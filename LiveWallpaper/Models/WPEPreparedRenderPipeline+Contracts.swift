@@ -16,6 +16,14 @@ extension WPEPreparedRenderPipeline {
                 default: break
                 }
             }
+            // Cursor ripple buffers store four directional forces; alpha is data, not coverage.
+            for prepared in layer.passes {
+                let shader = WPEBuiltinShaderName.normalized(prepared.pass.shader)
+                guard ["cursorripple_apply_force", "cursorripple_simulate_force"]
+                    .contains((shader as NSString).lastPathComponent),
+                    case let .fbo(name) = prepared.pass.target else { continue }
+                declaredTargets["fbo:" + name] = .data(.flow)
+            }
         }
         resources = declaredTargets
         // Names with a `resources` entry; aliased reads probe these exactly as runtime binding probes written FBOs.

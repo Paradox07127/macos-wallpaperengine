@@ -2595,8 +2595,13 @@ final class WPEMetalRenderExecutor {
         let sourceWorldSize = Self.worldSourceSize(of: sourceTexture)
         let baseWidth = geometry.size.map { Float($0.width) } ?? sourceWorldSize.width
         let baseHeight = geometry.size.map { Float($0.height) } ?? sourceWorldSize.height
-        let scaleX = Float(geometry.scale.x)
-        let scaleY = Float(geometry.scale.y)
+        // Fold the out-of-plane Euler tilts into the 2D scale the way the full model
+        // matrix (Rz·Ry·Rx·S) projects a flat quad: cos(angles.y) scales X, cos(angles.x)
+        // scales Y. The magnitude shrinks the quad (foreshortening) and the sign rides
+        // the existing UV-mirror field — exact for the ±π flips the quad path would
+        // otherwise drop entirely.
+        let scaleX = Float(geometry.scale.x * cos(geometry.angles.y))
+        let scaleY = Float(geometry.scale.y * cos(geometry.angles.x))
         let width = max(baseWidth * max(abs(scaleX), 0.0001), 0.0001)
         let height = max(baseHeight * max(abs(scaleY), 0.0001), 0.0001)
         let anchor = Self.centeredOrigin(of: geometry, sceneSize: sceneSize)
@@ -2654,8 +2659,9 @@ final class WPEMetalRenderExecutor {
         let sourceWorldSize = Self.worldSourceSize(of: sourceTexture)
         let baseWidth = geometry.size.map { Float($0.width) } ?? sourceWorldSize.width
         let baseHeight = geometry.size.map { Float($0.height) } ?? sourceWorldSize.height
-        let scaleX = Float(geometry.scale.x)
-        let scaleY = Float(geometry.scale.y)
+        // Same X/Y-angle fold as the orthographic branch.
+        let scaleX = Float(geometry.scale.x * cos(geometry.angles.y))
+        let scaleY = Float(geometry.scale.y * cos(geometry.angles.x))
         let width = max(baseWidth * max(abs(scaleX), 0.0001) * projection.depthScale, 0.0001)
         let height = max(baseHeight * max(abs(scaleY), 0.0001) * projection.depthScale, 0.0001)
         let quadCenter = projection.center
@@ -2706,8 +2712,11 @@ final class WPEMetalRenderExecutor {
         // `usesShapeQuadGeometry` gates every call to exactly 4 points.
         let points = geometry.shapePoints!
         let baseSquare = sceneHeight
-        let scaleX = Float(geometry.scale.x)
-        let scaleY = Float(geometry.scale.y)
+        // Same X/Y-angle fold as `objectQuadUniforms`: cos(angles.y) scales X,
+        // cos(angles.x) scales Y — here applied to the pre-rotation model corners, so
+        // a ±π flip mirrors the quad while each corner keeps its authored point UV.
+        let scaleX = Float(geometry.scale.x * cos(geometry.angles.y))
+        let scaleY = Float(geometry.scale.y * cos(geometry.angles.x))
         let rotation = Float(geometry.angles.z)
         let cosR = cos(rotation)
         let sinR = sin(rotation)

@@ -711,14 +711,17 @@ extension WPEMetalSceneRenderer {
         var layers: [WPESceneScriptLayerInfo] = []
         layers.reserveCapacity(nameByID.count)
         for object in document.imageObjects {
+            // The script surface is LOCAL: write-backs (e.g. `layer.origin = originalOrigin`)
+            // replace the local component in applyingLayerTransforms, which composes the
+            // parent again. Seeding the composed world value would double the parent offset.
             layers.append(WPESceneScriptLayerInfo(
                 id: object.id,
                 name: object.name,
                 size: SIMD2<Double>(Double(object.size?.width ?? 0), Double(object.size?.height ?? 0)),
-                origin: SIMD2<Double>(object.origin.x, object.origin.y),
-                originZ: object.origin.z,
-                scale: object.scale,
-                angles: object.angles,
+                origin: SIMD2<Double>(object.localOrigin.x, object.localOrigin.y),
+                originZ: object.localOrigin.z,
+                scale: object.localScale,
+                angles: object.localAngles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
                 parentID: object.parentObjectID,
@@ -734,10 +737,10 @@ extension WPEMetalSceneRenderer {
                 id: object.id,
                 name: object.name,
                 size: .zero,
-                origin: SIMD2<Double>(object.origin.x, object.origin.y),
-                originZ: object.origin.z,
-                scale: object.scale,
-                angles: object.angles,
+                origin: SIMD2<Double>(object.localOrigin.x, object.localOrigin.y),
+                originZ: object.localOrigin.z,
+                scale: object.localScale,
+                angles: object.localAngles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
                 parentID: object.parentObjectID,
@@ -750,9 +753,12 @@ extension WPEMetalSceneRenderer {
                 id: object.id,
                 name: object.name,
                 size: object.boxSize ?? SIMD2<Double>(0, 0),
-                origin: SIMD2<Double>(object.origin.x, object.origin.y),
-                originZ: object.origin.z,
-                scale: object.scale,
+                origin: SIMD2<Double>(
+                    (object.localOrigin ?? object.origin).x,
+                    (object.localOrigin ?? object.origin).y
+                ),
+                originZ: (object.localOrigin ?? object.origin).z,
+                scale: object.localScale ?? object.scale,
                 angles: object.angles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },

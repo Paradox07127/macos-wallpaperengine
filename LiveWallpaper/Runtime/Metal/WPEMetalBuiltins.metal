@@ -433,7 +433,10 @@ struct WPEPuppetVertex {
 };
 
 struct WPEPuppetMeshUniforms {
-    float4 localSizeAndMode; // x,y local render target size; z=bone palette count; w=skinning enabled
+    // x,y = assembled layer extent in MODEL units (not the render target's texel count — the
+    // target may be mip/pixelScale-reduced while NDC still spans the full layer rect);
+    // z=bone palette count; w=skinning enabled
+    float4 localSizeAndMode;
     float4 meshCenterAndPadding; // x,y raw MDLV mesh center; z,w reserved
 };
 

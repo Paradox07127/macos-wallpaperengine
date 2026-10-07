@@ -154,7 +154,7 @@ extension WPEMetalSceneRenderer {
         let offset = Self.transformedTextOffset(
             initialLayout.centerOffsetFromObjectOrigin,
             scale: geometry.scale,
-            angle: geometry.angles.z
+            angles: geometry.angles
         )
         let textOrigin = geometry.origin - SIMD3<Double>(offset.x, offset.y, 0)
         let canvasSize = groupSize ?? sceneRenderSize
@@ -202,20 +202,30 @@ extension WPEMetalSceneRenderer {
         }
         return WPETextMeshPlacement(
             originTopLeft: originTopLeft,
-            scale: SIMD2<Double>(geometry.scale.x, geometry.scale.y) * depthScale,
+            // The glyph renderer scales positions directly, so the same cos fold the
+            // quad uniform builders use applies here verbatim — a ±π X/Y flip mirrors
+            // the placed glyphs through a negative axis scale.
+            scale: SIMD2<Double>(
+                geometry.scale.x * cos(geometry.angles.y),
+                geometry.scale.y * cos(geometry.angles.x)
+            ) * depthScale,
             rotation: geometry.angles.z
         )
     }
 
+    /// Model-space text offset → world offset under the layer transform. The X/Y
+    /// angles fold into the per-axis scale exactly like `objectQuadUniforms` — the
+    /// flat text plane can't express true 3D rotation, but cos(angles.y)·X and
+    /// cos(angles.x)·Y are exact for single-axis tilts including ±π flips.
     static func transformedTextOffset(
         _ offset: SIMD2<Double>,
         scale: SIMD3<Double>,
-        angle: Double
+        angles: SIMD3<Double>
     ) -> SIMD2<Double> {
-        let x = offset.x * scale.x
-        let y = offset.y * scale.y
-        let cosine = cos(angle)
-        let sine = sin(angle)
+        let x = offset.x * scale.x * cos(angles.y)
+        let y = offset.y * scale.y * cos(angles.x)
+        let cosine = cos(angles.z)
+        let sine = sin(angles.z)
         return SIMD2<Double>(x * cosine - y * sine, x * sine + y * cosine)
     }
 
@@ -261,11 +271,11 @@ extension WPEMetalSceneRenderer {
         var shifted = origins
         for plan in textRenderPlans where shifted[plan.object.id] != nil {
             let scale = scales[plan.object.id] ?? plan.object.localScale ?? plan.object.scale
-            let angle = angles[plan.object.id]?.z ?? plan.object.angles.z
+            let objectAngles = angles[plan.object.id] ?? plan.object.angles
             let offset = Self.transformedTextOffset(
                 plan.initialLayout.centerOffsetFromObjectOrigin,
                 scale: scale,
-                angle: angle
+                angles: objectAngles
             )
             shifted[plan.object.id]! += SIMD3<Double>(offset.x, offset.y, 0)
         }
@@ -362,12 +372,12 @@ private extension WPERenderLayer {
             let oldOffset = WPEMetalSceneRenderer.transformedTextOffset(
                 initial.centerOffsetFromObjectOrigin,
                 scale: geometry.scale,
-                angle: geometry.angles.z
+                angles: geometry.angles
             )
             let newOffset = WPEMetalSceneRenderer.transformedTextOffset(
                 layout.centerOffsetFromObjectOrigin,
                 scale: geometry.scale,
-                angle: geometry.angles.z
+                angles: geometry.angles
             )
             return WPERenderLayerGeometry(
                 origin: geometry.origin

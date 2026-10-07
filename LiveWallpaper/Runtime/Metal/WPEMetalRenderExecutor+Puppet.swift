@@ -952,7 +952,7 @@ extension WPEMetalRenderExecutor {
               let model = puppetModel else {
             return false
         }
-        if shouldDeferPuppetMeshWarp(for: layer) {
+        if shouldDeferPuppetMeshWarp(for: layer, model: model) {
             // Intentional fallthrough: `.layerComposite` draws the atlas at local UV 1:1 with no mesh warp; `encodePuppetSceneCompositePassIfNeeded` warps later.
             return false
         }
@@ -1050,10 +1050,14 @@ extension WPEMetalRenderExecutor {
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
 
         let paletteState = puppetBonePalette(for: skinningState)
+        // Mesh positions are in the layer's authored (model) space — the same basis
+        // `puppetCompositeLocalSize` feeds the deferred composite — so the NDC divisor
+        // is the layer extent, not the possibly mip/pixelScale-reduced FBO texel count.
+        let localSize = puppetCompositeLocalSize(for: layer, sourceTexture: primary)
         var meshUniforms = WPEPuppetMeshUniforms(
             localSizeAndMode: SIMD4<Float>(
-                Float(max(destination.texture.width, 1)),
-                Float(max(destination.texture.height, 1)),
+                localSize.x,
+                localSize.y,
                 Float(paletteState.bonePalette.count),
                 paletteState.skinningEnabled
             ),
@@ -1162,7 +1166,7 @@ extension WPEMetalRenderExecutor {
     ) throws -> Bool {
         guard isDeferredWarpTarget(pass.pass.target, layer: layer),
               let model = puppetModel,
-              shouldDeferPuppetMeshWarp(for: layer) else {
+              shouldDeferPuppetMeshWarp(for: layer, model: model) else {
             return false
         }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
@@ -1668,14 +1672,54 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// Keep the material/effects in atlas space and deform at the terminal
-    /// composite. A local texture sized for the rest pose clips animated limbs
-    /// just as readily on a puppet with no effects.
-    private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer) -> Bool {
+    /// Keep a no-effect puppet's material in atlas space and deform at the terminal
+    /// composite. A local texture sized for the rest pose clips animated limbs.
+    /// A contained static mesh can assemble before effects so their layer-space
+    /// masks see the assembled image. Overflowing or skinned meshes keep the
+    /// scene-space path: the authored card cannot bound all animation frames.
+    private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer, model: WPEPuppetModel) -> Bool {
         // Without a `.scene` copy pass to land on, deferring would leave the puppet unwarped — even a forced override stays on the direct path.
         guard layerHasDeferredWarpTarget(layer) else { return false }
         if let forced = Self.deferPuppetMeshWarpOverride { return forced }
-        return layerHasEffectChain(layer) || layer.meshMaterialTextures.isEmpty
+        if layerHasEffectChain(layer) {
+            // Defer only when no material pass can host the mesh draw (e.g. a
+            // non-image material shader); otherwise the flat blit would feed
+            // layer-space masks an atlas image.
+            return !layerAssemblesMeshInMaterialPass(layer) || !puppetFitsLocalComposite(layer: layer, model: model)
+        }
+        return layer.meshMaterialTextures.isEmpty
+    }
+
+    private func puppetFitsLocalComposite(layer: WPERenderLayer, model: WPEPuppetModel) -> Bool {
+        guard model.bones.isEmpty, let size = layer.geometry.size,
+              size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0 else { return false }
+        let halfWidth = Float(size.width) / 2
+        let halfHeight = Float(size.height) / 2
+        let center = layer.geometry.puppetMeshCenter
+        return model.meshes.allSatisfy { mesh in
+            mesh.vertices.allSatisfy { vertex in
+                let x = vertex.position.x - Float(center.x)
+                let y = vertex.position.y - Float(center.y)
+                return abs(x) <= halfWidth && abs(y) <= halfHeight
+            }
+        }
+    }
+
+    /// The material pass can rasterize the assembled mesh only for the image-material
+    /// shaders the puppet path supports; any other shader still blits the source flat.
+    /// A slot-8 clip binding is claimed by the deferred clip composite instead — it
+    /// rasterizes parts in scene space past the local card's bounds.
+    private func layerAssemblesMeshInMaterialPass(_ layer: WPERenderLayer) -> Bool {
+        layer.passes.contains { pass in
+            guard case .material = pass.phase,
+                  case .layerComposite = pass.target,
+                  !hasPuppetClipCompositeBinding(pass, layer: layer) else { return false }
+            switch WPEBuiltinShaderKind(normalizing: pass.shader) {
+            case .genericImage2, .genericImage4: return true
+            default: return false
+            }
+        }
     }
 
     /// Applied by `encodePuppetSceneCompositePassIfNeeded` on a scene-target or composelayer-group-target `copy` pass.
@@ -2036,7 +2080,7 @@ extension WPEMetalRenderExecutor {
         guard let model = puppetModel else {
             return false
         }
-        if shouldDeferPuppetMeshWarp(for: layer) {
+        if shouldDeferPuppetMeshWarp(for: layer, model: model) {
             return try encodeDeferredPuppetClipCompositePassIfNeeded(
                 pass: pass,
                 layer: layer,
@@ -2088,12 +2132,14 @@ extension WPEMetalRenderExecutor {
                     + "— if skinning=OFF the eye renders static (no squish), so nothing is clipped"
             )
         }
-        // localSizeAndMode is taken from the MAIN destination for ALL draws so the clip mask
-        // (rendered to a different-resolution RT) maps to the same NDC and the screen-space UV aligns.
+        // localSizeAndMode is the SAME model-space layer extent for ALL draws (main FBO and
+        // clip-mask RTs alike) so the mask — rendered to a different-resolution RT — maps to
+        // the same NDC and the screen-space UV aligns. FBO texel count never enters the mapping.
+        let compositeLocalSize = puppetCompositeLocalSize(for: layer, sourceTexture: primary)
         var meshUniforms = WPEPuppetMeshUniforms(
             localSizeAndMode: SIMD4<Float>(
-                Float(max(destination.texture.width, 1)),
-                Float(max(destination.texture.height, 1)),
+                compositeLocalSize.x,
+                compositeLocalSize.y,
                 Float(paletteState.bonePalette.count),
                 paletteState.skinningEnabled
             ),
