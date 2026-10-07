@@ -4506,7 +4506,7 @@ export function init(value) {
         #expect(instance.tickString() == "[1.50]")
     }
 
-    @Test("Parser keeps a script-driven text object whose authored value is empty")
+    @Test("Parser keeps declared empty static and script-driven text objects")
     func parserKeepsScriptedTextWithEmptyAuthoredValue() throws {
         let json = #"""
         {
@@ -4535,7 +4535,9 @@ export function init(value) {
         let scripted = try #require(document.textObjects.first(where: { $0.id == "345" }))
         #expect(scripted.text.isEmpty)
         #expect(scripted.textScript?.isEmpty == false)
-        #expect(!document.textObjects.contains(where: { $0.id == "346" }))
+        let emptyStatic = try #require(document.textObjects.first(where: { $0.id == "346" }))
+        #expect(emptyStatic.text.isEmpty)
+        #expect(emptyStatic.textScript == nil)
     }
 
     // MARK: - Batched per-tick host writes (J-a)
