@@ -177,6 +177,36 @@ struct WorkshopDownloadQueueTests {
         #expect(restoredDownloads().downloadOrder.isEmpty, "X must remove the saved failure")
     }
 
+    @Test("A malformed saved failure is skipped without losing the readable ones")
+    func malformedFailureDoesNotDropTheOthers() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FailedDownloadHistory")
+        defer { suite.discard() }
+        let saved = #"[{"itemID":\#(first),"title":"Kept","reason":"saved reason","replacesLocalCopy":false},{"itemID":\#(second),"title":"Broken"}]"#
+        suite.defaults.set(Data(saved.utf8), forKey: "workshop.failedDownloadHistory")
+        let restored = WorkshopDownloadCoordinator(
+            repositoryCoordinator: WorkshopRepositoryCoordinator(), toasts: WorkshopToastCenter(),
+            historyDefaults: suite.defaults
+        )
+        #expect(restored.downloadOrder == [first])
+        #expect(restored.titles[first] == "Kept")
+        #expect(restored.phase(for: first) == .failed("saved reason"))
+    }
+
+    @Test("An approved copy whose bookmark was refreshed stays approved; a later re-import does not")
+    func approvalSurvivesBookmarkRefresh() {
+        func entry(bookmark: UInt8, importedAt: Date) -> WPEHistoryEntry {
+            let origin = WPEOrigin(
+                workshopID: String(second), title: "Copy", originalType: .video,
+                sourceFolderBookmark: Data([bookmark]), cacheRelativePath: nil, previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: importedAt, lastUsedAt: nil)
+        }
+        let importedAt = Date(timeIntervalSinceReferenceDate: 1000)
+        let approved = entry(bookmark: 1, importedAt: importedAt)
+        #expect(WorkshopDownloadCoordinator.isApproved(entry(bookmark: 2, importedAt: importedAt), approved))
+        #expect(!WorkshopDownloadCoordinator.isApproved(entry(bookmark: 1, importedAt: importedAt.addingTimeInterval(1)), approved))
+    }
+
     @Test("Enqueueing the same item twice requests it once")
     func duplicateEnqueueRequestsOnce() async {
         let queue = makeQueue()

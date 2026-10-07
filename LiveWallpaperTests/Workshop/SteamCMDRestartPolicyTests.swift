@@ -336,13 +336,36 @@ struct SteamWorkshopDownloadCompletionTests {
         guard case .gateFailed = outcome else { Issue.record("untrusted replacement must remain refused"); return }
     }
 
-    @Test("Crash diagnostics name a real signal and ordinary failures retain their exit status")
-    func reportsTerminationReason() {
-        #expect(SteamWorkshopDownloadCompletion.diagnostic(output: "Loading Steam API...OK", exitCode: 11,
-                                                           terminationSignal: 11).contains("terminated by signal 11"))
-        #expect(SteamWorkshopDownloadCompletion.diagnostic(output: "failure", exitCode: 11,
-                                                           terminationSignal: nil).contains("exited with status 11"))
+    #if !LITE_BUILD
+    private func unrecognizedReason(
+        exitCode: Int32?, signal: Int32? = nil, detail: SteamWorkshopDownloadResult.FailureDetail? = nil, tail: String = "raw tail"
+    ) -> String {
+        let result = SteamWorkshopDownloadResult(
+            outcome: .unrecognized, itemPath: nil, diagnosticTail: "unused", exitCode: exitCode,
+            terminationSignal: signal, failureDetail: detail
+        )
+        return SteamCMDDoctorService.unrecognizedDownloadReason(result, redactedTail: tail)
     }
+
+    @Test("A rejected completion names why, ahead of SteamCMD's own output")
+    func rejectedCompletionNamesWhy() {
+        let profile = String(localized: "SteamCMD saved the item to its private profile instead of your Steam library.", bundle: .appLanguage)
+        let invalid = String(localized: "SteamCMD reported the download as complete, but the downloaded project or its content is invalid.", bundle: .appLanguage)
+        #expect(unrecognizedReason(exitCode: 0, signal: 11, detail: .leftInPrivateProfile) == "\(profile)\nraw tail")
+        #expect(unrecognizedReason(exitCode: 1, detail: .invalidCommittedItem) == "\(invalid)\nraw tail")
+        #expect(unrecognizedReason(exitCode: 0, detail: .invalidCommittedItem, tail: "") == invalid)
+    }
+
+    @Test("A crash names its signal before an exit status, and a clean or unknown exit adds nothing")
+    func reportsTerminationReason() {
+        let signal = String(localized: "SteamCMD was terminated by signal \(11).", bundle: .appLanguage)
+        let status = String(localized: "SteamCMD exited with status \(5).", bundle: .appLanguage)
+        #expect(unrecognizedReason(exitCode: 11, signal: 11) == "\(signal)\nraw tail")
+        #expect(unrecognizedReason(exitCode: 5) == "\(status)\nraw tail")
+        #expect(unrecognizedReason(exitCode: 0) == "raw tail")
+        #expect(unrecognizedReason(exitCode: nil) == "raw tail")
+    }
+    #endif
 
     @Test("Explicit cancellation is recorded only for the matching active child and resets for its successor")
     func distinguishesCancellationFromCrash() {

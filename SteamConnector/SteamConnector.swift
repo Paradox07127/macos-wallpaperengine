@@ -439,7 +439,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     ) {
         callerLiveness.own(operationID: operationID)
         let liveness = callerLiveness
-        @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil) {
+        @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, detail: SteamWorkshopDownloadResult.FailureDetail? = nil) {
             liveness.disown(operationID: operationID)
             let result = SteamWorkshopDownloadResult(
                 outcome: outcome,
@@ -447,7 +447,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 diagnosticTail: String(tail.suffix(500)),
                 executedBinaryPath: executed,
                 exitCode: exitCode,
-                terminationSignal: signal
+                terminationSignal: signal,
+                failureDetail: detail
             )
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
@@ -511,28 +512,25 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             )
             stopStagingPoll()
             let out = run.output
-            let diagnostic = SteamWorkshopDownloadCompletion.diagnostic(
-                output: out, exitCode: run.exitCode, terminationSignal: run.terminationSignal
-            )
             if run.timedOut {
-                respond(.timedOut, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
+                respond(.timedOut, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
-            guard liveness.canContinue else { respond(.unrecognized, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return }
+            guard liveness.canContinue else { respond(.unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return }
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
-                respond(.loginRequired, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
+                respond(.loginRequired, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No Connection).") {
-                respond(.steamUnreachable, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
+                respond(.steamUnreachable, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No match).") {
-                respond(.removedFromSteam, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
+                respond(.removedFromSteam, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
             // Trust the tree, not the log line: SteamCMD prints the destination
             // it *intended*, and a partial run can leave that path absent.
             let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: libraryRoot)
                 .appendingPathComponent(workshopID, isDirectory: true)
             guard run.completedWorkshopItem else {
-                respond(.unrecognized, tail: diagnostic, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
+                respond(.unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
             let project = folder.appendingPathComponent("project.json")
             let finalRunCompleted = run.exitCode == 0 && run.terminationSignal == nil
@@ -550,13 +548,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     .map { SteamLibraryPaths.workshopContentRoot(steamRoot: $0).appendingPathComponent(workshopID, isDirectory: true) }
                     .map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false
                 respond(
-                    .unrecognized,
-                    tail: stray ? "SteamCMD ignored force_install_dir and left the item in the private profile\n\(diagnostic)" : "SteamCMD reported completion but the committed project or content is invalid\n\(diagnostic)",
-                    executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal
+                    .unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal,
+                    detail: stray ? .leftInPrivateProfile : .invalidCommittedItem
                 )
                 return
             }
-            respond(.downloaded, tail: diagnostic, path: folder.path(percentEncoded: false), executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal)
+            respond(.downloaded, tail: out, path: folder.path(percentEncoded: false), executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal)
         }
     }
 

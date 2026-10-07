@@ -244,6 +244,19 @@ struct WorkshopModalTests {
         #expect(plain.status == String(localized: "Downloading…", bundle: .appLanguage))
     }
 
+    @Test("A queued apply keeps naming its display while SteamCMD starts or stalls", arguments: [
+        WorkshopDownloadCoordinator.TransferState.waiting, .stalled,
+    ])
+    func queuedDownloadKeepsItsDisplayBeforeBytesArrive(transfer: WorkshopDownloadCoordinator.TransferState) {
+        let name = "Studio"
+        let line = WorkshopDownloadPresentation.make(
+            ticketState: .waiting, screenName: name, wallpapersOn: true, phase: .downloading,
+            isFetchingDependencies: false, fraction: nil, downloadedBytes: nil, totalBytes: nil,
+            bytesPerSecond: nil, isInstalled: false, reportsSave: true, blocker: nil, transferState: transfer
+        )
+        #expect(line.status == String(localized: "Will apply to \(name) when done", bundle: .appLanguage))
+    }
+
     @Test("A download saved without an apply reports the library; a preset, a gone entry or a queued apply does not")
     func savedDownloadReportsTheLibrary() {
         let added = String(localized: "Added to your library.", bundle: .appLanguage)

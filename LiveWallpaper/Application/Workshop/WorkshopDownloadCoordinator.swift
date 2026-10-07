@@ -64,6 +64,15 @@ final class WorkshopDownloadCoordinator {
         let approvedReplacement: WPEHistoryEntry?
     }
 
+    /// Lets one unreadable saved failure drop alone instead of the whole list.
+    private struct SavedFailure: Decodable {
+        let failure: FailedDownload?
+
+        init(from decoder: any Decoder) throws {
+            failure = try? FailedDownload(from: decoder)
+        }
+    }
+
     private static let failedHistoryKey = "workshop.failedDownloadHistory"
     static let shared = WorkshopDownloadCoordinator(historyDefaults: .appScoped())
 
@@ -198,8 +207,8 @@ final class WorkshopDownloadCoordinator {
         self.afterSteamCMDRun = afterSteamCMDRun
         self.historyDefaults = historyDefaults
         if let data = historyDefaults?.data(forKey: Self.failedHistoryKey),
-           let failures = try? JSONDecoder().decode([FailedDownload].self, from: data) {
-            for failure in failures {
+           let saved = try? JSONDecoder().decode([SavedFailure].self, from: data) {
+            for failure in saved.compactMap(\.failure) {
                 if titles[failure.itemID] == nil {
                     downloadOrder.append(failure.itemID)
                 }
@@ -580,10 +589,10 @@ final class WorkshopDownloadCoordinator {
         return conflict
     }
 
-    private static func isApproved(_ existing: WPEHistoryEntry, _ approved: WPEHistoryEntry?) -> Bool {
+    static func isApproved(_ existing: WPEHistoryEntry, _ approved: WPEHistoryEntry?) -> Bool {
         guard let approved else { return false }
+        // Not the bookmark bytes: refreshing a stale bookmark rewrites them on the same library entry.
         return existing.importedAt == approved.importedAt
-            && existing.origin.sourceFolderBookmark == approved.origin.sourceFolderBookmark
     }
 
     private static func libraryConflictReason(_ existing: WPEHistoryEntry) -> String {

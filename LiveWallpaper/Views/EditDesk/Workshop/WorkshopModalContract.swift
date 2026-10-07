@@ -181,6 +181,8 @@ struct WorkshopDownloadPresentation: Equatable {
             presentation.detail = detailText(
                 downloaded: downloadedBytes, total: totalBytes, bytesPerSecond: bytesPerSecond, fraction: effectiveFraction
             )
+            // A queued display outranks transfer state, which stays .waiting until the first byte arrives.
+            guard ticketState != .waiting else { break }
             if transferState == .waiting {
                 presentation.status = String(localized: "Waiting for Steam…", bundle: .appLanguage)
             } else if transferState == .restarting {

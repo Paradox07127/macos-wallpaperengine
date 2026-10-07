@@ -647,6 +647,11 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
         case steamCMDUnavailable
         case unrecognized
     }
+    /// Why SteamCMD's reported completion was not accepted; the app words it for the user.
+    enum FailureDetail: String, Codable, Sendable {
+        case leftInPrivateProfile
+        case invalidCommittedItem
+    }
     let outcome: Outcome
     /// Where the item landed, on success — inside the shared Steam repository.
     let itemPath: String?
@@ -660,6 +665,7 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     var exitCode: Int32?
     /// Set only when Foundation reports `.uncaughtSignal`, never inferred from an exit status.
     var terminationSignal: Int32?
+    var failureDetail: FailureDetail? = nil
 }
 
 /// One bounded receipt for this request, independent of the last self-update run's output.
@@ -715,12 +721,6 @@ struct SteamWorkshopDownloadCompletion {
               attributes[.type] as? FileAttributeType == .typeRegular,
               let size = attributes[.size] as? NSNumber, size.uint64Value > 0 else { return false }
         return true
-    }
-
-    static func diagnostic(output: String, exitCode: Int32, terminationSignal: Int32?) -> String {
-        let status = terminationSignal.map { "SteamCMD terminated by signal \($0)" }
-            ?? "SteamCMD exited with status \(exitCode)"
-        return "\(output)\n\(status)"
     }
 }
 
