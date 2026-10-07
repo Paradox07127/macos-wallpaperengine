@@ -708,6 +708,12 @@ final class WPELayerScriptInstance {
         }
     }
 
+    /// A user-property patch changed the property this script is assigned to; the next update(value) receives it.
+    func setBoundOwnVisible(_ value: Bool) {
+        guard !isDestroyed else { return }
+        engine.setBoundOwnVisible(value)
+    }
+
     func applyScriptPropertiesSuperseding(
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
@@ -954,6 +960,13 @@ final class WPELayerScriptInstance {
                 let evaluation = self.evaluateLayerEntry { self.initializeOnQueue() }
                 guard let metadata = evaluation.result else { return self.context == nil ? .contextUnavailable : .setupFailed }
                 return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
+            }
+        }
+
+        /// Enqueued on the serial lane, so every tick submitted after this call reads the new value.
+        func setBoundOwnVisible(_ value: Bool) {
+            queue.async { [self] in
+                assignedVisible[Self.ownKey] = value
             }
         }
 

@@ -69,4 +69,46 @@ struct WPESceneVisibleEnableGateTests {
         let doc = try scene(display: nil)
         #expect(doc.ownVisibilityByID["130"] == false)
     }
+
+    private func boundScene(userValue: Bool?) throws -> WPESceneDocument {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160]],
+            "objects": [[
+                "id": 2077,
+                "name": "bound",
+                "image": "models/combined.json",
+                "origin": "0 0 0",
+                "visible": [
+                    "script": "export function update(value) { return value; }",
+                    "scriptproperties": ["speed": ["value": 1]],
+                    "user": "_3d",
+                    "value": false,
+                ] as [String: Any],
+            ]],
+        ]
+        var userValues: [String: WallpaperEngineProjectPropertyValue] = [:]
+        if let userValue {
+            userValues["_3d"] = .bool(userValue)
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        return try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: userValues,
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+    }
+
+    @Test("A scripted visible bound to a user property seeds from that property")
+    func scriptedVisibleSeedsFromUserProperty() throws {
+        let doc = try boundScene(userValue: true)
+        #expect(doc.ownVisibilityByID["2077"] == true)
+        #expect(doc.imageObjects.first?.visibleScript != nil)
+    }
+
+    @Test("Control: a scripted visible with no user value keeps the authored value")
+    func scriptedVisibleWithoutUserValueKeepsAuthoredValue() throws {
+        let doc = try boundScene(userValue: nil)
+        #expect(doc.ownVisibilityByID["2077"] == false)
+    }
 }
