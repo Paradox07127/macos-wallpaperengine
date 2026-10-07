@@ -81,3 +81,11 @@ extension WallpaperConfigurationStore {
         self.init(persistence: SettingsManagerScreenConfigurationPersistence())
     }
 }
+
+@MainActor
+protocol GlobalSettingsPersisting: AnyObject {
+    func loadGlobalSettings() -> GlobalSettings
+    func saveGlobalSettings(_ settings: GlobalSettings)
+}
+
+extension SettingsManager: GlobalSettingsPersisting {}

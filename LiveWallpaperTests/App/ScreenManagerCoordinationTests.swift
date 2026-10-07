@@ -837,7 +837,7 @@ struct ScreenManagerCoordinationTests {
 
     @Test("updateVideoVolume mutates configuration and posts a change notification")
     func updateVideoVolumeForwardsThroughCoordinator() async throws {
-        try await Self.runWithSeededConfiguration { manager, screen in
+        try await Self.runWithSeededConfiguration(videoVolume: 0.9) { manager, screen in
             let target = 0.42
             try await Self.expectChange(notificationFor: screen) {
                 manager.updateVideoVolume(target, for: screen)
@@ -1663,16 +1663,26 @@ struct ScreenManagerCoordinationTests {
     }
 
     private static func runWithSeededConfiguration(
+        videoVolume: Double? = nil,
         _ body: (ScreenManager, Screen) async throws -> Void
     ) async throws {
         guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
             Issue.record("No NSScreen available for ScreenManager coordination test")
             return
         }
-        let originalConfigurations = SettingsManager.shared.loadConfigurations()
-        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
+        let state = videoVolume.map { _ in ScreenManagerFixtureState() }
+        let originalConfigurations = state == nil ? SettingsManager.shared.loadConfigurations() : []
+        defer {
+            if state == nil {
+                SettingsManager.shared.replaceAllConfigurations(originalConfigurations)
+            }
+        }
 
-        if !originalConfigurations.contains(where: { $0.screenID == screen.id }) {
+        if let state, let videoVolume {
+            var seeded = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("<p>x</p>"), config: .default))
+            seeded.videoVolume = videoVolume
+            state.saveConfiguration(seeded)
+        } else if !originalConfigurations.contains(where: { $0.screenID == screen.id }) {
             SettingsManager.shared.saveConfiguration(
                 ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("<p>x</p>"), config: .default))
             )
@@ -1685,6 +1695,7 @@ struct ScreenManagerCoordinationTests {
             fullScreenDetector: FakeFullScreenDetector(),
             playableVideoLoader: FakePlayableVideoLoader(),
             displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            configurationStore: state.map { WallpaperConfigurationStore(persistence: $0) }, userPauseState: state,
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
 
