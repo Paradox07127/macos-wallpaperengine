@@ -85,7 +85,7 @@ struct BrowseCard: View, Equatable {
         .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
         .wpeTranslateWallpaperName(item.title)
         .contextMenu { contextMenuItems }
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: shouldBlur ? .ignore : .contain)
         .accessibilityLabel(Text(accessibilityLabelText))
         .accessibilityHint(shouldBlur
             ? Text("Mature content hidden. Activate to reveal.")
@@ -169,10 +169,12 @@ struct BrowseCard: View, Equatable {
         }
         .overlay(alignment: .topLeading) {
             topBadgeRow
+                .accessibilityHidden(true)
         }
         .overlay(alignment: .bottom) {
             if !shouldBlur {
                 editDeskInfoBand
+                    .accessibilityHidden(true)
             }
         }
         .thumbnailBadgeSurface(.opaque)

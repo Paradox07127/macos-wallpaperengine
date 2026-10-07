@@ -25,6 +25,7 @@ struct AnimatedGIFThumbnail: View {
 
     @State private var controller = GIFAnimationController()
     @State private var phase: LoadPhase = .loading
+    @State private var retryAttempt = 0
     @State private var isVisible = false
     @State private var hostAllowsPlayback = false
     private let loadAsset: @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset?
@@ -39,10 +40,11 @@ struct AnimatedGIFThumbnail: View {
         let url: URL?
         let size: WorkshopPreviewSize
         let isPresented: Bool
+        let retryAttempt: Int
     }
 
     private var loadKey: LoadKey {
-        LoadKey(url: url, size: previewSize, isPresented: inspectorContentIsVisible)
+        LoadKey(url: url, size: previewSize, isPresented: inspectorContentIsVisible, retryAttempt: retryAttempt)
     }
 
     private var playbackGate: ThumbnailPlaybackGate {
@@ -157,12 +159,37 @@ struct AnimatedGIFThumbnail: View {
             ArcSpinner(size: 20, lineWidth: 2, tint: .secondary)
                 .opacity(0.7)
                 .accessibilityHidden(true)
+        } else if phase == .failed, !isBlurred {
+            failedPreview
         } else {
             Image(systemName: "cube.transparent")
                 .font(.system(size: 36, weight: .regular))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }
+    }
+
+    private var failedPreview: some View {
+        VStack(spacing: DesignTokens.Spacing.sm) {
+            Image(systemName: "cube.transparent")
+                .font(.system(size: DesignTokens.EmptyState.compactIconSize))
+                .foregroundStyle(DesignTokens.Colors.textTertiary)
+                .accessibilityHidden(true)
+            Text("Preview unavailable", comment: "Workshop thumbnail could not be loaded after retries.")
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(DesignTokens.Colors.textSecondary)
+            Button {
+                phase = .loading
+                retryAttempt += 1
+            } label: {
+                Label("Retry thumbnail", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .font(DesignTokens.Typography.caption)
+            .accessibilityIdentifier("workshop.thumbnail.retry")
+        }
+        .padding(DesignTokens.Spacing.sm)
     }
 
     private var playingBadge: some View {

@@ -1035,6 +1035,15 @@ final class SteamCMDDoctorService {
         onProgress: SteamCMDProgressHandler? = nil,
         onContentReady: @MainActor @Sendable (URL) async -> Imported
     ) async -> WorkshopItemDownloadResult<Imported> {
+        await downloadWorkshopItem(itemID, onProgress: onProgress, onPhase: nil, onContentReady: onContentReady)
+    }
+
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress: SteamCMDProgressHandler?,
+        onPhase: (@Sendable (SteamOperationProgress.Phase) -> Void)?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported> {
         do {
             return try await operationCoordinator.withOperation(.workshopDownload) { [weak self] _ in
                 guard let self else {
@@ -1043,6 +1052,7 @@ final class SteamCMDDoctorService {
                 return await performDownloadWorkshopItem(
                     itemID,
                     onProgress: onProgress,
+                    onPhase: onPhase,
                     onContentReady: onContentReady
                 )
             }
@@ -1056,6 +1066,7 @@ final class SteamCMDDoctorService {
     private func performDownloadWorkshopItem<Imported: Sendable>(
         _ itemID: UInt64,
         onProgress: SteamCMDProgressHandler?,
+        onPhase: (@Sendable (SteamOperationProgress.Phase) -> Void)?,
         onContentReady: @MainActor @Sendable (URL) async -> Imported
     ) async -> WorkshopItemDownloadResult<Imported> {
         guard let username, SteamCMDScriptWriter.validateUsername(username) else {
@@ -1083,6 +1094,7 @@ final class SteamCMDDoctorService {
             username,
             steamRoot.path(percentEncoded: false),
             { @Sendable update in
+                onPhase?(update.phase)
                 onProgress?(update.fraction.map { $0 * 100 }, update.downloadedBytes, update.totalBytes)
             }
         )

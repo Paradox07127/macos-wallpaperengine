@@ -121,6 +121,15 @@ Downloads use the authorized Steam library and subscription sync makes your
 subscribed items available in the app. You can also link local project folders,
 which are read in place. Browse filters apply within tag/creator views as well.
 
+Open **Downloads** in the Workshop toolbar to see queued, active and finished
+downloads. Failed items retain their reason and offer **Retry**; queued and active
+items offer **Cancel**. Completed and cancelled items last for the current app
+session; failed items survive restarts until dismissed or retried. Progress shows
+a percentage when Steam reports one or downloaded bytes and a total are known;
+otherwise it shows an activity indicator. Waiting and SteamCMD restarts have their
+own status. A failed thumbnail offers **Retry thumbnail** without downloading the
+wallpaper again.
+
 ## 9) Scene presets (Pro)
 
 A wallpaper's page in the Workshop also lists the **presets** its community has

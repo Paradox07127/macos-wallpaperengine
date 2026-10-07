@@ -8,54 +8,65 @@ extension WorkshopDownloadTests {
     @MainActor
     func dependencyRunsHookPerSteamCMDRun() async throws {
         let fixture = try HookFixture()
-        defer { await fixture.discard() }
-        let attempt = try #require(fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader))
-        await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            let attempt = try #require(fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader))
+            await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
 
-        #expect(fixture.downloader.requestedIDs == [HookFixture.rootID, HookFixture.dependencyID, HookFixture.rootID])
-        guard case .succeeded? = attempt.outcome else {
-            Issue.record("the dependency chain did not finish: \(String(describing: attempt.outcome))")
-            return
+            #expect(fixture.downloader.requestedIDs == [HookFixture.rootID, HookFixture.dependencyID, HookFixture.rootID])
+            guard case .succeeded? = attempt.outcome else {
+                Issue.record("the dependency chain did not finish: \(String(describing: attempt.outcome))")
+                return
+            }
+            #expect(fixture.runs.value == 3)
         }
-        #expect(fixture.runs.value == 3)
     }
 
     @Test("A dependency fetch the mutation gate refuses ran no SteamCMD and runs no hook")
     @MainActor
     func refusedDependencyGateSkipsHook() async throws {
         let fixture = try HookFixture()
-        defer { await fixture.discard() }
-        let holder = fixture.holdMutation(of: HookFixture.dependencyID)
-        #expect(await fixture.waitUntilMutating(HookFixture.dependencyID))
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            let holder = fixture.holdMutation(of: HookFixture.dependencyID)
+            #expect(await fixture.waitUntilMutating(HookFixture.dependencyID))
 
-        fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader)
-        await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
+            fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader)
+            await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
 
-        #expect(fixture.downloader.requestedIDs == [HookFixture.rootID])
-        #expect(fixture.runs.value == 1)
-        fixture.gate.release()
-        await holder.value
+            #expect(fixture.downloader.requestedIDs == [HookFixture.rootID])
+            #expect(fixture.runs.value == 1)
+            fixture.gate.release()
+            await holder.value
+            guard case .failed = fixture.downloads.phase(for: HookFixture.rootID) else {
+                Issue.record("the refused dependency download hid its failure")
+                return
+            }
+        }
     }
 
     @Test("A re-read the mutation gate refuses ran no SteamCMD and runs no hook")
     @MainActor
     func refusedReimportGateSkipsHook() async throws {
         let fixture = try HookFixture()
-        defer { await fixture.discard() }
-        var holder: Task<Void, Never>?
-        fixture.downloader.afterDependency = {
-            holder = fixture.holdMutation(of: HookFixture.rootID)
-            _ = await fixture.waitUntilMutating(HookFixture.rootID)
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            var holder: Task<Void, Never>?
+            fixture.downloader.afterDependency = {
+                holder = fixture.holdMutation(of: HookFixture.rootID)
+                _ = await fixture.waitUntilMutating(HookFixture.rootID)
+            }
+
+            fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader)
+            await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
+
+            #expect(fixture.downloader.requestedIDs == [HookFixture.rootID, HookFixture.dependencyID])
+            #expect(fixture.runs.value == 2)
+            fixture.gate.release()
+            await holder?.value
+            fixture.downloader.afterDependency = nil
+            guard case .failed = fixture.downloads.phase(for: HookFixture.rootID) else {
+                Issue.record("the refused re-read hid its failure")
+                return
+            }
         }
-
-        fixture.downloads.download(itemID: HookFixture.rootID, title: "Root", using: fixture.downloader)
-        await fixture.downloads.downloadTaskForTesting(itemID: HookFixture.rootID)?.value
-
-        #expect(fixture.downloader.requestedIDs == [HookFixture.rootID, HookFixture.dependencyID])
-        #expect(fixture.runs.value == 2)
-        fixture.gate.release()
-        await holder?.value
-        fixture.downloader.afterDependency = nil
     }
 }
 

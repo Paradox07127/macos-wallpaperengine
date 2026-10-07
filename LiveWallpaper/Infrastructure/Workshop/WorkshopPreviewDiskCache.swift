@@ -49,6 +49,11 @@ final class WorkshopPreviewDiskCache: Sendable {
         await disk.write(data, named: Self.fileName(for: url, size: size))
     }
 
+    /// Remove only the undecodable preview, preserving other URLs and decode sizes.
+    func remove(for url: URL, size: WorkshopPreviewSize) async {
+        await disk.remove(named: Self.fileName(for: url, size: size))
+    }
+
     func sizeBytes() async -> Int64 {
         await disk.sizeBytes()
     }

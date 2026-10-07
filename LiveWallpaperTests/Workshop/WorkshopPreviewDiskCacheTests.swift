@@ -208,6 +208,56 @@ struct WorkshopPreviewDiskCacheTests {
 
     // MARK: - Criterion 6: bytes that are not an image never reach the disk
 
+    @Test("An undecodable disk entry is replaced by a fresh fetch without evicting other previews")
+    @MainActor
+    func corruptedDiskEntryIsRefetched() async {
+        let directory = Fixtures.makeDirectory()
+        defer { Fixtures.remove(directory) }
+        let disk = WorkshopPreviewDiskCache(directoryURL: directory)
+        let good = GIFTestFixtures.png(width: 24, height: 14)
+        await disk.store(Data("old corrupt preview".utf8), for: Fixtures.url, size: .tile)
+        await disk.store(good, for: Fixtures.url, size: .hero)
+        await disk.store(good, for: Fixtures.url(index: 1), size: .tile)
+        let counter = FetchCounter()
+        let loader = WorkshopPreviewImageLoader(
+            diskCache: disk,
+            fetch: { _ in
+                await counter.increment()
+                return good
+            },
+            retryBackoff: []
+        )
+
+        #expect(await loader.load(Fixtures.url, size: .tile) != nil)
+        #expect(await counter.count == 1)
+        #expect(await disk.data(for: Fixtures.url, size: .tile) == good)
+        #expect(await disk.data(for: Fixtures.url, size: .hero) == good)
+        #expect(await disk.data(for: Fixtures.url(index: 1), size: .tile) == good)
+    }
+
+    @Test("Corrupt cache recovery stops after one undecodable response and leaves no poisoned entry")
+    @MainActor
+    func corruptedDiskEntryRecoveryIsBounded() async {
+        let directory = Fixtures.makeDirectory()
+        defer { Fixtures.remove(directory) }
+        let disk = WorkshopPreviewDiskCache(directoryURL: directory)
+        let junk = Data("not an image".utf8)
+        await disk.store(junk, for: Fixtures.url, size: .tile)
+        let counter = FetchCounter()
+        let loader = WorkshopPreviewImageLoader(
+            diskCache: disk,
+            fetch: { _ in
+                await counter.increment()
+                return junk
+            },
+            retryBackoff: [0, 0]
+        )
+
+        #expect(await loader.load(Fixtures.url, size: .tile) == nil)
+        #expect(await counter.count == 1)
+        #expect(await disk.data(for: Fixtures.url, size: .tile) == nil)
+    }
+
     @Test("A 200 image/* body that will not decode is not written to disk")
     @MainActor
     func undecodableBytesAreNotPersisted() async throws {

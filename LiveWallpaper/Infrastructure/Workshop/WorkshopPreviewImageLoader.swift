@@ -174,6 +174,7 @@ final class WorkshopPreviewImageLoader {
     /// stored, but nobody is left to retry on their behalf.
     private enum LoadVerdict: Sendable {
         case decoded(WorkshopPreviewAsset)
+        case invalidDiskEntry
         case retryable(String)
         case permanent(String)
         case abandoned
@@ -187,12 +188,18 @@ final class WorkshopPreviewImageLoader {
         guard case .allowed(let canonicalURL) =
                 WorkshopCDNHostAllowList.evaluate(url.absoluteString) else { return nil }
         var attemptIndex = 0
+        var repairedDiskEntry = false
         while true {
             switch await attemptLoad(canonicalURL, size: size) {
             case let .decoded(asset):
                 return asset
             case .abandoned:
                 return nil
+            case .invalidDiskEntry:
+                // The entry was evicted inside the attempt. Fetch afresh once,
+                // outside the gate, without consuming transport retries.
+                guard !repairedDiskEntry, !Task.isCancelled else { return nil }
+                repairedDiskEntry = true
             case let .retryable(reason) where attemptIndex < retryBackoff.count:
                 logFetchFailure(reason, url: canonicalURL, willRetry: true)
                 // The sleep sits outside the gate so a waiting retry frees its
@@ -262,7 +269,10 @@ final class WorkshopPreviewImageLoader {
             }
             switch outcome {
             case let .decoded(asset): return .decoded(asset)
-            case .undecodable: return .permanent("body is not a decodable image")
+            case .undecodable:
+                guard servedFromDisk else { return .permanent("body is not a decodable image") }
+                await diskCache.remove(for: canonicalURL, size: size)
+                return .invalidDiskEntry
             case .abandoned: return .abandoned
             }
         }

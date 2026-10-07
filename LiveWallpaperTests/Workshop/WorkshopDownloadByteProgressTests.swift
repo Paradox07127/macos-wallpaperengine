@@ -105,7 +105,7 @@ struct WorkshopDownloadByteProgressTests {
     func bytesAndTotalDeriveFraction() {
         let quarter = downloading(downloaded: 100_000_000, total: 400_000_000)
         #expect(quarter.progress == .fraction(0.25))
-        #expect(quarter.detail == "\(megabytes(100_000_000)) / \(megabytes(400_000_000))")
+        #expect(quarter.detail == "25% · \(megabytes(100_000_000)) / \(megabytes(400_000_000))")
         #expect(downloading(downloaded: 500_000_000, total: 400_000_000).progress == .fraction(0.99))
         #expect(downloading(downloaded: 400_000_000, total: 400_000_000).progress == .fraction(0.99))
     }
@@ -138,8 +138,8 @@ struct WorkshopDownloadByteProgressTests {
         return condition()
     }
 
-    @Test("A frame without a fraction keeps the last fraction and updates the bytes")
-    func fractionlessFrameUpdatesBytesOnly() async throws {
+    @Test("Byte-only samples supersede stale fractions and preserve the known total")
+    func fractionlessFrameRecomputesProgress() async throws {
         let itemID: UInt64 = 920_000_001
         let downloader = ProgressReportingDownloader()
         let downloads = WorkshopDownloadCoordinator(
@@ -149,12 +149,31 @@ struct WorkshopDownloadByteProgressTests {
         downloads.download(itemID: itemID, title: String(itemID), using: downloader)
         #expect(await waitUntil { downloader.onProgress != nil })
         let report = try #require(downloader.onProgress)
+        #expect(downloads.transferState(for: itemID, at: Date()) == .waiting)
 
         report(42, 1000, 10000)
         #expect(await waitUntil { downloads.progress[itemID] == 0.42 })
         report(nil, 2000, nil)
         #expect(await waitUntil { downloads.progressBytes[itemID]?.downloaded == 2000 })
-        #expect(downloads.progress[itemID] == 0.42)
+        #expect(downloads.progress[itemID] == 0.2)
+        #expect(downloads.progressBytes[itemID]?.total == 10000)
+        report(70, nil, nil)
+        #expect(await waitUntil { downloads.progress[itemID] == 0.7 })
+        #expect(downloads.progressBytes[itemID]?.downloaded == 2000)
+        #expect(downloads.progressBytes[itemID]?.total == 10000)
+        report(nil, 4000, nil)
+        #expect(await waitUntil { downloads.progress[itemID] == 0.4 })
+        let advancedAt = try #require(downloads.lastAdvanceAt[itemID])
+        #expect(downloads.transferState(for: itemID, at: advancedAt.addingTimeInterval(11)) == .stalled)
+        #expect(downloads.bytesPerSecond(for: itemID, at: advancedAt.addingTimeInterval(6)) == nil)
+        let phase = try #require(downloader.onPhase)
+        phase(.restarting)
+        #expect(await waitUntil { downloads.transferState(for: itemID, at: Date()) == .restarting })
+        #expect(downloads.progress[itemID] == nil)
+        #expect(downloads.progressBytes[itemID]?.total == 10000)
+        report(nil, 1000, nil)
+        #expect(await waitUntil { downloads.progress[itemID] == 0.1 })
+        #expect(downloads.transferState(for: itemID, at: Date()) == .transferring)
         downloader.release()
     }
 }
@@ -162,6 +181,7 @@ struct WorkshopDownloadByteProgressTests {
 @MainActor
 private final class ProgressReportingDownloader: WorkshopItemDownloading {
     private(set) var onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?
+    private(set) var onPhase: (@Sendable (SteamOperationProgress.Phase) -> Void)?
     private var gate: CheckedContinuation<Void, Never>?
 
     func downloadWorkshopItem<Imported: Sendable>(
@@ -172,6 +192,16 @@ private final class ProgressReportingDownloader: WorkshopItemDownloading {
         self.onProgress = onProgress
         await withCheckedContinuation { gate = $0 }
         return .failed(reason: "released by test")
+    }
+
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?,
+        onPhase: (@Sendable (SteamOperationProgress.Phase) -> Void)?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported> {
+        self.onPhase = onPhase
+        return await downloadWorkshopItem(itemID, onProgress: onProgress, onContentReady: onContentReady)
     }
 
     func release() {

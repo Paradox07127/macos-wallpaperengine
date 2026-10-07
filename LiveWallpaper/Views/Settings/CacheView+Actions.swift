@@ -103,7 +103,7 @@ extension WPECacheManagementView {
     ) -> UInt64? {
         let targets = before.filter { kinds.contains($0.location.kind) }
         let targetsAfter = after.filter { kinds.contains($0.location.kind) }
-        guard !targets.contains(where: { $0.status == .unavailable }),
+        guard !targets.contains(where: { $0.status == .partial || $0.status == .unavailable }),
               !targetsAfter.contains(where: { $0.status == .partial || $0.status == .unavailable }) else { return nil }
         let remaining = Dictionary(targetsAfter.map { ($0.id, $0.bytes) }, uniquingKeysWith: +)
         return targets.reduce(0) { freed, measurement in

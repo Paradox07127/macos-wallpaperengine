@@ -25,6 +25,9 @@ struct PasteRowCard: View {
                 } else if let error = row.error {
                     WorkshopRowErrorStrip(error: error)
                 }
+                if let itemID = row.publishedFileID, downloadPhase == .downloading || downloadPhase == .importing {
+                    WorkshopDownloadProgress(itemID: itemID, listedSize: row.metadata?.fileSizeBytes)
+                }
                 footerActions
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -46,6 +49,11 @@ struct PasteRowCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .onChange(of: row.metadata?.fileSizeBytes, initial: true) { _, size in
+            if let itemID = row.publishedFileID {
+                WorkshopDownloadCoordinator.shared.retainListedSize(size, for: itemID)
+            }
+        }
     }
 
     // MARK: - Subviews
@@ -170,13 +178,8 @@ struct PasteRowCard: View {
     @ViewBuilder
     private var downloadAction: some View {
         switch Self.downloadStatus(phase: downloadPhase, isQueued: isQueued, canDownload: onDownload != nil) {
-        case let .inProgress(importing)?:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(importing ? "Importing…" : "Downloading…")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(.secondary)
-            }
+        case .inProgress?:
+            EmptyView()
         case .queued?:
             Label("Queued", systemImage: "clock")
                 .font(DesignTokens.Typography.caption)

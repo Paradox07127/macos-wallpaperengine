@@ -232,6 +232,7 @@ final class SteamCMDActiveProcessRegistry: Sendable {
         let hasOwnGroup: Bool
         /// `nil` for a run the app never named — a probe or an install. Only host exit signals those.
         let operationID: String?
+        var cancellationRequested = false
     }
 
     private let state = OSAllocatedUnfairLock<Active?>(initialState: nil)
@@ -268,6 +269,10 @@ final class SteamCMDActiveProcessRegistry: Sendable {
         state.withLock { $0 = nil }
     }
 
+    var cancellationRequested: Bool {
+        state.withLock { $0?.cancellationRequested ?? false }
+    }
+
     /// SIGTERM to the active child — its whole process group when it has one,
     /// same form as `spawn`'s timeout kill. Returns whether anything was
     /// signalled; `spawn`'s own EOF/timeout handling reaps the child, so no
@@ -275,7 +280,11 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     /// child was registered under: a cancel for one operation must never
     /// signal a different one's child (review finding, both models).
     func terminateActive(operationID: String, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
-        guard let active = state.withLock({ $0 }), active.operationID == operationID else { return false }
+        guard let active = state.withLock({ current -> Active? in
+            guard current?.operationID == operationID else { return nil }
+            current?.cancellationRequested = true
+            return current
+        }) else { return false }
         _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
         return true
     }
@@ -647,6 +656,72 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     /// the app learns which one ran. Optional-with-default so a payload from an
     /// older connector (no key) still decodes; nil means nothing was spawned.
     var executedBinaryPath: String? = nil
+    /// Actual final-child status; absent in replies from older connectors or when no child ran.
+    var exitCode: Int32?
+    /// Set only when Foundation reports `.uncaughtSignal`, never inferred from an exit status.
+    var terminationSignal: Int32?
+}
+
+/// One bounded receipt for this request, independent of the last self-update run's output.
+struct SteamWorkshopDownloadCompletion {
+    let workshopID: String?
+    private(set) var completed = false
+
+    mutating func record(output: String, exitCode: Int32, timedOut: Bool, terminationSignal: Int32?) {
+        guard let workshopID, SteamLibraryPaths.isSafeWorkshopID(workshopID) else { return }
+        // A relaunch that actually attempts and fails this item invalidates an earlier receipt.
+        if output.contains("ERROR! Download item \(workshopID) failed") {
+            completed = false
+            return
+        }
+        guard !timedOut, terminationSignal == nil,
+              exitCode == 0 || exitCode == SteamCMDSelfUpdateRestartPolicy.restartExitCode,
+              output.contains("Success. Downloaded item \(workshopID) to ") else { return }
+        completed = true
+    }
+
+    /// A receipt plus a committed manifest and its payload; stale `project.json` alone proves nothing.
+    static func validCommittedItem(at folder: URL, steamRoot: URL) -> Bool {
+        let project = folder.appendingPathComponent("project.json")
+        guard SteamLibraryPaths.isWritable(project, steamRoot: steamRoot) else { return false }
+        let fd = open(project.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return false }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var metadata = stat()
+        guard fstat(fd, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
+              metadata.st_size > 0, metadata.st_size <= 2 * 1024 * 1024,
+              let data = try? handle.read(upToCount: 2 * 1024 * 1024 + 1), data.count <= 2 * 1024 * 1024,
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        // Presets intentionally have no entry file. The importer reads values from the manifest itself.
+        if manifest["file"] == nil, let dependency = manifest["dependency"] as? String,
+           SteamLibraryPaths.isSafeWorkshopID(dependency), (9 ... 20).contains(dependency.count),
+           manifest["preset"] is [String: Any] {
+            return true
+        }
+        guard let file = manifest["file"] as? String, !file.isEmpty,
+              !file.hasPrefix("/"), !file.split(separator: "/").contains("..") else { return false }
+        // Packaged scenes (and packaged video/web) name their entry inside scene.pkg in project.json.
+        if validPayload(folder.appendingPathComponent("scene.pkg"), steamRoot: steamRoot) {
+            return true
+        }
+        let payload = folder.appendingPathComponent(file).standardizedFileURL
+        return payload.path.hasPrefix(folder.standardizedFileURL.path + "/")
+            && validPayload(payload, steamRoot: steamRoot)
+    }
+
+    private static func validPayload(_ payload: URL, steamRoot: URL) -> Bool {
+        guard SteamLibraryPaths.isWritable(payload, steamRoot: steamRoot),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: payload.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber, size.uint64Value > 0 else { return false }
+        return true
+    }
+
+    static func diagnostic(output: String, exitCode: Int32, terminationSignal: Int32?) -> String {
+        let status = terminationSignal.map { "SteamCMD terminated by signal \($0)" }
+            ?? "SteamCMD exited with status \(exitCode)"
+        return "\(output)\n\(status)"
+    }
 }
 
 struct SteamSubscribedItemsResult: Codable, Equatable, Sendable {
@@ -679,6 +754,7 @@ protocol SteamConnectorProgressProtocol: Sendable {
 struct SteamOperationProgress: Codable, Equatable, Sendable {
     enum Phase: String, Codable, Sendable {
         case connecting
+        case restarting
         case downloading
         case verifying
         case pruning

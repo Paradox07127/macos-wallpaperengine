@@ -217,7 +217,7 @@ final class WPEEngineAssetsInstaller {
                         phase = .pruning
                         progress = nil
                         progressBytes = nil
-                    case .connecting, .downloading, .verifying:
+                    case .connecting, .restarting, .downloading, .verifying:
                         guard case .downloading = phase else { return }
                         progress = update.fraction
                         progressBytes = ProgressBytes(

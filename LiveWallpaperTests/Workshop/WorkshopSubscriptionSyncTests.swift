@@ -11,97 +11,103 @@ struct WorkshopSubscriptionSyncTests {
     @Test("An item downloaded earlier in this run, then deleted, is offered again by the next check")
     func downloadedThenDeletedIsOfferedAgain() async throws {
         let fixture = try SyncFixture()
-        defer { await fixture.discard() }
-        fixture.listing.ids = [itemID]
-        await fixture.sync.refresh(using: fixture.doctor)
-        fixture.sync.downloadSelected(using: fixture.downloader)
-        #expect(await waitUntil { fixture.downloads.phase(for: itemID) == .succeeded && !fixture.downloads.isBusy(itemID) })
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            fixture.listing.ids = [itemID]
+            await fixture.sync.refresh(using: fixture.doctor)
+            fixture.sync.downloadSelected(using: fixture.downloader)
+            #expect(await waitUntil { fixture.downloads.phase(for: itemID) == .succeeded && !fixture.downloads.isBusy(itemID) })
 
-        // The download landed outside the Steam library, so the check reads it as not installed.
-        await fixture.sync.refresh(using: fixture.doctor)
+            // The download landed outside the Steam library, so the check reads it as not installed.
+            await fixture.sync.refresh(using: fixture.doctor)
 
-        #expect(fixture.sync.phase == .ready(missing: [itemID]))
-        #expect(fixture.sync.downloadableSelection() == [itemID], "a past success hid an item missing from disk")
-        #expect(fixture.downloads.phase(for: itemID) == .idle)
+            #expect(fixture.sync.phase == .ready(missing: [itemID]))
+            #expect(fixture.sync.downloadableSelection() == [itemID], "a past success hid an item missing from disk")
+            #expect(fixture.downloads.phase(for: itemID) == .idle)
+        }
     }
 
     @Test("An item whose folder is in the Steam library is not missing")
     func installedFolderIsNotMissing() async throws {
         let fixture = try SyncFixture()
-        defer { await fixture.discard() }
-        try fixture.installInLibrary(itemID)
-        fixture.listing.ids = [itemID]
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            try fixture.installInLibrary(itemID)
+            fixture.listing.ids = [itemID]
 
-        await fixture.sync.refresh(using: fixture.doctor)
+            await fixture.sync.refresh(using: fixture.doctor)
 
-        #expect(fixture.sync.phase == .ready(missing: []))
-        #expect(fixture.sync.downloadableSelection().isEmpty)
+            #expect(fixture.sync.phase == .ready(missing: []))
+            #expect(fixture.sync.downloadableSelection().isEmpty)
+        }
     }
 
     @Test("An item SteamCMD installs while the subscription list is read is not missing")
     func installedDuringListingIsNotMissing() async throws {
         let fixture = try SyncFixture()
-        defer { await fixture.discard() }
-        fixture.listing.ids = [itemID]
-        fixture.listing.installsBeforeAnswering = SteamLibraryPaths.workshopContentRoot(steamRoot: fixture.root)
-            .appendingPathComponent(String(itemID), isDirectory: true)
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            fixture.listing.ids = [itemID]
+            fixture.listing.installsBeforeAnswering = SteamLibraryPaths.workshopContentRoot(steamRoot: fixture.root)
+                .appendingPathComponent(String(itemID), isDirectory: true)
 
-        await fixture.sync.refresh(using: fixture.doctor)
+            await fixture.sync.refresh(using: fixture.doctor)
 
-        #expect(fixture.sync.phase == .ready(missing: []))
+            #expect(fixture.sync.phase == .ready(missing: []))
+        }
     }
 
     @Test("A workshop folder that cannot be read fails the check instead of listing every item as missing")
     func unreadableContentFolderFailsCheck() async throws {
         let fixture = try SyncFixture()
-        defer { await fixture.discard() }
-        try fixture.installInLibrary(itemID)
-        try fixture.setContentFolderPermissions(0o000)
-        fixture.listing.ids = [itemID]
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            try fixture.installInLibrary(itemID)
+            try fixture.setContentFolderPermissions(0o000)
+            fixture.listing.ids = [itemID]
 
-        await fixture.sync.refresh(using: fixture.doctor)
+            await fixture.sync.refresh(using: fixture.doctor)
 
-        guard case .failed = fixture.sync.phase else {
-            Issue.record("an unreadable library was read as empty, got \(fixture.sync.phase)")
-            return
+            guard case .failed = fixture.sync.phase else {
+                Issue.record("an unreadable library was read as empty, got \(fixture.sync.phase)")
+                return
+            }
         }
     }
 
     @Test("A library with no workshop folder lists every subscription as missing")
     func absentContentFolderListsAllMissing() async throws {
         let fixture = try SyncFixture()
-        defer { await fixture.discard() }
-        try FileManager.default.removeItem(at: fixture.contentFolder)
-        fixture.listing.ids = [itemID]
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            try FileManager.default.removeItem(at: fixture.contentFolder)
+            fixture.listing.ids = [itemID]
 
-        await fixture.sync.refresh(using: fixture.doctor)
+            await fixture.sync.refresh(using: fixture.doctor)
 
-        #expect(fixture.sync.phase == .ready(missing: [itemID]))
+            #expect(fixture.sync.phase == .ready(missing: [itemID]))
+        }
     }
 
     @Test("A check that fails mid-download keeps the download active and cancellable")
     func failedCheckKeepsActiveDownload() async throws {
         let fixture = try SyncFixture(parks: true)
-        defer { await fixture.discard() }
-        fixture.listing.ids = [itemID]
-        await fixture.sync.refresh(using: fixture.doctor)
-        fixture.sync.downloadSelected(using: fixture.downloader)
-        #expect(await waitUntil { fixture.downloader.isParked })
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            fixture.listing.ids = [itemID]
+            await fixture.sync.refresh(using: fixture.doctor)
+            fixture.sync.downloadSelected(using: fixture.downloader)
+            #expect(await waitUntil { fixture.downloader.isParked })
 
-        fixture.listing.ids = nil
-        await fixture.sync.refresh(using: fixture.doctor)
-        guard case .failed = fixture.sync.phase else {
-            Issue.record("the check was expected to fail, got \(fixture.sync.phase)")
+            fixture.listing.ids = nil
+            await fixture.sync.refresh(using: fixture.doctor)
+            guard case .failed = fixture.sync.phase else {
+                Issue.record("the check was expected to fail, got \(fixture.sync.phase)")
+                fixture.downloader.release()
+                return
+            }
+
+            #expect(fixture.sync.hasActiveDownloads, "a failed check hid the running download")
+            #expect(fixture.sync.rows == [itemID])
+            fixture.sync.cancelDownloads()
+            #expect(!fixture.downloads.isBusy(itemID), "Cancel downloads left the running download alone")
+            #expect(!fixture.sync.hasActiveDownloads)
             fixture.downloader.release()
-            return
         }
-
-        #expect(fixture.sync.hasActiveDownloads, "a failed check hid the running download")
-        #expect(fixture.sync.rows == [itemID])
-        fixture.sync.cancelDownloads()
-        #expect(!fixture.downloads.isBusy(itemID), "Cancel downloads left the running download alone")
-        #expect(!fixture.sync.hasActiveDownloads)
-        fixture.downloader.release()
     }
 
     private func waitUntil(_ condition: () -> Bool) async -> Bool {

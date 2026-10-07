@@ -69,6 +69,14 @@ final class WorkshopDiskCacheStore: Sendable {
         await perform { self.clearSync() }
     }
 
+    func remove(named name: String) async {
+        await perform {
+            try? FileManager.default.removeItem(
+                at: self.directoryURL.appendingPathComponent(name, isDirectory: false)
+            )
+        }
+    }
+
     /// One housekeeping pass per instance, queued behind the request that triggered it on the same serial queue, so the waiting entry is not blocked by a full directory listing.
     func sweepOnce() {
         let claimed = hasSwept.withLock { swept -> Bool in
