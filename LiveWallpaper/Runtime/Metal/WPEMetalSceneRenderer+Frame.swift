@@ -338,6 +338,7 @@ extension WPEMetalSceneRenderer {
             deferredPresent: deferredPresent
         )
         frameRendered = true
+        sceneScriptSharedState?.publishLayerTexts(lastStableScriptTextByID, loadState: sceneScriptLoadState)
         if cameraMotionPlayback != nil || cameraPathPlayback != nil {
             synchronizeFrameDemand(); publishRuntimeActivity()
         }
@@ -421,7 +422,7 @@ extension WPEMetalSceneRenderer {
             visibility: liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
         )
         lastFrameDirectionalLighting = lighting
-        let frame = try withFrameSignpost("encode") { () throws -> MTLTexture in
+        return try withFrameSignpost("encode") { () throws -> MTLTexture in
             let currentTextures = try texturesForCurrentFrame(
                 time: uniforms.time,
                 pipeline: textFrame.pipeline,
@@ -457,7 +458,6 @@ extension WPEMetalSceneRenderer {
                 deferredPresent: deferredPresent
             )
         }
-        return frame
     }
 
     func recordSceneFrameForDebug(time: Double, composite: MTLTexture) {
@@ -746,7 +746,6 @@ extension WPEMetalSceneRenderer {
             }
         }
         if let coordinator = particleInstanceCoordinator {
-            let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
             withFrameSignpost("particleEvents") {
                 coordinator.tick(now: time, frameSlot: frameSlot, shouldPrepareRenderData: { system in
                     !Self.particleFrameArenaEnabled && system.definition.rendersSprite && particleSystemVisible(system)

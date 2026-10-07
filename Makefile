@@ -101,7 +101,8 @@ WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEA
     WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests WPEMetalFBOFormatMappingTests \
     WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
     WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
-    WPERenderThreadTests WPERenderThreadDrainRuntimeTests
+    WPERenderThreadTests WPERenderThreadDrainRuntimeTests \
+    WPESceneTextDeliveryTests WPESignedAlignmentGeometryTests WPESceneScriptPlayerRelocationTests
 
 # Wallpaper transitions draw with Metal into real windows, so they also stay out of the headless shard.
 TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitionShaderTests \
