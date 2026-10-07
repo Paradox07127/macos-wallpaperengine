@@ -34,7 +34,8 @@ final class ScreenManager {
     @ObservationIgnored let displayRegistry: any DisplayRegistering
     @ObservationIgnored let featureCatalog: FeatureCatalog
     @ObservationIgnored let originReconciler: any OriginReconciler
-    @ObservationIgnored let configurationStore = WallpaperConfigurationStore()
+    @ObservationIgnored let configurationStore: WallpaperConfigurationStore
+    @ObservationIgnored let userPauseState: any GlobalSettingsPersisting
     @ObservationIgnored let ambientSessionBuilder = AmbientWallpaperSessionBuilder()
     #if !LITE_BUILD
     @ObservationIgnored var sceneSpanGroups: [UUID: SceneSpanWallpaperGroup] = [:]
@@ -108,7 +109,7 @@ final class ScreenManager {
     }
 
     func isUserPaused(_ screenID: CGDirectDisplayID, fingerprint: String?) -> Bool {
-        SettingsManager.shared.loadGlobalSettings().pausedDisplayKeys
+        userPauseState.loadGlobalSettings().pausedDisplayKeys
             .contains(Self.userPauseKey(screenID: screenID, fingerprint: fingerprint))
     }
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
@@ -387,6 +388,8 @@ final class ScreenManager {
 
     // MARK: - Initialization
     init(startupOptions: ScreenManagerStartupOptions) {
+        configurationStore = startupOptions.configurationStore ?? WallpaperConfigurationStore()
+        userPauseState = startupOptions.userPauseState ?? SettingsManager.shared
         displayRegistry = startupOptions.displayRegistry ?? DisplayRegistry()
         featureCatalog = startupOptions.featureCatalog
         originReconciler = startupOptions.originReconciler

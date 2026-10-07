@@ -50,6 +50,8 @@ struct ScreenManagerStartupOptions: Equatable {
     var absenceRevalidationGrace: Duration = .seconds(10)
     /// Cadence of the slow poll that re-runs revalidation while absent. Injectable so tests do not have to wait out the production cadence.
     var absenceRevalidationPollInterval: Duration = .seconds(30)
+    var configurationStore: WallpaperConfigurationStore?
+    var userPauseState: (any GlobalSettingsPersisting)?
     /// SKU-driven feature toggles. Every production, test, and preview caller
     /// must explicitly choose Lite, Pro, or the fail-closed unconfigured state.
     var featureCatalog: FeatureCatalog

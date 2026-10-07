@@ -9,7 +9,8 @@ import Testing
 @Suite("Playback state machine routing")
 struct PlaybackStateMachineRoutingTests {
     private func makeManager(
-        probe: (any UserPresenceProbing)? = nil
+        probe: (any UserPresenceProbing)? = nil,
+        state: ScreenManagerFixtureState
     ) -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
@@ -19,6 +20,7 @@ struct PlaybackStateMachineRoutingTests {
             playableVideoLoader: FakePlayableVideoLoader(),
             displayRegistry: FakeDisplayRegistry(),
             userPresenceProbe: probe ?? RoutingPresenceProbe(),
+            configurationStore: WallpaperConfigurationStore(persistence: state), userPauseState: state,
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
     }
@@ -27,6 +29,12 @@ struct PlaybackStateMachineRoutingTests {
         let manager: ScreenManager
         let screen: Screen
         let playback: RoutingFakePlaybackController
+
+        @MainActor
+        func cleanUp() {
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+        }
     }
 
     private func makeRig(
@@ -34,7 +42,8 @@ struct PlaybackStateMachineRoutingTests {
         probe: (any UserPresenceProbing)? = nil
     ) -> Rig? {
         guard let nsScreen = NSScreen.screens.first else { return nil }
-        let manager = makeManager(probe: probe)
+        let manager = makeManager(probe: probe, state: ScreenManagerFixtureState())
+        manager.wallpapersGloballyEnabled = true
         let screen = Screen(nsScreen: nsScreen)
         screen.installRuntimeSession(playback)
         manager.screens = [screen]
@@ -49,6 +58,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.togglePlayback(for: rig.screen)
         #expect(!rig.playback.userIntendsToPlay)
@@ -71,6 +81,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.togglePlayback()
         #expect(!rig.playback.userIntendsToPlay)
@@ -94,6 +105,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.togglePlayback()
 
@@ -112,6 +124,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.userAbsenceReasons.insert(.displaySleep)
         probe.allDisplaysAsleep = true
@@ -141,6 +154,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.togglePlayback(for: rig.screen)
         #expect(!rig.manager.playbackStateMachine(for: rig.screen.id).userIntendsToPlay)
@@ -163,6 +177,7 @@ struct PlaybackStateMachineRoutingTests {
             Issue.record("No NSScreen available for test")
             return
         }
+        defer { rig.cleanUp() }
 
         rig.manager.togglePlayback(for: rig.screen)
         #expect(!rig.manager.playbackStateMachine(for: rig.screen.id).userIntendsToPlay)

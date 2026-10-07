@@ -359,14 +359,14 @@ extension ScreenManager {
         // A display with no saved wallpaper has no session to restore paused. The fingerprint lookup is avoided because it can stamp the row and advance its revision.
         if paused, configurationStore.get(for: screen.id) == nil { return }
         let key = Self.userPauseKey(screenID: screen.id, fingerprint: screen.displayFingerprint)
-        var settings = SettingsManager.shared.loadGlobalSettings()
+        var settings = userPauseState.loadGlobalSettings()
         guard settings.pausedDisplayKeys.contains(key) != paused else { return }
         if paused {
             settings.pausedDisplayKeys.append(key)
         } else {
             settings.pausedDisplayKeys.removeAll { $0 == key }
         }
-        SettingsManager.shared.saveGlobalSettings(settings)
+        userPauseState.saveGlobalSettings(settings)
     }
 
     /// Re-picking the active wallpaper keeps its session, which would otherwise stay paused until its next rebuild.
