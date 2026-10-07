@@ -1220,9 +1220,9 @@ public enum WPESceneDocumentParser {
         default:
             authoredText = nil
         }
-        // WPE runs a text script regardless of the authored value, so only SCRIPTLESS
-        // objects with no resolvable text are dropped.
-        guard authoredText?.isEmpty == false || textScript != nil else {
+        // Declared empty text retains its layer identity for later SceneScript writes.
+        // Only missing/malformed text without a text script is rejected.
+        guard authoredText != nil || textScript != nil else {
             let objectName = dict["name"] as? String ?? "?"
             diagnostics.append(.init(
                 severity: .warning,
