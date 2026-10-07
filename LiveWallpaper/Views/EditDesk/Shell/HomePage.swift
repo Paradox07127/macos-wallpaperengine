@@ -1260,12 +1260,16 @@ struct HomePage: View {
         sleep: (Duration) async -> Void,
         capture: () async -> CGImage?
     ) async -> CGImage? {
-        if let image = await capture() { return image }
+        if let image = await capture() {
+            return image
+        }
         for delay in retryDelays {
             guard isNewest() else { return nil }
             await sleep(delay)
             guard isNewest() else { return nil }
-            if let image = await capture() { return image }
+            if let image = await capture() {
+                return image
+            }
         }
         return nil
     }
