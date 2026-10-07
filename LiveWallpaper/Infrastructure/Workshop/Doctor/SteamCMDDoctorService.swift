@@ -1170,7 +1170,7 @@ final class SteamCMDDoctorService {
         default:
             nil
         }
-        return [summary, redactedTail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+        return [summary, redactedTail].compactMap(\.self).filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     /// `result.itemPath` is a claim from the connector's JSON, not an authorization; revalidate among the library's own items before the importer sees a URL.

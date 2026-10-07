@@ -647,11 +647,13 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
         case steamCMDUnavailable
         case unrecognized
     }
+
     /// Why SteamCMD's reported completion was not accepted; the app words it for the user.
     enum FailureDetail: String, Codable, Sendable {
         case leftInPrivateProfile
         case invalidCommittedItem
     }
+
     let outcome: Outcome
     /// Where the item landed, on success — inside the shared Steam repository.
     let itemPath: String?
@@ -665,7 +667,7 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     var exitCode: Int32?
     /// Set only when Foundation reports `.uncaughtSignal`, never inferred from an exit status.
     var terminationSignal: Int32?
-    var failureDetail: FailureDetail? = nil
+    var failureDetail: FailureDetail?
 }
 
 /// One bounded receipt for this request, independent of the last self-update run's output.
