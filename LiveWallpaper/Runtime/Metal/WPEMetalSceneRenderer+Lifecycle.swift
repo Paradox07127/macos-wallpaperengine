@@ -234,6 +234,17 @@ extension WPEMetalSceneRenderer {
         beginSceneScriptVideoCommands()
         liveLayerVisibility = plan.layers
         liveTextVisibility = plan.text
+        // A visible script feeds update(value) from its own state, so without this its return re-applies the stale value every frame.
+        for binding in patch.incrementalBindings where binding.kind == .visible && binding.condition == nil {
+            switch binding.target {
+            case .imageObject(let id):
+                if let value = plan.layers[id] { layerScriptInstances[id]?.setBoundOwnVisible(value) }
+            case .textObject(let id):
+                if let value = plan.text[id] { textVisibleScriptInstances[id]?.setBoundOwnVisible(value) }
+            default:
+                break
+            }
+        }
         applyCameraParallaxUpdates(plan)
 
         guard applyLiveScriptPropertyUpdates(plan.scriptProperties) else {

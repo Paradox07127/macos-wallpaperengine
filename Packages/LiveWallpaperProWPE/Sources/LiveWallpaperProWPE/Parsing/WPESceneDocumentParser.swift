@@ -1364,6 +1364,9 @@ public enum WPESceneDocumentParser {
             // satisfied gate would start switched off with nothing able to turn it on.
             if let gate = conditionGate(in: dict, userValues: userValues) {
                 resolved["value"] = gate
+            } else if let key = dict["user"] as? String, let override = userValues[key] {
+                // A plain-key binding is the property's current value, which update(value) receives.
+                resolved["value"] = jsonValue(for: override)
             }
             return resolved
         }
