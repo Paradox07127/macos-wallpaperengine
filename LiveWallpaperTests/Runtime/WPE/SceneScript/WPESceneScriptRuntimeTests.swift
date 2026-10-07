@@ -3066,6 +3066,38 @@ export function init(value) {
         #expect(abs(image.origin.y - 600) < 0.01)
     }
 
+    /// Script write-backs (`layer.origin = v`) replace the LOCAL transform — the
+    /// renderer re-composes the parent in applyingLayerTransforms. Seeding the JS
+    /// surface with the composed world value re-added the parent offset on every
+    /// write: Sora P1's centred fullscreen children drifted to the top-right quadrant.
+    @Test("scriptLayerTable exposes the pre-composition local transform")
+    func scriptLayerTableExposesLocalTransforms() throws {
+        let json = """
+        {
+            "camera": {"center": "0 0 0"},
+            "general": {"orthogonalprojection": {"width": 3648, "height": 2048, "auto": true}},
+            "objects": [
+                {"id": 18, "name": "host", "origin": "1824 1024 0", "scale": "2 2 1"},
+                {"id": 38, "name": "child", "image": "materials/x.png", "parent": 18},
+                {"id": 62, "name": "child2", "image": "materials/y.png", "parent": 18,
+                 "origin": "0 -19 0", "scale": "1.5 1.5 1"}
+            ]
+        }
+        """
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let table = WPEMetalSceneRenderer.scriptLayerTable(for: document)
+        let child = try #require(table.first { $0.id == "38" })
+        #expect(child.origin == .zero)
+        #expect(child.originZ == 0)
+        #expect(child.scale == SIMD3<Double>(repeating: 1))
+        let child2 = try #require(table.first { $0.id == "62" })
+        #expect(child2.origin == SIMD2<Double>(0, -19))
+        #expect(child2.scale == SIMD3<Double>(1.5, 1.5, 1))
+        let host = try #require(table.first { $0.id == "18" })
+        #expect(host.origin == SIMD2<Double>(1824, 1024))
+        #expect(host.scale == SIMD3<Double>(2, 2, 1))
+    }
+
     // MARK: - Text-content script scriptProperties injection (Mon vs Monday)
 
     @Test("Text script renders with the scene's scriptProperties, not just defaults")

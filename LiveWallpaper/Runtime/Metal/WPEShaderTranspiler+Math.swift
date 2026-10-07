@@ -64,6 +64,29 @@ extension WPEShaderTranspiler {
         return lines.joined(separator: "\n")
     }
 
+    /// MSL lacks these GLSL builtins. An authored overload owns its signature;
+    /// the other widths retain builtin conversions without rewriting user calls.
+    static func glslAnglePrelude(authoredHelpers: String) -> String {
+        let source = maskComments(authoredHelpers)
+        let helpers = parseHelperFunctions(in: source)
+        var lines: [String] = []
+        for width in 1 ... 4 {
+            let type = width == 1 ? "float" : "float\(width)"
+            for (name, factor) in [("radians", "0.017453292519943295"), ("degrees", "57.29577951308232")] {
+                let authored = helpers.contains {
+                    $0.name == name && source[$0.parameterRange].range(
+                        of: #"^\s*(?:const\s+)?"# + type + #"\s+[A-Za-z_]\w*\s*$"#,
+                        options: .regularExpression
+                    ) != nil
+                } || source.range(of: #"(?m)^\s*#\s*define\s+"# + name + #"\b"#, options: .regularExpression) != nil
+                if !authored {
+                    lines.append("inline \(type) \(name)(\(type) value) { return value * \(factor); }")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Generated only for a stage containing a rewritten inverse call. Keeping
     /// unused helpers out preserves the established MSL/compiler identity.
     static var glslMatrixInversePrelude: String {

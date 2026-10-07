@@ -2696,6 +2696,37 @@ struct WPEMetalRenderExecutorTests {
 
     @Test("Puppet terminal composite keeps every mesh, including geometry beyond the local texture", arguments: [false, true])
     func puppetMaterialPassRendersMeshesIntoLocalComposite(overflows: Bool) throws {
+        let output = try renderEffectPuppet(overflows: overflows)
+        #expect(try nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
+    }
+
+    @Test("Ordinary image puppets keep overflowing geometry through effects", arguments: ["genericimage2", "genericimage4"], [false, true])
+    func ordinaryPuppetEffectsPreserveOverflow(shader: String, overflows: Bool) throws {
+        let output = try renderEffectPuppet(shader: shader, overflows: overflows, withEffects: true)
+        #expect(try nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
+    }
+
+    @Test("Contained static puppet applies effect masks to the assembled layer", arguments: ["genericimage2", "genericimage4"])
+    func containedPuppetEffectsUseAssembledLayerMask(shader: String) throws {
+        let output = try renderEffectPuppet(shader: shader, withEffects: true, masked: true)
+        // Both mesh halves use the full atlas UV range. A layer-space mask must
+        // suppress the right half, rather than repeat separately on each mesh.
+        #expect(try readPixel(output, x: 5, y: 8).r >= 250)
+        #expect(try readPixel(output, x: 10, y: 8).r <= 5)
+    }
+
+    @Test("Effect puppet preserves geometry that leaves the card during animation", arguments: ["genericimage2", "genericimage4"])
+    func animatedPuppetEffectsPreserveOverflow(shader: String) throws {
+        let rest = try renderEffectPuppet(shader: shader, withEffects: true, animated: true)
+        let moved = try renderEffectPuppet(shader: shader, withEffects: true, animated: true, time: 1)
+        #expect(try nonBlackBounds(rest) == PixelBounds(minX: 4, minY: 4, maxX: 11, maxY: 11))
+        #expect(try nonBlackBounds(moved) == PixelBounds(minX: 2, minY: 4, maxX: 9, maxY: 11))
+    }
+
+    private func renderEffectPuppet(
+        shader: String = "genericimage2", overflows: Bool = false,
+        withEffects: Bool = false, masked: Bool = false, animated: Bool = false, time: Double = 0
+    ) throws -> MTLTexture {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let input = try makeRGBAInputTexture(
@@ -2707,7 +2738,7 @@ struct WPEMetalRenderExecutorTests {
         let materialPass = WPERenderPass(
             id: "puppet.0",
             phase: .material,
-            shader: "genericimage2",
+            shader: shader,
             source: .image("materials/base.png"),
             target: .layerComposite(name: "_rt_imageLayerComposite_puppet_a"),
             textures: [0: .image("materials/base.png")],
@@ -2719,13 +2750,31 @@ struct WPEMetalRenderExecutorTests {
             depthTest: "disabled",
             depthWrite: "disabled"
         )
+        let effectPass = WPERenderPass(
+            id: "puppet.effect",
+            phase: .effect(file: "effects/probe/effect.json"),
+            shader: masked ? "effects/opacity" : "copy",
+            source: .fbo("_rt_imageLayerComposite_puppet_a"),
+            target: .layerComposite(name: "_rt_imageLayerComposite_puppet_b"),
+            textures: masked
+                ? [0: .fbo("_rt_imageLayerComposite_puppet_a"), 1: .image("materials/mask.png")]
+                : [0: .fbo("_rt_imageLayerComposite_puppet_a")],
+            binds: [:],
+            constants: masked ? ["alpha": .number(1)] : [:],
+            combos: [:],
+            blending: "disabled",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let processed = withEffects ? "_rt_imageLayerComposite_puppet_b" : "_rt_imageLayerComposite_puppet_a"
         let scenePass = WPERenderPass(
             id: "puppet.1",
             phase: .command(file: "materials/util/copy.json"),
             shader: "materials/util/copy.json",
-            source: .fbo("_rt_imageLayerComposite_puppet_a"),
+            source: .fbo(processed),
             target: .scene,
-            textures: [0: .fbo("_rt_imageLayerComposite_puppet_a")],
+            textures: [0: .fbo(processed)],
             binds: [:],
             constants: [:],
             combos: [:],
@@ -2767,7 +2816,17 @@ struct WPEMetalRenderExecutorTests {
                 indices: [0, 1, 2, 2, 1, 3],
                 parts: []
             )
-        ])
+        ], bones: animated ? [WPEPuppetBone(
+            index: 0, parentIndex: nil,
+            rawMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        )] : [], animations: animated ? [WPEPuppetAnimation(
+            id: 0, name: "move", mode: "loop", fps: 1, frameCount: 2,
+            channels: [WPEPuppetAnimChannel(boneIndex: 0, keyframes: [
+                WPEPuppetAnimKey(frame: 0, translation: .zero, euler: .zero, scale: SIMD3(repeating: 1)),
+                WPEPuppetAnimKey(frame: 1, translation: SIMD3(-2, 0, 0), euler: .zero, scale: SIMD3(repeating: 1)),
+            ])]
+        )] : [])
+        let passes = withEffects ? [materialPass, effectPass, scenePass] : [materialPass, scenePass]
         let layer = WPERenderLayer(
             objectID: "puppet",
             objectName: "Puppet",
@@ -2778,39 +2837,39 @@ struct WPEMetalRenderExecutorTests {
             compositeA: "_rt_imageLayerComposite_puppet_a",
             compositeB: "_rt_imageLayerComposite_puppet_b",
             localFBOs: [],
-            passes: [materialPass, scenePass]
+            passes: passes
         )
         let pipeline = WPEPreparedRenderPipeline(layers: [
             WPEPreparedRenderLayer(
                 graphLayer: layer,
                 puppetModel: puppet,
-                passes: [
-                    WPEPreparedRenderPass(
-                        pass: materialPass,
-                        shader: WPEShaderProgram(name: "genericimage2", vertexSource: "", fragmentSource: "", isBuiltin: true),
-                        textureBindings: [0: .image("materials/base.png")],
-                        comboValues: [:],
-                        uniformValues: [:]
-                    ),
-                    WPEPreparedRenderPass(
-                        pass: scenePass,
-                        shader: WPEShaderProgram(name: "copy", vertexSource: "", fragmentSource: "", isBuiltin: true),
-                        textureBindings: [0: .fbo("_rt_imageLayerComposite_puppet_a")],
-                        comboValues: [:],
-                        uniformValues: [:]
-                    )
-                ]
+                passes: passes.map { pass in
+                    preparedBuiltinPass(pass, bindings: pass.textures, uniforms: pass.constants)
+                }
             )
         ])
 
-        let output = try executor.render(
+        var textures = ["materials/base.png": input]
+        if masked {
+            // Native opacity masks use authored pixel coordinates, so match the
+            // local card's 8×8 extent rather than scaling a two-pixel mask.
+            let maskPixels: [UInt8] = (0 ..< 64).flatMap { pixel in
+                let value: UInt8 = pixel % 8 < 4 ? 255 : 0
+                return [value, value, value, 255]
+            }
+            textures["materials/mask.png"] = try makeRGBAInputTexture(
+                device: device, width: 8, height: 8, bytes: Data(maskPixels)
+            )
+        }
+        if animated {
+            #expect(try executor.puppetSkinningGateForTesting(layer: layer, model: puppet, time: time).enabled)
+        }
+        return try executor.render(
             pipeline: pipeline,
             size: CGSize(width: 16, height: 16),
-            textures: ["materials/base.png": input]
+            textures: textures,
+            runtimeUniforms: .init(time: time, daytime: 0, brightness: 1, pointerPosition: .zero)
         )
-        let bounds = try #require(nonBlackBounds(output))
-
-        #expect(bounds == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
     }
 
     @Test("Clip puppet with effects defers the mesh warp past local FBO bounds")
