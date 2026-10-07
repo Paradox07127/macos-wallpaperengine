@@ -84,6 +84,29 @@ struct WPESignedAlignmentGeometryTests {
         }
     }
 
+    @Test("Hover anchors a right-aligned Y-flipped layer on the same side as drawing and a negative X scale")
+    func hoverFollowsYAngleFlipAlignment() throws {
+        let fixture = try Fixture()
+        let flipped = Self.layer(scale: SIMD2(2, 3), alignment: .right, angles: SIMD3(0, .pi, 0))
+        let hit = try #require(WPEMetalSceneRenderer.hoverHitRect(geometry: flipped.geometry, sceneSize: Self.sceneSize, projection: nil))
+        let quad = fixture.executor.objectQuadUniforms(for: flipped, sceneSize: Self.sceneSize, sourceTexture: fixture.texture)
+        #expect(abs(hit.center.x - Double(400 + quad.centerAndSize.x)) < 0.001)
+        #expect(abs(hit.center.y - Double(300 - quad.centerAndSize.y)) < 0.001)
+        let mirrored = Self.layer(scale: SIMD2(-2, 3), alignment: .right)
+        let mirroredHit = try #require(WPEMetalSceneRenderer.hoverHitRect(geometry: mirrored.geometry, sceneSize: Self.sceneSize, projection: nil))
+        #expect(abs(hit.center.x - mirroredHit.center.x) < 0.001)
+        #expect(abs(hit.half.x - mirroredHit.half.x) < 0.001)
+    }
+
+    @Test("Hover half-height folds the X-angle tilt like the drawn quad")
+    func hoverHalfHeightFoldsXAngle() throws {
+        let layer = Self.layer(scale: SIMD2(2, 3), alignment: .center, angles: SIMD3(.pi / 3, 0, 0))
+        let hit = try #require(WPEMetalSceneRenderer.hoverHitRect(geometry: layer.geometry, sceneSize: Self.sceneSize, projection: nil))
+        let expected = 40 * 3 * cos(Double.pi / 3) * 0.5
+        #expect(expected > Double(Self.sceneSize.height) * 0.02)
+        #expect(abs(hit.half.y - expected) < 1e-9)
+    }
+
     private static let sceneSize = CGSize(width: 800, height: 600)
 
     private static func expectCenter(_ quad: WPEObjectQuadUniforms, _ expected: SIMD2<Float>) {
@@ -93,9 +116,9 @@ struct WPESignedAlignmentGeometryTests {
 
     private static func layer(
         origin: SIMD3<Double> = SIMD3(300, 200, 0), scale: SIMD2<Double>, alignment: WPESceneAlignment,
-        size: CGSize = CGSize(width: 80, height: 40)
+        size: CGSize = CGSize(width: 80, height: 40), angles: SIMD3<Double> = .zero
     ) -> WPERenderLayer {
-        let geometry = WPERenderLayerGeometry(origin: origin, scale: SIMD3(scale.x, scale.y, 1), angles: .zero,
+        let geometry = WPERenderLayerGeometry(origin: origin, scale: SIMD3(scale.x, scale.y, 1), angles: angles,
                                               alignment: alignment, size: size, alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
         return .init(objectID: "layer", objectName: "layer", imagePath: "image", materialPath: nil, geometry: geometry,
                      compositeA: "a", compositeB: "b", localFBOs: [], passes: [])

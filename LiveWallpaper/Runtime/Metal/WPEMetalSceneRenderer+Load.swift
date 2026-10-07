@@ -759,7 +759,7 @@ extension WPEMetalSceneRenderer {
                 ),
                 originZ: (object.localOrigin ?? object.origin).z,
                 scale: object.localScale ?? object.scale,
-                angles: object.angles,
+                angles: object.localAngles ?? object.angles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
                 parentID: object.parentObjectID,

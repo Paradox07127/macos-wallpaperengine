@@ -3107,6 +3107,25 @@ export function init(value) {
         #expect(host.scale == SIMD3<Double>(2, 2, 1))
     }
 
+    @Test("scriptLayerTable exposes a parented text layer's local angles")
+    func scriptLayerTableExposesTextLocalAngles() throws {
+        let json = """
+        {
+            "camera": {"center": "0 0 0"},
+            "general": {"orthogonalprojection": {"width": 1000, "height": 1000, "auto": true}},
+            "objects": [
+                {"id": 70, "name": "host", "origin": "500 500 0", "angles": "0 0 1"},
+                {"id": 71, "name": "label", "type": "text", "text": "x", "parent": 70, "angles": "0 0 0.25"}
+            ]
+        }
+        """
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let text = try #require(document.textObjects.first { $0.id == "71" })
+        #expect(text.angles != SIMD3<Double>(0, 0, 0.25))
+        let row = try #require(WPEMetalSceneRenderer.scriptLayerTable(for: document).first { $0.id == "71" })
+        #expect(row.angles == SIMD3<Double>(0, 0, 0.25))
+    }
+
     // MARK: - Text-content script scriptProperties injection (Mon vs Monday)
 
     @Test("Text script renders with the scene's scriptProperties, not just defaults")
