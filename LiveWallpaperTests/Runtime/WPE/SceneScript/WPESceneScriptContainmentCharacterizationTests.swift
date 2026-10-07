@@ -1219,7 +1219,7 @@ struct WPESceneScriptTimerContainmentTests {
             script: """
             var callbacks = 0;
             for (var i = 0; i < 1100; i++) {
-                setTimeout(function () { callbacks += 1; }, 1000);
+                engine.setTimeout(function () { callbacks += 1; }, 1000);
             }
             export function update(value) { return String(callbacks); }
             """,
@@ -1244,7 +1244,7 @@ struct WPESceneScriptTimerContainmentTests {
         let shared = WPESharedScriptState(sceneScriptLoadToken: oldToken)
         let old = try WPESceneScriptInstance(
             script: """
-            setTimeout(function () { shared.staleTimerPublished = true; }, 10);
+            engine.setTimeout(function () { shared.staleTimerPublished = true; }, 10);
             export function update(value) { return 'old'; }
             """,
             initialValue: "stable",

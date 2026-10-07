@@ -965,7 +965,6 @@ enum WPESceneScriptBaseclasses {
     defineGlobal("degrees", degrees);
     defineGlobal("toSpherical", toSpherical);
     defineGlobal("refract", refract);
-    defineGlobal("setTimeout", timerStub);
     defineGlobal("setInterval", timerStub);
     defineGlobal("clearTimeout", timerStub);
     defineGlobal("clearInterval", timerStub);
