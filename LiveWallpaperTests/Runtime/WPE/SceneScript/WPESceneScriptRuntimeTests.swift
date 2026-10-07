@@ -2233,7 +2233,7 @@ export function init(value) {
     func tolerantGlobalsNeverThrow() throws {
         let script = """
         export function update(value) {
-            setTimeout(function () {}, 16);
+            engine.setTimeout(function () {}, 16);
             var origin = thisLayer.origin;
             origin.x;
             thisLayer.visible = false;
@@ -2264,21 +2264,21 @@ export function init(value) {
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
 
-        #expect(instance.tickString(runtimeSeconds: 0) == "function|function|function|function|function|function:0:0")
-        #expect(instance.tickString(runtimeSeconds: 0.099) == "function|function|function|function|function|function:0.099:0")
-        #expect(instance.tickString(runtimeSeconds: 0.050) == "function|function|function|function|function|function:0.099:0")
-        #expect(instance.tickString(runtimeSeconds: 0.100) == "function|function|function|function|function|function:0.1:1")
+        #expect(instance.tickString(runtimeSeconds: 0) == "function|function|function|function|undefined|function:0:0")
+        #expect(instance.tickString(runtimeSeconds: 0.099) == "function|function|function|function|undefined|function:0.099:0")
+        #expect(instance.tickString(runtimeSeconds: 0.050) == "function|function|function|function|undefined|function:0.099:0")
+        #expect(instance.tickString(runtimeSeconds: 0.100) == "function|function|function|function|undefined|function:0.1:1")
     }
 
     @Test("Timer handles support clear calls and direct self-cancellation")
     func timerCancellationContract() throws {
         let script = """
         var fired = 0;
-        var a = setTimeout(function () { fired += 1; }, 10);
+        var a = engine.setTimeout(function () { fired += 1; }, 10);
         clearTimeout(a);
         var b = engine.setInterval(function () { fired += 10; }, 10);
         b();
-        var c = setTimeout(function () { fired += 100; }, 10);
+        var c = engine.setTimeout(function () { fired += 100; }, 10);
         engine.clearInterval(c);
         export function update(value) { return String(fired); }
         """
@@ -2290,11 +2290,11 @@ export function init(value) {
     func timerReentrancyAndStableOrdering() throws {
         let script = """
         var events = '';
-        setTimeout(function () {
+        engine.setTimeout(function () {
             events += 'a';
-            setTimeout(function () { events += 'c'; }, 0);
+            engine.setTimeout(function () { events += 'c'; }, 0);
         }, 100);
-        setTimeout(function () { events += 'b'; }, 100);
+        engine.setTimeout(function () { events += 'b'; }, 100);
         export function update(value) { return events; }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
@@ -2365,7 +2365,7 @@ export function init(value) {
     @Test("A timer-only layer script keeps the visibility its timer wrote")
     func timerOnlyLayerScriptKeepsTimerVisibility() throws {
         let script = """
-        setTimeout(function () { thisLayer.visible = false; }, 0);
+        engine.setTimeout(function () { thisLayer.visible = false; }, 0);
         """
         let instance = try WPELayerScriptInstance(script: script)
         let own = try #require(instance.tick(runtimeSeconds: 0.1)).own
@@ -2376,7 +2376,7 @@ export function init(value) {
     @Test("Video commands issued from a timer callback reach the tick's output")
     func timerCallbackVideoCommandsSurviveTick() throws {
         let script = """
-        setTimeout(function () { thisLayer.getVideoTexture().play(); }, 0);
+        engine.setTimeout(function () { thisLayer.getVideoTexture().play(); }, 0);
         export function update() {}
         """
         let instance = try WPELayerScriptInstance(script: script)
@@ -5081,7 +5081,7 @@ export function init(value) {
         let store = WPESharedScriptState()
         let instance = try WPEDynamicTransformScriptInstance(script: """
         export function init(value) {
-            setTimeout(function () { shared.cursorX = input.cursorScreenPosition.x; }, 0);
+            engine.setTimeout(function () { shared.cursorX = input.cursorScreenPosition.x; }, 0);
             return value;
         }
         """, seed: .zero, canvasSize: SIMD2(100, 100), shared: store, governor: isolatedGovernor)

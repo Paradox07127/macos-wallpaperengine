@@ -574,7 +574,10 @@ final class WPESceneScriptTimerScheduler {
             ("clearInterval", clear as Any),
         ] {
             engine.setObject(function, forKeyedSubscript: name as NSString)
-            context.setObject(function, forKeyedSubscript: name as NSString)
+            // Native SceneScript exposes setTimeout on engine, without a global alias.
+            if name != "setTimeout" {
+                context.setObject(function, forKeyedSubscript: name as NSString)
+            }
         }
     }
 
@@ -1613,7 +1616,6 @@ final class WPESceneScriptInstance {
             engine.setObject(scheduleNever, forKeyedSubscript: "setInterval" as NSString)
             engine.setObject(clearNever, forKeyedSubscript: "clearTimeout" as NSString)
             engine.setObject(clearNever, forKeyedSubscript: "clearInterval" as NSString)
-            context.setObject(scheduleNever, forKeyedSubscript: "setTimeout" as NSString)
             context.setObject(scheduleNever, forKeyedSubscript: "setInterval" as NSString)
             context.setObject(clearNever, forKeyedSubscript: "clearTimeout" as NSString)
             context.setObject(clearNever, forKeyedSubscript: "clearInterval" as NSString)
