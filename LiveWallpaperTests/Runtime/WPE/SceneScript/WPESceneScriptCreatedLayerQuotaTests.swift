@@ -79,6 +79,40 @@ struct WPESceneScriptCreatedLayerQuotaTests {
         withExtendedLifetime((visualizer, playerBars)) {}
     }
 
+    @Test("Uncloneable createLayer images yield a writable detached handle; malformed specs stay null")
+    @MainActor
+    func uncloneableImageYieldsDetachedHandle() throws {
+        let token = preparedToken(generation: 20)
+        let store = WPESharedScriptState(sceneScriptLoadToken: token)
+        let instance = try WPELayerScriptInstance(script: """
+        let s;
+        export function init() {
+            s = thisScene.createLayer({image: 'models/util/composelayer.json', perspective: true});
+            s.visible = false;
+            s.origin = new Vec3(1, 2, 3);
+            shared.ok = (s.origin.x === 1) && (s.visible === false) && (s.scale.y === 1) && (s.perspective === true);
+            shared.bad = thisScene.createLayer(42) == null && thisScene.createLayer('../escape.json') == null;
+        }
+        export function update(value) {
+            thisLayer.angles = new Vec3(10, 20, 0);
+            s.visible = true;
+            s.getParent().getChildren();
+            s.getAnimationLayer(0).play();
+            s.visible = false;
+            return value;
+        }
+        """, shared: store, createdLayerBridge: .init(
+            imagePaths: ["models/bar.json"], orderedLayerNames: [], allowsSorting: false
+        ))
+        #expect(store.get("ok") as? Bool == true)
+        #expect(store.get("bad") as? Bool == true)
+        #expect(instance.initialOutput.created.isEmpty)
+        let output = try #require(instance.tick())
+        #expect(output.ownTransform.angles == SIMD3(10, 20, 0))
+        #expect(output.created.isEmpty)
+        #expect(token.resourceSnapshot.createdLayers == 0)
+    }
+
     private func preparedToken(generation: Int) -> WPESceneScriptInstanceLimitToken {
         let token = WPESceneScriptInstanceLimitToken(generation: generation)
         #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))

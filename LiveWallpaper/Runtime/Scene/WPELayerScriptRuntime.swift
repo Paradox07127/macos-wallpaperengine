@@ -1754,6 +1754,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate let evaluationResourceBudget: WPESceneScriptEvaluationResourceBudget
     fileprivate var neutralLayerStubCache: JSValue?
     fileprivate var neutralAnimationStubCache: JSValue?
+    fileprivate var detachedLayerFactoryCache: JSValue?
     /// ownKey is the empty string, so without this thisLayer.name / .size / .origin and thisScene.getLayerIndex(thisLayer) all miss the layer table.
     fileprivate let ownLayerName: String?
     fileprivate let ownObjectID: String?
@@ -2075,7 +2076,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
             if let requestedImage, let bridge = createdLayerBridge {
                 guard let resolved = bridge.resolvedImagePath(requestedImage, workshopID: scriptWorkshopID) else {
                     reportUnsupportedLayerOperation("createLayer image is unavailable, ambiguous, or outside the prepared image subset: \(requestedImage)")
-                    return nil
+                    // A malformed or escaping path is an argument error and stays null.
+                    let isWellFormed = !WPECreatedLayerBridgeConfiguration.assetCandidates(
+                        requestedImage, workshopID: scriptWorkshopID
+                    ).isEmpty
+                    return isWellFormed ? detachedLayerHandle(spec: spec, in: context) : nil
                 }
                 resolvedImage = resolved
             } else {
@@ -2788,6 +2793,40 @@ class WPELayerScriptBridge: @unchecked Sendable {
         stub.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
         neutralLayerStubCache = stub
         return stub
+    }
+
+    /// Plain JS object for a createLayer whose template cannot be cloned: writes stay on the object,
+    /// outside the journal and `createdLayers`, so a later `layer.visible = …` cannot throw and roll back the entry.
+    fileprivate func detachedLayerHandle(spec: JSValue, in context: JSContext) -> JSValue? {
+        if detachedLayerFactoryCache == nil {
+            detachedLayerFactoryCache = context.evaluateScript("""
+            (function (spec, parent, animation) {
+                const source = spec !== null && typeof spec === 'object' ? spec : {};
+                const vec = (name, fallback) => new Vec3(source[name] === undefined ? fallback : source[name]);
+                const none = () => {};
+                const layer = {
+                    name: typeof source.name === 'string' ? source.name : '',
+                    image: typeof spec === 'string' ? spec : source.image,
+                    origin: vec('origin', 0), scale: vec('scale', 1), angles: vec('angles', 0), color: vec('color', 1),
+                    visible: source.visible === undefined ? true : !!source.visible,
+                    alpha: source.alpha === undefined ? 1 : Number(source.alpha),
+                    perspective: !!source.perspective,
+                    size: new Vec2(0, 0), text: '', volume: 1,
+                    play: none, stop: none, pause: none, getTransformMatrix: none,
+                    isPlaying: () => false,
+                    getParent: () => parent,
+                    getChildren: () => [],
+                };
+                for (const method of ['getVideoTexture', 'getAnimationLayer', 'getTextureAnimation', 'getAnimation']) {
+                    layer[method] = () => animation;
+                }
+                return layer;
+            })
+            """)
+        }
+        let parent = neutralLayerStub(in: context)
+        let animation = neutralAnimationStub(in: context)
+        return detachedLayerFactoryCache?.call(withArguments: [spec, parent, animation])
     }
 
     fileprivate func neutralAnimationStub(in context: JSContext) -> JSValue {
