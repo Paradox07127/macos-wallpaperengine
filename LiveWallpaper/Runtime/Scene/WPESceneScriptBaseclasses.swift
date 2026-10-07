@@ -89,7 +89,9 @@ enum WPESceneScriptBaseclasses {
 
     class Vec2 {
         constructor(x, y) {
-            if (arguments.length === 0) { x = 0; y = 0; }
+            // A vector first argument wins over any later ones, matching WPE's baseclasses.js.
+            if (x instanceof Vec3 || x instanceof Vec2) { y = x.y; x = x.x; }
+            else if (arguments.length === 0) { x = 0; y = 0; }
             else if (arguments.length === 1) {
                 if (typeof x === "string") {
                     var values = parseNumbers(x, 2);
@@ -171,7 +173,10 @@ enum WPESceneScriptBaseclasses {
 
     class Vec3 {
         constructor(x, y, z) {
-            if (arguments.length === 0) { x = 0; y = 0; z = 0; }
+            // A vector first argument wins over any later ones; a Vec2 widens with z = 0, matching WPE's baseclasses.js.
+            if (x instanceof Vec3) { y = x.y; z = x.z; x = x.x; }
+            else if (x instanceof Vec2) { y = x.y; z = 0; x = x.x; }
+            else if (arguments.length === 0) { x = 0; y = 0; z = 0; }
             else if (arguments.length === 1) {
                 if (typeof x === "string") {
                     var values = parseNumbers(x, 3);
