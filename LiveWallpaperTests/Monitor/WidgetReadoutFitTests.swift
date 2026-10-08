@@ -356,55 +356,36 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - The gauge column is a declared width, not a measured one
 
-    /// `cellHeight` is `tileHeight / 2` (M) or `/ 4` (L); `offeredHeight` is what the row
-    /// leaves the ring before any cap, over board scales 0.7 … 2.0. It is not proportional
-    /// to the tile: the container inset and the label clamp are fixed costs.
+    /// `cellHeight` is `tileHeight / 2` (M) or `/ 4` (L), over board scales 0.7 … 2.0.
+    /// `largeOfferedHeight` is what the L row leaves its ring; M rows measure theirs (`offeredHeight(_:)`).
     private struct GaugeRow {
         let name: String
         let cellHeight: CGFloat
         let rows: Int
         let identity: Bool
         let legend: Bool
-        let offeredHeight: CGFloat
+        var largeOfferedHeight: CGFloat = 0
     }
 
-    private let gaugeRows: [GaugeRow] = [
-        GaugeRow(name: "M @0.7", cellHeight: 59.50, rows: 1, identity: true, legend: true, offeredHeight: 20.70),
-        GaugeRow(name: "M @0.85", cellHeight: 72.25, rows: 1, identity: true, legend: true, offeredHeight: 45.20),
-        GaugeRow(name: "M @1.0", cellHeight: 85.00, rows: 1, identity: true, legend: true, offeredHeight: 67.70),
-        GaugeRow(name: "M @1.25", cellHeight: 106.25, rows: 1, identity: true, legend: true, offeredHeight: 104.81),
-        GaugeRow(name: "M @1.6", cellHeight: 136.00, rows: 1, identity: true, legend: true, offeredHeight: 153.24),
-        GaugeRow(name: "M @2.0", cellHeight: 170.00, rows: 1, identity: true, legend: true, offeredHeight: 221.24),
+    private static let mediumBoards: [(scale: String, cellHeight: CGFloat)] = [
+        ("0.7", 59.50), ("0.85", 72.25), ("1.0", 85.00), ("1.25", 106.25), ("1.6", 136.00), ("2.0", 170.00),
+    ]
 
-        GaugeRow(name: "M @0.7 no legend", cellHeight: 59.50, rows: 1, identity: true, legend: false, offeredHeight: 59.00),
-        GaugeRow(name: "M @0.85 no legend", cellHeight: 72.25, rows: 1, identity: true, legend: false, offeredHeight: 83.50),
-        GaugeRow(name: "M @1.0 no legend", cellHeight: 85.00, rows: 1, identity: true, legend: false, offeredHeight: 106.00),
-        GaugeRow(name: "M @1.25 no legend", cellHeight: 106.25, rows: 1, identity: true, legend: false, offeredHeight: 143.88),
-        GaugeRow(name: "M @1.6 no legend", cellHeight: 136.00, rows: 1, identity: true, legend: false, offeredHeight: 196.00),
-        GaugeRow(name: "M @2.0 no legend", cellHeight: 170.00, rows: 1, identity: true, legend: false, offeredHeight: 264.00),
-
-        GaugeRow(name: "M @0.7 no identity", cellHeight: 59.50, rows: 1, identity: false, legend: true, offeredHeight: 39.70),
-        GaugeRow(name: "M @0.85 no identity", cellHeight: 72.25, rows: 1, identity: false, legend: true, offeredHeight: 65.20),
-        GaugeRow(name: "M @1.0 no identity", cellHeight: 85.00, rows: 1, identity: false, legend: true, offeredHeight: 90.70),
-        GaugeRow(name: "M @1.25 no identity", cellHeight: 106.25, rows: 1, identity: false, legend: true, offeredHeight: 132.12),
-        GaugeRow(name: "M @1.6 no identity", cellHeight: 136.00, rows: 1, identity: false, legend: true, offeredHeight: 185.24),
-        GaugeRow(name: "M @2.0 no identity", cellHeight: 170.00, rows: 1, identity: false, legend: true, offeredHeight: 253.24),
-
-        GaugeRow(name: "M @0.7 bare", cellHeight: 59.50, rows: 1, identity: false, legend: false, offeredHeight: 78.00),
-        GaugeRow(name: "M @0.85 bare", cellHeight: 72.25, rows: 1, identity: false, legend: false, offeredHeight: 103.50),
-        GaugeRow(name: "M @1.0 bare", cellHeight: 85.00, rows: 1, identity: false, legend: false, offeredHeight: 129.00),
-        GaugeRow(name: "M @1.25 bare", cellHeight: 106.25, rows: 1, identity: false, legend: false, offeredHeight: 171.19),
-        GaugeRow(name: "M @1.6 bare", cellHeight: 136.00, rows: 1, identity: false, legend: false, offeredHeight: 228.00),
-        GaugeRow(name: "M @2.0 bare", cellHeight: 170.00, rows: 1, identity: false, legend: false, offeredHeight: 296.00),
-
-        GaugeRow(name: "L @0.7", cellHeight: 62.30, rows: 2, identity: true, legend: true, offeredHeight: 39.22),
-        GaugeRow(name: "L @0.85", cellHeight: 75.65, rows: 2, identity: true, legend: true, offeredHeight: 59.95),
-        GaugeRow(name: "L @1.0", cellHeight: 89.00, rows: 2, identity: true, legend: true, offeredHeight: 85.15),
-        GaugeRow(name: "L @1.25", cellHeight: 111.25, rows: 2, identity: true, legend: true, offeredHeight: 121.08),
-        GaugeRow(name: "L @1.6", cellHeight: 142.40, rows: 2, identity: true, legend: true, offeredHeight: 176.80),
-        GaugeRow(name: "L @2.0", cellHeight: 178.00, rows: 2, identity: true, legend: true, offeredHeight: 248.00),
+    private let gaugeRows: [GaugeRow] = WidgetReadoutFitTests.mediumBoards.flatMap { board in
+        [(true, true, ""), (true, false, " no legend"), (false, true, " no identity"), (false, false, " bare")]
+            .map { identity, legend, suffix in
+                GaugeRow(name: "M @\(board.scale)\(suffix)", cellHeight: board.cellHeight, rows: 1,
+                         identity: identity, legend: legend)
+            }
+    } + [
+        GaugeRow(name: "L @0.7", cellHeight: 62.30, rows: 2, identity: true, legend: true, largeOfferedHeight: 39.22),
+        GaugeRow(name: "L @0.85", cellHeight: 75.65, rows: 2, identity: true, legend: true, largeOfferedHeight: 59.95),
+        GaugeRow(name: "L @1.0", cellHeight: 89.00, rows: 2, identity: true, legend: true, largeOfferedHeight: 85.15),
+        GaugeRow(name: "L @1.25", cellHeight: 111.25, rows: 2, identity: true, legend: true, largeOfferedHeight: 121.08),
+        GaugeRow(name: "L @1.6", cellHeight: 142.40, rows: 2, identity: true, legend: true, largeOfferedHeight: 176.80),
+        GaugeRow(name: "L @2.0", cellHeight: 178.00, rows: 2, identity: true, legend: true, largeOfferedHeight: 248.00),
         // The row that makes the cap the only bound L can take.
-        GaugeRow(name: "L @0.7 bare", cellHeight: 62.30, rows: 2, identity: false, legend: false, offeredHeight: 101.10),
+        GaugeRow(name: "L @0.7 bare", cellHeight: 62.30, rows: 2, identity: false, legend: false, largeOfferedHeight: 101.10),
     ]
 
     private func gaugeSide(_ row: GaugeRow) -> CGFloat {
@@ -415,23 +396,27 @@ final class WidgetReadoutFitTests: XCTestCase {
     }
 
     /// A column narrower than its ring would make the ring width-limited and shrink it.
+    @MainActor
     func testGaugeSideNeverNarrowsTheRingItReserves() {
         for row in gaugeRows {
-            let ring = min(CPUWidgetView.gaugeSideCap, row.offeredHeight)
+            let ring = min(CPUWidgetView.gaugeSideCap, offeredHeight(row))
             XCTAssertGreaterThanOrEqual(
                 gaugeSide(row), ring,
                 "\(row.name): the column reserves \(gaugeSide(row)) pt for a \(ring) pt ring, which clips it"
             )
         }
-        let tight = gaugeRows.filter { $0.offeredHeight < CPUWidgetView.gaugeSideCap }
+        let tight = gaugeRows.filter { offeredHeight($0) < CPUWidgetView.gaugeSideCap }
         XCTAssertGreaterThanOrEqual(tight.count, 10,
                                     "every measured row is cap-limited; nothing above is tested")
     }
 
+    @MainActor
     func testGaugeSideStrandsFarLessThanTheOldFixedWidth() throws {
         let medium = try XCTUnwrap(gaugeRows.first { $0.name == "M @1.0" })
-        XCTAssertEqual(CPUWidgetView.gaugeSideCap - medium.offeredHeight, 28.30, accuracy: 0.01)
-        XCTAssertLessThanOrEqual(gaugeSide(medium) - medium.offeredHeight, 13)
+        let offered = offeredHeight(medium)
+        let stranded = gaugeSide(medium) - offered
+        XCTAssertLessThanOrEqual(stranded, 13)
+        XCTAssertLessThan(stranded, CPUWidgetView.gaugeSideCap - offered)
         // Not all of them: the rest are rows where the ring itself reaches the cap.
         let narrowed = gaugeRows.filter { $0.rows == 1 && gaugeSide($0) < CPUWidgetView.gaugeSideCap }
         XCTAssertGreaterThanOrEqual(
@@ -481,9 +466,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
         // Control: on the desktop board's own M tile the ring term alone is
         // under the legend, so the legend floor is what pins the column there.
-        let ringTerm = 85 * 2 - CPUWidgetView.gaugeChromeBase
-            - CPUWidgetView.gaugeChromeIdentityRow - CPUWidgetView.gaugeChromeCompositionLegend
-        XCTAssertEqual(ringTerm, 71.70, accuracy: 0.01)
+        let desktop = GaugeRow(name: "M @1.0", cellHeight: 85, rows: 1, identity: true, legend: true)
+        let ringTerm = offeredHeight(desktop)
         XCTAssertLessThan(ringTerm, widestCompositionLegend(label: Design.TypeScale(cellHeight: 85).label))
     }
 
@@ -513,7 +497,8 @@ final class WidgetReadoutFitTests: XCTestCase {
     func testPinnedGaugeColumnReportsGaugeSideAtEveryOfferedHeight() {
         let side = CPUWidgetView.gaugeSide(cellHeight: 85, rows: 1,
                                            hasIdentityRow: true, hasCompositionLegend: true)
-        for offered: CGFloat in [20.70, 45.20, 67.70, 96, 140, 300] {
+        let measured = gaugeRows.filter { $0.rows == 1 && $0.identity && $0.legend }.prefix(3).map(offeredHeight)
+        for offered in measured + [96, 140, 300] {
             let size = gaugeSize(proposing: CGSize(width: 300, height: offered)) {
                 $0.frame(maxHeight: CPUWidgetView.gaugeSideCap)
                     .frame(width: side, alignment: .leading)
@@ -526,11 +511,83 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     /// The pinned column must not make the gauge frame taller than its row, or the M tile
     /// overflows.
+    @MainActor
     func testMediumGaugeSideIsNeverUnderWhatItsRowOffers() {
         for row in gaugeRows where row.rows == 1 {
+            let offered = offeredHeight(row)
             XCTAssertGreaterThanOrEqual(
-                gaugeSide(row), min(CPUWidgetView.gaugeSideCap, row.offeredHeight),
-                "\(row.name): a \(gaugeSide(row)) pt column under a \(row.offeredHeight) pt row"
+                gaugeSide(row), min(CPUWidgetView.gaugeSideCap, offered),
+                "\(row.name): a \(gaugeSide(row)) pt column under a \(offered) pt row"
+            )
+        }
+    }
+
+    // MARK: - M chrome, measured off SwiftUI layout
+
+    @MainActor
+    private func idealHeight(_ view: some View, width: CGFloat = 400) -> CGFloat {
+        let renderer = ImageRenderer(content: view)
+        renderer.proposedSize = ProposedViewSize(width: width, height: nil)
+        return renderer.nsImage?.size.height ?? 0
+    }
+
+    /// The real `WidgetContainer` around a fixed-height body: its inset, header, and the spacing under it.
+    @MainActor
+    private func measuredBaseChrome(cellHeight: CGFloat) -> CGFloat {
+        let body: CGFloat = 50
+        let container = WidgetContainer(
+            label: WidgetFactory.displayName(.cpu), systemImage: WidgetFactory.icon(.cpu),
+            cellHeight: cellHeight, status: { LoadStateDot(fraction: 0.37) },
+            content: { Color.clear.frame(height: body) }
+        )
+        return idealHeight(container) - body
+    }
+
+    /// The identity row and legend chip are private to `CPUWidgetView`; these rebuild them from its fonts and spacings.
+    @MainActor
+    private func measuredMediumChrome(_ row: GaugeRow) -> CGFloat {
+        let scale = Design.TypeScale(cellHeight: row.cellHeight)
+        var chrome = measuredBaseChrome(cellHeight: row.cellHeight)
+        if row.identity {
+            chrome += idealHeight(HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.5) {
+                Text(verbatim: "Apple M5 Pro").font(Design.subFont(size: scale.sub * 0.92))
+                Text(verbatim: "· 18 cores (6 Super + 12 Performance)").font(Design.labelFont(size: scale.label))
+            }) + scale.label * 0.5
+        }
+        if row.legend {
+            let chip = VStack(alignment: .leading, spacing: scale.label * 0.3) {
+                ForEach(["USER 100%", "SYS 100%"], id: \.self) { text in
+                    HStack(spacing: scale.label * 0.35) {
+                        Rectangle().frame(width: scale.label * 0.6, height: scale.label * 0.6)
+                        Text(verbatim: text).font(Design.labelFont(size: scale.label * 0.95)).monospacedDigit()
+                    }
+                }
+            }
+            .lineLimit(1)
+            .monitorChip(scale)
+            chrome += idealHeight(chip) + scale.label * 0.45
+        }
+        return chrome
+    }
+
+    /// What the row leaves the ring before any cap: M from the measured chrome, L from its laid-out tile.
+    @MainActor
+    private func offeredHeight(_ row: GaugeRow) -> CGFloat {
+        row.rows == 1 ? row.cellHeight * 2 - measuredMediumChrome(row) : row.largeOfferedHeight
+    }
+
+    /// Below the cap and above the legend floor, an M column wider than the ring its row offers strands that width.
+    @MainActor
+    func testMediumGaugeSideLeavesRoomForTheMeasuredChrome() {
+        for row in gaugeRows where row.rows == 1 {
+            let legend = row.legend
+                ? widestCompositionLegend(label: Design.TypeScale(cellHeight: row.cellHeight).label)
+                : 0
+            let offered = offeredHeight(row)
+            let side = gaugeSide(row)
+            XCTAssertLessThanOrEqual(
+                side, max(legend, min(CPUWidgetView.gaugeSideCap, offered)) + 0.01,
+                "\(row.name): a \(side) pt column over a \(offered) pt ring under a \(legend) pt legend"
             )
         }
     }
