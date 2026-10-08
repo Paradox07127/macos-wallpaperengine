@@ -494,6 +494,35 @@
         }
       }
     },
+    "%@ The download is saved in your library." : {
+      "comment" : "Toast after a Workshop download joined the library but its queued apply failed. Placeholder is the failure sentence.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ La descarga se guardó en la biblioteca de fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ダウンロードした壁紙は壁紙ライブラリに保存されています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 下载的壁纸已存入壁纸库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 下載的桌布已存入桌布庫。"
+          }
+        }
+      }
+    },
     "%@ changed in the meantime, so the download wasn’t applied." : {
       "comment" : "Workshop deferred apply dropped because the user applied something else there. Placeholder is a display name.",
       "localizations" : {
@@ -22920,6 +22949,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載的工作坊預覽圖，上限 256 MB；再次檢視時重新下載。"
+          }
+        }
+      }
+    },
+    "Downloaded and applied to %@" : {
+      "comment" : "Toast after a Workshop download reached the display it was queued for. Placeholder is a display name.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargado y aplicado a %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードして %@ に適用しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载并应用到 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下載並套用到 %@"
           }
         }
       }

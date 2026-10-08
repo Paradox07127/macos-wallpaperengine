@@ -17,9 +17,10 @@ enum DeferredApplyToasts {
     }
 
     /// `screenID` is the ticket's target; `wallpapersOn` is the master switch.
+    /// `afterDownload` is false for an installed item applied with no download in between.
     static func messages(
         for state: DeferredApplyCoordinator.State, screenName: String,
-        screenID: CGDirectDisplayID? = nil, wallpapersOn: Bool = true
+        screenID: CGDirectDisplayID? = nil, wallpapersOn: Bool = true, afterDownload: Bool = true
     ) -> [Message]? {
         switch state {
         case let .finished(report):
@@ -45,7 +46,9 @@ enum DeferredApplyToasts {
                 .info
             }
             messages.append(Message(
-                text: appliedText(report, screenName: screenName, wallpapersOn: wallpapersOn),
+                text: afterDownload
+                    ? downloadedText(report, screenName: screenName, wallpapersOn: wallpapersOn)
+                    : appliedText(report, screenName: screenName, wallpapersOn: wallpapersOn),
                 style: style,
                 persists: changesDisplay && report.outcome != .applied,
                 screenID: changesDisplay ? screenID : nil,
@@ -105,6 +108,25 @@ enum DeferredApplyToasts {
             reason
         case .importingLibrary:
             String(localized: "Importing from folder…", bundle: .appLanguage)
+        }
+    }
+
+    /// Also stands for the download, whose own success toast gave way to this one.
+    static func downloadedText(_ report: ApplyReport, screenName: String, wallpapersOn: Bool) -> String {
+        let applied = appliedText(report, screenName: screenName, wallpapersOn: wallpapersOn)
+        switch report.outcome {
+        case .applied where wallpapersOn:
+            return String(
+                localized: "Downloaded and applied to \(screenName)", bundle: .appLanguage,
+                comment: "Toast after a Workshop download reached the display it was queued for. Placeholder is a display name."
+            )
+        case .failed, .prepareFailed:
+            return String(
+                localized: "\(applied) The download is saved in your library.", bundle: .appLanguage,
+                comment: "Toast after a Workshop download joined the library but its queued apply failed. Placeholder is the failure sentence."
+            )
+        case .applied, .registeredPreset, .importingLibrary:
+            return applied
         }
     }
 

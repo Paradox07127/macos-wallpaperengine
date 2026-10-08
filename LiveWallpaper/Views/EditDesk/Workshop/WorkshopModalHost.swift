@@ -24,6 +24,8 @@ struct WorkshopModalWiring {
         var start: @MainActor (UInt64, WPEHistoryEntry?) -> WorkshopDownloadAttempt?
         var active: @MainActor (UInt64) -> WorkshopDownloadAttempt?
         var cancel: @MainActor (UInt64) -> Void
+        /// The closure answers whether a display still waits to apply the attempt.
+        var deferSuccessToast: @MainActor (WorkshopDownloadAttempt, @escaping @MainActor () -> Bool) -> Void = { _, _ in }
     }
 
     let downloads: Downloads
@@ -43,9 +45,11 @@ struct WorkshopModalWiring {
         guard let screen = screens.screens.first(where: { $0.id == screenID }),
               let attempt = downloads.active(itemID) ?? downloads.start(itemID, replacing) else { return nil }
         let generation = screens.beginExplicitWallpaperSelection(for: screen)
-        return deferredApply.submit(
+        let ticket = deferredApply.submit(
             attempt: attempt, target: .init(screen: screen, selectionGeneration: generation)
         )
+        downloads.deferSuccessToast(attempt) { [weak ticket] in ticket?.state == .waiting }
+        return ticket
     }
 
     /// Moves a queued apply to another display. Refused once the apply is running — the wallpaper is
@@ -69,6 +73,13 @@ struct WorkshopModalWiring {
     func cancelDownload(itemID: UInt64) {
         dropQueuedApply(itemID: itemID)
         downloads.cancel(itemID)
+    }
+
+    /// Before the installed item goes straight to a display: an apply queued for any display is dropped,
+    /// the download itself keeps running.
+    func prepareDirectApply(itemID: UInt64) {
+        dropQueuedApply(itemID: itemID)
+        deferredApply.discardIfSettled(itemID: itemID)
     }
 
     private func dropQueuedApply(itemID: UInt64) {
@@ -281,7 +292,8 @@ struct WorkshopModalHost: View {
                     )
                 },
                 active: { WorkshopDownloadCoordinator.shared.activeAttempt(for: $0) },
-                cancel: { WorkshopDownloadCoordinator.shared.cancel($0) }
+                cancel: { WorkshopDownloadCoordinator.shared.cancel($0) },
+                deferSuccessToast: { WorkshopDownloadCoordinator.shared.deferSuccessToast(of: $0, while: $1) }
             ),
             deferredApply: session.deferredApply,
             screens: screenManager
@@ -326,7 +338,7 @@ struct WorkshopModalHost: View {
         switch action {
         case .applyNow:
             if let entry = installedEntry {
-                session.deferredApply.discardIfSettled(itemID: item.id)
+                wiring.prepareDirectApply(itemID: item.id)
                 applyNow(entry, to: screenID)
             }
         case .retarget:
@@ -362,7 +374,7 @@ struct WorkshopModalHost: View {
             report.undoStepID = recording?.settle(screen.id, applied: report.outcome == .applied)
             let messages = DeferredApplyToasts.messages(
                 for: .finished(report), screenName: screen.name, screenID: screen.id,
-                wallpapersOn: screenManager.wallpapersGloballyEnabled
+                wallpapersOn: screenManager.wallpapersGloballyEnabled, afterDownload: false
             )
             for message in messages ?? [] {
                 toasts.post(

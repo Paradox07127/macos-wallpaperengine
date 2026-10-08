@@ -513,6 +513,42 @@ struct DeferredApplyCoordinatorTests {
         await steam.discard()
     }
 
+    @Test(
+        "A download a display waits on leaves its toast to the apply; one saved or no longer queued says it joined the library",
+        .timeLimit(.minutes(1)), arguments: ["queued", "saved", "applied directly"]
+    )
+    func queuedApplyTakesOverTheDownloadToast(route: String) async throws {
+        let fixture = try DownloadAttemptFixture(name: "toast-\(route)", startsWithDependencies: false)
+        defer { fixture.gate.release(); fixture.defaults.discard() }
+        fixture.gate.release()
+        let wiring = WorkshopModalWiring(downloads: fixture.wiringDownloads, deferredApply: owner(timeout: .zero), screens: manager)
+        var ticket: DeferredApplyCoordinator.Ticket?
+        if route == "saved" {
+            wiring.saveOnly(itemID: 420_000_042)
+        } else {
+            ticket = wiring.applyWhenDownloaded(itemID: 420_000_042, to: manager.first.id)
+            try #require(ticket != nil)
+        }
+        if route == "applied directly" {
+            wiring.prepareDirectApply(itemID: 420_000_042)
+        }
+        let attempt = try #require(fixture.downloads.activeAttempt(for: 420_000_042))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        await task.value
+        guard case .succeeded? = attempt.outcome else {
+            Issue.record("Expected the download to succeed, got \(String(describing: attempt.outcome))")
+            return
+        }
+        if route == "queued" {
+            #expect(fixture.toasts.lastEvent == nil, "the download raised its own toast beside the one its apply raises")
+            await waitUntil { ticket?.state.isSettled == true }
+            #expect(fixture.toasts.lastEvent == nil)
+        } else {
+            #expect(fixture.toasts.lastEvent?.message == String(localized: "Added to your library.", bundle: .appLanguage))
+        }
+        await fixture.discard()
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func lookupReturnsTheLiveTicketAndNothingForAnUnknownItem() {
         let owner = owner()
@@ -817,6 +853,16 @@ private final class DownloadAttemptFixture {
 
     var itemFolder: URL {
         downloader.root.appendingPathComponent("420000042", isDirectory: true)
+    }
+
+    /// The modal's view of this coordinator, as `WorkshopModalHost` wires the shared one.
+    var wiringDownloads: WorkshopModalWiring.Downloads {
+        .init(
+            start: { [self] in downloads.download(itemID: $0, title: "Remote", using: downloader, replacing: $1) },
+            active: { [self] in downloads.activeAttempt(for: $0) },
+            cancel: { [self] in downloads.cancel($0) },
+            deferSuccessToast: { [self] in downloads.deferSuccessToast(of: $0, while: $1) }
+        )
     }
 
     func libraryEntry(in folder: URL, title: String) throws -> WPEHistoryEntry {

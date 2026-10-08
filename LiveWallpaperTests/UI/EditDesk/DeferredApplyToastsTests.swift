@@ -14,7 +14,7 @@ struct DeferredApplyToastsTests {
         let cases: [(DeferredApplyCoordinator.State, String, EditDeskToastCenter.Toast.Style)] = [
             (
                 .finished(ApplyReport(outcome: .applied, exitedSpanMode: false)),
-                String(localized: "Applied to \(screenName)", bundle: .appLanguage),
+                String(localized: "Downloaded and applied to \(screenName)", bundle: .appLanguage),
                 .success
             ),
             (
@@ -56,22 +56,44 @@ struct DeferredApplyToastsTests {
         }
     }
 
-    @Test func failedApplyUsesTheFailuresOwnText() throws {
+    @Test("A download that applied is one line naming the display; an installed item applied directly still says Applied")
+    func appliedDownloadIsOneLineNamingTheDisplay() throws {
+        let report = ApplyReport(outcome: .applied, exitedSpanMode: false)
+        let messages = try #require(DeferredApplyToasts.messages(for: .finished(report), screenName: screenName))
+        #expect(messages.count == 1)
+        #expect(messages.first?.text == String(localized: "Downloaded and applied to \(screenName)", bundle: .appLanguage))
+        #expect(messages.first?.text.contains(screenName) == true)
+        let direct = try #require(
+            DeferredApplyToasts.messages(for: .finished(report), screenName: screenName, afterDownload: false)
+        )
+        #expect(direct.map(\.text) == [ApplyOutcome.appliedText(on: screenName)], "nothing was downloaded on the direct route")
+    }
+
+    @Test("A download whose apply failed says the failure and that the download is in the library")
+    func failedApplyUsesTheFailuresOwnTextAndKeepsTheDownload() throws {
         let failure = DropFailure.sceneImportRejected(reason: "Fixture rejection")
         let report = ApplyReport(outcome: .failed(failure), exitedSpanMode: false)
         let messages = try #require(DeferredApplyToasts.messages(for: .finished(report), screenName: screenName))
         #expect(messages.count == 1)
-        #expect(messages.first?.text == failure.toastText)
+        #expect(messages.first?.text == String(
+            localized: "\(failure.toastText) The download is saved in your library.", bundle: .appLanguage
+        ))
         #expect(messages.first?.style == .failure)
+        // Control: on the direct route there was no download to mention.
+        let direct = try #require(
+            DeferredApplyToasts.messages(for: .finished(report), screenName: screenName, afterDownload: false)
+        )
+        #expect(direct.map(\.text) == [failure.toastText])
     }
 
     @Test func sceneAttemptFailureLeavesTheToastToItsFailureCard() {
         let attempt = ApplyReport(outcome: .prepareFailed(reason: "Fixture", attemptID: UUID()), exitedSpanMode: false)
         #expect(DeferredApplyToasts.messages(for: .finished(attempt), screenName: screenName) == [])
         let other = ApplyReport(outcome: .prepareFailed(reason: "Fixture", attemptID: nil), exitedSpanMode: false)
+        let saved = String(localized: "\("Fixture") The download is saved in your library.", bundle: .appLanguage)
         #expect(
             DeferredApplyToasts.messages(for: .finished(other), screenName: screenName)
-                == [.init(text: "Fixture", style: .failure, persists: true)]
+                == [.init(text: saved, style: .failure, persists: true)]
         )
     }
 
@@ -143,7 +165,7 @@ struct DeferredApplyToastsTests {
         #expect(off.last?.text == ApplyOutcome.appliedText(on: screenName, wallpapersOn: false))
         // Control: with wallpapers on it still says applied.
         let on = try #require(DeferredApplyToasts.messages(for: .finished(report), screenName: screenName, wallpapersOn: true))
-        #expect(on.last?.text == ApplyOutcome.appliedText(on: screenName))
+        #expect(on.last?.text == String(localized: "Downloaded and applied to \(screenName)", bundle: .appLanguage))
     }
 
     @Test("A registered preset says where it went and that the wallpaper stayed, as the home page does")
