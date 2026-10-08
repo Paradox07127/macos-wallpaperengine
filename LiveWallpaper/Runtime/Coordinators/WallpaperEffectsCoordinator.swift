@@ -58,7 +58,6 @@ final class WallpaperEffectsCoordinator {
 
     func updateEffectConfig(_ effectConfig: VideoEffectConfig, for screen: Screen) {
         guard !isShutdown else { return }
-        let effectConfig = effectConfig.withoutWeatherOverlay
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.effectConfig != effectConfig else { return }
         config.effectConfig = effectConfig
@@ -145,8 +144,9 @@ final class WallpaperEffectsCoordinator {
 
     func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
         guard !isShutdown else { return }
-        environmentOverlay.retainOnly(Set(screensProvider().map(\.id)))
         refreshWeatherMonitoringState()
+        // Builds the hand-picked layers too; `applyWeatherEffects` only covers weather-reactive ones.
+        reconcileEnvironmentOverlays()
         for screen in screensProvider() where arrivedScreenIDs.contains(screen.id) {
             applyWeatherEffects(for: screen)
         }
@@ -158,7 +158,13 @@ final class WallpaperEffectsCoordinator {
         refreshWeatherMonitoringState()
         reconcileEnvironmentOverlays()
         for screen in screensProvider() {
-            applyWeatherEffects(for: screen)
+            if weatherOverlay(screen).weatherReactive {
+                applyWeatherEffects(for: screen)
+            } else if let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+                      config.wallpaperType == .video {
+                // Drops a weather tint left by a reactive state that was switched off elsewhere.
+                applyVideoEffects(for: screen, config: config)
+            }
         }
     }
 
