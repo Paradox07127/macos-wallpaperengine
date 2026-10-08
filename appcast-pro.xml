@@ -7,43 +7,42 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.4</title>
-      <pubDate>Tue, 06 Oct 2026 04:41:01 +0000</pubDate>
-      <sparkle:version>0.8.4</sparkle:version>
-      <sparkle:shortVersionString>0.8.4</sparkle:shortVersionString>
+      <title>Version 0.8.5</title>
+      <pubDate>Thu, 08 Oct 2026 14:56:23 +0000</pubDate>
+      <sparkle:version>0.8.5</sparkle:version>
+      <sparkle:shortVersionString>0.8.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Pro: Chinese wallpaper names, descriptions, controls and Workshop preset names can be machine-translated into the app language; Settings has a Translate wallpaper text switch and a language pack download</li>
-<li>Pro: a downloading Workshop item shows how many bytes have arrived</li>
-<li>Pro: you can select and cancel subscription downloads, and batch downloads run one at a time</li>
-<li>A wallpaper that fails to load lists the missing files and names the likely cause</li>
-<li>Settings has a new Appearance page for window and library appearance</li>
-<li>In the detail sheet, pressing a display that already shows the wallpaper opens that display's page</li>
+<li>Pro: a Downloads sheet tracks Workshop downloads with progress, speed and stalls; you can cancel downloads, and failed ones come back after a restart so you can retry them — thanks @Aleem2Z (#145)</li>
+<li>The weather layer works on a display without a wallpaper and stays when you clear the wallpaper; schemes no longer change it</li>
+<li>Lite: importing a Pro backup keeps its scene displays, and the summary counts the ones Lite cannot run</li>
+<li>The System Wallpaper panel flags an extension copy that is out of date</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>The Storage page shows both rings with a full-name legend, lists every location with its path and actions, and can clear preview, shader, audio and web caches</li>
-<li>Pro: library entries whose Workshop items Steam deleted are removed after each SteamCMD run</li>
+<li>Playback actions use the same short names (Pause, Play, Previous, Next) in the menu bar, the display page and VoiceOver</li>
+<li>The display inspector gets narrower in narrow windows</li>
+<li>Pro: Workshop tags and resolution labels use Wallpaper Engine's own Chinese wording, and multi-display and portrait resolution tags are translated</li>
+<li>Pro: Download and apply shows one notice instead of two</li>
+<li>Pro: the Workshop page rescans downloads less often, which puts less load on the macOS bookmark service</li>
+<li>Automation queue rows use friendly titles, show the folder of local videos, and keep the row you previewed selected</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: scene scripts receive cursor input again, and parallax, cursor regions and audio-driven particle rates work again</li>
-<li>Pro: clock highlights no longer turn white, and transparent layers no longer get darker</li>
-<li>Pro: 3D models keep their own material per mesh, translucent parts stay blended, and padded textures no longer show seams</li>
-<li>Pro: lights under text and top-level particles, sprite UVs and text effects render closer to Windows</li>
-<li>Pro: textures with conditional variants load and show their base image</li>
-<li>Pro: Sync subscribed wallpapers no longer reports every subscription as missing</li>
-<li>Pro: removing Steam-deleted items no longer touches items that are downloading, moved, or in a renamed Steam library</li>
-<li>A wallpaper applied while displays connect or disconnect is no longer lost</li>
-<li>A paused video keeps its seek position</li>
-<li>Clearing caches skips files that are still in use</li>
-<li>The title-bar double-click setting is honored</li>
+<li>Pro: perspective and tilted composition layers render in place instead of covering the screen</li>
+<li>Pro: shader inputs, cursor ripples, flipped layers and text, and puppet layers render correctly — thanks @Aleem2Z (#146)</li>
+<li>Pro: scene scripts get canvasSize as a vector, get copies from transform getters, and handle missing layers in createLayer and getLayer</li>
+<li>Pro: applying an installed Workshop item straight to a display cancels the apply that its update download queued for another display</li>
+<li>Pro: a waiting apply keeps its status, refreshed approvals retry, and download failure reasons are translated</li>
+<li>Transitions across several displays use the displays' current positions</li>
+<li>The music visualizer stops capturing audio when Reduce Motion is on</li>
+<li>The CPU gauge legend fits its column in every language</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.4">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.4">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.5">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.5">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.4/Loomscreen-Pro-0.8.4.dmg" type="application/octet-stream" sparkle:edSignature="jXabDu/WU8yvGDvEXo/DhMgDPOMLBPuT4tP+ljMMqR6TVCOfLPF4Hr8Acr9aedEEZf3DBw1OjvXWDjjeAEkRCw==" length="17753139" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.5/Loomscreen-Pro-0.8.5.dmg" type="application/octet-stream" sparkle:edSignature="hcwHj7Ufii7UvRcyrEnb+6XmHzre4RTCoU4dYCZUhnsY0WFiLWilse92AP5B6guzcY7BZDw2wu3n8rq0w9cGDg==" length="11030755" />
     </item>
   </channel>
 </rss>
