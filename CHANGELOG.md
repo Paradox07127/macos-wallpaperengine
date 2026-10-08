@@ -56,7 +56,6 @@ what shipped at that time; current behavior is documented in `docs/`.
 - Pro: a waiting apply keeps its status, refreshed approvals retry, and
   download failure reasons are translated.
 - Transitions across several displays use the displays' current positions.
-- The Home page shows a display's cover while a transition runs.
 - The music visualizer stops capturing audio when Reduce Motion is on.
 - The CPU gauge legend fits its column in every language, and the ring height
   follows the board's type scale.
