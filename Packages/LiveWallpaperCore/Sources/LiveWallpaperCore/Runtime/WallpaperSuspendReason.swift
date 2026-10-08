@@ -15,17 +15,6 @@ public enum WallpaperSuspendReason: String, Equatable, Hashable, Sendable, CaseI
     case fullScreen
     case windowOcclusion
 
-    /// Safety reasons cannot be turned off in settings, so the UI must not offer
-    /// a settings shortcut for them — only a "this will lift on its own" note.
-    public var isSafety: Bool {
-        switch self {
-        case .userAbsent, .memoryPressure, .thermal:
-            true
-        case .applicationRule, .lowPowerMode, .battery, .fullScreen, .windowOcclusion:
-            false
-        }
-    }
-
     /// While absent the user is not looking at the screen, so surfacing a reason
     /// for it would only ever be read after the fact.
     public var isUserVisible: Bool {
