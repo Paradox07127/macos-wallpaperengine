@@ -101,7 +101,7 @@ WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEA
     WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests WPEMetalFBOFormatMappingTests \
     WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
     WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
-    WPEProjectedQuadShaderTests WPEObjectQuadUniformsBytePinTests \
+    WPEProjectedQuadShaderTests WPEObjectQuadUniformsBytePinTests WPEProjectedComposeExecutorTests \
     WPERenderThreadTests WPERenderThreadDrainRuntimeTests \
     WPESceneTextDeliveryTests WPESignedAlignmentGeometryTests WPESceneScriptPlayerRelocationTests
 

@@ -73,18 +73,21 @@ extension WPEMetalShaderDispatcher {
             && (isSceneAliasReference(firstReference)
                 || isGroupCompositeSourceReference(firstReference, layer: layer))
         if singleTextureCompose {
-            metadata = BuiltinTraceMetadata(
-                fragmentShaderName: layer.groupCompositeSource == nil
-                    && isSceneAliasReference(firstReference)
-                    && executor.sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
-                        ? "wpe_local_scene_capture_fragment"
-                        : "wpe_composelayer_fragment",
-                textureSlots: [0]
-            )
+            let captureGeometry = layer.groupCompositeSource == nil && isSceneAliasReference(firstReference)
+                ? executor.sceneCaptureUtilityOutputGeometry(for: layer)
+                : .fullscreen
+            let fragmentShaderName = switch captureGeometry {
+            case .subregion: "wpe_local_scene_capture_fragment"
+            case .projected: "wpe_projected_scene_capture_fragment"
+            case .fullscreen: "wpe_composelayer_fragment"
+            }
+            metadata = BuiltinTraceMetadata(fragmentShaderName: fragmentShaderName, textureSlots: [0])
         }
 
+        let projectedDrawBack = (kind == .copy || kind == .blendComposite)
+            && executor.usesProjectedComposeDrawBack(for: pass.pass, layer: layer)
         let usesObjectQuad: Bool
-        if singleTextureCompose || kind == .genericParticle {
+        if singleTextureCompose || kind == .genericParticle || projectedDrawBack {
             usesObjectQuad = false
         } else if let effect = WPEEffectDispatchDescriptor.table[kind] {
             let parallax = effect.appliesCameraParallax ? frameState.cameraParallax : .neutral
@@ -131,7 +134,8 @@ extension WPEMetalShaderDispatcher {
             layer: layer,
             destination: destination,
             builtinKind: kind.rawValue,
-            vertexShaderName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
+            vertexShaderName: projectedDrawBack ? "wpe_projected_quad_vertex"
+                : usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentShaderName: metadata.fragmentShaderName,
             textureBindings: bindings,
             usesObjectQuad: usesObjectQuad,

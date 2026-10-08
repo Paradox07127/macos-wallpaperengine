@@ -230,28 +230,33 @@ final class WPEMetalTextureSlotTable {
 }
 
 enum WPEMetalSceneCaptureUtilityModels {
-    enum OutputGeometry { case fullscreen, subregion }
+    /// `.projected` = captured and drawn back through the layer's own perspective MVP (`WPEProjectedComposeQuad`).
+    enum OutputGeometry { case fullscreen, subregion, projected }
 
     /// Fullscreen/project always cover the frame. A composelayer stays fullscreen unless its authored footprint is a safe sub-rect.
     static func outputGeometry(
         path: String,
         geometry: WPERenderLayerGeometry,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        composePerspective: Bool = false
     ) -> OutputGeometry {
         outputGeometry(
             kind: WPEUtilityModelKind.classify(path),
             geometry: geometry,
-            sceneSize: sceneSize
+            sceneSize: sceneSize,
+            composePerspective: composePerspective
         )
     }
 
     static func outputGeometry(
         kind: WPEUtilityModelKind?,
         geometry: WPERenderLayerGeometry,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        composePerspective: Bool = false
     ) -> OutputGeometry {
         guard kind == .composeLayer else { return .fullscreen }
         guard let size = geometry.size else { return .fullscreen }
+        if composePerspective { return .projected }
         let sceneW = max(Float(sceneSize.width), 1)
         let sceneH = max(Float(sceneSize.height), 1)
         // Must match objectQuadUniforms' X/Y fold, or routing and the drawn quad disagree on footprint and flips.
@@ -285,6 +290,7 @@ final class WPESceneCaptureOutputGeometryMemo {
         let scale: SIMD3<Double>
         let angles: SIMD3<Double>
         let sceneSize: CGSize
+        let composePerspective: Bool
         let result: WPEMetalSceneCaptureUtilityModels.OutputGeometry
     }
 
@@ -293,12 +299,14 @@ final class WPESceneCaptureOutputGeometryMemo {
     func outputGeometry(
         layer: WPERenderLayer,
         geometry: WPERenderLayerGeometry,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        composePerspective: Bool = false
     ) -> WPEMetalSceneCaptureUtilityModels.OutputGeometry {
         let path = layer.imagePath
         let objectID = layer.objectID
         if let entry = entries[objectID],
            entry.sceneSize == sceneSize,
+           entry.composePerspective == composePerspective,
            entry.size == geometry.size,
            entry.scale == geometry.scale,
            entry.angles == geometry.angles,
@@ -308,7 +316,8 @@ final class WPESceneCaptureOutputGeometryMemo {
         let result = WPEMetalSceneCaptureUtilityModels.outputGeometry(
             kind: layer.utilityModelKind,
             geometry: geometry,
-            sceneSize: sceneSize
+            sceneSize: sceneSize,
+            composePerspective: composePerspective
         )
         if entries.count >= 512, entries[objectID] == nil {
             entries.removeAll(keepingCapacity: true)
@@ -319,6 +328,7 @@ final class WPESceneCaptureOutputGeometryMemo {
             scale: geometry.scale,
             angles: geometry.angles,
             sceneSize: sceneSize,
+            composePerspective: composePerspective,
             result: result
         )
         return result
