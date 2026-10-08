@@ -252,6 +252,24 @@ struct WPEFrameDemandTests {
         #expect(WPEMetalSceneRenderer.pipelineHasAnimatedPasses(animated))
     }
 
+    /// Idle, so it adds no `.particles` demand, yet it still counts as a possible pointer consumer.
+    static func finishedParticleSystem() throws -> WPEParticleSystem {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let system = try #require(WPEParticleSystem(
+            definition: WPEParticleDefinitionParser.parse(dictionary: [
+                "maxcount": 8,
+                "emitter": [["rate": 0, "instantaneous": 2]],
+                "initializer": [["name": "lifetimerandom", "min": 0.05, "max": 0.1]],
+            ]),
+            device: device,
+            seed: 0xB3
+        ))
+        system.tick(now: 0)
+        system.tick(now: 1)
+        try #require(system.isPermanentlyIdle)
+        return system
+    }
+
     private static var animatedValue: WPESceneAnimatedValue {
         WPESceneAnimatedValue(
             animation: WPESceneNumericAnimation(
@@ -369,6 +387,112 @@ struct WPEFrameDemandTests {
         #expect(stack.surface.mtkView.isPaused == false)
     }
 
+    @Test("A hidden live emitter carries no frame demand until it is shown")
+    func hiddenEmitterDoesNotDemandFrames() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+
+        let system = try #require(WPEParticleSystem(
+            definition: WPEParticleDefinitionParser.parse(dictionary: [
+                "maxcount": 8,
+                "emitter": [["rate": 5]],
+            ]),
+            device: device,
+            seed: 0xB3
+        ))
+        system.scriptParticleObjectID = "emitter"
+        renderer.ownVisibilityByID["emitter"] = false
+        renderer.particleSystems = [system]
+        renderer.synchronizeFrameDemand()
+        #expect(!system.isPermanentlyIdle)
+        #expect(renderer.frameDemand.isEmpty)
+        #expect(stack.surface.mtkView.isPaused)
+
+        renderer.ownVisibilityByID["emitter"] = true
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.frameDemand.contains(.particles))
+        #expect(stack.surface.mtkView.isPaused == false)
+    }
+
+    @Test("A fail-closed SceneScript latch drops script frame demand")
+    func failClosedScriptsDoNotDemandFrames() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+        let key = WPEEffectConstantScriptKey(passID: "solid", uniform: "g_Alpha")
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: "export function update(value) { return value + 0.1; }",
+            seed: SIMD3<Double>(1, 0, 0),
+            valueShape: .scalar,
+            canvasSize: SIMD2<Double>(64, 64),
+            batchDispatcher: renderer.sceneScriptBatchDispatcher
+        )
+        defer { _ = instance.destroy() }
+        renderer.effectConstantScriptInstances[key] = instance
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.frameDemand.contains(.scripts))
+
+        renderer.sceneScriptLoadState.begin(generation: renderer.loadGeneration)
+            .failClosed(.executionTimedOut(operation: .tick))
+        renderer.synchronizeFrameDemand()
+        #expect(!renderer.frameDemand.contains(.scripts))
+        #expect(stack.surface.mtkView.isPaused)
+        renderer.effectConstantScriptInstances.removeAll()
+    }
+
+    @Test("A shader that reads g_Time animates even outside effects/ and workshop/")
+    func timeReadingShaderAnimatesRegardlessOfPath() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        defer { stack.renderer.cleanup() }
+        try await stack.load()
+        let pipeline = try #require(stack.renderer.renderPipeline)
+        let layer = try #require(pipeline.layers.first)
+        let original = try #require(layer.passes.first)
+        let shaderPath = original.pass.shader.lowercased()
+        #expect(!shaderPath.contains("effects/") && !shaderPath.contains("workshop/"))
+        let flagShader = WPEShaderProgram(
+            name: "flag",
+            vertexSource: "uniform float g_Time;\nvoid main() { v_NormalCoord.x -= g_Time * g_WaveSpeed; }",
+            fragmentSource: "void main() {}",
+            isBuiltin: false
+        )
+        let animatedPass = WPEPreparedRenderPass(
+            pass: original.pass, shader: flagShader,
+            textureBindings: original.textureBindings, comboValues: original.comboValues,
+            uniformValues: original.uniformValues
+        )
+        let animated = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(
+            graphLayer: layer.graphLayer, passes: [animatedPass]
+        )])
+        #expect(WPEMetalSceneRenderer.pipelineHasAnimatedPasses(animated))
+        #expect(!WPEMetalSceneRenderer.pipelineHasAnimatedPasses(pipeline))
+    }
+
+    @Test("Click capture without any pointer consumer leaves a static scene paused")
+    func clickCaptureWithoutPointerConsumerDoesNotDemandFrames() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+
+        renderer.setClickCaptureEnabled(true)
+        #expect(!renderer.frameDemand.contains(.pointer))
+        #expect(renderer.frameDemand.isEmpty)
+        #expect(stack.surface.mtkView.isPaused)
+    }
+
     @Test("The runtime-activity mirror publishes idle for a static scene and flips with demand")
     func runtimeActivityMirrorFollowsDemand() async throws {
         let fixture = try FrameDemandFixture.make()
@@ -386,6 +510,7 @@ struct WPEFrameDemandTests {
         let afterLoad = published.withLock { $0.last }
         #expect(afterLoad == WPESceneRuntimeActivity(producesFrames: false, audible: false))
 
+        renderer.particleSystems = try [Self.finishedParticleSystem()]
         renderer.setClickCaptureEnabled(true)
         let afterCapture = published.withLock { $0.last }
         #expect(afterCapture == WPESceneRuntimeActivity(producesFrames: true, audible: false))

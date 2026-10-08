@@ -440,7 +440,7 @@ extension WPEMetalSceneRenderer {
         let mediaTextureSlots = WPEMediaTextureDemand.byPassID(in: pipeline)
         let mediaStore = mediaTextureSlots.isEmpty ? nil
             : WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
-        let surfaceControl = surfaceControl
+        let displayActor = displayActor
         #if DEBUG
         let mediaSnapshot = oracleMediaSnapshot
         #endif
@@ -474,7 +474,7 @@ extension WPEMetalSceneRenderer {
                 }
                 if let mediaStore {
                     let candidate = WPEMediaTextureSubscription(store: mediaStore, source: source)
-                    candidate.onTextureChange = { [surfaceControl] in surfaceControl.setNeedsRedraw() }
+                    candidate.onTextureChange = { [weak displayActor] in Task { await displayActor?.forceContentRerender() } }
                     candidate.start()
                     subscription = candidate
                 }

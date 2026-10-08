@@ -101,6 +101,8 @@ extension WPEMetalSceneRenderer {
         }
         guard await staticTextureReloadTaskOwner.canPublish(ticket),
               !Task.isCancelled, loadGeneration == generation else { return }
+        // A static scene would otherwise re-present its cached frame, which still samples the placeholder.
+        pendingForcedRerender = true
         surfaceControl.setNeedsRedraw()
     }
 

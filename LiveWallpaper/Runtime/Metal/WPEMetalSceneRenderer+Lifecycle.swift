@@ -253,61 +253,56 @@ extension WPEMetalSceneRenderer {
             return false
         }
 
-        if !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
-            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
-            || !particleAlphaScriptInstances.isEmpty
-            || hasTransformScriptInstances {
-            let changed = Self.bridgeUserProperties(
-                patch.newValues.filter { patch.changedKeys.contains($0.key) }
-            )
-            if !changed.isEmpty {
-                for (objectID, instance) in layerScriptInstances {
-                    if let output = applyScriptUserProperties(
-                        instance,
-                        changed,
-                        runtimeSeconds: lastRuntimeUniforms?.time
-                    ) {
-                        applyLayerScriptOutput(output, ownObjectID: objectID)
-                    }
+        let changed = Self.bridgeUserProperties(
+            patch.newValues.filter { patch.changedKeys.contains($0.key) }
+        )
+        if !changed.isEmpty {
+            for (objectID, instance) in layerScriptInstances {
+                if let output = applyScriptUserProperties(
+                    instance,
+                    changed,
+                    runtimeSeconds: lastRuntimeUniforms?.time
+                ) {
+                    applyLayerScriptOutput(output, ownObjectID: objectID)
                 }
-                for (objectID, instance) in layerAlphaScriptInstances {
-                    if let output = applyScriptUserProperties(
-                        instance,
-                        changed,
-                        runtimeSeconds: lastRuntimeUniforms?.time
-                    ) {
-                        applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
-                    }
-                }
-                for (objectID, instance) in particleAlphaScriptInstances {
-                    if let output = applyScriptUserProperties(
-                        instance,
-                        changed,
-                        runtimeSeconds: lastRuntimeUniforms?.time
-                    ) {
-                        applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
-                    }
-                }
-                for (objectID, instance) in textVisibleScriptInstances {
-                    if let output = applyScriptUserProperties(
-                        instance,
-                        changed,
-                        runtimeSeconds: lastRuntimeUniforms?.time
-                    ) {
-                        applyTextScriptOutput(output, ownObjectID: objectID)
-                    }
-                }
-                for (objectID, instance) in textAlphaScriptInstances {
-                    if let output = applyScriptUserProperties(
-                        instance,
-                        changed,
-                        runtimeSeconds: lastRuntimeUniforms?.time
-                    ) {
-                        applyTextAlphaScriptOutput(output, ownObjectID: objectID)
-                    }
-                }
-                dispatchTransformScriptUserProperties(changed)
             }
+            for (objectID, instance) in layerAlphaScriptInstances {
+                if let output = applyScriptUserProperties(
+                    instance,
+                    changed,
+                    runtimeSeconds: lastRuntimeUniforms?.time
+                ) {
+                    applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in particleAlphaScriptInstances {
+                if let output = applyScriptUserProperties(
+                    instance,
+                    changed,
+                    runtimeSeconds: lastRuntimeUniforms?.time
+                ) {
+                    applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textVisibleScriptInstances {
+                if let output = applyScriptUserProperties(
+                    instance,
+                    changed,
+                    runtimeSeconds: lastRuntimeUniforms?.time
+                ) {
+                    applyTextScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textAlphaScriptInstances {
+                if let output = applyScriptUserProperties(
+                    instance,
+                    changed,
+                    runtimeSeconds: lastRuntimeUniforms?.time
+                ) {
+                    applyTextAlphaScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            dispatchTransformScriptUserProperties(changed)
         }
 
         if scriptFailureBeforePatch == nil {
@@ -631,10 +626,13 @@ extension WPEMetalSceneRenderer {
         if !dynamicTextureSources.isEmpty {
             demand.insert(.dynamicTextures)
         }
-        if particleSystems.contains(where: { !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer }) {
+        if particleSystems.contains(where: {
+            !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer && particleSystemVisible($0)
+        }) {
             demand.insert(.particles)
         }
-        if !dynamicOriginScriptInstances.isEmpty
+        // A fail-closed latch is permanent and blocks every tick, so these instances can no longer change the frame.
+        if sceneScriptLoadState.currentFailureReason == nil, !dynamicOriginScriptInstances.isEmpty
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
@@ -669,8 +667,8 @@ extension WPEMetalSceneRenderer {
             && settings.enabled
             && settings.amount != 0
             && settings.mouseInfluence != 0)
-            || lastPushedClickCaptureEnabled
-            ?? mailbox.read().clickCaptureEnabled
+            || ((lastPushedClickCaptureEnabled ?? mailbox.read().clickCaptureEnabled)
+                && scenePointerConsumersPossible)
     }
 
     /// Conservative: shaders, scripts, and particle attractors can consume the pointer even when `tracksPointer` is false — only a provably pointer-free scene gates monitors off.
@@ -720,7 +718,10 @@ extension WPEMetalSceneRenderer {
             return layer.passes.contains { prepared in
                 if prepared.hasAnimatedUniformValues { return true }
                 let shader = prepared.pass.shader.lowercased()
-                return shader.contains("effects/") || shader.contains("workshop/")
+                if shader.contains("effects/") || shader.contains("workshop/") { return true }
+                guard let program = prepared.shader else { return false }
+                return [program.vertexSource, program.fragmentSource]
+                    .contains { $0.lowercased().contains("g_time") }
             }
         }
     }

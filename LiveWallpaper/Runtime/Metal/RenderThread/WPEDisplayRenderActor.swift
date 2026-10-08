@@ -205,6 +205,13 @@ actor WPEDisplayRenderActor {
         )
     }
 
+    /// A static scene re-presents its cached frame on a plain redraw; changed texture content needs a fresh encode.
+    func forceContentRerender() {
+        guard let renderer else { return }
+        renderer.pendingForcedRerender = true
+        renderer.surfaceControl.setNeedsRedraw()
+    }
+
     func renderDisplayLinkFrame(at timestamp: Double) {
         guard !linkPaused,
               frameCadence.shouldRender(at: timestamp, framesPerSecond: linkPreferredFPS) else { return }
@@ -346,8 +353,6 @@ actor WPEDisplayRenderActor {
             return
         } catch {
             Logger.warning("Scene \(renderer.descriptor.workshopID) [OnDemandVideo] rebuild failed for \(key): \(error)", category: .wpeRender)
-            // A silent failure here would leave the loop paused forever (released on-demand videos carry no frame demand); kick one frame so reconcileVideoResidency runs again.
-            renderer.surfaceControl.setNeedsRedraw()
             return
         }
         guard renderer.loadGeneration == generation,

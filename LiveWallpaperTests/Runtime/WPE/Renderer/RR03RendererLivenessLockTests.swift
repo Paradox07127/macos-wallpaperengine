@@ -136,6 +136,7 @@ struct RR03RendererLivenessLockTests {
         try await stack.load()
         #expect(stack.surface.mtkView.isPaused)
 
+        renderer.particleSystems = try [WPEFrameDemandTests.finishedParticleSystem()]
         renderer.setClickCaptureEnabled(true)
         #expect(renderer.needsContinuousFrames)
         #expect(stack.surface.mtkView.isPaused == false)
@@ -145,6 +146,34 @@ struct RR03RendererLivenessLockTests {
         #expect(renderer.needsContinuousFrames == false)
         #expect(stack.surface.mtkView.isPaused)
         #expect(stack.surface.mtkView.enableSetNeedsDisplay)
+    }
+
+    @Test("A live property patch reaches a scene whose only script is a text-content script")
+    func propertyPatchReachesTextContentScript() async throws {
+        let script = """
+        'use strict';
+        export function update(value) { return value; }
+        export function applyUserProperties(properties) {
+            if (properties.show !== undefined) shared.seenShow = properties.show;
+        }
+        """
+        let fixture = try RR03LivenessFixture.make(propertyControlled: true, textScript: script)
+        defer { fixture.cleanup() }
+        let stack = try Self.makeRenderer(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+
+        try await stack.load()
+        #expect(!renderer.textScriptInstances.isEmpty)
+        #expect(renderer.layerScriptInstances.isEmpty && !renderer.hasTransformScriptInstances)
+        let patch = WPEScenePropertyPatch(
+            bindingsByProperty: renderer.scenePropertyBindings,
+            oldValues: ["show": .bool(true)],
+            newValues: ["show": .bool(false)]
+        )
+
+        #expect(renderer.applyScenePropertyPatch(patch))
+        #expect(renderer.sharedScriptValueForTesting("seenShow") as? Bool == false)
     }
 
     private static func makeRenderer(_ fixture: RR03LivenessFixture) throws -> RR03RendererStack {
@@ -201,7 +230,8 @@ private struct RR03LivenessFixture {
 
     static func make(
         propertyControlled: Bool,
-        propertyScript: String? = nil
+        propertyScript: String? = nil,
+        textScript: String? = nil
     ) throws -> Self {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rr03-liveness-\(UUID().uuidString)", isDirectory: true)
@@ -211,18 +241,30 @@ private struct RR03LivenessFixture {
             controlledVisibility["script"] = propertyScript
         }
         let visible: Any = propertyControlled ? controlledVisibility : true
+        var objects: [[String: Any]] = [[
+            "id": "solid",
+            "name": "Solid",
+            "type": "image",
+            "image": "models/util/solidlayer.json",
+            "color": "1 0 0",
+            "alpha": 1,
+            "visible": visible,
+        ]]
+        if let textScript {
+            objects.append([
+                "id": "label",
+                "name": "Label",
+                "type": "text",
+                "font": "systemfont_arial",
+                "visible": true,
+                "origin": "32 32 0",
+                "text": ["value": "A", "script": textScript],
+            ])
+        }
         let scene = try JSONSerialization.data(withJSONObject: [
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 64, "auto": true]],
-            "objects": [[
-                "id": "solid",
-                "name": "Solid",
-                "type": "image",
-                "image": "models/util/solidlayer.json",
-                "color": "1 0 0",
-                "alpha": 1,
-                "visible": visible,
-            ]],
+            "objects": objects,
         ], options: [.sortedKeys])
         try scene.write(to: root.appendingPathComponent("scene.json"))
         let project = try JSONSerialization.data(withJSONObject: [
