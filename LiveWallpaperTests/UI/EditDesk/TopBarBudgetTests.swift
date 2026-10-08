@@ -277,4 +277,20 @@ struct TopBarBudgetTests {
         let bare = TopBarBudget.layout(windowWidth: windowWidth, pillWidth: pillWidth, capsuleWidth: 0, statusWidth: status)
         #expect(bare.clusterX == windowWidth - DesignTokens.Spacing.lg - (guide + gap + status))
     }
+
+    /// The Workshop page puts Downloads and the Steam menu in the cluster instead of a status capsule.
+    @Test("A page's own trailing controls are counted in the cluster")
+    func pageControlsAreCounted() {
+        let windowWidth: CGFloat = 1280, pillWidth: CGFloat = 300, capsuleWidth: CGFloat = 100
+        let gap = DesignTokens.EditDesk.Spacing.s12
+        let guide = DesignTokens.iconButtonDiameter(.large)
+        let room = windowWidth / 2 - pillWidth / 2 - DesignTokens.Spacing.lg - DesignTokens.EditDesk.Spacing.s12
+        let controls = room - capsuleWidth - guide - 2 * gap + 20
+        let crowded = TopBarBudget.layout(
+            windowWidth: windowWidth, pillWidth: pillWidth, capsuleWidth: capsuleWidth, statusWidth: 0,
+            pageControlsWidth: controls
+        )
+        #expect(!crowded.showsCapsule, "the controls overlap the pill while the capsule stays")
+        #expect(crowded.clusterX == windowWidth - DesignTokens.Spacing.lg - (guide + gap + controls))
+    }
 }

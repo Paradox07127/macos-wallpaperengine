@@ -41,26 +41,27 @@ enum TopBarBudget {
     /// drop it, and a measured width would then read 0 and hand it straight back.
     static func layout(
         windowWidth: CGFloat, pillWidth: CGFloat,
-        capsuleWidth: CGFloat, statusWidth: CGFloat
+        capsuleWidth: CGFloat, statusWidth: CGFloat, pageControlsWidth: CGFloat = 0
     ) -> Layout {
         let room = windowWidth / 2 - pillWidth / 2 - gutter - navigationGap
         // pillWidth 0 is the bar's first, unmeasured frame: room there is a guess the next frame can take back.
         let capsule: CGFloat? = capsuleWidth > 0 && pillWidth > 0 ? capsuleWidth : nil
         let status: CGFloat? = statusWidth > 0 ? statusWidth : nil
+        let controls: CGFloat? = pageControlsWidth > 0 ? pageControlsWidth : nil
         // The page guide button is drawn on every page, so it is always in the cluster.
         let guide = DesignTokens.iconButtonDiameter(.large)
-        var width = clusterWidth([capsule, guide, status])
+        var width = clusterWidth([capsule, guide, controls, status])
         var showsCapsule = capsule != nil
         // The capsule opens the welcome tour, which is also available from Settings › About,
         // so it goes whole rather than push the permanent nav pill off centre.
         if width > room, showsCapsule {
-            width = clusterWidth([guide, status])
+            width = clusterWidth([guide, controls, status])
             showsCapsule = false
         }
         return Layout(
             clusterX: windowWidth - gutter - width,
             showsCapsule: showsCapsule,
-            maximumStatusWidth: max(0, room - guide - gap),
+            maximumStatusWidth: max(0, room - clusterWidth([guide, controls]) - gap),
             overflow: max(0, width - room)
         )
     }
