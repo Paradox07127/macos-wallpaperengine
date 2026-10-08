@@ -876,6 +876,51 @@ struct WallpaperEngineImportServiceTests {
         #expect(packageEntryName == nil)
     }
 
+    @Test("Source-folder content makes one bookmark per source folder, entry file and kind")
+    func sourceFolderContentReusesCreatedBookmarks() throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: rootURL) }
+        func videoOrigin(folder name: String, entryFiles: [String]) throws -> WPEOrigin {
+            let folder = rootURL.appendingPathComponent(name, isDirectory: true)
+            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+            for entryFile in entryFiles {
+                try Data([0x00]).write(to: folder.appendingPathComponent(entryFile))
+            }
+            return try WPEOrigin(
+                workshopID: name, title: name, originalType: .video,
+                sourceFolderBookmark: folder.bookmarkData(),
+                cacheRelativePath: nil, previewFileName: nil, entryFile: entryFiles[0], resourceLocation: .sourceFolder
+            )
+        }
+        let first = try videoOrigin(folder: "first", entryFiles: ["video.mp4", "other.mp4"])
+        let second = try videoOrigin(folder: "second", entryFiles: ["video.mp4"])
+        let otherEntry = WPEOrigin(
+            workshopID: "first", title: "first", originalType: .video,
+            sourceFolderBookmark: first.sourceFolderBookmark,
+            cacheRelativePath: nil, previewFileName: nil, entryFile: "other.mp4", resourceLocation: .sourceFolder
+        )
+        let made = MadeBookmarks()
+        let resolver = WPECachedContentResolver(makeBookmark: { url in
+            made.urls.append(url)
+            return Data(url.path.utf8)
+        })
+
+        for _ in 0 ..< 3 {
+            guard case let .video(bookmarkData, packageEntryName) = resolver.content(for: first) else {
+                Issue.record("Expected source-folder video content")
+                return
+            }
+            #expect(bookmarkData == made.urls.first.map { Data($0.path.utf8) })
+            #expect(packageEntryName == nil)
+        }
+        #expect(made.urls.count == 1, "each resolve of one origin made a new bookmark")
+        _ = resolver.content(for: second)
+        #expect(made.urls.count == 2, "a second source folder reused the first one's bookmark")
+        _ = resolver.content(for: otherEntry)
+        #expect(made.urls.count == 3, "another entry file in the same folder reused the first entry's bookmark")
+    }
+
     @Test("Non-image producers import in place while light-only and empty inputs stay unsupported", arguments: ["text", "particle", "light", "empty"], [false, true])
     func nonImageSceneImport(kind: String, packaged: Bool) async throws {
         let object: [[String: Any]] = switch kind {
@@ -1051,4 +1096,9 @@ private struct PackageEntrySpec: Sendable {
         self.name = name
         self.bytes = bytes
     }
+}
+
+@MainActor
+private final class MadeBookmarks {
+    var urls: [URL] = []
 }

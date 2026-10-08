@@ -56,6 +56,19 @@ struct WPECachedContentResolver {
         return WallpaperEngineImportService.originKind(forSourceFolder: sourceFolder)
     }
 
+    /// Every bookmark creation is a ScopedBookmarkAgent request; only the created Data is kept, never a resolved URL.
+    private static var createdBookmarks = CreatedBookmarkCache()
+
+    private func createdBookmark(_ kind: CreatedBookmarkKind, of url: URL, origin: WPEOrigin, entryFile: String) -> Data? {
+        let key = CreatedBookmarkKey(sourceFolderBookmark: origin.sourceFolderBookmark, entryFile: entryFile, kind: kind)
+        if let cached = Self.createdBookmarks[key] {
+            return cached
+        }
+        guard let created = makeBookmark(url) else { return nil }
+        Self.createdBookmarks.insert(created, for: key)
+        return created
+    }
+
     private func sourceFolderContent(for origin: WPEOrigin) -> WallpaperContent? {
         guard origin.originalType == .video || origin.originalType == .web,
               let entryFile = origin.entryFile, !entryFile.isEmpty else { return nil }
@@ -71,19 +84,20 @@ struct WPECachedContentResolver {
 
         switch origin.originalType {
         case .video:
-            if looseEntryExists, let entryURL = looseEntryURL, let bookmark = makeBookmark(entryURL) {
+            if looseEntryExists, let entryURL = looseEntryURL,
+               let bookmark = createdBookmark(.videoEntry, of: entryURL, origin: origin, entryFile: entryFile) {
                 return .video(bookmarkData: bookmark)
             }
             if fileManager.fileExists(atPath: pkgURL.path),
                Self.packageContainsEntry(pkgURL, relativePath: entryFile),
-               let bookmark = makeBookmark(pkgURL) {
+               let bookmark = createdBookmark(.packageEntry, of: pkgURL, origin: origin, entryFile: entryFile) {
                 return .video(bookmarkData: bookmark, packageEntryName: entryFile)
             }
             return nil
         case .web:
             guard looseEntryExists || (fileManager.fileExists(atPath: pkgURL.path)
                 && Self.packageContainsEntry(pkgURL, relativePath: entryFile)),
-                  let bookmark = makeBookmark(folderURL) else { return nil }
+                let bookmark = createdBookmark(.webFolder, of: folderURL, origin: origin, entryFile: entryFile) else { return nil }
             return .html(
                 source: .folder(bookmarkData: bookmark, indexFileName: entryFile),
                 config: HTMLConfig(
@@ -284,6 +298,37 @@ struct WPECachedContentResolver {
         ))
     }
 
+}
+
+private enum CreatedBookmarkKind: Hashable {
+    case videoEntry, packageEntry, webFolder
+}
+
+private struct CreatedBookmarkKey: Hashable {
+    let sourceFolderBookmark: Data
+    let entryFile: String
+    let kind: CreatedBookmarkKind
+}
+
+/// Insertion-ordered; the oldest entry goes first once full.
+private struct CreatedBookmarkCache {
+    /// A shuffle pass makes one bookmark per video or web entry: 512 covers a large library at a few KB of Data per slot.
+    static let capacity = 512
+
+    private var bookmarks: [CreatedBookmarkKey: Data] = [:]
+    private var insertionOrder: [CreatedBookmarkKey] = []
+
+    subscript(key: CreatedBookmarkKey) -> Data? {
+        bookmarks[key]
+    }
+
+    mutating func insert(_ bookmark: Data, for key: CreatedBookmarkKey) {
+        guard bookmarks.updateValue(bookmark, forKey: key) == nil else { return }
+        insertionOrder.append(key)
+        if insertionOrder.count > Self.capacity {
+            bookmarks[insertionOrder.removeFirst()] = nil
+        }
+    }
 }
 
 private func scenePackageEntryNames(
