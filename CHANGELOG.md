@@ -13,6 +13,54 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.5] — 2026-10-08
+
+### Added
+
+- Pro: a Downloads sheet tracks Workshop downloads with progress, speed and
+  stalls. Downloads can be cancelled, and failed downloads stay listed after a
+  restart so they can be retried
+  ([#145](https://github.com/Paradox07127/macos-wallpaperengine/pull/145), thanks @Aleem2Z).
+- The weather layer works on a display without a wallpaper and stays when the
+  wallpaper is cleared. Weather settings now live with the display's overlays,
+  so schemes no longer change them; older settings and backups move over once.
+- Lite: importing a Pro backup keeps its scene displays, and the summary counts
+  the displays Lite cannot run.
+- The System Wallpaper panel flags an extension copy that is out of date, and
+  bug reports list the extension processes.
+
+### Changed
+
+- Playback actions use one set of short names (Pause, Play, Previous, Next) in
+  the menu bar, the display page and VoiceOver.
+- The display inspector gets narrower in narrow windows.
+- Pro: Workshop tags and resolution labels use Wallpaper Engine's Chinese
+  wording, and multi-display and portrait resolution tags are translated.
+- Pro: Download and apply shows one notice instead of two.
+- Pro: the Workshop page rescans downloads less often and reuses bookmarks it
+  created, which puts less load on the macOS bookmark service.
+- Automation queue rows use friendly titles, show the folder of local videos,
+  and keep the previewed row selected.
+
+### Fixed
+
+- Pro: perspective and X/Y-tilted composition layers render in place instead of
+  covering the screen.
+- Pro: shader inputs, cursor ripples, flipped layers and text, and puppet layers
+  render correctly
+  ([#146](https://github.com/Paradox07127/macos-wallpaperengine/pull/146), thanks @Aleem2Z).
+- Pro: scene scripts get `canvasSize` as a vector, get copies from transform
+  getters, and handle missing layers in `createLayer` and `getLayer`.
+- Pro: applying an installed Workshop item straight to a display cancels the
+  apply that its update download queued for another display.
+- Pro: a waiting apply keeps its status, refreshed approvals retry, and
+  download failure reasons are translated.
+- Transitions across several displays use the displays' current positions.
+- The Home page shows a display's cover while a transition runs.
+- The music visualizer stops capturing audio when Reduce Motion is on.
+- The CPU gauge legend fits its column in every language, and the ring height
+  follows the board's type scale.
+
 ## [0.8.4] — 2026-10-06
 
 ### Added
@@ -1218,3 +1266,5 @@ codebase, distributed via GitHub Releases.
 - `InfoPlist.xcstrings` no longer localizes `CFBundleDisplayName` /
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
+
+[0.8.5]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.4...loomscreen-v0.8.5
