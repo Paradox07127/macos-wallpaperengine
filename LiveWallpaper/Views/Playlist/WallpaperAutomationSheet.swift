@@ -212,6 +212,12 @@ struct WallpaperAutomationSheet: View {
         matchingItem(entry, in: library)?.title.translatedWallpaperName ?? entry.displayTitle
     }
 
+    /// A Workshop video's folder is its numeric ID, so only local videos name theirs.
+    static func rowSubtitle(_ metadata: RowMetadata, for entry: WallpaperQueueEntry) -> String {
+        guard entry.origin != nil else { return metadata.subtitle }
+        return RowMetadata(resolution: metadata.resolution, duration: metadata.duration, folder: nil).subtitle
+    }
+
     /// By the cursor, not by content: editing a playing scene's properties changes its content but not its row.
     static func nowPlayingEntryID(
         in configuration: ScreenConfiguration?, insertedCurrent: WallpaperQueueEntry.ID?, previewing: WallpaperQueueEntry.ID?
@@ -952,8 +958,7 @@ private struct QueueEntryLabel: View {
             .task(id: entry.id) {
                 guard case let .video(bookmarkData, .none) = entry.content else { return }
                 let metadata = await MetadataService.shared.metadata(for: bookmarkData)
-                // The folder of a Workshop video is its numeric ID, which belongs in the item's details.
-                subtitle = RowMetadata(resolution: metadata.resolution, duration: metadata.duration, folder: nil).subtitle
+                subtitle = WallpaperAutomationSheet.rowSubtitle(metadata, for: entry)
             }
         }
     }
