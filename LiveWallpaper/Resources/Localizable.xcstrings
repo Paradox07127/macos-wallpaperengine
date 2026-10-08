@@ -8318,13 +8318,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已审核"
+            "value" : "广受好评"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已審核"
+            "value" : "已核准"
           }
         }
       }
@@ -8610,7 +8610,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "素材包"
+            "value" : "資源包"
           }
         }
       }
@@ -9006,7 +9006,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "音訊回應"
+            "value" : "音訊回應式"
           }
         }
       }
@@ -11301,7 +11301,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CGI"
+            "value" : "電腦成像"
           }
         }
       }
@@ -19805,7 +19805,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可自定义"
+            "value" : "可自定义的"
           }
         },
         "zh-Hant" : {
@@ -19840,7 +19840,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "赛博朋克"
+            "value" : "网络朋克"
           }
         },
         "zh-Hant" : {
@@ -24007,6 +24007,150 @@
         }
       }
     },
+    "Dual" : {
+      "comment" : "Workshop card badge: the item is laid out for two displays.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doble"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デュアル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雙顯示器"
+          }
+        }
+      }
+    },
+    "Dual 3840 x 1080" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual 3840 x 1080"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doble monitor 3840 x 1080"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デュアルモニター 3840 x 1080"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3840 x 1080"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3840 x 1080"
+          }
+        }
+      }
+    },
+    "Dual 5120 x 1440" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual 5120 x 1440"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doble monitor 5120 x 1440"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デュアルモニター 5120 x 1440"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5120 x 1440"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5120 x 1440"
+          }
+        }
+      }
+    },
+    "Dual 7680 x 2160" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual 7680 x 2160"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doble monitor 7680 x 2160"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デュアルモニター 7680 x 2160"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7680 x 2160"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7680 x 2160"
+          }
+        }
+      }
+    },
     "Dual Monitor" : {
       "comment" : "Workshop resolution filter: two-display layouts.",
       "extractionState" : "manual",
@@ -24039,6 +24183,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雙顯示器"
+          }
+        }
+      }
+    },
+    "Dual Standard Definition" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual Standard Definition"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doble monitor (definición estándar)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デュアルモニター（スタンダード解像度）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双显示器（标准）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雙顯示器（標準）"
           }
         }
       }
@@ -26326,13 +26506,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "奇幻"
+            "value" : "幻想"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "奇幻"
+            "value" : "幻想"
           }
         }
       }
@@ -28330,13 +28510,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "女性角色"
+            "value" : "女性"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "女性角色"
+            "value" : "女生"
           }
         }
       }
@@ -28534,13 +28714,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "男性角色"
+            "value" : "男性"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "男性角色"
+            "value" : "男生"
           }
         }
       }
@@ -35084,7 +35264,7 @@
       }
     },
     "MMD" : {
-      "comment" : "Workshop genre tag: MikuMikuDance. Kept as the acronym in every language.",
+      "comment" : "Workshop genre tag: MikuMikuDance.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35107,13 +35287,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MMD"
+            "value" : "MMD（Miku-Miku Dance）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MMD"
+            "value" : "MMD（Miku-Miku Dance）"
           }
         }
       }
@@ -36109,7 +36289,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "迷因"
+            "value" : "网红事物"
           }
         },
         "zh-Hant" : {
@@ -44947,7 +45127,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "像素藝術"
+            "value" : "像素圖樣"
           }
         }
       }
@@ -45595,13 +45775,193 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "竖向"
+            "value" : "纵向"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "直向"
+          }
+        }
+      }
+    },
+    "Portrait 1080 x 1920" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait 1080 x 1920"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical 1080 x 1920"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦向き 1080 x 1920"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1080 x 1920"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1080 x 1920"
+          }
+        }
+      }
+    },
+    "Portrait 1440 x 2560" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait 1440 x 2560"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical 1440 x 2560"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦向き 1440 x 2560"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1440 x 2560"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1440 x 2560"
+          }
+        }
+      }
+    },
+    "Portrait 2160 x 3840" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait 2160 x 3840"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical 2160 x 3840"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦向き 2160 x 3840"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2160 x 3840"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2160 x 3840"
+          }
+        }
+      }
+    },
+    "Portrait 720 x 1280" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait 720 x 1280"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical 720 x 1280"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦向き 720 x 1280"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "720 x 1280"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "720 x 1280"
+          }
+        }
+      }
+    },
+    "Portrait Standard Definition" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait Standard Definition"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical (definición estándar)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦向き（スタンダード解像度）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "纵向（标准）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直向標準"
           }
         }
       }
@@ -59967,13 +60327,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "标准清晰度"
+            "value" : "标清"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "標準畫質"
+            "value" : "標準解析度"
           }
         }
       }
@@ -64725,13 +65085,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "影视"
+            "value" : "电视节目"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "影視"
+            "value" : "電視節目"
           }
         }
       }
@@ -71004,6 +71364,186 @@
         }
       }
     },
+    "Triple" : {
+      "comment" : "Workshop card badge: the item is laid out for three displays.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三顯示器"
+          }
+        }
+      }
+    },
+    "Triple 11520 x 2160" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple 11520 x 2160"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor 11520 x 2160"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター 11520 x 2160"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "11520 x 2160"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "11520 x 2160"
+          }
+        }
+      }
+    },
+    "Triple 4096 x 768" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple 4096 x 768"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor 4096 x 768"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター 4096 x 768"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4096 x 768"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4096 x 768"
+          }
+        }
+      }
+    },
+    "Triple 5760 x 1080" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple 5760 x 1080"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor 5760 x 1080"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター 5760 x 1080"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5760 x 1080"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5760 x 1080"
+          }
+        }
+      }
+    },
+    "Triple 7680 x 1440" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple 7680 x 1440"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor 7680 x 1440"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター 7680 x 1440"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7680 x 1440"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7680 x 1440"
+          }
+        }
+      }
+    },
     "Triple Monitor" : {
       "comment" : "Workshop resolution filter: three-display layouts.",
       "extractionState" : "manual",
@@ -71036,6 +71576,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "三顯示器"
+          }
+        }
+      }
+    },
+    "Triple Standard Definition" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple Standard Definition"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor (definición estándar)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター（スタンダード解像度）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三显示器（标准）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三顯示器（標準）"
           }
         }
       }
@@ -71500,6 +72076,114 @@
         }
       }
     },
+    "Ultrawide 2560 x 1080" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrawide 2560 x 1080"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrapanorámica 2560 x 1080"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウルトラワイド 2560 x 1080"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2560 x 1080"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2560 x 1080"
+          }
+        }
+      }
+    },
+    "Ultrawide 3440 x 1440" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrawide 3440 x 1440"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrapanorámica 3440 x 1440"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウルトラワイド 3440 x 1440"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3440 x 1440"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3440 x 1440"
+          }
+        }
+      }
+    },
+    "Ultrawide Standard Definition" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrawide Standard Definition"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrapanorámica (definición estándar)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウルトラワイド（スタンダード解像度）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超宽（标准）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超寬（標準）"
+          }
+        }
+      }
+    },
     "Unable to Read Settings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -71928,13 +72612,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未指定"
+            "value" : "未指定样式"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未指定"
+            "value" : "未分類"
           }
         }
       }
@@ -73308,13 +73992,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "载具"
+            "value" : "汽车"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "載具"
+            "value" : "車輛"
           }
         }
       }

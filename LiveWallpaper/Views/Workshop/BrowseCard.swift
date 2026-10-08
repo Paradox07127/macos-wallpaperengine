@@ -303,7 +303,9 @@ struct BrowseCard: View, Equatable {
 
     static func resolutionShortLabel(for tags: [String]) -> String? {
         for tag in tags {
-            if let mapped = knownResolutionLabels[tag] { return mapped }
+            if let filter = knownResolutionBuckets[tag] {
+                return shortLabel(for: filter, tag: tag)
+            }
         }
         for tag in tags {
             if let derived = deriveResolutionLabel(from: tag) { return derived }
@@ -311,25 +313,30 @@ struct BrowseCard: View, Equatable {
         return nil
     }
 
-    /// Keyed by Steam's real Resolution tags. Layout buckets name their badge;
-    /// single-screen buckets derive it from the numbers; Other/Dynamic has none.
-    static let knownResolutionLabels: [String: String] = {
-        var labels: [String: String] = [:]
-        for filter in WorkshopResolutionFilter.allCases {
+    /// Keyed by Steam's real Resolution tags; Other/Dynamic has no badge.
+    static let knownResolutionBuckets: [String: WorkshopResolutionFilter] = {
+        var buckets: [String: WorkshopResolutionFilter] = [:]
+        for filter in WorkshopResolutionFilter.allCases where filter != .any && filter != .other {
             for tag in filter.tags {
-                switch filter {
-                case .any, .other: break
-                case .standardDefinition: labels[tag] = "SD"
-                case .ultrawide: labels[tag] = "UW"
-                case .dual: labels[tag] = "Dual"
-                case .triple: labels[tag] = "Triple"
-                case .portrait: labels[tag] = "Portrait"
-                case .hd, .quadHD1440, .ultraHD4K: labels[tag] = deriveResolutionLabel(from: tag)
-                }
+                buckets[tag] = filter
             }
         }
-        return labels
+        return buckets
     }()
+
+    /// Layout buckets name their badge, resolved per call so it follows the app language;
+    /// single-screen buckets derive it from the numbers.
+    private static func shortLabel(for filter: WorkshopResolutionFilter, tag: String) -> String? {
+        switch filter {
+        case .any, .other: nil
+        case .standardDefinition: "SD"
+        case .ultrawide: "UW"
+        case .dual: String(localized: "Dual", bundle: .appLanguage, comment: "Workshop card badge: the item is laid out for two displays.")
+        case .triple: String(localized: "Triple", bundle: .appLanguage, comment: "Workshop card badge: the item is laid out for three displays.")
+        case .portrait: filter.displayName
+        case .hd, .quadHD1440, .ultraHD4K: deriveResolutionLabel(from: tag)
+        }
+    }
 
     /// Covers prefixes like "Dual 3840 x 1080".
     private static func deriveResolutionLabel(from tag: String) -> String? {
