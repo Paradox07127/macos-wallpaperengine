@@ -750,6 +750,44 @@ struct WPEMetalSceneRendererTests {
         #expect(renderer.failedPresentGeneration == nil)
     }
 
+    @Test("A finished static texture reload re-encodes a static scene", .timeLimit(.minutes(1)))
+    func staticTextureReloadReencodesStaticScene() async throws {
+        let scene = try MetalSceneFixture.materialTextureScene(color: CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        let stack = try await StaticPresentRetryFixture.make(scene)
+        defer { stack.cleanup() }
+        let renderer = stack.renderer
+        let actor = try #require(renderer.displayActor)
+        let path = try #require(renderer.staticTextureCacheRecords.keys.first)
+        let record = try #require(renderer.staticTextureCacheRecords[path])
+        #expect(!renderer.needsContinuousFrames)
+        let owner = renderer.staticTextureReloadTaskOwner
+        let resolver = renderer.resourceResolver
+        let loader = renderer.textureLoader
+        let generation = renderer.loadGeneration
+        let encodesBefore = renderer.frameEncodeCountForTesting
+
+        let submitted = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+            let ticket = owner.submit(path: path, generation: generation) { ticket in
+                await actor.performStaticReload(
+                    path: path,
+                    record: record,
+                    resolver: resolver,
+                    loader: loader,
+                    threshold: WPEMetalSceneRenderer.lazyAnimationRawByteThreshold,
+                    ticket: ticket
+                )
+                done.resume(returning: true)
+            }
+            if ticket == nil {
+                done.resume(returning: false)
+            }
+        }
+        #expect(submitted)
+        renderer.renderAndPresentFrame()
+
+        #expect(renderer.frameEncodeCountForTesting == encodesBefore + 1)
+    }
+
     @Test("Repeated static drawable misses fail the load generation without re-encoding")
     func staticDrawableMissExhaustionFailsGeneration() async throws {
         let stack = try await StaticPresentRetryFixture.make()
@@ -2373,9 +2411,9 @@ private struct StaticPresentRetryFixture {
     let renderer: WPEMetalSceneRenderer
     let window: NSWindow
 
-    static func make() async throws -> Self {
+    static func make(_ scene: MetalSceneFixture? = nil) async throws -> Self {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try MetalSceneFixture.solidColorScene()
+        let fixture = try scene ?? MetalSceneFixture.solidColorScene()
         do {
             let renderer = try WPEMetalSceneRenderer(
                 descriptor: fixture.descriptor,
