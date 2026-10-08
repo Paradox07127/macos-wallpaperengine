@@ -233,26 +233,30 @@ enum WPEMetalSceneCaptureUtilityModels {
     /// `.projected` = captured and drawn back through the layer's own perspective MVP (`WPEProjectedComposeQuad`).
     enum OutputGeometry { case fullscreen, subregion, projected }
 
-    /// Fullscreen/project always cover the frame. A composelayer stays fullscreen unless its authored footprint is a safe sub-rect.
+    /// Fullscreen/project always cover the frame. A composelayer stays fullscreen unless its authored footprint is a safe sub-rect or a sampled non-identity cover.
     static func outputGeometry(
         path: String,
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize,
-        composePerspective: Bool = false
+        composePerspective: Bool = false,
+        sampledByOtherLayers: Bool = false
     ) -> OutputGeometry {
         outputGeometry(
             kind: WPEUtilityModelKind.classify(path),
             geometry: geometry,
             sceneSize: sceneSize,
-            composePerspective: composePerspective
+            composePerspective: composePerspective,
+            sampledByOtherLayers: sampledByOtherLayers
         )
     }
 
+    /// `sampledByOtherLayers`: another layer reads this layer's `_rt_imageLayerComposite_<id>` RT.
     static func outputGeometry(
         kind: WPEUtilityModelKind?,
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize,
-        composePerspective: Bool = false
+        composePerspective: Bool = false,
+        sampledByOtherLayers: Bool = false
     ) -> OutputGeometry {
         guard kind == .composeLayer else { return .fullscreen }
         guard let size = geometry.size else { return .fullscreen }
@@ -272,8 +276,14 @@ enum WPEMetalSceneCaptureUtilityModels {
         let flipsY = foldedScaleY < 0
         if flipsX != flipsY && !isHalfTurn { return .fullscreen }
         let fullCoverage: Float = 0.95
-        if width >= sceneW * fullCoverage && height >= sceneH * fullCoverage { return .fullscreen }
-        return .subregion
+        guard width >= sceneW * fullCoverage && height >= sceneH * fullCoverage else { return .subregion }
+        // A reader samples the RT with its own uv, so a 1:1 capture would drop this layer's transform from the reader's view.
+        guard sampledByOtherLayers else { return .fullscreen }
+        let pixelTolerance: Float = 0.5
+        let coversSceneExactly = abs(width - sceneW) <= pixelTolerance && abs(height - sceneH) <= pixelTolerance
+            && abs(Float(geometry.origin.x) - sceneW / 2) <= pixelTolerance
+            && abs(Float(geometry.origin.y) - sceneH / 2) <= pixelTolerance
+        return coversSceneExactly ? .fullscreen : .subregion
     }
 
     private static func normalizedAbsoluteZTurn(_ radians: Float) -> Float {
@@ -287,10 +297,12 @@ final class WPESceneCaptureOutputGeometryMemo {
     private struct Entry {
         let path: String
         let size: CGSize?
+        let origin: SIMD3<Double>
         let scale: SIMD3<Double>
         let angles: SIMD3<Double>
         let sceneSize: CGSize
         let composePerspective: Bool
+        let sampledByOtherLayers: Bool
         let result: WPEMetalSceneCaptureUtilityModels.OutputGeometry
     }
 
@@ -300,14 +312,17 @@ final class WPESceneCaptureOutputGeometryMemo {
         layer: WPERenderLayer,
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize,
-        composePerspective: Bool = false
+        composePerspective: Bool = false,
+        sampledByOtherLayers: Bool = false
     ) -> WPEMetalSceneCaptureUtilityModels.OutputGeometry {
         let path = layer.imagePath
         let objectID = layer.objectID
         if let entry = entries[objectID],
            entry.sceneSize == sceneSize,
            entry.composePerspective == composePerspective,
+           entry.sampledByOtherLayers == sampledByOtherLayers,
            entry.size == geometry.size,
+           entry.origin == geometry.origin,
            entry.scale == geometry.scale,
            entry.angles == geometry.angles,
            entry.path == path {
@@ -317,7 +332,8 @@ final class WPESceneCaptureOutputGeometryMemo {
             kind: layer.utilityModelKind,
             geometry: geometry,
             sceneSize: sceneSize,
-            composePerspective: composePerspective
+            composePerspective: composePerspective,
+            sampledByOtherLayers: sampledByOtherLayers
         )
         if entries.count >= 512, entries[objectID] == nil {
             entries.removeAll(keepingCapacity: true)
@@ -325,10 +341,12 @@ final class WPESceneCaptureOutputGeometryMemo {
         entries[objectID] = Entry(
             path: path,
             size: geometry.size,
+            origin: geometry.origin,
             scale: geometry.scale,
             angles: geometry.angles,
             sceneSize: sceneSize,
             composePerspective: composePerspective,
+            sampledByOtherLayers: sampledByOtherLayers,
             result: result
         )
         return result

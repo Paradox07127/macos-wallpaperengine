@@ -98,17 +98,23 @@ final class WPEMetalRenderTargetPool {
         layer: WPERenderLayer,
         sceneSize: CGSize,
         memo: WPESceneCaptureOutputGeometryMemo? = nil,
-        composePerspective: Bool = false
+        composePerspective: Bool = false,
+        sampledByOtherLayers: Bool = false
     ) -> CGSize? {
         let localFBOName = WPERenderTargetNames.PuppetClip.baseName(of: fboName) ?? fboName
         guard !WPETextureReference.isSceneAliasName(fboName),
               layer.localFBOs.contains(where: { $0.name == localFBOName }) else { return nil }
-        return layerCompositeSize(for: layer, sceneSize: sceneSize, memo: memo, composePerspective: composePerspective)
+        return layerCompositeSize(
+            for: layer, sceneSize: sceneSize, memo: memo,
+            composePerspective: composePerspective, sampledByOtherLayers: sampledByOtherLayers
+        )
     }
 
     let sceneCaptureGeometryMemo = WPESceneCaptureOutputGeometryMemo()
     /// This frame's `.projected` composelayers. Set before the alias plan is built: it moves their target keys.
     var projectedComposeObjectIDs: Set<String> = []
+    /// Layers whose layer composite another layer reads. Set before the alias plan is built: it moves their target keys.
+    var sampledCompositeObjectIDs: Set<String> = []
 
     private let device: MTLDevice
     private let maximumTextureDimension2D: Int
@@ -392,7 +398,8 @@ final class WPEMetalRenderTargetPool {
                 for: layer,
                 sceneSize: sceneSize,
                 memo: sceneCaptureGeometryMemo,
-                composePerspective: projectedComposeObjectIDs.contains(layer.objectID)
+                composePerspective: projectedComposeObjectIDs.contains(layer.objectID),
+                sampledByOtherLayers: sampledCompositeObjectIDs.contains(layer.objectID)
             )
             // A resolved source extent is already in uploaded texels, not scene pixels.
             let localSize = layer.compositeSourceExtent == nil ? canvas(sourceSize) : sourceSize
@@ -410,7 +417,8 @@ final class WPEMetalRenderTargetPool {
                layer: layer,
                sceneSize: sceneSize,
                memo: sceneCaptureGeometryMemo,
-               composePerspective: projectedComposeObjectIDs.contains(layer.objectID)
+               composePerspective: projectedComposeObjectIDs.contains(layer.objectID),
+               sampledByOtherLayers: sampledCompositeObjectIDs.contains(layer.objectID)
            ) {
             let scaledLocal = canvas(localSize)
             if let fitted = wpeFitRenderTargetExtent(scaledLocal, fit: fit) {
@@ -554,7 +562,8 @@ final class WPEMetalRenderTargetPool {
         for layer: WPERenderLayer,
         sceneSize: CGSize,
         memo: WPESceneCaptureOutputGeometryMemo? = nil,
-        composePerspective: Bool = false
+        composePerspective: Bool = false,
+        sampledByOtherLayers: Bool = false
     ) -> CGSize {
         if let extent = layer.compositeSourceExtent {
             return extent.compositeSize
@@ -566,12 +575,14 @@ final class WPEMetalRenderTargetPool {
                layer: layer,
                geometry: layer.geometry,
                sceneSize: sceneSize,
-               composePerspective: composePerspective
+               composePerspective: composePerspective,
+               sampledByOtherLayers: sampledByOtherLayers
            ) ?? WPEMetalSceneCaptureUtilityModels.outputGeometry(
                kind: layer.utilityModelKind,
                geometry: layer.geometry,
                sceneSize: sceneSize,
-               composePerspective: composePerspective
+               composePerspective: composePerspective,
+               sampledByOtherLayers: sampledByOtherLayers
            )) == .fullscreen {
             return sceneSize
         }
