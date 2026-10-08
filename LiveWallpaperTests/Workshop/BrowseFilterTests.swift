@@ -349,13 +349,13 @@ struct BrowseFilterTests {
     @Test("The card badge keys on Steam's real resolution tags")
     @MainActor
     func resolutionBadgeKeysOnSteamTags() {
-        #expect(BrowseCard.resolutionShortLabel(for: ["Ultrawide 3440 x 1440"]) == "UW")
-        #expect(BrowseCard.resolutionShortLabel(for: ["Ultrawide Standard Definition"]) == "UW")
-        #expect(BrowseCard.resolutionShortLabel(for: ["Triple 5760 x 1080"]) == "Triple")
-        #expect(BrowseCard.resolutionShortLabel(for: ["Portrait 1080 x 1920"]) == "Portrait")
-        #expect(BrowseCard.resolutionShortLabel(for: ["1920 x 1080"]) == "1080p")
+        let badges = AppLanguageOverride.with(.english) {
+            ["Ultrawide 3440 x 1440", "Ultrawide Standard Definition", "Triple 5760 x 1080", "Portrait 1080 x 1920", "1920 x 1080"]
+                .map { BrowseCard.resolutionShortLabel(for: [$0]) }
+        }
+        #expect(badges == ["UW", "UW", "Triple", "Portrait", "1080p"])
 
-        let known = Set(BrowseCard.knownResolutionLabels.keys)
+        let known = Set(BrowseCard.knownResolutionBuckets.keys)
         #expect(known.isSubset(of: Set(Self.steamResolutionTags)))
         #expect(!known.contains("3440 x 1440"))
         #expect(!known.contains("5120 x 1440"))
@@ -376,6 +376,28 @@ struct BrowseFilterTests {
             WallpaperFacts.tagFacts(["Other resolution", "Dynamic resolution"]).first { $0.kind == .resolution }?.value
         }
         #expect(row == "其他分辨率 / 动态分辨率", "the detail modal's Resolution row reads \(row ?? "nothing")")
+    }
+
+    @Test("Layout resolution tags and card badges read as Wallpaper Engine's Chinese UI writes them")
+    @MainActor
+    func layoutResolutionTagsFollowWallpaperEngineWording() {
+        let shown = AppLanguageOverride.with(.simplifiedChinese) {
+            ["Ultrawide Standard Definition", "Dual 3840 x 1080"].map(WorkshopTagLocalization.displayName)
+        }
+        #expect(shown == ["超宽（标准）", "3840 x 1080"])
+
+        let badges = AppLanguageOverride.with(.simplifiedChinese) {
+            ["Dual 3840 x 1080", "Triple 5760 x 1080", "Portrait 1080 x 1920"].map { BrowseCard.resolutionShortLabel(for: [$0]) }
+        }
+        #expect(badges == ["双显示器", "三显示器", "纵向"])
+
+        let layoutTags = [WorkshopResolutionFilter.ultrawide, .dual, .triple, .portrait].flatMap(\.tags)
+        for language in [AppLanguagePreference.simplifiedChinese, .traditionalChinese, .japanese, .spanish] {
+            let english = AppLanguageOverride.with(language) {
+                layoutTags.filter { WorkshopTagLocalization.displayName($0) == $0 }
+            }
+            #expect(english.isEmpty, "\(language.rawValue) shows Steam's English: \(english)")
+        }
     }
 
     // MARK: - W4-A: search target + Miscellaneous at the request layer
