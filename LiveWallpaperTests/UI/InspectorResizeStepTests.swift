@@ -1,5 +1,6 @@
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 @Suite("Inspector resize stepping for keyboard and VoiceOver")
@@ -65,6 +66,17 @@ struct InspectorResizeStepTests {
         #expect(!split.contains("return min(max(CGFloat(liveWidth), dragLowerBound), maxWidth)"))
         #expect(handle.contains("private func rawCandidate"))
         #expect(handle.contains("if armed(for: rawCandidate)"))
+    }
+
+    @MainActor
+    @Test("The display detail's default inspector falls back to the compact width on a minimum-size window")
+    func displayDetailInspectorFallsBackOnNarrowWindow() {
+        let standard = Double(DesignTokens.Inspector.defaultWidth)
+        #expect(DisplayDetailHost.inspectorWidth(stored: standard, windowWidth: 1040) == 332)
+        #expect(DisplayDetailHost.inspectorWidth(stored: standard, windowWidth: 1041) == 372)
+        #expect(DisplayDetailHost.inspectorWidth(stored: standard, windowWidth: 1440) == 372)
+        // A width the user resized to is theirs at any window size.
+        #expect(DisplayDetailHost.inspectorWidth(stored: 420, windowWidth: 1040) == 420)
     }
 
     @Test("The shipped default step is what the view uses")

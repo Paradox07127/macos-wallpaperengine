@@ -20,7 +20,7 @@ struct TileMarkBadge: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(DesignTokens.EditDesk.Typography.chip)
                 .foregroundStyle(isOn ? tint : DesignTokens.Colors.overlayForeground)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())

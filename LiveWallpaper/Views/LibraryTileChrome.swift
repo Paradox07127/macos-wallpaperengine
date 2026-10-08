@@ -9,7 +9,7 @@ struct LibraryTileOverflowButton<Content: View>: View {
     var body: some View {
         NativeMenuButton { content {} } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DesignTokens.EditDesk.Typography.floatName)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
                 .frame(width: 22, height: 22)
                 .floatingGlyphGlass(hovered: isHovering)
@@ -26,7 +26,7 @@ struct LibraryTileUnavailableVeil: View {
             .fill(.black.opacity(0.45))
             .overlay {
                 Image(systemName: "nosign")
-                    .font(.system(size: 34, weight: .light))
+                    .font(DesignTokens.Glyph.unavailableVeil)
                     .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(0.9))
             }
             .allowsHitTesting(false)

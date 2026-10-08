@@ -99,7 +99,7 @@ struct EditDeskAccessibilityTests {
         #expect(capsule.contains("accessibilityElement(children: .ignore)"), "each dot would become its own element")
         #expect(capsule.contains(#"accessibilityLabel(Text("Get Started"))"#))
         // The value is the progress itself, so the pill answers "how far in am I".
-        #expect(capsule.contains(#"accessibilityValue(Text("Tour progress: \(dots.filter(\.self).count) / \(dots.count)"))"#))
+        #expect(capsule.contains(#"accessibilityValue(Text(OnboardingCapsuleModel.progressValue(dots: dots)))"#))
     }
 
     /// 6.1c's two entry points are drawn into a CALayer, so the display element carries them as

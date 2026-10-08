@@ -132,7 +132,7 @@ struct AnimatedGIFThumbnail: View {
             Color.black.opacity(0.45)
             VStack(spacing: 5) {
                 Image(systemName: "eye.slash.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(DesignTokens.Typography.modalTitle)
                 Text("Mature", comment: "Spoiler cover over an adult-rated Workshop thumbnail.")
                     .font(DesignTokens.Typography.captionEmphasized)
                 Text("Click to reveal", comment: "Hint on the spoiler cover over an adult-rated Workshop thumbnail.")
@@ -163,7 +163,7 @@ struct AnimatedGIFThumbnail: View {
             failedPreview
         } else {
             Image(systemName: "cube.transparent")
-                .font(.system(size: 36, weight: .regular))
+                .font(DesignTokens.Glyph.workshopPlaceholder)
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }

@@ -1,3 +1,4 @@
+import LiveWallpaperCore
 import SwiftUI
 
 /// For 50pt list rows (`Row`, `SlotRow`).
@@ -12,7 +13,7 @@ struct RowOverflowMenu<Content: View>: View {
             content()
         } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.system(size: 13))
+                .font(DesignTokens.EditDesk.Typography.body)
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())

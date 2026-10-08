@@ -140,7 +140,7 @@ struct DisplayDetailHost: View {
                     OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
                                      size: size, layersVisible: $layersVisible,
                                      inspectorVisible: $overlayInspectorVisible,
-                                     inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
+                                     inspectorWidth: shownInspectorWidth, liveInspectorWidth: $liveInspectorWidth,
                                      recapture: { refreshCover(id); overlaySession.capturePreview() },
                                      swipe: { swipe($0) }, switchEdge: switchEdge,
                                      copyLayer: { requestOverlayCopy(.kind($0, name: $1)) })
@@ -152,7 +152,7 @@ struct DisplayDetailHost: View {
             emptyScreen: screen, webTransform: webTransform(for: screen),
             schedulePausedUntil: draft.schedulePausedUntil, switchEdge: switchEdge,
             inspectorVisible: sectionInspectorVisible,
-            inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
+            inspectorWidth: shownInspectorWidth, liveInspectorWidth: $liveInspectorWidth
         )
         .dropDestination(for: URL.self) { urls, _ in
             section == .wallpaper && dropFiles(urls, screen)
@@ -227,6 +227,20 @@ struct DisplayDetailHost: View {
 
     private var sectionInspectorVisible: Binding<Bool> {
         section == .overlay ? $overlayInspectorVisible : $inspectorVisible
+    }
+
+    private var shownInspectorWidth: Binding<Double> {
+        Binding(
+            get: { Self.inspectorWidth(stored: inspectorWidth, windowWidth: stage.stageSize.width) },
+            set: { inspectorWidth = $0 }
+        )
+    }
+
+    /// A width the user resized to is kept; only the untouched default gives way on a minimum-size window.
+    static func inspectorWidth(stored: Double, windowWidth: CGFloat) -> Double {
+        guard stored == Double(DesignTokens.Inspector.defaultWidth),
+              windowWidth <= DesignTokens.Inspector.compactWindowWidth else { return stored }
+        return Double(DesignTokens.Inspector.compactWidth)
     }
 
     // MARK: Handshake

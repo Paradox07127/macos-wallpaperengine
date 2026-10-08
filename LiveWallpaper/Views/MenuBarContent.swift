@@ -321,7 +321,7 @@ struct MenuBarContent: View {
         }
 
         var attributed = AttributedString(typeText)
-        attributed.font = Font.system(size: 11, weight: .semibold)
+        attributed.font = DesignTokens.EditDesk.Typography.floatName
         attributed.foregroundColor = Color.primary
 
         if !source.isEmpty {
@@ -330,7 +330,7 @@ struct MenuBarContent: View {
             attributed.append(separator)
 
             var sourceText = AttributedString(source)
-            sourceText.font = Font.system(size: 11)
+            sourceText.font = DesignTokens.EditDesk.Typography.footnote
             sourceText.foregroundColor = Color.secondary
             attributed.append(sourceText)
         }
@@ -727,15 +727,15 @@ private struct MenuBarDisplayRow: View {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if canStepPlaylist {
                             GlassIconButton("chevron.left", size: .regular, action: previousAction)
-                                .accessibilityLabel(Text("Previous wallpaper"))
+                                .accessibilityLabel(Text("Previous Wallpaper"))
                         }
 
                         GlassIconButton(intendsToPlay ? "pause.fill" : "play.fill", size: .regular, action: playbackAction)
-                            .accessibilityLabel(Text(intendsToPlay ? "Pause wallpaper" : "Play wallpaper"))
+                            .accessibilityLabel(Text(intendsToPlay ? "Pause" : "Play"))
 
                         if canStepPlaylist {
                             GlassIconButton("chevron.right", size: .regular, action: nextAction)
-                                .accessibilityLabel(Text("Next wallpaper"))
+                                .accessibilityLabel(Text("Next Wallpaper"))
                         }
                     }
                 }
@@ -764,7 +764,7 @@ private struct DisplayIconTile: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 11, weight: .semibold))
+            .font(DesignTokens.EditDesk.Typography.floatName)
             .foregroundStyle(state.tint)
             .frame(width: 26, height: 26)
             .background(
@@ -774,7 +774,7 @@ private struct DisplayIconTile: View {
             .overlay(alignment: .bottomTrailing) {
                 if let symbol = state.symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(DesignTokens.Glyph.statusBadge)
                         .foregroundStyle(state.tint)
                         .frame(width: 12, height: 12)
                         .background(DesignTokens.Colors.surfaceRaised, in: Circle())

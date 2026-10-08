@@ -6,6 +6,14 @@ enum OnboardingCapsuleModel {
     static func dots(visible: [OnboardingProgress.Page], handled: Set<OnboardingProgress.Page>) -> [Bool] {
         visible.map(handled.contains)
     }
+
+    /// Pages completed or skipped, never the step the guide card is on: the card already counts steps.
+    static func progressValue(dots: [Bool]) -> String {
+        String(
+            localized: "Completed \(dots.filter(\.self).count) of \(dots.count)", bundle: .appLanguage,
+            comment: "Accessibility value of the Get Started capsule. Placeholders are the welcome tour pages completed or skipped and the total pages."
+        )
+    }
 }
 
 enum OnboardingCapsuleFit {
@@ -49,7 +57,7 @@ struct OnboardingCapsule: View {
                 .onHover { isHovering = $0 }
                 .help(Text("Welcome Tour"))
                 .accessibilityLabel(Text("Get Started"))
-                .accessibilityValue(Text("Tour progress: \(dots.filter(\.self).count) / \(dots.count)"))
+                .accessibilityValue(Text(OnboardingCapsuleModel.progressValue(dots: dots)))
         }
     }
 

@@ -99,6 +99,32 @@ struct OnboardingUITests {
         #expect(OnboardingCapsuleModel.dots(visible: lite, handled: [.home]) == [true, false, false])
     }
 
+    @MainActor
+    @Test("The capsule counts completed pages: none on the tour's first step, one on its second page", arguments: [false, true])
+    func capsuleCountsCompletedPages(workshopAvailable: Bool) throws {
+        let current = try TestScratch.defaultsSuite(prefix: "OnboardingUITests.capsule.\(workshopAvailable)", function: #function)
+        let legacy = try TestScratch.defaultsSuite(prefix: "OnboardingUITests.capsule.legacy.\(workshopAvailable)", function: #function)
+        defer {
+            current.defaults.removePersistentDomain(forName: current.name)
+            legacy.defaults.removePersistentDomain(forName: legacy.name)
+        }
+        let progress = OnboardingProgress(defaults: current.defaults, legacyDefaults: legacy.defaults, workshopAvailable: workshopAvailable)
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { workshopAvailable })
+        let guide = PageGuideSession()
+        guide.startTour(progress: progress, router: router)
+        let total = progress.visiblePages.count
+        func value() -> String {
+            OnboardingCapsuleModel.progressValue(dots: OnboardingCapsuleModel.dots(visible: progress.visiblePages, handled: progress.handled))
+        }
+        #expect(guide.stepNumber == 1)
+        #expect(value() == String(localized: "Completed \(0) of \(total)", bundle: .appLanguage))
+        for _ in PageGuideContext.overview.steps {
+            guide.next()
+        }
+        #expect(guide.tourPage == .library)
+        #expect(value() == String(localized: "Completed \(1) of \(total)", bundle: .appLanguage))
+    }
+
     @Test("Optional progress environments allow hosts outside the tutorial")
     func optionalEnvironment() throws {
         for path in [Self.card, Self.capsule, Self.home, Self.topBar, Self.detailHost, Self.workshopPage] {

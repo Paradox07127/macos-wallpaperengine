@@ -79,7 +79,7 @@ public struct ThumbnailPresenceCheck: View {
 
     private func check(_ color: Color) -> some View {
         Image(systemName: "checkmark")
-            .font(.system(size: 9, weight: .bold))
+            .font(DesignTokens.Glyph.selectionCheck)
             .foregroundStyle(color)
             .frame(width: 18, height: 18)
     }

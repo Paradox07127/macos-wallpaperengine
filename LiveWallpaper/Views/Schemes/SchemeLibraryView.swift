@@ -367,7 +367,7 @@ private struct SchemeTile: View {
                 .scaledToFill()
         } else {
             Image(systemName: iconName)
-                .font(.system(size: 30, weight: .light))
+                .font(DesignTokens.Glyph.schemePlaceholder)
                 .foregroundStyle(tint.opacity(0.85))
         }
     }
@@ -408,7 +408,7 @@ private struct SchemeTile: View {
                 .onExitCommand(perform: onCancelRename)
             Button(action: onCommitRename) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
+                    .font(DesignTokens.EditDesk.Typography.body)
                     .foregroundStyle(.tint)
             }
             .buttonStyle(.borderless)
@@ -416,7 +416,7 @@ private struct SchemeTile: View {
             .help(Text("Save"))
             Button(action: onCancelRename) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 13))
+                    .font(DesignTokens.EditDesk.Typography.body)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)

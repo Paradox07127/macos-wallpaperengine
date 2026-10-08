@@ -46,7 +46,7 @@ struct WidgetSettingsPopover: View {
     private var header: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Image(systemName: WidgetFactory.icon(placement.kind))
-                .font(.system(size: 13, weight: .semibold))
+                .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
                 .foregroundStyle(.primary)
                 .frame(width: 26, height: 26)
                 .background(
