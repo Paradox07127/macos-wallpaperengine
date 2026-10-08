@@ -207,6 +207,11 @@ struct WallpaperAutomationSheet: View {
         return nil
     }
 
+    /// The library card's title for the same wallpaper; the entry's own title only when the library has no match.
+    static func rowTitle(for entry: WallpaperQueueEntry, in library: SavedLibraryModel) -> String {
+        matchingItem(entry, in: library)?.title.translatedWallpaperName ?? entry.displayTitle
+    }
+
     /// By the cursor, not by content: editing a playing scene's properties changes its content but not its row.
     static func nowPlayingEntryID(
         in configuration: ScreenConfiguration?, insertedCurrent: WallpaperQueueEntry.ID?, previewing: WallpaperQueueEntry.ID?
@@ -384,7 +389,7 @@ struct WallpaperAutomationSheet: View {
                 .frame(width: DesignTokens.iconButtonDiameter(.regular))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Text(verbatim: failure.entry.displayTitle).lineLimit(1)
+                Text(verbatim: Self.rowTitle(for: failure.entry, in: library)).lineLimit(1)
                 if let reason = failure.reason {
                     Text(Self.skipReason(reason)).font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                 }
@@ -458,7 +463,10 @@ struct WallpaperAutomationSheet: View {
                             } else {
                                 Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
                             }
-                            QueueEntryLabel(entry: entry, isPlaying: entry.id == playingEntryID, thumbnails: thumbnails) {
+                            QueueEntryLabel(
+                                entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: entry.id == playingEntryID,
+                                thumbnails: thumbnails
+                            ) {
                                 thumbnailRequest(for: entry)
                             }
                             failureBadge(entry)
@@ -557,7 +565,7 @@ struct WallpaperAutomationSheet: View {
                         picking = true
                     } label: {
                         if let entry = slot.wallpaper {
-                            QueueEntryLabel(entry: entry, isPlaying: false, thumbnails: thumbnails) {
+                            QueueEntryLabel(entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: false, thumbnails: thumbnails) {
                                 thumbnailRequest(for: entry)
                             }
                             .id(entry.id)
@@ -717,7 +725,7 @@ struct WallpaperAutomationSheet: View {
                             HStack {
                                 Image(systemName: item.kind == .scene ? "cube.transparent" : item.kind == .web ? "globe" : "film")
                                     .frame(width: 24).foregroundStyle(.tint)
-                                Text(verbatim: item.title).lineLimit(2).multilineTextAlignment(.leading)
+                                Text(verbatim: item.title.translatedWallpaperName).lineLimit(2).multilineTextAlignment(.leading)
                                 Spacer()
                                 if isPicked(item) {
                                     Image(systemName: "checkmark").foregroundStyle(.tint)
@@ -735,6 +743,10 @@ struct WallpaperAutomationSheet: View {
                 if pickTarget == .queue {
                     Button("Choose Videos", action: chooseVideoFiles)
                     Spacer()
+                    Text("\(added.values.count(where: { id in queue.contains { $0.id == id } })) selected")
+                        .font(DesignTokens.Typography.subheadline)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                     Button("Done") { picking = false }.buttonStyle(.borderedProminent)
                 } else {
                     Button("Choose Video", action: chooseVideoFiles)
@@ -750,7 +762,7 @@ struct WallpaperAutomationSheet: View {
             Image(systemName: entry.symbol).font(DesignTokens.Typography.sectionTitle)
                 .frame(width: 42, height: 36)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
-            Text(verbatim: entry.displayTitle).lineLimit(2).multilineTextAlignment(.leading)
+            Text(verbatim: Self.rowTitle(for: entry, in: library)).lineLimit(2).multilineTextAlignment(.leading)
         }
     }
 
@@ -840,11 +852,11 @@ struct WallpaperAutomationSheet: View {
     private var currentEntry: WallpaperQueueEntry? {
         guard let config = manager.getConfiguration(for: screen) else { return nil }
         var entry = WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
-        entry.title = matchingItem(entry)?.title ?? manager.wallpaperDisplayName(for: screen) ?? ""
+        entry.title = Self.matchingItem(entry, in: library)?.title ?? manager.wallpaperDisplayName(for: screen) ?? ""
         return entry
     }
 
-    private func matchingItem(_ entry: WallpaperQueueEntry) -> LibraryItem? {
+    private static func matchingItem(_ entry: WallpaperQueueEntry, in library: SavedLibraryModel) -> LibraryItem? {
         let sceneID = entry.content.sceneDescriptor?.workshopID
         return library.items.first { item in
             switch item.source {
@@ -862,7 +874,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func thumbnailRequest(for entry: WallpaperQueueEntry) -> ShelfThumbnailCache.Request {
-        matchingItem(entry)?.thumbnail
+        Self.matchingItem(entry, in: library)?.thumbnail
             ?? .bookmark(WallpaperBookmark(label: entry.title, content: entry.content, wpeOrigin: entry.origin))
     }
 
@@ -898,7 +910,7 @@ struct WallpaperAutomationSheet: View {
         manager.updateWallpaperAutomation(
             queue: queue, slots: slots, fallback: fallback ?? (mode == .schedule ? derivedFallback : nil), mode: mode,
             rotationMinutes: rotation > 0 ? rotation : nil, shuffle: shuffle,
-            libraryShuffleRotationMinutes: libraryRotation, for: screen
+            libraryShuffleRotationMinutes: libraryRotation, previewedEntryID: preview?.entryID, for: screen
         )
     }
 }
@@ -906,6 +918,7 @@ struct WallpaperAutomationSheet: View {
 private struct QueueEntryLabel: View {
     private static let thumbnailSize = CGSize(width: 80, height: 45)
     let entry: WallpaperQueueEntry
+    let title: String
     let isPlaying: Bool
     let thumbnails: ShelfThumbnailCache
     let request: @MainActor () -> ShelfThumbnailCache.Request
@@ -924,7 +937,7 @@ private struct QueueEntryLabel: View {
                     image = await thumbnails.image(request(), pixelSize: pixelSize, scale: scale)
                 }
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: entry.displayTitle).lineLimit(2).multilineTextAlignment(.leading)
+                Text(verbatim: title).lineLimit(2).multilineTextAlignment(.leading)
                 if isPlaying {
                     Text("Now playing")
                         .font(DesignTokens.Typography.caption)
@@ -938,7 +951,9 @@ private struct QueueEntryLabel: View {
             .accessibilityValue(isPlaying ? Text("Now playing") : Text(verbatim: ""))
             .task(id: entry.id) {
                 guard case let .video(bookmarkData, .none) = entry.content else { return }
-                subtitle = await MetadataService.shared.metadata(for: bookmarkData).subtitle
+                let metadata = await MetadataService.shared.metadata(for: bookmarkData)
+                // The folder of a Workshop video is its numeric ID, which belongs in the item's details.
+                subtitle = RowMetadata(resolution: metadata.resolution, duration: metadata.duration, folder: nil).subtitle
             }
         }
     }

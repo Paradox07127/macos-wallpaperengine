@@ -2569,6 +2569,65 @@
         }
       }
     },
+    "%lld of them use scene wallpapers this version can't run." : {
+      "comment" : "Import line under the restored-displays count: how many of those displays show a scene wallpaper this build cannot run. Their setups are still saved.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them uses a scene wallpaper this version can't run."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them use scene wallpapers this version can't run."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de ellas usa un fondo de pantalla de escena que esta versión no puede ejecutar."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de ellas usan fondos de pantalla de escena que esta versión no puede ejecutar."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのうち %lld 件は、このバージョンでは実行できないシーン壁紙を使用しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其中 %lld 个使用本版本无法运行的场景壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其中 %lld 個使用此版本無法執行的場景桌布。"
+          }
+        }
+      }
+    },
     "%lld percent" : {
       "comment" : "Audio level accessibility value, e.g. \"35 percent\".",
       "localizations" : {
@@ -2789,6 +2848,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 個方案"
+          }
+        }
+      }
+    },
+    "%lld selected" : {
+      "comment" : "Playlist wallpaper picker footer: how many library wallpapers are picked while the picker is open.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seleccionado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seleccionados"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件選択済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选 %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選 %lld 項"
           }
         }
       }

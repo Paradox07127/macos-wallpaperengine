@@ -22,8 +22,14 @@ extension ConfigurationPorter {
         return bundle
     }
 
+    #if LITE_BUILD
+    static let runsScenes = false
+    #else
+    static let runsScenes = true
+    #endif
+
     /// The sections this SKU accepts, shared by confirmation and the result of applying the bundle.
-    static func importSummary(for bundle: ConfigurationBundle) -> ApplySummary {
+    static func importSummary(for bundle: ConfigurationBundle, runsScenes: Bool = ConfigurationPorter.runsScenes) -> ApplySummary {
         #if LITE_BUILD
         let workshopBookmarkCount: Int? = nil
         #else
@@ -35,6 +41,7 @@ extension ConfigurationPorter {
         let bookmarkCounts = [bundle.wallpaperBookmarks?.count, otherMarkCount].compactMap(\.self)
         return ApplySummary(
             displayCount: bundle.screenConfigurations?.count,
+            unsupportedDisplayCount: runsScenes ? nil : bundle.screenConfigurations?.count(where: { $0.wallpaperType == .scene }),
             bookmarkCount: bookmarkCounts.isEmpty ? nil : bookmarkCounts.reduce(0, +),
             workshopBookmarkCount: workshopBookmarkCount,
             schemeCount: bundle.screenSchemes?.count,
@@ -43,7 +50,7 @@ extension ConfigurationPorter {
     }
 
     @discardableResult
-    static func apply(_ bundle: ConfigurationBundle) -> ApplySummary {
+    static func apply(_ bundle: ConfigurationBundle, runsScenes: Bool = ConfigurationPorter.runsScenes) -> ApplySummary {
         let manager = SettingsManager.shared
 
         if let configurations = bundle.screenConfigurations {
@@ -101,7 +108,7 @@ extension ConfigurationPorter {
         if LibraryBookmarkStore.shared.isArchiveUnreadable {
             counted.libraryBookmarks = nil
         }
-        let summary = importSummary(for: counted)
+        let summary = importSummary(for: counted, runsScenes: runsScenes)
 
         Logger.info(
             "Configuration import applied (displays=\(summary.displayCount ?? 0), global=\(summary.didRestoreGlobalSettings), bookmarks=\(summary.bookmarkCount ?? 0), schemes=\(bundle.screenSchemes?.count ?? 0))",

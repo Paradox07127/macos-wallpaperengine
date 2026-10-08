@@ -98,6 +98,8 @@ public enum ConfigurationPorter {
 
     public struct ApplySummary: Sendable {
         public var displayCount: Int?
+        /// Restored displays whose wallpaper this build can't run; nil when the build runs every type.
+        public var unsupportedDisplayCount: Int?
         public var bookmarkCount: Int?
         public var workshopBookmarkCount: Int?
         public var schemeCount: Int?
@@ -105,12 +107,14 @@ public enum ConfigurationPorter {
 
         public init(
             displayCount: Int? = nil,
+            unsupportedDisplayCount: Int? = nil,
             bookmarkCount: Int? = nil,
             workshopBookmarkCount: Int? = nil,
             schemeCount: Int? = nil,
             didRestoreGlobalSettings: Bool = false
         ) {
             self.displayCount = displayCount
+            self.unsupportedDisplayCount = unsupportedDisplayCount
             self.bookmarkCount = bookmarkCount
             self.workshopBookmarkCount = workshopBookmarkCount
             self.schemeCount = schemeCount
