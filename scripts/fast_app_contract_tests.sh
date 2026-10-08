@@ -379,6 +379,11 @@ SERIAL_SUITES=(
   WorkshopSteamDeletedPruneTests
 )
 
+# Kept out on purpose: they drive parked windows with synthetic events and flake on
+# CI runners, so only the local merge gate runs them as extra suites.
+#   ModalArrowWindowTests LibraryGridPreviewTests LibraryGridDragWindowTests
+#   SettingsSearchRowEmphasisTests LibraryModalHostLoadTests
+
 action="test"
 run_lite=1
 case "${1:-}" in
