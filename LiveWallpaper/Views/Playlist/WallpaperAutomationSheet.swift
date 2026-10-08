@@ -710,7 +710,10 @@ struct WallpaperAutomationSheet: View {
             LibrarySearchField(text: $search, prompt: "Search wallpapers")
             ScrollView {
                 LazyVStack(spacing: DesignTokens.Spacing.xs) {
-                    ForEach(library.items.filter { $0.isSupported && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }) { item in
+                    ForEach(library.items.filter {
+                        $0.isSupported && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)
+                            || $0.title.translatedWallpaperName.localizedCaseInsensitiveContains(search))
+                    }) { item in
                         Button {
                             if pickTarget == .queue, Self.togglePick(item, queue: &queue, added: &added) {
                                 error = nil
@@ -863,6 +866,16 @@ struct WallpaperAutomationSheet: View {
     }
 
     private static func matchingItem(_ entry: WallpaperQueueEntry, in library: SavedLibraryModel) -> LibraryItem? {
+        // Saved scene variants share a Workshop ID, so an exact content match must win over the ID fallback.
+        let exact = library.items.first { item in
+            guard case let .bookmark(bookmark) = item.source else {
+                return false
+            }
+            return bookmark.content == entry.content
+        }
+        if let exact {
+            return exact
+        }
         let sceneID = entry.content.sceneDescriptor?.workshopID
         return library.items.first { item in
             switch item.source {
