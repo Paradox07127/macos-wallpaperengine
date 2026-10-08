@@ -1249,9 +1249,8 @@ struct HomePage: View {
         }
     }
 
-    /// A new session held through a transition, or one suspended, captures nil; retrying spans the longest
-    /// transition hold so the card does not keep the previous wallpaper's still.
-    private static let coverRetryDelays: [Duration] = Array(repeating: .milliseconds(400), count: 11)
+    /// A new session held through a transition, or one suspended, captures nil, so the card retries briefly.
+    private static let coverRetryDelays: [Duration] = Array(repeating: .milliseconds(400), count: 2)
 
     /// `isNewest`: no newer capture was asked for since; once false, nothing more is captured and nil is returned.
     static func captureCover(
