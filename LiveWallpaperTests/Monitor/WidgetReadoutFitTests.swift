@@ -454,20 +454,29 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// Below board scale 1.25 the M column reports the composition legend, not the ring;
-    /// `legend` is its width at the widest reading ("USER 100%").
+    /// The legend chip's width at its widest reading, measured from the text the view draws.
+    @MainActor
+    private func widestCompositionLegend(label: CGFloat, environment: EnvironmentValues = EnvironmentValues()) -> CGFloat {
+        // Swatch, its spacing, and the chip's horizontal padding (`legendValue`, `monitorChip`).
+        let chrome = label * (0.6 + 0.35 + 2 * 0.5)
+        let keys: [String.LocalizationValue] = ["USER", "SYS"]
+        return keys.map { key -> CGFloat in
+            let text = CPUWidgetView.compositionLegendText(key, percent: 100)._resolveText(in: environment)
+            // Rounded up to whole points, the coarsest pixel grid a board is drawn on.
+            return width(text, font(label * 0.95, monospacedDigit: true)).rounded(.up) + chrome
+        }.max() ?? 0
+    }
+
+    /// Below board scale 1.25 the M column reports the composition legend, not the ring.
+    @MainActor
     func testGaugeSideReservesTheWidestCompositionLegend() {
-        let measured: [(cellHeight: CGFloat, label: CGFloat, legend: CGFloat)] = [
-            (59.50, 10, 80.00), (72.25, 10, 80.00), (85.00, 10, 80.00),
-            (106.25, 10.625, 81.72), (136.00, 12, 91.90), (170.00, 12, 91.90),
-        ]
-        for tile in measured {
-            XCTAssertEqual(Design.TypeScale(cellHeight: tile.cellHeight).label, tile.label, accuracy: 0.001)
+        for cellHeight: CGFloat in [59.50, 72.25, 85.00, 106.25, 136.00, 170.00] {
+            let legend = widestCompositionLegend(label: Design.TypeScale(cellHeight: cellHeight).label)
             XCTAssertGreaterThanOrEqual(
-                CPUWidgetView.gaugeSide(cellHeight: tile.cellHeight, rows: 1,
+                CPUWidgetView.gaugeSide(cellHeight: cellHeight, rows: 1,
                                         hasIdentityRow: true, hasCompositionLegend: true),
-                tile.legend,
-                "the legend truncates at cellHeight \(tile.cellHeight)"
+                legend,
+                "the legend truncates at cellHeight \(cellHeight)"
             )
         }
         // Control: on the desktop board's own M tile the ring term alone is
@@ -475,7 +484,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         let ringTerm = 85 * 2 - CPUWidgetView.gaugeChromeBase
             - CPUWidgetView.gaugeChromeIdentityRow - CPUWidgetView.gaugeChromeCompositionLegend
         XCTAssertEqual(ringTerm, 71.70, accuracy: 0.01)
-        XCTAssertLessThan(ringTerm, 80.00)
+        XCTAssertLessThan(ringTerm, widestCompositionLegend(label: Design.TypeScale(cellHeight: 85).label))
     }
 
     /// The M legend chip is `lineLimit(1)` with no scale floor, so a translation wider than
@@ -485,23 +494,17 @@ final class WidgetReadoutFitTests: XCTestCase {
         var environment = EnvironmentValues()
         for cellHeight: CGFloat in [85, 106.25, 136] {
             let label = Design.TypeScale(cellHeight: cellHeight).label
-            let column = CPUWidgetView.gaugeSide(cellHeight: cellHeight, rows: 1,
-                                                 hasIdentityRow: true, hasCompositionLegend: true)
-            // Swatch, its spacing, and the chip's horizontal padding (`legendValue`, `monitorChip`).
-            let chrome = label * (0.6 + 0.35 + 2 * 0.5)
             for language in AppLanguagePreference.allCases where language != .system {
                 environment.locale = language.locale
-                for key: String.LocalizationValue in ["USER", "SYS"] {
-                    let text = AppLanguageOverride.with(language) {
-                        CPUWidgetView.compositionLegendText(key, percent: 100)._resolveText(in: environment)
-                    }
-                    // Rounded up to whole points, the coarsest pixel grid a board is drawn on.
-                    let needed = width(text, font(label * 0.95, monospacedDigit: true)).rounded(.up) + chrome
-                    XCTAssertLessThanOrEqual(
-                        needed, column + 0.01,
-                        "\(language.rawValue) \"\(text)\" needs \(needed) pt; the M column at cellHeight \(cellHeight) reserves \(column) pt"
-                    )
+                let (column, needed) = AppLanguageOverride.with(language) {
+                    (CPUWidgetView.gaugeSide(cellHeight: cellHeight, rows: 1,
+                                             hasIdentityRow: true, hasCompositionLegend: true),
+                     widestCompositionLegend(label: label, environment: environment))
                 }
+                XCTAssertLessThanOrEqual(
+                    needed, column + 0.01,
+                    "\(language.rawValue) legend needs \(needed) pt; the M column at cellHeight \(cellHeight) reserves \(column) pt"
+                )
             }
         }
     }

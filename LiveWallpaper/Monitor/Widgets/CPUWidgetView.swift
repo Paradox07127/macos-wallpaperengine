@@ -1,3 +1,5 @@
+import AppKit
+import CoreText
 import SwiftUI
 import LiveWallpaperCore
 
@@ -742,8 +744,21 @@ extension CPUWidgetView {
     nonisolated static let gaugeChromeIdentityRow: CGFloat = 19
     /// What the composition legend and its spacing add to `gaugeChromeBase`.
     nonisolated static let gaugeChromeCompositionLegend: CGFloat = 38.3
-    /// Legend width in multiples of `scale.label`: 8.05 covers USER/SYS 100% at the 10 pt label size, with rounding margin.
-    nonisolated static let gaugeLegendSlots: CGFloat = 8.05
+
+    /// The M composition legend chip at its widest reading (USER/SYS 100%), in the current app language.
+    nonisolated static func compositionLegendWidth(label: CGFloat) -> CGFloat {
+        // `Design.labelFont` at `legendValue`'s size, with its 10 pt floor.
+        let font = NSFont.monospacedDigitSystemFont(ofSize: max(label * 0.95, 10), weight: .semibold)
+        let keys: [String.LocalizationValue] = ["USER", "SYS"]
+        let widest = keys.map { key -> CGFloat in
+            let line = CTLineCreateWithAttributedString(NSAttributedString(
+                string: compositionLegendString(key, percent: 100), attributes: [.font: font]
+            ))
+            return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        }.max() ?? 0
+        // Swatch, its spacing, and the chip's horizontal padding (`legendValue`, `monitorChip`).
+        return widest.rounded(.up) + label * (0.6 + 0.35 + 2 * 0.5)
+    }
 
     /// Reserve a stable upper bound so changing gauge readings cannot move adjacent columns.
     /// M may over-reserve but cannot clip the ring; L keeps the full cap because optional detail rows change its height.
@@ -760,7 +775,7 @@ extension CPUWidgetView {
             chrome += gaugeChromeCompositionLegend
         }
         let legend = hasCompositionLegend
-            ? Design.TypeScale(cellHeight: cellHeight).label * gaugeLegendSlots
+            ? compositionLegendWidth(label: Design.TypeScale(cellHeight: cellHeight).label)
             : 0
         return min(gaugeSideCap, max(0, legend, cellHeight * 2 - chrome))
     }
@@ -804,7 +819,11 @@ extension CPUWidgetView {
     }
 
     static func compositionLegendText(_ label: String.LocalizationValue, percent: Int) -> Text {
-        Text(verbatim: "\(String(localized: label, bundle: .appLanguage)) \(percent)%")
+        Text(verbatim: compositionLegendString(label, percent: percent))
+    }
+
+    nonisolated static func compositionLegendString(_ label: String.LocalizationValue, percent: Int) -> String {
+        "\(String(localized: label, bundle: .appLanguage)) \(percent)%"
     }
 
     nonisolated static func topCPUProcesses(_ processes: [MonitorProcessSample]?, limit: Int) -> [MonitorProcessSample]? {

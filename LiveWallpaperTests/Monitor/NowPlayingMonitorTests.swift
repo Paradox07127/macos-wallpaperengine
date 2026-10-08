@@ -770,6 +770,34 @@ struct NowPlayingDemandGraphTests {
         await runtime.shutdown()
     }
 
+    @MainActor
+    @Test("Reduce Motion withholds audio capture and keeps the saved preference", .timeLimit(.minutes(1)))
+    func reduceMotionWithholdsAudioCapture() async {
+        let runtime = makeRuntime()
+        let controller = OverlayController(runtime: runtime)
+        controller.debugReduceMotionOverride = true
+        let music = MusicOverlayConfiguration(enabled: true, level: .front)
+        #expect(NowPlayingOptions(music.options).audioReactive, "precondition: the layer asks for reactive effects")
+        controller.apply(
+            overlay: MonitorOverlayConfiguration(enabled: false, level: .front, music: music),
+            screenID: 93,
+            screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+        await controller.waitUntilRuntimeSettled()
+
+        #expect(await runtime.debugActiveOptions?.music == true)
+        #expect(await runtime.debugActiveOptions?.musicAudioReactive == false, "capture runs with no layer drawing it")
+        #expect(controller.music(screenID: 93).map { NowPlayingOptions($0.options).audioReactive } == true)
+
+        controller.debugReduceMotionOverride = false
+        await controller.waitUntilRuntimeSettled()
+        #expect(await runtime.debugActiveOptions?.musicAudioReactive == true, "turning Reduce Motion off must bring capture back")
+
+        controller.teardownAll()
+        await controller.waitUntilRuntimeSettled()
+        await runtime.shutdown()
+    }
+
     /// nil factory override → the runtime reads the real MainActor registry
     /// that `OverlayController.apply` populates via `registerDefaultFactories`.
     private func makeRuntime() -> Runtime {
