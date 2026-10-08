@@ -27,6 +27,25 @@ struct PlaylistEntryTitleTests {
         #expect(WallpaperAutomationSheet.rowTitle(for: entry, in: library) == "Loose clip")
     }
 
+    @Test("A saved scene variant keeps its own title instead of the first card with its Workshop ID")
+    func sceneVariantKeepsItsOwnTitle() {
+        func scene(preset: String?) -> WallpaperContent {
+            .scene(SceneDescriptor(
+                workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json",
+                capabilityTier: .imageOnly, presetID: preset
+            ))
+        }
+        let base = WallpaperBookmark(label: "Lantern Festival", content: scene(preset: nil))
+        let variant = WallpaperBookmark(label: "Lantern Festival (Blue)", content: scene(preset: "blue"))
+        var inputs = SavedLibraryModel.Inputs()
+        inputs.bookmarks = { [base, variant] }
+        let library = SavedLibraryModel(inputs: inputs)
+        let entry = WallpaperQueueEntry(title: "Lantern Festival (Blue)", content: variant.content)
+
+        let title = WallpaperAutomationSheet.rowTitle(for: entry, in: library)
+        #expect(title == "Lantern Festival (Blue)".translatedWallpaperName)
+    }
+
     @Test("A video row names its folder unless the folder is a Workshop item's numeric ID")
     func subtitleOmitsOnlyTheWorkshopFolder() {
         let metadata = RowMetadata(resolution: nil, duration: 30, folder: "Wallpapers")
