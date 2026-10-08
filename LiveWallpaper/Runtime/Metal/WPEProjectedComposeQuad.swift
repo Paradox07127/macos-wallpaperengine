@@ -3,16 +3,18 @@ import CoreGraphics
 import Foundation
 import simd
 
-/// A composelayer drawn through the 2D-scene perspective camera: captured from the scene with its own MVP and drawn back with the same MVP, keeping w.
+/// A composelayer captured through the orthographic camera (affine) and drawn back through the 2D-scene perspective camera, keeping w.
 struct WPEProjectedComposeQuad {
     /// Corners whose clip w is at most this fraction of the eye distance count as at/behind the eye.
     static let minimumDepthFraction = 1e-3
 
     /// Clip (x, y, w), y-up NDC, in `wpe_object_quad_vertex` strip order: BL(0,1), BR(1,1), TL(0,0), TR(1,0).
     let clipCorners: [SIMD3<Double>]
-    /// Layer uv (v down) → (U·w, V·w, w), where (U, V) is the top-left scene texture uv.
+    /// Orthographic: layer uv (v down) → (U, V, 1), where (U, V) is the top-left scene texture uv.
     let captureHomography: simd_double3x3
-    let inverseCaptureHomography: simd_double3x3
+    /// Perspective: layer uv (v down) → (U·w, V·w, w) on screen, as the draw-back rasterises `clipCorners`.
+    let drawBackHomography: simd_double3x3
+    let inverseDrawBackHomography: simd_double3x3
     let sceneSize: CGSize
 
     /// `angles` in radians, `fovDegrees` is `perspectiveoverridefov`; `parallaxOffset` is a world-space translation applied after the model matrix.
@@ -41,6 +43,8 @@ struct WPEProjectedComposeQuad {
             SIMD3(0, 0, 0),
             SIMD3(0, 0, 1),
         ])
+        let world = (model * layerPoint).transpose
+        let sceneWidth = Double(sceneSize.width), sceneHeight = Double(sceneSize.height)
         let clip = viewProjection * model * layerPoint
         let clipX = clip.transpose.columns.0, clipY = clip.transpose.columns.1, clipW = clip.transpose.columns.3
         let corners = [SIMD2<Double>(0, 1), SIMD2(1, 1), SIMD2(0, 0), SIMD2(1, 0)].map { uv in
@@ -51,16 +55,20 @@ struct WPEProjectedComposeQuad {
         guard corners.allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.z.isFinite && $0.z > minimumW }) else {
             return nil
         }
-        let homography = simd_double3x3(rows: [(clipW + clipX) / 2, (clipW - clipY) / 2, clipW])
+        let drawBack = simd_double3x3(rows: [(clipW + clipX) / 2, (clipW - clipY) / 2, clipW])
         clipCorners = corners
-        captureHomography = homography
-        inverseCaptureHomography = homography.inverse
+        // World z is dropped: U = x / W, V = 1 − y / H, with world.3 the constant (0, 0, 1) row.
+        captureHomography = simd_double3x3(rows: [
+            world.columns.0 / sceneWidth, world.columns.3 - world.columns.1 / sceneHeight, world.columns.3,
+        ])
+        drawBackHomography = drawBack
+        inverseDrawBackHomography = drawBack.inverse
         self.sceneSize = sceneSize
     }
 
-    /// nil when the screen point maps behind the layer plane.
+    /// Inverts the perspective draw-back; nil when the screen point maps behind the layer plane.
     func layerUV(screenUV: SIMD2<Double>) -> SIMD2<Double>? {
-        let mapped = inverseCaptureHomography * SIMD3(screenUV.x, screenUV.y, 1)
+        let mapped = inverseDrawBackHomography * SIMD3(screenUV.x, screenUV.y, 1)
         guard mapped.z > 0 else { return nil }
         return SIMD2(mapped.x, mapped.y) / mapped.z
     }

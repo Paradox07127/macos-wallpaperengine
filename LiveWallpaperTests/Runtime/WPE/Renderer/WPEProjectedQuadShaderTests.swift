@@ -112,7 +112,7 @@ struct WPEProjectedQuadShaderTests {
         let uniforms = WPEProjectedQuadUniforms(quad: quad, clearAlpha: true)
         let tl = quad.clipCorners[2]
         #expect(uniforms.clipCorners.2 == SIMD4(Float(tl.x), Float(tl.y), 0, Float(tl.z)))
-        #expect(uniforms.captureRow2.z == 1 && uniforms.captureRow2.w == 0)
+        #expect(uniforms.captureRow2 == SIMD4(0, 0, 1, 0))
         #expect(uniforms.flags.x == 1)
         #expect(WPEProjectedQuadUniforms(quad: quad, clearAlpha: false).flags.x == 0)
     }
@@ -128,7 +128,7 @@ struct WPEProjectedQuadShaderTests {
         var worst = 0.0
         // Near-TL probe pins orientation: layer uv (0,0) must land where clipCorners[2] projects.
         for layerUV in [SIMD2(0.5, 0.5), SIMD2(0.2, 0.25), SIMD2(0.8, 0.2), SIMD2(0.25, 0.8), SIMD2(0.75, 0.75), SIMD2(0.06, 0.06)] {
-            let mapped = quad.captureHomography * SIMD3(layerUV.x, layerUV.y, 1)
+            let mapped = quad.drawBackHomography * SIMD3(layerUV.x, layerUV.y, 1)
             let screenPixel = SIMD2(mapped.x, mapped.y) / mapped.z * size
             let column = Int(screenPixel.x.rounded(.down)), row = Int(screenPixel.y.rounded(.down))
             let center = (SIMD2(Double(column), Double(row)) + 0.5) / size

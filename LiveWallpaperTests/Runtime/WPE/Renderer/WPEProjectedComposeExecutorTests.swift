@@ -127,11 +127,30 @@ struct WPEProjectedComposeExecutorTests {
         return bytes
     }
 
+    /// Linear clamp-to-edge sample of a `width`×`height` grid at uv.
+    private static func bilinear(_ uv: SIMD2<Double>, _ texel: (Int, Int) -> SIMD3<Double>) -> SIMD3<Double> {
+        let position = simd_clamp(uv, SIMD2(repeating: 0), SIMD2(repeating: 1)) * SIMD2(Double(width), Double(height)) - 0.5
+        let base = position.rounded(.down), fraction = position - base
+        func at(_ dx: Int, _ dy: Int) -> SIMD3<Double> {
+            texel(min(max(Int(base.x) + dx, 0), width - 1), min(max(Int(base.y) + dy, 0), height - 1))
+        }
+        let top = at(0, 0) * (1 - fraction.x) + at(1, 0) * fraction.x
+        let bottom = at(0, 1) * (1 - fraction.x) + at(1, 1) * fraction.x
+        return top * (1 - fraction.y) + bottom * fraction.y
+    }
+
+    /// Scene uv the capture reads for a layer uv: the orthographic projection of `M·p`.
+    private static func orthographicCaptureUV(_ layerUV: SIMD2<Double>) -> SIMD2<Double> {
+        let model = WPEMetalObjectUniforms.modelMatrix(origin: SIMD3(32, 18, 0), scale: SIMD3(1, 1, 1), angles: angles)
+        let world = model * SIMD4(Double(width) * (layerUV.x - 0.5), Double(height) * (0.5 - layerUV.y), 0, 1)
+        return SIMD2(world.x / Double(width), 1 - world.y / Double(height))
+    }
+
     private static func doubled(_ bytes: [UInt8]) -> [UInt8] {
         bytes.enumerated().map { index, byte in index % 4 == 3 ? byte : UInt8(min(255, Int(byte) * 2)) }
     }
 
-    @Test("A perspective composelayer draws back only inside its projected quad")
+    @Test("A perspective composelayer adds its orthographic capture inside the perspective trapezoid")
     func projectedDrawBackMatchesCPUQuad() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -149,7 +168,14 @@ struct WPEProjectedComposeExecutorTests {
             quad.contains(screenPixel: SIMD2(Double(column) + 0.5, Double(row) + 0.5))
         }
         let seedBytes = Self.seedBytes()
-        var insideCount = 0, outsideCount = 0, worst = 0
+        func seedTexel(_ column: Int, _ row: Int) -> SIMD3<Double> {
+            SIMD3(Double(column * 2), Double(row * 3), 40)
+        }
+        func captured(_ column: Int, _ row: Int) -> SIMD3<Double> {
+            let layerUV = (SIMD2(Double(column), Double(row)) + 0.5) / SIMD2(Double(Self.width), Double(Self.height))
+            return Self.bilinear(Self.orthographicCaptureUV(layerUV), seedTexel)
+        }
+        var insideCount = 0, outsideCount = 0, worst = 0.0
         // Interior pixels whose 3×3 neighbourhood agrees on inside/outside; borders sample clamped edges.
         for row in 1 ..< Self.height - 1 {
             for column in 1 ..< Self.width - 1 {
@@ -157,11 +183,15 @@ struct WPEProjectedComposeExecutorTests {
                 let neighbours = (-1 ... 1).flatMap { dy in (-1 ... 1).map { dx in inside(column + dx, row + dy) } }
                 guard neighbours.allSatisfy({ $0 == isInside }) else { continue }
                 let index = (row * Self.width + column) * 4
-                let factor = isInside ? 2 : 1
+                var drawn = SIMD3<Double>.zero
+                if isInside {
+                    let screenUV = (SIMD2(Double(column), Double(row)) + 0.5) / SIMD2(Double(Self.width), Double(Self.height))
+                    drawn = try Self.bilinear(#require(quad.layerUV(screenUV: screenUV)), captured)
+                }
                 for channel in 0 ..< 3 {
-                    let error = abs(Int(bytes[index + channel]) - Int(seedBytes[index + channel]) * factor)
+                    let error = abs(Double(bytes[index + channel]) - Double(seedBytes[index + channel]) - drawn[channel])
                     worst = max(worst, error)
-                    #expect(error <= Self.tolerance, "pixel (\(column), \(row)) channel \(channel) inside=\(isInside)")
+                    #expect(error <= Double(Self.tolerance), "pixel (\(column), \(row)) channel \(channel) inside=\(isInside)")
                 }
                 insideCount += isInside ? 1 : 0
                 outsideCount += isInside ? 0 : 1

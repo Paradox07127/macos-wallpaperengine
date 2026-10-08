@@ -331,7 +331,7 @@ struct WPEObjectQuadUniforms {
 struct WPEProjectedQuadUniforms {
     /// Clip (x, y, 0, w), y-up NDC, in `WPEProjectedComposeQuad.clipCorners` order BL, BR, TL, TR.
     var clipCorners: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>)
-    /// Rows of the layer uv → (U·w, V·w, w) capture homography, scaled so row 2 col 2 is 1; w unused.
+    /// Rows of the layer uv → scene uv capture homography, scaled so row 2 col 2 is 1; w unused.
     var captureRow0: SIMD4<Float>
     var captureRow1: SIMD4<Float>
     var captureRow2: SIMD4<Float>
