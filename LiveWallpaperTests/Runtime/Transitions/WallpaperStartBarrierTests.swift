@@ -17,9 +17,14 @@ private final class PendingArrival {
     private(set) var isFinished = false
     private var task: Task<WallpaperSpanStart?, Never>?
 
-    init(_ barrier: WallpaperStartBarrier, _ display: CGDirectDisplayID, attempt: ObjectIdentifier, frame: CGRect) {
+    init(
+        _ barrier: WallpaperStartBarrier,
+        _ display: CGDirectDisplayID,
+        attempt: ObjectIdentifier,
+        frame: @autoclosure @escaping @MainActor () -> CGRect?
+    ) {
         task = Task { @MainActor in
-            let start = await barrier.arrive(display, attempt: attempt, frame: frame)
+            let start = await barrier.arrive(display, attempt: attempt, frame: frame())
             self.isFinished = true
             return start
         }
@@ -27,6 +32,16 @@ private final class PendingArrival {
 
     var value: WallpaperSpanStart? {
         get async { await task!.value }
+    }
+}
+
+/// A display's live frame; nil once it is unplugged.
+@MainActor
+private final class LiveFrame {
+    var frame: CGRect?
+
+    init(_ frame: CGRect) {
+        self.frame = frame
     }
 }
 
@@ -211,6 +226,56 @@ struct WallpaperStartBarrierTests {
 
         #expect(await barrier.arrive(4, attempt: first, frame: farRight) == nil)
         #expect(barrier.start(for: 4) == nil)
+    }
+
+    @Test("A display moved after release gives every display the moved canvas and the release's draw", .timeLimit(.minutes(1)))
+    func movedDisplayRecomputesCanvas() async {
+        let barrier = WallpaperStartBarrier(timeout: .seconds(30), now: { 42 })
+        barrier.join(1, attempt: first)
+        barrier.join(2, attempt: first)
+        let liveTwo = LiveFrame(right)
+
+        let one = PendingArrival(barrier, 1, attempt: first, frame: left)
+        await settle()
+        let released = await barrier.arrive(2, attempt: first, frame: liveTwo.frame)
+        #expect(await one.value == released)
+        #expect(barrier.start(for: 1) == released)
+        #expect(barrier.start(for: 2) == released)
+
+        let moved = CGRect(x: 1920, y: 1080, width: 1920, height: 1080)
+        liveTwo.frame = moved
+        let startOne = barrier.start(for: 1)
+        #expect(startOne?.canvas == left.union(moved))
+        #expect(startOne?.sharesGeometry == false)
+        #expect(barrier.start(for: 2) == startOne)
+        #expect(startOne?.hostTime == released?.hostTime)
+        #expect(startOne?.seed == released?.seed)
+        #expect(startOne?.origin == released?.origin)
+    }
+
+    @Test("An unplugged display drops out of the span; one display left plays alone", .timeLimit(.minutes(1)))
+    func unpluggedDisplayDropsOut() async {
+        let barrier = WallpaperStartBarrier(timeout: .seconds(30))
+        for display: CGDirectDisplayID in [1, 2, 3] {
+            barrier.join(display, attempt: first)
+        }
+        let liveTwo = LiveFrame(right)
+        let liveThree = LiveFrame(farRight)
+
+        let one = PendingArrival(barrier, 1, attempt: first, frame: left)
+        let two = PendingArrival(barrier, 2, attempt: first, frame: liveTwo.frame)
+        await settle()
+        let released = await barrier.arrive(3, attempt: first, frame: liveThree.frame)
+        _ = await (one.value, two.value)
+        #expect(released?.canvas == left.union(farRight))
+
+        liveThree.frame = nil
+        #expect(barrier.start(for: 3) == nil)
+        #expect(barrier.start(for: 1)?.canvas == left.union(right))
+        #expect(barrier.start(for: 2) == barrier.start(for: 1))
+
+        liveTwo.frame = nil
+        #expect(barrier.start(for: 1) == nil)
     }
 
     @Test("A manual entry inside a manual group reuses it")

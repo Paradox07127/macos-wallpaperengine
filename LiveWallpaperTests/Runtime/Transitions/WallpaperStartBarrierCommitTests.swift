@@ -5,8 +5,9 @@ import Testing
 
 private final class BarrierCommitTestNSScreen: NSScreen {
     var displayID: UInt32 = 1
+    var movedFrame: NSRect?
     override var frame: NSRect {
-        NSRect(x: CGFloat(displayID) * 800, y: 0, width: 800, height: 600)
+        movedFrame ?? NSRect(x: CGFloat(displayID) * 800, y: 0, width: 800, height: 600)
     }
 
     override var deviceDescription: [NSDeviceDescriptionKey: Any] {
@@ -66,12 +67,22 @@ private final class PrepareGate {
     }
 }
 
+@MainActor
+private final class LiveScreen {
+    var screen: Screen
+
+    init(_ screen: Screen) {
+        self.screen = screen
+    }
+}
+
 @Suite("Wallpaper start barrier at commit")
 @MainActor
 struct WallpaperStartBarrierCommitTests {
-    private func makeScreen(id: UInt32) -> Screen {
+    private func makeScreen(id: UInt32, movedFrame: NSRect? = nil) -> Screen {
         let nsScreen = BarrierCommitTestNSScreen()
         nsScreen.displayID = id
+        nsScreen.movedFrame = movedFrame
         return Screen(nsScreen: nsScreen)
     }
 
@@ -79,7 +90,8 @@ struct WallpaperStartBarrierCommitTests {
         _ candidate: BarrierTestSession,
         to screen: Screen,
         gate: PrepareGate? = nil,
-        batch: WallpaperOpeningBatch? = nil
+        batch: WallpaperOpeningBatch? = nil,
+        live: LiveScreen? = nil
     ) -> Task<WallpaperPreparationResult, Never> {
         Task { @MainActor in
             await WallpaperSessionTransaction.prepareAndCommit(
@@ -88,6 +100,7 @@ struct WallpaperStartBarrierCommitTests {
                 replacing: nil,
                 timeout: .seconds(60),
                 isStillCurrent: { candidate.isCurrent },
+                currentScreen: live.map { live -> @MainActor () -> Screen? in { live.screen } },
                 prepare: { _, _ in
                     if let gate {
                         return await gate.wait()
@@ -105,11 +118,12 @@ struct WallpaperStartBarrierCommitTests {
         _ b: BarrierTestSession, on screenB: Screen,
         gateB: PrepareGate,
         group: WallpaperSwitchGroup?,
-        batch: WallpaperOpeningBatch? = nil
+        batch: WallpaperOpeningBatch? = nil,
+        liveA: LiveScreen? = nil
     ) async throws -> (a: Task<WallpaperPreparationResult, Never>, b: Task<WallpaperPreparationResult, Never>) {
         let taskB = WallpaperSwitchGroup.$current.withValue(group) { commit(b, to: screenB, gate: gateB, batch: batch) }
         try await waitUntil { b.showCallCount == 1 }
-        let taskA = WallpaperSwitchGroup.$current.withValue(group) { commit(a, to: screenA, batch: batch) }
+        let taskA = WallpaperSwitchGroup.$current.withValue(group) { commit(a, to: screenA, batch: batch, live: liveA) }
         return (taskA, taskB)
     }
 
@@ -150,6 +164,30 @@ struct WallpaperStartBarrierCommitTests {
         #expect(screenA.runtimeSession === a)
         #expect(screenB.runtimeSession === b)
         let start = try #require(group.barrier.start(for: screenA.id))
+        #expect(group.barrier.start(for: screenB.id) == start)
+    }
+
+    @Test("A display moved while its group waits commits both displays on the moved canvas", .timeLimit(.minutes(1)))
+    func displayMovedWhileWaitingSharesTheMovedCanvas() async throws {
+        let group = WallpaperSwitchGroup(pace: .manual, barrier: WallpaperStartBarrier(timeout: .seconds(30)))
+        let screenA = makeScreen(id: 69)
+        let screenB = makeScreen(id: 70)
+        let liveA = LiveScreen(screenA)
+        let a = BarrierTestSession()
+        let b = BarrierTestSession()
+        let gateB = PrepareGate()
+
+        let tasks = try await startPair(a, on: screenA, b, on: screenB, gateB: gateB, group: group, liveA: liveA)
+        try await waitUntil { a.showCallCount == 2 }
+        let moved = NSRect(x: screenB.frame.maxX, y: 0, width: 800, height: 600)
+        liveA.screen = makeScreen(id: 69, movedFrame: moved)
+
+        gateB.open()
+        #expect(await tasks.a.value == .ready)
+        #expect(await tasks.b.value == .ready)
+        #expect(liveA.screen.runtimeSession === a)
+        let start = try #require(group.barrier.start(for: screenA.id))
+        #expect(start.canvas == moved.union(screenB.frame), "the span kept the frame A had before it moved")
         #expect(group.barrier.start(for: screenB.id) == start)
     }
 
