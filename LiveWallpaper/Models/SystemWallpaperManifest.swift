@@ -125,6 +125,21 @@ enum SystemWallpaperProviderStaleness {
         return .supersededByDeclared(declaredPath: declared.bundlePath)
     }
 
+    /// The appex cannot use the app's String Catalog, so the marker is localized here against `preferredLanguage`.
+    static func panelGroupTitle(_ title: String, verdict: Verdict, preferredLanguage: String) -> String {
+        guard verdict != .current else { return title }
+        let markers: [String: String] = [
+            "zh-Hans": "（旧版本）",
+            "zh-Hant": "（舊版本）",
+            "ja": "（旧バージョン）",
+            "es": " (copia obsoleta)",
+        ]
+        for (prefix, marker) in markers where preferredLanguage.hasPrefix(prefix) {
+            return title + marker
+        }
+        return title + " (outdated copy)"
+    }
+
     /// Textual only: `standardizingPath` folds `/private` just when the path exists, and the sandboxed appex cannot stat the app's copy of the path anyway.
     private static func normalizedPath(_ path: String) -> String {
         var normalized = (path as NSString).standardizingPath

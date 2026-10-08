@@ -311,7 +311,7 @@ enum CodexProcessProbe {
     }
 
     /// `proc_listallpids` returns the number of PIDs written, not a byte count — dividing by the element stride would examine only a quarter of the process table.
-    private static func allPIDs() -> [Int32] {
+    static func allPIDs() -> [Int32] {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else { return [] }
         // Head-room so a process spawned between the two calls cannot truncate us.
