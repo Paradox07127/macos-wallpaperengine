@@ -99,6 +99,7 @@ struct BugReporterBodyLanguageTests {
                     "Nice Scene ?token=abc123def",
                 ]),
                 recentLogLines: [],
+                extensionProcessLines: [],
                 form: form
             )
             #expect(!body.contains("alice"), "\(form) leaked the user name")
@@ -113,6 +114,7 @@ struct BugReporterBodyLanguageTests {
         let body = BugReporter.formatMarkdown(
             snapshot: Self.snapshot(),
             recentLogLines: ["ERROR: boom"],
+            extensionProcessLines: [],
             form: .simplifiedChinese
         )
         #expect(body.contains("### 发生了什么？"))
@@ -128,6 +130,7 @@ struct BugReporterBodyLanguageTests {
         let body = BugReporter.formatMarkdown(
             snapshot: Self.snapshot(),
             recentLogLines: ["ERROR: boom"],
+            extensionProcessLines: [],
             form: .english
         )
         #expect(body.contains("### What happened?"))
@@ -141,12 +144,12 @@ struct BugReporterBodyLanguageTests {
     func emptyStatesAreLocalized() {
         let empty = Self.snapshot(displays: [], activeWallpapers: [])
 
-        let chinese = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], form: .simplifiedChinese)
+        let chinese = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], extensionProcessLines: [], form: .simplifiedChinese)
         #expect(chinese.contains("（没有检测到）"))
         #expect(chinese.contains("**正在播放的壁纸**：（无）"))
         #expect(chinese.contains("**最近活动**：（没有记录）"))
 
-        let english = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], form: .english)
+        let english = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], extensionProcessLines: [], form: .english)
         #expect(english.contains("(none detected)"))
         #expect(english.contains("**Active wallpapers**: (none)"))
         #expect(english.contains("(none recorded)"))
@@ -156,7 +159,7 @@ struct BugReporterBodyLanguageTests {
     func displayCountsMatchAcrossForms() {
         let snapshot = Self.snapshot()
         for form in [BugReporter.IssueForm.english, .simplifiedChinese] {
-            let body = BugReporter.formatMarkdown(snapshot: snapshot, recentLogLines: [], form: form)
+            let body = BugReporter.formatMarkdown(snapshot: snapshot, recentLogLines: [], extensionProcessLines: [], form: form)
             #expect(body.contains("3456×2234 @2x"), "\(form) dropped the display measurements")
         }
     }
@@ -166,14 +169,14 @@ struct BugReporterBodyLanguageTests {
         let chineseForm = BugReporter.issueForm(preference: .simplifiedChinese, systemLocalizations: ["en"])
         #expect(chineseForm.templateName == BugReporter.simplifiedChineseTemplateName)
         #expect(
-            BugReporter.formatMarkdown(snapshot: Self.snapshot(), recentLogLines: [], form: chineseForm)
+            BugReporter.formatMarkdown(snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [], form: chineseForm)
                 .contains("### 发生了什么？")
         )
 
         let japaneseForm = BugReporter.issueForm(preference: .japanese, systemLocalizations: ["zh-Hans"])
         #expect(japaneseForm.templateName == BugReporter.englishTemplateName)
         #expect(
-            BugReporter.formatMarkdown(snapshot: Self.snapshot(), recentLogLines: [], form: japaneseForm)
+            BugReporter.formatMarkdown(snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [], form: japaneseForm)
                 .contains("### What happened?")
         )
     }

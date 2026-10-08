@@ -29,12 +29,16 @@ enum ProviderStaleness {
             wpxLog.info("idle retirement skipped — surfaces=\(surfaces, privacy: .public) connected=\(connected, privacy: .public)")
             return
         }
-        let verdict = SystemWallpaperProviderStaleness.idleVerdict(
+        retire(if: declaredVerdict(store: store, bundle: bundle), bundle: bundle)
+    }
+
+    /// Includes `.supersededByDeclared`, which only an idle process may act on; callers that merely report it can use it as is.
+    static func declaredVerdict(store: SharedLibraryStore, bundle: Bundle = .main) -> SystemWallpaperProviderStaleness.Verdict {
+        SystemWallpaperProviderStaleness.idleVerdict(
             bundleVerdict(bundle: bundle),
             ownBundlePath: bundle.bundlePath,
             declared: store.loadDeclaredProvider()
         )
-        retire(if: verdict, bundle: bundle)
     }
 
     private static func bundleVerdict(bundle: Bundle) -> SystemWallpaperProviderStaleness.Verdict {

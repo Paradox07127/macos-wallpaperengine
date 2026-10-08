@@ -88,9 +88,12 @@ struct SettingsProvider {
             "es": "Fondos de vídeo",
         ]
         let preferred = Locale.preferredLanguages.first ?? "en"
-        for (prefix, text) in suffix where preferred.hasPrefix(prefix) {
-            return "\(brand) \(text)"
-        }
-        return "\(brand) Video Wallpapers"
+        let title = suffix.first { preferred.hasPrefix($0.key) }.map { "\(brand) \($0.value)" }
+            ?? "\(brand) Video Wallpapers"
+        return SystemWallpaperProviderStaleness.panelGroupTitle(
+            title,
+            verdict: ProviderStaleness.declaredVerdict(store: store),
+            preferredLanguage: preferred
+        )
     }
 }

@@ -55,11 +55,18 @@ enum BugReporter {
         let snapshot = SystemSnapshot.capture(activeWallpapers: activeWallpapers)
         let recentLog = sanitizedRecentLogLines()
         let form = issueForm()
+        let extensionLines = extensionProcessLines(
+            running: runningExecutables(),
+            bundledAppexPath: SystemWallpaperProviderIdentity.bundledProvider()?.bundlePath,
+            form: form
+        )
+        let body = formatMarkdown(
+            snapshot: snapshot, recentLogLines: recentLog, extensionProcessLines: extensionLines, form: form
+        )
         let failureText = failureContext.map { fencedLog([$0.diagnosticText]) + "\n\n" } ?? ""
-        let fullMarkdown = failureText + formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form)
+        let fullMarkdown = failureText + body
         let markdown = capped(
-            (failureContext.map { fencedLog([$0.issueDiagnosticText]) + "\n\n" } ?? "")
-                + formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form),
+            (failureContext.map { fencedLog([$0.issueDiagnosticText]) + "\n\n" } ?? "") + body,
             to: maxBodyLength,
             form: form
         )
@@ -76,21 +83,50 @@ enum BugReporter {
     static func formatMarkdown(
         snapshot: SystemSnapshot,
         recentLogLines: [String],
+        extensionProcessLines: [String],
         form: IssueForm
     ) -> String {
         switch form {
         case .english:
-            englishMarkdown(snapshot: snapshot, recentLogLines: recentLogLines)
+            englishMarkdown(snapshot: snapshot, recentLogLines: recentLogLines, extensionLines: extensionProcessLines)
         case .simplifiedChinese:
-            simplifiedChineseMarkdown(snapshot: snapshot, recentLogLines: recentLogLines)
+            simplifiedChineseMarkdown(
+                snapshot: snapshot, recentLogLines: recentLogLines, extensionLines: extensionProcessLines
+            )
         }
+    }
+
+    /// Lists every running copy of this app's extension, found by the bundled appex's directory name so builds installed elsewhere show up too.
+    static func extensionProcessLines(
+        running: [(pid: Int32, path: String)],
+        bundledAppexPath: String?,
+        form: IssueForm
+    ) -> [String] {
+        let lines: [String] = bundledAppexPath.map { bundled in
+            let marker = "/\((bundled as NSString).lastPathComponent)/Contents/MacOS/"
+            return running.filter { $0.path.contains(marker) }.map { process -> String in
+                let isBundled = process.path.hasPrefix(bundled + "/")
+                let path = LogPrivacyRedactor.scrub(process.path)
+                return form == .simplifiedChinese
+                    ? "pid \(process.pid) · \(path) · 自带那份：\(isBundled ? "是" : "否")"
+                    : "pid \(process.pid) · \(path) · bundled copy: \(isBundled ? "yes" : "no")"
+            }
+        } ?? []
+        guard lines.isEmpty else { return lines }
+        return [form == .simplifiedChinese ? "没有在运行" : "none running"]
+    }
+
+    private static func bulletList(_ lines: [String]) -> String {
+        lines.map { "  - \($0)" }.joined(separator: "\n")
     }
 
     private static func scrubbedWallpaperNames(_ names: [String]) -> [String] {
         names.map { LogPrivacyRedactor.scrub(LogPrivacyRedactor.sanitizedTitle($0)) }
     }
 
-    private static func englishMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
+    private static func englishMarkdown(
+        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String]
+    ) -> String {
         var sections: [String] = []
 
         sections.append("""
@@ -115,6 +151,7 @@ enum BugReporter {
             """)
         }
 
+        sections.append("- **System wallpaper extension processes**:\n" + bulletList(extensionLines))
         sections.append("</details>")
 
         sections.append("""
@@ -134,7 +171,9 @@ enum BugReporter {
         return sections.joined(separator: "\n\n")
     }
 
-    private static func simplifiedChineseMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
+    private static func simplifiedChineseMarkdown(
+        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String]
+    ) -> String {
         var sections: [String] = []
 
         sections.append("""
@@ -159,6 +198,7 @@ enum BugReporter {
             """)
         }
 
+        sections.append("- **系统壁纸扩展进程**：\n" + bulletList(extensionLines))
         sections.append("</details>")
 
         sections.append("""
@@ -236,6 +276,16 @@ enum BugReporter {
     private static func logFileExists() -> Bool {
         guard let url = Logger.persistentLogFileURL else { return false }
         return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private static func runningExecutables() -> [(pid: Int32, path: String)] {
+        // PROC_PIDPATHINFO_MAXSIZE; the macro does not import into Swift.
+        var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        return CodexProcessProbe.allPIDs().compactMap { pid in
+            let length = buffer.withUnsafeMutableBytes { proc_pidpath(pid, $0.baseAddress, UInt32($0.count)) }
+            guard length > 0, let path = String(bytes: buffer.prefix(Int(length)), encoding: .utf8) else { return nil }
+            return (pid: pid, path: path)
+        }
     }
 
     private static func sanitizedRecentLogLines() -> [String] {
