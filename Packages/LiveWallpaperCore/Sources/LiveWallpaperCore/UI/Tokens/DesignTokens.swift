@@ -163,6 +163,22 @@ public enum DesignTokens {
         public static let codeCaption = Font.system(.caption, design: .monospaced)
     }
 
+    /// Fixed point sizes for standalone SF Symbols that have no same-size text role.
+    public enum Glyph {
+        public static let selectionCheck = Font.system(size: 9, weight: .bold)
+        public static let searchMagnifier = Font.system(size: 12, weight: .medium)
+        public static let toastDismiss = Font.system(size: 10, weight: .bold)
+        public static let statusBadge = Font.system(size: 8, weight: .semibold)
+        public static let previewControl = Font.system(size: 15, weight: .medium)
+        public static let previewControlBadge = Font.system(size: 8)
+        public static let sheetHeaderIcon = Font.system(size: 22)
+        public static let failureDiagnosis = Font.system(size: 32)
+        public static let unavailableVeil = Font.system(size: 34, weight: .light)
+        public static let schemePlaceholder = Font.system(size: 30, weight: .light)
+        public static let videoPlaceholder = Font.system(size: 28, weight: .light)
+        public static let workshopPlaceholder = Font.system(size: 36)
+    }
+
     public enum LibraryGrid {
         /// Tile shape, which decides the ladder: `.wide` is 16:9, `.square` is Workshop.
         public enum Aspect {
@@ -293,6 +309,9 @@ public enum DesignTokens {
         public static let minWidth: CGFloat = 268
         public static let maxWidth: CGFloat = 480
         public static let defaultWidth: CGFloat = 372
+        /// What `defaultWidth` falls back to while the window is no wider than `compactWindowWidth`.
+        public static let compactWidth: CGFloat = 332
+        public static let compactWindowWidth: CGFloat = 1040
         public static let horizontalPadding: CGFloat = Spacing.md
         /// Shared geometry for inspector "label … [slider][value]" rows. `Typography.metric`
         /// is already monospaced, so call sites don't add `.monospacedDigit()`.

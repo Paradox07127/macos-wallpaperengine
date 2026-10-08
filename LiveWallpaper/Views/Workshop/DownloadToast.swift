@@ -105,7 +105,7 @@ struct DownloadToastHost: View {
                     withAnimation(.easeOut(duration: 0.2)) { shown = nil }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(DesignTokens.Glyph.toastDismiss)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)

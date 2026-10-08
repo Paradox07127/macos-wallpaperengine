@@ -75,7 +75,7 @@ struct WallpaperFailureView: View {
     private var diagnosis: some View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.lg) {
             Image(systemName: failureClass.symbol)
-                .font(.system(size: 32))
+                .font(DesignTokens.Glyph.failureDiagnosis)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(failureClass.tint)
                 .accessibilityHidden(true)

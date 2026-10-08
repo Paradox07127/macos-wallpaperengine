@@ -379,7 +379,7 @@ struct PlaybackControls: View {
                 .overlay(alignment: .topTrailing) {
                     if badge {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 8))
+                            .font(DesignTokens.Glyph.previewControlBadge)
                             .foregroundStyle(DesignTokens.Colors.Status.active)
                             .accessibilityHidden(true)
                     }

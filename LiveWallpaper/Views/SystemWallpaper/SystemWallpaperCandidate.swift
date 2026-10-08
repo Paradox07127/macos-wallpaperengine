@@ -138,14 +138,14 @@ struct SystemWallpaperCandidateTile: View {
                 .scaledToFill()
         } else {
             Image(systemName: "film")
-                .font(.system(size: 28, weight: .light))
+                .font(DesignTokens.Glyph.videoPlaceholder)
                 .foregroundStyle(Color.accentColor.opacity(0.85))
         }
     }
 
     private var selectionMark: some View {
         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-            .font(.system(size: 15, weight: .semibold))
+            .font(DesignTokens.EditDesk.Typography.stageTitle)
             .foregroundStyle(isSelected ? Color.accentColor : DesignTokens.Colors.overlayForeground)
             .frame(width: 22, height: 22)
             .floatingGlyphGlass(hovered: isHovering, opacity: 0.72)

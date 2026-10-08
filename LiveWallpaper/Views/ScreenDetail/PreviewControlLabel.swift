@@ -19,7 +19,7 @@ struct PreviewControlLabel: View {
     var body: some View {
         VStack(spacing: 2) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .medium))
+                .font(DesignTokens.Glyph.previewControl)
                 .frame(height: 18)
             if !compact {
                 Text(title)

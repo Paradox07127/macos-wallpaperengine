@@ -17,7 +17,7 @@ struct SteamSheetHeader: View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .font(DesignTokens.Glyph.sheetHeaderIcon)
                     .foregroundStyle(iconTint)
                     .accessibilityHidden(true)
             }

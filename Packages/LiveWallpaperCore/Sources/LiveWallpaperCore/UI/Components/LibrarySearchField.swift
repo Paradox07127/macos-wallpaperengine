@@ -111,7 +111,7 @@ public struct LibrarySearchField: View {
     @ViewBuilder
     private var magnifier: some View {
         let glyph = Image(systemName: "magnifyingglass")
-            .font(.system(size: 12, weight: .medium))
+            .font(DesignTokens.Glyph.searchMagnifier)
             .foregroundStyle(DesignTokens.Colors.textSecondary)
 
         if let onSubmit {

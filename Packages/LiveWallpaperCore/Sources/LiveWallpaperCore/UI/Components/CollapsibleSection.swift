@@ -55,7 +55,7 @@ public struct CollapsibleSection<Content: View, TrailingAccessory: View>: View {
                     }
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DesignTokens.EditDesk.Typography.floatName)
                         .foregroundStyle(DesignTokens.Colors.textSecondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .contentShape(Rectangle())
