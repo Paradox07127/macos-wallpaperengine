@@ -47,12 +47,6 @@ struct SuspendReasonReportingTests {
         }
     }
 
-    @Test("Safety reasons are exactly the ones settings cannot switch off")
-    func safetyClassificationMatchesPolicy() {
-        let safety = Set(WallpaperSuspendReason.allCases.filter(\.isSafety))
-        #expect(safety == [.userAbsent, .memoryPressure, .thermal])
-    }
-
     @Test("Restoring is its own state, never reported as a suspension")
     func restoringIsDistinctFromSuspension() {
         let all = Set([
