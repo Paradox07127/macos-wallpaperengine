@@ -896,7 +896,7 @@ final class WPESceneScriptInstance {
     func tickString(
         runtimeSeconds: Double? = nil
     ) -> String {
-        guard !requiresInitialization, hasUpdateFunction, !isPoisoned, !isDestroyed,
+        guard !requiresInitialization, hasUpdateFunction || engine.hasPendingTimers, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return lastValue }
         switch engine.tick(
             lastValue: lastValue,
@@ -1010,7 +1010,7 @@ final class WPESceneScriptInstance {
     // MARK: Async Tick
 
     func seedAsyncTick(runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, hasUpdateFunction, !isPoisoned, !isDestroyed,
+        guard !requiresInitialization, hasUpdateFunction || engine.hasPendingTimers, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return }
         switch engine.tick(
             lastValue: lastValue,
@@ -1048,7 +1048,7 @@ final class WPESceneScriptInstance {
             return (lastValue, nil)
         }
         flushPendingMediaEvents(runtimeSeconds: runtimeSeconds)
-        guard !isPoisoned, hasUpdateFunction else { return (lastValue, nil) }
+        guard !isPoisoned, hasUpdateFunction || engine.hasPendingTimers else { return (lastValue, nil) }
         guard engine.allows(.tick) else { return (lastValue, nil) }
         if let fresh = asyncOutcomeSlot.takeLatest(), let newValue = fresh {
             lastValue = newValue
@@ -1088,6 +1088,15 @@ final class WPESceneScriptInstance {
         private var didInitialize = false
         private var screenResolution: JSValue?
         private var lastRuntimeSeconds: Double?
+        /// Frame base for `engine.frametime`; only frame ticks move it.
+        private var lastFrameRuntimeSeconds: Double?
+        private var lastFrameTime = 0.0
+        /// Written by every entry on the lane, read by the render thread's batch guard.
+        private let pendingTimers = OSAllocatedUnfairLock(initialState: false)
+        var hasPendingTimers: Bool {
+            pendingTimers.withLock { $0 }
+        }
+
         /// One-crossing clock updates; nil until setUp (then falls back to
         /// `wpeRefreshEngineClock` should construction ever fail).
         private var engineClockWriter: WPEEngineClockWriter?
@@ -1202,7 +1211,7 @@ final class WPESceneScriptInstance {
         ) -> WPESceneScriptBoundedExecutionResult<String?> {
             guard allows(.tick) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .tick, admission: .failFast) {
-                self.tickOnQueue(lastValue: lastValue, runtimeSeconds: runtimeSeconds)
+                self.tickOnQueue(lastValue: lastValue, runtimeSeconds: runtimeSeconds, isFrameTick: true)
             }
         }
 
@@ -1225,7 +1234,8 @@ final class WPESceneScriptInstance {
                     applied: true,
                     value: self.tickOnQueue(
                         lastValue: lastValue,
-                        runtimeSeconds: runtimeSeconds
+                        runtimeSeconds: runtimeSeconds,
+                        isFrameTick: false
                     )
                 )
             }
@@ -1288,7 +1298,8 @@ final class WPESceneScriptInstance {
                 defer { asyncExecutionSafety.complete(safety) }
                 let outcome = tickOnQueue(
                     lastValue: lastValue,
-                    runtimeSeconds: runtimeSeconds
+                    runtimeSeconds: runtimeSeconds,
+                    isFrameTick: true
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -1313,6 +1324,8 @@ final class WPESceneScriptInstance {
         /// A quarantined evaluation publishes nothing, matching the string outcome's fence.
         private func publishLayerOutput() {
             layerBridge.finishEvaluation(commit: acceptsCompletion())
+            // Every entry ends here, so the batch guard also sees timers a handler registered.
+            pendingTimers.withLock { $0 = timerScheduler?.hasPendingTimers == true }
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
@@ -1387,7 +1400,7 @@ final class WPESceneScriptInstance {
             installCanvasSize(in: context)
             layerBridge.installLayerBridge(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
-            _ = updateEngineRuntime(0)
+            _ = updateEngineRuntime(0, isFrameTick: true)
             if let shared {
                 wpeInstallSharedState(shared, in: context)
             }
@@ -1424,14 +1437,14 @@ final class WPESceneScriptInstance {
             if initialize {
                 return initializeOnQueue(initialValue: initialValue)
             }
-            return .ready(hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers, initialResult: nil,
+            return .ready(hasUpdate: updateFunction != nil, initialResult: nil,
                           media: WPESceneMediaHandlerSet(in: context))
         }
 
         private func initializeOnQueue(initialValue: String) -> SetupOutcome {
             guard let context else { return .contextUnavailable }
             guard !didInitialize else {
-                return .ready(hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
+                return .ready(hasUpdate: updateFunction != nil,
                               initialResult: nil, media: WPESceneMediaHandlerSet(in: context))
             }
             didInitialize = true
@@ -1444,7 +1457,7 @@ final class WPESceneScriptInstance {
                 initialResult = Self.coercedResult(initFn.call(withArguments: [seed as Any]))
             }
             return .ready(
-                hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
+                hasUpdate: updateFunction != nil,
                 initialResult: initialResult,
                 media: WPESceneMediaHandlerSet(in: context)
             )
@@ -1458,7 +1471,7 @@ final class WPESceneScriptInstance {
         ) -> Bool {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return false }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return false }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return false }
@@ -1479,12 +1492,13 @@ final class WPESceneScriptInstance {
 
         private func tickOnQueue(
             lastValue: String,
-            runtimeSeconds: Double?
+            runtimeSeconds: Double?,
+            isFrameTick: Bool
         ) -> String? {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
             audioBridge?.refresh()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return nil }
             guard let context, let updateFunction else { return nil }
             let now = WPEScriptFaultPolicy.monotonicNow()
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
@@ -1516,16 +1530,20 @@ final class WPESceneScriptInstance {
             return nil
         }
 
-        private func updateEngineRuntime(_ runtimeSeconds: Double?) -> Double? {
+        /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
             guard let context else { return nil }
             let supplied = runtimeSeconds.flatMap { $0.isFinite ? $0 : nil }
             let runtime = max(lastRuntimeSeconds ?? 0, supplied ?? lastRuntimeSeconds ?? 0)
-            let frameTime = lastRuntimeSeconds.map { max(runtime - $0, 0) } ?? 0
             lastRuntimeSeconds = runtime
+            if isFrameTick {
+                lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? 0
+                lastFrameRuntimeSeconds = runtime
+            }
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
             }
             return supplied == nil ? nil : runtime
         }
@@ -3111,12 +3129,19 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
 
         guard let update = context.objectForKeyedSubscript("update"),
               !update.isUndefined, update.hasProperty("call"),
-              let valueObject = JSValue(newObjectIn: context) else { return nil }
-        valueObject.setObject(seed.x, forKeyedSubscript: "x" as NSString)
-        valueObject.setObject(seed.y, forKeyedSubscript: "y" as NSString)
-        valueObject.setObject(seed.z, forKeyedSubscript: "z" as NSString)
+              var valueObject = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [seed.x, seed.y, seed.z])
+        else { return nil }
 
         exception.didThrow = false
+        if let initFn = context.objectForKeyedSubscript("init"), !initFn.isUndefined, initFn.hasProperty("call") {
+            let initialized = initFn.call(withArguments: [valueObject])
+            guard !exception.didThrow else {
+                return nil
+            }
+            if let initialized, initialized.isObject {
+                valueObject = initialized
+            }
+        }
         guard let result = update.call(withArguments: [valueObject]),
               !exception.didThrow,
               !result.isUndefined, !result.isNull, result.isObject,
@@ -3174,9 +3199,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private let tickBudget: TimeInterval
     private var lastValue: SIMD3<Double>
     private var isPoisoned = false
-    /// A module exporting only `init` (and cursor/media handlers) has nothing to
-    /// run per frame. Ticking it anyway would publish `nil` on the next frame and
-    /// snap the layer back off the value `init` returned.
+    /// Whether the module exports `update`; without it, frames tick only while timers are pending.
     private var hasUpdateFunction: Bool
     private(set) var mediaHandlers: WPESceneMediaHandlerSet
     private var requiresInitialization: Bool
@@ -3217,8 +3240,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             case .setupFailed:
                 isPoisoned = true
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, initialResult, media, cursor):
-                hasUpdateFunction = hasUpdate
+            case let .ready(exportsUpdate, initialResult, media, cursor):
+                hasUpdateFunction = exportsUpdate
                 mediaHandlers = media
                 cursorHandlers = cursor
                 if let initialResult {
@@ -3305,9 +3328,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 throw WPESceneScriptError.contextUnavailable
             case .setupFailed:
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, initialResult, media, cursor):
+            case let .ready(exportsUpdate, initialResult, media, cursor):
                 self.mediaHandlers = media
-                self.hasUpdateFunction = hasUpdate
+                hasUpdateFunction = exportsUpdate
                 cursorHandlers = cursor
                 // Publish init's return as the first completed outcome so the first frame does not show the baked transform; nil leaves the authored seed.
                 if let initialResult {
@@ -3324,7 +3347,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     }
 
     func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed,
               mediaHandlers.handles(event), engine.allows(.event) else { return }
         switch engine.dispatchMediaEvent(
             event,
@@ -3343,7 +3366,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     }
 
     func liveDispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed,
               mediaHandlers.handles(event), engine.allows(.event) else { return }
         _ = engine.dispatchMediaEventAsync(event, runtimeSeconds: runtimeSeconds)
     }
@@ -3351,7 +3374,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// One drain's worth of events in one hop; see the layer runtime's batch
     /// entry for why per-event dispatch dropped everything after the first.
     func liveDispatchMediaEvents(_ events: [WPESceneMediaEvent], runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return }
         for event in events where mediaHandlers.handles(event) {
             pendingMediaEvents.coalesce(event)
         }
@@ -3369,7 +3392,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         allowSubmission: Bool = true
     ) -> WPESceneScriptBatchDispatcher.Job? {
         guard !requiresInitialization else { return nil }
-        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, engine.allows(.event) else {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else {
             cursorInbox.close()
             return nil
         }
@@ -3392,7 +3415,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     func injectOracleUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue]
     ) -> [String: WPESceneScriptPropertyValue]? {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         switch engine.injectOracleUserProperties(properties, budget: tickBudget) {
         case .timedOut:
@@ -3410,8 +3433,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> SIMD3<Double>? {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return nil }
-        guard hasUpdateFunction else { return hasAsyncOutcome ? lastValue : nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return nil }
+        guard hasUpdateFunction || engine.hasPendingTimers else { return hasAsyncOutcome ? lastValue : nil }
         guard engine.allows(.tick) else { return nil }
         switch engine.tick(
             currentValue: lastValue,
@@ -3440,7 +3463,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> Bool {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return false }
         let budget = tickBudget * 2
         switch engine.applyScriptProperties(
@@ -3471,7 +3494,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     @discardableResult
     func resizeScreen(_ size: SIMD2<Double>) -> Bool {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed,
               engine.allows(.event) else { return false }
         let budget = tickBudget * 2
         switch engine.resizeScreen(size, budget: budget) {
@@ -3488,7 +3511,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     @discardableResult
     func applyGeneralSettings(language: String) -> Bool {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed,
               engine.allows(.event) else { return false }
         let budget = tickBudget * 2
         switch engine.applyGeneralSettings(language: language, budget: budget) {
@@ -3505,7 +3528,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     @discardableResult
     func applyUserProperties(_ properties: [String: WPESceneScriptPropertyValue]) -> Bool {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed,
               engine.allows(.event) else { return false }
         let budget = tickBudget * 2
         switch engine.applyUserProperties(properties, budget: budget) {
@@ -3525,7 +3548,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         guard !isDestroyed else { return false }
         isDestroyed = true
         cursorInbox.close()
-        guard !requiresInitialization, !isPoisoned, !engine.hasRuntimeFault,
+        guard !requiresInitialization, !isPoisoned,
               engine.allows(.event) else {
             engine.discardPreparedResources()
             return false
@@ -3546,7 +3569,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     // MARK: Async Tick
 
     func seedAsyncTick(pointerPosition: SIMD2<Double>, runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, hasUpdateFunction,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, hasUpdateFunction || engine.hasPendingTimers,
               engine.allows(.tick) else { return }
         switch engine.tick(
             currentValue: lastValue,
@@ -3569,7 +3592,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> (value: SIMD3<Double>?, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return (nil, nil) }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return (nil, nil) }
         // Overdue check BEFORE the no-update return: an init-only module still
         // hosts media handlers, and a hung one must poison the instance rather
         // than keep its engine lane and governor permit occupied forever.
@@ -3581,11 +3604,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             )
             return (nil, nil)
         }
-        // No `update` to run: hold whatever `init` returned rather than schedule a
-        // per-frame job whose nil result would overwrite it.
-        guard hasUpdateFunction else { return (hasAsyncOutcome ? lastValue : nil, nil) }
+        guard hasUpdateFunction || engine.hasPendingTimers else { return (hasAsyncOutcome ? lastValue : nil, nil) }
         guard engine.allows(.tick) else { return (nil, nil) }
-        if let fresh = asyncOutcomeSlot.takeLatest() {
+        // Without update() a frame job only runs timers; its nil must not overwrite what init returned.
+        if let fresh = asyncOutcomeSlot.takeLatest(), hasUpdateFunction || fresh != nil {
             hasAsyncOutcome = true
             lastAsyncInner = fresh
             if let fresh {
@@ -3613,7 +3635,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
         enum SetupOutcome {
             case ready(
-                hasUpdate: Bool,
+                exportsUpdate: Bool,
                 initialResult: SIMD3<Double>?,
                 media: WPESceneMediaHandlerSet,
                 cursor: Set<WPELayerScriptCursorEvent>
@@ -3660,13 +3682,18 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         /// each tick (same shape as `cursorWorldPosition`).
         private var updateArgument: JSValue?
         private var lastRuntimeSeconds: Double?
+        /// Frame base for `engine.frametime`; only frame ticks move it.
+        private var lastFrameRuntimeSeconds: Double?
+        private var lastFrameTime = 1.0 / 30.0
         /// One diagnostic per instance, including the actual JS error and its authored source location.
         private var didLogException = false
         fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
-        /// Set on hard quarantine so callers can stop scheduling without a queue hop.
-        private let runtimeFault = OSAllocatedUnfairLock(initialState: false)
-        var hasRuntimeFault: Bool { runtimeFault.withLock { $0 } }
+        /// Written by every entry on the lane, read by the render thread's batch guard.
+        private let pendingTimers = OSAllocatedUnfairLock(initialState: false)
+        var hasPendingTimers: Bool {
+            pendingTimers.withLock { $0 }
+        }
 
         init(
             seed: SIMD3<Double>,
@@ -3742,7 +3769,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 self.tickOnQueue(
                     currentValue: currentValue,
                     pointerPosition: pointerPosition,
-                    runtimeSeconds: runtimeSeconds
+                    runtimeSeconds: runtimeSeconds,
+                    isFrameTick: true
                 )
             }
         }
@@ -3782,7 +3810,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     value: self.tickOnQueue(
                         currentValue: currentValue,
                         pointerPosition: pointerPosition,
-                        runtimeSeconds: runtimeSeconds
+                        runtimeSeconds: runtimeSeconds,
+                        isFrameTick: false
                     )
                 )
             }
@@ -3948,7 +3977,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 let outcome = tickOnQueue(
                     currentValue: currentValue,
                     pointerPosition: pointerPosition,
-                    runtimeSeconds: runtimeSeconds
+                    runtimeSeconds: runtimeSeconds,
+                    isFrameTick: true
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -3980,7 +4010,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             installInput(in: context)
             installLayerBridge(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
-            _ = updateEngineRuntime(0)
+            _ = updateEngineRuntime(0, isFrameTick: true)
             if let shared {
                 wpeInstallSharedState(shared, in: context)
             }
@@ -4024,7 +4054,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             if initialize {
                 return initializeOnQueue()
             }
-            return .ready(hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers, initialResult: nil,
+            return .ready(exportsUpdate: updateFunction != nil, initialResult: nil,
                           media: WPESceneMediaHandlerSet(in: context), cursor: Self.cursorHandlers(in: context))
         }
 
@@ -4035,7 +4065,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private func initializeOnQueue() -> SetupOutcome {
             guard let context else { return .contextUnavailable }
             guard !didInitialize else {
-                return .ready(hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
+                return .ready(exportsUpdate: updateFunction != nil,
                               initialResult: nil, media: WPESceneMediaHandlerSet(in: context),
                               cursor: Self.cursorHandlers(in: context))
             }
@@ -4055,7 +4085,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 // The exception handler already logged the error once; keep the authored seed and later callbacks.
             }
             return .ready(
-                hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
+                exportsUpdate: updateFunction != nil,
                 initialResult: initialResult,
                 media: WPESceneMediaHandlerSet(in: context),
                 cursor: Self.cursorHandlers(in: context)
@@ -4070,7 +4100,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         ) {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return }
@@ -4098,7 +4128,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
             updateInput(pointerFrame.position)
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return }
@@ -4202,7 +4232,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private func tickOnQueue(
             currentValue: SIMD3<Double>,
             pointerPosition: SIMD2<Double>,
-            runtimeSeconds: Double?
+            runtimeSeconds: Double?,
+            isFrameTick: Bool
         ) -> SIMD3<Double>? {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
@@ -4210,7 +4241,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             audioBridge?.refresh()
             // Before timers: a timer-only module has no update() but its callbacks read input.
             updateInput(pointerPosition)
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return nil }
             guard let updateFunction else { return nil }
 
             didThrow = false
@@ -4223,7 +4254,6 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 let verdict = faultPolicy.recordFailure(entryPoint: "update", at: now)
                 if verdict == .quarantined {
                     self.updateFunction = nil
-                    runtimeFault.withLock { $0 = true }
                 }
                 return nil
             }
@@ -4262,7 +4292,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return SIMD3<Double>(x, y, z.isFinite ? z : currentValue.z)
         }
 
-        private func updateEngineRuntime(_ runtimeSeconds: Double?) -> Double? {
+        /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
             guard let context else { return nil }
             let runtime: Double
             if let runtimeSeconds, runtimeSeconds.isFinite {
@@ -4270,17 +4301,15 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             } else {
                 runtime = (lastRuntimeSeconds ?? 0) + 1.0 / 30.0
             }
-            let frameTime: Double
-            if let previous = lastRuntimeSeconds {
-                frameTime = max(runtime - previous, 0)
-            } else {
-                frameTime = 1.0 / 30.0
-            }
             lastRuntimeSeconds = runtime
+            if isFrameTick {
+                lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? 1.0 / 30.0
+                lastFrameRuntimeSeconds = runtime
+            }
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
             }
             return runtimeSeconds?.isFinite == true ? runtime : nil
         }
@@ -4414,6 +4443,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func publishLayerOutput() {
             layerBridge.finishEvaluation(commit: acceptsCompletion())
+            // Every entry ends here, so the batch guard also sees timers a handler registered.
+            pendingTimers.withLock { $0 = timerScheduler?.hasPendingTimers == true }
         }
 
     }
