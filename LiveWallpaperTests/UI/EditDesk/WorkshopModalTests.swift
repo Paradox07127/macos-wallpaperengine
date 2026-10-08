@@ -333,17 +333,19 @@ struct WorkshopModalTests {
     }
 
     @Test(
-        "Applying the installed item straight to a display drops a settled ticket, so its old result leaves the line; a waiting one stays",
+        "Applying the installed item straight to a display drops a settled ticket, so its old result leaves the line",
         .timeLimit(.minutes(1))
     )
     func directApplyDropsTheSettledResult() async throws {
         let host = try RepositoryRoot.source(Self.hostPath)
         let start = try #require(host.range(of: "case .applyNow:"))
         let end = try #require(host.range(of: "case .retarget:", range: start.upperBound ..< host.endIndex))
-        #expect(
-            has("discardIfSettled(itemID: item.id)", in: String(host[start.lowerBound ..< end.lowerBound])),
-            "the direct apply leaves the settled ticket, so the line keeps reporting the display it was queued for"
+        let applyNow = String(host[start.lowerBound ..< end.lowerBound])
+        let prepare = try #require(
+            applyNow.range(of: "wiring.prepareDirectApply(itemID: item.id)"),
+            "the direct apply leaves the item's ticket, so a queued apply or an old result outlives it"
         )
+        #expect(applyNow.range(of: "applyNow(entry, to: screenID)", range: prepare.upperBound ..< applyNow.endIndex) != nil)
 
         let manager = DeferredWallpaperApplying()
         let deferredApply = DeferredApplyCoordinator(
@@ -353,12 +355,14 @@ struct WorkshopModalTests {
                 sceneCapable: true, confirmationTimeout: .seconds(1)
             )
         )
+        let wiring = WorkshopModalWiring(
+            downloads: .init(start: { _, _ in nil }, active: { _ in nil }, cancel: { _ in }),
+            deferredApply: deferredApply, screens: manager
+        )
         let attempt = WorkshopDownloadAttempt(itemID: 42)
         let ticket = deferredApply.submit(attempt: attempt, target: .init(
             screen: manager.first, selectionGeneration: manager.beginExplicitWallpaperSelection(for: manager.first)
         ))
-        deferredApply.discardIfSettled(itemID: 42)
-        #expect(deferredApply.ticket(for: 42) === ticket, "a direct apply dropped an apply still waiting on its download")
 
         attempt.finish(.succeeded(manager.entry))
         let deadline = ContinuousClock.now + .seconds(1)
@@ -368,7 +372,7 @@ struct WorkshopModalTests {
         #expect(ticket.state == .finished(ApplyReport(outcome: .applied, exitedSpanMode: false)))
         #expect(WorkshopModalPress.action(isInstalled: true, ticketState: ticket.state) == .applyNow)
 
-        deferredApply.discardIfSettled(itemID: 42)
+        wiring.prepareDirectApply(itemID: 42)
         #expect(
             presentation(deferredApply.ticket(for: 42)?.state, phase: .succeeded, installed: true, screenName: manager.first.name).status
                 == String(localized: "Added to your library.", bundle: .appLanguage),

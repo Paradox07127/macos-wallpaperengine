@@ -185,6 +185,8 @@ final class WorkshopDownloadCoordinator {
     @ObservationIgnored private let cancelSteamCMD: @MainActor (UUID) async -> Void
     @ObservationIgnored private var tasks: [UInt64: Task<Void, Never>] = [:]
     @ObservationIgnored private var activeDownloads: [UInt64: WorkshopDownloadAttempt] = [:]
+    /// Keyed by attempt id: asked on success whether a display still waits to apply that attempt.
+    @ObservationIgnored private var successToastDeferrals: [UUID: @MainActor () -> Bool] = [:]
     /// Runs once SteamCMD returns from an item's download, whatever its result.
     @ObservationIgnored var afterSteamCMDRun: @MainActor () async -> Void
 
@@ -247,6 +249,17 @@ final class WorkshopDownloadCoordinator {
         activeDownloads[itemID]
     }
 
+    /// While `appliesNext` holds, the attempt's success toast is left to the apply that follows it.
+    func deferSuccessToast(of attempt: WorkshopDownloadAttempt, while appliesNext: @escaping @MainActor () -> Bool) {
+        guard activeDownloads[attempt.itemID] === attempt else { return }
+        successToastDeferrals[attempt.id] = appliesNext
+    }
+
+    private func appliesNext(_ itemID: UInt64) -> Bool {
+        guard let attempt = activeDownloads[itemID], let appliesNext = successToastDeferrals[attempt.id] else { return false }
+        return appliesNext()
+    }
+
     @discardableResult
     func download(
         itemID: UInt64, title: String, using doctor: any WorkshopItemDownloading, replacing: WPEHistoryEntry? = nil
@@ -277,7 +290,10 @@ final class WorkshopDownloadCoordinator {
         markCancelled(itemID)
         clearProgress(itemID)
         fetchingDependencies.remove(itemID)
-        activeDownloads.removeValue(forKey: itemID)?.finish(.cancelled)
+        if let attempt = activeDownloads.removeValue(forKey: itemID) {
+            successToastDeferrals[attempt.id] = nil
+            attempt.finish(.cancelled)
+        }
         // Task.cancel invalidates the connection, which makes the connector drop a still-queued run; a child already running is signalled here, scoped to this attempt's id so another item or a retry survives.
         if let cancelledAttempt {
             Task { [cancelSteamCMD] in await cancelSteamCMD(cancelledAttempt) }
@@ -419,6 +435,9 @@ final class WorkshopDownloadCoordinator {
             }
             tasks[itemID] = nil
             let attempt = activeDownloads.removeValue(forKey: itemID)
+            if let attempt {
+                successToastDeferrals[attempt.id] = nil
+            }
             if let outcome {
                 attempt?.finish(outcome)
             } else if case let .failed(reason) = phases[itemID] {
@@ -531,6 +550,7 @@ final class WorkshopDownloadCoordinator {
         phases[itemID] = phase
         switch phase {
         case .succeeded:
+            guard !appliesNext(itemID) else { break }
             toasts.post(
                 headline: String(localized: "Downloaded", bundle: .appLanguage, comment: "Workshop download success toast headline."),
                 title: title,
@@ -688,12 +708,14 @@ final class WorkshopDownloadCoordinator {
             )
             return .failed(reason: reason)
         }
-        toasts.post(
-            headline: String(localized: "Required items added", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
-            title: rootTitle,
-            message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", bundle: .appLanguage, comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
-            isSuccess: true
-        )
+        if !appliesNext(rootItemID) {
+            toasts.post(
+                headline: String(localized: "Required items added", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
+                title: rootTitle,
+                message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", bundle: .appLanguage, comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
+                isSuccess: true
+            )
+        }
         return .succeeded(entry)
     }
 

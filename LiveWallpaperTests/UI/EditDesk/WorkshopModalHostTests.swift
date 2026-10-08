@@ -163,6 +163,31 @@ struct WorkshopModalHostTests {
         #expect(ticket?.state == .finished(ApplyReport(outcome: .applied, exitedSpanMode: false)))
     }
 
+    @Test(
+        "Applying the installed item straight to a display drops the apply its update download queued for another",
+        .timeLimit(.minutes(1))
+    )
+    func directApplyDropsTheApplyQueuedForAnotherDisplay() async {
+        let wiring = wiring()
+        let queued = wiring.applyWhenDownloaded(itemID: 42, to: manager.first.id)
+        // Values are read into locals first: a failing #expect reflects its operands, and reflecting AppKit-backed objects traps the host.
+        let action = WorkshopModalPress.action(isInstalled: true, ticketState: queued?.state)
+        #expect(action == .applyNow)
+
+        wiring.prepareDirectApply(itemID: 42)
+        let state = queued?.state
+        #expect(state == .invalidated(.cancelled), "the apply queued for the first display survived the direct apply")
+        let remainsListed = wiring.ticket(for: 42) != nil
+        #expect(!remainsListed)
+        let downloadKeptRunning = downloads.cancelledItems.isEmpty && downloads.active(42) != nil
+        #expect(downloadKeptRunning, "the direct apply stopped the download")
+
+        downloads.active(42)?.finish(.succeeded(manager.entry))
+        await waitUntil { queued?.state.isSettled == true }
+        let appliedIDs = manager.appliedScreens.map(\.id)
+        #expect(appliedIDs.isEmpty, "the finished download still went to the display it was queued for")
+    }
+
     private func waitUntil(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(1)
         while !condition(), ContinuousClock.now < deadline {
