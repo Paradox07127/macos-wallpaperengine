@@ -27,6 +27,7 @@ EOF
 # A suite that fails beside others belongs in SERIAL_SUITES.
 PARALLEL_SUITES=(
   GeneralSettingsOwnershipCharacterizationTests
+  PlaylistEntryTitleTests
   # Capture lifecycle resets use fake sources.
   AudioSpectrumBrokerTests
   AudioSpectrumCadenceTests
@@ -267,6 +268,7 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  WeatherOverlayMigrationTests
   # ScreenManager owns shared settings across await; scope tokens isolate notifications,
   # while this pass keeps its persistence snapshots exclusive from parallel suites.
   PersistentUserPauseTests
