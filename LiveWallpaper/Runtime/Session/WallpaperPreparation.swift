@@ -247,7 +247,7 @@ enum WallpaperSessionTransaction {
         candidate.show()
         var span: WallpaperSpanStart?
         if let barrier {
-            span = await barrier.arrive(screen.id, attempt: attempt, frame: screen.frame)
+            span = await barrier.arrive(screen.id, attempt: attempt, frame: resolveCommitScreen()?.frame)
             guard !Task.isCancelled, isStillCurrent() else {
                 Logger.notice(
                     Task.isCancelled
@@ -267,6 +267,10 @@ enum WallpaperSessionTransaction {
         screen = live
         if currentScreen != nil {
             candidate.updateFrame(to: screen.frame)
+        }
+        if span != nil {
+            // Partners may have moved since release; the span must match the frames being installed.
+            span = barrier?.start(for: screen.id)
         }
         var didAttemptCommit = false
         var commitAccepted = false
