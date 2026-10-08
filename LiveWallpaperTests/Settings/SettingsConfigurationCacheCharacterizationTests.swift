@@ -101,7 +101,7 @@ struct SettingsConfigurationCacheCharacterizationTests {
     }
 
     enum ReadBoundary: CaseIterable {
-        case get, revision, loadAll, clearCache
+        case get, revision, loadAll
     }
 
     @Test("All cache read boundaries fence external edits and retain deletion tombstones", arguments: ReadBoundary.allCases)
@@ -119,7 +119,6 @@ struct SettingsConfigurationCacheCharacterizationTests {
         case .get: #expect(store.get(for: 11) == refreshed)
         case .revision: #expect(store.revision(for: 11) == preparedRevision + 1)
         case .loadAll: #expect(store.loadAll() == [refreshed])
-        case .clearCache: store.clearCache()
         }
         #expect(store.revision(for: 11) == preparedRevision + 1)
         #expect(store.get(for: 11) == refreshed)
@@ -128,7 +127,6 @@ struct SettingsConfigurationCacheCharacterizationTests {
         #expect(store.get(for: 11) == nil)
         let deletedRevision = store.revision(for: 11)
         #expect(deletedRevision == preparedRevision + 2)
-        store.clearCache()
         manager.saveConfiguration(original)
         #expect(store.revision(for: 11) == deletedRevision + 1)
         #expect(store.get(for: 11) == original)

@@ -104,8 +104,10 @@ extension ScreenManager {
         notifyWallpaperSessionChanged()
     }
 
-    func clearWallpaperOfType(_ type: WallpaperType, for screen: Screen) {
+    /// `isDeleted` names the queue and library entries that point at the content being removed.
+    func clearWallpaperOfType(_ type: WallpaperType, for screen: Screen, deleting isDeleted: (WallpaperQueueEntry) -> Bool) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
+        let deletedContent = config.activeWallpaper
 
         let wasActive = (config.activeWallpaper.wallpaperType == type)
         // Clear wpeOrigin when leaving a scene so reloads cannot revive deleted content.
@@ -125,22 +127,16 @@ extension ScreenManager {
             config.savedSceneDescriptor = nil
         }
 
-        guard wasActive else {
-            saveConfiguration(config)
-            return
-        }
-
-        if type != .video, config.activateSavedVideoWallpaper() {
-            restoreProposedWallpaperSession(for: screen, configuration: config)
-            return
-        }
-
-        if type != .html, config.activateSavedHTMLWallpaper() {
-            restoreProposedWallpaperSession(for: screen, configuration: config)
-            return
-        }
-
-        clearWallpaperForScreen(screen)
+        // Saved before the switch starts, so the caller's later origin scrub finds nothing to save and cannot void the candidate.
+        saveConfiguration(config)
+        guard wasActive else { return }
+        automationOrchestrator.replaceDeletedContent(
+            matching: { isDeleted($0) || SchedulePolicy.isSameContent($0.content, deletedContent) }, for: screen,
+            onExhausted: { [weak self, weak screen] in
+                guard let self, let screen else { return }
+                clearWallpaperForScreen(screen)
+            }
+        )
     }
 
     /// Tears down the live runtime session without changing saved configuration.
@@ -196,7 +192,6 @@ extension ScreenManager {
         for screen in snapshot {
             releaseRuntimeSession(screen)
         }
-        configurationStore.clearCache()
         Task { @MainActor in
             for screen in snapshot {
                 NotificationCenter.default.post(

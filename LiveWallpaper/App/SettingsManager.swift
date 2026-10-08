@@ -267,7 +267,7 @@ final class SettingsManager {
         cachedConfigurations = cachedConfigurations?.map {
             $0.refreshingScenePresets(in: library)
         }
-        // WallpaperConfigurationStore keeps its own per-display copies. Without this the renderer keeps the old snapshot until relaunch, and the next save writes the stale values back to disk.
+        // Running scene sessions still render the old snapshot until an observer hands them the reconciled descriptor.
         NotificationCenter.default.post(name: .scenePresetLibraryDidChange, object: nil)
     }
 

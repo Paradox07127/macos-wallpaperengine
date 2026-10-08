@@ -20,7 +20,6 @@ public extension ScreenConfigurationPersisting {
 
 @MainActor
 public final class WallpaperConfigurationStore {
-    private var cache: [CGDirectDisplayID: ScreenConfiguration] = [:]
     /// Semantic revision for prepared wallpaper CAS; advances even on equal value.
     private var revisions: [CGDirectDisplayID: UInt64] = [:]
     private var persistenceRevisions: [CGDirectDisplayID: UInt64] = [:]
@@ -32,16 +31,7 @@ public final class WallpaperConfigurationStore {
 
     public func get(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
         synchronizePersistenceRevision(for: screenID)
-        if let cached = cache[screenID] {
-            return cached
-        }
-
-        guard let configuration = persistence.getConfiguration(for: screenID) else {
-            return nil
-        }
-
-        cache[screenID] = configuration
-        return configuration
+        return persistence.getConfiguration(for: screenID)
     }
 
     /// Prefer display ID; miss → fingerprint match and migrate to current ID.
@@ -50,13 +40,11 @@ public final class WallpaperConfigurationStore {
         fingerprint: String?
     ) -> ScreenConfiguration? {
         if let direct = get(for: screenID) {
-            // ID recycled onto a different panel: trust fingerprint, not ID;
-            // evict stale binding and fall through to fingerprint scan.
+            // ID recycled onto a different panel: trust fingerprint, not ID.
             if let fingerprint, !fingerprint.isUnknownDisplayFingerprint,
-               let cachedFingerprint = direct.displayFingerprint,
-               !cachedFingerprint.isUnknownDisplayFingerprint,
-               cachedFingerprint != fingerprint {
-                cache.removeValue(forKey: screenID)
+               let storedFingerprint = direct.displayFingerprint,
+               !storedFingerprint.isUnknownDisplayFingerprint,
+               storedFingerprint != fingerprint {
                 return migrateByFingerprint(to: screenID, fingerprint: fingerprint)
             }
             if let fingerprint, !fingerprint.isUnknownDisplayFingerprint,
@@ -100,7 +88,6 @@ public final class WallpaperConfigurationStore {
         all[index].displayFingerprint = current
         let migrated = all[index]
         persistence.replaceAllConfigurations(all)
-        cache[migrated.screenID] = migrated
         bumpRevision(for: migrated.screenID)
         acknowledgePersistenceRevision(for: migrated.screenID)
         return true
@@ -145,11 +132,9 @@ public final class WallpaperConfigurationStore {
         updated.append(match)
         persistence.replaceAllConfigurations(updated)
 
-        cache[screenID] = match
         bumpRevision(for: screenID)
         acknowledgePersistenceRevision(for: screenID)
         if oldScreenID != screenID {
-            cache.removeValue(forKey: oldScreenID)
             bumpRevision(for: oldScreenID)
             acknowledgePersistenceRevision(for: oldScreenID)
         }
@@ -158,14 +143,12 @@ public final class WallpaperConfigurationStore {
 
     public func save(_ config: ScreenConfiguration) {
         bumpRevision(for: config.screenID)
-        cache[config.screenID] = config
         persistence.saveConfiguration(config)
         acknowledgePersistenceRevision(for: config.screenID)
     }
 
     public func remove(for screenID: CGDirectDisplayID) {
         bumpRevision(for: screenID)
-        cache.removeValue(forKey: screenID)
         persistence.cleanSettingsForScreen(screenID)
         acknowledgePersistenceRevision(for: screenID)
     }
@@ -179,7 +162,6 @@ public final class WallpaperConfigurationStore {
     private func synchronizePersistenceRevision(for screenID: CGDirectDisplayID) {
         guard let current = persistence.configurationRevision(for: screenID) else { return }
         if let previous = persistenceRevisions.updateValue(current, forKey: screenID), previous != current {
-            cache.removeValue(forKey: screenID)
             bumpRevision(for: screenID)
         }
     }
@@ -189,7 +171,7 @@ public final class WallpaperConfigurationStore {
     }
 
     private func synchronizePersistenceRevisions() {
-        for screenID in Set(cache.keys).union(revisions.keys).union(persistenceRevisions.keys) {
+        for screenID in Set(revisions.keys).union(persistenceRevisions.keys) {
             synchronizePersistenceRevision(for: screenID)
         }
     }
@@ -198,32 +180,25 @@ public final class WallpaperConfigurationStore {
         revisions[screenID] = (revisions[screenID] ?? 0) &+ 1
     }
 
-    public func clearCache() {
-        cache.removeAll()
-    }
-
     public func loadAll() -> [ScreenConfiguration] {
         let configs = persistence.loadConfigurations()
         synchronizePersistenceRevisions()
         for config in configs {
             acknowledgePersistenceRevision(for: config.screenID)
         }
-        cache = Self.cacheKeyedByScreenID(configs)
+        Self.warnOnDuplicateScreenIDs(configs)
         return configs
     }
 
-    /// Duplicate screenIDs: keep later entry + log (must not trap at launch).
-    private static func cacheKeyedByScreenID(
-        _ configs: [ScreenConfiguration]
-    ) -> [CGDirectDisplayID: ScreenConfiguration] {
-        let keyed = Dictionary(configs.map { ($0.screenID, $0) }, uniquingKeysWith: { _, later in later })
-        if keyed.count != configs.count {
+    /// Duplicate screenIDs are logged, never trapped on: they can reach disk and must not stop launch.
+    private static func warnOnDuplicateScreenIDs(_ configs: [ScreenConfiguration]) {
+        let shadowed = configs.count - Set(configs.map(\.screenID)).count
+        if shadowed > 0 {
             Logger.warning(
-                "Duplicate screenID entries in persisted configurations (\(configs.count - keyed.count) shadowed); keeping the later entry",
+                "Duplicate screenID entries in persisted configurations (\(shadowed) shadowed)",
                 category: .settings
             )
         }
-        return keyed
     }
 
     public func pruneInvalidResourceConfigurations(using validator: (CGDirectDisplayID) -> Bool) -> [CGDirectDisplayID] {
@@ -246,7 +221,7 @@ public final class WallpaperConfigurationStore {
         )
 
         synchronizePersistenceRevisions()
-        cache = Self.cacheKeyedByScreenID(pruned)
+        Self.warnOnDuplicateScreenIDs(pruned)
         persistence.replaceAllConfigurations(pruned)
         for screenID in invalidIDs {
             bumpRevision(for: screenID)

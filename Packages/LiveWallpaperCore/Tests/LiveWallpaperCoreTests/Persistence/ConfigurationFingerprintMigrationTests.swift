@@ -14,8 +14,6 @@ struct ConfigurationFingerprintMigrationTests {
 
         let original = makeVideoConfig(screenID: 42, fingerprint: nil)
         store.save(original)
-        store.clearCache()
-
         let resolved = store.get(for: 42, fingerprint: "V:M:S")
         #expect(resolved?.screenID == 42)
         #expect(resolved?.displayFingerprint == "V:M:S")
@@ -29,8 +27,6 @@ struct ConfigurationFingerprintMigrationTests {
 
         let originalConfig = makeVideoConfig(screenID: 42, fingerprint: "V:M:S")
         store.save(originalConfig)
-        store.clearCache()
-
         let resolved = store.get(for: 999, fingerprint: "V:M:S")
 
         #expect(resolved?.screenID == 999)
@@ -50,8 +46,6 @@ struct ConfigurationFingerprintMigrationTests {
         let store = WallpaperConfigurationStore(persistence: fakePersistence)
 
         store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        store.clearCache()
-
         let resolved = store.get(for: 999, fingerprint: "OTHER:M:S")
         #expect(resolved == nil)
         #expect(fakePersistence.allConfigs[42]?.screenID == 42)
@@ -63,8 +57,6 @@ struct ConfigurationFingerprintMigrationTests {
         let store = WallpaperConfigurationStore(persistence: fakePersistence)
 
         store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        store.clearCache()
-
         let resolved = store.get(for: 999, fingerprint: "unknown:Display 1")
         #expect(resolved == nil)
         #expect(fakePersistence.allConfigs[42]?.screenID == 42)
@@ -76,8 +68,6 @@ struct ConfigurationFingerprintMigrationTests {
         let store = WallpaperConfigurationStore(persistence: fakePersistence)
 
         store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        store.clearCache()
-
         let resolved = store.get(for: 999, fingerprint: nil)
         #expect(resolved == nil)
     }
@@ -89,8 +79,6 @@ struct ConfigurationFingerprintMigrationTests {
 
         store.save(makeVideoConfig(screenID: 42, fingerprint: "OLD"))
         store.save(makeVideoConfig(screenID: 7, fingerprint: "NEW"))
-        store.clearCache()
-
         // macOS recycled ID 42 onto the "NEW" panel.
         let resolved = store.get(for: 42, fingerprint: "NEW")
         #expect(resolved?.screenID == 42)
@@ -117,7 +105,7 @@ struct ConfigurationFingerprintMigrationTests {
         let configs = store.loadAll()
 
         #expect(configs.count == 2)
-        #expect(store.get(for: 42)?.displayFingerprint == "B", "Later entry wins on duplicate screenID")
+        #expect(store.get(for: 42)?.displayFingerprint == "A", "The store must hand back the row persistence resolves, not its own pick")
     }
 
     @Test("Per-screen revision advances for every semantic write")
