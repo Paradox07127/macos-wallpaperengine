@@ -525,7 +525,7 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
     ) -> WPELayerScriptOutput? {
-        guard !requiresInitialization, hasUpdateFunction, !isPoisoned, !isDestroyed,
+        guard !requiresInitialization, hasUpdateFunction || engine.hasPendingTimers, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return nil }
         switch engine.tick(
             runtimeSeconds: runtimeSeconds,
@@ -648,7 +648,7 @@ final class WPELayerScriptInstance {
         guard !requiresInitialization, !isPoisoned, !isDestroyed else { return (nil, nil) }
         guard engine.allows(.tick) else { return (nil, nil) }
         let fresh = consumeOutput ? asyncOutcomeSlot.takeLatest() : nil
-        guard hasUpdateFunction, let claim = asyncOutcomeSlot.beginTick() else { return (fresh, nil) }
+        guard hasUpdateFunction || engine.hasPendingTimers, let claim = asyncOutcomeSlot.beginTick() else { return (fresh, nil) }
         guard let work = engine.makeBatchTick(
             runtimeSeconds: runtimeSeconds,
             pointerFrame: cursorInbox.maskingSuppressedButtons(pointerFrame),
@@ -889,6 +889,15 @@ final class WPELayerScriptInstance {
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
         let asyncExecutionSafety = WPESceneScriptAsyncExecutionSafety()
         private var lastRuntimeSeconds: Double?
+        /// Frame base for `engine.frametime`; only frame ticks move it.
+        private var lastFrameRuntimeSeconds: Double?
+        private var lastFrameTime = 1.0 / 30.0
+        /// Written by every entry on the lane, read by the render thread's batch guard.
+        private let pendingTimers = OSAllocatedUnfairLock(initialState: false)
+        var hasPendingTimers: Bool {
+            pendingTimers.withLock { $0 }
+        }
+
         private var cursorScreenPosition: JSValue?
         private var cursorWorldPosition: JSValue?
         /// One-crossing clock updates; nil until setUp (then falls back to
@@ -985,7 +994,7 @@ final class WPELayerScriptInstance {
         ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput> {
             guard allows(.tick) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .tick, admission: .failFast) {
-                self.tickOnQueue(runtimeSeconds: runtimeSeconds, pointerFrame: pointerFrame)
+                self.tickOnQueue(runtimeSeconds: runtimeSeconds, pointerFrame: pointerFrame, isFrameTick: true)
             }
         }
 
@@ -1132,7 +1141,8 @@ final class WPELayerScriptInstance {
                     applied: true,
                     value: self.tickOnQueue(
                         runtimeSeconds: runtimeSeconds,
-                        pointerFrame: nil
+                        pointerFrame: nil,
+                        isFrameTick: false
                     )
                 )
             }
@@ -1186,7 +1196,8 @@ final class WPELayerScriptInstance {
                 defer { asyncExecutionSafety.complete(safety) }
                 let outcome = tickOnQueue(
                     runtimeSeconds: runtimeSeconds,
-                    pointerFrame: pointerFrame
+                    pointerFrame: pointerFrame,
+                    isFrameTick: true
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -1265,6 +1276,8 @@ final class WPELayerScriptInstance {
             beginEvaluation()
             let result = body()
             finishEvaluation(commit: acceptsCompletion())
+            // Every entry ends here, so the batch guard also sees timers a handler registered.
+            pendingTimers.withLock { $0 = timerScheduler?.hasPendingTimers == true }
             return (result, readOutput())
         }
 
@@ -1289,7 +1302,7 @@ final class WPELayerScriptInstance {
                 engineClockWriter = WPEEngineClockWriter(context: context)
                 cachedTrueArgument = JSValue(bool: true, in: context)
                 cachedFalseArgument = JSValue(bool: false, in: context)
-                _ = updateEngineRuntime(0)
+                _ = updateEngineRuntime(0, isFrameTick: true)
                 installLayerBridge(in: context)
                 if let shared {
                     wpeInstallSharedState(shared, in: context)
@@ -1332,7 +1345,7 @@ final class WPELayerScriptInstance {
                 if initialize {
                     return initializeOnQueue()
                 }
-                return (updateFunction != nil || timerScheduler.hasPendingTimers, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
+                return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
             }
             guard let metadata = evaluation.result else { return context == nil ? .contextUnavailable : .setupFailed }
             return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
@@ -1374,7 +1387,7 @@ final class WPELayerScriptInstance {
                     assignedText[Self.ownKey] = nil
                 }
             }
-            return (updateFunction != nil || timerScheduler?.hasPendingTimers == true, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
+            return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
         }
 
         /// Keyed by handler name, so a throwing media handler backs off alone
@@ -1385,7 +1398,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
                 guard let context,
                       let fn = context.objectForKeyedSubscript(event.handlerName),
                       !fn.isUndefined, fn.hasProperty("call") else {
@@ -1408,7 +1421,8 @@ final class WPELayerScriptInstance {
 
         private func tickOnQueue(
             runtimeSeconds: Double?,
-            pointerFrame: WPEPointerFrame?
+            pointerFrame: WPEPointerFrame?,
+            isFrameTick: Bool
         ) -> WPELayerScriptOutput {
             // WPE retains a destroyed handle through the first update after init;
             // retire it after that frame's callback, not before an unrelated event.
@@ -1416,7 +1430,7 @@ final class WPELayerScriptInstance {
             return evaluateLayerEntry {
                 audioBridge?.refresh()
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return }
                 updateInput(pointerFrame)
                 guard let context, let updateFunction else { return }
                 let now = WPEScriptFaultPolicy.monotonicNow()
@@ -1472,7 +1486,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
                 updateInput(pointerFrame)
                 guard let context,
                       let fn = context.objectForKeyedSubscript(event.handlerName),
@@ -1506,7 +1520,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
                 guard let context,
                       let fn = context.objectForKeyedSubscript("applyUserProperties"),
                       !fn.isUndefined, fn.hasProperty("call"),
@@ -1579,21 +1593,20 @@ final class WPELayerScriptInstance {
             return evaluation.output
         }
 
-        private func updateEngineRuntime(_ runtimeSeconds: Double?) -> Double? {
+        /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
             guard let context else { return nil }
             let supplied = runtimeSeconds.flatMap { $0.isFinite ? $0 : nil }
             let runtime = max(lastRuntimeSeconds ?? 0, supplied ?? lastRuntimeSeconds ?? 0)
-            let frameTime: Double
-            if let previous = lastRuntimeSeconds {
-                frameTime = max(runtime - previous, 0)
-            } else {
-                frameTime = max(runtime, 1.0 / 30.0)
-            }
             lastRuntimeSeconds = runtime
+            if isFrameTick {
+                lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? max(runtime, 1.0 / 30.0)
+                lastFrameRuntimeSeconds = runtime
+            }
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
             }
             return supplied == nil ? nil : runtime
         }
