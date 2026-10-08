@@ -738,12 +738,28 @@ extension CPUWidgetView {
     /// Tallest ring the M and L tiles draw, at every board scale.
     nonisolated static let gaugeSideCap: CGFloat = 96
 
-    /// Chrome stacked above the M ring at the smallest type size: WidgetContainer vertical inset, its header, and the row spacing under it.
-    nonisolated static let gaugeChromeBase: CGFloat = 41
-    /// What the identity row and its spacing add to `gaugeChromeBase`.
-    nonisolated static let gaugeChromeIdentityRow: CGFloat = 19
-    /// What the composition legend and its spacing add to `gaugeChromeBase`.
-    nonisolated static let gaugeChromeCompositionLegend: CGFloat = 38.3
+    /// One line of the board's semibold system face (`Design.labelFont` / `subFont`, 10 pt floor) as SwiftUI lays it out.
+    nonisolated static func lineHeight(fontSize: CGFloat) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: max(fontSize, 10), weight: .semibold)
+        // SwiftUI snaps the baseline to a whole point and rounds the descent up.
+        return font.ascender.rounded() + (-font.descender).rounded(.up)
+    }
+
+    /// Height the M tile spends on everything in the gauge column's stack except the ring.
+    nonisolated static func gaugeChrome(cellHeight: CGFloat, hasIdentityRow: Bool, hasCompositionLegend: Bool) -> CGFloat {
+        let scale = Design.TypeScale(cellHeight: cellHeight)
+        // `WidgetContainer`: vertical inset, header line, and the spacing under it.
+        var chrome = 2 * Design.contentInsetV + lineHeight(fontSize: scale.label + 1) + scale.label * 0.5
+        if hasIdentityRow {
+            // Baseline-aligned, so the device name's larger face sets the row height.
+            chrome += lineHeight(fontSize: max(scale.sub * 0.92, scale.label)) + scale.label * 0.5
+        }
+        if hasCompositionLegend {
+            // Column spacing, `legendValue`'s two lines and their spacing, `monitorChip`'s vertical padding.
+            chrome += 2 * lineHeight(fontSize: scale.label * 0.95) + scale.label * (0.45 + 0.3 + 2 * 0.24)
+        }
+        return chrome
+    }
 
     /// The M composition legend chip at its widest reading (USER/SYS 100%), in the current app language.
     nonisolated static func compositionLegendWidth(label: CGFloat) -> CGFloat {
@@ -767,13 +783,9 @@ extension CPUWidgetView {
         hasIdentityRow: Bool, hasCompositionLegend: Bool
     ) -> CGFloat {
         guard rows == 1 else { return gaugeSideCap }
-        var chrome = gaugeChromeBase
-        if hasIdentityRow {
-            chrome += gaugeChromeIdentityRow
-        }
-        if hasCompositionLegend {
-            chrome += gaugeChromeCompositionLegend
-        }
+        let chrome = gaugeChrome(
+            cellHeight: cellHeight, hasIdentityRow: hasIdentityRow, hasCompositionLegend: hasCompositionLegend
+        )
         let legend = hasCompositionLegend
             ? compositionLegendWidth(label: Design.TypeScale(cellHeight: cellHeight).label)
             : 0
