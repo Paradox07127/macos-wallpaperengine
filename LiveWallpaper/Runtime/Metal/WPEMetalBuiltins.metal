@@ -962,6 +962,50 @@ struct WPEBlendCompositeUniforms {
     return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, clamp(uv, float2(0.0), float2(1.0)))))));
 }
 
+struct WPEProjectedQuadUniforms {
+    float4 clipCorners[4]; // (x, y, 0, w) y-up clip, order BL, BR, TL, TR
+    float4 captureRow0;    // rows of layer uv (v down) -> (U*w, V*w, w), U/V top-left scene uv; w unused
+    float4 captureRow1;
+    float4 captureRow2;
+    float4 flags;          // x = local capture CLEARALPHA
+};
+
+// Keeps clip w so the default center_perspective interpolation yields the projected uv;
+// mirroring already lives in the model matrix, so uv is not sign-flipped here.
+[[vertex]] WPEVertexOut wpe_projected_quad_vertex(
+    uint vertexID [[vertex_id]],
+    constant WPEProjectedQuadUniforms& u [[buffer(1)]]
+) {
+    float2 uvs[4] = {
+        float2(0.0, 1.0),
+        float2(1.0, 1.0),
+        float2(0.0, 0.0),
+        float2(1.0, 0.0)
+    };
+    float4 c = u.clipCorners[vertexID];
+
+    WPEVertexOut out;
+    out.position = float4(c.x, c.y, 0.0, c.w);
+    out.uv = uvs[vertexID];
+    return out;
+}
+
+// Drawn on a fullscreen quad over the layer target, so in.uv is the layer uv.
+[[fragment]] half4 wpe_projected_scene_capture_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    constant WPEProjectedQuadUniforms& u [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float3 layerUV = float3(in.uv, 1.0);
+    float3 h = float3(dot(u.captureRow0.xyz, layerUV), dot(u.captureRow1.xyz, layerUV), dot(u.captureRow2.xyz, layerUV));
+    if (u.flags.x > 0.5 || h.z <= 0.0) {
+        return half4(wpe_attachment_output(float4(half4(0.0))));
+    }
+    float2 uv = h.xy / h.z;
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, clamp(uv, float2(0.0), float2(1.0)))))));
+}
+
 [[fragment]] half4 wpe_compose_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
