@@ -864,15 +864,18 @@ final class WPEMetalRenderExecutor {
             previousFrameHistory = nil
         }
 
+        let aliasTopology = validatedFBOAliasTopology(for: preparedPipeline)
         let projectedComposeIDs = projectedComposeObjectIDs(
             for: preparedPipeline,
             cameraUniforms: cameraUniforms,
             sceneSize: size,
-            groupingContainerObjectIDs: validatedFBOAliasTopology(for: preparedPipeline).groupingContainerObjectIDs
+            groupingContainerObjectIDs: aliasTopology.groupingContainerObjectIDs
         )
-        if projectedComposeIDs != targetPool.projectedComposeObjectIDs {
+        // The interval memo keys on neither set, yet both move the layer-composite keys.
+        if projectedComposeIDs != targetPool.projectedComposeObjectIDs
+            || aliasTopology.sampledCompositeObjectIDs != targetPool.sampledCompositeObjectIDs {
             targetPool.projectedComposeObjectIDs = projectedComposeIDs
-            // The interval memo does not key on this set, yet it moves the layer-composite keys.
+            targetPool.sampledCompositeObjectIDs = aliasTopology.sampledCompositeObjectIDs
             cachedFBOAliasTopology?.intervalMemo = nil
         }
         // Aliasing is disabled while the debug bypass path is active — bypass skips a layer's passes, which would break the lockstep pass index the alias plan relies on.
@@ -2451,7 +2454,8 @@ final class WPEMetalRenderExecutor {
             layer: layer,
             geometry: layer.geometry,
             sceneSize: currentSceneSize,
-            composePerspective: targetPool.projectedComposeObjectIDs.contains(layer.objectID)
+            composePerspective: targetPool.projectedComposeObjectIDs.contains(layer.objectID),
+            sampledByOtherLayers: targetPool.sampledCompositeObjectIDs.contains(layer.objectID)
         )
     }
 

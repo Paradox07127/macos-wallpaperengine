@@ -295,6 +295,8 @@ extension WPEMetalRenderExecutor {
         let signature: [SignatureEntry]
         /// Structural parent routing, shared by every frame using this topology.
         let groupingContainerObjectIDs: Set<String>
+        /// Layers whose `_rt_imageLayerComposite_<id>` another layer reads; grouping containers excluded.
+        let sampledCompositeObjectIDs: Set<String>
         /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
         let sizingLayerIndices: [Int]
 
@@ -324,11 +326,27 @@ extension WPEMetalRenderExecutor {
             self.itemIndicesByKeyName = itemIndicesByKeyName
             self.signature = signature
             groupingContainerObjectIDs = Set(signature.compactMap(\.sceneParentObjectID))
+            sampledCompositeObjectIDs = Self.sampledCompositeObjectIDs(in: layers).subtracting(groupingContainerObjectIDs)
             self.sizingLayerIndices = sizingLayerIndices
             validatedLayers = layers
             sizingGeometry = sizingLayerIndices.map {
                 SizingGeometry(layers[$0])
             }
+        }
+
+        static func sampledCompositeObjectIDs(in layers: [WPEPreparedRenderLayer]) -> Set<String> {
+            var ids: Set<String> = []
+            for layer in layers {
+                let ownID = layer.graphLayer.objectID
+                for pass in layer.passes {
+                    for name in pass.access.fboNames {
+                        if let id = WPERenderTargetNames.ImageLayerComposite.layerID(from: name), id != ownID {
+                            ids.insert(id)
+                        }
+                    }
+                }
+            }
+            return ids
         }
 
         /// O(1) and exact — see `validatedLayers`. Two empty arrays compare equal
