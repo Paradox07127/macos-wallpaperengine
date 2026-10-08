@@ -135,6 +135,13 @@ extension GeneralSettingsView {
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many displays were restored."
             ))
         }
+        if let count = summary.unsupportedDisplayCount, count > 0 {
+            lines.append(String(
+                localized: "\(count) of them use scene wallpapers this version can't run.",
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale,
+                comment: "Import line under the restored-displays count: how many of those displays show a scene wallpaper this build cannot run. Their setups are still saved."
+            ))
+        }
         if summary.didRestoreGlobalSettings {
             lines.append(String(
                 localized: "Restored global preferences, display defaults, schedule, and shortcuts.",

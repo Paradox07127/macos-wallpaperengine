@@ -143,12 +143,14 @@ extension ScreenManager {
 
     func updateWallpaperAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
-        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil, for screen: Screen
+        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
+        previewedEntryID: WallpaperQueueEntry.ID? = nil, for screen: Screen
     ) {
         guard !isTerminating else { return }
         automationOrchestrator.updateAutomation(
             queue: queue, slots: slots, fallback: fallback, mode: mode, rotationMinutes: rotationMinutes,
-            shuffle: shuffle, libraryShuffleRotationMinutes: libraryShuffleRotationMinutes, for: screen
+            shuffle: shuffle, libraryShuffleRotationMinutes: libraryShuffleRotationMinutes,
+            previewedEntryID: previewedEntryID, for: screen
         )
     }
 

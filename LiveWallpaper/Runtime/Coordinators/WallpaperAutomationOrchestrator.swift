@@ -327,7 +327,8 @@ final class WallpaperAutomationOrchestrator {
 
     func updateAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
-        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil, for screen: Screen
+        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
+        previewedEntryID: WallpaperQueueEntry.ID? = nil, for screen: Screen
     ) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               mode != .schedule || slots.allSatisfy({ SchedulePolicy.conflicts(slot: $0, against: slots).isEmpty }) else { return }
@@ -345,7 +346,9 @@ final class WallpaperAutomationOrchestrator {
         var seen: Set<String> = []
         config.wallpaperQueue = queue.filter { seen.insert($0.id).inserted }
         let keptCursor = config.wallpaperQueue?.firstIndex(where: { $0.id == currentID })
-        config.playlistCursorIndex = keptCursor ?? 0
+        // The previewed row is already on screen, so it becomes the row the next rotation steps on from.
+        let previewedCursor = mode == .playlist ? config.wallpaperQueue?.firstIndex(where: { $0.id == previewedEntryID }) : nil
+        config.playlistCursorIndex = previewedCursor ?? keptCursor ?? 0
         config.scheduleSlots = slots.isEmpty ? nil : slots
         config.wallpaperMode = mode
         config.playlistRotationMinutes = rotationMinutes.flatMap { $0 > 0 ? $0 : nil }
@@ -360,7 +363,7 @@ final class WallpaperAutomationOrchestrator {
             }
         } else if mode == .schedule {
             checkAndApplySchedule(for: screen, force: true)
-        } else if previousMode != .playlist || (currentID != nil && keptCursor == nil),
+        } else if previousMode != .playlist || (previewedCursor == nil && currentID != nil && keptCursor == nil),
                   let entries = config.wallpaperQueue, !entries.isEmpty {
             let index = config.playlistCursorIndex ?? 0
             applyEntry(entries[index], cursor: index, for: screen)

@@ -351,6 +351,29 @@ struct ConfigurationPorterTests {
         #expect(announcedHistory.contains([]), "the imported history went unannounced, so nothing re-checks it")
     }
 
+    @Test("A build that can't run scenes still stores them and counts the restored displays it can't run")
+    func sceneDisplaysCountAsUnsupportedWithoutSceneRuntime() {
+        let manager = SettingsManager.shared
+        let previous = manager.loadConfigurations()
+        defer { manager.replaceAllConfigurations(previous) }
+        let scene = WallpaperContent.scene(SceneDescriptor(
+            workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly
+        ))
+        let bundle = ConfigurationBundle(screenConfigurations: [
+            ScreenConfiguration(screenID: 901, wallpaper: .video(bookmarkData: Data([1]))),
+            ScreenConfiguration(screenID: 902, wallpaper: .video(bookmarkData: Data([2]))),
+            ScreenConfiguration(screenID: 903, wallpaper: scene),
+        ])
+
+        let summary = ConfigurationPorter.apply(bundle, runsScenes: false)
+
+        #expect(summary.displayCount == 3)
+        #expect(summary.unsupportedDisplayCount == 1, "the scene display was not reported as unrunnable")
+        #expect(manager.loadConfigurations().contains { $0.activeWallpaper == scene }, "the scene setup was dropped from the store")
+        let sceneBuild = ConfigurationPorter.importSummary(for: bundle, runsScenes: true)
+        #expect((sceneBuild.unsupportedDisplayCount ?? 0) == 0)
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default
             .temporaryDirectory
@@ -437,7 +460,7 @@ struct ConfigurationPorterBookmarkMergeTests {
     @Test("apply counts library marks only after merging them, and not when the unreadable archive refused them")
     func applySummaryLeavesOutRefusedLibraryMarks() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Persistence/ConfigurationPorter+SettingsBridge.swift")
-        let start = try #require(source.range(of: "static func apply(_ bundle: ConfigurationBundle) -> ApplySummary {"))
+        let start = try #require(source.range(of: "static func apply(_ bundle: ConfigurationBundle, runsScenes: Bool = ConfigurationPorter.runsScenes) -> ApplySummary {"))
         let end = try #require(source.range(of: "static func mergingWallpaperBookmarks(", range: start.upperBound ..< source.endIndex))
         let body = source[start.upperBound ..< end.lowerBound]
         let merge = try #require(body.range(of: "bundle.mergeLibraryBookmarks(into: .shared"))
