@@ -334,6 +334,49 @@ struct ConfigurationPorterTests {
         #expect(restored.pauseOnFullScreen == imported.pauseOnFullScreen, "the other global settings were not restored")
     }
 
+    @Test("Weather layers survive an export and a re-import")
+    func weatherOverlaysRoundTrip() throws {
+        let manager = SettingsManager.shared
+        let previous = manager.loadGlobalSettings()
+        defer { manager.saveGlobalSettings(previous) }
+        let layers = ["fp-A": WeatherOverlayConfiguration(particleEffect: .snow, weatherReactive: true, particleDensity: 2.5)]
+        manager.saveWeatherOverlays(layers)
+
+        let exported = try ConfigurationPorter.encode(ConfigurationPorter.currentBundle())
+        manager.saveWeatherOverlays([:])
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("weather.lwconfig")
+        try exported.write(to: file)
+        try ConfigurationPorter.apply(ConfigurationPorter.decode(from: file))
+
+        #expect(manager.loadWeatherOverlays() == layers)
+    }
+
+    @Test("A backup from before weather layers brings its displays' weather values in as layers")
+    func legacyBackupWeatherBecomesLayers() {
+        let manager = SettingsManager.shared
+        let previousSettings = manager.loadGlobalSettings()
+        let previousConfigurations = manager.loadConfigurations()
+        defer {
+            manager.saveGlobalSettings(previousSettings)
+            manager.replaceAllConfigurations(previousConfigurations)
+        }
+        var legacy = ScreenConfiguration(screenID: 41, wallpaper: .video(bookmarkData: Data([0x41])))
+        legacy.displayFingerprint = "fp-legacy"
+        legacy.particleEffect = .fallingLeaves
+        legacy.effectConfig.particleDensity = 0.4
+        var imported = previousSettings
+        imported.weatherOverlays = [:]
+
+        ConfigurationPorter.apply(ConfigurationBundle(screenConfigurations: [legacy], globalSettings: imported))
+
+        let layer = manager.loadWeatherOverlays()["fp-legacy"]
+        #expect(layer == WeatherOverlayConfiguration(particleEffect: .fallingLeaves, particleDensity: 0.4))
+        let leftOnConfiguration = manager.loadConfigurations().first?.legacyWeatherOverlay
+        #expect(leftOnConfiguration == .default)
+    }
+
     @Test("Importing global settings announces the Workshop history it brought in")
     func importAnnouncesWPEHistory() {
         let manager = SettingsManager.shared

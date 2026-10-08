@@ -58,7 +58,23 @@ struct DraftState: Sendable, Equatable {
         sceneDescriptor: nil
     )
 
+    /// The weather fields (`selectedParticleEffect`, `particleDensity`, the weather flags in `effectConfig`) mirror `weather`.
     static func from(
+        config: ScreenConfiguration?,
+        weather: WeatherOverlayConfiguration = .default,
+        fallbackHasPreviewSource: Bool
+    ) -> DraftState {
+        var state = wallpaperDraft(config: config, fallbackHasPreviewSource: fallbackHasPreviewSource)
+        state.selectedParticleEffect = weather.particleEffect
+        state.particleDensity = weather.particleDensity
+        state.effectConfig.weatherReactive = weather.weatherReactive
+        state.effectConfig.weatherWind = weather.weatherWind
+        state.effectConfig.weatherIntensity = weather.weatherIntensity
+        state.effectConfig.particleDensity = weather.particleDensity
+        return state
+    }
+
+    private static func wallpaperDraft(
         config: ScreenConfiguration?,
         fallbackHasPreviewSource: Bool
     ) -> DraftState {
@@ -74,7 +90,7 @@ struct DraftState: Sendable, Equatable {
             selectedVideoDisplayMode: config.videoDisplayMode,
             selectedWallpaperType: config.wallpaperType,
             selectedWallpaperMode: config.wallpaperMode,
-            selectedParticleEffect: config.particleEffect,
+            selectedParticleEffect: .none,
             effectConfig: config.effectConfig,
             htmlSource: config.htmlSource,
             htmlConfig: config.htmlConfig ?? .default,
@@ -87,7 +103,7 @@ struct DraftState: Sendable, Equatable {
             videoMuted: config.muted,
             videoVolume: config.videoVolume,
             videoColorSpace: config.videoColorSpace,
-            particleDensity: config.effectConfig.particleDensity,
+            particleDensity: 1.0,
             selectedFrameRateLimit: config.frameRateLimit,
             sceneMouseInteractionEnabled: config.sceneMouseInteractionEnabled,
             sceneClickCaptureEnabled: config.sceneClickCaptureEnabled,

@@ -37,6 +37,9 @@ public struct GlobalSettings: Codable, Sendable {
     /// wallpaper deletes that entry, and the overlay has to outlive it.
     public var monitorOverlays: [String: MonitorOverlayConfiguration] = [:]
 
+    /// Weather (particle) layer per display, keyed and kept here for the same reason as `monitorOverlays`.
+    public var weatherOverlays: [String: WeatherOverlayConfiguration] = [:]
+
     /// User-assigned display names, keyed by `NSScreen.displayFingerprint`. Here for the
     /// same reason as `monitorOverlays`: it must outlive a cleared wallpaper.
     public var screenNames: [String: String] = [:]
@@ -95,6 +98,7 @@ public struct GlobalSettings: Codable, Sendable {
         videoCacheMaxBytesPerScreen: Int = GlobalSettings.defaultVideoCacheBytes,
         displayDefaults: DisplayDefaults = DisplayDefaults(),
         monitorOverlays: [String: MonitorOverlayConfiguration] = [:],
+        weatherOverlays: [String: WeatherOverlayConfiguration] = [:],
         screenNames: [String: String] = [:],
         pausedDisplayKeys: [String] = [],
         audioResponseEnabled: Bool = false,
@@ -120,6 +124,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.videoCacheMaxBytesPerScreen = Self.clampedVideoCacheBytes(videoCacheMaxBytesPerScreen)
         self.displayDefaults = displayDefaults
         self.monitorOverlays = monitorOverlays
+        self.weatherOverlays = weatherOverlays
         self.screenNames = screenNames
         self.pausedDisplayKeys = pausedDisplayKeys
         self.audioResponseEnabled = audioResponseEnabled
@@ -160,6 +165,7 @@ public struct GlobalSettings: Codable, Sendable {
         videoCacheMaxBytesPerScreen = GlobalSettings.clampedVideoCacheBytes(storedCache)
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
         monitorOverlays = c.decodeLossyStringDictionary(forKey: .monitorOverlays) ?? [:]
+        weatherOverlays = c.decodeLossyStringDictionary(forKey: .weatherOverlays) ?? [:]
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         pausedDisplayKeys = (try? c.decodeIfPresent([String].self, forKey: .pausedDisplayKeys)) ?? []
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false

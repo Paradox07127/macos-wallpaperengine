@@ -948,7 +948,7 @@ private final class S7OverlayStore: OverlayEditorStore {
 
     init(widgets: [MonitorWidgetPlacement]) {
         let configuration = ScreenConfiguration(
-            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: ParticleEffect.none
+            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default)
         )
         snapshot = OverlayEditorSnapshot(
             overlay: MonitorOverlayConfiguration(enabled: true, board: MonitorBoardConfiguration(widgets: widgets)),
@@ -981,7 +981,7 @@ private final class S7OverlayStore: OverlayEditorStore {
     }
 
     func writeEffect(_ effect: ParticleEffect, for _: OverlayEditorIdentity) {
-        snapshot.configuration?.particleEffect = effect
+        snapshot.weather.particleEffect = effect
     }
 
     func copy(_: OverlayKind, from _: OverlayEditorIdentity) {}

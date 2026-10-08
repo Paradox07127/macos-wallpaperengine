@@ -65,6 +65,7 @@ extension ConfigurationPorter {
             // configurations still carry snapshots of.
             manager.reconcileScenePresetSnapshots()
         }
+        manager.migrateLegacyWeatherOverlaysIfNeeded()
 
         var renamedLibraryBookmarks: [String: String] = [:]
         if let bookmarks = bundle.wallpaperBookmarks {

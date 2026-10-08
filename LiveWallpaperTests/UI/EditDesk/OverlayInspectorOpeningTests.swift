@@ -387,7 +387,7 @@ private final class OpeningStore: OverlayEditorStore {
     }
 
     func writeEffect(_ effect: ParticleEffect, for _: OverlayEditorIdentity) {
-        snapshot.configuration?.particleEffect = effect
+        snapshot.weather.particleEffect = effect
     }
 
     func copy(_: OverlayKind, from _: OverlayEditorIdentity) {}

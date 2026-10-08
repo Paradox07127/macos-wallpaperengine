@@ -78,7 +78,7 @@ struct OverlayRemoveAllTests {
         let cleared = manager.monitorOverlay(for: screen)
         #expect(cleared.board.widgets.isEmpty, "widgets are left: \(cleared.board.widgets.map(\.kind))")
         #expect(!cleared.clock.enabled && !cleared.music.enabled)
-        #expect(manager.getConfiguration(for: screen)?.particleEffect == ParticleEffect.none)
+        #expect(manager.weatherOverlay(for: screen).particleEffect == ParticleEffect.none)
         #expect(session.interaction.placements.isEmpty && !session.hasObjects)
         #expect(stack.undoSteps.count == 1, "Remove All left \(stack.undoSteps.count) undo steps")
         #expect(stack.undoSteps.last?.action == .removeAllObjects)
@@ -89,7 +89,7 @@ struct OverlayRemoveAllTests {
         let restored = manager.monitorOverlay(for: screen)
         #expect(restored.board.widgets == [cpu, gpu], "the widgets came back as \(restored.board.widgets)")
         #expect(restored.clock.enabled && restored.music.enabled)
-        #expect(manager.getConfiguration(for: screen)?.particleEffect == .rain)
+        #expect(manager.weatherOverlay(for: screen).particleEffect == .rain)
         session.refreshAppliedConfiguration()
         #expect(session.interaction.placements.map(\.id) == [cpu.id, gpu.id])
         #expect(session.effectVisible && session.hasObjects)
@@ -137,7 +137,8 @@ private final class RemoveAllStore: OverlayEditorStore {
         guard identity == self.identity else { return nil }
         return OverlayEditorSnapshot(
             overlay: manager.monitorOverlay(for: manager.left), configuration: manager.getConfiguration(for: manager.left),
-            logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none
+            logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none,
+            weather: manager.weatherOverlay(for: manager.left)
         )
     }
 

@@ -134,10 +134,7 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
     func testGlobalGateStopsWeatherMonitoringAndPreventsStartup() throws {
         let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
         let store = WallpaperConfigurationStore(persistence: InMemoryConfigurationPersistence())
-        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
-        configuration.particleEffect = .rain
-        configuration.effectConfig.weatherReactive = true
-        store.save(configuration)
+        store.save(ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data()))
         let service = WeatherReactiveService(locationProvider: UnresolvedWeatherProvider())
         let enabled = OSAllocatedUnfairLock(initialState: false)
         let coordinator = WallpaperEffectsCoordinator(
@@ -145,6 +142,8 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             configurationStore: store,
             screensProvider: { [screen] },
             saveConfiguration: { _ in },
+            weatherOverlay: { _ in WeatherOverlayConfiguration(particleEffect: .rain, weatherReactive: true) },
+            saveWeatherOverlay: { _, _ in },
             applyFrameRateLimit: { _, _ in },
             screenRefreshRate: { _ in 60 },
             weatherWidgetPlaced: { true },
@@ -168,13 +167,12 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
         let live = OSAllocatedUnfairLock<[Screen]>(initialState: [screen])
         let store = WallpaperConfigurationStore(persistence: InMemoryConfigurationPersistence())
-        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
-        configuration.particleEffect = .rain
-        store.save(configuration)
         let coordinator = WallpaperEffectsCoordinator(
             configurationStore: store,
             screensProvider: { live.withLock { $0 } },
             saveConfiguration: { _ in },
+            weatherOverlay: { _ in WeatherOverlayConfiguration(particleEffect: .rain) },
+            saveWeatherOverlay: { _, _ in },
             applyFrameRateLimit: { _, _ in },
             screenRefreshRate: { _ in 60 }
         )

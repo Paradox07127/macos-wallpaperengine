@@ -274,7 +274,8 @@ private final class MovementStore: OverlayEditorStore {
         guard identity == self.identity else { return nil }
         return OverlayEditorSnapshot(overlay: manager.monitorOverlay(for: manager.left),
                                      configuration: manager.getConfiguration(for: manager.left),
-                                     logicalSize: CGSize(width: 1920, height: 1080), safeArea: .none)
+                                     logicalSize: CGSize(width: 1920, height: 1080), safeArea: .none,
+                                     weather: manager.weatherOverlay(for: manager.left))
     }
 
     func writeBoard(_ board: MonitorBoardConfiguration, for _: OverlayEditorIdentity) {

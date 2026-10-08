@@ -20,6 +20,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var videoDisplayMode: VideoDisplayMode = .perDisplay
     public var frameRateLimit: FrameRateLimit
 
+    /// Legacy: read only to migrate into `GlobalSettings.weatherOverlays`.
     public var particleEffect: ParticleEffect
     public var effectConfig: VideoEffectConfig
     public var scheduleSlots: [ScheduleSlot]?
@@ -594,16 +595,5 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
             return failure
         }
         return copy == self ? nil : copy
-    }
-}
-
-public extension ScreenConfiguration {
-    /// Exactly the fields the weather overlay rides on, nothing else about the target display.
-    mutating func adoptWeatherOverlay(from template: ScreenConfiguration) {
-        particleEffect = template.particleEffect
-        effectConfig.weatherReactive = template.effectConfig.weatherReactive
-        effectConfig.particleDensity = template.effectConfig.particleDensity
-        effectConfig.weatherWind = template.effectConfig.weatherWind
-        effectConfig.weatherIntensity = template.effectConfig.weatherIntensity
     }
 }

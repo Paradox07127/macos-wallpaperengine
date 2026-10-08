@@ -57,6 +57,24 @@ struct ScreenSchemePersistenceTests {
         await TestScratch.discard(root, flushing: manager, reloaded)
     }
 
+    @Test("A scheme neither stores nor restores the weather layer")
+    func schemeCarriesNoWeather() throws {
+        var configuration = sampleConfiguration()
+        configuration.particleEffect = .snow
+        configuration.effectConfig.weatherReactive = true
+        configuration.effectConfig.warmth = 5000
+        let scheme = ScreenScheme(name: "Desk setup", configuration: configuration, overlay: .default)
+        #expect(scheme.configuration.legacyWeatherOverlay == .default)
+        #expect(scheme.configuration.effectConfig.warmth == 5000)
+
+        // An archive written by an older build still has the weather values inside.
+        var legacy = try JSONDecoder().decode(ScreenScheme.self, from: JSONEncoder().encode(scheme))
+        legacy.configuration = configuration
+        let applied = legacy.rebound(to: 7, fingerprint: "fp-7")
+        #expect(applied.legacyWeatherOverlay == .default)
+        #expect(applied.effectConfig.warmth == 5000)
+    }
+
     @Test("Resetting settings clears saved schemes and the shared store")
     func resetClearsSchemes() {
         let store = SchemeStore.shared

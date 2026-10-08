@@ -81,6 +81,7 @@ struct OverlayEditorSnapshot {
     var configuration: ScreenConfiguration?
     var logicalSize: CGSize
     var safeArea: MonitorSafeAreaInsets
+    var weather: WeatherOverlayConfiguration = .default
 }
 
 /// What Remove All takes off one display, and what undoing it puts back.
@@ -88,14 +89,14 @@ struct OverlayObjects: Equatable {
     var widgets: [MonitorWidgetPlacement]
     var clockEnabled: Bool
     var musicEnabled: Bool
-    /// `.none` when the effect layer is off or the display has no wallpaper.
+    /// `.none` when the effect layer is off.
     var effect: ParticleEffect
 
-    init(overlay: MonitorOverlayConfiguration, configuration: ScreenConfiguration?) {
+    init(overlay: MonitorOverlayConfiguration, weather: WeatherOverlayConfiguration) {
         widgets = overlay.board.widgets
         clockEnabled = overlay.clock.enabled
         musicEnabled = overlay.music.enabled
-        effect = configuration?.particleEffect ?? .none
+        effect = weather.particleEffect
     }
 }
 
@@ -132,7 +133,8 @@ final class OverlayEditorScreenStore: OverlayEditorStore {
         return OverlayEditorSnapshot(
             overlay: manager.monitorOverlay(for: screen), configuration: manager.getConfiguration(for: screen),
             logicalSize: CGSize(width: max(screen.frame.width, 1), height: max(screen.frame.height, 1)),
-            safeArea: MonitorSafeAreaInsets.of(screen.nsScreen)
+            safeArea: MonitorSafeAreaInsets.of(screen.nsScreen),
+            weather: manager.weatherOverlay(for: screen)
         )
     }
 
@@ -288,8 +290,8 @@ final class OverlayEditorSession {
         overlay = snapshot.overlay
         logicalSize = snapshot.logicalSize
         safeArea = snapshot.safeArea
-        draft = DraftState.from(config: snapshot.configuration, fallbackHasPreviewSource: false)
-        canEditEffect = snapshot.configuration != nil
+        draft = DraftState.from(config: snapshot.configuration, weather: snapshot.weather, fallbackHasPreviewSource: false)
+        canEditEffect = true
         interaction.safeArea = safeArea
         interaction.boardSize = logicalSize
         interaction.apply(configuration: overlay.board)
@@ -319,8 +321,8 @@ final class OverlayEditorSession {
 
     func refreshAppliedConfiguration() {
         guard let identity, let snapshot = store?.read(identity) else { return }
-        draft = DraftState.from(config: snapshot.configuration, fallbackHasPreviewSource: false)
-        canEditEffect = snapshot.configuration != nil
+        draft = DraftState.from(config: snapshot.configuration, weather: snapshot.weather, fallbackHasPreviewSource: false)
+        canEditEffect = true
         guard pendingBoard == nil, interaction.drag == nil, drag == nil else { return }
         if snapshot.overlay != overlay || snapshot.logicalSize != logicalSize || snapshot.safeArea != safeArea {
             endKeyboardMove()
@@ -469,7 +471,7 @@ final class OverlayEditorSession {
         guard isActive, let identity, let store else { return }
         flushPendingEdits()
         guard let snapshot = store.read(identity) else { return }
-        let removed = OverlayObjects(overlay: snapshot.overlay, configuration: snapshot.configuration)
+        let removed = OverlayObjects(overlay: snapshot.overlay, weather: snapshot.weather)
         // Straight to the store: through the canvas each widget would be reported to `onWidgetsRemoved` on its own.
         if !removed.widgets.isEmpty {
             var board = snapshot.overlay.board
@@ -803,17 +805,14 @@ final class OverlayEditorSession {
     private static func copied(_ kind: OverlayKind, from source: OverlayEditorSnapshot, to target: OverlayEditorSnapshot) -> Bool {
         switch kind {
         case .monitor:
-            return target.overlay.enabled == source.overlay.enabled && target.overlay.level == source.overlay.level
+            target.overlay.enabled == source.overlay.enabled && target.overlay.level == source.overlay.level
                 && target.overlay.board == source.overlay.board
         case .music:
-            return target.overlay.music == source.overlay.music
+            target.overlay.music == source.overlay.music
         case .clock:
-            return target.overlay.clock == source.overlay.clock
+            target.overlay.clock == source.overlay.clock
         case .weather:
-            guard let sourceConfig = source.configuration, let targetConfig = target.configuration else { return false }
-            var expected = targetConfig
-            expected.adoptWeatherOverlay(from: sourceConfig)
-            return expected == targetConfig
+            target.weather == source.weather
         }
     }
 }

@@ -269,7 +269,7 @@ private final class TopBarStore: OverlayEditorStore {
 
     init() {
         let configuration = ScreenConfiguration(
-            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: .snow
+            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default)
         )
         snapshot = OverlayEditorSnapshot(
             overlay: MonitorOverlayConfiguration(
@@ -279,7 +279,8 @@ private final class TopBarStore: OverlayEditorStore {
                     MonitorWidgetPlacement(kind: .memory, size: .small, x: 0.3, y: 0.7),
                 ])
             ),
-            configuration: configuration, logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none
+            configuration: configuration, logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none,
+            weather: WeatherOverlayConfiguration(particleEffect: .snow)
         )
     }
 
@@ -308,7 +309,7 @@ private final class TopBarStore: OverlayEditorStore {
     }
 
     func writeEffect(_ effect: ParticleEffect, for _: OverlayEditorIdentity) {
-        snapshot.configuration?.particleEffect = effect
+        snapshot.weather.particleEffect = effect
     }
 
     func copy(_: OverlayKind, from _: OverlayEditorIdentity) {}

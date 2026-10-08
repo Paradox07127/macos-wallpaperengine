@@ -47,6 +47,32 @@ struct OverlayBareDisplayTests {
         }
     }
 
+    @Test("A weather layer on a bare display is saved, gets a particle host, and outlives a cleared wallpaper")
+    func weatherLayer() throws {
+        try onBareDisplay { manager, screen in
+            let previous = SettingsManager.shared.loadWeatherOverlays()
+            defer {
+                SettingsManager.shared.saveWeatherOverlays(previous)
+                manager.weatherOverlays = previous
+            }
+            manager.updateParticleEffect(.rain, for: screen)
+            manager.updateParticleDensity(2, for: screen)
+
+            let saved = SettingsManager.shared.loadWeatherOverlays()[screen.displayFingerprint]
+            #expect(saved?.particleEffect == .rain)
+            #expect(saved?.particleDensity == 2)
+            let hosted = manager.effectsCoordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id) != nil
+            #expect(hosted, "no particle host was built for the bare display")
+
+            manager.clearWallpaperForScreen(screen)
+            manager.effectsCoordinator.reconcileEnvironmentOverlays()
+            let kept = SettingsManager.shared.loadWeatherOverlays()[screen.displayFingerprint]?.particleEffect
+            #expect(kept == .rain)
+            let stillHosted = manager.effectsCoordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id) != nil
+            #expect(stillHosted, "clearing the wallpaper took the weather layer down")
+        }
+    }
+
     private func onBareDisplay(_ body: (ScreenManager, Screen) throws -> Void) throws {
         let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
