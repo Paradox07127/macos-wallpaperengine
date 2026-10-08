@@ -26,4 +26,18 @@ struct PlaylistEntryTitleTests {
 
         #expect(WallpaperAutomationSheet.rowTitle(for: entry, in: library) == "Loose clip")
     }
+
+    @Test("A video row names its folder unless the folder is a Workshop item's numeric ID")
+    func subtitleOmitsOnlyTheWorkshopFolder() {
+        let metadata = RowMetadata(resolution: nil, duration: 30, folder: "Wallpapers")
+        let local = WallpaperQueueEntry(title: "Loose clip", content: .video(bookmarkData: Data([8])))
+        let origin = WPEOrigin(
+            workshopID: "123456789", title: "Rain", originalType: .video,
+            sourceFolderBookmark: Data([9]), cacheRelativePath: nil, previewFileName: nil
+        )
+        let workshop = WallpaperQueueEntry(title: "Rain", content: .video(bookmarkData: Data([9])), origin: origin)
+
+        #expect(WallpaperAutomationSheet.rowSubtitle(metadata, for: local) == "0:30 · Wallpapers")
+        #expect(WallpaperAutomationSheet.rowSubtitle(metadata, for: workshop) == "0:30")
+    }
 }
