@@ -268,6 +268,7 @@ final class WPEMetalRenderExecutor {
         case localSceneCapture, composeLayer, compose
         case genericImage2, genericImage4, godraysCombine, effect
         case solidLayerStraight
+        case projectedSceneCapture
     }
 
     struct PassPSOKey: Hashable {
@@ -282,6 +283,8 @@ final class WPEMetalRenderExecutor {
         let depthPixelFormat: MTLPixelFormat
         var nativeAlpha: WPENativeAlphaPolicy = .compatibility
         var blendContract: WPEBlendContract?
+        /// Vertex/fragment pair reads `WPEProjectedQuadUniforms`; sharing a key with the object-quad PSO would draw the wrong geometry silently.
+        var projectedQuad = false
     }
 
     private var passPipelineStates: [PassPSOKey: MTLRenderPipelineState] = [:]
@@ -293,6 +296,7 @@ final class WPEMetalRenderExecutor {
         passID: String,
         variant: PassPSOVariant,
         objectQuad: Bool = false,
+        projectedQuad: Bool = false,
         vertexName: String = "wpe_fullscreen_vertex",
         fragmentName: String,
         blendMode: String,
@@ -310,7 +314,8 @@ final class WPEMetalRenderExecutor {
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat,
             depthPixelFormat: depthPixelFormat,
-            nativeAlpha: nativeAlpha, blendContract: blendContract ?? blendFacts(blendMode).contract
+            nativeAlpha: nativeAlpha, blendContract: blendContract ?? blendFacts(blendMode).contract,
+            projectedQuad: projectedQuad
         )
         if let cached = passPipelineStates[key] {
             return cached
@@ -859,6 +864,17 @@ final class WPEMetalRenderExecutor {
             previousFrameHistory = nil
         }
 
+        let projectedComposeIDs = projectedComposeObjectIDs(
+            for: preparedPipeline,
+            cameraUniforms: cameraUniforms,
+            sceneSize: size,
+            groupingContainerObjectIDs: validatedFBOAliasTopology(for: preparedPipeline).groupingContainerObjectIDs
+        )
+        if projectedComposeIDs != targetPool.projectedComposeObjectIDs {
+            targetPool.projectedComposeObjectIDs = projectedComposeIDs
+            // The interval memo does not key on this set, yet it moves the layer-composite keys.
+            cachedFBOAliasTopology?.intervalMemo = nil
+        }
         // Aliasing is disabled while the debug bypass path is active — bypass skips a layer's passes, which would break the lockstep pass index the alias plan relies on.
         let plannedAliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
         let aliasIntervals = diagnosticControls.disableFBOAliasing ? [] : plannedAliasIntervals
@@ -2418,7 +2434,7 @@ final class WPEMetalRenderExecutor {
         // WPE fullscreen/passthrough utility layers capture + copy the full frame 1:1. A `composelayer.json` in a safe sub-rect captures the matching scene area, then its final scene output is confined to that box via the object quad.
         if layer.isUtilityModelLayer {
             if layer.groupCompositeSource != nil { return true }
-            return sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
+            return sceneCaptureUtilityOutputGeometry(for: layer) != .fullscreen
         }
         return true
     }
@@ -2434,7 +2450,8 @@ final class WPEMetalRenderExecutor {
         return targetPool.sceneCaptureGeometryMemo.outputGeometry(
             layer: layer,
             geometry: layer.geometry,
-            sceneSize: currentSceneSize
+            sceneSize: currentSceneSize,
+            composePerspective: targetPool.projectedComposeObjectIDs.contains(layer.objectID)
         )
     }
 

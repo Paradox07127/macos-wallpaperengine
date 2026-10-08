@@ -194,12 +194,15 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat,
         fetchSceneColor: Bool
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        let projected = projectedDrawBackUniforms(pass: pass, layer: layer, frameState: frameState)
+        let usesObjectQuad = projected == nil
+            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
         try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: fetchSceneColor ? .blendCompositeFramebufferFetch : .blendComposite,
             objectQuad: usesObjectQuad,
-            vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
+            projectedQuad: projected != nil,
+            vertexName: drawBackVertexName(projected: projected != nil, objectQuad: usesObjectQuad),
             fragmentName: fetchSceneColor ? "wpe_blend_composite_fetch_fragment" : "wpe_blend_composite_fragment",
             blendMode: pass.pass.blending,
             alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
@@ -237,13 +240,29 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEBlendCompositeUniforms>.stride, index: 0)
 
-        if usesObjectQuad {
+        if var projected {
+            encoder.setVertexBytes(&projected, length: MemoryLayout<WPEProjectedQuadUniforms>.stride, index: 1)
+        } else if usesObjectQuad {
             bindObjectQuadVertexUniforms(
                 pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
                 sourceTexture: layerTexture, encoder: encoder
             )
         }
+    }
+
+    private func projectedDrawBackUniforms(
+        pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer,
+        frameState: WPEMetalFrameState
+    ) -> WPEProjectedQuadUniforms? {
+        guard executor.usesProjectedComposeDrawBack(for: pass.pass, layer: layer) else { return nil }
+        return executor.projectedQuadUniforms(for: layer, frameState: frameState, clearAlpha: false)
+    }
+
+    private func drawBackVertexName(projected: Bool, objectQuad: Bool) -> String {
+        if projected { return "wpe_projected_quad_vertex" }
+        return objectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex"
     }
 
     private func dispatchCopy(
@@ -258,12 +277,15 @@ struct WPEMetalShaderDispatcher {
         let fragmentName = pass.pass.shader == "commands/copy"
             ? "wpe_copy_fragment"
             : "wpe_util_copy_fragment"
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        let projected = projectedDrawBackUniforms(pass: pass, layer: layer, frameState: frameState)
+        let usesObjectQuad = projected == nil
+            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
         try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: .copy,
             objectQuad: usesObjectQuad,
-            vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
+            projectedQuad: projected != nil,
+            vertexName: drawBackVertexName(projected: projected != nil, objectQuad: usesObjectQuad),
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
             alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
@@ -280,7 +302,9 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setFragmentTexture(texture, index: 0)
         // wpe_copy_fragment samples 1:1 and takes no fragment uniform buffer.
-        if usesObjectQuad {
+        if var projected {
+            encoder.setVertexBytes(&projected, length: MemoryLayout<WPEProjectedQuadUniforms>.stride, index: 1)
+        } else if usesObjectQuad {
             bindObjectQuadVertexUniforms(
                 pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
@@ -303,11 +327,34 @@ struct WPEMetalShaderDispatcher {
         let isSingleTextureComposeLayer = layer.isUtilityModelLayer
             && isLayerCompositeTarget(pass.pass.target)
             && (isSceneAliasReference(firstReference) || isGroupCompositeSourceReference(firstReference, layer: layer))
-        let isLocalSceneCaptureComposeLayer = isSingleTextureComposeLayer
+        let isSceneCaptureComposeLayer = isSingleTextureComposeLayer
             && layer.groupCompositeSource == nil
             && isSceneAliasReference(firstReference)
-            && executor.sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
-        if isLocalSceneCaptureComposeLayer {
+        let captureGeometry = isSceneCaptureComposeLayer ? executor.sceneCaptureUtilityOutputGeometry(for: layer) : .fullscreen
+        let projectedCapture = captureGeometry == .projected
+            ? executor.projectedQuadUniforms(for: layer, frameState: frameState, clearAlpha: clearAlphaValue(for: pass) > 0.5)
+            : nil
+        if var projectedCapture {
+            encoder.setRenderPipelineState(try executor.passPipelineState(
+                passID: pass.pass.id,
+                variant: .projectedSceneCapture,
+                projectedQuad: true,
+                fragmentName: "wpe_projected_scene_capture_fragment",
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
+                colorPixelFormat: destination.texture.pixelFormat,
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
+            ))
+            let firstTexture = try WPEMetalShaderInputs.resolve(
+                reference: firstReference,
+                textures: textures,
+                frameState: frameState,
+                currentTargetID: destination.id
+            )
+            encoder.setFragmentTexture(firstTexture, index: 0)
+            encoder.setFragmentBytes(&projectedCapture, length: MemoryLayout<WPEProjectedQuadUniforms>.stride, index: 0)
+        } else if captureGeometry == .subregion {
             encoder.setRenderPipelineState(try executor.passPipelineState(
                 passID: pass.pass.id,
                 variant: .localSceneCapture,
