@@ -209,7 +209,7 @@ struct WorkshopFolderImportCoordinatorTests {
             uniqueKeysWithValues: manager.loadGlobalSettings().recentWPEImports.map { ($0.origin.workshopID, $0.importedAt) }
         )
 
-        await coordinator.ingestExistingDownloads(using: steam.doctor)
+        await coordinator.ingestBoundLibraryDownloads(using: steam.doctor)
         let recent = manager.loadGlobalSettings().recentWPEImports
         #expect(toastCenter.lastEvent?.token == firstToast, "the second scan re-imported items it had already imported")
         #expect(recent.count == itemCount)
@@ -374,7 +374,7 @@ struct WorkshopFolderImportCoordinatorTests {
         let toast = library.toastCenter.lastEvent
         #expect(toast?.message == WorkshopFolderImportCoordinator.syncSummary(added: 1, repaired: 0))
 
-        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        await library.coordinator.ingestBoundLibraryDownloads(using: steam.doctor)
         #expect(library.manager.loadGlobalSettings().recentWPEImports == after, "the second scan imported the Steam item again")
         #expect(library.toastCenter.lastEvent?.token == toast?.token)
         await library.discard()
@@ -400,7 +400,7 @@ struct WorkshopFolderImportCoordinatorTests {
         let toast = library.toastCenter.lastEvent
         #expect(toast?.message == WorkshopFolderImportCoordinator.syncSummary(added: 0, repaired: 0, conflicts: 1))
 
-        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        await library.coordinator.ingestBoundLibraryDownloads(using: steam.doctor)
         #expect(library.toastCenter.lastEvent?.token == toast?.token, "the second scan repeated a conflict already shown")
         await library.discard()
     }
@@ -452,6 +452,86 @@ struct WorkshopFolderImportCoordinatorTests {
             let count = resolves.withLock { $0 }
             #expect(count <= history.count + downloadedIDs.count, "the scan resolved \(count) bookmarks for \(history.count) history entries")
         }
+    }
+
+    // MARK: - Workshop page visits
+
+    @Test("A Workshop visit skips the download scan while the downloads and history are unchanged", .timeLimit(.minutes(1)))
+    func unchangedDownloadsAreNotRescanned() async throws {
+        let scans = try CountedScans()
+        await scans.visit()
+        #expect(scans.manager.loadGlobalSettings().recentWPEImports.count == 1)
+        _ = scans.takeResolves()
+
+        await scans.visit()
+
+        #expect(scans.takeResolves() == 0, "a visit rescanned downloads that had not changed")
+        await scans.discard()
+    }
+
+    @Test("A Workshop visit scans again once a new item folder appears", .timeLimit(.minutes(1)))
+    func aNewDownloadIsScanned() async throws {
+        let scans = try CountedScans()
+        await scans.visit()
+        _ = scans.takeResolves()
+        let newItem = SteamLibraryPaths.workshopContentRoot(steamRoot: scans.steam.root)
+            .appendingPathComponent("9900000000", isDirectory: true)
+        try writeVideoProject(at: newItem, workshopID: newItem.lastPathComponent)
+
+        await scans.visit()
+
+        #expect(scans.takeResolves() > 0, "a visit after a new download skipped the scan")
+        #expect(scans.manager.loadGlobalSettings().recentWPEImports.count == 2)
+        await scans.discard()
+    }
+
+    @Test("A Workshop visit after a scan with an unreadable item scans again", .timeLimit(.minutes(1)))
+    func aScanWithAnUnreadableItemIsNotTreatedAsDone() async throws {
+        let scans = try CountedScans()
+        let broken = SteamLibraryPaths.workshopContentRoot(steamRoot: scans.steam.root)
+            .appendingPathComponent("9900000001", isDirectory: true)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: broken.appendingPathComponent("project.json"))
+        await scans.visit()
+        #expect(scans.manager.loadGlobalSettings().recentWPEImports.count == 1)
+        _ = scans.takeResolves()
+
+        await scans.visit()
+
+        #expect(scans.takeResolves() > 0, "a scan that could not read an item counted as finished, so the next visit skipped it")
+        await scans.discard()
+    }
+
+    @Test("A Workshop visit after a cancelled scan scans again", .timeLimit(.minutes(1)))
+    func aCancelledScanIsNotTreatedAsDone() async throws {
+        let scans = try CountedScans(parksImports: true)
+        let cancelled = Task { await scans.visit() }
+        try await settle { await scans.gate.entries == 1 }
+        cancelled.cancel()
+        await scans.gate.release()
+        await cancelled.value
+
+        await scans.visit()
+
+        #expect(await scans.gate.entries == 2, "a cancelled scan counted as finished, so the next visit skipped it")
+        await scans.discard()
+    }
+
+    @Test("A Workshop visit that skips the scan still advances the Steam prune baseline", .timeLimit(.minutes(1)))
+    func aSkippedScanStillAdvancesThePruneBaseline() async throws {
+        let scans = try CountedScans()
+        let id = scans.steam.itemFolders[0].lastPathComponent
+        try writeAppWorkshopACF(appWorkshopACF(installed: [id]), steamRoot: scans.steam.root)
+        await scans.visit()
+        #expect(scans.coordinator.steamPruneBaseline?.listedIDs == [id])
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: scans.steam.root)
+        _ = scans.takeResolves()
+
+        await scans.visit()
+
+        #expect(scans.takeResolves() == 0)
+        #expect(scans.coordinator.steamPruneBaseline?.listedIDs == [], "a skipped scan left the baseline at the old acf listing")
+        await scans.discard()
     }
 
     // MARK: - Library scan without the Workshop page
@@ -765,6 +845,72 @@ private struct ConflictLibrary {
     func discard() async {
         suite.discard()
         await TestScratch.discard(root, flushing: manager)
+    }
+}
+
+/// Workshop page visits over one Steam download. A scan resolves every history bookmark and a skipped visit none,
+/// so `takeResolves()` tells them apart; with `parksImports`, imports park on `gate` and `gate.entries` counts them.
+@MainActor
+private struct CountedScans {
+    let steam: SteamDownloads
+    let suite: TestScratch.DefaultsSuite
+    let manager: SettingsManager
+    let gate: ValidationGate
+    let coordinator: WorkshopFolderImportCoordinator
+    private let resolves: OSAllocatedUnfairLock<Int>
+
+    init(parksImports: Bool = false, function: String = #function) throws {
+        steam = try SteamDownloads(function: function)
+        suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.CountedScans", function: function)
+        let resolves = OSAllocatedUnfairLock(initialState: 0)
+        self.resolves = resolves
+        let manager = SettingsManager(
+            directory: ConfigurationDirectory(root: steam.root.appendingPathComponent("settings")),
+            defaults: suite.defaults,
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { data in
+                    resolves.withLock { $0 += 1 }
+                    var isStale = false
+                    let url = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                    return (url, isStale)
+                },
+                refreshData: { try $0.bookmarkData() }
+            )
+        )
+        self.manager = manager
+        let gate = ValidationGate()
+        self.gate = gate
+        coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(
+                validateVideo: { [gate] _ in
+                    if parksImports {
+                        try await gate.park()
+                    }
+                },
+                makeBookmark: { try? $0.bookmarkData() }
+            ),
+            settings: manager,
+            toastCenter: WorkshopToastCenter(),
+            defaults: suite.defaults
+        )
+    }
+
+    func visit() async {
+        await coordinator.ingestExistingDownloads(using: steam.doctor)
+    }
+
+    /// History bookmarks resolved since the last call.
+    func takeResolves() -> Int {
+        resolves.withLock { count in
+            defer { count = 0 }
+            return count
+        }
+    }
+
+    func discard() async {
+        suite.discard()
+        await TestScratch.discard(steam.root.appendingPathComponent("settings"), flushing: manager)
+        steam.discard()
     }
 }
 

@@ -60,8 +60,24 @@ final class WorkshopFolderImportCoordinator {
     @ObservationIgnored private let repositoryCoordinator: WorkshopRepositoryCoordinator
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let surveySteamDeleted: SteamDeletedSurveying
-    /// Ids whose scan conflict was already shown this launch; the scan reruns on every Workshop visit.
+    /// Ids whose scan conflict was already shown this launch; the scan reruns on later Workshop visits.
     @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
+
+    /// What a download scan saw, so a Workshop visit can tell whether anything changed since.
+    private struct DownloadScanMark: Equatable {
+        struct HistoryEntry: Hashable {
+            let workshopID: String
+            let importedAt: Date
+        }
+
+        /// Item folder name to modification date, read before the scan.
+        let contentRoot: [String: Date]
+        /// The history after the scan, so its own imports don't count as a change.
+        let history: Set<HistoryEntry>
+    }
+
+    /// nil until a scan runs to the end; a cancelled or terminated scan leaves it as it was.
+    @ObservationIgnored private var lastCompletedScan: DownloadScanMark?
     /// One Steam-deleted pass at a time; one that starts while another surveys is skipped.
     @ObservationIgnored private var isPruning = false
 
@@ -204,11 +220,23 @@ final class WorkshopFolderImportCoordinator {
     /// The download scan for launch and re-authorization: it needs a usable library grant, not SteamCMD.
     func ingestBoundLibraryDownloads(using doctor: SteamCMDDoctorService) async {
         guard (try? doctor.resolveWorkdirURL()) != nil else { return }
-        await ingestExistingDownloads(using: doctor)
+        await scanDownloads(using: doctor, contentRoot: downloadedItemDates(using: doctor))
     }
 
-    /// Skipped, not queued, while anything else imports: the scan reruns on the next Workshop visit.
+    /// The Workshop page's scan; skips the import pass while the content root and history match the last completed scan.
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
+        guard allowsImport, importer == nil else { return }
+        let contentRoot = await downloadedItemDates(using: doctor)
+        if let contentRoot, lastCompletedScan == DownloadScanMark(contentRoot: contentRoot, history: historyMark()) {
+            // The scan's Steam-deleted pass still runs: it also advances the prune baseline.
+            await pruneSteamDeletedImports(using: doctor)
+            return
+        }
+        await scanDownloads(using: doctor, contentRoot: contentRoot)
+    }
+
+    /// Skipped, not queued, while anything else imports: the scan reruns on a later Workshop visit.
+    private func scanDownloads(using doctor: SteamCMDDoctorService, contentRoot: [String: Date]?) async {
         guard allowsImport, importer == nil else { return }
         importer = .downloadScan
         defer {
@@ -246,6 +274,8 @@ final class WorkshopFolderImportCoordinator {
         var added = 0
         var repaired = 0
         var conflicts = 0
+        // A read failure may be transient, so such a scan never lets a later visit skip.
+        var unreadable = 0
 
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
             guard let self, allowsImport else { return }
@@ -263,7 +293,9 @@ final class WorkshopFolderImportCoordinator {
                     if reportedScanConflictIDs.insert(id).inserted {
                         conflicts += 1
                     }
-                case .rejected, .unreadable:
+                case .unreadable:
+                    unreadable += 1
+                case .rejected:
                     break
                 }
                 return
@@ -281,19 +313,47 @@ final class WorkshopFolderImportCoordinator {
                 if reportedScanConflictIDs.insert(id).inserted {
                     conflicts += 1
                 }
-            case .rejected, .unreadable:
+            case .unreadable:
+                unreadable += 1
+            case .rejected:
                 break
             }
         }
         await removeSteamDeleted(staleSteamEntries, using: doctor)
 
-        guard allowsImport, added > 0 || repaired > 0 || conflicts > 0 else { return }
+        guard allowsImport else { return }
+        if let contentRoot, unreadable == 0 {
+            lastCompletedScan = DownloadScanMark(contentRoot: contentRoot, history: historyMark())
+        }
+        guard added > 0 || repaired > 0 || conflicts > 0 else { return }
         toastCenter.post(
             headline: String(localized: "Library synced", bundle: .appLanguage, comment: "Toast headline after auto-importing existing SteamCMD downloads."),
             title: String(localized: "SteamCMD downloads", bundle: .appLanguage, comment: "Toast subject for the SteamCMD download sync."),
             message: Self.syncSummary(added: added, repaired: repaired, conflicts: conflicts),
             isSuccess: true
         )
+    }
+
+    /// Item folder name to modification date under the bound library's content root; nil when it can't be listed.
+    private func downloadedItemDates(using doctor: SteamCMDDoctorService) async -> [String: Date]? {
+        guard let access = try? doctor.beginWorkdirAccess() else { return nil }
+        defer { access.end() }
+        let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: access.url)
+        return await Task.detached(priority: .utility) { () -> [String: Date]? in
+            let key = URLResourceKey.contentModificationDateKey
+            guard let items = try? FileManager().contentsOfDirectory(
+                at: contentRoot, includingPropertiesForKeys: [key], options: [.skipsHiddenFiles]
+            ) else { return nil }
+            return Dictionary(items.map { item in
+                (item.lastPathComponent, (try? item.resourceValues(forKeys: [key]).contentModificationDate) ?? .distantPast)
+            }, uniquingKeysWith: { first, _ in first })
+        }.value
+    }
+
+    private func historyMark() -> Set<DownloadScanMark.HistoryEntry> {
+        Set(settings.loadGlobalSettings().recentWPEImports.map {
+            DownloadScanMark.HistoryEntry(workshopID: $0.origin.workshopID, importedAt: $0.importedAt)
+        })
     }
 
     /// Drops the Steam entries Steam deleted, importing nothing; SteamCMD removes unsubscribed items whenever it logs in.
