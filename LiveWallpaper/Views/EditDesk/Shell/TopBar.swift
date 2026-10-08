@@ -14,10 +14,11 @@ struct TopBar<Trailing: View>: View {
 
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
 
-    /// The two the budget cannot derive: the pill is sized by its own localized titles and the
-    /// status capsule by its content. Measured, so no number here restates theirs.
+    /// What the budget cannot derive: the pill is sized by its own localized titles, the status
+    /// capsule and the page's own controls by their content. Measured, so no number here restates theirs.
     @State private var pillWidth: CGFloat = 0
     @State private var statusWidth: CGFloat = 0
+    @State private var pageControlsWidth: CGFloat = 0
 
     private static var trafficLightReserve: CGFloat {
         68
@@ -27,7 +28,7 @@ struct TopBar<Trailing: View>: View {
         TopBarBudget.layout(
             windowWidth: windowWidth, pillWidth: pillWidth,
             capsuleWidth: OnboardingCapsuleFit.width(progress: progress),
-            statusWidth: statusWidth
+            statusWidth: statusWidth, pageControlsWidth: pageControlsWidth
         )
     }
 
@@ -56,6 +57,7 @@ struct TopBar<Trailing: View>: View {
             }
             PageGuideButton(context: .page(page))
             trailing()
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { pageControlsWidth = $0 }
             // Stay compact, but give long status text only the space beside navigation.
             status
                 .frame(maxWidth: budget.maximumStatusWidth, alignment: .trailing)
