@@ -374,7 +374,7 @@ struct ConfigurationPorterTests {
         let layer = manager.loadWeatherOverlays()["fp-legacy"]
         #expect(layer == WeatherOverlayConfiguration(particleEffect: .fallingLeaves, particleDensity: 0.4))
         let leftOnConfiguration = manager.loadConfigurations().first?.legacyWeatherOverlay
-        #expect(leftOnConfiguration == .default)
+        #expect(leftOnConfiguration == layer, "the import stripped the configuration's copy")
     }
 
     @Test("Importing global settings announces the Workshop history it brought in")

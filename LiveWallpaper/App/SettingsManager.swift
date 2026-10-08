@@ -850,11 +850,9 @@ final class SettingsManager {
             configurations: loadConfigurations(),
             into: settings.weatherOverlays
         ) else { return }
-        // Overlays first: the stripped configurations must never land without the values they gave up.
-        settings.weatherOverlays = migrated.overlays
+        settings.weatherOverlays = migrated
         saveGlobalSettings(settings)
-        persistConfigurations(migrated.configurations)
-        Logger.info("Moved legacy weather layers out of display configurations", category: .settings)
+        Logger.info("Copied legacy weather layers out of display configurations", category: .settings)
     }
 
     private func stampBlobSchemaVersionIfNeeded() {

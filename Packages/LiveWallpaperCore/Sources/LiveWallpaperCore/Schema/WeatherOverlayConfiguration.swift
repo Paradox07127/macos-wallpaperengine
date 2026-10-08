@@ -35,25 +35,19 @@ public struct WeatherOverlayConfiguration: Codable, Equatable, Sendable {
         weatherIntensity = (try? c.decodeIfPresent(Bool.self, forKey: .weatherIntensity)) ?? true
     }
 
-    /// Moves the weather values older builds stored on each `ScreenConfiguration` into `overlays`,
-    /// keyed by the configuration's fingerprint. An existing entry wins; a configuration without a
-    /// fingerprint keeps its values for a later pass. nil = nothing to change.
+    /// Fills missing `overlays` entries from older builds' per-configuration weather values. nil = nothing to add.
+    /// Never clears the configurations' copy: that second write could land while this one is lost.
     public static func migratingLegacy(
         configurations: [ScreenConfiguration],
         into overlays: [String: WeatherOverlayConfiguration]
-    ) -> (configurations: [ScreenConfiguration], overlays: [String: WeatherOverlayConfiguration])? {
-        var migratedConfigurations = configurations
-        var migratedOverlays = overlays
-        for index in migratedConfigurations.indices {
-            let legacy = migratedConfigurations[index].legacyWeatherOverlay
-            guard legacy != .default, let key = migratedConfigurations[index].displayFingerprint else { continue }
-            if migratedOverlays[key] == nil {
-                migratedOverlays[key] = legacy
-            }
-            migratedConfigurations[index].clearLegacyWeatherOverlay()
+    ) -> [String: WeatherOverlayConfiguration]? {
+        var migrated = overlays
+        for configuration in configurations {
+            let legacy = configuration.legacyWeatherOverlay
+            guard legacy != .default, let key = configuration.displayFingerprint, migrated[key] == nil else { continue }
+            migrated[key] = legacy
         }
-        guard migratedConfigurations != configurations else { return nil }
-        return (migratedConfigurations, migratedOverlays)
+        return migrated == overlays ? nil : migrated
     }
 }
 

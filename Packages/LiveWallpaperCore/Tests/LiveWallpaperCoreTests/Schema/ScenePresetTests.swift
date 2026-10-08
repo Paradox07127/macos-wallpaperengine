@@ -485,31 +485,33 @@ struct WeatherOverlayMigrationTests {
         return configuration
     }
 
-    @Test("Every weather field moves, and nothing else about the display")
-    func movesAllWeatherFields() throws {
+    @Test("Every weather field is copied into a layer keyed by the display's fingerprint")
+    func copiesAllWeatherFields() throws {
         let migrated = try #require(WeatherOverlayConfiguration.migratingLegacy(
             configurations: [legacy(screenID: 1, fingerprint: "fp")], into: [:]
         ))
-        #expect(migrated.overlays == ["fp": WeatherOverlayConfiguration(
+        #expect(migrated == ["fp": WeatherOverlayConfiguration(
             particleEffect: .rain, weatherReactive: true, particleDensity: 1.8, weatherWind: true, weatherIntensity: false
         )])
-        let configuration = try #require(migrated.configurations.first)
-        #expect(configuration.legacyWeatherOverlay == .default)
-        #expect(configuration.effectConfig.warmth == 5000)
     }
 
     @Test("An existing layer wins, a display without a fingerprint waits, and a second pass changes nothing")
     func idempotentAndNonDestructive() throws {
         let kept = WeatherOverlayConfiguration(particleEffect: .sakura)
+        let configurations = [
+            legacy(screenID: 1, fingerprint: "fp"),
+            legacy(screenID: 2, fingerprint: nil),
+            legacy(screenID: 3, fingerprint: "fp-3"),
+        ]
         let migrated = try #require(WeatherOverlayConfiguration.migratingLegacy(
-            configurations: [legacy(screenID: 1, fingerprint: "fp"), legacy(screenID: 2, fingerprint: nil)],
-            into: ["fp": kept]
+            configurations: configurations, into: ["fp": kept]
         ))
-        #expect(migrated.overlays == ["fp": kept])
-        #expect(migrated.configurations[0].legacyWeatherOverlay == .default)
-        #expect(migrated.configurations[1].legacyWeatherOverlay.particleEffect == .rain)
+        #expect(migrated["fp"] == kept)
+        #expect(migrated["fp-3"]?.particleEffect == .rain)
+        #expect(migrated.count == 2)
+        #expect(WeatherOverlayConfiguration.migratingLegacy(configurations: configurations, into: migrated) == nil)
         #expect(WeatherOverlayConfiguration.migratingLegacy(
-            configurations: migrated.configurations, into: migrated.overlays
+            configurations: [legacy(screenID: 1, fingerprint: "fp")], into: ["fp": kept]
         ) == nil)
     }
 }

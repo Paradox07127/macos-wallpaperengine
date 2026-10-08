@@ -36,7 +36,7 @@ struct WeatherOverlayMigrationTests {
         let firstOverlays = first.loadWeatherOverlays()
         #expect(firstOverlays == ["fp-11": Self.migrated])
         let firstConfiguration = try #require(first.loadConfigurations().first)
-        #expect(firstConfiguration.legacyWeatherOverlay == .default)
+        #expect(firstConfiguration.legacyWeatherOverlay == Self.migrated, "migration stripped the configuration's copy")
         #expect(firstConfiguration.effectConfig.warmth == 5200, "a video effect went along with the weather")
         var edited = Self.migrated
         edited.particleEffect = .rain
@@ -66,10 +66,38 @@ struct WeatherOverlayMigrationTests {
         let overlays = reloaded.loadWeatherOverlays()
         #expect(overlays == ["fp-11": kept])
         let configuration = try #require(reloaded.loadConfigurations().first)
-        #expect(configuration.legacyWeatherOverlay == .default, "the stale copy stayed on the configuration")
+        #expect(configuration.legacyWeatherOverlay == Self.migrated, "migration stripped the configuration's copy")
 
         await TestScratch.discard(root, flushing: seed, reloaded)
         defaults.discard()
+    }
+
+    @Test("Saving video effects keeps the weather values still on the configuration")
+    func effectEditKeepsLegacyWeather() throws {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let store = WallpaperConfigurationStore(persistence: ScreenManagerFixtureState())
+        var configuration = Self.legacyConfiguration()
+        configuration.screenID = screen.id
+        configuration.displayFingerprint = screen.displayFingerprint
+        store.save(configuration)
+        let coordinator = WallpaperEffectsCoordinator(
+            configurationStore: store,
+            screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
+            weatherOverlay: { _ in .default },
+            saveWeatherOverlay: { _, _ in },
+            applyFrameRateLimit: { _, _ in },
+            screenRefreshRate: { _ in 60 }
+        )
+        defer { coordinator.shutdown() }
+
+        var edited = configuration.effectConfig
+        edited.brightness = 0.2
+        coordinator.updateEffectConfig(edited, for: screen)
+
+        let saved = store.get(for: screen.id, fingerprint: screen.displayFingerprint)
+        #expect(saved?.effectConfig.brightness == 0.2)
+        #expect(saved?.legacyWeatherOverlay == Self.migrated, "the edit stripped weather that was not migrated yet")
     }
 
     @Test("Applying a bookmark that still carries weather values leaves the display's weather layer alone")
