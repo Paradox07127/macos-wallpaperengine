@@ -224,6 +224,10 @@ final class OverlayController: NSObject {
     private var appliedRuntimeState = AppliedRuntimeState()
     private var runtimeReconciliationRevision: UInt64 = 0
     private var runtimeReconciliationTask: Task<Void, Never>?
+    /// Same system setting the Music layer reads to hide its audio-reactive effects.
+    private lazy var reduceMotionWatcher = ReduceMotionWatcher { [weak self] _ in
+        self?.scheduleRuntimeReconciliation()
+    }
 
     override private convenience init() {
         self.init(runtime: .shared)
@@ -233,6 +237,7 @@ final class OverlayController: NSObject {
         self.runtime = runtime
         self.runtimeLeaseSlot = runtime.makeLeaseSlot()
         super.init()
+        reduceMotionWatcher.start()
     }
 
     var weatherService: WeatherReactiveService?
@@ -472,6 +477,15 @@ final class OverlayController: NSObject {
     /// nil = read the real mouse buttons.
     var debugPointerIsCaptured: Bool?
 
+    /// nil = read the system Reduce Motion setting.
+    var debugReduceMotionOverride: Bool? {
+        get { reduceMotionWatcher.override }
+        set {
+            reduceMotionWatcher.override = newValue
+            scheduleRuntimeReconciliation()
+        }
+    }
+
     func board(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> MonitorBoardConfiguration? {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.boardConfig
     }
@@ -701,6 +715,7 @@ final class OverlayController: NSObject {
         var demand = MonitorSampleDemand()
         var music = false
         var musicWantsAudio = false
+        let reduceMotion = reduceMotionWatcher.isReduced
         for (key, host) in hosts where visibleHostKeys.contains(key) {
             switch host.content {
             case .monitor(_, let board):
@@ -715,8 +730,9 @@ final class OverlayController: NSObject {
             case .music(_, let configuration):
                 music = true
                 // The tap and its FFT only pay for themselves while a layer
-                // actually draws the reactive effects.
-                musicWantsAudio = musicWantsAudio || NowPlayingOptions(configuration.options).audioReactive
+                // actually draws the reactive effects; Reduce Motion hides them.
+                musicWantsAudio = musicWantsAudio
+                    || (!reduceMotion && NowPlayingOptions(configuration.options).audioReactive)
             case .clock: break
             }
         }
