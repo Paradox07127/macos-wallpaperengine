@@ -49,5 +49,23 @@ struct ScreenManagerSceneSpanTests {
             #expect(stored.first { $0.screenID == offlineID &+ 1 }?.activeWallpaper == .scene(original))
         }
     }
+
+    @Test("A scene edit reaches the schedule entry of another span member")
+    func descriptorEditReachesMemberSchedule() throws {
+        let original = Self.makeDescriptor()
+        let edited = original.withPropertyOverrides(["enabled": .bool(false)])
+        let id = UUID()
+        let memberID: CGDirectDisplayID = 0x5EED_0FF3
+        var member = ScreenConfiguration(screenID: memberID, wallpaper: .scene(original))
+        member.sceneSpanGroupID = id
+        member.wallpaperMode = .schedule
+        member.scheduleFallback = WallpaperQueueEntry(title: "", content: .scene(original))
+        try Self.withManager(seeding: [member]) { manager, screen in
+            manager.persistSceneSpanDescriptor(edited, groupID: id, excluding: screen.id)
+
+            let stored = manager.configurationStore.loadAll().first { $0.screenID == memberID }
+            #expect(stored?.scheduleFallback?.content == .scene(edited), "the next run of the plan would bring the old values back")
+        }
+    }
 }
 #endif

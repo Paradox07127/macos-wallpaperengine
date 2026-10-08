@@ -69,7 +69,7 @@ extension ScreenManager {
             configuration.savedSceneDescriptor = descriptor
             configuration.fitMode = fitMode
             configuration.sceneSpanGroupID = id
-            proposals[screen.id] = configuration
+            proposals[screen.id] = SchedulePolicy.writingBack(.scene(descriptor), into: configuration, now: Date(), calendar: .current)
         }
         sceneSpanProposals[id] = proposals
         var remaining = targets.count
@@ -102,7 +102,7 @@ extension ScreenManager {
             guard case let .scene(current) = configuration.activeWallpaper, current.isSameScene(as: descriptor) else { continue }
             configuration.activeWallpaper = .scene(descriptor)
             configuration.savedSceneDescriptor = descriptor
-            saveConfiguration(configuration)
+            saveConfiguration(SchedulePolicy.writingBack(.scene(descriptor), into: configuration, now: Date(), calendar: .current))
         }
     }
 

@@ -16,7 +16,6 @@ struct OnboardingMultiScreenTests {
         let originalSettings = SettingsManager.shared.loadConfigurations()
         defer { SettingsManager.shared.replaceAllConfigurations(originalSettings) }
         SettingsManager.shared.replaceAllConfigurations([])
-        store.clearCache()
 
         let firstID: CGDirectDisplayID = 5005
         let secondID: CGDirectDisplayID = 6006
@@ -42,7 +41,6 @@ struct OnboardingMultiScreenTests {
         let originalSettings = SettingsManager.shared.loadConfigurations()
         defer { SettingsManager.shared.replaceAllConfigurations(originalSettings) }
         SettingsManager.shared.replaceAllConfigurations([])
-        store.clearCache()
 
         let primaryID: CGDirectDisplayID = 7007
         let secondaryID: CGDirectDisplayID = 8008

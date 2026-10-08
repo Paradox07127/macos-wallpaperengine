@@ -202,11 +202,45 @@ final class WallpaperAutomationOrchestrator {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.canNavigatePlaylist else { return }
         let queue = config.effectiveWallpaperQueue
-        let current = max(0, min(config.playlistCursorIndex ?? 0, queue.count - 1))
-        let indices = config.shufflePlaylist
-            ? queue.indices.filter { $0 != current }.shuffled()
-            : (1 ..< queue.count).map { (current + $0) % queue.count }
-        startAutomaticSelection(indices.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
+        startAutomaticSelection(Self.forwardOrder(in: config).dropLast().map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
+    }
+
+    /// Queue indices in the order the playlist moves forward from the cursor, ending with the cursor itself.
+    private static func forwardOrder(in config: ScreenConfiguration) -> [Int] {
+        let count = config.effectiveWallpaperQueue.count
+        guard count > 0 else { return [] }
+        let current = max(0, min(config.playlistCursorIndex ?? 0, count - 1))
+        let others = config.shufflePlaylist
+            ? (0 ..< count).filter { $0 != current }.shuffled()
+            : (1 ..< count).map { (current + $0) % count }
+        return others + [current]
+    }
+
+    /// Moves the display off content that is being deleted, the way its mode would move on; `onExhausted` runs when nothing else lands.
+    func replaceDeletedContent(
+        matching isDeleted: (WallpaperQueueEntry) -> Bool, for screen: Screen, onExhausted: @MainActor @escaping () -> Void
+    ) {
+        guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
+        let candidates: [(entry: WallpaperQueueEntry, cursor: Int?)]
+        let source: AutomaticSwitchMark.Source
+        switch config.wallpaperMode {
+        case .playlist:
+            let queue = config.effectiveWallpaperQueue
+            candidates = Self.forwardOrder(in: config).filter { !isDeleted(queue[$0]) }.map { (queue[$0], $0) }
+            source = .playlist
+        case .libraryShuffle:
+            candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper)
+                .filter { !isDeleted($0) }.shuffled().map { ($0, nil) }
+            source = .libraryShuffle
+        case .schedule:
+            candidates = []
+            source = .schedule
+        }
+        guard !candidates.isEmpty else {
+            onExhausted()
+            return
+        }
+        startAutomaticSelection(candidates, source: source, for: screen, onExhausted: onExhausted)
     }
 
     func regressPlaylist(for screen: Screen) {
@@ -418,12 +452,16 @@ final class WallpaperAutomationOrchestrator {
 
     /// One cancellable worker per display; retries are sequential and never own periodic clocks.
     private func startAutomaticSelection(
-        _ candidates: [(entry: WallpaperQueueEntry, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen
+        _ candidates: [(entry: WallpaperQueueEntry, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
+        onExhausted: (@MainActor () -> Void)? = nil
     ) {
         guard !isSuspendedForUserAbsence, let initial = configurationStore.get(for: screen.id) else { return }
         let expectedMode = initial.wallpaperMode
         let candidates = candidates.filter { initial.automationFailures[$0.entry.id]?.entry.content != $0.entry.content }
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty else {
+            onExhausted?()
+            return
+        }
         let screenID = screen.id
         validationTasksByScreen[screenID]?.task.cancel()
         automaticSelectionSerial &+= 1
@@ -498,6 +536,7 @@ final class WallpaperAutomationOrchestrator {
                 current.automationFailures[entry.id] = WallpaperAutomationFailure(entry: entry, failedAt: now(), reason: reason)
                 saveConfiguration(current)
             }
+            onExhausted?()
         }
         validationTasksByScreen[screenID] = PendingValidation(generation: serial, task: task)
     }

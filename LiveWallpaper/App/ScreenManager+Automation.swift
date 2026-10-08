@@ -95,7 +95,11 @@ extension ScreenManager {
                     matchesScene = false
                 }
                 guard matchesScene || config.wpeOrigin.map(matchingOrigin) == true else { continue }
-                clearWallpaperOfType(config.activeWallpaper.wallpaperType, for: screen)
+                clearWallpaperOfType(config.activeWallpaper.wallpaperType, for: screen) { entry in
+                    if entry.origin.map(matchingOrigin) == true { return true }
+                    guard case let .scene(descriptor) = entry.content else { return false }
+                    return matchingScene(descriptor)
+                }
             }
         }
     }

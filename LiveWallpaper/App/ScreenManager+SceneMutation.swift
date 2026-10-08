@@ -68,7 +68,6 @@ extension ScreenManager {
             descriptor.presetID != nil else { continue }
             rendering[screen.id] = descriptor
         }
-        configurationStore.clearCache()
         guard !rendering.isEmpty else { return }
 
         for screen in screens {
