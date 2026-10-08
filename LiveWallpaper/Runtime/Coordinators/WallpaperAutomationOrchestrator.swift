@@ -346,8 +346,10 @@ final class WallpaperAutomationOrchestrator {
         var seen: Set<String> = []
         config.wallpaperQueue = queue.filter { seen.insert($0.id).inserted }
         let keptCursor = config.wallpaperQueue?.firstIndex(where: { $0.id == currentID })
-        // The previewed row is already on screen, so it becomes the row the next rotation steps on from.
-        let previewedCursor = mode == .playlist ? config.wallpaperQueue?.firstIndex(where: { $0.id == previewedEntryID }) : nil
+        // A preview still loading or failed leaves the old content in config; only a landed preview moves the cursor.
+        let previewedCursor = mode == .playlist ? config.wallpaperQueue?.firstIndex(where: {
+            $0.id == previewedEntryID && SchedulePolicy.isSameContent($0.content, config.activeWallpaper)
+        }) : nil
         config.playlistCursorIndex = previewedCursor ?? keptCursor ?? 0
         config.scheduleSlots = slots.isEmpty ? nil : slots
         config.wallpaperMode = mode

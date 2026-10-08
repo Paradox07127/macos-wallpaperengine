@@ -965,6 +965,56 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored.last == entries[previewed ? 3 : 1].content, "the next rotation did not continue after the saved row")
     }
 
+    @Test(
+        "Saving a playlist whose previewed row never reached the display keeps the cursor on what is shown",
+        .timeLimit(.minutes(1)), arguments: [WallpaperMode.playlist, .libraryShuffle]
+    )
+    func savingWithUnshownPreviewKeepsCursor(previousMode: WallpaperMode) async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = (0 ..< 4).map {
+            WallpaperQueueEntry(id: "row\($0)", title: "Row \($0)", content: .html(source: .inline("row\($0)"), config: .default))
+        }
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        initial.playlistCursorIndex = 0
+        initial.wallpaperMode = previousMode
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var restored: [WallpaperContent] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Queue entries must use the common product restore path") },
+            restoreProposedConfiguration: { _, proposed in
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+            },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
+        )
+        orchestrator.updateAutomation(
+            queue: entries, slots: [], mode: .playlist, rotationMinutes: 5, shuffle: false,
+            previewedEntryID: entries[2].id, for: screen
+        )
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        let expectedApplied = previousMode == .playlist ? [] : [entries[0].content]
+        #expect(restored == expectedApplied, "saving applied the unshown preview instead of the row the old rules pick")
+        #expect(store.get(for: screen.id)?.playlistCursorIndex == 0, "the cursor moved to a preview the display never showed")
+        let shownBeforeAdvance = restored.count
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 50 where restored.count == shownBeforeAdvance {
+            await Task.yield()
+        }
+        #expect(restored.last == entries[1].content, "the next rotation stepped on from the unshown preview")
+    }
+
     @Test("Library shuffle follows live membership, skips missing sources and preserves the curated queue")
     func libraryShuffleUsesLiveMembership() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
