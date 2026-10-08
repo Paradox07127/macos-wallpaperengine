@@ -9,8 +9,11 @@ import Testing
 struct WPEProjectedComposeQuadTests {
     private static let sceneSize = CGSize(width: 3840, height: 2160)
 
+    /// Windows RenderDoc capture of scene 3808922316 #2077, frame center-a1.
+    private static let measuredAngles = SIMD3<Double>(-2.5046, 2.4974, -0.1001) * .pi / 180
+
     private static func quad2077(
-        angles: SIMD3<Double> = SIMD3(2.5, -2.5, 0) * .pi / 180,
+        angles: SIMD3<Double> = measuredAngles,
         fovDegrees: Double = 90
     ) -> WPEProjectedComposeQuad? {
         WPEProjectedComposeQuad(
@@ -23,64 +26,74 @@ struct WPEProjectedComposeQuadTests {
         #expect(abs(lhs.x - rhs.x) <= tolerance && abs(lhs.y - rhs.y) <= tolerance, "\(lhs) != \(rhs)")
     }
 
+    /// Top-left scene pixels of layer uv as the draw-back rasterises it from the clip corners.
+    private static func drawBackPixel(_ quad: WPEProjectedComposeQuad, _ uv: SIMD2<Double>) -> SIMD2<Double> {
+        let corners = quad.clipCorners
+        let clip = (1 - uv.x) * (1 - uv.y) * corners[2] + uv.x * (1 - uv.y) * corners[3]
+            + (1 - uv.x) * uv.y * corners[0] + uv.x * uv.y * corners[1]
+        return SIMD2((0.5 + 0.5 * clip.x / clip.z) * 3840, (0.5 - 0.5 * clip.y / clip.z) * 2160)
+    }
+
+    @Test("Draw-back corners and card points match the Windows capture")
+    func drawBackMatchesMeasurement() throws {
+        let quad = try #require(Self.quad2077())
+        #expect(quad.clipCorners.count == 4)
+        let corners: [(SIMD2<Double>, SIMD2<Double>)] = [
+            (SIMD2(0, 0), SIMD2(-688.5, -391.7)), (SIMD2(1, 0), SIMD2(4074.2, -128.1)),
+            (SIMD2(0, 1), SIMD2(-1039.4, 2739.6)), (SIMD2(1, 1), SIMD2(4308.9, 2427.8)),
+        ]
+        let cardPoints: [(SIMD2<Double>, SIMD2<Double>)] = [
+            (SIMD2(1, 1) / 6, SIMD2(207.3, 113.7)), (SIMD2(5, 1) / 6, SIMD2(3424.4, 236.4)),
+            (SIMD2(1, 5) / 6, SIMD2(62.8, 2121.5)), (SIMD2(5, 5) / 6, SIMD2(3535.2, 1991.3)),
+        ]
+        var worst = 0.0
+        for (uv, measured) in corners + cardPoints {
+            let rasterised = Self.drawBackPixel(quad, uv)
+            Self.expectClose(rasterised, measured, 0.1)
+            let mapped = quad.drawBackHomography * SIMD3(uv.x, uv.y, 1)
+            Self.expectClose(SIMD2(mapped.x, mapped.y) / mapped.z * SIMD2(3840, 2160), measured, 0.1)
+            let roundTrip = try #require(quad.layerUV(screenUV: measured / SIMD2(3840, 2160)))
+            Self.expectClose(roundTrip, uv, 1e-4)
+            worst = max(worst, simd_reduce_max(simd_abs(rasterised - measured)))
+        }
+        print("WPEProjectedComposeQuadTests draw-back worst pixel error \(worst)")
+    }
+
+    @Test("Capture homography is the orthographic projection of the layer quad")
+    func captureHomographyIsOrthographic() throws {
+        let quad = try #require(Self.quad2077())
+        let expected = simd_double3x3(rows: [
+            SIMD3(1.298763, 0.000116, -0.149440),
+            SIMD3(0.004033, 1.298760, -0.151397),
+            SIMD3(0, 0, 1),
+        ])
+        var worst = 0.0
+        for column in 0 ..< 3 {
+            for row in 0 ..< 3 {
+                let error = abs(quad.captureHomography[column, row] - expected[column, row])
+                #expect(error <= 1e-5, "Hc[\(row)][\(column)]")
+                worst = max(worst, error)
+            }
+        }
+        print("WPEProjectedComposeQuadTests capture worst element error \(worst)")
+    }
+
+    @Test("Hit test follows the perspective trapezoid, not the captured quad")
+    func containsUsesDrawBackTrapezoid() throws {
+        let quad = try #require(Self.quad2077())
+        #expect(quad.contains(screenPixel: SIMD2(1920, 1080)))
+        // Left of the captured quad's x ≈ −573 edge, right of the trapezoid's x ≈ −1001 edge.
+        #expect(quad.contains(screenPixel: SIMD2(-800, 2400)))
+        // Inside the captured quad (x < 4413), right of the trapezoid's x ≈ 4086 edge.
+        #expect(!quad.contains(screenPixel: SIMD2(4300, 0)))
+    }
+
     private static func camera(fov: Double, sceneIDs: Set<String>, perspectiveScene: Bool = false) -> WPEMetalCameraUniforms {
         WPEMetalCameraUniforms(
             orthogonalProjection: .init(width: 3840, height: 2160, auto: false),
             sceneCamera: .defaultCamera, usesPerspectiveProjection: perspectiveScene,
             perspectiveOverrideFOVDegrees: fov, perspectiveObjectIDs: sceneIDs
         )
-    }
-
-    @Test("2077 tilt corners match the derivation in clip space and screen pixels")
-    func tiltCornersMatchDerivation() throws {
-        let quad = try #require(Self.quad2077())
-        let expectedClip: [SIMD3<Double>] = [
-            SIMD3(-1401.161085, -1402.663703, 1250.057322),
-            SIMD3(1404.166322, -1402.663703, 1032.309341),
-            SIMD3(-1404.166322, 1402.663703, 1127.690659),
-            SIMD3(1401.161085, 1402.663703, 909.942678),
-        ]
-        let expectedPixels: [SIMD2<Double>] = [
-            SIMD2(-232.085, 2291.846), SIMD2(4531.620, 2547.464),
-            SIMD2(-470.726, -263.344), SIMD2(4876.482, -584.805),
-        ]
-        #expect(quad.clipCorners.count == 4)
-        for (corner, expected) in zip(quad.clipCorners, expectedClip) {
-            #expect(simd_length(corner - expected) <= 1e-3, "\(corner) != \(expected)")
-        }
-        for (corner, expected) in zip(quad.clipCorners, expectedPixels) {
-            let pixel = SIMD2((0.5 + 0.5 * corner.x / corner.z) * 3840, (0.5 - 0.5 * corner.y / corner.z) * 2160)
-            Self.expectClose(pixel, expected, 1e-3)
-        }
-    }
-
-    @Test("Capture homography maps layer uv to scene uv as the derivation does")
-    func captureHomographyMatchesDerivation() throws {
-        let quad = try #require(Self.quad2077())
-        let normalized = quad.captureHomography * (1 / quad.captureHomography[2, 2])
-        let expected = simd_double3x3(rows: [
-            SIMD3(1.147291326, 0.055587895, -0.122584886),
-            SIMD3(-0.096545972, 1.298092719, -0.121918649),
-            SIMD3(-0.193091944, 0.108510842, 1),
-        ])
-        for column in 0 ..< 3 {
-            for row in 0 ..< 3 {
-                #expect(abs(normalized[column, row] - expected[column, row]) <= 1e-6, "Hc[\(row)][\(column)]")
-            }
-        }
-        let sampled = quad.captureHomography * SIMD3(0.25, 0.25, 1)
-        Self.expectClose(SIMD2(sampled.x, sampled.y) / sampled.z, SIMD2(0.181983, 0.182323), 1e-6)
-        let layerUV = try #require(quad.layerUV(screenUV: SIMD2(0, 0)))
-        Self.expectClose(layerUV, SIMD2(0.101929, 0.101502), 1e-6)
-    }
-
-    @Test("Hit test inverts the homography onto the layer's unit square")
-    func containsUsesInverseHomography() throws {
-        let quad = try #require(Self.quad2077())
-        #expect(quad.contains(screenPixel: SIMD2(1920, 1080)))
-        // Inside the axis-aligned bounds of the tilted quad but outside its trapezoid.
-        #expect(!quad.contains(screenPixel: SIMD2(-400, -500)))
-        #expect(quad.contains(screenPixel: SIMD2(-400, 0)))
     }
 
     @Test("Zero angles under perspective reduce to the orthographic subregion")
