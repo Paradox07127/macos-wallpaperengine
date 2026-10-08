@@ -471,27 +471,45 @@ struct ScenePresetSnapshotTests {
     }
 }
 
-@Suite("Weather overlay adoption")
-struct WeatherOverlayAdoptionTests {
-    @Test("Adopting copies every weather field and nothing else")
-    func adoptionCopiesAllWeatherFields() {
-        var source = ScreenConfiguration(screenID: 1, wallpaper: .video(bookmarkData: Data([1])))
-        source.particleEffect = .rain
-        source.effectConfig.weatherReactive = true
-        source.effectConfig.particleDensity = 1.8
-        source.effectConfig.weatherWind = true
-        source.effectConfig.weatherIntensity = false
+@Suite("Legacy weather migration")
+struct WeatherOverlayMigrationTests {
+    private func legacy(screenID: UInt32, fingerprint: String?) -> ScreenConfiguration {
+        var configuration = ScreenConfiguration(screenID: screenID, wallpaper: .video(bookmarkData: Data([1])))
+        configuration.displayFingerprint = fingerprint
+        configuration.particleEffect = .rain
+        configuration.effectConfig.weatherReactive = true
+        configuration.effectConfig.particleDensity = 1.8
+        configuration.effectConfig.weatherWind = true
+        configuration.effectConfig.weatherIntensity = false
+        configuration.effectConfig.warmth = 5000
+        return configuration
+    }
 
-        var target = ScreenConfiguration(screenID: 2, wallpaper: .video(bookmarkData: Data([2])))
-        target.effectConfig.warmth = 5000  // non-weather field, must survive
+    @Test("Every weather field moves, and nothing else about the display")
+    func movesAllWeatherFields() throws {
+        let migrated = try #require(WeatherOverlayConfiguration.migratingLegacy(
+            configurations: [legacy(screenID: 1, fingerprint: "fp")], into: [:]
+        ))
+        #expect(migrated.overlays == ["fp": WeatherOverlayConfiguration(
+            particleEffect: .rain, weatherReactive: true, particleDensity: 1.8, weatherWind: true, weatherIntensity: false
+        )])
+        let configuration = try #require(migrated.configurations.first)
+        #expect(configuration.legacyWeatherOverlay == .default)
+        #expect(configuration.effectConfig.warmth == 5000)
+    }
 
-        target.adoptWeatherOverlay(from: source)
-
-        #expect(target.particleEffect == .rain)
-        #expect(target.effectConfig.weatherReactive)
-        #expect(target.effectConfig.particleDensity == 1.8)
-        #expect(target.effectConfig.weatherWind)
-        #expect(!target.effectConfig.weatherIntensity)
-        #expect(target.effectConfig.warmth == 5000)
+    @Test("An existing layer wins, a display without a fingerprint waits, and a second pass changes nothing")
+    func idempotentAndNonDestructive() throws {
+        let kept = WeatherOverlayConfiguration(particleEffect: .sakura)
+        let migrated = try #require(WeatherOverlayConfiguration.migratingLegacy(
+            configurations: [legacy(screenID: 1, fingerprint: "fp"), legacy(screenID: 2, fingerprint: nil)],
+            into: ["fp": kept]
+        ))
+        #expect(migrated.overlays == ["fp": kept])
+        #expect(migrated.configurations[0].legacyWeatherOverlay == .default)
+        #expect(migrated.configurations[1].legacyWeatherOverlay.particleEffect == .rain)
+        #expect(WeatherOverlayConfiguration.migratingLegacy(
+            configurations: migrated.configurations, into: migrated.overlays
+        ) == nil)
     }
 }

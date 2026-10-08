@@ -62,7 +62,7 @@ private func richOverlay() -> MonitorOverlayConfiguration {
 
 @Suite("ScreenScheme capture / apply")
 struct ScreenSchemeTests {
-    @Test("Applying a captured scheme reproduces every field but the display identity")
+    @Test("Applying a captured scheme reproduces every field but the display identity and the weather layer")
     func captureApplyRoundTripPreservesEveryOtherField() {
         let source = richConfiguration()
         // Held in a local: each `richOverlay()` call mints fresh widget UUIDs.
@@ -81,6 +81,7 @@ struct ScreenSchemeTests {
         var expected = source
         expected.screenID = 4242
         expected.displayFingerprint = "target-panel-fingerprint"
+        expected.clearLegacyWeatherOverlay()
         #expect(applied == expected)
 
         // Spot checks so a failure reads as something other than "structs differ".

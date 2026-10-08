@@ -113,9 +113,9 @@ struct PolicyPropagationTests {
         let screen = try #require(manager.screens.first)
 
         var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
-        configuration.particleEffect = .snow
         configuration.displayFingerprint = screen.displayFingerprint
         manager.configurationStore.save(configuration)
+        manager.weatherOverlays[screen.displayFingerprint] = WeatherOverlayConfiguration(particleEffect: .snow)
         manager.effectsCoordinator.reconcileEnvironmentOverlays()
         manager.refreshPerformancePolicyForAllScreens()
 

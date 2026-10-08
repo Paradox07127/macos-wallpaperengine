@@ -113,8 +113,8 @@ struct WeatherWidgetTests {
 
     @Test("A placed weather tile earns the forecast fetch by itself")
     func weatherWidgetKeepsMonitoringOn() {
-        #expect(WeatherReactivePolicy.shouldMonitor(configurations: [], activeScreenIDs: [], weatherWidgetPlaced: true))
-        #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [], activeScreenIDs: [], weatherWidgetPlaced: false))
+        #expect(WeatherReactivePolicy.shouldMonitor(overlays: [], weatherWidgetPlaced: true))
+        #expect(!WeatherReactivePolicy.shouldMonitor(overlays: [], weatherWidgetPlaced: false))
     }
 
     @MainActor

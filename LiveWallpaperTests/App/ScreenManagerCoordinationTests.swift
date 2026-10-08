@@ -906,7 +906,7 @@ struct ScreenManagerCoordinationTests {
     @Test("Re-applying the current particle effect is a no-op (no notification)")
     func updateParticleEffectWithSameValueIsNoOp() async throws {
         try await Self.runWithSeededConfiguration { manager, screen in
-            let currentEffect = try #require(manager.getConfiguration(for: screen)?.particleEffect)
+            let currentEffect = manager.weatherOverlay(for: screen).particleEffect
             let capture = Self.attachConfigurationObserver()
             defer { capture.detach() }
 
@@ -914,14 +914,14 @@ struct ScreenManagerCoordinationTests {
             await Self.drainMainQueue()
 
             #expect(capture.notifications.isEmpty)
-            #expect(manager.getConfiguration(for: screen)?.particleEffect == currentEffect)
+            #expect(manager.weatherOverlay(for: screen).particleEffect == currentEffect)
         }
     }
 
     @Test("Re-applying the current weather-reactive setting is a no-op (no notification)")
     func setWeatherReactiveWithSameValueIsNoOp() async throws {
         try await Self.runWithSeededConfiguration { manager, screen in
-            let currentValue = try #require(manager.getConfiguration(for: screen)?.effectConfig.weatherReactive as Bool?)
+            let currentValue = manager.weatherOverlay(for: screen).weatherReactive
             let capture = Self.attachConfigurationObserver()
             defer { capture.detach() }
 
@@ -929,7 +929,7 @@ struct ScreenManagerCoordinationTests {
             await Self.drainMainQueue()
 
             #expect(capture.notifications.isEmpty)
-            #expect(manager.getConfiguration(for: screen)?.effectConfig.weatherReactive == currentValue)
+            #expect(manager.weatherOverlay(for: screen).weatherReactive == currentValue)
         }
     }
 

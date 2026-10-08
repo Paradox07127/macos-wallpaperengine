@@ -12,6 +12,8 @@ final class WallpaperEffectsCoordinator {
     private let configurationStore: WallpaperConfigurationStore
     private let screensProvider: @MainActor () -> [Screen]
     private let saveConfiguration: @MainActor (ScreenConfiguration) -> Void
+    private let weatherOverlay: @MainActor (Screen) -> WeatherOverlayConfiguration
+    private let saveWeatherOverlay: @MainActor (WeatherOverlayConfiguration, Screen) -> Void
     private let applyFrameRateLimit: @MainActor (FrameRateLimit, Screen) -> Void
     private let screenRefreshRate: @MainActor (CGDirectDisplayID) -> Int
     private let isScreenSuspended: @MainActor (CGDirectDisplayID) -> Bool
@@ -30,6 +32,8 @@ final class WallpaperEffectsCoordinator {
         configurationStore: WallpaperConfigurationStore,
         screensProvider: @MainActor @escaping () -> [Screen],
         saveConfiguration: @MainActor @escaping (ScreenConfiguration) -> Void,
+        weatherOverlay: @MainActor @escaping (Screen) -> WeatherOverlayConfiguration,
+        saveWeatherOverlay: @MainActor @escaping (WeatherOverlayConfiguration, Screen) -> Void,
         applyFrameRateLimit: @MainActor @escaping (FrameRateLimit, Screen) -> Void,
         screenRefreshRate: @MainActor @escaping (CGDirectDisplayID) -> Int,
         isScreenSuspended: @MainActor @escaping (CGDirectDisplayID) -> Bool = { _ in false },
@@ -41,6 +45,8 @@ final class WallpaperEffectsCoordinator {
         self.configurationStore = configurationStore
         self.screensProvider = screensProvider
         self.saveConfiguration = saveConfiguration
+        self.weatherOverlay = weatherOverlay
+        self.saveWeatherOverlay = saveWeatherOverlay
         self.applyFrameRateLimit = applyFrameRateLimit
         self.screenRefreshRate = screenRefreshRate
         self.isScreenSuspended = isScreenSuspended
@@ -52,6 +58,7 @@ final class WallpaperEffectsCoordinator {
 
     func updateEffectConfig(_ effectConfig: VideoEffectConfig, for screen: Screen) {
         guard !isShutdown else { return }
+        let effectConfig = effectConfig.withoutWeatherOverlay
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.effectConfig != effectConfig else { return }
         config.effectConfig = effectConfig
@@ -60,111 +67,80 @@ final class WallpaperEffectsCoordinator {
     }
 
     func updateParticleEffect(_ effect: ParticleEffect, for screen: Screen) {
-        guard !isShutdown else { return }
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              config.particleEffect != effect else { return }
-        config.particleEffect = effect
-        saveConfiguration(config)
-        refreshWeatherMonitoringState()
-        let effect = resolvedParticleEffect(for: config)
-        applyParticleEffect(
-            effect,
-            density: resolvedParticleDensity(for: config),
-            tiltRadians: windTilt(for: effect, config: config),
-            to: screen
-        )
-    }
-
-    func updateParticleDensity(_ density: Double, for screen: Screen) {
-        guard !isShutdown else { return }
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        let clamped = min(max(density, 0.2), 3.0)
-        guard abs(clamped - config.effectConfig.particleDensity) > 0.001 else { return }
-        config.effectConfig.particleDensity = clamped
-        saveConfiguration(config)
-        let effect = resolvedParticleEffect(for: config)
-        applyParticleEffect(
-            effect,
-            density: resolvedParticleDensity(for: config),
-            tiltRadians: windTilt(for: effect, config: config),
-            to: screen
-        )
-    }
-
-    func setWeatherReactive(_ enabled: Bool, for screen: Screen) {
-        guard !isShutdown else { return }
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              config.effectConfig.weatherReactive != enabled else { return }
-        config.effectConfig.weatherReactive = enabled
-        saveConfiguration(config)
-        refreshWeatherMonitoringState()
-
-        if enabled {
-            applyWeatherEffects(for: screen)
-        } else {
-            applyParticleEffect(config.particleEffect, density: config.effectConfig.particleDensity, to: screen)
-            if config.wallpaperType == .video {
-                applyVideoEffects(for: screen, config: config)
-            }
+        updateWeatherOverlay(for: screen) { overlay in
+            guard overlay.particleEffect != effect else { return false }
+            overlay.particleEffect = effect
+            return true
         }
     }
 
+    func updateParticleDensity(_ density: Double, for screen: Screen) {
+        let clamped = min(max(density, 0.2), 3.0)
+        updateWeatherOverlay(for: screen) { overlay in
+            guard abs(clamped - overlay.particleDensity) > 0.001 else { return false }
+            overlay.particleDensity = clamped
+            return true
+        }
+    }
+
+    func setWeatherReactive(_ enabled: Bool, for screen: Screen) {
+        updateWeatherOverlay(for: screen) { overlay in
+            guard overlay.weatherReactive != enabled else { return false }
+            overlay.weatherReactive = enabled
+            return true
+        }
+        guard !isShutdown, !enabled,
+              let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+              config.wallpaperType == .video else { return }
+        // Drops the weather tint `applyWeatherEffects` put on the video.
+        applyVideoEffects(for: screen, config: config)
+    }
+
     func setWeatherWind(_ enabled: Bool, for screen: Screen) {
-        updateWeatherOption(for: screen) { config in
-            guard config.effectConfig.weatherWind != enabled else { return false }
-            config.effectConfig.weatherWind = enabled
+        updateWeatherOverlay(for: screen) { overlay in
+            guard overlay.weatherWind != enabled else { return false }
+            overlay.weatherWind = enabled
             return true
         }
     }
 
     /// Whether the reported downpour/flurry strength scales the density.
     func setWeatherIntensity(_ enabled: Bool, for screen: Screen) {
-        updateWeatherOption(for: screen) { config in
-            guard config.effectConfig.weatherIntensity != enabled else { return false }
-            config.effectConfig.weatherIntensity = enabled
+        updateWeatherOverlay(for: screen) { overlay in
+            guard overlay.weatherIntensity != enabled else { return false }
+            overlay.weatherIntensity = enabled
             return true
         }
     }
 
-    /// Both sub-options only matter while "match local weather" is on; `applyWeatherEffects` already declines otherwise, so neither needs its own guard for that.
-    private func updateWeatherOption(
-        for screen: Screen, mutate: (inout ScreenConfiguration) -> Bool
+    private func updateWeatherOverlay(
+        for screen: Screen, mutate: (inout WeatherOverlayConfiguration) -> Bool
     ) {
         guard !isShutdown else { return }
-        guard var config = configurationStore.get(
-            for: screen.id, fingerprint: screen.displayFingerprint
-        ) else { return }
-        guard mutate(&config) else { return }
-        saveConfiguration(config)
+        var overlay = weatherOverlay(screen)
+        guard mutate(&overlay) else { return }
+        saveWeatherOverlay(overlay, screen)
+        refreshWeatherMonitoringState()
+        applyParticles(overlay, to: screen)
         applyWeatherEffects(for: screen)
     }
 
     func applyWeatherEffects(for screen: Screen) {
         guard !isShutdown else { return }
+        let overlay = weatherOverlay(screen)
+        guard overlay.weatherReactive else { return }
+        applyParticles(overlay, to: screen)
+
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              config.effectConfig.weatherReactive else { return }
-
-        let effect = resolvedParticleEffect(for: config)
-        applyParticleEffect(
-            effect,
-            density: resolvedParticleDensity(for: config),
-            tiltRadians: windTilt(for: effect, config: config),
-            to: screen
-        )
-
+              config.wallpaperType == .video else { return }
         let adj = weatherService.currentEffectAdjustments
-        var weatherConfig = config.effectConfig
-        weatherConfig.saturation = adj.saturation
-        weatherConfig.brightness = adj.brightness
-        weatherConfig.warmth = adj.warmth
-        weatherConfig.blurRadius = adj.blurRadius
-        weatherConfig.vignetteIntensity = adj.vignetteIntensity
-
-        if config.wallpaperType == .video {
-            var updatedConfig = config
-            updatedConfig.effectConfig = weatherConfig
-            applyVideoEffects(for: screen, config: updatedConfig)
-        }
+        var updatedConfig = config
+        updatedConfig.effectConfig.saturation = adj.saturation
+        updatedConfig.effectConfig.brightness = adj.brightness
+        updatedConfig.effectConfig.warmth = adj.warmth
+        updatedConfig.effectConfig.blurRadius = adj.blurRadius
+        updatedConfig.effectConfig.vignetteIntensity = adj.vignetteIntensity
+        applyVideoEffects(for: screen, config: updatedConfig)
     }
 
     func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
@@ -172,8 +148,16 @@ final class WallpaperEffectsCoordinator {
         environmentOverlay.retainOnly(Set(screensProvider().map(\.id)))
         refreshWeatherMonitoringState()
         for screen in screensProvider() where arrivedScreenIDs.contains(screen.id) {
-            guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-                  config.effectConfig.weatherReactive else { continue }
+            applyWeatherEffects(for: screen)
+        }
+    }
+
+    /// Re-reads every display's weather layer after it changed outside this coordinator.
+    func weatherOverlaysDidChange() {
+        guard !isShutdown else { return }
+        refreshWeatherMonitoringState()
+        reconcileEnvironmentOverlays()
+        for screen in screensProvider() {
             applyWeatherEffects(for: screen)
         }
     }
@@ -286,20 +270,7 @@ final class WallpaperEffectsCoordinator {
         let screens = screensProvider()
         environmentOverlay.retainOnly(Set(screens.map(\.id)))
         for screen in screens {
-            guard let config = configurationStore.get(
-                for: screen.id,
-                fingerprint: screen.displayFingerprint
-            ) else {
-                environmentOverlay.teardown(screenID: screen.id)
-                continue
-            }
-            let effect = resolvedParticleEffect(for: config)
-            applyParticleEffect(
-                effect,
-                density: resolvedParticleDensity(for: config),
-                tiltRadians: windTilt(for: effect, config: config),
-                to: screen
-            )
+            applyParticles(weatherOverlay(screen), to: screen)
         }
     }
 
@@ -331,26 +302,24 @@ final class WallpaperEffectsCoordinator {
         player.setFrameRateLimit(limit ?? 0)
     }
 
-    private func resolvedParticleEffect(for config: ScreenConfiguration) -> ParticleEffect {
-        WeatherReactivePolicy.resolvedParticleEffect(
-            chosen: config.particleEffect,
-            weatherReactive: config.effectConfig.weatherReactive,
+    private func applyParticles(_ overlay: WeatherOverlayConfiguration, to screen: Screen) {
+        let effect = WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: overlay.particleEffect,
+            weatherReactive: overlay.weatherReactive,
             weatherEffect: weatherService.currentParticleEffect
         )
-    }
-
-    private func resolvedParticleDensity(for config: ScreenConfiguration) -> Double {
-        WeatherReactivePolicy.resolvedParticleDensity(
-            userDensity: config.effectConfig.particleDensity,
-            weatherReactive: config.effectConfig.weatherReactive,
+        let density = WeatherReactivePolicy.resolvedParticleDensity(
+            userDensity: overlay.particleDensity,
+            weatherReactive: overlay.weatherReactive,
             intensity: weatherService.currentIntensity,
-            intensityEnabled: config.effectConfig.weatherIntensity
+            intensityEnabled: overlay.weatherIntensity
         )
+        applyParticleEffect(effect, density: density, tiltRadians: windTilt(for: effect, overlay: overlay), to: screen)
     }
 
     /// Zero unless the display is weather-reactive, the user asked for wind, and the API sent a reading — a hand-picked snow effect should not blow sideways because it is gusty outside.
-    private func windTilt(for effect: ParticleEffect, config: ScreenConfiguration) -> Double {
-        guard config.effectConfig.weatherReactive, config.effectConfig.weatherWind,
+    private func windTilt(for effect: ParticleEffect, overlay: WeatherOverlayConfiguration) -> Double {
+        guard overlay.weatherReactive, overlay.weatherWind,
               effect.leansIntoWind,
               let wind = weatherService.currentWind else { return 0 }
         let fallSpeed: Double
@@ -366,7 +335,7 @@ final class WallpaperEffectsCoordinator {
     }
 
     private func applyParticleEffect(
-        _ effect: ParticleEffect, density: Double, tiltRadians: Double = 0, to screen: Screen
+        _ effect: ParticleEffect, density: Double, tiltRadians: Double, to screen: Screen
     ) {
         guard WeatherReactivePolicy.shouldDrawParticles(
             effect: effect, wallpapersEnabled: isGloballyEnabled()
@@ -387,11 +356,8 @@ final class WallpaperEffectsCoordinator {
 
     private func refreshWeatherMonitoringState() {
         guard !isShutdown else { return }
-        let activeScreens = screensProvider()
-        let activeScreenIDs = Set(activeScreens.map(\.id))
-        let configurations = activeScreenIDs.compactMap { configurationStore.get(for: $0) }
         if WeatherReactivePolicy.shouldMonitor(
-            configurations: configurations, activeScreenIDs: activeScreenIDs,
+            overlays: screensProvider().map(weatherOverlay),
             weatherWidgetPlaced: weatherWidgetPlaced(),
             wallpapersEnabled: isGloballyEnabled()
         ) {
@@ -416,8 +382,6 @@ final class WallpaperEffectsCoordinator {
                       !self.isShutdown,
                       self.weatherTrackingGeneration == generation else { return }
                 for screen in self.screensProvider() {
-                    guard let config = self.configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-                          config.effectConfig.weatherReactive else { continue }
                     self.applyWeatherEffects(for: screen)
                 }
                 self.observeWeatherChanges()

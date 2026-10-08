@@ -1345,6 +1345,8 @@ struct VideoSessionLifecycleTests {
             configurationStore: WallpaperConfigurationStore(),
             screensProvider: { [screen] },
             saveConfiguration: { _ in },
+            weatherOverlay: { _ in .default },
+            saveWeatherOverlay: { _, _ in },
             applyFrameRateLimit: { _, _ in
                 legacyScreenFallbackCount += 1
             },

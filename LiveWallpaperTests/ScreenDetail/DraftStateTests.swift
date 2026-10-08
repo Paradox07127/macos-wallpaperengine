@@ -61,8 +61,7 @@ struct DraftStateTests {
         var effectConfig = VideoEffectConfig.default
         effectConfig.blurRadius = 2
         effectConfig.saturation = 0.8
-        effectConfig.weatherReactive = true
-        effectConfig.particleDensity = 2.25
+        let weather = WeatherOverlayConfiguration(particleEffect: .rain, weatherReactive: true, particleDensity: 2.25)
 
         let playlistBookmarks = [
             Data([0x02]),
@@ -85,7 +84,6 @@ struct DraftStateTests {
             fitMode: .aspectFit,
             videoDisplayMode: .spanAllDisplays,
             frameRateLimit: .fps30,
-            particleEffect: .rain,
             effectConfig: effectConfig,
             scheduleSlots: scheduleSlots,
             playlistBookmarks: playlistBookmarks,
@@ -100,8 +98,12 @@ struct DraftStateTests {
 
         let draft = DraftState.from(
             config: config,
+            weather: weather,
             fallbackHasPreviewSource: false
         )
+        var mirroredEffects = effectConfig
+        mirroredEffects.weatherReactive = true
+        mirroredEffects.particleDensity = 2.25
 
         #expect(draft.playbackSpeed == 1.5)
         #expect(draft.selectedFitMode == .aspectFit)
@@ -109,7 +111,7 @@ struct DraftStateTests {
         #expect(draft.selectedWallpaperType == .video)
         #expect(draft.selectedWallpaperMode == .schedule)
         #expect(draft.selectedParticleEffect == .rain)
-        #expect(draft.effectConfig == effectConfig)
+        #expect(draft.effectConfig == mirroredEffects)
         #expect(draft.htmlSource == nil)
         #expect(draft.htmlConfig == .default)
         #expect(draft.setAsLockScreen == true)

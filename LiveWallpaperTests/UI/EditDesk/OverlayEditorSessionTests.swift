@@ -86,7 +86,7 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
-    @Test("Copy flushes first, calls all four kinds, and reports the target without weather as incomplete")
+    @Test("Copy flushes first, calls all four kinds, and completes a target that has no wallpaper")
     func copyCount() throws {
         let store = FakeOverlayStore()
         let session = opened(store)
@@ -94,7 +94,7 @@ struct OverlayEditorSessionTests {
         session.interaction.moveWidget(id: id, direction: .right)
         store.events = []
         let result = session.copyToOtherDisplays()
-        #expect(result == OverlayEditorSession.CopyResult(copied: 1, total: 2))
+        #expect(result == OverlayEditorSession.CopyResult(copied: 2, total: 2))
         #expect(store.copiedKinds == OverlayKind.allCases)
         #expect(store.events.first == "board 1")
         let boardIndex = try #require(store.events.firstIndex(of: "board 1"))
@@ -102,16 +102,17 @@ struct OverlayEditorSessionTests {
         #expect(boardIndex < copyIndex)
         #expect(store.snapshots[store.displays[1]]?.overlay.board == store.snapshots[store.displays[0]]?.overlay.board)
         #expect(store.snapshots[store.displays[2]]?.configuration == nil)
+        #expect(store.snapshots[store.displays[2]]?.weather == store.snapshots[store.displays[0]]?.weather)
         session.detach()
     }
 
-    @Test("Missing source configuration skips effects and reports no complete copies")
+    @Test("A source display without a wallpaper still edits and copies its weather layer")
     func copyWithoutSourceWallpaper() {
         let store = FakeOverlayStore()
         store.snapshots[store.displays[0]]?.configuration = nil
         let session = opened(store)
-        #expect(!session.canEditEffect)
-        #expect(session.copyToOtherDisplays() == OverlayEditorSession.CopyResult(copied: 0, total: 2))
+        #expect(session.canEditEffect)
+        #expect(session.copyToOtherDisplays() == OverlayEditorSession.CopyResult(copied: 2, total: 2))
         #expect(store.copiedKinds == OverlayKind.allCases)
         session.detach()
     }
@@ -123,7 +124,6 @@ struct OverlayEditorSessionTests {
         let session = opened(store)
         let id = try #require(session.interaction.placements.first?.id)
         session.interaction.moveWidget(id: id, direction: .right)
-        // Display 3 has no wallpaper, which only an effect copy needs.
         #expect(session.copyToOtherDisplays([.music]) == OverlayEditorSession.CopyResult(copied: 2, total: 2))
         #expect(store.copiedKinds == [.music])
         let source = try #require(store.snapshots[store.displays[0]]?.overlay)
@@ -208,25 +208,28 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
-    @Test("Effects use the applied draft, remember their type, and are disabled without a configuration")
+    @Test("Effects use the applied draft, remember their type, and work on a display without a wallpaper")
     func effectWriter() throws {
         let suite = try TestScratch.defaultsSuite(prefix: "OverlayEditorSessionTests")
         defer { suite.discard() }
         let defaults = suite.defaults
         let store = FakeOverlayStore()
-        store.snapshots[store.displays[0]]?.configuration?.particleEffect = .rain
+        store.snapshots[store.displays[0]]?.weather.particleEffect = .rain
         let session = OverlayEditorSession(defaults: defaults)
         session.transition(to: store.displays[0], store: store, editing: true)
         #expect(session.effectVisible && session.draft.selectedParticleEffect == .rain)
+        #expect(session.draft.particleDensity == 2)
         session.setEffectVisible(false)
         #expect(!session.effectVisible)
         session.setEffectVisible(true)
         #expect(session.draft.selectedParticleEffect == .rain)
         session.transition(to: store.displays[2], store: store, editing: true)
-        #expect(!session.canEditEffect && !session.effectVisible)
+        #expect(session.canEditEffect && !session.effectVisible)
         store.events = []
         session.setEffectVisible(true)
-        #expect(store.events.isEmpty)
+        #expect(store.events.contains("effect 3"))
+        #expect(store.snapshots[store.displays[2]]?.weather.particleEffect == .snow)
+        #expect(session.effectVisible)
         session.detach()
     }
 
@@ -660,12 +663,13 @@ private final class FakeOverlayStore: OverlayEditorStore {
             clock.x = 0.1
             clock.y = 0.1
             let config = ScreenConfiguration(screenID: identity.displayID,
-                                             wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: .snow)
+                                             wallpaper: .html(source: .inline("Test"), config: .default))
             snapshots[identity] = OverlayEditorSnapshot(
                 overlay: MonitorOverlayConfiguration(enabled: true, music: music, clock: clock,
                                                      board: MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.3, y: 0.3)])),
                 configuration: identity.displayID == 3 ? nil : config,
-                logicalSize: CGSize(width: 2400, height: 1800), safeArea: .none
+                logicalSize: CGSize(width: 2400, height: 1800), safeArea: .none,
+                weather: identity.displayID == 1 ? WeatherOverlayConfiguration(particleEffect: .snow, particleDensity: 2) : .default
             )
         }
     }
@@ -710,7 +714,7 @@ private final class FakeOverlayStore: OverlayEditorStore {
 
     func writeEffect(_ effect: ParticleEffect, for identity: OverlayEditorIdentity) {
         log("effect \(identity.displayID)")
-        snapshots[identity]?.configuration?.particleEffect = effect
+        snapshots[identity]?.weather.particleEffect = effect
     }
 
     func copy(_ kind: OverlayKind, from identity: OverlayEditorIdentity) {
@@ -725,10 +729,7 @@ private final class FakeOverlayStore: OverlayEditorStore {
                 snapshots[target]?.overlay.board = source.overlay.board
             case .music: snapshots[target]?.overlay.music = source.overlay.music
             case .clock: snapshots[target]?.overlay.clock = source.overlay.clock
-            case .weather:
-                if let configuration = source.configuration {
-                    snapshots[target]?.configuration?.adoptWeatherOverlay(from: configuration)
-                }
+            case .weather: snapshots[target]?.weather = source.weather
             }
         }
     }

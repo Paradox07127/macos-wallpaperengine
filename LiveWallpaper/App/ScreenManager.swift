@@ -24,6 +24,8 @@ final class ScreenManager {
     /// Monitor overlay per display, keyed by `displayFingerprint`; write-through
     /// to global settings. Observed so the sidebar page and menu bar track edits.
     var monitorOverlays: [String: MonitorOverlayConfiguration] = SettingsManager.shared.loadMonitorOverlays()
+    /// Weather layer per display, keyed by `displayFingerprint`; write-through to global settings.
+    var weatherOverlays: [String: WeatherOverlayConfiguration] = SettingsManager.shared.loadWeatherOverlays()
     /// User-assigned display names keyed by `displayFingerprint`; write-through
     /// to global settings, re-applied to every rebuilt `Screen` on refresh.
     var screenNames: [String: String] = SettingsManager.shared.loadScreenNames()
@@ -343,6 +345,12 @@ final class ScreenManager {
             },
             saveConfiguration: { [weak self] config in
                 self?.saveConfiguration(config)
+            },
+            weatherOverlay: { [weak self] screen in
+                self?.weatherOverlay(for: screen) ?? .default
+            },
+            saveWeatherOverlay: { [weak self] overlay, screen in
+                self?.storeWeatherOverlay(overlay, for: [screen])
             },
             applyFrameRateLimit: { [weak self] limit, screen in
                 self?.applyFrameRateLimit(limit, to: screen)

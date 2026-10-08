@@ -447,8 +447,7 @@ extension ScreenManager {
         if config.storedPlaybackDiffers(from: SettingsManager.shared.loadDisplayDefaults()) {
             return true
         }
-        return config.particleEffect != .none
-            || config.effectConfig != .default
+        return config.effectConfig != .default
             || config.scheduleSlots != nil
             || config.shufflePlaylist
             || config.playlistRotationMinutes != nil
@@ -473,7 +472,6 @@ extension ScreenManager {
 
         let displayDefaults = SettingsManager.shared.loadDisplayDefaults()
         config.resetStoredPlayback(to: displayDefaults)
-        config.particleEffect = .none
         config.effectConfig = .default
         config.scheduleSlots = nil
         config.scheduleFallback = nil
@@ -554,10 +552,13 @@ extension ScreenManager {
 
         let migratedNames = Self.migrateLegacyFingerprintKeys(screenNames, mappings: mappings)
         let migratedOverlays = Self.migrateLegacyFingerprintKeys(monitorOverlays, mappings: mappings)
+        let migratedWeather = Self.migrateLegacyFingerprintKeys(weatherOverlays, mappings: mappings)
         let namesChanged = migratedNames != screenNames
         let overlaysChanged = migratedOverlays != monitorOverlays
+        let weatherChanged = migratedWeather != weatherOverlays
         screenNames = migratedNames
         monitorOverlays = migratedOverlays
+        weatherOverlays = migratedWeather
 
         for screen in newScreens {
             guard let legacy = screen.legacyDisplayFingerprint else { continue }
@@ -569,6 +570,9 @@ extension ScreenManager {
         }
         if overlaysChanged {
             SettingsManager.shared.saveMonitorOverlays(monitorOverlays)
+        }
+        if weatherChanged {
+            SettingsManager.shared.saveWeatherOverlays(weatherOverlays)
         }
     }
 

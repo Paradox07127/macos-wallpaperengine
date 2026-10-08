@@ -459,7 +459,7 @@ struct EditDeskUndoStackTests {
         let stack = stack(timeout: .milliseconds(300))
         // A scheme that kept the page and changed only a setting.
         let recording = stack.begin(.applyWallpaper, displays: [manager.left], includesOverlay: true)
-        manager.updateParticleEffect(.snow, for: manager.left)
+        manager.toggleMuted(on: manager.left)
         recording.settle(manager.left.id, applied: true)
         manager.confirmsRestores = false
 
@@ -538,6 +538,7 @@ final class UndoTestManager: UndoRestoring {
     private var configurations: [CGDirectDisplayID: ScreenConfiguration] = [:]
     private var marks: [String: AutomaticSwitchMark] = [:]
     private var overlays: [String: MonitorOverlayConfiguration] = [:]
+    private var weatherOverlays: [String: WeatherOverlayConfiguration] = [:]
     private var held: [Restore] = []
     private var revisions: [CGDirectDisplayID: UInt64] = [:]
     private(set) var restores: [Restore] = []
@@ -642,7 +643,15 @@ final class UndoTestManager: UndoRestoring {
     }
 
     func updateParticleEffect(_ effect: ParticleEffect, for screen: Screen) {
-        configurations[screen.id]?.particleEffect = effect
+        weatherOverlays[screen.displayFingerprint, default: .default].particleEffect = effect
+    }
+
+    func weatherOverlay(for screen: Screen) -> WeatherOverlayConfiguration {
+        weatherOverlays[screen.displayFingerprint] ?? .default
+    }
+
+    func toggleMuted(on screen: Screen) {
+        configurations[screen.id]?.muted.toggle()
     }
 
     func updateSceneDescriptor(_ descriptor: SceneDescriptor, for screen: Screen) async {

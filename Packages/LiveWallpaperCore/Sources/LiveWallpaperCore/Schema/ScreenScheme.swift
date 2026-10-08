@@ -68,11 +68,15 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         copy.screenID = unboundScreenID
         copy.displayFingerprint = nil
         copy.sceneSpanGroupID = nil
+        copy.clearLegacyWeatherOverlay()
         return copy
     }
 
+    /// An archive from an older build may still hold weather values; they never reach the display.
     public func rebound(to screenID: CGDirectDisplayID, fingerprint: String?) -> ScreenConfiguration {
-        configuration.reboundToDisplay(screenID, fingerprint: fingerprint)
+        var copy = configuration.reboundToDisplay(screenID, fingerprint: fingerprint)
+        copy.clearLegacyWeatherOverlay()
+        return copy
     }
 }
 

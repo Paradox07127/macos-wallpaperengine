@@ -499,6 +499,13 @@ extension ScreenManager {
         // Both caches live in GlobalSettings, which a .lwconfig import replaces wholesale. Without re-reading them the imported names/overlays stay invisible until relaunch.
         screenNames = SettingsManager.shared.loadScreenNames()
         monitorOverlays = SettingsManager.shared.loadMonitorOverlays()
+        let weather = SettingsManager.shared.loadWeatherOverlays()
+        if weather != weatherOverlays {
+            weatherOverlays = weather
+            if effectsCoordinatorWasInitialized {
+                effectsCoordinator.weatherOverlaysDidChange()
+            }
+        }
         updateFullScreenFallbackPolling()
         refreshPerformancePolicyForAllScreens()
         applyWallpaperCapturePolicy()

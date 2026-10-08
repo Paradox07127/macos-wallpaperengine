@@ -16,6 +16,7 @@ protocol UndoRestoring: WallpaperApplying {
     func setMonitorOverlayBoard(_ board: MonitorBoardConfiguration, for screen: Screen)
     func setMonitorOverlay(_ overlay: MonitorOverlayConfiguration, for screen: Screen)
     func updateParticleEffect(_ effect: ParticleEffect, for screen: Screen)
+    func weatherOverlay(for screen: Screen) -> WeatherOverlayConfiguration
     func updateSceneDescriptor(_ descriptor: SceneDescriptor, for screen: Screen) async
     func automaticSwitchMark(for fingerprint: String) -> AutomaticSwitchMark?
 }
@@ -592,7 +593,7 @@ final class EditDeskUndoStack {
         }
         await edit.flush()
         var overlay = manager.monitorOverlay(for: screen)
-        let replaced = OverlayObjects(overlay: overlay, configuration: manager.getConfiguration(for: screen))
+        let replaced = OverlayObjects(overlay: overlay, weather: manager.weatherOverlay(for: screen))
         overlay.board.widgets = edit.objects.widgets
         overlay.clock.enabled = edit.objects.clockEnabled
         overlay.music.enabled = edit.objects.musicEnabled

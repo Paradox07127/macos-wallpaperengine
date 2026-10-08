@@ -3,18 +3,16 @@ import Foundation
 import LiveWallpaperCore
 
 enum WeatherReactivePolicy {
-    /// Fetch when a live display has particles and weatherReactive, or a Weather tile is placed. Particle switch is master.
+    /// Fetch when a live display's weather layer has particles and weatherReactive, or a Weather tile is placed. Particle switch is master.
+    /// `overlays` holds the live displays' layers only.
     static func shouldMonitor(
-        configurations: [ScreenConfiguration],
-        activeScreenIDs: Set<CGDirectDisplayID>,
+        overlays: [WeatherOverlayConfiguration],
         weatherWidgetPlaced: Bool = false,
         wallpapersEnabled: Bool = true
     ) -> Bool {
         guard wallpapersEnabled else { return false }
-        return weatherWidgetPlaced || configurations.contains { configuration in
-            activeScreenIDs.contains(configuration.screenID)
-                && configuration.particleEffect != .none
-                && configuration.effectConfig.weatherReactive
+        return weatherWidgetPlaced || overlays.contains { overlay in
+            overlay.particleEffect != .none && overlay.weatherReactive
         }
     }
 

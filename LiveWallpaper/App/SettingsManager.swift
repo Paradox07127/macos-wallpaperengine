@@ -167,6 +167,7 @@ final class SettingsManager {
 
         migrateLegacyUserDefaultsIfNeeded()
         stampBlobSchemaVersionIfNeeded()
+        migrateLegacyWeatherOverlaysIfNeeded()
     }
 
     // MARK: - Screen Configurations
@@ -419,6 +420,16 @@ final class SettingsManager {
     func saveMonitorOverlays(_ overlays: [String: MonitorOverlayConfiguration]) {
         var settings = loadGlobalSettings()
         settings.monitorOverlays = overlays
+        saveGlobalSettings(settings)
+    }
+
+    func loadWeatherOverlays() -> [String: WeatherOverlayConfiguration] {
+        loadGlobalSettings().weatherOverlays
+    }
+
+    func saveWeatherOverlays(_ overlays: [String: WeatherOverlayConfiguration]) {
+        var settings = loadGlobalSettings()
+        settings.weatherOverlays = overlays
         saveGlobalSettings(settings)
     }
 
@@ -830,6 +841,20 @@ final class SettingsManager {
             )
             return false
         }
+    }
+
+    /// Also run after a backup import: an older `.lwconfig` still carries weather on its configurations.
+    func migrateLegacyWeatherOverlaysIfNeeded() {
+        var settings = loadGlobalSettings()
+        guard let migrated = WeatherOverlayConfiguration.migratingLegacy(
+            configurations: loadConfigurations(),
+            into: settings.weatherOverlays
+        ) else { return }
+        // Overlays first: the stripped configurations must never land without the values they gave up.
+        settings.weatherOverlays = migrated.overlays
+        saveGlobalSettings(settings)
+        persistConfigurations(migrated.configurations)
+        Logger.info("Moved legacy weather layers out of display configurations", category: .settings)
     }
 
     private func stampBlobSchemaVersionIfNeeded() {

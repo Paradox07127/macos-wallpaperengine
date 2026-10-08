@@ -7,6 +7,7 @@ public struct VideoEffectConfig: Codable, Equatable, Sendable {
     public var warmth: Double = 6500
     public var vignetteIntensity: Double = 0
     public var autoTimeTint: Bool = false
+    /// Legacy, with the next three: read only to migrate into `WeatherOverlayConfiguration`.
     public var weatherReactive: Bool = false
     /// Whether live wind leans the particles. Off by default.
     public var weatherWind: Bool = false

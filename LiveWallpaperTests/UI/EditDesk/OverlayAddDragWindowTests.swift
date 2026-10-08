@@ -254,14 +254,15 @@ private final class DragWindowStore: OverlayEditorStore {
     init(identity: OverlayEditorIdentity = OverlayEditorIdentity(displayID: 0xAD0D_0001, fingerprint: "add-drag-window")) {
         self.identity = identity
         let configuration = ScreenConfiguration(
-            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: .snow
+            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default)
         )
         snapshot = OverlayEditorSnapshot(
             overlay: MonitorOverlayConfiguration(
                 enabled: true,
                 board: MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.02, y: 0.7)])
             ),
-            configuration: configuration, logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none
+            configuration: configuration, logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none,
+            weather: WeatherOverlayConfiguration(particleEffect: .snow)
         )
     }
 
@@ -290,7 +291,7 @@ private final class DragWindowStore: OverlayEditorStore {
     }
 
     func writeEffect(_ effect: ParticleEffect, for _: OverlayEditorIdentity) {
-        snapshot.configuration?.particleEffect = effect
+        snapshot.weather.particleEffect = effect
     }
 
     func copy(_: OverlayKind, from _: OverlayEditorIdentity) {}

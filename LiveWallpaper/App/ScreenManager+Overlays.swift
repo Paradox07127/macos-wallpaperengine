@@ -61,6 +61,22 @@ extension ScreenManager {
         monitorOverlays[screen.displayFingerprint] ?? .default
     }
 
+    /// This display's weather layer; absent = never configured, i.e. off.
+    func weatherOverlay(for screen: Screen) -> WeatherOverlayConfiguration {
+        weatherOverlays[screen.displayFingerprint] ?? .default
+    }
+
+    /// Persists only; callers bring the particle layer up to date.
+    func storeWeatherOverlay(_ overlay: WeatherOverlayConfiguration, for targets: [Screen]) {
+        var next = weatherOverlays
+        for screen in targets {
+            next[screen.displayFingerprint] = overlay
+        }
+        guard next != weatherOverlays else { return }
+        weatherOverlays = next
+        SettingsManager.shared.saveWeatherOverlays(next)
+    }
+
     var hasEnabledWeatherWidget: Bool {
         wallpapersGloballyEnabled && screens.contains { screen in
             let overlay = monitorOverlay(for: screen)
@@ -121,20 +137,8 @@ extension ScreenManager {
             let template = monitorOverlay(for: source).clock
             mutateMonitorOverlays(of: targets) { $0.clock = template }
         case .weather:
-            // Weather is not in `monitorOverlays` — it rides on each display's
-            // own configuration, so only its three fields move.
-            guard let template = configurationStore.get(
-                for: source.id, fingerprint: source.displayFingerprint
-            ) else { return }
-            for target in targets {
-                guard var config = configurationStore.get(
-                    for: target.id, fingerprint: target.displayFingerprint
-                ) else { continue }
-                config.adoptWeatherOverlay(from: template)
-                saveConfiguration(config)
-                effectsCoordinator.applyWeatherEffects(for: target)
-            }
-            effectsCoordinator.reconcileEnvironmentOverlays()
+            storeWeatherOverlay(weatherOverlay(for: source), for: targets)
+            effectsCoordinator.weatherOverlaysDidChange()
         }
         Logger.info(
             "Applied \(kind) overlay from screen \(source.id) to \(targets.count) other displays",

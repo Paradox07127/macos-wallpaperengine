@@ -439,76 +439,44 @@ struct WeatherReactivePolicyTests {
         #expect(!source.contains("guard screen.runtimeSession != nil,"))
     }
 
-    @Test("Monitor runs only when an active screen has weather-reactive effects")
-    func monitorRequiresActiveWeatherReactiveConfiguration() {
-        let activeID: CGDirectDisplayID = 10
-        let inactiveID: CGDirectDisplayID = 20
-
-        var activeConfig = ScreenConfiguration(screenID: activeID, videoBookmarkData: Data([0x01]))
-        activeConfig.particleEffect = .rain
-        activeConfig.effectConfig.weatherReactive = true
-
-        var inactiveConfig = ScreenConfiguration(screenID: inactiveID, videoBookmarkData: Data([0x02]))
-        inactiveConfig.particleEffect = .rain
-        inactiveConfig.effectConfig.weatherReactive = true
-
-        var disabledConfig = ScreenConfiguration(screenID: activeID, videoBookmarkData: Data([0x03]))
-        disabledConfig.particleEffect = .rain
-        disabledConfig.effectConfig.weatherReactive = false
-
-        #expect(WeatherReactivePolicy.shouldMonitor(configurations: [activeConfig], activeScreenIDs: [activeID]))
-        #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [inactiveConfig], activeScreenIDs: [activeID]))
-        #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
-    }
-
     @Test("Global wallpaper disable suppresses both weather particle and widget demand")
     func disabledWallpapersNeverDemandWeather() {
-        var configuration = ScreenConfiguration(screenID: 10, videoBookmarkData: Data())
-        configuration.particleEffect = .rain
-        configuration.effectConfig.weatherReactive = true
+        let overlay = WeatherOverlayConfiguration(particleEffect: .rain, weatherReactive: true)
         for widgetPlaced in [false, true] {
             #expect(!WeatherReactivePolicy.shouldMonitor(
-                configurations: [configuration], activeScreenIDs: [10],
-                weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: false
+                overlays: [overlay], weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: false
             ))
             #expect(WeatherReactivePolicy.shouldMonitor(
-                configurations: [configuration], activeScreenIDs: [10],
-                weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: true
+                overlays: [overlay], weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: true
             ))
         }
     }
 
     @Test("weather is fetched only for a display that both draws particles and follows the sky")
     func monitorNeedsBothSwitches() {
-        let id: CGDirectDisplayID = 10
-
-        func config(effect: ParticleEffect, reactive: Bool) -> ScreenConfiguration {
-            var c = ScreenConfiguration(screenID: id, videoBookmarkData: Data([0x01]))
-            c.particleEffect = effect
-            c.effectConfig.weatherReactive = reactive
-            return c
+        func overlay(effect: ParticleEffect, reactive: Bool) -> WeatherOverlayConfiguration {
+            WeatherOverlayConfiguration(particleEffect: effect, weatherReactive: reactive)
         }
 
+        #expect(WeatherReactivePolicy.shouldMonitor(overlays: [overlay(effect: .rain, reactive: true)]))
+        #expect(
+            !WeatherReactivePolicy.shouldMonitor(overlays: [overlay(effect: .none, reactive: true)]),
+            "fetching for a display whose weather overlay is switched off"
+        )
+        #expect(!WeatherReactivePolicy.shouldMonitor(overlays: [overlay(effect: .rain, reactive: false)]))
+        #expect(!WeatherReactivePolicy.shouldMonitor(overlays: [overlay(effect: .none, reactive: false)]))
+        #expect(!WeatherReactivePolicy.shouldMonitor(overlays: []))
         #expect(WeatherReactivePolicy.shouldMonitor(
-            configurations: [config(effect: .rain, reactive: true)], activeScreenIDs: [id]
+            overlays: [overlay(effect: .none, reactive: true), overlay(effect: .snow, reactive: true)]
         ))
-        #expect(!WeatherReactivePolicy.shouldMonitor(
-            configurations: [config(effect: .none, reactive: true)], activeScreenIDs: [id]
-        ), "fetching for a display whose weather overlay is switched off")
-        #expect(!WeatherReactivePolicy.shouldMonitor(
-            configurations: [config(effect: .rain, reactive: false)], activeScreenIDs: [id]
-        ))
-        #expect(!WeatherReactivePolicy.shouldMonitor(
-            configurations: [config(effect: .none, reactive: false)], activeScreenIDs: [id]
-        ))
+    }
 
-        var other = ScreenConfiguration(screenID: 20, videoBookmarkData: Data([0x02]))
-        other.particleEffect = .snow
-        other.effectConfig.weatherReactive = true
-        #expect(WeatherReactivePolicy.shouldMonitor(
-            configurations: [config(effect: .none, reactive: true), other],
-            activeScreenIDs: [id, 20]
-        ))
+    @Test("Only live displays' weather layers are asked whether to fetch")
+    func monitorReadsLiveDisplaysOnly() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Coordinators/WallpaperEffectsCoordinator.swift"
+        )
+        #expect(source.contains("overlays: screensProvider().map(weatherOverlay)"))
     }
 
     @Test("wind direction resolves to the side it actually blows towards")
