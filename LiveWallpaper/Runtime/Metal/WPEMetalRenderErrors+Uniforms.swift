@@ -327,6 +327,32 @@ struct WPEObjectQuadUniforms {
     var cameraWorldDepth = SIMD4<Float>.zero
 }
 
+/// Layout MUST match `WPEProjectedQuadUniforms` in `WPEMetalBuiltins.metal`.
+struct WPEProjectedQuadUniforms {
+    /// Clip (x, y, 0, w), y-up NDC, in `WPEProjectedComposeQuad.clipCorners` order BL, BR, TL, TR.
+    var clipCorners: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>)
+    /// Rows of the layer uv → (U·w, V·w, w) capture homography, scaled so row 2 col 2 is 1; w unused.
+    var captureRow0: SIMD4<Float>
+    var captureRow1: SIMD4<Float>
+    var captureRow2: SIMD4<Float>
+    /// x = CLEARALPHA (> 0.5 makes the capture write transparent).
+    var flags: SIMD4<Float>
+
+    init(quad: WPEProjectedComposeQuad, clearAlpha: Bool) {
+        let corners = quad.clipCorners.map { SIMD4(Float($0.x), Float($0.y), 0, Float($0.z)) }
+        clipCorners = (corners[0], corners[1], corners[2], corners[3])
+        let pivot = quad.captureHomography[2, 2]
+        let rows = (pivot.isFinite && pivot != 0 ? quad.captureHomography * (1 / pivot) : quad.captureHomography).transpose
+        func row(_ value: SIMD3<Double>) -> SIMD4<Float> {
+            SIMD4(Float(value.x), Float(value.y), Float(value.z), 0)
+        }
+        captureRow0 = row(rows.columns.0)
+        captureRow1 = row(rows.columns.1)
+        captureRow2 = row(rows.columns.2)
+        flags = SIMD4(clearAlpha ? 1 : 0, 0, 0, 0)
+    }
+}
+
 /// Layout MUST match `WPEBloomUniforms` in `WPEMetalBuiltins.metal`.
 struct WPEBloomUniforms {
     /// xy = source texel size, z = strength (prefilter) / RGB scatter (upsample), w pad.
