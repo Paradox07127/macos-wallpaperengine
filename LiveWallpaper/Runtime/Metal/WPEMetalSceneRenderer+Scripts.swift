@@ -168,140 +168,74 @@ extension WPEMetalSceneRenderer {
             max(Double(surfaceDrawableSize.width), 1),
             max(Double(surfaceDrawableSize.height), 1)
         )
-        for object in scriptHosts {
+        /// False once the load token refuses construction; the caller then stops loading every family.
+        func install(
+            _ script: String?,
+            properties: [String: WPESceneScriptPropertyValue],
+            outputMode: WPELayerScriptOutputMode = .layerState,
+            initialVisible: Bool = true,
+            initialAlpha: Double = 1,
+            owner: (id: String, name: String),
+            createdLayerBridge: WPECreatedLayerBridgeConfiguration? = nil,
+            into target: ReferenceWritableKeyPath<WPEMetalSceneRenderer, [String: WPELayerScriptInstance]>,
+            label: String
+        ) -> Bool {
+            guard let script else { return true }
             do {
                 guard let instance = try constructSceneScript(for: scriptLoadToken, {
                     try WPELayerScriptInstance(
-                    script: object.visibleScript,
-                    scriptProperties: object.scriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    createdLayerBridge: Self.createdLayerBridgeConfiguration(
-                        document: document, pipeline: pipeline, ownerName: object.name
-                    ),
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                layerScriptInstances[object.id] = instance
+                        script: script,
+                        scriptProperties: properties,
+                        shared: sharedState,
+                        canvasSize: scriptCanvasSize,
+                        screenSize: scriptScreenSize,
+                        outputMode: outputMode,
+                        initialVisible: initialVisible,
+                        initialAlpha: initialAlpha,
+                        ownLayerName: owner.name,
+                        ownObjectID: owner.id,
+                        createdLayerBridge: createdLayerBridge,
+                        batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
+                }) else { return false }
+                self[keyPath: target][owner.id] = instance
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [ScriptHost] init failed for \(object.name): \(error)", category: .wpeRender)
+                Logger.warning("Scene \(descriptor.workshopID) [\(label)] init failed for \(owner.name): \(error)", category: .wpeRender)
             }
+            return true
+        }
+        func bridge(_ ownerName: String) -> WPECreatedLayerBridgeConfiguration {
+            Self.createdLayerBridgeConfiguration(document: document, pipeline: pipeline, ownerName: ownerName)
+        }
+        for object in scriptHosts {
+            guard install(object.visibleScript, properties: object.scriptProperties, owner: (object.id, object.name),
+                          createdLayerBridge: bridge(object.name), into: \.layerScriptInstances, label: "ScriptHost") else { return }
         }
         for object in visibleScripted {
-            guard let script = object.visibleScript else { continue }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPELayerScriptInstance(
-                    script: script,
-                    scriptProperties: object.scriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    initialVisible: object.visible,
-                    initialAlpha: object.alpha,
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    createdLayerBridge: Self.createdLayerBridgeConfiguration(
-                        document: document, pipeline: pipeline, ownerName: object.name
-                    ),
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                layerScriptInstances[object.id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [LayerScript] init failed for \(object.name): \(error)", category: .wpeRender)
-            }
+            guard install(object.visibleScript, properties: object.scriptProperties,
+                          initialVisible: object.visible, initialAlpha: object.alpha, owner: (object.id, object.name),
+                          createdLayerBridge: bridge(object.name), into: \.layerScriptInstances, label: "LayerScript") else { return }
         }
         for object in alphaScripted {
-            guard let script = object.alphaScript else { continue }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPELayerScriptInstance(
-                    script: script,
-                    scriptProperties: object.alphaScriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    outputMode: .returnedAlpha(initialValue: object.alpha),
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                layerAlphaScriptInstances[object.id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [AlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
-            }
+            guard install(object.alphaScript, properties: object.alphaScriptProperties,
+                          outputMode: .returnedAlpha(initialValue: object.alpha), owner: (object.id, object.name),
+                          into: \.layerAlphaScriptInstances, label: "AlphaScript") else { return }
         }
         for object in textVisibleScripted {
-            guard let script = object.visibleScript else { continue }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPELayerScriptInstance(
-                    script: script,
-                    scriptProperties: object.visibleScriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    initialVisible: object.visible,
-                    initialAlpha: object.alpha,
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                textVisibleScriptInstances[object.id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [TextVisibleScript] init failed for \(object.name): \(error)", category: .wpeRender)
-            }
+            guard install(object.visibleScript, properties: object.visibleScriptProperties,
+                          initialVisible: object.visible, initialAlpha: object.alpha, owner: (object.id, object.name),
+                          into: \.textVisibleScriptInstances, label: "TextVisibleScript") else { return }
         }
         for object in textAlphaScripted {
-            guard let script = object.alphaScript else { continue }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPELayerScriptInstance(
-                    script: script,
-                    scriptProperties: object.alphaScriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    outputMode: .returnedAlpha(initialValue: object.alpha),
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                textAlphaScriptInstances[object.id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [TextAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
-            }
+            guard install(object.alphaScript, properties: object.alphaScriptProperties,
+                          outputMode: .returnedAlpha(initialValue: object.alpha), owner: (object.id, object.name),
+                          into: \.textAlphaScriptInstances, label: "TextAlphaScript") else { return }
         }
         for object in particleAlphaScripted {
-            guard let override = object.instanceOverride,
-                  let script = override.alphaScript else { continue }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPELayerScriptInstance(
-                    script: script,
-                    scriptProperties: override.alphaScriptProperties,
-                    shared: sharedState,
-                    canvasSize: scriptCanvasSize,
-                    screenSize: scriptScreenSize,
-                    // WPE hands `update(value)` the property's live value; the
-                    // authored `value` inside the envelope is its seed.
-                    outputMode: .returnedAlpha(initialValue: override.alpha ?? 1),
-                    ownLayerName: object.name,
-                    ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
-                }) else { return }
-                particleAlphaScriptInstances[object.id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [ParticleAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
-            }
+            // WPE hands `update(value)` the property's live value; the authored `value` inside the envelope is its seed.
+            guard install(object.instanceOverride?.alphaScript, properties: object.instanceOverride?.alphaScriptProperties ?? [:],
+                          outputMode: .returnedAlpha(initialValue: object.instanceOverride?.alpha ?? 1), owner: (object.id, object.name),
+                          into: \.particleAlphaScriptInstances, label: "ParticleAlphaScript") else { return }
         }
     }
 

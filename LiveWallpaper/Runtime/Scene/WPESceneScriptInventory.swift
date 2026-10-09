@@ -2,134 +2,74 @@
     import LiveWallpaperProWPE
 
     extension WPESceneScriptInstanceInventory {
-        init(document: WPESceneDocument) {
-            let text = document.textObjects.reduce(into: 0) { count, object in
-                if object.textScript != nil {
-                    count += 1
-                }
-            }
-            let layer = document.scriptHostObjects.count
-                + document.imageObjects.reduce(into: 0) { count, object in
-                    if object.visibleScript != nil {
-                        count += 1
-                    }
-                    if object.alphaScript != nil {
-                        count += 1
-                    }
-                }
-                + document.textObjects.reduce(into: 0) { count, object in
-                    if object.visibleScript != nil {
-                        count += 1
-                    }
-                    if object.alphaScript != nil {
-                        count += 1
-                    }
-                }
-        let lightObjectIDs = Set(document.lightObjects.map(\.id))
-        let nonLightHosts = document.transformHostObjects.filter { !lightObjectIDs.contains($0.id) }
-            let transform = document.imageObjects.reduce(into: 0) { count, object in
-                if object.originScript != nil {
-                    count += 1
-                }
-                if object.scaleScript != nil {
-                    count += 1
-                }
-                if object.anglesScript != nil {
-                    count += 1
-                }
-                if object.colorScript != nil {
-                    count += 1
-                }
-            if object.parallaxDepthScript != nil {
-                count += 1
-            }
-        } + nonLightHosts.reduce(into: 0) { count, object in
-                if object.originScript != nil {
-                    count += 1
-                }
-                if object.scaleScript != nil {
-                    count += 1
-                }
-                if object.anglesScript != nil {
-                    count += 1
-                }
-            } + document.textObjects.reduce(into: 0) { count, object in
-                if object.originScript != nil {
-                    count += 1
-                }
-                if object.colorScript != nil {
-                    count += 1
-                }
-                if object.scaleScript != nil {
-                    count += 1
-                }
-                if object.anglesScript != nil {
-                    count += 1
-                }
-            }
-        let lightTransforms = document.lightObjects.reduce(into: 0) { count, object in
-            for field in ["origin", "scale", "angles", "color"] where object.fieldBindings[field]?.script != nil {
-                count += 1
-            }
-        }
-            // Shader-constant scripts share the transform inventory bucket. There is no instance cap.
-            let effectConstants = document.imageObjects.reduce(into: 0) { count, object in
-                for effect in object.effects {
-                    for override in effect.passOverrides {
-                        count += override.constantScripts.count
-                    }
-                }
-            }
-        let particleRates = document.particleObjects.filter { $0.instanceOverride?.rateScript != nil }.count
-        self.init(text: text, layer: layer, transform: transform + lightTransforms + effectConstants + particleRates)
+        /// `effectVisibility` scripts are scanned but never constructed as a runtime, so the count skips them.
+        enum BoundScriptFamily {
+            case text, layer, transform, effectVisibility
         }
 
-        /// True if any bound script reads audio. Do not gate on supportsaudioprocessing (corpus omits it).
-        static func usesAudioAPI(in document: WPESceneDocument) -> Bool {
-            var found = false
-            func note(_ script: String?) {
-                guard !found, let script else { return }
-                found = script.contains("registerAudioBuffers")
-                    || script.contains("getFrequency")
-                    || script.contains("getFrequencies")
+        init(document: WPESceneDocument) {
+            var text = 0
+            var layer = 0
+            var transform = 0
+            Self.forEachBoundScript(in: document) { family, _ in
+                switch family {
+                case .text: text += 1
+                case .layer: layer += 1
+                case .transform: transform += 1
+                case .effectVisibility: break
+                }
+            }
+            self.init(text: text, layer: layer, transform: transform)
+        }
+
+        static func forEachBoundScript(
+            in document: WPESceneDocument,
+            _ body: (BoundScriptFamily, String) -> Void
+        ) {
+            func each(_ family: BoundScriptFamily, _ scripts: [String?]) {
+                for case let script? in scripts { body(family, script) }
             }
             for object in document.imageObjects {
-                note(object.visibleScript)
-                note(object.alphaScript)
-            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
-                    note(transform?.script)
-                }
+                each(.layer, [object.visibleScript, object.alphaScript])
+                each(.transform, [
+                    object.originScript, object.scaleScript, object.anglesScript, object.colorScript,
+                    object.parallaxDepthScript,
+                ].map { $0?.script })
                 for effect in object.effects {
-                    note(effect.visibleScript?.script)
+                    each(.effectVisibility, [effect.visibleScript?.script])
                     for override in effect.passOverrides {
-                        for bound in override.constantScripts.values { note(bound.script) }
+                        each(.transform, override.constantScripts.values.map(\.script))
                     }
                 }
             }
             for object in document.textObjects {
-                note(object.textScript)
-                note(object.visibleScript)
-                note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript] {
-                    note(transform?.script)
-                }
+                each(.text, [object.textScript])
+                each(.layer, [object.visibleScript, object.alphaScript])
+                each(.transform, [
+                    object.originScript, object.scaleScript, object.anglesScript, object.colorScript,
+                ].map { $0?.script })
             }
-        let lightObjectIDs = Set(document.lightObjects.map(\.id))
-        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
-                for transform in [object.originScript, object.scaleScript, object.anglesScript] {
-                    note(transform?.script)
-                }
+            let lightObjectIDs = Set(document.lightObjects.map(\.id))
+            for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
+                each(.transform, [object.originScript, object.scaleScript, object.anglesScript].map { $0?.script })
             }
-        for object in document.particleObjects {
-            note(object.instanceOverride?.rateScript?.script)
+            for object in document.particleObjects {
+                each(.transform, [object.instanceOverride?.rateScript?.script])
+                each(.layer, [object.instanceOverride?.alphaScript])
+            }
+            for object in document.lightObjects {
+                each(.transform, ["origin", "scale", "angles", "color"].map { object.fieldBindings[$0]?.script })
+            }
+            each(.layer, document.scriptHostObjects.map(\.visibleScript))
         }
-        for object in document.lightObjects {
-            for field in ["origin", "scale", "angles", "color"] {
-                note(object.fieldBindings[field]?.script)
+
+        /// True if any bound script reads audio. Do not gate on supportsaudioprocessing (corpus omits it).
+        static func usesAudioAPI(in document: WPESceneDocument) -> Bool {
+            anyBoundScript(in: document) { script in
+                script.contains("registerAudioBuffers")
+                    || script.contains("getFrequency")
+                    || script.contains("getFrequencies")
             }
-        }
-            for object in document.scriptHostObjects { note(object.visibleScript) }
-            return found
         }
 
         /// True if any bound script exports a media handler. There is no `supports*` opt-in
@@ -191,91 +131,18 @@
             where matches: (String) -> Bool
         ) -> Bool {
             var found = false
-            func note(_ script: String?) {
-                guard !found, let script else { return }
-                found = matches(script)
+            forEachBoundScript(in: document) { _, script in
+                if !found { found = matches(script) }
             }
-            for object in document.imageObjects {
-                note(object.visibleScript)
-                note(object.alphaScript)
-            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
-                    note(transform?.script)
-                }
-                for effect in object.effects {
-                    note(effect.visibleScript?.script)
-                    for override in effect.passOverrides {
-                        for bound in override.constantScripts.values { note(bound.script) }
-                    }
-                }
-            }
-            for object in document.textObjects {
-                note(object.textScript)
-                note(object.visibleScript)
-                note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript] {
-                    note(transform?.script)
-                }
-            }
-        let lightObjectIDs = Set(document.lightObjects.map(\.id))
-        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
-                for transform in [object.originScript, object.scaleScript, object.anglesScript] {
-                    note(transform?.script)
-                }
-            }
-        for object in document.particleObjects {
-            note(object.instanceOverride?.rateScript?.script)
-        }
-        for object in document.lightObjects {
-            for field in ["origin", "scale", "angles", "color"] {
-                note(object.fieldBindings[field]?.script)
-            }
-        }
-            for object in document.scriptHostObjects { note(object.visibleScript) }
             return found
         }
 
         static func sourceReuse(in document: WPESceneDocument) -> (bindings: Int, distinct: Int, maxRepeat: Int) {
             var counts: [String: Int] = [:]
-            func note(_ script: String?) {
-                guard let script, !script.isEmpty else { return }
+            forEachBoundScript(in: document) { _, script in
+                guard !script.isEmpty else { return }
                 counts[script, default: 0] += 1
             }
-            for object in document.imageObjects {
-                note(object.visibleScript)
-                note(object.alphaScript)
-            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
-                    note(transform?.script)
-                }
-                for effect in object.effects {
-                    note(effect.visibleScript?.script)
-                    for override in effect.passOverrides {
-                        for bound in override.constantScripts.values { note(bound.script) }
-                    }
-                }
-            }
-            for object in document.textObjects {
-                note(object.textScript)
-                note(object.visibleScript)
-                note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript] {
-                    note(transform?.script)
-                }
-            }
-        let lightObjectIDs = Set(document.lightObjects.map(\.id))
-        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
-                for transform in [object.originScript, object.scaleScript, object.anglesScript] {
-                    note(transform?.script)
-                }
-            }
-        for object in document.particleObjects {
-            note(object.instanceOverride?.rateScript?.script)
-        }
-        for object in document.lightObjects {
-            for field in ["origin", "scale", "angles", "color"] {
-                note(object.fieldBindings[field]?.script)
-            }
-        }
-            for object in document.scriptHostObjects { note(object.visibleScript) }
             return (
                 bindings: counts.values.reduce(0, +),
                 distinct: counts.count,

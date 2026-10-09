@@ -42,6 +42,55 @@ extension WPEMetalSceneRenderer {
         return token.failClosed(reason)
     }
 
+    /// False once the load token refuses construction; the caller then stops loading. `failure` is the log text before `: <error>`.
+    private func installTransformScript<Key: Hashable>(
+        _ script: WPESceneTransformScript,
+        shape: WPEScriptValueShape,
+        owner: (id: String?, name: String?),
+        createdLayerBridge: WPECreatedLayerBridgeConfiguration? = nil,
+        canvasSize: SIMD2<Double>,
+        screenSize: SIMD2<Double>,
+        shared: WPESharedScriptState,
+        token: WPESceneScriptInstanceLimitToken,
+        into target: ReferenceWritableKeyPath<WPEMetalSceneRenderer, [Key: WPEDynamicTransformScriptInstance]>,
+        key: Key,
+        failure: @autoclosure () -> String
+    ) -> Bool {
+        do {
+            guard let instance = try constructSceneScript(for: token, {
+                try WPEDynamicTransformScriptInstance(
+                    script: script.script,
+                    scriptProperties: script.scriptProperties,
+                    seed: script.seed,
+                    valueShape: shape,
+                    canvasSize: canvasSize,
+                    screenSize: screenSize,
+                    ownLayerName: owner.name,
+                    ownObjectID: owner.id,
+                    createdLayerBridge: createdLayerBridge,
+                    shared: shared,
+                    batchDispatcher: self.sceneScriptBatchDispatcher,
+                    initializationMode: .deferred
+                )
+            }) else { return false }
+            self[keyPath: target][key] = instance
+        } catch {
+            _ = latchSceneScriptFailure(error, operation: .setup, token: token)
+            Logger.warning("Scene \(descriptor.workshopID) \(failure()): \(error)", category: .wpeRender)
+        }
+        return true
+    }
+
+    /// Live shared values are snapshotted only for these keys, so every fan family must be in the union.
+    private func publishSharedReadFanKeys() {
+        let transformFans = [
+            sharedOriginReadFans, sharedScaleReadFans, sharedAnglesReadFans, sharedColorReadFans, sharedParallaxReadFans,
+        ]
+        sceneScriptSharedState?.setReadFanKeys(
+            Set(transformFans.flatMap(\.values)).union(sharedEffectConstantReadFans.values.map(\.sharedKey))
+        )
+    }
+
     @discardableResult
     func resetSceneScriptsToBakedIfFailed(
         _ token: WPESceneScriptInstanceLimitToken
@@ -164,6 +213,7 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
+        defer { publishSharedReadFanKeys() }
         let layerNameByID = Dictionary(
             sharedState.layers.map { ($0.id, $0.name) },
             uniquingKeysWith: { first, _ in first }
@@ -175,7 +225,7 @@ extension WPEMetalSceneRenderer {
         )
         func install(
             _ scripts: [(String, WPESceneTransformScript)],
-            into instances: inout [String: WPEDynamicTransformScriptInstance],
+            into instances: ReferenceWritableKeyPath<WPEMetalSceneRenderer, [String: WPEDynamicTransformScriptInstance]>,
             fans: inout [String: String],
             label: String,
             shape: WPEScriptValueShape = .vector3
@@ -185,54 +235,27 @@ extension WPEMetalSceneRenderer {
                     fans[objectID] = key
                     continue
                 }
-                do {
-                    guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                        try WPEDynamicTransformScriptInstance(
-                            script: script.script,
-                            scriptProperties: script.scriptProperties,
-                            seed: script.seed,
-                            valueShape: objectID == WPECameraMotionPlayback.zoomScriptKey ? .scalar : shape,
-                            canvasSize: canvasSize,
-                            screenSize: screenSize,
-                            ownLayerName: layerNameByID[objectID],
-                            ownObjectID: objectID,
-                            createdLayerBridge: createdBridge,
-                            shared: sharedState,
-                            batchDispatcher: self.sceneScriptBatchDispatcher,
-                            initializationMode: .deferred
-                        )
-                    }) else { return }
-                    instances[objectID] = instance
-                } catch {
-                    _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                    Logger.warning("Scene \(descriptor.workshopID) [\(label)] init failed for \(objectID): \(error)", category: .wpeRender)
-                }
+                guard installTransformScript(
+                    script, shape: objectID == WPECameraMotionPlayback.zoomScriptKey ? .scalar : shape,
+                    owner: (objectID, layerNameByID[objectID]), createdLayerBridge: createdBridge,
+                    canvasSize: canvasSize, screenSize: screenSize, shared: sharedState, token: scriptLoadToken,
+                    into: instances, key: objectID, failure: "[\(label)] init failed for \(objectID)"
+                ) else { return }
             }
         }
-        install(originScripts, into: &dynamicOriginScriptInstances, fans: &sharedOriginReadFans, label: "OriginScript")
-        install(scaleScripts, into: &dynamicScaleScriptInstances, fans: &sharedScaleReadFans, label: "ScaleScript")
-        install(anglesScripts, into: &dynamicAnglesScriptInstances, fans: &sharedAnglesReadFans, label: "AnglesScript")
-        install(colorScripts, into: &dynamicColorScriptInstances, fans: &sharedColorReadFans, label: "ColorScript")
+        install(originScripts, into: \.dynamicOriginScriptInstances, fans: &sharedOriginReadFans, label: "OriginScript")
+        install(scaleScripts, into: \.dynamicScaleScriptInstances, fans: &sharedScaleReadFans, label: "ScaleScript")
+        install(anglesScripts, into: \.dynamicAnglesScriptInstances, fans: &sharedAnglesReadFans, label: "AnglesScript")
+        install(colorScripts, into: \.dynamicColorScriptInstances, fans: &sharedColorReadFans, label: "ColorScript")
         for (objectID, script) in rateScripts {
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPEDynamicTransformScriptInstance(
-                        script: script.script, scriptProperties: script.scriptProperties,
-                        seed: script.seed, valueShape: .scalar,
-                        canvasSize: canvasSize, screenSize: screenSize,
-                        ownLayerName: layerNameByID[objectID], ownObjectID: objectID,
-                        shared: sharedState, batchDispatcher: self.sceneScriptBatchDispatcher,
-                        initializationMode: .deferred
-                    )
-                }) else { return }
-                particleRateScriptInstances[objectID] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning("Scene \(descriptor.workshopID) [ParticleRateScript] init failed for \(objectID): \(error)", category: .wpeRender)
-            }
+            guard installTransformScript(
+                script, shape: .scalar, owner: (objectID, layerNameByID[objectID]),
+                canvasSize: canvasSize, screenSize: screenSize, shared: sharedState, token: scriptLoadToken,
+                into: \.particleRateScriptInstances, key: objectID, failure: "[ParticleRateScript] init failed for \(objectID)"
+            ) else { return }
         }
         install(
-            parallaxScripts, into: &dynamicParallaxDepthScriptInstances, fans: &sharedParallaxReadFans,
+            parallaxScripts, into: \.dynamicParallaxDepthScriptInstances, fans: &sharedParallaxReadFans,
             label: "ParallaxScript", shape: .vector2
         )
         debugStage(
@@ -284,35 +307,18 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
+        defer { publishSharedReadFanKeys() }
         for (key, script, shape, objectID) in bindings {
             if let sharedKey = WPESharedReadFanAnalysis.readKey(in: script.script) {
                 sharedEffectConstantReadFans[key] = (sharedKey, shape)
                 continue
             }
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPEDynamicTransformScriptInstance(
-                        script: script.script,
-                        scriptProperties: script.scriptProperties,
-                        seed: script.seed,
-                        valueShape: shape,
-                        canvasSize: canvasSize,
-                        screenSize: screenSize,
-                        ownLayerName: sharedState.layers.first(where: { $0.id == objectID })?.name,
-                        ownObjectID: objectID,
-                        shared: sharedState,
-                        batchDispatcher: self.sceneScriptBatchDispatcher,
-                        initializationMode: .deferred
-                    )
-                }) else { return }
-                effectConstantScriptInstances[key] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning(
-                    "Scene \(descriptor.workshopID) [ConstantScript] init failed for \(key.passID).\(key.uniform): \(error)",
-                    category: .wpeRender
-                )
-            }
+            guard installTransformScript(
+                script, shape: shape, owner: (objectID, sharedState.layers.first(where: { $0.id == objectID })?.name),
+                canvasSize: canvasSize, screenSize: screenSize, shared: sharedState, token: scriptLoadToken,
+                into: \.effectConstantScriptInstances, key: key,
+                failure: "[ConstantScript] init failed for \(key.passID).\(key.uniform)"
+            ) else { return }
         }
         debugStage(
             "effectConstantScripts.fans",
@@ -354,30 +360,12 @@ extension WPEMetalSceneRenderer {
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
         for (id, gate) in gatesByID.sorted(by: { $0.key < $1.key }) {
-            do {
-                guard let instance = try constructSceneScript(for: scriptLoadToken, {
-                    try WPEDynamicTransformScriptInstance(
-                        script: gate.script.script,
-                        scriptProperties: gate.script.scriptProperties,
-                        seed: gate.script.seed,
-                        valueShape: .boolean,
-                        canvasSize: canvasSize,
-                        screenSize: screenSize,
-                        ownLayerName: sharedState.layers.first(where: { $0.id == ownerIDsByGate[id] })?.name,
-                        ownObjectID: ownerIDsByGate[id],
-                        shared: sharedState,
-                        batchDispatcher: self.sceneScriptBatchDispatcher,
-                        initializationMode: .deferred
-                    )
-                }) else { return }
-                effectVisibilityScriptInstances[id] = instance
-            } catch {
-                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
-                Logger.warning(
-                    "Scene \(descriptor.workshopID) [EffectVisibilityScript] init failed: \(error)",
-                    category: .wpeRender
-                )
-            }
+            let ownerID = ownerIDsByGate[id]
+            guard installTransformScript(
+                gate.script, shape: .boolean, owner: (ownerID, sharedState.layers.first(where: { $0.id == ownerID })?.name),
+                canvasSize: canvasSize, screenSize: screenSize, shared: sharedState, token: scriptLoadToken,
+                into: \.effectVisibilityScriptInstances, key: id, failure: "[EffectVisibilityScript] init failed"
+            ) else { return }
         }
     }
 

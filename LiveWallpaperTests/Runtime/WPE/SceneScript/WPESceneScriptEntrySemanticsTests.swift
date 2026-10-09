@@ -117,22 +117,35 @@ struct WPESceneScriptEntrySemanticsTests {
         )
         _ = layer.tick(runtimeSeconds: 1)
         _ = layer.tick(runtimeSeconds: 1.25)
-        layer.dispatchMediaEvent(Self.timeline, runtimeSeconds: 1.375)
+        #expect(Self.run(layer.batchMediaEvents([Self.timeline], runtimeSeconds: 1.375)))
         #expect(Self.number(shared, "eventFrametime") == 0.25)
         _ = layer.tick(runtimeSeconds: 1.5)
         #expect(Self.number(shared, "frametime") == 0.25)
     }
 
     @Test("X3-04: a transform media event between frames neither sees nor eats the frame's frametime")
-    func transformEventKeepsFrameTime() throws {
+    func transformEventKeepsFrameTime() async throws {
         let shared = WPESharedScriptState()
+        let soloGovernor = WPESceneScriptExecutionGovernor(limit: 1)
         let transform = try WPEDynamicTransformScriptInstance(
             script: Self.frametimeScript, seed: .zero, canvasSize: SIMD2(1920, 1080), shared: shared,
-            setupBudget: 2, tickBudget: 0.5, governor: governor
+            setupBudget: 2, tickBudget: 0.5, governor: soloGovernor
         )
         _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 1)
         _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 1.25)
-        transform.dispatchMediaEvent(Self.timeline, runtimeSeconds: 1.375)
+        transform.liveDispatchMediaEvents([Self.timeline], runtimeSeconds: 1.375)
+        // The async batch holds the only permit until it finishes; a probe acquiring it proves the event ran.
+        let probe = soloGovernor.makeParticipant()
+        var idle = false
+        for _ in 0 ..< 1_000 where !idle {
+            if let permit = soloGovernor.tryAcquireUnreserved(for: probe) {
+                permit.release()
+                idle = true
+            } else {
+                try await Task.sleep(for: .milliseconds(2))
+            }
+        }
+        #expect(idle)
         #expect(Self.number(shared, "eventFrametime") == 0.25)
         _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 1.5)
         #expect(Self.number(shared, "frametime") == 0.25)
@@ -209,5 +222,64 @@ struct WPESceneScriptEntrySemanticsTests {
         #expect(Self.number(shared, "c") == 1)
         #expect(transform.destroy())
         #expect(Self.number(shared, "d") == 1)
+    }
+
+    // MARK: U04-02
+
+    @Test("U04-02: a live-value snapshot refresh copies only the registered read-fan keys")
+    func liveSnapshotRefreshFollowsReadFanKeys() throws {
+        let shared = WPESharedScriptState()
+        let layer = try WPELayerScriptInstance(
+            script: """
+            var fanned = new Vec3(1, 2, 3);
+            var unread = new Vec3(0, 0, 0);
+            export function init(value) { shared.fanned = fanned; shared.unread = unread; return value; }
+            export function update() { fanned.x += 1; unread.x += 1; }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5, governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        #expect(shared.liveSnapshotCount == 0, "with no read fan registered no live value may be snapshotted")
+
+        shared.setReadFanKeys(["fanned"])
+        _ = layer.tick(runtimeSeconds: 2)
+        #expect(shared.liveSnapshotCount == 1, "only the registered key is snapshotted")
+        #expect((shared.get("fanned") as? [String: Any])?["x"] as? Double == 3)
+    }
+
+    // MARK: X3-14
+
+    @Test("X3-14: getTransformMatrix composes the parent chain, live values and this entry's assignment")
+    func transformMatrixComposesParentChain() throws {
+        let shared = WPESharedScriptState(layers: [
+            WPESceneScriptLayerInfo(
+                id: "1", name: "Root", size: SIMD2(100, 100), origin: SIMD2(100, 50),
+                angles: SIMD3(0, 0, .pi / 2), index: 0, parentName: nil
+            ),
+            WPESceneScriptLayerInfo(
+                id: "2", name: "Child", size: SIMD2(10, 10), origin: SIMD2(10, 0),
+                scale: SIMD3(2, 3, 1), index: 1, parentName: "Root", parentID: "1"
+            ),
+        ])
+        shared.publishLayerTransforms(origins: ["1": SIMD3(200, 50, 0)], scales: [:], angles: [:])
+        let layer = try WPELayerScriptInstance(
+            script: """
+            function fmt(m) {
+                return [m[0], m[1], m[4], m[5], m[12], m[13]]
+                    .map(function (v) { return Math.round(v * 1000) / 1000; }).join(',');
+            }
+            export function update() {
+                shared.before = fmt(thisLayer.getTransformMatrix().m);
+                thisLayer.origin = new Vec3(20, 0, 0);
+                shared.after = fmt(thisLayer.getTransformMatrix().m);
+            }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5,
+            ownLayerName: "Child", ownObjectID: "2", governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        // World = T(live root) · Rz(90°) · T(child) · S(2, 3, 1).
+        #expect(shared.get("before") as? String == "0,2,-3,0,200,60")
+        #expect(shared.get("after") as? String == "0,2,-3,0,200,70")
     }
 }

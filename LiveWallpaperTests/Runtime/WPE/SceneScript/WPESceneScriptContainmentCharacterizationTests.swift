@@ -76,7 +76,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(",
             in: runtime
-        ) == 28)
+        ) == 26)
         // Every bounded entry checks the scene token first; admission itself lives in the one shared runner.
         let runtimeLines = runtime.components(separatedBy: "\n")
         for index in runtimeLines.indices.dropFirst() where runtimeLines[index].contains("return runWithBudget(") {
@@ -93,12 +93,12 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "return runWithBudget(budget, operation: .tick, admission: .failFast)",
             in: runtime
         ) == 3)
-        // Cursor events plus the three media-event entry points; all are fail-fast
+        // Cursor events plus the text family's synchronous media entry; both are fail-fast
         // because a frame must never wait on a script engine.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .event, admission: .failFast)",
             in: runtime
-        ) == 4)
+        ) == 2)
         // 10 = resizeScreen/destroy/applyGeneralSettings on all three live engines,
         // plus the transform engine's applyUserProperties.
         #expect(RR10ProductionSource.occurrences(
@@ -170,9 +170,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         // Layer batching now delegates admission to a reusable optional-work factory.
         // Pin each real admission path instead of counting Boolean-return spellings.
         for (source, method, refusedValue) in [
-            (layer, "dispatchMediaEventAsync", "false"),
             (layer, "makeMediaEventsBatch", "nil"),
-            (scene, "dispatchMediaEventAsync", "false"),
             (scene, "dispatchMediaEventsAsync", "false"),
         ] {
             let bodies = try RR10ProductionSource.engineMethodBodies(named: method, in: source)
@@ -235,9 +233,9 @@ struct WPESceneScriptContainmentCharacterizationTests {
         let runtime = layerRuntime + "\n" + sceneRuntime
         // Instance-level media entry points (engine-level ones sit behind these), counted per file.
         let entryPoints: [(source: String, name: String, count: Int)] = [
-            (layerRuntime, "dispatchMediaEvent", 1), (layerRuntime, "liveDispatchMediaEvent", 1),
+            (layerRuntime, "dispatchMediaEvent", 0), (layerRuntime, "liveDispatchMediaEvent", 0),
             (layerRuntime, "liveDispatchMediaEvents", 1), (layerRuntime, "batchMediaEvents", 1),
-            (sceneRuntime, "dispatchMediaEvent", 2), (sceneRuntime, "liveDispatchMediaEvent", 1),
+            (sceneRuntime, "dispatchMediaEvent", 1), (sceneRuntime, "liveDispatchMediaEvent", 0),
             (sceneRuntime, "liveDispatchMediaEvents", 1),
         ]
         for entry in entryPoints {
@@ -600,8 +598,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
         for body in sceneTicks + layerTicks {
             #expect(body.contains("guard acceptsCompletion() else { slot.rejectTick(claim) return } slot.publishTick(outcome, for: claim)"))
         }
-        let singleMedia = try #require(RR10ProductionSource.engineMethodBodies(named: "dispatchMediaEventAsync", in: layer).first)
-        #expect(singleMedia.contains("guard self.acceptsCompletion() else { return } slot.publishEvent(outcome)"))
         let mediaBatch = try #require(RR10ProductionSource.engineMethodBodies(named: "makeMediaEventsBatch", in: layer).first)
         #expect(mediaBatch.contains("guard acceptsCompletion() else { return } slot.publishEvent(outcome)"))
         let cursorBatch = try #require(RR10ProductionSource.engineMethodBodies(named: "makeCursorBatch", in: layer).first)

@@ -260,7 +260,7 @@ struct WPESceneScriptSharedLayerOrderTests {
         _ = try #require(instance.applyGeneralSettings(language: "en"))
         _ = try #require(instance.resizeScreen(SIMD2(100, 80)))
         _ = try #require(instance.dispatchCursorEvent(.click, pointerFrame: .neutral))
-        _ = try #require(instance.dispatchMediaEvent(.playbackChanged(.playing)))
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
         _ = try #require(instance.destroy())
         for key in ["topLevelRejected", "initAllowed", "createRejected", "updateAllowed", "propertiesRejected",
                     "generalRejected", "resizeRejected", "cursorRejected", "mediaRejected", "destroyRejected"] {
