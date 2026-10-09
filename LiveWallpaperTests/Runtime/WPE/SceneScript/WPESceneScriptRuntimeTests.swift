@@ -258,6 +258,8 @@ struct WPESceneScriptRuntimeTests {
         }
         """, initialValue: "?", shared: store)
         #expect(store.get("originalIdentity") as? Bool == true)
+        // Only keys a renderer read fan consumes get a host snapshot.
+        store.setReadFanKeys(["accentColor"])
         #expect(consumer.tickString() == "5:true")
         let snapshot = try #require(store.get("accentColor") as? [String: Any])
         #expect((snapshot["x"] as? NSNumber)?.doubleValue == 0.7)
