@@ -278,7 +278,7 @@ struct ScreenManagerCoordinationTests {
                     prepareCalls += 1
                     return .failed
                 },
-                libraryEntries: { [entry] },
+                libraryEntries: { [LibraryShuffleCandidate(entry)] },
                 libraryEntryAvailable: { _ in
                     availabilityChecks += 1
                     guard availabilityChecks > 1 else { return true }

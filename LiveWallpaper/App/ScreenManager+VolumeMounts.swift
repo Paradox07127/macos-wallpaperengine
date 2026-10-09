@@ -27,7 +27,7 @@ extension ScreenManager {
         }
     }
 
-    /// Only bookmark-backed video and local HTML can be stranded by an unmounted volume.
+    /// Bookmark-backed video, local HTML and scenes read in place from their Workshop source can be stranded by an unmounted volume.
     nonisolated static func needsReloadAfterVolumeMount(
         configuration: ScreenConfiguration?,
         hasHealthySession: Bool,
@@ -42,7 +42,14 @@ extension ScreenManager {
              let .html(.file(data), _),
              let .html(.folder(data, _), _):
             bookmarkData = data
-        case .html(.inline, _), .html(.url, _), .scene:
+        case .scene:
+            #if LITE_BUILD
+            return false
+            #else
+            guard let origin = configuration.wpeOrigin else { return false }
+            bookmarkData = origin.sourceFolderBookmark
+            #endif
+        case .html(.inline, _), .html(.url, _):
             return false
         }
         return !volumeIsUnavailable(bookmarkData)

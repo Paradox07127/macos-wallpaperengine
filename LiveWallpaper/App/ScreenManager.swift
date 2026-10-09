@@ -294,7 +294,8 @@ final class ScreenManager {
         },
         libraryEntries: { [weak self] in
             guard let self else { return [] }
-            return LibraryShufflePolicy.liveEntries().filter { self.featureCatalog.capabilities.canRender($0.content.wallpaperType) }
+            let capabilities = featureCatalog.capabilities
+            return LibraryShufflePolicy.liveEntries(canRender: { capabilities.canRender($0) })
         }
     )
     /// Keyed by `displayFingerprint`; read by the Edit Desk's undo and the playlist sheet's preview to spot a switch they did not make.

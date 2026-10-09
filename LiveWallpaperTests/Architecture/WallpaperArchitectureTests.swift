@@ -1027,7 +1027,7 @@ struct WallpaperAutomationCoordinatorTests {
         initial.playlistRotationMinutes = 120
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         let entries = OSAllocatedUnfairLock<[WallpaperQueueEntry]>(initialState: [first, second, missing])
-        let liveEntries: @MainActor () -> [WallpaperQueueEntry] = { entries.withLock { $0 } }
+        let liveEntries: @MainActor () -> [LibraryShuffleCandidate] = { entries.withLock { $0 }.map(LibraryShuffleCandidate.init) }
         var restored: [WallpaperContent] = []
         var marks: [AutomaticSwitchMark.Source] = []
         let orchestrator = WallpaperAutomationOrchestrator(
@@ -1136,8 +1136,9 @@ struct WallpaperAutomationCoordinatorTests {
     func libraryShuffleCandidates() {
         let current = WallpaperContent.html(source: .inline("current"), config: .default)
         let next = WallpaperQueueEntry(id: "next", title: "Next", content: .video(bookmarkData: Data([2])))
-        #expect(LibraryShufflePolicy.candidates(in: [], excluding: current).isEmpty)
-        #expect(LibraryShufflePolicy.candidates(in: [WallpaperQueueEntry(title: "Current", content: current), next, next], excluding: current) == [next])
+        #expect(LibraryShufflePolicy.candidates(in: [], excluding: current, origin: nil).isEmpty)
+        let entries = [WallpaperQueueEntry(title: "Current", content: current), next, next].map(LibraryShuffleCandidate.init)
+        #expect(LibraryShufflePolicy.candidates(in: entries, excluding: current, origin: nil).map(\.resolvedEntry) == [next])
     }
 
     @Test("A failed automation entry gets exactly one retry, is marked and is skipped on later rotations")
@@ -1340,7 +1341,7 @@ struct WallpaperAutomationCoordinatorTests {
                 guard intended() else { return .cancelled }
                 store.save(proposed)
                 return .ready
-            }, libraryEntries: { [entry] }, libraryEntryAvailable: { _ in true }
+            }, libraryEntries: { [LibraryShuffleCandidate(entry)] }, libraryEntryAvailable: { _ in true }
         )
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 100 where attempts < 2 {

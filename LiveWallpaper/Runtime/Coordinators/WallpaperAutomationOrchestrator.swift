@@ -40,7 +40,7 @@ final class WallpaperAutomationOrchestrator {
     private let prepareAutomation: AutomationPreparer
     private var automaticSelectionSerial = 0
     private var automaticSelections: [CGDirectDisplayID: Int] = [:]
-    private let libraryEntries: @MainActor () -> [WallpaperQueueEntry]
+    private let libraryEntries: @MainActor () -> [LibraryShuffleCandidate]
     private let libraryEntryAvailable: @MainActor (WallpaperQueueEntry) async -> Bool
     private let bookmarkVolumeUnavailable: @MainActor (Data) -> Bool
     private let now: @MainActor () -> Date
@@ -74,7 +74,7 @@ final class WallpaperAutomationOrchestrator {
         now: @MainActor @escaping () -> Date = { Date() },
         prepareAutomation: @escaping AutomationPreparer,
         automationAllowed: @MainActor @escaping () -> Bool = { true },
-        libraryEntries: @MainActor @escaping () -> [WallpaperQueueEntry] = { [] },
+        libraryEntries: @MainActor @escaping () -> [LibraryShuffleCandidate] = { [] },
         libraryEntryAvailable: @MainActor @escaping (WallpaperQueueEntry) async -> Bool = { entry in
             await LibraryContentLocator.locate(content: entry.content, wpeOrigin: entry.origin).isAvailable
         },
@@ -229,8 +229,9 @@ final class WallpaperAutomationOrchestrator {
             candidates = Self.forwardOrder(in: config).filter { !isDeleted(queue[$0]) }.map { (queue[$0], $0) }
             source = .playlist
         case .libraryShuffle:
-            candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper)
-                .filter { !isDeleted($0) }.shuffled().map { ($0, nil) }
+            // Resolved up front: `isDeleted` cannot outlive this call, so it cannot run inside the selection loop.
+            candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin)
+                .compactMap { $0.resolve() }.filter { !isDeleted($0) }.shuffled().map { ($0, nil) }
             source = .libraryShuffle
         case .schedule:
             candidates = []
@@ -446,18 +447,30 @@ final class WallpaperAutomationOrchestrator {
         guard !isSuspendedForUserAbsence,
               let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.wallpaperMode == .libraryShuffle else { return }
-        let candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper).shuffled()
-        startAutomaticSelection(candidates.map { ($0, nil) }, source: .libraryShuffle, for: screen)
+        let candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin)
+        startAutomaticSelection(candidates.shuffled().map { ($0, nil) }, source: .libraryShuffle, for: screen)
+    }
+
+    private func startAutomaticSelection(
+        _ entries: [(entry: WallpaperQueueEntry, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
+        onExhausted: (@MainActor () -> Void)? = nil
+    ) {
+        startAutomaticSelection(
+            entries.map { (LibraryShuffleCandidate($0.entry), $0.cursor) }, source: source, for: screen, onExhausted: onExhausted
+        )
     }
 
     /// One cancellable worker per display; retries are sequential and never own periodic clocks.
     private func startAutomaticSelection(
-        _ candidates: [(entry: WallpaperQueueEntry, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
+        _ candidates: [(entry: LibraryShuffleCandidate, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
         onExhausted: (@MainActor () -> Void)? = nil
     ) {
         guard !isSuspendedForUserAbsence, let initial = configurationStore.get(for: screen.id) else { return }
         let expectedMode = initial.wallpaperMode
-        let candidates = candidates.filter { initial.automationFailures[$0.entry.id]?.entry.content != $0.entry.content }
+        // An unresolved candidate's failure record is checked once the loop resolves it.
+        let candidates = candidates.filter { candidate in
+            candidate.entry.resolvedEntry.map { initial.automationFailures[$0.id]?.entry.content != $0.content } ?? true
+        }
         guard !candidates.isEmpty else {
             onExhausted?()
             return
@@ -485,8 +498,8 @@ final class WallpaperAutomationOrchestrator {
             }
             var dispatched = false
             for candidate in candidates {
-                let entry = candidate.entry
                 guard intended(), let config = configurationStore.get(for: screenID), config.wallpaperMode == expectedMode else { return }
+                guard let entry = candidate.entry.resolve() else { continue }
                 // Editing a source changes its snapshot and automatically gives it a fresh chance.
                 if config.automationFailures[entry.id]?.entry.content == entry.content {
                     continue

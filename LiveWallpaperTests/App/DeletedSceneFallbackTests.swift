@@ -69,7 +69,7 @@ struct DeletedSceneFallbackTests {
                 manager.saveConfiguration(proposed)
                 return .ready
             },
-            libraryEntries: { library },
+            libraryEntries: { library.map(LibraryShuffleCandidate.init) },
             libraryEntryAvailable: { _ in true }
         )
         SettingsManager.shared.recordWPEImport(deleted.history)
