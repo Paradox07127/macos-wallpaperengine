@@ -282,4 +282,71 @@ struct WPESceneScriptEntrySemanticsTests {
         #expect(shared.get("before") as? String == "0,2,-3,0,200,60")
         #expect(shared.get("after") as? String == "0,2,-3,0,200,70")
     }
+
+    @Test("X3-14: a child's getTransformMatrix sees this entry's assignment to its own layer as the parent")
+    func childTransformMatrixSeesOwnParentAssignment() throws {
+        let shared = WPESharedScriptState(layers: [
+            WPESceneScriptLayerInfo(
+                id: "1", name: "Root", size: SIMD2(100, 100), origin: SIMD2(100, 50),
+                angles: SIMD3(0, 0, .pi / 2), index: 0, parentName: nil
+            ),
+            WPESceneScriptLayerInfo(
+                id: "2", name: "Child", size: SIMD2(10, 10), origin: SIMD2(10, 0),
+                scale: SIMD3(2, 3, 1), index: 1, parentName: "Root", parentID: "1"
+            ),
+        ])
+        shared.publishLayerTransforms(origins: ["1": SIMD3(200, 50, 0)], scales: [:], angles: [:])
+        let layer = try WPELayerScriptInstance(
+            script: """
+            function fmt(m) {
+                return [m[0], m[1], m[4], m[5], m[12], m[13]]
+                    .map(function (v) { return Math.round(v * 1000) / 1000; }).join(',');
+            }
+            export function update() {
+                thisLayer.origin = new Vec3(300, 50, 0);
+                shared.child = fmt(thisScene.getLayer('Child').getTransformMatrix().m);
+            }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5,
+            ownLayerName: "Root", ownObjectID: "1", governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        // World = T(assigned root) · Rz(90°) · T(child) · S(2, 3, 1).
+        #expect(shared.get("child") as? String == "0,2,-3,0,300,60")
+    }
+
+    @Test("X3-14: getParent() on a child of this entry's layer returns thisLayer, so its assignment reaches the parent walk")
+    func childParentIsThisLayer() throws {
+        let shared = WPESharedScriptState(layers: [
+            WPESceneScriptLayerInfo(
+                id: "1", name: "Root", size: SIMD2(100, 100), origin: SIMD2(100, 50),
+                angles: SIMD3(0, 0, .pi / 2), index: 0, parentName: nil
+            ),
+            WPESceneScriptLayerInfo(
+                id: "2", name: "Child", size: SIMD2(10, 10), origin: SIMD2(10, 0),
+                scale: SIMD3(2, 3, 1), index: 1, parentName: "Root", parentID: "1"
+            ),
+        ])
+        shared.publishLayerTransforms(origins: ["1": SIMD3(200, 50, 0)], scales: [:], angles: [:])
+        let layer = try WPELayerScriptInstance(
+            script: """
+            function fmt(m) {
+                return [m[0], m[1], m[4], m[5], m[12], m[13]]
+                    .map(function (v) { return Math.round(v * 1000) / 1000; }).join(',');
+            }
+            export function update() {
+                const child = thisScene.getLayer('Child');
+                const parent = child.getParent();
+                parent.origin = new Vec3(300, 50, 0);
+                shared.same = parent === thisLayer;
+                shared.child = fmt(child.getTransformMatrix().m);
+            }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5,
+            ownLayerName: "Root", ownObjectID: "1", governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        #expect(shared.get("same") as? Bool == true)
+        #expect(shared.get("child") as? String == "0,2,-3,0,300,60")
+    }
 }
