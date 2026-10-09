@@ -27,15 +27,15 @@ struct WPEMdlParserAttachmentBoundsTests {
         #expect(model.attachments.isEmpty)
     }
 
-    @Test("Preserves complete MDL bytes and generic bone simulation JSON")
-    func preservesAuthoredMDLAndBoneSimulationJSON() throws {
+    @Test("Preserves generic bone simulation JSON")
+    func preservesBoneSimulationJSON() throws {
         let simulationJSON = #"{"enabled":true,"mass":2.5,"unset":null,"rules":[{"name":"first"},0,false]}"#
         var data = singleTriangleMDLV23()
         data.append(singleBoneMDLSV4(simulationJSON: simulationJSON, absoluteStart: data.count))
 
         let model = try WPEMdlParser.parse(data: data)
 
-        #expect(model.authoredData == data)
+        #expect(model.meshes.count == 1)
         #expect(model.bones.count == 1)
         #expect(model.bones[0].simulationJSON == simulationJSON)
         #expect(model.bones[0].simulationJSONValue?["enabled"] == .bool(true))

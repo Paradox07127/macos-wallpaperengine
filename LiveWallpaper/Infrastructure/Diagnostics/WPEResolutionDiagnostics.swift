@@ -76,10 +76,22 @@ struct WPEResolutionDiagnosticsSnapshot: Equatable, Sendable {
 final class WPEResolutionTracer: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [WPEResolutionEvent] = []
+    private var dropped = 0
+    static let eventLimit = 4096
+
+    var droppedEventCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return dropped
+    }
 
     func record(_ event: WPEResolutionEvent) {
         lock.lock()
-        events.append(event)
+        if events.count < Self.eventLimit {
+            events.append(event)
+        } else {
+            dropped += 1
+        }
         lock.unlock()
     }
 
@@ -93,6 +105,7 @@ final class WPEResolutionTracer: @unchecked Sendable {
     func reset() {
         lock.lock()
         events.removeAll(keepingCapacity: true)
+        dropped = 0
         lock.unlock()
     }
 }

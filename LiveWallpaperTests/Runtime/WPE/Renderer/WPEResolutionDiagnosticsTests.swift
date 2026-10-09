@@ -313,6 +313,23 @@ struct WPEResolutionDiagnosticsTests {
         #expect(tracer.snapshot().events.isEmpty)
     }
 
+    @Test("Tracer stops growing at its event limit and counts what it drops")
+    func tracerCapsEvents() {
+        let tracer = WPEResolutionTracer()
+        let event = WPEResolutionEvent(
+            ref: "fonts/missing.ttf",
+            attempts: [WPEResolutionAttempt(origin: .scene, outcome: .fileMissing)],
+            finalOutcome: .fileMissing
+        )
+        for _ in 0 ..< WPEResolutionTracer.eventLimit + 10 {
+            tracer.record(event)
+        }
+        #expect(tracer.snapshot().events.count == WPEResolutionTracer.eventLimit)
+        #expect(tracer.droppedEventCount == 10)
+        tracer.reset()
+        #expect(tracer.droppedEventCount == 0)
+    }
+
     private func makeTempRoot() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-resolution-\(UUID().uuidString)", isDirectory: true)

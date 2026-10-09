@@ -212,9 +212,9 @@ final class WPEMetalRenderTargetPool {
         for name in names {
             zeroPlaceholderTextures[name] = nil
         }
-        // The alias plan includes dimensions in its signature and must be
-        // rebuilt alongside the discrete slots.
-        releaseAliasState()
+        // Forces a re-plan; `prepareAliasPlan` keeps the heap when the new plan still fits.
+        lastPrepareInputs = nil
+        aliasFrameTextures = aliasFrameTextures.filter { !names.contains($0.key.name) }
     }
 
     /// Non-nil ONLY when `name` is a declared local FBO; undeclared names return nil so the caller still raises `missingTexture`.
@@ -670,16 +670,23 @@ final class WPEMetalRenderTargetPool {
             return
         }
 
-        releaseAliasState()
-
         let plan = WPEMetalFBOAliasPlanner.plan(plannerIntervals, alignment: maxAlignment)
+        let heapSize = Self.align(plan.heapSize + maxAlignment, to: maxAlignment)
+        // An automatic heap places textures itself, so any heap at least this large fits the new plan.
+        if plan.heapSize > 0, let aliasHeap, aliasHeap.size >= heapSize {
+            aliasLastPassByKey = lastPassByKey
+            aliasPlanInputs = planInputs
+            return
+        }
+
+        releaseAliasState()
         guard plan.heapSize > 0 else { return }
 
         let heapDescriptor = MTLHeapDescriptor()
         heapDescriptor.type = .automatic
         heapDescriptor.storageMode = .private
         heapDescriptor.hazardTrackingMode = .tracked
-        heapDescriptor.size = Self.align(plan.heapSize + maxAlignment, to: maxAlignment)
+        heapDescriptor.size = heapSize
         guard let heap = device.makeHeap(descriptor: heapDescriptor) else { return }
 
         aliasHeap = heap
@@ -688,9 +695,8 @@ final class WPEMetalRenderTargetPool {
     }
 
     private func releaseAliasState() {
-        // Single choke point for every invalidation (`releaseAll`,
-        // `discardTextures`, empty-interval frames, plan rebuild), so the
-        // early-out cache can never outlive the plan it vouches for.
+        // Every heap drop (`releaseAll`, empty-interval frames, plan rebuild) goes
+        // through here, so the early-out cache can never outlive the plan it vouches for.
         lastPrepareInputs = nil
         aliasFrameTextures.removeAll(keepingCapacity: false)
         aliasLastPassByKey.removeAll(keepingCapacity: false)
