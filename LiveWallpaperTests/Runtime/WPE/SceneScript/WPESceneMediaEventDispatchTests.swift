@@ -177,7 +177,7 @@ struct WPESceneMediaEventDispatchTests {
     /// The async media batch holds its engine's only permit on a limit-1 governor until it finishes.
     private static func waitForAsyncBatch(on governor: WPESceneScriptExecutionGovernor) async throws {
         let probe = governor.makeParticipant()
-        for _ in 0 ..< 1_000 {
+        for _ in 0 ..< 1000 {
             if let permit = governor.tryAcquireUnreserved(for: probe) {
                 permit.release()
                 return
@@ -489,7 +489,7 @@ struct WPESceneMediaEventDispatchTests {
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
             "objects": [particle],
         ]
-        return try WPESceneDocumentParser.parse(data: try JSONSerialization.data(withJSONObject: payload))
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
     }
 
     @Test("The media, audio and inventory scans see a particle alpha script")
