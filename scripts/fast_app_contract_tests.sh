@@ -274,6 +274,10 @@ SERIAL_SUITES=(
   PersistentUserPauseTests
   ScreenManagerCoordinationTests
   DeletedSceneFallbackTests
+  ScreenSignatureBaselineTests
+  ResetPlaybackColorSpaceTests
+  ScenePresetLiveUpdateTests
+  LibraryShuffleLazyResolutionTests
   DefaultsIsolationTests
   # AppLanguageOverride writes the process-wide argument domain. Its lock orders
   # writers, but unscoped localized UI readers in the parallel pass do not take it.
