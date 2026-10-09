@@ -343,6 +343,7 @@ SERIAL_SUITES=(
   # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
   # with other UI probes; the isolated 119-test suite passes without contention.
   EditDeskStageViewTests
+  HomePageTeardownTests
   # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
   OverlayVisibilityLifecycleCharacterizationTests
   # Error snapshots compare app-language text across calls; locale probes change it process-wide.
