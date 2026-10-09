@@ -452,12 +452,18 @@ extension ScreenManager {
 
     func resetPlaybackSettings(for screen: Screen) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
+        let storedColorSpace = config.videoColorSpace
         config.resetPlayback(to: SettingsManager.shared.loadDisplayDefaults())
+        let colorSpace = config.videoColorSpace
         restoreProposedWallpaperSession(
             for: screen,
             configuration: config,
             preservingState: true
-        )
+        ) { [weak screen] in
+            // A reused player keeps its color space unless told; a fresh player was already built with the new one.
+            guard colorSpace != storedColorSpace else { return }
+            screen?.videoPlayer?.setVideoColorSpace(colorSpace)
+        }
         Logger.info("Reset playback defaults for screen \(screen.id)", category: .screenManager)
     }
 

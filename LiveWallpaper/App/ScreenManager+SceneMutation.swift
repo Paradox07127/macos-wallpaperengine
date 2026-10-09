@@ -57,21 +57,12 @@ extension ScreenManager {
         }
     }
 
-    func handleScenePresetLibraryChange() {
+    /// previous holds each display's active scene from before the library reconcile; the store already returns the reconciled one.
+    func handleScenePresetLibraryChange(previous rendering: [CGDirectDisplayID: SceneDescriptor]) {
         guard !isTerminating else { return }
-        var rendering: [CGDirectDisplayID: SceneDescriptor] = [:]
-        for screen in screens {
-            guard let configuration = configurationStore.get(
-                for: screen.id,
-                fingerprint: screen.displayFingerprint
-            ), case let .scene(descriptor) = configuration.activeWallpaper,
-            descriptor.presetID != nil else { continue }
-            rendering[screen.id] = descriptor
-        }
-        guard !rendering.isEmpty else { return }
-
         for screen in screens {
             guard let previous = rendering[screen.id],
+                  previous.presetID != nil,
                   let configuration = configurationStore.get(
                       for: screen.id,
                       fingerprint: screen.displayFingerprint

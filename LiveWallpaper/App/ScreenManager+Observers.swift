@@ -16,6 +16,8 @@ extension ScreenManager {
     }
     
     func setupScreenObservers() {
+        // Without a launch baseline the first parameter change cannot tell a refresh-rate change apart from a new display.
+        lastScreenSignatures = ScreenConfigurationSignature.currentLayout()
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .throttle(for: .seconds(1.0), scheduler: DispatchQueue.main, latest: true)
@@ -26,8 +28,10 @@ extension ScreenManager {
 
         NotificationCenter.default.publisher(for: .scenePresetLibraryDidChange)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.handleScenePresetLibraryChange()
+            .sink { [weak self] notification in
+                let previous = notification.userInfo?[SettingsManager.previousSceneDescriptorsKey]
+                    as? [CGDirectDisplayID: SceneDescriptor] ?? [:]
+                self?.handleScenePresetLibraryChange(previous: previous)
             }
             .store(in: &cleanupTasks)
 

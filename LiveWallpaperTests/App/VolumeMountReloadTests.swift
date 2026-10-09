@@ -49,6 +49,25 @@ struct VolumeMountReloadTests {
         #expect(!Self.needsReload(.html(source: .url(remote), config: .default)))
     }
 
+    #if !LITE_BUILD
+    @Test("A scene read in place from a now-mounted Workshop source with no running session is reloaded")
+    func sceneWithOriginIsSelected() {
+        let scene = SceneDescriptor(workshopID: "1", cacheRelativePath: "1", entryFile: "scene.json", capabilityTier: .imageOnly)
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(scene))
+        configuration.wpeOrigin = WPEOrigin(
+            workshopID: "1", title: "Scene", originalType: .scene, sourceFolderBookmark: Self.externalBookmark,
+            cacheRelativePath: "1", previewFileName: nil
+        )
+        var checked: Data?
+        #expect(ScreenManager.needsReloadAfterVolumeMount(
+            configuration: configuration,
+            hasHealthySession: false,
+            volumeIsUnavailable: { checked = $0; return false }
+        ))
+        #expect(checked == Self.externalBookmark)
+    }
+    #endif
+
     @Test("A screen with no configuration is not reloaded")
     func missingConfigurationIsSkipped() {
         #expect(!ScreenManager.needsReloadAfterVolumeMount(

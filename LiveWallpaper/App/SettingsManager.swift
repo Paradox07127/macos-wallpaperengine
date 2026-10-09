@@ -262,13 +262,25 @@ final class SettingsManager {
         }
     }
 
+    /// userInfo key of `.scenePresetLibraryDidChange`: `[CGDirectDisplayID: SceneDescriptor]`, each display's active scene before the reconcile.
+    static let previousSceneDescriptorsKey = "previousSceneDescriptors"
+
     func reconcileScenePresetSnapshots() {
         let library = loadGlobalSettings().scenePresets
+        // Collected first: once the cache is rewritten, every reader already sees the reconciled descriptors.
+        var previous: [CGDirectDisplayID: SceneDescriptor] = [:]
+        for configuration in cachedConfigurations ?? [] {
+            if case let .scene(descriptor) = configuration.activeWallpaper {
+                previous[configuration.screenID] = descriptor
+            }
+        }
         cachedConfigurations = cachedConfigurations?.map {
             $0.refreshingScenePresets(in: library)
         }
         // Running scene sessions still render the old snapshot until an observer hands them the reconciled descriptor.
-        NotificationCenter.default.post(name: .scenePresetLibraryDidChange, object: nil)
+        NotificationCenter.default.post(
+            name: .scenePresetLibraryDidChange, object: nil, userInfo: [Self.previousSceneDescriptorsKey: previous]
+        )
     }
 
     func loadConfigurations() -> [ScreenConfiguration] {
