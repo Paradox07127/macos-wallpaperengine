@@ -273,6 +273,7 @@ SERIAL_SUITES=(
   # while this pass keeps its persistence snapshots exclusive from parallel suites.
   PersistentUserPauseTests
   ScreenManagerCoordinationTests
+  DeletedSceneFallbackTests
   DefaultsIsolationTests
   # AppLanguageOverride writes the process-wide argument domain. Its lock orders
   # writers, but unscoped localized UI readers in the parallel pass do not take it.
