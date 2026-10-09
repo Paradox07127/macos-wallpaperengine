@@ -1829,6 +1829,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
                 respond(.loginRequired, tail: out, executed: steamCMDPath); return
             }
+            if out.contains("No Connection") {
+                respond(.steamUnreachable, tail: out, executed: steamCMDPath); return
+            }
             if out.contains("No subscription") || out.contains("Invalid Platform") {
                 respond(.notEntitled, tail: out, executed: steamCMDPath); return
             }

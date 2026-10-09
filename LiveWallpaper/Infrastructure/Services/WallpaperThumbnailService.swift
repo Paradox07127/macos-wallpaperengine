@@ -162,7 +162,35 @@ final class WallpaperThumbnailService {
         configuration.defaultWebpagePreferences = preferences
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = false
+        if request.effectiveConfig.requiresNetworkIsolation {
+            let handler = FolderURLSchemeHandler()
+            handler.networkIsolationEnabled = true
+            handler.folderURL = request.localReadAccessRoot ?? request.loadURL.deletingLastPathComponent()
+            configuration.setURLSchemeHandler(handler, forURLScheme: FolderURLSchemeHandler.scheme)
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: HTMLWallpaperRuntimeScript.peerConnectionBlocker(),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
         return configuration
+    }
+
+    /// nil = the configuration has no isolating scheme handler, so the page loads directly.
+    static func isolatedHTMLSnapshotURL(
+        for request: HTMLSnapshotRequest,
+        configuration: WKWebViewConfiguration
+    ) -> URL? {
+        guard let handler = configuration.urlSchemeHandler(forURLScheme: FolderURLSchemeHandler.scheme)
+            as? FolderURLSchemeHandler,
+            let nonce = handler.currentSessionNonce else { return nil }
+        let index = if case let .folder(_, indexFileName) = request.source {
+            indexFileName
+        } else {
+            request.loadURL.lastPathComponent
+        }
+        let escapedIndex = index.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? index
+        return URL(string: "\(FolderURLSchemeHandler.scheme)://\(FolderURLSchemeHandler.host)/\(escapedIndex)?n=\(nonce)")
     }
 
     private func captureHTMLSnapshot(
@@ -219,7 +247,12 @@ final class WallpaperThumbnailService {
             }
         }
 
-        if request.loadURL.isFileURL {
+        if request.effectiveConfig.requiresNetworkIsolation {
+            guard let isolatedURL = Self.isolatedHTMLSnapshotURL(for: request, configuration: configuration) else {
+                return nil
+            }
+            webView.load(URLRequest(url: isolatedURL))
+        } else if request.loadURL.isFileURL {
             let readRoot = request.localReadAccessRoot
                 ?? request.loadURL.deletingLastPathComponent()
             webView.loadFileURL(request.loadURL, allowingReadAccessTo: readRoot)

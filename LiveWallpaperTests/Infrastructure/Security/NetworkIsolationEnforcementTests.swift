@@ -106,14 +106,27 @@ struct NetworkIsolationEnforcementTests {
 
     /// Reported through a rejected promise because that is the one channel the collector
     /// passes through verbatim.
-    private func peerConnectionAvailability(withBlocker: Bool) async throws -> [String] {
+    private func peerConnectionAvailability(
+        withBlocker: Bool,
+        blockerMainFrameOnly: Bool = false,
+        probeChildFrame: Bool = false
+    ) async throws -> [String] {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("lw-rtc-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
+        // A src-less iframe gets its initial about:blank realm without a load, so frame-src never sees it.
+        let probe = probeChildFrame
+            ? """
+            var f = document.createElement('iframe');
+            document.body.appendChild(f);
+            var t; try { t = typeof f.contentWindow.RTCPeerConnection; } catch (e) { t = 'threw'; }
+            Promise.reject(new Error('RTC type=' + t));
+            """
+            : "Promise.reject(new Error('RTC type=' + (typeof RTCPeerConnection)));"
         let page = """
         <!doctype html><meta charset="utf-8"><body><script>
-        Promise.reject(new Error('RTC type=' + (typeof RTCPeerConnection)));
+        \(probe)
         </script></body>
         """
         try Data(page.utf8).write(to: folder.appendingPathComponent("index.html"))
@@ -133,7 +146,7 @@ struct NetworkIsolationEnforcementTests {
                 WKUserScript(
                     source: HTMLWallpaperRuntimeScript.peerConnectionBlocker(),
                     injectionTime: .atDocumentStart,
-                    forMainFrameOnly: true
+                    forMainFrameOnly: blockerMainFrameOnly
                 )
             )
         }
@@ -166,28 +179,41 @@ struct NetworkIsolationEnforcementTests {
         #expect(seen.contains("RTC type=undefined"), "\(seen)")
     }
 
+    @Test("A src-less child iframe of an isolated page has no peer-connection constructor")
+    func isolationRemovesPeerConnectionInChildFrame() async throws {
+        let seen = try await peerConnectionAvailability(withBlocker: true, probeChildFrame: true)
+        #expect(seen.contains("RTC type=undefined"), "\(seen)")
+    }
+
+    /// Control group: proves the child-frame probe can see a surviving constructor at all.
+    @Test("A main-frame-only blocker leaves the child realm's constructor in place")
+    func mainFrameOnlyBlockerMissesChildFrame() async throws {
+        let seen = try await peerConnectionAvailability(withBlocker: true, blockerMainFrameOnly: true, probeChildFrame: true)
+        #expect(seen.contains("RTC type=function"), "\(seen)")
+    }
+
     @Test("The CSP alone leaves the constructor in place")
     func cspAloneDoesNotRemovePeerConnection() async throws {
         let seen = try await peerConnectionAvailability(withBlocker: false)
         #expect(seen.contains("RTC type=function"), "\(seen)")
     }
 
-    @Test("The baseline script injects the blocker, gated on isolation")
-    func baselineScriptWiresTheBlockerToIsolation() throws {
+    @Test("The live view injects the blocker into every frame, gated on isolation")
+    func liveViewWiresTheBlockerToIsolation() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Playback/Web/HTMLWallpaperView.swift")
-        let gate = source
-            .split(separator: "\n")
-            .first { $0.contains("HTMLWallpaperRuntimeScript.peerConnectionBlocker()") }
-        #expect(gate != nil, "the baseline script no longer builds the blocker at all")
-        let gateIndex = try #require(source.range(of: "HTMLWallpaperRuntimeScript.peerConnectionBlocker()"))
+        let gateIndex = try #require(
+            source.range(of: "HTMLWallpaperRuntimeScript.peerConnectionBlocker()"),
+            "the live view no longer installs the blocker at all"
+        )
         let preamble = source[source.startIndex ..< gateIndex.lowerBound].suffix(200)
         #expect(
             preamble.contains("requiresNetworkIsolation"),
             "the blocker is no longer gated on Workshop provenance"
         )
+        let installation = source[gateIndex.upperBound...].prefix(120)
         #expect(
-            source.contains("\\(peerConnectionBlocker)"),
-            "the blocker is built but never interpolated into the injected script"
+            installation.contains("forMainFrameOnly: false"),
+            "the blocker is main-frame only, so a src-less child iframe keeps RTCPeerConnection"
         )
     }
 }

@@ -196,7 +196,7 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
 
 final class TailCursorStore: Sendable {
     private static let currentSchemaVersion = 2
-    static let defaultMaxEntryCount = 2048
+    static let defaultMaxEntryCount = 512
     private static let defaultRetentionAge: TimeInterval = 90 * 24 * 60 * 60
     private static let defaultTouchPersistInterval: TimeInterval = 7 * 24 * 60 * 60
     private static let defaultRetentionSweepInterval: TimeInterval = 6 * 60 * 60
@@ -296,7 +296,7 @@ final class TailCursorStore: Sendable {
 
     init(
         directory: URL? = nil,
-        debounceInterval: TimeInterval = 5,
+        debounceInterval: TimeInterval = 30,
         maxEntryCount: Int = TailCursorStore.defaultMaxEntryCount,
         retentionAge: TimeInterval = TailCursorStore.defaultRetentionAge,
         touchPersistInterval: TimeInterval = TailCursorStore.defaultTouchPersistInterval,
