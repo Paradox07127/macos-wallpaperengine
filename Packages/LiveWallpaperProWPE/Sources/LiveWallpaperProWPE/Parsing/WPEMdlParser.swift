@@ -9,22 +9,19 @@ public struct WPEPuppetModel: Equatable, Sendable {
     public let animations: [WPEPuppetAnimation]
     /// MDAT anchors mapping a named scene attachment to a bone and bind transform.
     public let attachments: [WPEPuppetAttachment]
-    public let authoredData: Data?
 
     public init(
         version: Int,
         meshes: [WPEPuppetMesh],
         bones: [WPEPuppetBone] = [],
         animations: [WPEPuppetAnimation] = [],
-        attachments: [WPEPuppetAttachment] = [],
-        authoredData: Data? = nil
+        attachments: [WPEPuppetAttachment] = []
     ) {
         self.version = version
         self.meshes = meshes
         self.bones = bones
         self.animations = animations
         self.attachments = attachments
-        self.authoredData = authoredData
     }
 
     public var clipMaskName: String? {
@@ -1082,8 +1079,7 @@ public enum WPEMdlParser {
             meshes: meshes,
             bones: resolvedBones,
             animations: animations,
-            attachments: attachments,
-            authoredData: data
+            attachments: attachments
         )
     }
 

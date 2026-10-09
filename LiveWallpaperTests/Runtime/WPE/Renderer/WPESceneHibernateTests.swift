@@ -184,6 +184,53 @@ struct WPESceneHibernateTests {
         #expect(woken.generation == loaded.generation + 1, "wake reload is one attempt: \(loaded) -> \(woken)")
     }
 
+    @Test("The diagnostic poll leaves a hibernated renderer alone", .timeLimit(.minutes(1)))
+    func diagnosticPollSkipsHibernatedRenderer() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            projectManifestRootURL: fixture.root,
+            dependencyMounts: [],
+            surfaceControl: surface,
+            mailbox: surface.mailbox,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            drawableSize: surface.metalLayer.drawableSize,
+            device: device,
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(
+            window: window,
+            renderActor: actor,
+            surface: surface,
+            audioCaptureDemandController: HibernateStubAudioDemand(),
+            hibernationDelay: .milliseconds(50)
+        )
+        defer { session.cleanup() }
+        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        try await Self.poll("initial load") {
+            await actor.rendererStateSnapshot()?.isLoaded == true
+        }
+        await session.pollRendererState()
+        let loadedSummary = try #require(session.rendererDiagnostics?.compatibilitySummary)
+
+        session.applyPerformanceProfile(.suspended)
+        session.setHibernationEligible(true)
+        try await Self.poll("hibernate after dwell") { session.isHibernated }
+        let hibernatedSummary = try #require(await actor.rendererStateSnapshot()).compatibilitySummary
+        #expect(hibernatedSummary != loadedSummary, "retire left the summary unchanged, so this test cannot see a poll")
+
+        try await Task.sleep(for: .seconds(4))
+        #expect(session.rendererDiagnostics?.compatibilitySummary != hibernatedSummary,
+                "the 3 s diagnostic poll fetched a snapshot from the hibernated renderer")
+    }
+
     @Test("Eligibility flapping cancels the dwell instead of hibernating")
     func eligibilityFlapCancelsDwell() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

@@ -248,6 +248,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 guard let self, hasRenderer else { return }
+                guard effectivePerformanceProfile == .quality, !isHibernated else { continue }
                 await pollRendererState()
             }
         }

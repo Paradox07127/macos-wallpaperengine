@@ -153,4 +153,33 @@ struct WPEMetalRenderTargetPoolAliasLifetimeTests {
         #expect(resized.height == after.key.height)
         #expect(resized.heap === heap, "the resized key must be planned onto the alias heap, not a discrete slot")
     }
+
+    @Test("A text resize that discards its targets keeps the alias heap that still fits")
+    func textResizeKeepsFittingHeap() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pool = WPEMetalRenderTargetPool(device: device)
+        let layer = Self.layer(fboNames: ["fx_text", "fx_b"])
+        let pipeline = Self.pipeline(layer)
+        let shrunkScene = CGSize(width: 32, height: 16)
+
+        pool.prepare(pipeline: pipeline, aliasIntervals: [
+            Self.interval(pool, layer, "fx_text", 0, 1),
+            Self.interval(pool, layer, "fx_b", 0, 3),
+        ], pipelineIdentity: 1)
+        pool.beginAliasFrame()
+        let heap = try #require(try Self.texture(pool, layer, "fx_text").heap)
+        let untouched = try Self.texture(pool, layer, "fx_b")
+
+        pool.discardTextures(named: ["fx_text"])
+        #expect(try Self.texture(pool, layer, "fx_b") === untouched, "a target outside the discarded names lost its lease")
+        pool.prepare(pipeline: pipeline, aliasIntervals: [
+            Self.interval(pool, layer, "fx_text", 0, 1, sceneSize: shrunkScene),
+            Self.interval(pool, layer, "fx_b", 0, 3),
+        ], pipelineIdentity: 1)
+        pool.beginAliasFrame()
+        let resized = try Self.texture(pool, layer, "fx_text", sceneSize: shrunkScene)
+
+        #expect(resized.width == 32)
+        #expect(resized.heap === heap, "a smaller plan must reuse the existing heap instead of allocating a new one")
+    }
 }
