@@ -137,7 +137,7 @@ struct WPESceneScriptEntrySemanticsTests {
         // The async batch holds the only permit until it finishes; a probe acquiring it proves the event ran.
         let probe = soloGovernor.makeParticipant()
         var idle = false
-        for _ in 0 ..< 1_000 where !idle {
+        for _ in 0 ..< 1000 where !idle {
             if let permit = soloGovernor.tryAcquireUnreserved(for: probe) {
                 permit.release()
                 idle = true
