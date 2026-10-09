@@ -50,7 +50,7 @@ Pro 独有的代码用 `#if !LITE_BUILD` 圈起来。Lite 的 scheme（`LiveWall
 两版共享 Core，Pro 额外链接 ProWPE 解析/schema 包。应用编译条件不会传入 Swift 包，
 详见[架构说明](architecture.md)。
 
-备份可保留配置数据，但 Lite 无法运行 Pro 场景。导出不打包媒体文件，也不让文件授权跨机器生效。
+备份可保留配置数据。Lite 保留 Pro 的场景条目但无法运行，导入摘要会列出数量。导出不打包媒体文件，也不让文件授权跨机器生效。
 
 ## 架构
 

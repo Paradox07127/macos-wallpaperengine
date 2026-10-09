@@ -54,7 +54,7 @@ choices are presented by Sparkle. See [Install & update](install.md).
 Core is shared; Pro additionally links the ProWPE parser/schema package. App
 compilation conditions do not propagate into Swift packages. See [Architecture](architecture.md).
 
-Backups preserve configuration data, but Lite cannot run scene entries from Pro.
+Backups preserve configuration data. Lite keeps scene entries from Pro but cannot run them; the import summary counts them.
 Export does not bundle media or make file grants portable between machines.
 
 ## Architecture
