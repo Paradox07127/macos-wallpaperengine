@@ -2494,17 +2494,36 @@ final class WPESharedScriptState: @unchecked Sendable {
         }
     }
 
+    /// Keys the renderer's shared read fans copy each frame; they are the only `get()` readers of a live value's snapshot.
+    private var readFanKeys: Set<String> = []
+    private var liveSnapshotsTaken = 0
+
+    func setReadFanKeys(_ keys: Set<String>) {
+        lock.lock(); defer { lock.unlock() }
+        readFanKeys = keys
+    }
+
+    var liveSnapshotCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return liveSnapshotsTaken
+    }
+
     /// Compute on the scene VM lane, publish only detached data under the host
     /// lock. Shared read fans never touch a JSValue from the render actor.
     func refreshLiveScriptSnapshots() {
         lock.lock()
-        let live = storage.compactMap { key, value in
-            (value as? WPESharedLiveScriptValue).map { (key, $0) }
+        guard !readFanKeys.isEmpty else {
+            lock.unlock()
+            return
+        }
+        let live = readFanKeys.compactMap { key in
+            (storage[key] as? WPESharedLiveScriptValue).map { (key, $0) }
         }
         lock.unlock()
         for (key, value) in live {
             guard let snapshot = value.snapshot() else { continue }
             lock.lock()
+            liveSnapshotsTaken += 1
             if storage[key] as? WPESharedLiveScriptValue === value,
                sceneScriptLoadToken?.acceptsCompletion() ?? true {
                 value.hostSnapshot = snapshot
@@ -3346,31 +3365,6 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         engine.layerOutputs.takeLatest()
     }
 
-    func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed,
-              mediaHandlers.handles(event), engine.allows(.event) else { return }
-        switch engine.dispatchMediaEvent(
-            event,
-            runtimeSeconds: runtimeSeconds,
-            budget: tickBudget
-        ) {
-        case .timedOut:
-            isPoisoned = true
-            Logger.warning(
-                "Transform SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
-                category: .wpeRender
-            )
-        case .capacityUnavailable, .completed:
-            break
-        }
-    }
-
-    func liveDispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed,
-              mediaHandlers.handles(event), engine.allows(.event) else { return }
-        _ = engine.dispatchMediaEventAsync(event, runtimeSeconds: runtimeSeconds)
-    }
-
     /// One drain's worth of events in one hop; see the layer runtime's batch
     /// entry for why per-event dispatch dropped everything after the first.
     func liveDispatchMediaEvents(_ events: [WPESceneMediaEvent], runtimeSeconds: Double? = nil) {
@@ -3815,40 +3809,6 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     )
                 )
             }
-        }
-
-        func dispatchMediaEvent(
-            _ event: WPESceneMediaEvent,
-            runtimeSeconds: Double?,
-            budget: TimeInterval
-        ) -> WPESceneScriptBoundedExecutionResult<Void> {
-            guard allows(.event) else { return .capacityUnavailable }
-            return runWithBudget(budget, operation: .event, admission: .failFast) {
-                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
-            }
-        }
-
-        func dispatchMediaEventAsync(
-            _ event: WPESceneMediaEvent,
-            runtimeSeconds: Double?
-        ) -> Bool {
-            guard allows(.event) else { return false }
-            guard let safety = asyncExecutionSafety.begin(
-                sceneToken: instanceLimitToken,
-                operation: .event
-            ) else { return false }
-            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
-                asyncExecutionSafety.complete(safety)
-                return false
-            }
-            queue.async {
-                defer {
-                    self.asyncExecutionSafety.complete(safety)
-                    permit.release()
-                }
-                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
-            }
-            return true
         }
 
         /// Batch the whole drain in one hop: one-at-a-time admitted only the first event of a cold-start burst and dropped the rest.

@@ -4,6 +4,7 @@ import JavaScriptCore
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import os
+import simd
 
 
 // MARK: - Layer SceneScript (visible-script video intros)
@@ -443,43 +444,6 @@ final class WPELayerScriptInstance {
                 initialOutput = Self.mergedOutputs(pending: initialOutput, newer: output)
             }
         }
-    }
-
-    @discardableResult
-    func dispatchMediaEvent(
-        _ event: WPESceneMediaEvent,
-        runtimeSeconds: Double? = nil
-    ) -> WPELayerScriptOutput? {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }
-        switch engine.dispatchMediaEvent(
-            event,
-            runtimeSeconds: runtimeSeconds,
-            budget: tickBudget
-        ) {
-        case .timedOut:
-            isPoisoned = true
-            Logger.warning(
-                "Layer SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
-                category: .wpeRender
-            )
-            return nil
-        case .capacityUnavailable:
-            return nil
-        case let .completed(output):
-            return engine.acceptsCompletion() ? output : nil
-        }
-    }
-
-    func liveDispatchMediaEvent(
-        _ event: WPESceneMediaEvent,
-        runtimeSeconds: Double? = nil
-    ) {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
-        _ = engine.dispatchMediaEventAsync(
-            event,
-            runtimeSeconds: runtimeSeconds,
-            publishTo: asyncOutcomeSlot
-        )
     }
 
     /// One drain's events in one async hop. Dispatched one at a time, the single in-flight slot admitted only the first event and silently dropped the rest.
@@ -1014,46 +978,6 @@ final class WPELayerScriptInstance {
                     runtimeSeconds: runtimeSeconds
                 )
             }
-        }
-
-        func dispatchMediaEvent(
-            _ event: WPESceneMediaEvent,
-            runtimeSeconds: Double?,
-            budget: TimeInterval
-        ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput> {
-            guard allows(.event) else { return .capacityUnavailable }
-            return runWithBudget(budget, operation: .event, admission: .failFast) {
-                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
-            }
-        }
-
-        func dispatchMediaEventAsync(
-            _ event: WPESceneMediaEvent,
-            runtimeSeconds: Double?,
-            publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
-        ) -> Bool {
-            guard allows(.event) else { return false }
-            guard let safety = asyncExecutionSafety.begin(
-                sceneToken: instanceLimitToken,
-                operation: .event
-            ) else { return false }
-            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
-                asyncExecutionSafety.complete(safety)
-                return false
-            }
-            queue.async {
-                defer {
-                    self.asyncExecutionSafety.complete(safety)
-                    permit.release()
-                }
-                let outcome = self.dispatchMediaEventOnQueue(
-                    event,
-                    runtimeSeconds: runtimeSeconds
-                )
-                guard self.acceptsCompletion() else { return }
-                slot.publishEvent(outcome)
-            }
-            return true
         }
 
         func dispatchMediaEventsAsync(
@@ -2436,14 +2360,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
         handle.setObject(getChildren, forKeyedSubscript: "getChildren" as NSString)
         let getTransformMatrix: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self, let context, let info = layerInfo(forKey: key) else { return nil }
-            let live = shared?.layerTransform(id: info.id)?.transform
-            let origin = live?.origin ?? SIMD3(info.origin.x, info.origin.y, info.originZ)
-            let scale = live?.scale ?? info.scale
             let result = JSValue(newObjectIn: context)
-            result?.setObject([
-                scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0,
-                origin.x, origin.y, origin.z, 1,
-            ], forKeyedSubscript: "m" as NSString)
+            result?.setObject(
+                WPEMetalObjectUniforms.flattenedColumnMajor(worldTransformMatrix(key: key, info: info)),
+                forKeyedSubscript: "m" as NSString
+            )
             return result
         }
         handle.setObject(getTransformMatrix, forKeyedSubscript: "getTransformMatrix" as NSString)
@@ -2703,6 +2624,27 @@ class WPELayerScriptBridge: @unchecked Sendable {
     /// Returns a copy: a script that caches a getter result and later assigns the property must not see its cache rewritten.
     private func transformValue(forKey key: String, field: OwnTransformField) -> JSValue? {
         refreshedTransformBridgeValue(forKey: key, field: field)?.invokeMethod("copy", withArguments: [])
+    }
+
+    /// T·R·S per level up the parent chain; each level prefers a script assignment, then the live value, then the authored seed.
+    private func worldTransformMatrix(key: String, info: WPESceneScriptLayerInfo) -> simd_double4x4 {
+        var world = matrix_identity_double4x4
+        var level = (key: key, info: info)
+        // Bounded so a malformed parent cycle cannot hang the script's call.
+        for _ in 0 ..< 100 {
+            let assigned = level.key == Self.ownKey ? assignedOwnTransform : assignedOtherTransforms[level.key] ?? .init()
+            let live = shared?.layerTransform(id: level.info.id)?.transform
+            world = WPEMetalObjectUniforms.modelMatrix(
+                origin: assigned.origin ?? live?.origin ?? SIMD3(level.info.origin.x, level.info.origin.y, level.info.originZ),
+                scale: assigned.scale ?? live?.scale ?? level.info.scale,
+                // Script-assigned angles are degrees; live and authored angles are radians.
+                angles: assigned.angles.map { $0 * (.pi / 180) } ?? live?.angles ?? level.info.angles
+            ) * world
+            guard let parentID = level.info.parentID, let shared,
+                  let parent = shared.layers.first(where: { $0.id == parentID }) else { break }
+            level = (shared.layerHandleKey(parent), parent)
+        }
+        return world
     }
 
     private func refreshedTransformBridgeValue(forKey key: String, field: OwnTransformField) -> JSValue? {

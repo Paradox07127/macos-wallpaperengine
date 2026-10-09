@@ -252,12 +252,11 @@ extension WPEMetalSceneRenderer {
                 category: .wpeRender
             )
         }
-        let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
-        debugStage(
-            "scripts.inventory",
-            "runtimes=\(scriptInventory.total) bindings=\(reuse.bindings) "
+        debugStage("scripts.inventory", {
+            let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
+            return "runtimes=\(scriptInventory.total) bindings=\(reuse.bindings) "
                 + "distinct=\(reuse.distinct) maxRepeat=\(reuse.maxRepeat)"
-        )
+        }())
         try Task.checkCancellation()
 
         debugStage("graph.build", "begin")

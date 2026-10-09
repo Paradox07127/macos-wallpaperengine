@@ -160,11 +160,31 @@ struct WPESceneMediaEventDispatchTests {
         }
         """)
         #expect(instance.mediaHandlers.playback, "the module exports the handler")
-        instance.dispatchMediaEvent(.playbackChanged(.playing))
+        #expect(Self.run(instance.batchMediaEvents([.playbackChanged(.playing)])))
         #expect(instance.tick()?.own.visible == true)
 
-        instance.dispatchMediaEvent(.playbackChanged(.paused))
+        #expect(Self.run(instance.batchMediaEvents([.playbackChanged(.paused)])))
         #expect(instance.tick()?.own.visible == false)
+    }
+
+    private static func run(_ job: WPESceneScriptBatchDispatcher.Job?) -> Bool {
+        guard let job else { return false }
+        return WPESceneScriptBatchDispatcher.processShared
+            .submit([job], trackingCompletion: true)?
+            .wait(timeout: .now() + 5) == true
+    }
+
+    /// The async media batch holds its engine's only permit on a limit-1 governor until it finishes.
+    private static func waitForAsyncBatch(on governor: WPESceneScriptExecutionGovernor) async throws {
+        let probe = governor.makeParticipant()
+        for _ in 0 ..< 1_000 {
+            if let permit = governor.tryAcquireUnreserved(for: probe) {
+                permit.release()
+                return
+            }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        Issue.record("the async media batch never released its permit")
     }
 
     /// This is the fire-and-forget async lane, not the bounded-sync one the other tests use; a cold start posts all three events in one drain.
@@ -459,6 +479,36 @@ struct WPESceneMediaEventDispatchTests {
         #expect(WPESceneMediaEventDispatcher.isNeeded(by: scene))
     }
 
+    private func particleAlphaDocument(script: String) throws -> WPESceneDocument {
+        let particle: [String: Any] = [
+            "id": "5", "name": "sparks", "particle": "particles/sparks.json",
+            "instanceoverride": ["alpha": ["value": 1, "script": script]],
+        ]
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [particle],
+        ]
+        return try WPESceneDocumentParser.parse(data: try JSONSerialization.data(withJSONObject: payload))
+    }
+
+    @Test("The media, audio and inventory scans see a particle alpha script")
+    func scansCoverParticleAlphaScripts() throws {
+        let media = try particleAlphaDocument(script: """
+        export function mediaPlaybackChanged(event) {}
+        export function update(value) { return value; }
+        """)
+        #expect(media.particleObjects.first?.instanceOverride?.alphaScript != nil)
+        #expect(WPESceneMediaEventDispatcher.isNeeded(by: media))
+        #expect(WPESceneScriptInstanceInventory(document: media).layer == 1)
+
+        let audio = try particleAlphaDocument(script: """
+        const audio = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        export function update(value) { return audio.average[0]; }
+        """)
+        #expect(WPESceneScriptInstanceInventory.usesAudioAPI(in: audio))
+    }
+
     // MARK: - 6. Teardown
 
     @Test("Teardown releases the subscription")
@@ -477,29 +527,35 @@ struct WPESceneMediaEventDispatchTests {
 
     // MARK: - 7. The third runtime (origin/scale/color/shader-constant scripts)
 
-    private func transformInstance(script: String) throws -> WPEDynamicTransformScriptInstance {
+    private func transformInstance(
+        script: String,
+        governor: WPESceneScriptExecutionGovernor? = nil
+    ) throws -> WPEDynamicTransformScriptInstance {
         try WPEDynamicTransformScriptInstance(
             script: script,
             seed: SIMD3<Double>(0, 0, 0),
             canvasSize: SIMD2<Double>(1920, 1080),
             setupBudget: 2,
             tickBudget: 0.5,
-            governor: isolatedGovernor
+            governor: governor ?? isolatedGovernor
         )
     }
 
     @Test("A dynamic-transform script's mediaPlaybackChanged receives state")
-    func playbackChangedReachesTransformScript() throws {
+    func playbackChangedReachesTransformScript() async throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
         let instance = try transformInstance(script: """
         var mediaState = MediaPlaybackEvent.PLAYBACK_STOPPED;
         export function mediaPlaybackChanged(event) { mediaState = event.state; }
         export function update(value) { return new Vec3(mediaState, mediaState, mediaState); }
-        """)
+        """, governor: governor)
         #expect(instance.mediaHandlers.playback, "the module exports the handler")
-        instance.dispatchMediaEvent(.playbackChanged(.playing))
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
+        try await Self.waitForAsyncBatch(on: governor)
         #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5))?.x == 1)
 
-        instance.dispatchMediaEvent(.playbackChanged(.paused))
+        instance.liveDispatchMediaEvents([.playbackChanged(.paused)])
+        try await Self.waitForAsyncBatch(on: governor)
         #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5))?.x == 2)
     }
 
@@ -738,16 +794,18 @@ struct WPESceneMediaEventDispatchTests {
     }
 
     @Test("A script's mediaTimelineChanged receives position and duration in seconds")
-    func timelineChangedReachesEveryRuntime() throws {
+    func timelineChangedReachesEveryRuntime() async throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
         let transform = try transformInstance(script: """
         var pos = -1, dur = -1;
         export function mediaTimelineChanged(event) { pos = event.position; dur = event.duration; }
         export function update(value) { return new Vec3(pos, dur, 0); }
-        """)
+        """, governor: governor)
         #expect(transform.mediaHandlers.timeline, "the module exports the handler")
-        transform.dispatchMediaEvent(.timelineChanged(
+        transform.liveDispatchMediaEvents([.timelineChanged(
             WPESceneMediaTimeline(position: 42.5, duration: 217)
-        ))
+        )])
+        try await Self.waitForAsyncBatch(on: governor)
         let value = try #require(transform.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)))
         #expect(value.x == 42.5, "position, in seconds")
         #expect(value.y == 217, "duration, in seconds")
@@ -769,7 +827,7 @@ struct WPESceneMediaEventDispatchTests {
         export function update() { thisLayer.visible = seen; }
         """)
         #expect(layer.mediaHandlers.timeline)
-        layer.dispatchMediaEvent(.timelineChanged(WPESceneMediaTimeline(position: 1, duration: 8)))
+        #expect(Self.run(layer.batchMediaEvents([.timelineChanged(WPESceneMediaTimeline(position: 1, duration: 8))])))
         #expect(layer.tick()?.own.visible == true)
     }
 

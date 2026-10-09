@@ -107,7 +107,7 @@ struct WPEInitOnlyTransformMediaFailCloseTests {
         )
         #expect(instance.batchTick(pointerPosition: .zero).value == SIMD3(5, 6, 7))
 
-        instance.liveDispatchMediaEvent(.playbackChanged(.playing))
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
         // Let the handler be well past the 50ms budget while still running.
         try await Task.sleep(for: .milliseconds(300))
 
