@@ -2337,10 +2337,14 @@ class WPELayerScriptBridge: @unchecked Sendable {
         handle.setObject(getVideoTexture, forKeyedSubscript: "getVideoTexture" as NSString)
         // Real parent when the document names one; a stub without an origin would throw on currentPos.x every tick.
         let parentName = info?.parentName
+        let parentID = info?.parentID
         let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self else { return nil }
             guard let parentName, let context else { return neutralLayerStubCache }
-            return layerHandle(named: parentName, in: context)
+            // Through handle(forLayerKey:) so a parent that is this entry's own layer comes back as thisLayer.
+            let parentKey = parentID.flatMap { id in shared?.layers.first { $0.id == id } }
+                .flatMap { shared?.layerHandleKey($0) } ?? parentName
+            return self.handle(forLayerKey: parentKey, in: context)
         }
         handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
         // Child layers in paint order, matched on the object id — names repeat.
@@ -2630,9 +2634,12 @@ class WPELayerScriptBridge: @unchecked Sendable {
     private func worldTransformMatrix(key: String, info: WPESceneScriptLayerInfo) -> simd_double4x4 {
         var world = matrix_identity_double4x4
         var level = (key: key, info: info)
+        // Ancestors are keyed by handle key, but this entry's own layer stores its assignments under ownKey.
+        let ownID = layerInfo(forKey: Self.ownKey)?.id
         // Bounded so a malformed parent cycle cannot hang the script's call.
         for _ in 0 ..< 100 {
-            let assigned = level.key == Self.ownKey ? assignedOwnTransform : assignedOtherTransforms[level.key] ?? .init()
+            let isOwn = level.key == Self.ownKey || level.info.id == ownID
+            let assigned = isOwn ? assignedOwnTransform : assignedOtherTransforms[level.key] ?? .init()
             let live = shared?.layerTransform(id: level.info.id)?.transform
             world = WPEMetalObjectUniforms.modelMatrix(
                 origin: assigned.origin ?? live?.origin ?? SIMD3(level.info.origin.x, level.info.origin.y, level.info.originZ),
