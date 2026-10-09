@@ -1207,6 +1207,42 @@ struct AmbientHTMLUserRetryTests {
         #expect(view.consecutiveFailureCount == 0)
     }
 
+    @Test("A page that crashes after every successful load reports rendererCrashed once the budget is spent")
+    func crashAfterEachFinishExhaustsRetryBudget() throws {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+        defer { view.cleanup() }
+        var config = HTMLConfig.default
+        config.maxRetries = 3
+        view.lastAppliedConfig = config
+        var errorCount = 0
+        var causeCodes: [String] = []
+        view.onError = { _ in errorCount += 1 }
+        view.onFailureCause = { cause in
+            if let cause {
+                causeCodes.append(cause.code)
+            }
+        }
+
+        // A bare `WKNavigation()` has no backing navigation and crashes the host when released.
+        let navigationSource = WKWebView()
+        for round in 1 ... 4 {
+            let navigation = try #require(navigationSource.loadHTMLString("", baseURL: nil))
+            view.navigationGenerationState.registerHostNavigation(
+                navigation,
+                generation: view.preparationGeneration
+            )
+            view.webView(view.webView, didFinish: navigation)
+            view.webViewWebContentProcessDidTerminate(view.webView)
+            if round < 4 {
+                #expect(errorCount == 0, "round \(round) reported before the retry budget was spent")
+                #expect(view.reloadScheduler.hasScheduledRetry, "round \(round) did not schedule a reload")
+            }
+        }
+
+        #expect(errorCount == 1)
+        #expect(causeCodes == [WebFailureCause.rendererCrashed().code])
+    }
+
     @Test("A suspended package retry prepares explicitly without resuming background work")
     func suspendedPackageRetryIsExplicitlyAdmitted() async throws {
         let folder = FileManager.default.temporaryDirectory

@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import os
 @testable import LiveWallpaper
 
 @Suite("Monitor runtime leases")
@@ -140,7 +139,7 @@ struct RuntimeTests {
         #expect(await runtime.debugActiveLeaseCount == 0)
     }
 
-    @Test("Termination awaits every producer before final cursor and settings flushes", .timeLimit(.minutes(1)))
+    @Test("Termination awaits every producer before the final settings flush", .timeLimit(.minutes(1)))
     func terminationOrdersProducerStopBeforeFinalFlush() async {
         let probe = TerminationOrderProbe()
         let source = BlockingTerminationSource(probe: probe)
@@ -162,7 +161,6 @@ struct RuntimeTests {
         let termination = Task { @MainActor in
             await AppTerminationCoordinator.run(
                 stopMonitorProducers: { await runtime.shutdown() },
-                flushMonitorCursors: { await probe.record("cursor-flush") },
                 flushSettings: {
                     await probe.record("settings-flush")
                     return true
@@ -184,7 +182,6 @@ struct RuntimeTests {
         #expect(await probe.events == [
             "producer-stop-entered",
             "producer-complete",
-            "cursor-flush",
             "settings-flush",
         ])
         #expect(await probe.stopInvocationCount == 1)
@@ -196,43 +193,6 @@ struct RuntimeTests {
         await staleLease.waitUntilSettled()
         #expect(await runtime.debugActiveLeaseCount == 0)
         #expect(await runtime.debugActiveSourceCount == 0)
-    }
-
-    @Test("A blocked cursor flush leaves the MainActor watchdog runnable", .timeLimit(.minutes(1)))
-    func blockingCursorFlushDoesNotStarveMainActor() async {
-        let flushEntered = OSAllocatedUnfairLock(initialState: false)
-        let releaseFlush = DispatchSemaphore(value: 0)
-        let mainActorReached = OSAllocatedUnfairLock(initialState: false)
-
-        let flush = Task { @MainActor in
-            await AppTerminationCoordinator.runBlockingOffMainActor {
-                flushEntered.withLock { $0 = true }
-                releaseFlush.wait()
-            }
-        }
-        let entryDeadline = Date().addingTimeInterval(2)
-        while !flushEntered.withLock({ $0 }), Date() < entryDeadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(flushEntered.withLock { $0 })
-
-        let watchdog = Task { @MainActor in
-            mainActorReached.withLock { $0 = true }
-        }
-        let deadline = Date().addingTimeInterval(1)
-        while !mainActorReached.withLock({ $0 }), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        let reachedBeforeRelease = mainActorReached.withLock { $0 }
-
-        releaseFlush.signal()
-        await flush.value
-        await watchdog.value
-
-        #expect(
-            reachedBeforeRelease,
-            "MainActor was starved while the detached cursor flush was blocked"
-        )
     }
 }
 

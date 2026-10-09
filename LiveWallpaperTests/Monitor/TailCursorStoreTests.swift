@@ -190,7 +190,26 @@ struct TailCursorStoreTests {
         #expect(store.state(for: newest)?.offset == 10_009)
     }
 
-    @Test("the shipping default enforces its documented 2048-entry count bound")
+    @Test("the shipping entry-count cap stays at 256 so each full rewrite stays small")
+    func productionDefaultEntryCountIsSmall() {
+        #expect(TailCursorStore.defaultMaxEntryCount == 512)
+    }
+
+    @Test("an agent checkpoint keeps only the newest 32 completed tool IDs")
+    func checkpointTruncatesCompletedToolIDs() throws {
+        var state = AgentActivityState()
+        for index in 0 ..< 100 {
+            state.beginTool(id: "tool-\(index)", name: "Bash", at: Double(index))
+            state.endTool(id: "tool-\(index)", at: Double(index) + 0.5, ok: true)
+        }
+        let data = try JSONEncoder().encode(state.checkpoint())
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let completed = try #require(root["completedIDs"] as? [String])
+        #expect(completed.count == 32)
+        #expect(completed.last == AgentActivityState.key("tool-99"))
+    }
+
+    @Test("the shipping default enforces its entry-count bound")
     func productionDefaultEntryCountIsBounded() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

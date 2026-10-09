@@ -34,6 +34,7 @@ struct AgentActivityState: Codable, Sendable, Equatable {
         copy.usageOrder = Array(usageOrder.suffix(64))
         copy.usageReceipts = usageReceipts.filter { copy.usageOrder.contains($0.key) }
         copy.tools = Array(tools.suffix(8))
+        copy.completedIDs = Array(completedIDs.suffix(32))
         return copy
     }
 

@@ -5,10 +5,6 @@ enum SourceRegistration {
 
     static let sharedCursorStore = TailCursorStore()
 
-    static func flushCursorStoreForTermination() {
-        sharedCursorStore.flush()
-    }
-
     /// Deliberately not inside the agents factory: the Now Playing source must
     /// exist whenever a music layer is visible, with or without any board.
     static let nowPlayingFactory: Runtime.SourceFactory = { options in

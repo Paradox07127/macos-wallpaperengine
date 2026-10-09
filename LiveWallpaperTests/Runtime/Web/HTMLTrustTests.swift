@@ -688,6 +688,59 @@ struct ThumbnailServiceAdmissionTests {
         await holder.value
         #expect(await gate.activeCount == 0)
     }
+
+    private static func folderSnapshotRequest(originKind: HTMLOriginKind) -> HTMLSnapshotRequest {
+        var config = HTMLConfig.default
+        config.originKind = originKind
+        let folder = URL(fileURLWithPath: "/tmp/snapshot-isolation-\(UUID().uuidString)", isDirectory: true)
+        return HTMLSnapshotRequest(
+            source: .folder(bookmarkData: Data(), indexFileName: "web/index.html"),
+            loadURL: folder.appendingPathComponent("web/index.html"),
+            cacheKey: "isolation",
+            effectiveConfig: config,
+            localReadAccessRoot: folder
+        )
+    }
+
+    @Test("A network-isolated page snapshots through the isolating scheme handler")
+    @MainActor
+    func isolatedPageSnapshotsThroughIsolatedScheme() throws {
+        let request = Self.folderSnapshotRequest(originKind: .workshopImport)
+        try #require(request.effectiveConfig.requiresNetworkIsolation)
+
+        let configuration = WallpaperThumbnailService.htmlWebViewConfiguration(for: request)
+
+        let handler = configuration.urlSchemeHandler(forURLScheme: FolderURLSchemeHandler.scheme) as? FolderURLSchemeHandler
+        #expect(handler?.networkIsolationEnabled == true, "the Workshop page would be served without the isolation CSP")
+        #expect(handler?.folderURL == request.localReadAccessRoot)
+        let blocker = configuration.userContentController.userScripts.first {
+            $0.source == HTMLWallpaperRuntimeScript.peerConnectionBlocker()
+        }
+        #expect(blocker?.isForMainFrameOnly == false, "WebRTC would stay reachable from the snapshot's frames")
+        let loadURL = try #require(
+            WallpaperThumbnailService.isolatedHTMLSnapshotURL(for: request, configuration: configuration),
+            "the Workshop page would be loaded over file://"
+        )
+        #expect(loadURL.scheme == FolderURLSchemeHandler.scheme)
+        #expect(loadURL.path == "/web/index.html")
+        let nonce = try #require(handler?.currentSessionNonce)
+        #expect(loadURL.query == "n=\(nonce)")
+    }
+
+    @Test("A page without network isolation keeps the direct file load")
+    @MainActor
+    func unisolatedPageKeepsFileLoad() throws {
+        let request = Self.folderSnapshotRequest(originKind: .userLocal)
+        try #require(!request.effectiveConfig.requiresNetworkIsolation)
+
+        let configuration = WallpaperThumbnailService.htmlWebViewConfiguration(for: request)
+
+        #expect(configuration.urlSchemeHandler(forURLScheme: FolderURLSchemeHandler.scheme) == nil)
+        #expect(!configuration.userContentController.userScripts.contains {
+            $0.source == HTMLWallpaperRuntimeScript.peerConnectionBlocker()
+        })
+        #expect(WallpaperThumbnailService.isolatedHTMLSnapshotURL(for: request, configuration: configuration) == nil)
+    }
 }
 
 @Suite("HTML wallpaper permission boundaries")

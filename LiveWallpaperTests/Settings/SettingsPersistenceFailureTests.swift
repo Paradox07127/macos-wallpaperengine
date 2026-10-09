@@ -107,7 +107,6 @@ struct SettingsPersistenceFailureTests {
 
         let saved = await AppTerminationCoordinator.run(
             stopMonitorProducers: {},
-            flushMonitorCursors: {},
             flushSettings: { await manager.flushPendingWrites() }
         )
         #expect(!saved)

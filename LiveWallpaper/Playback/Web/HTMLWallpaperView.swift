@@ -28,6 +28,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     var lastSource: HTMLSource?
     /// Capped by `HTMLConfig.maxRetries`; drives exponential backoff.
     var consecutiveFailureCount: Int = 0
+    /// Not cleared by `didFinish`: a page that crashes after loading would otherwise reload forever.
+    var consecutiveContentProcessTerminations = 0
+    var lastContentProcessTerminationAt: Date?
+    static let contentProcessTerminationWindow: TimeInterval = 10 * 60
     var packageBackingTask: Task<Void, Never>?
     var packageBackingGeneration: UInt64 = 0
     var restartPackageBackingAfterResume = false
@@ -198,6 +202,15 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             forMainFrameOnly: false
         ))
 
+        // The isolation CSP cannot reach WebRTC; every frame, since a src-less iframe is a fresh realm that frame-src never sees.
+        if config?.requiresNetworkIsolation ?? false {
+            controller.addUserScript(WKUserScript(
+                source: HTMLWallpaperRuntimeScript.peerConnectionBlocker(),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
+
         let baseline = makeBaselineScript(for: config)
         controller.addUserScript(WKUserScript(
             source: baseline,
@@ -238,10 +251,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         let cspInjection = (config?.cspEnforcementEnabled ?? false)
             ? HTMLWallpaperRuntimeScript.cspInjection()
             : ""
-        // The isolation CSP cannot reach WebRTC; see `peerConnectionBlocker`.
-        let peerConnectionBlocker = (config?.requiresNetworkIsolation ?? false)
-            ? HTMLWallpaperRuntimeScript.peerConnectionBlocker()
-            : ""
 
         let transformController = HTMLWallpaperRuntimeScript.transformController(
             scale: config?.transformScale ?? 1.0,
@@ -254,7 +263,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
         return """
         \(cspInjection)
-        \(peerConnectionBlocker)
         \(msaaForcer)
         (function () {
             \(physicalPixelBootstrap)
@@ -575,6 +583,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         wallpaperEngineProjectKey = WallpaperEngineProjectIdentity.key(source: source)
         if resetFailureCount {
             resetNavigationFailureState()
+            consecutiveContentProcessTerminations = 0
         }
         stopActiveSecurityScope()
         var effectiveSource = source
@@ -1146,7 +1155,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         }
     }
 
-    /// No `didFail` on process death — recover via shared retry budget (not a hot loop).
+    /// No `didFail` on process death; crashes spend their own budget, refilled only by a user retry, a new source, or a quiet window.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !isCleaningUp else { return }
         // The listeners died with the process. Without this the pump keeps pushing into a dead
@@ -1157,7 +1166,17 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             "HTML wallpaper WebContent process terminated; reloading source. url=\(webView.url?.absoluteString ?? "<no url>")",
             category: .screenManager
         )
-        if shouldRetryNavigationFailure() { return }
+        let now = Date()
+        if let last = lastContentProcessTerminationAt,
+           now.timeIntervalSince(last) > Self.contentProcessTerminationWindow {
+            consecutiveContentProcessTerminations = 0
+        }
+        lastContentProcessTerminationAt = now
+        if consecutiveContentProcessTerminations < max(0, lastAppliedConfig?.maxRetries ?? 0) {
+            consecutiveContentProcessTerminations += 1
+            reloadScheduler.scheduleRetry(after: pow(2.0, Double(consecutiveContentProcessTerminations - 1)))
+            return
+        }
         reportError(
             .webNavigationFailed(
             webView.url ?? Self.aboutBlank,

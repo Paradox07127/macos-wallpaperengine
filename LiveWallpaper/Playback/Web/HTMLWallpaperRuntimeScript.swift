@@ -1389,7 +1389,7 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - CSP Injection
 
-    /// Remove peer-connection constructors: CSP webrtc is unimplemented in WebKit and connect-src does not cover ICE. Non-configurable, and frame-src 'none' denies a fresh realm.
+    /// Remove peer-connection constructors: CSP webrtc is unimplemented in WebKit and connect-src does not cover ICE. Non-configurable, and must run in every frame: a src-less iframe's realm bypasses frame-src.
     static func peerConnectionBlocker() -> String {
         """
         (function () {
