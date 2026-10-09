@@ -337,6 +337,7 @@ SERIAL_SUITES=(
   WPESceneScriptQuarantineCompletionTests
   WPEScriptAsyncTickSemanticsTests
   WPETimerAliasCharacterizationTests
+  WPESceneScriptEntrySemanticsTests
   WPENativeTimerSurfaceTests
   # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
   # with other UI probes; the isolated 119-test suite passes without contention.
