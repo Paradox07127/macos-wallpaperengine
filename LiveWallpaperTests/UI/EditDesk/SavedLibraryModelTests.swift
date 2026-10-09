@@ -515,6 +515,41 @@ struct SavedLibraryModelTests {
         #expect(model.items.first { $0.id == "aerial:/sky.mov" }?.metadata == nil)
     }
 
+    @Test("Probing metadata that has not changed leaves the rows' observers alone")
+    func unchangedProbeDoesNotNotify() async {
+        @MainActor final class Changes { var count = 0 }
+        let saved = bookmark("Saved")
+        var source = inputs([saved])
+        source.metadata = { _ in fourK }
+        source.probeMetadata = { _ in fourK }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.items.first?.metadata == fourK)
+        let changes = Changes()
+        withObservationTracking {
+            _ = model.items
+        } onChange: {
+            MainActor.assumeIsolated { changes.count += 1 }
+        }
+        await model.probeMetadata(for: ["bookmark:\(saved.id)"])
+        #expect(changes.count == 0, "a probe that read the same metadata invalidated every view of the rows")
+    }
+
+    @Test("A refresh over unchanged inputs leaves the rows' observers alone")
+    func unchangedRefreshDoesNotNotify() {
+        @MainActor final class Changes { var count = 0 }
+        var source = inputs([bookmark("Saved")], aerials: [aerial()])
+        source.metadata = { _ in fourK }
+        let model = SavedLibraryModel(inputs: source)
+        let changes = Changes()
+        withObservationTracking {
+            _ = model.items
+        } onChange: {
+            MainActor.assumeIsolated { changes.count += 1 }
+        }
+        model.refresh()
+        #expect(changes.count == 0, "a refresh that rebuilt the same rows invalidated every view of them")
+    }
+
     @Test("A refresh keeps an unchanged row's metadata without reading it again")
     func refreshKeepsUnchangedMetadataWithoutReadingIt() {
         var reads = 0

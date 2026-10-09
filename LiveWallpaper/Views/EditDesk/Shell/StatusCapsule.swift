@@ -237,8 +237,6 @@ struct StatusCapsule: View {
 
     var body: some View {
         contentView
-            .onAppear { SystemMonitor.shared.startMonitoring() }
-            .onDisappear { SystemMonitor.shared.stopMonitoring() }
             .onReceive(NotificationCenter.default.publisher(for: PowerMonitor.powerSourceDidChangeNotification)) { notification in
                 if let source = notification.userInfo?["newSource"] as? PowerMonitor.PowerSource {
                     powerSource = source

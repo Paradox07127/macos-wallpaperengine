@@ -82,6 +82,20 @@ struct WallpaperCoverStoreTests {
         ))
     }
 
+    @Test("The decoded covers are dropped when the last window's image caches are reclaimed")
+    func reclaimEmptiesTheDecodedCovers() async throws {
+        let (store, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fileName = try #require(store.store(Self.solidImage(.red), for: UUID()))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Covers/\(fileName)"))
+        // Off disk, so only the decoded cache can still answer.
+        #expect(await store.cover(named: fileName) != nil)
+
+        LocalImageCacheRegistry.shared.purgeAll()
+        #expect(await store.cover(named: fileName) == nil, "the cover cache is not registered with the reclaimer")
+    }
+
     @Test("The orphan sweep keeps named covers and deletes the rest")
     func orphanSweep() throws {
         let (store, root) = try Self.makeStore()

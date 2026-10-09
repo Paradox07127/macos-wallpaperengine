@@ -685,7 +685,10 @@ final class SavedLibraryModel {
             let metadata = await inputs.probeMetadata(bookmark)
             guard !Task.isCancelled else { return }
             guard let index = items.firstIndex(where: { $0.id == item.id && $0.source == item.source }) else { continue }
-            items[index].metadata = metadata
+            // `_modify` on an @Observable property notifies even for an equal value.
+            if items[index].metadata != metadata {
+                items[index].metadata = metadata
+            }
         }
     }
 

@@ -118,6 +118,9 @@ struct DisplayDetailHost: View {
         .onDisappear {
             overlaySession?.detach()
             closeShownFailure()
+            // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
+            coordinator?.onShow = { _ in }
+            coordinator?.onRelease = {}
         }
     }
 

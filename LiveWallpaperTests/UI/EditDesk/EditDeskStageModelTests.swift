@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import Testing
 
 @MainActor
@@ -129,6 +130,34 @@ struct EditDeskStageModelTests {
         #expect(await iterator.next() == .playbackTapped(3, .toggle))
         #expect(await iterator.next() == .emptyActionTapped(3, .chooseFile))
         #expect(await iterator.next() == .emptyActionTapped(3, .pasteURL))
+    }
+
+    @Test("The rest and handoff flags notify only as the progress crosses them, not on every frame between")
+    func progressFlagsNotifyOnlyAtTheirThresholds() {
+        @MainActor final class Changes { var count = 0 }
+        let model = EditDeskStageModel()
+        func changes(over progresses: [Double]) -> Int {
+            let changes = Changes()
+            withObservationTracking {
+                _ = model.atRest
+                _ = model.pastLibraryHandoff
+            } onChange: {
+                MainActor.assumeIsolated { changes.count += 1 }
+            }
+            for progress in progresses {
+                model.report(progress: progress)
+            }
+            return changes.count
+        }
+        #expect(model.atRest && !model.pastLibraryHandoff)
+        #expect(changes(over: [0.1]) == 1)
+        #expect(!model.atRest)
+        #expect(changes(over: [0.2, 0.9, 1.5, 1.79]) == 0, "a frame between the thresholds invalidated the flags' readers")
+        #expect(changes(over: [1.81]) == 1)
+        #expect(model.pastLibraryHandoff)
+        #expect(changes(over: [1.9, 2]) == 0)
+        #expect(changes(over: [0]) == 1)
+        #expect(model.atRest && !model.pastLibraryHandoff)
     }
 
     @Test("Display and card equality ignore image identity only when the image is the same object")
