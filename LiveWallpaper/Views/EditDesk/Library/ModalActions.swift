@@ -48,12 +48,12 @@ final class ModalActions {
         }
     }
 
-    private let inputs: Inputs
+    private var inputs: Inputs
     private let bookmarks: BookmarkStore
     private let thumbnails: ShelfThumbnailCache
-    private let apply: @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
+    private var apply: @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
     /// Takes "All Displays" as one change.
-    private let applyToAll: @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
+    private var applyToAll: @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     /// Where removing and renaming a saved entry are recorded; nil records nothing.
     private let undo: EditDeskUndoStack?
     private let libraryBookmarks: LibraryBookmarkStore
@@ -147,6 +147,15 @@ final class ModalActions {
         )
     }
     #endif
+
+    /// Drops the hooks that capture the page. Setting the page's state to nil is not enough: SwiftUI keeps the old value.
+    func detach() {
+        apply = { _, _ in }
+        applyToAll = { _, _ in }
+        #if !LITE_BUILD
+        inputs.update = { _ in }
+        #endif
+    }
 
     static func intent(for item: LibraryItem) -> ApplyIntent? {
         guard item.isSupported else { return nil }

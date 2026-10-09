@@ -373,7 +373,7 @@ struct HomePage: View {
                 .modifier(CoveredByDetail(covered: detailCovers))
             HomeHints(stage: stage)
                 .modifier(CoveredByDetail(covered: detailCovers))
-            hoverName
+            HoverCardName(stage: stage, library: library, enabled: router.page == .home && !interactionLock)
                 .modifier(CoveredByDetail(covered: detailCovers))
             libraryLayer
                 .modifier(CoveredByDetail(covered: detailCovers))
@@ -445,6 +445,13 @@ struct HomePage: View {
                 // Off, the stage stays at rest: the banner that turns wallpapers back on only shows there.
                 stage.setProgress(1, animated: false)
             }
+        }
+        // These closures capture this view, whose state owns the objects holding them: left set, the page is never freed.
+        .onDisappear {
+            stage.displayMenu = nil
+            stage.cardMenu = nil
+            modalActions?.detach()
+            modalActions = nil
         }
         .task { await consumeEvents() }
         .modifier(SyncHooks(page: self))
@@ -640,7 +647,7 @@ struct HomePage: View {
 
     /// Keep the wallpaper-off banner on the resting overview, clear of details and modals.
     private var isRestingOverview: Bool {
-        router.page == .home && stage.progress == 0 && !interactionLock
+        router.page == .home && stage.atRest && !interactionLock
     }
 
     private var offBannerClaimsStage: Bool {
@@ -700,7 +707,8 @@ struct HomePage: View {
 
     private var isLibraryOpen: Bool {
         Self.mountsLibraryGrid(
-            page: router.page, snappedIndex: stage.snappedIndex, progress: stage.progress, leaving: stage.leavingLibrary
+            page: router.page, snappedIndex: stage.snappedIndex, pastHandoff: stage.pastLibraryHandoff,
+            leaving: stage.leavingLibrary
         )
     }
 
@@ -746,8 +754,8 @@ struct HomePage: View {
     /// pointer for the rest of the swipe. Not `progress == 2` either: the first pixel of a return swipe
     /// would tear it down and lose the scroll position, and a cancelled swipe would rebuild it. `leaving`:
     /// the stage is carrying the cards off, and the grid stays until they land, however far they have gone.
-    static func mountsLibraryGrid(page: EditDeskRouter.Page, snappedIndex: Int, progress: Double, leaving: Bool = false) -> Bool {
-        page == .library && snappedIndex == 2 && (leaving || progress > StageGeometry.libraryHandoffProgress)
+    static func mountsLibraryGrid(page: EditDeskRouter.Page, snappedIndex: Int, pastHandoff: Bool, leaving: Bool = false) -> Bool {
+        page == .library && snappedIndex == 2 && (leaving || pastHandoff)
     }
 
     private var statusCapsule: StatusCapsule {
@@ -817,31 +825,6 @@ struct HomePage: View {
             library?.endBrowsing()
         } else {
             library?.beginBrowsing()
-        }
-    }
-
-    private var hoverCaption: String? {
-        guard let id = stage.hoveredCard, let item = library?.items.first(where: { $0.id == id }) else { return nil }
-        return item.title.translatedWallpaperName + " · " + item.kind.localizedName
-    }
-
-    /// The name rides over the card the pointer is on: inside the thumbnail the card to the right
-    /// covers all but the near edge, so a title drawn there is unreadable.
-    @ViewBuilder
-    private var hoverName: some View {
-        if router.page == .home, !interactionLock, stage.progress < 1.5,
-           let caption = hoverCaption, let rect = stage.hoveredCardRect, stage.showsShelf {
-            Text(verbatim: caption)
-                .font(DesignTokens.Typography.captionEmphasized)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                .lineLimit(1)
-                .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
-                .padding(.vertical, 4)
-                .background(DesignTokens.EditDesk.Colors.panel, in: Capsule())
-                .fixedSize()
-                .position(x: rect.midX, y: rect.minY - 16)
-                .allowsHitTesting(false)
-                .transition(.opacity)
         }
     }
 
@@ -1789,6 +1772,35 @@ struct ShelfChromeRide: ViewModifier {
             .opacity(opacity)
             .allowsHitTesting(opacity > Self.interactiveOpacity)
             .accessibilityHidden(opacity <= Self.interactiveOpacity)
+    }
+}
+
+/// The name rides over the card the pointer is on: inside the thumbnail the card to the right
+/// covers all but the near edge. Its own view, like `ShelfChromeRide`, so a gesture frame invalidates it alone.
+struct HoverCardName: View {
+    let stage: EditDeskStageModel
+    let library: SavedLibraryModel?
+    let enabled: Bool
+
+    private var caption: String? {
+        guard let id = stage.hoveredCard, let item = library?.items.first(where: { $0.id == id }) else { return nil }
+        return item.title.translatedWallpaperName + " · " + item.kind.localizedName
+    }
+
+    var body: some View {
+        if enabled, stage.progress < 1.5, let caption, let rect = stage.hoveredCardRect, stage.showsShelf {
+            Text(verbatim: caption)
+                .font(DesignTokens.Typography.captionEmphasized)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
+                .padding(.vertical, 4)
+                .background(DesignTokens.EditDesk.Colors.panel, in: Capsule())
+                .fixedSize()
+                .position(x: rect.midX, y: rect.minY - 16)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
     }
 }
 

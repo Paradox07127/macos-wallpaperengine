@@ -325,6 +325,11 @@ final class EditDeskStageModel {
         progress > 0.5
     }
 
+    /// `progress == 0` and `progress > libraryHandoffProgress`, written only as they flip, so a view
+    /// reading them is not invalidated on every frame of a gesture the way a reader of `progress` is.
+    private(set) var atRest = true
+    private(set) var pastLibraryHandoff = false
+
     private(set) var snappedIndex = 0
     /// True from the first frame the stage moves off the library it landed on until it lands again: the
     /// cards sit on the grid's tiles as it starts, so the grid hides for that stretch.
@@ -423,6 +428,12 @@ final class EditDeskStageModel {
     func report(progress: Double) {
         if self.progress != progress {
             self.progress = progress
+        }
+        if atRest != (progress == 0) {
+            atRest = progress == 0
+        }
+        if pastLibraryHandoff != (progress > StageGeometry.libraryHandoffProgress) {
+            pastLibraryHandoff = progress > StageGeometry.libraryHandoffProgress
         }
     }
 

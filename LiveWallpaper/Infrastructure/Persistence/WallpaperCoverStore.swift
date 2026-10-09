@@ -12,6 +12,7 @@ final class WallpaperCoverStore {
         let c = NSCache<NSString, NSImage>()
         c.countLimit = 128
         c.totalCostLimit = 48 * 1024 * 1024
+        LocalImageCacheRegistry.shared.register(c)
         return c
     }()
 

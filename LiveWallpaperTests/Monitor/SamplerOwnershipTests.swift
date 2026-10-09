@@ -155,6 +155,9 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(menu.contains(".onAppear(perform: acquireSystemMonitorLeaseIfNeeded)"))
         #expect(menu.contains(".onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)"))
 
+        let capsule = try productionSource("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
+        #expect(!capsule.contains("startMonitoring()"), "the status capsule holds a sampler lease of its own")
+
         let app = try productionSource("LiveWallpaper/App/LiveWallpaperApp.swift")
         #expect(!app.contains("prewarmSettingsWindow"))
         let present = try slice(
