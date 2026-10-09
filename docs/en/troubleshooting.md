@@ -28,7 +28,7 @@
 | Second display stays blank | Does the source's file permission cover that display's config? | Re-open the display's detail panel and re-assign the source explicitly |
 | Large video stutters | Source resolution/codec, overlays and resource pressure | Try a lower-resolution source, adjust the frame-rate target and disable overlays to isolate; changing preload trades RAM for disk/decoder work |
 | Desktop clicks feel blocked (scenes) | Scene **click interaction** captures mouse clicks | Disable click interaction for that display and reload |
-| Wallpaper vanished after an external drive was ejected | Is the video or web wallpaper stored on that drive? | The display keeps its configuration while the drive is away. Reconnect the drive; the display reloads on its own. Use **Reload display** if it does not |
+| Wallpaper vanished after an external drive was ejected | Is the video, web wallpaper or (Pro) scene stored on that drive? | The display keeps its configuration while the drive is away. Reconnect the drive; the display reloads on its own. Use **Reload display** if it does not |
 | Wallpaper stays paused after relaunch or replugging | Did you pause that display, or use the global toggle, before? | A manual pause persists. Press play, or pick a wallpaper for that display |
 
 ## Playlists & schedule

@@ -222,9 +222,10 @@ property edits, automatic rotation, unplugging and reconnecting the display,
 and relaunch. Pressing play, or picking a wallpaper for that display, clears
 it. Configuration backups do not carry the pause.
 
-Video and local web wallpapers can live on an external drive. When that volume
-is unmounted, the display keeps its configuration. When the volume mounts
-again, the affected displays reload on their own.
+Video and local web wallpapers, and in Pro scenes from a Steam library, can live
+on an external drive. When that volume is unmounted, the display keeps its
+configuration. When the volume mounts again, the affected displays reload on
+their own.
 
 ## Workshop — Pro
 
