@@ -64,7 +64,7 @@
 | Apple Music progress or controls are unavailable | Allow Loomscreen to automate Music in macOS Privacy & Security → Automation. A track without a usable playhead cannot provide timed progress |
 | Lyrics are missing or static | Enable lyrics, check connectivity and track matching; not every track has timed LRCLIB lyrics |
 | Weather widget has no current conditions | Select a system/manual location and check Weather settings and network access |
-| Imported backup contains a scene but Lite shows no wallpaper | Lite preserves configuration data but cannot run Pro scenes. Select a supported video/web source or open the setup in Pro |
+| Imported backup contains a scene but Lite shows no wallpaper | Lite preserves configuration data but cannot run Pro scenes; the import summary counts those displays. Select a supported video/web source or open the setup in Pro |
 | System Wallpaper is unavailable | It requires macOS 26+ and a compatible provider. Use the app's normal video path if its status says the provider is paused; adding a video still requires selection in macOS Wallpaper settings |
 | Update banner remains after dismissing an update | The retained Sparkle session can keep the badge visible; use the update dialog for its actions. This is not a second download |
 | Update download/verification fails | Retry on a working connection; do not bypass signature verification. A matching manual DMG and checksum are available from Releases |

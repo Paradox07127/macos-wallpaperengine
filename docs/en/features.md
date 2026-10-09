@@ -125,6 +125,8 @@ and volume changes also reach span displays that are disconnected.
 - **Schemes**: a full display setup, including wallpaper, overlays,
   playback, effects, playlist and schedule. Applying a scheme replaces that
   display's setup after confirmation. Positions adapt to the target display.
+  The particle and weather layer is not part of a scheme; applying one leaves
+  it unchanged.
 - **Wallpaper Automation**: a sheet opened from the display's top bar, with
   three modes — Playlist, Daily Schedule and Library Shuffle.
 - **Playlists**: videos, web pages and (Pro) scenes, drag-reordering, shuffle,
@@ -151,13 +153,15 @@ and volume changes also reach span displays that are disconnected.
 - **Backup**: `.lwconfig` carries configurations, global settings, bookmarks
   and schemes, plus Workshop likes in Pro. It does not package media files, Steam credentials or API keys.
   File grants are machine-specific; files may need to be selected again after
-  moving a backup. Lite cannot play Pro-only scene configurations in a backup.
+  moving a backup. Lite keeps the scene displays of a Pro backup but cannot
+  play them; the import summary counts them.
 
 ## Overlays
 
 Overlays have per-display configuration and can accompany video, web or scenes.
 Particles and the monitor/music layers can also run over the macOS desktop
-without an active Loomscreen wallpaper session. The display's **Overlays** editor
+without an active Loomscreen wallpaper session. The particle and weather layer
+belongs to the display: it stays when you clear the wallpaper. The display's **Overlays** editor
 shows widgets, clock and music together on one canvas, with shared placement,
 selection and object controls; particles and weather response use the effect layer.
 See [Workspace](workspace.md#arrange-overlays).
@@ -247,6 +251,9 @@ again, the affected displays reload on their own.
 - In-app sign-in supports Steam Guard and cached accounts. Sessions are kept
   per account; downloads go to the authorized Steam library. Subscription sync
   makes subscribed items available in the app.
+- **Downloads** on the Workshop page lists each download with its progress,
+  speed and stall state. You can cancel a download. A failed download stays
+  in the list after a restart, so you can retry it.
 - Downloads are revalidated inside the authorized library before import;
   app-managed deletion and download mutations share repository coordination.
 - Shared Wallpaper Engine assets can be linked or installed, with update checks.
