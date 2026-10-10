@@ -21,6 +21,8 @@ Native macOS live wallpapers, a visual workspace for every display, and widgets,
 [🛠 Build](docs/en/building.md) ·
 [🌐 中文](README.zh-Hans.md)
 
+<img src="docs/images/overview.png" width="880" alt="Overview showing two displays in their desktop arrangement above the wallpaper shelf" />
+
 </div>
 
 > Lite and Pro are both free and open source under MIT. The renderer is an independent implementation, not affiliated with Wallpaper Engine; compatibility varies by project. Workshop downloads use your own Steam account and license.
@@ -33,6 +35,10 @@ Native macOS live wallpapers, a visual workspace for every display, and widgets,
 
 The menu bar keeps everyday controls close. Closing the management window keeps wallpapers running. [Explore the workspace](docs/en/workspace.md).
 
+| **One canvas for your layers.** Arrange widgets, clock and music together. | **Wallpaper Engine scenes on Mac.** Pro renders compatible scenes natively with Metal. |
+|:---:|:---:|
+| <img src="docs/images/editor-overlays.png" alt="Display editor Overlays canvas with widgets, the layer list and the Add Widget palette" /> | <img src="docs/images/editor-wallpaper.png" alt="Display editor Wallpaper tab with a scene preview and its custom settings" /> |
+
 ## Wallpaper types
 
 | Type | Edition | What you get |
@@ -41,6 +47,11 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 | **Video** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`, smooth looping, HDR-aware color pipeline, per-display or spanned across all displays. |
 | **Web pages** | Lite + Pro | Sandboxed `WKWebView` with JavaScript toggle, tracker blocking, custom CSS, and auto-refresh. |
 | **Apple Aerials** | Lite + Pro | Browse and apply the Apple TV aerial videos already on your Mac. |
+
+<p align="center">
+  <img src="docs/images/workshop-browse.jpg" width="720" alt="Pro Workshop page with a grid of Steam Workshop wallpapers" /><br />
+  <sub>Pro: browse Steam Workshop and download with your own Steam account.</sub>
+</p>
 
 ## More than a player
 

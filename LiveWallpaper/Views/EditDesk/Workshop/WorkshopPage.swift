@@ -110,23 +110,15 @@ struct WorkshopPage: View {
         let queue = WorkshopDownloadQueue.shared
         let activeCount = Set(queue.pending).union(downloads.downloadOrder.filter { downloads.isBusy($0) }).count
         let hasFailures = downloads.hasFailedDownloadsInHistory
-        return Button { isShowingDownloads = true } label: {
-            HStack(spacing: DesignTokens.Spacing.xs) {
-                Label("Downloads", systemImage: "arrow.down.circle")
-                if activeCount > 0 {
-                    Text(verbatim: activeCount.formatted())
-                        .font(DesignTokens.Typography.metric)
-                }
-                if hasFailures {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(DesignTokens.Colors.Status.danger)
-                        .accessibilityLabel(Text("Download failed"))
-                }
-            }
-            .font(DesignTokens.EditDesk.Typography.chip)
+        let tint: Color? = activeCount > 0 ? DesignTokens.Colors.Status.info
+            : hasFailures ? DesignTokens.Colors.Status.danger : nil
+        return GlassIconButton("arrow.down", prominence: tint == nil ? .regular : .prominent, tint: tint) {
+            isShowingDownloads = true
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .help(Text("Downloads"))
+        .accessibilityLabel(Text("Downloads"))
+        .accessibilityValue(activeCount > 0 ? Text(verbatim: activeCount.formatted())
+            : hasFailures ? Text("Download failed") : Text(verbatim: ""))
     }
 
     private var steamMenu: some View {

@@ -55,17 +55,9 @@ struct WorkshopLikedToggle: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Button {
+        GlassIconButton(isOn ? "heart.fill" : "heart", tint: isOn ? DesignTokens.Colors.like : nil) {
             isOn.toggle()
-        } label: {
-            HStack(spacing: DesignTokens.Spacing.xs) {
-                Image(systemName: isOn ? "heart.fill" : "heart")
-                    .foregroundStyle(isOn ? AnyShapeStyle(DesignTokens.Colors.like) : AnyShapeStyle(.foreground))
-                Text("Liked")
-            }
-            .font(DesignTokens.EditDesk.Typography.body)
         }
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .help(Text("Show only wallpapers you liked"))
         .accessibilityLabel(Text("Liked"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
