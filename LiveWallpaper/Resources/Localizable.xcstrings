@@ -57413,6 +57413,40 @@
         }
       }
     },
+    "Share anonymous hardware info" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share anonymous hardware info"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir información de hardware anónima"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名のハードウェア情報を共有"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享匿名硬件信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享匿名硬體資訊"
+          }
+        }
+      }
+    },
     "Shared assets are readable." : {
       "comment" : "Scene resources diagnostic detail when the assets folder is reachable.",
       "extractionState" : "manual",
@@ -72830,6 +72864,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新"
+          }
+        }
+      }
+    },
+    "Up to once a week, update checks include your Mac model, processor, memory, macOS version, language, and display count and resolution range. No identifiers are sent. Used to tune resource use." : {
+      "comment" : "Settings explanation; preserve scope and consequences.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to once a week, update checks include your Mac model, processor, memory, macOS version, language, and display count and resolution range. No identifiers are sent. Used to tune resource use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como máximo una vez por semana, las búsquedas de actualizaciones incluyen el modelo de Mac, el procesador, la memoria, la versión de macOS, el idioma, y el número de pantallas y su rango de resolución. No se envía ningún identificador. Se utiliza para optimizar el uso de recursos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートの確認時に、週に 1 回まで Mac のモデル、プロセッサ、メモリ、macOS のバージョン、言語、ディスプレイの数と解像度の区分を送信します。識別子は送信されません。リソース使用量の最適化にのみ使用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查更新时每周最多附带一次 Mac 机型、处理器、内存、macOS 版本、语言，以及显示器数量和分辨率档位。不含任何标识符，仅用于优化资源占用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檢查更新時每週最多附帶一次 Mac 機型、處理器、記憶體、macOS 版本、語言，以及顯示器數量與解析度級距。不含任何識別碼，僅用於最佳化資源使用。"
           }
         }
       }

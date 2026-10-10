@@ -84,7 +84,7 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/Paradox07127/macos-wallpaperengine/main/appcast-pro.xml</string>
+	<string>https://loomscreen-feed.snowy-moon-fa11.workers.dev/appcast-pro.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>V1TAiPupv91eQ9YlbHDBxPdztUhLrvG1TTJMYyArArs=</string>
 	<key>UTExportedTypeDeclarations</key>
