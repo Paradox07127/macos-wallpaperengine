@@ -161,9 +161,13 @@ final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     nonisolated func feedParameters(for _: SPUUpdater, sendingSystemProfile: Bool) -> [[String: String]] {
-        guard sendingSystemProfile else { return [] }
+        var parameters: [[String: String]] = []
+        if Self.consumeDailyFlag(defaults: .appScoped(), now: Date(), calendar: .current) {
+            parameters.append(["key": "daily", "value": "1"])
+        }
+        guard sendingSystemProfile else { return parameters }
         let displays = Self.activeDisplayIDs()
-        var parameters = [["key": "displays", "value": String(displays.count)]]
+        parameters.append(["key": "displays", "value": String(displays.count)])
         let pixelCounts = displays.compactMap { id in
             CGDisplayCopyDisplayMode(id).map { $0.pixelWidth * $0.pixelHeight }
         }
@@ -171,6 +175,17 @@ final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
             parameters.append(["key": "maxRes", "value": Self.resolutionBucket(pixelCount: largest)])
         }
         return parameters
+    }
+
+    /// Stores the local calendar day (`startOfDay`) of the last check that carried `daily=1`.
+    nonisolated static let dailyFlagDayKey = "loomscreen.update.dailyFlagDay.v1"
+
+    nonisolated static func consumeDailyFlag(defaults: UserDefaults, now: Date, calendar: Calendar) -> Bool {
+        if let stored = defaults.object(forKey: dailyFlagDayKey) as? Date, calendar.isDate(stored, inSameDayAs: now) {
+            return false
+        }
+        defaults.set(calendar.startOfDay(for: now), forKey: dailyFlagDayKey)
+        return true
     }
 
     nonisolated static func resolutionBucket(pixelCount: Int) -> String {

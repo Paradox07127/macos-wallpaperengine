@@ -134,6 +134,56 @@ struct SparkleUpdaterOwnershipTests {
         )
     }
 
+    private static func fixedCalendar() throws -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        return calendar
+    }
+
+    @Test("The first update check with no stored day carries the daily flag")
+    func dailyFlagFirstCheck() throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "SparkleDailyFlagTests")
+        defer { scratch.discard() }
+        let calendar = try Self.fixedCalendar()
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+
+        #expect(UpdateAvailabilityDelegate.consumeDailyFlag(defaults: scratch.defaults, now: now, calendar: calendar))
+        #expect(
+            scratch.defaults.object(forKey: UpdateAvailabilityDelegate.dailyFlagDayKey) as? Date
+                == calendar.startOfDay(for: now)
+        )
+    }
+
+    @Test("A second update check on the same day omits the daily flag")
+    func dailyFlagSameDay() throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "SparkleDailyFlagTests")
+        defer { scratch.discard() }
+        let calendar = try Self.fixedCalendar()
+        let morning = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 10, hour: 0, minute: 5)))
+        let evening = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 10, hour: 23, minute: 55)))
+
+        #expect(UpdateAvailabilityDelegate.consumeDailyFlag(defaults: scratch.defaults, now: morning, calendar: calendar))
+        #expect(
+            !UpdateAvailabilityDelegate.consumeDailyFlag(defaults: scratch.defaults, now: evening, calendar: calendar),
+            "a second check on the same day counted the Mac twice"
+        )
+    }
+
+    @Test("The first update check after local midnight carries the daily flag again")
+    func dailyFlagAcrossMidnight() throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "SparkleDailyFlagTests")
+        defer { scratch.discard() }
+        let calendar = try Self.fixedCalendar()
+        let beforeMidnight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 10, hour: 23, minute: 59)))
+        let afterMidnight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 11, hour: 0, minute: 1)))
+
+        #expect(UpdateAvailabilityDelegate.consumeDailyFlag(defaults: scratch.defaults, now: beforeMidnight, calendar: calendar))
+        #expect(
+            UpdateAvailabilityDelegate.consumeDailyFlag(defaults: scratch.defaults, now: afterMidnight, calendar: calendar),
+            "the first check of a new local day was not counted"
+        )
+    }
+
     @MainActor
     private final class CallbackFlag {
         var fired = false
