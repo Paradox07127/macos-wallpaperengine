@@ -13,6 +13,40 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.6] — 2026-10-10
+
+### Changed
+
+- Pro: static scenes stop drawing frames while nothing changes. Hidden
+  particles, failed scripts and unused click capture no longer keep the render
+  loop running.
+- Pro: scenes that span several displays present each frame once, and
+  diagnostics poll less and keep a bounded event log.
+- The Edit Desk home page releases its memory when the window closes and no
+  longer redraws on every gesture frame.
+- The Monitor log cursor store keeps at most 512 entries and saves every
+  30 seconds instead of on every change.
+- Library shuffle opens a Workshop scene only when its turn comes.
+
+### Fixed
+
+- Deleting the scene a display is showing moves to the display's playlist, or
+  clears the display when the playlist has nothing else. Edits to a spanned
+  scene are kept in the schedule.
+- Pro: scenes stored on an external drive reload when the drive mounts.
+- Pro: a static scene redraws when a texture finishes loading, instead of
+  keeping the placeholder.
+- Pro: scene scripts with only timers tick, event handlers keep `frametime`,
+  and static init runs with `Vec3`. A script that fails in its update no longer
+  blocks click, media and property handlers.
+- Pro: scene scripts get the right parent from `getParent` and include their own
+  layer when composing `getTransformMatrix`.
+- Preset, volume and color-space changes apply right away; resetting a video
+  restores the default color space.
+- Web wallpapers retry after their content process crashes, and thumbnails of
+  network-isolated web wallpapers stay offline.
+- Pro: Workshop downloads report when Steam has no connection.
+
 ## [0.8.5] — 2026-10-08
 
 ### Added
@@ -1266,4 +1300,5 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.8.6]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.5...loomscreen-v0.8.6
 [0.8.5]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.4...loomscreen-v0.8.5

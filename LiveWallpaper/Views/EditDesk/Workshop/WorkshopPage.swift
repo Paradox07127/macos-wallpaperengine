@@ -112,13 +112,25 @@ struct WorkshopPage: View {
         let hasFailures = downloads.hasFailedDownloadsInHistory
         let tint: Color? = activeCount > 0 ? DesignTokens.Colors.Status.info
             : hasFailures ? DesignTokens.Colors.Status.danger : nil
+        let countText = Text(verbatim: activeCount.formatted())
+        let failedText = Text("Download failed")
         return GlassIconButton("arrow.down", prominence: tint == nil ? .regular : .prominent, tint: tint) {
             isShowingDownloads = true
         }
-        .help(Text("Downloads"))
+        // Activity owns the tint, so a failure needs its own mark to stay visible while other items download.
+        .overlay(alignment: .topTrailing) {
+            if hasFailures {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(DesignTokens.Colors.Status.danger)
+                    .accessibilityHidden(true)
+            }
+        }
+        .help(hasFailures ? failedText : Text("Downloads"))
         .accessibilityLabel(Text("Downloads"))
-        .accessibilityValue(activeCount > 0 ? Text(verbatim: activeCount.formatted())
-            : hasFailures ? Text("Download failed") : Text(verbatim: ""))
+        .accessibilityValue(activeCount > 0 && hasFailures ? Text("\(countText) · \(failedText)")
+            : activeCount > 0 ? countText
+            : hasFailures ? failedText : Text(verbatim: ""))
     }
 
     private var steamMenu: some View {
