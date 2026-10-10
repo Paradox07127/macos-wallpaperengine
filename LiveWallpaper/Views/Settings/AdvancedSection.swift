@@ -47,6 +47,22 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "chart.bar.xaxis",
+                iconColor: .gray,
+                title: "Share anonymous hardware info",
+                info: "Up to once a week, update checks include your Mac model, processor, memory, macOS version, language, and display count and resolution range. No identifiers are sent. Used to tune resource use."
+            ) {
+                Toggle("", isOn: $sendsHardwareProfile)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: sendsHardwareProfile) { _, enabled in
+                        SparkleUpdaterController.shared.sendsSystemProfile = enabled
+                    }
+                    .accessibilityLabel(Text("Share anonymous hardware info"))
+                    .accessibilityHint(Text("Up to once a week, update checks include your Mac model, processor, memory, macOS version, language, and display count and resolution range. No identifiers are sent. Used to tune resource use."))
+            }
+
+            SettingRow(
                 icon: "arrow.counterclockwise",
                 iconColor: DesignTokens.Colors.Status.danger,
                 title: "Reset All Settings",

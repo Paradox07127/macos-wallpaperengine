@@ -288,10 +288,10 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .support,
             title: "Advanced",
             systemImage: "slider.horizontal.3",
-            keywords: ["logs", "diagnostics"],
+            keywords: ["logs", "diagnostics", "privacy", "hardware", "analytics"],
             rows: [
                 "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files",
-                "Reset All Settings",
+                "Share anonymous hardware info", "Reset All Settings",
             ]
         ),
         SettingsNavigationItem(
@@ -419,8 +419,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Startup",
                     anchor: .generalStartup,
-                    rows: ["Start at login", "Check for updates automatically", "Share anonymous hardware info", "Show in Dock"],
-                    keywords: ["login", "start", "launch", "update", "dock", "menu bar", "privacy", "hardware", "analytics"]
+                    rows: ["Start at login", "Check for updates automatically", "Show in Dock"],
+                    keywords: ["login", "start", "launch", "update", "dock", "menu bar"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
