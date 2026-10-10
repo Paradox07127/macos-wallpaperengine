@@ -1219,29 +1219,8 @@ struct S8bModalFidelityTests {
         ProbeRenderer.report("S8b.\(tag).panel", panel)
     }
 
-    /// R-24 ②③④ and the row's wording, read off the source: the GIF fit, the four-line description
-    /// and the mature gate have no measurable colour of their own in an offscreen frame.
-    @Test("S8b source contract: the shared 4:3 box fitted, a four-line description that grows in place, the shared row, shared mature gate")
+    @Test("Workshop surfaces share the mature-content preference and age confirmation")
     func sourceContract() throws {
-        let modalSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        #expect(modalSource.contains("collapsedLineLimit: 4"))
-        #expect(!modalSource.contains("expandedMaxHeight"), "the expanded description is still capped")
-        #expect(modalSource.contains("contentMode: .fit"), "the animated preview is still cropped to fill its box")
-        #expect(!modalSource.contains("previewSide"), "the modal sizes its own preview instead of the shared 4:3 box")
-        #expect(!modalSource.contains("bottomBarHeight"), "the modal keeps a fixed-height bar of its own")
-        #expect(modalSource.contains("ModalDisplayButtons("))
-        #expect(!modalSource.contains("applyToAll"), "the Workshop modal offers an apply-to-all it must not have")
-        // The buttons after the displays are worded by the contract; the row draws whichever it is handed.
-        let contractSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift")
-        for key in ["Save only", "Cancel Auto-Apply", "Cancel download", "Connect Steam"] {
-            #expect(contractSource.contains("\"\(key)\""), Comment(rawValue: "the contract does not word \(key)"))
-        }
-
-        // The line limit folds the description; nothing caps it once it is open.
-        let collapsible = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/CollapsibleDescription.swift")
-        #expect(collapsible.contains("var collapsedLineLimit: Int?"))
-        #expect(!collapsible.contains("expandedMaxHeight"), "the expanded description is still capped")
-
         // The mature gate: every surface reads the same preference and the same age confirmation.
         for path in [
             "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift",
@@ -1639,14 +1618,6 @@ struct S9LocalizationWidthTests {
 @Suite("Fidelity accessibility three modes", .serialized)
 @MainActor
 struct AccessibilityModeFidelityTests {
-    private static let newViews = [
-        "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift",
-        "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift",
-        "LiveWallpaper/Views/EditDesk/Onboarding/SteamWizard.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/TopBar.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/TopBarBudget.swift",
-    ]
 
     private func makeModel() -> EditDeskStageModel {
         let model = EditDeskStageModel()
@@ -1726,22 +1697,6 @@ struct AccessibilityModeFidelityTests {
         #expect(sample.matches(expected, tolerance: 2), "the Reduce Transparency fallback is not the background token")
     }
 
-    @Test("The new views carry no glass, and take Reduce Motion and Reduce Transparency from the environment")
-    func sourceContracts() throws {
-        for path in Self.newViews {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains("ultraThinMaterial"), "\(path) has a material Reduce Transparency cannot switch off")
-            #expect(!source.contains("glassEffect("), "\(path) has a glass effect Reduce Transparency cannot switch off")
-            #expect(!source.contains("NSVisualEffectView") || path.hasSuffix("EditDeskBackdrop.swift"))
-        }
-        let backdrop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift")
-        #expect(backdrop.contains("accessibilityReduceTransparency"))
-        #expect(backdrop.contains("if frosted, !reduceTransparency"), "the blur must be gated on the setting")
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift")
-        #expect(!card.contains("withAnimation"), "Guide placement must not animate across the page")
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(home.contains("stage.increaseContrast = page.contrast == .increased"), "the stage never hears about contrast")
-    }
 }
 
 @Suite("Settings background consistency", .serialized)

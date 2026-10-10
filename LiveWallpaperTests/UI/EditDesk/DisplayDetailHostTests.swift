@@ -232,16 +232,6 @@ struct DisplayDetailHostTests {
         #expect(DisplayDetailHost.switchEdge(from: 2, to: 9, in: order) == .leading)
     }
 
-    @Test("The top bar's tags and ⌘1–9 read the arrangement order the swipe walks")
-    func tagsAndShortcutsReadTheArrangementOrder() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
-        for signature in ["private func tags(current: CGDirectDisplayID)", "private func shortcuts(for screen: Screen)"] {
-            let start = try #require(source.range(of: signature), Comment(rawValue: "no \(signature)"))
-            let body = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
-            #expect(body.contains("Self.displayOrder(stage.displays)"), Comment(rawValue: "\(signature) keeps the system's display order"))
-        }
-    }
-
     @MainActor
     private final class Harness {
         let screen = Screen(nsScreen: DetailHostTestScreen())

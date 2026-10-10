@@ -102,17 +102,6 @@ struct TailCursorStoreTests {
         #expect(resumed.newLines == (hasActivity ? [newLine] : [oldLine, newLine]))
     }
 
-    @Test("agent sources persist cursor and aggregate through the atomic store API")
-    func agentSourcesUseAtomicCursorAggregateCommit() throws {
-        for relativePath in [
-            "LiveWallpaper/Monitor/Sources/ClaudeAgentSource.swift",
-            "LiveWallpaper/Monitor/Sources/CodexAgentSource.swift",
-        ] {
-            let source = try RepositoryRoot.source(relativePath)
-            #expect(source.contains("set(cursorState, aggregate:"), "Missing atomic commit in \(relativePath)")
-        }
-    }
-
     @Test("debounced save flushes without explicit flush")
     func debouncedFlushWorks() async throws {
         let dir = try makeTempDirectory()

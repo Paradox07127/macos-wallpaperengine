@@ -693,7 +693,10 @@ struct ModalActionsTests {
     @Test func installedUpdateFlagsDistinguishAvailableFromUpToDate() async {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
-        guard case let .workshop(entry) = item.source else { return }
+        guard case let .workshop(entry) = item.source else {
+            Issue.record("Expected a Workshop fixture")
+            return
+        }
         let model = InstalledLibraryModel(dependencies: .init(
             loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
@@ -715,7 +718,10 @@ struct ModalActionsTests {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         let other = workshop("999", importedAt: Date(timeIntervalSince1970: 10))
-        guard case let .workshop(entry) = item.source, case let .workshop(otherEntry) = other.source else { return }
+        guard case let .workshop(entry) = item.source, case let .workshop(otherEntry) = other.source else {
+            Issue.record("Expected both fixtures to have a Workshop source")
+            return
+        }
         let model = InstalledLibraryModel(dependencies: .init(
             loadEntries: { [entry, otherEntry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
@@ -763,7 +769,10 @@ struct ModalActionsTests {
         let bookmark = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
         var item = workshop("123", importedAt: Date(timeIntervalSince1970: 1_000_000), sourceFolderBookmark: bookmark)
         item.onDisplays = [2]
-        guard case let .workshop(entry) = item.source else { return }
+        guard case let .workshop(entry) = item.source else {
+            Issue.record("Expected a Workshop fixture")
+            return
+        }
         var inputs = fixture.inputs()
         inputs.localInfo = { _ in
             LocalProjectInfo(cleanedDescription: "Description", tags: ["Nature", "Everyone"], contentRating: "Everyone", sizeBytes: nil)
@@ -820,7 +829,10 @@ struct ModalActionsTests {
     func finishedUpdateSaysNothingAboutTheLibrary() {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
-        guard case let .workshop(entry) = item.source else { return }
+        guard case let .workshop(entry) = item.source else {
+            Issue.record("Expected a Workshop fixture")
+            return
+        }
         let model = InstalledLibraryModel(dependencies: .init(
             loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },

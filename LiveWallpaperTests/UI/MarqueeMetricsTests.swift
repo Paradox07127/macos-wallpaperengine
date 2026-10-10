@@ -48,34 +48,6 @@ struct MarqueeMetricsTests {
         ))
     }
 
-    @Test("The scrolling copy is laid out at full width, not the row's width")
-    func scrollingCopyEscapesTheRowWidth() throws {
-        let source = try RepositoryRoot.source(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/MarqueeOnHover.swift"
-        )
-
-        // Without `fixedSize` the visible copy would stay clamped to the row, so the crawl
-        // would slide the truncated string and the tail would never appear.
-        guard let visible = source.range(of: "if shouldScroll {"),
-              let rest = source.range(of: "} else {", range: visible.upperBound..<source.endIndex) else {
-            Issue.record("Could not find the scrolling branch")
-            return
-        }
-        let scrollingBranch = String(source[visible.upperBound..<rest.lowerBound])
-        #expect(scrollingBranch.contains(".fixedSize(horizontal: true, vertical: false)"))
-        #expect(scrollingBranch.contains(".offset(x: offset)"))
-
-        // The base keeps truncating, which pins the row width the overlay overflows, and it
-        // goes invisible exactly while the overlay exists; at rest the base is the visible label.
-        #expect(source.contains(".truncationMode(truncationMode)\n            .opacity(isHovering ? 0 : 1)"))
-        #expect(source.contains("if isHovering { visible(content) }"))
-        // Matched on the declaration forms so the prose explaining the change doesn't trip
-        // the negative assertions.
-        #expect(!source.contains("GeometryReader {"))
-        #expect(!source.contains(": PreferenceKey"))
-        #expect(source.contains(".onGeometryChange(for: CGFloat.self"))
-    }
-
     @Test("Longer text takes proportionally longer, with a floor")
     func durationScalesWithOverflow() {
         let short = MarqueeMetrics.duration(overflow: 45)

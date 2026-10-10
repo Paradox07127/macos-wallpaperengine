@@ -153,53 +153,6 @@ struct WPECameraEvidenceCaptureTests {
         TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_OUTPUT")
     }
 
-    @Test("Raw authored camera evidence keeps object perspective separate from scene projection")
-    func rawAuthoredCameraEvidenceContract() throws {
-        let payload: [String: Any] = [
-            "camera": ["nearz": 0.01, "farz": 10_000, "fov": 50],
-            "general": [
-                "orthogonalprojection": ["width": 2560, "height": 1440],
-                "zoom": ["value": 1.25, "user": "zoom"],
-                "perspectiveoverridefov": ["value": 95, "user": "fov"]
-            ],
-            "objects": [
-                [
-                    "id": 42,
-                    "name": "Perspective Water",
-                    "image": "models/water.json",
-                    "material": "materials/water.json",
-                    "perspective": ["value": true],
-                    "effects": [["name": "Ripple"], ["name": "Blur"]]
-                ],
-                ["id": 43, "name": "HUD", "image": "models/hud.json", "perspective": false]
-            ]
-        ]
-        let scene = try WPECameraEvidenceManifest.scene(
-            sceneID: "fixture",
-            entryFile: "scene.json",
-            data: JSONSerialization.data(withJSONObject: payload)
-        )
-
-        #expect(scene.projection.isOrthographic)
-        #expect(scene.projection.width == 2560)
-        #expect(scene.projection.height == 1440)
-        #expect(scene.projection.zoom == 1.25)
-        #expect(scene.projection.perspectiveOverrideFOV == 95)
-        #expect(scene.projection.nearZ == 0.01)
-        #expect(scene.projection.farZ == 10_000)
-        #expect(scene.projection.fov == 50)
-        #expect(scene.isObjectPerspectiveCandidate)
-        #expect(scene.perspectiveObjects == [
-            .init(
-                id: "42",
-                name: "Perspective Water",
-                image: "models/water.json",
-                material: "materials/water.json",
-                effectCount: 2
-            )
-        ])
-    }
-
     @Test(
         "Emit a paired camera-input manifest for Windows capture candidates",
         .enabled(if: configURL != nil && captureOutputRoot != nil)

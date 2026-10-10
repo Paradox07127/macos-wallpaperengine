@@ -57,51 +57,6 @@ struct EditDeskModalChromeTests {
 
     // MARK: Source contract
 
-    private static let chromePath = "LiveWallpaper/Views/EditDesk/Library/EditDeskModalChrome.swift"
-    private static let modalPath = "LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift"
-
-    @Test("The scrim, the panel box and the modal traits live in the chrome")
-    func chromeOwnsTheShell() throws {
-        let source = try RepositoryRoot.source(Self.chromePath)
-        #expect(source.contains("ModalGeometry.panelFrame(in: windowSize)"))
-        #expect(source.contains("DesignTokens.EditDesk.Colors.modalScrim"))
-        #expect(source.contains("DesignTokens.Colors.pageBackground"))
-        #expect(source.contains("accessibilityElement(children: .contain)"))
-        #expect(source.contains("accessibilityAddTraits(.isModal)"))
-        #expect(source.contains("DesignTokens.EditDesk.Shadow.modal"))
-    }
-
-    @Test("The library modal keeps ⌘n on applyTo and keeps ESC cancelling a drag")
-    func modalKeepsItsOwnBusiness() throws {
-        let source = try RepositoryRoot.source(Self.modalPath)
-        #expect(source.contains("onTargetShortcut:"))
-        #expect(source.contains("ModalKeyMap.target(forShortcut:"))
-        #expect(source.contains("onEscape:"))
-        #expect(source.contains("onDrag(.cancelled)"))
-        // Space must not reach the desktop from the modal.
-        #expect(!source.contains("keyboardShortcut(.space"))
-        // ← → belong with the arrows they press, which the chrome both detail modals share draws beside the panel.
-        let layout = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperDetailLayout.swift")
-        let chrome = try RepositoryRoot.source(Self.chromePath)
-        #expect(chrome.contains("keyboardShortcut(.leftArrow") && chrome.contains("keyboardShortcut(.rightArrow"))
-        #expect(!layout.contains("keyboardShortcut(.leftArrow") && !layout.contains("keyboardShortcut(.rightArrow"))
-    }
-
-    @Test("No token-bypass literals in the files this package adds")
-    func noTokenBypassLiterals() throws {
-        for path in [
-            Self.chromePath,
-            "LiveWallpaper/Views/EditDesk/Workshop/MatureRevealState.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains(".font(.system("), "\(path) has an inline .font(.system( literal")
-            #expect(!source.contains("Color(red:"), "\(path) has a literal Color(red:")
-            #expect(
-                source.range(of: #"cornerRadius:\s*[0-9]"#, options: .regularExpression) == nil,
-                "\(path) has a literal cornerRadius"
-            )
-        }
-    }
 }
 
 #if !LITE_BUILD

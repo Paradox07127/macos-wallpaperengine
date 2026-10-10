@@ -17,6 +17,7 @@ import unittest
 from unittest import mock
 
 import xcode_test_runner as runner
+import validate_package_tests as package_results
 
 
 PASSING_SUMMARY = {
@@ -133,24 +134,50 @@ class XcodeTestRunnerTests(unittest.TestCase):
         del summary["passedTests"]
         self.assertTrue(runner.validate_summary(summary, 1))
 
-    def test_required_suite_needs_a_passed_case(self) -> None:
+    def test_passing_sibling_cannot_cover_an_unverified_case(self) -> None:
         tests = {"testNodes": [{"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/test()"}]}
-        self.assertEqual(runner.required_suites_without_passes(tests, ["RequiredSuite"]), ["RequiredSuite"])
+        self.assertEqual(runner.required_cases_without_passes(tests, ["RequiredSuite"]), ["RequiredSuite/test()"])
         tests["testNodes"][0]["result"] = "Skipped"
-        self.assertEqual(runner.required_suites_without_passes(tests, ["RequiredSuite"]), ["RequiredSuite"])
+        self.assertEqual(runner.required_cases_without_passes(tests, ["RequiredSuite"]), ["RequiredSuite/test()"])
         tests["testNodes"].append({"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/other()",
                                    "result": "Passed"})
-        self.assertEqual(runner.required_suites_without_passes(tests, ["RequiredSuite"]), [])
+        self.assertEqual(runner.required_cases_without_passes(tests, ["RequiredSuite"]), ["RequiredSuite/test()"])
+
+    def test_exact_skip_exception_cannot_cover_another_case(self) -> None:
+        tests = {"testNodes": [
+            {"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/optional()", "result": "Skipped"},
+            {"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/required()", "result": "Skipped"},
+        ]}
+        self.assertEqual(runner.required_cases_without_passes(
+            tests, ["RequiredSuite"], allow_skipped_tests=["RequiredSuite/optional()"]
+        ), ["RequiredSuite/required()"])
+
+    def test_parameterized_pass_does_not_cover_a_skipped_or_unknown_run(self) -> None:
+        for node_type in ["Arguments", "Test Case Run"]:
+            for other in ["Skipped", None, "Failed"]:
+                with self.subTest(node_type=node_type, other=other):
+                    tests = {"testNodes": [{"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/test()",
+                        "result": "Passed", "children": [
+                            {"nodeType": node_type, "result": "Passed"},
+                            {"nodeType": node_type, "result": other}]}]}
+                    self.assertEqual(runner.required_cases_without_passes(tests, ["RequiredSuite"]),
+                                     ["RequiredSuite/test()"])
+
+    def test_gate_failure_is_not_reported_as_passed(self) -> None:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            runner.print_summary("probe", self.summary, 0, 1, Path("result"), Path("log"), ["missing case"])
+        self.assertIn("probe: Gate failed", output.getvalue())
 
     def test_parameterized_case_can_prove_execution_through_its_run(self) -> None:
         tests = {"testNodes": [{"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/test()",
-                                "children": [{"nodeType": "Test Case Run", "result": "Passed"}]}]}
-        self.assertEqual(runner.required_suites_without_passes(tests, ["RequiredSuite"]), [])
+                                "children": [{"nodeType": "Arguments", "result": "Passed"}]}]}
+        self.assertEqual(runner.required_cases_without_passes(tests, ["RequiredSuite"]), [])
 
     def test_skip_exception_does_not_allow_unknown_results(self) -> None:
         tests = {"testNodes": [{"nodeType": "Test Case", "nodeIdentifier": "RequiredSuite/test()"}]}
-        self.assertEqual(runner.required_suites_without_passes(
-            tests, ["RequiredSuite"], ["RequiredSuite"]), ["RequiredSuite"])
+        self.assertEqual(runner.required_cases_without_passes(
+            tests, ["RequiredSuite"], ["RequiredSuite"]), ["RequiredSuite/test()"])
 
     def test_skip_policy_controls_the_exit_code(self) -> None:
         self.assertNotEqual(run_main("RequiredSuite", "RequiredSuite", "Skipped"), 0)
@@ -206,10 +233,21 @@ case "$*" in
 esac
 echo "$label" >> "$PROBE_CALLS"
 case "$PROBE_SUMMARY" in
-  passed) echo 'Test run with 3 tests in 1 suite passed after 0.1 seconds.' ;;
+  passed|skipped) echo 'Test run with 3 tests in 1 suite passed after 0.1 seconds.' ;;
   zero) echo 'Test run with 0 tests passed after 0.1 seconds.' ;;
-  skipped) echo 'Test run with 3 tests skipped after 0.1 seconds.' ;;
 esac
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == --xunit-output ]]; then
+    report="${2%.xml}-swift-testing.xml"
+    case "$PROBE_SUMMARY" in
+      passed) printf '<testsuites><testsuite><testcase name="real"/></testsuite></testsuites>' > "$report" ;;
+      skipped) printf '<testsuites><testsuite><testcase name="optional"><skipped/></testcase></testsuite></testsuites>' > "$report" ;;
+      zero) printf '<testsuites/>' > "$report" ;;
+    esac
+    break
+  fi
+  shift
+done
 exit "$code"
 ''')
             fake.chmod(0o755)
@@ -242,6 +280,32 @@ exit "$code"
         result, calls = self.run_package_gate(0, 0)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls, ["Core", "ProWPE"])
+
+    def test_package_report_rejects_failure_error_and_skipped_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "result.xml"
+            for outcome in ["failure", "error", "skipped"]:
+                with self.subTest(outcome=outcome):
+                    report.write_text(f'<testsuites><testcase name="passed"/>'
+                                      f'<testcase name="bad"><{outcome}/></testcase></testsuites>')
+                    count, errors = package_results.validate(report)
+                    self.assertEqual(count, 2)
+                    self.assertTrue(errors)
+
+    def test_verify_remains_sequential_with_parallel_make(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary)
+            source = (ROOT / "Makefile").read_text()
+            overrides = "\n".join(
+                f'{target}:\n\t@mkdir "{scratch / "lock"}"; sleep 0.05; rmdir "{scratch / "lock"}"\n'
+                for target in ["fast", "contracts", "lint", "test-packages", "test-app", "test-wpe-metal"]
+            )
+            for guarded in [True, False]:
+                makefile = scratch / "Makefile"
+                makefile.write_text((source if guarded else source.replace(".NOTPARALLEL:", "")) + overrides)
+                result = subprocess.run(["make", "-f", str(makefile), "-j8", "verify"],
+                                        cwd=ROOT, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode == 0, guarded, result.stdout + result.stderr)
 
     def test_full_command_requires_security_suites(self):
         command = self.app_command("full")

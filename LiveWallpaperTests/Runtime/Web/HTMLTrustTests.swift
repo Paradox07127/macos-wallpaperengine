@@ -237,17 +237,6 @@ struct HTMLTrustVerdictTests {
         #expect(preview.contains("HTMLWallpaperCompatibilityPolicy.runtimeConfig("))
     }
 
-    @Test("Offscreen thumbnail load completion is sticky until its async waiter arrives")
-    func offscreenThumbnailLoadCompletionIsSticky() throws {
-        let pendingSnapshot = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Services/PendingHTMLSnapshot.swift"
-        )
-
-        #expect(pendingSnapshot.contains("private var completedResult: Bool?"))
-        #expect(pendingSnapshot.contains("if let completedResult"))
-        #expect(pendingSnapshot.contains("completedResult = result"))
-    }
-
     @Test("Offscreen thumbnail completion before waiter returns immediately")
     @MainActor
     func offscreenThumbnailCompletionBeforeWaiterReturnsImmediately() async throws {

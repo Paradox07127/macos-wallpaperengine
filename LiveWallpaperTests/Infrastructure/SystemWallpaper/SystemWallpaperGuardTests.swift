@@ -144,6 +144,27 @@ struct SystemWallpaperGuardTests {
         }
     }
 
+    @Test("Appexes are embedded into Contents/Extensions, not Contents/PlugIns")
+    func appexesEmbedIntoExtensionsFolder() throws {
+        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
+        for sku in Self.skus {
+            let reference = "\(sku.targetName).appex in Embed"
+            #expect(
+                project.contains(reference),
+                "\(sku.name): appex is not in an embed phase — it would never ship inside the app"
+            )
+        }
+        // pkd only scans Contents/Extensions; the generic-extension template
+        // defaults to PlugIns, where the appex is silently invisible.
+        let embedPhases = project.components(separatedBy: "isa = PBXCopyFilesBuildPhase;").dropFirst()
+        for phase in embedPhases where phase.contains(".appex in Embed") {
+            #expect(
+                phase.contains("dstPath = \"$(EXTENSIONS_FOLDER_PATH)\";"),
+                "an appex embed phase does not target EXTENSIONS_FOLDER_PATH"
+            )
+        }
+    }
+
     @Test("The agent proxy is derived per call, never stored")
     func agentProxyIsNotStored() throws {
         let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
@@ -167,44 +188,4 @@ struct SystemWallpaperGuardTests {
         )
     }
 
-    @Test("Every choice-change heartbeat publishes the whole active set")
-    func choiceChangeHeartbeatCarriesEveryActiveChoice() throws {
-        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
-        // Slice to the member's closing brace: a fixed-length prefix shrinks
-        // silently whenever the comment above the code grows.
-        let selected = try #require(
-            handler.range(of: "func selectedChoicesDidChange").map { start -> String in
-                let body = handler[start.lowerBound...]
-                guard let end = body.range(of: "\n    }\n") else { return String(body) }
-                return String(body[..<end.upperBound])
-            }
-        )
-        #expect(
-            selected.contains("Self.writeActiveHeartbeat("),
-            "selectedChoicesDidChange must publish the active set, not a single choice"
-        )
-        #expect(!selected.contains("store.writeHeartbeat(activeChoiceID:"))
-        #expect(handler.contains("including extraChoiceID: String?"))
-    }
-
-    @Test("Appexes are embedded into Contents/Extensions, not Contents/PlugIns")
-    func appexesEmbedIntoExtensionsFolder() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
-        for sku in Self.skus {
-            let reference = "\(sku.targetName).appex in Embed"
-            #expect(
-                project.contains(reference),
-                "\(sku.name): appex is not in an embed phase — it would never ship inside the app"
-            )
-        }
-        // pkd only scans Contents/Extensions; the generic-extension template
-        // defaults to PlugIns, where the appex is silently invisible.
-        let embedPhases = project.components(separatedBy: "isa = PBXCopyFilesBuildPhase;").dropFirst()
-        for phase in embedPhases where phase.contains(".appex in Embed") {
-            #expect(
-                phase.contains("dstPath = \"$(EXTENSIONS_FOLDER_PATH)\";"),
-                "an appex embed phase does not target EXTENSIONS_FOLDER_PATH"
-            )
-        }
-    }
 }

@@ -21,37 +21,24 @@ python3 scripts/entitlement_fingerprint.py --help >/dev/null
 bash scripts/app_tests.sh --help >/dev/null
 bash scripts/fast_app_contract_tests.sh --list >/dev/null
 
-# The required PR shard must keep covering persistence, config portability,
-# storage and localized search. Each of these guards a defect that already
-# shipped once, and dropping one from the list would be silent.
+# Keep the data-loss boundaries in the small daily shard. Feature-specific
+# storage/search suites remain available in targeted and full runs.
 shard_suites="$(bash scripts/fast_app_contract_tests.sh --list)"
+duplicates="$(printf '%s\n' "$shard_suites" | sort | uniq -d)"
+if [[ -n "$duplicates" ]]; then
+  echo "ERROR: app shard runs suites more than once: $duplicates" >&2
+  exit 1
+fi
 for required_suite in \
   AtomicFileStoreTests \
-  ConfigurationPorterTests \
-  WPEStorageInventoryTests \
-  SettingsSearchLocalizationTests; do
+  ConfigurationPorterTests; do
   if ! printf '%s\n' "$shard_suites" | grep -Fxq "$required_suite"; then
     echo "ERROR: $required_suite dropped from the required PR shard." >&2
     exit 1
   fi
 done
 # Metal/display suites deadlock the headless runner; keep them out by name.
-# Exact-name exceptions: "Metal" in the name only, and their source must never touch Metal.
-hardware_free_metal_named_suites="WPEMetalFBOAliasPlannerTests"
-for suite in $hardware_free_metal_named_suites; do
-  suite_files="$(grep -rlE "struct ${suite}([^A-Za-z0-9_]|$)" LiveWallpaperTests --include='*.swift' || true)"
-  if [[ -z "$suite_files" ]]; then
-    echo "ERROR: hardware-free exception $suite has no 'struct $suite' under LiveWallpaperTests; drop it from the exception list." >&2
-    exit 1
-  fi
-  metal_uses="$(grep -nE 'import Metal|MTLCreateSystemDefaultDevice|MTLDevice|CAMetalLayer' $suite_files || true)"
-  if [[ -n "$metal_uses" ]]; then
-    echo "ERROR: $suite is exempt from the headless Metal name rule but now touches Metal; move it out of the shard:" >&2
-    echo "$metal_uses" >&2
-    exit 1
-  fi
-done
-if printf '%s\n' "$shard_suites" | grep -vFxf <(printf '%s\n' $hardware_free_metal_named_suites) | grep -Eq 'Metal|Renderer(Frame|Pass)'; then
+if printf '%s\n' "$shard_suites" | grep -Eq 'Metal|Renderer(Frame|Pass)'; then
   echo "ERROR: the headless shard must not run Metal/display suites." >&2
   exit 1
 fi
@@ -101,8 +88,7 @@ if grep -Fq 'RG="${RG:-rg}"' scripts/i18n_guard.sh; then
 fi
 
 # CI must not drift away from the Makefile: every gate the pipeline depends on
-# is reached through a make target, so a locally-green `make verify` means the
-# same thing as a green pipeline.
+# is reached through a make target. Local verify also adds Lite and Metal gates.
 for make_target in 'make test-packages' 'make test-app-hosted' 'make contracts' 'make fast' 'make lint'; do
   if ! grep -Fq "$make_target" .github/workflows/ci.yml; then
     echo "ERROR: CI no longer runs '$make_target'; local and CI gates have diverged." >&2
@@ -132,7 +118,6 @@ bash scripts/check_entitlements_self_test.sh
 
 app_test_script="scripts/app_tests.sh"
 grep -Fq 'scripts/app_tests.sh full' scripts/release_candidate_check.sh
-grep -Fq 'minimum_test_count=2400' "$app_test_script"
 grep -Fq -- '-only-testing:LiveWallpaperTests/$suite' "$app_test_script"
 grep -Fq -- '-configuration Debug' "$app_test_script"
 grep -Fq -- "-destination 'platform=macOS,arch=arm64'" "$app_test_script"

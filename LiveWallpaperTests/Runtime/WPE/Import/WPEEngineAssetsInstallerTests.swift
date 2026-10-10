@@ -45,26 +45,6 @@ struct WPEEngineAssetsInstallerTests {
         }
     }
 
-    /// `SteamConnector.swift` only compiles into the XPC target, so the install branch is pinned at source level.
-    @Test("An engine-assets install that cannot reach Steam answers steamUnreachable before any other verdict")
-    func installMapsNoConnectionToSteamUnreachable() throws {
-        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        let lower = try #require(source.range(of: "    func installWallpaperEngineAssets("))
-        let upper = try #require(source.range(
-            of: "    private static func discardStagedWorkshopTree(",
-            range: lower.upperBound ..< source.endIndex
-        ))
-        let body = source[lower.lowerBound ..< upper.lowerBound]
-        let noConnection = try #require(
-            body.range(of: "if out.contains(\"No Connection\") {\n                respond(.steamUnreachable, tail: out, executed: steamCMDPath); return"),
-            "the install path never maps SteamCMD's 'No Connection' to .steamUnreachable"
-        )
-        let notEntitled = try #require(body.range(of: "respond(.notEntitled"))
-        let unrecognized = try #require(body.range(of: "respond(.unrecognized"))
-        #expect(noConnection.lowerBound < notEntitled.lowerBound)
-        #expect(noConnection.lowerBound < unrecognized.lowerBound)
-    }
-
     @Test("An unknown installed build offers Update instead of a dead end")
     @MainActor
     func unknownInstalledBuildOffersUpdate() async {

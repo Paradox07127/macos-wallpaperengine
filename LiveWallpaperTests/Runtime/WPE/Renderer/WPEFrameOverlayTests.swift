@@ -102,9 +102,11 @@ struct WPEFrameOverlayTests {
         #expect(result.layers[0].graphLayer.geometry.alpha == 0.25)
     }
 
-    @Test("Opt-in CPU overlay benchmark")
+    @Test("Opt-in CPU overlay benchmark", .enabled(
+        if: ProcessInfo.processInfo.environment["LOOMSCREEN_FRAME_OVERLAY_BENCHMARK"] == "1",
+        "CPU benchmark requires explicit opt-in"
+    ))
     func benchmark() {
-        guard ProcessInfo.processInfo.environment["LOOMSCREEN_FRAME_OVERLAY_BENCHMARK"] == "1" else { return }
         let iterations = 100
         for count in [64, 256, 1024] {
             let source = Self.fixture()

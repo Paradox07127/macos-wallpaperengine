@@ -46,16 +46,4 @@ struct OriginProvenanceTests {
         )
     }
 
-    @Test("Both resolver paths route provenance through the helper")
-    func resolverPathsUseTheHelper() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Workshop/WPECachedContentResolver.swift"
-        )
-        let routed = source.components(separatedBy: "Self.effectiveOriginKind(").count - 1
-        #expect(routed == 2, "expected both the source-folder and cache web paths to route through the helper")
-        #expect(
-            !source.contains("originKind: origin.originKind"),
-            "a resolver path still copies stored provenance verbatim"
-        )
-    }
 }

@@ -19,6 +19,18 @@ private final class FakeUserPresenceProbe: UserPresenceProbing, @unchecked Senda
 @MainActor
 @Suite("Stale user absence revalidation")
 struct UserAbsenceRevalidationTests {
+    @Test("The sleep probe demands that every online display be asleep")
+    func sleepProbeRequiresEveryDisplayAsleep() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Infrastructure/Platform/UserPresenceProbe.swift"
+        )
+        #expect(source.contains("allSatisfy { CGDisplayIsAsleep($0) != 0 }"))
+        #expect(
+            !source.contains("contains { CGDisplayIsAsleep"),
+            "One sleeping display among awake ones is not an absence, and that display may never wake"
+        )
+    }
+
     private func makeManager(probe: FakeUserPresenceProbe) -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
@@ -172,17 +184,4 @@ struct UserAbsenceRevalidationTests {
         )
     }
 
-    /// Folding with `contains` instead would let a permanently dark second display —
-    /// an unplugged TV, a closed-lid external — hold the safety net off forever.
-    @Test("The sleep probe demands that every online display be asleep")
-    func sleepProbeRequiresEveryDisplayAsleep() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Platform/UserPresenceProbe.swift"
-        )
-        #expect(source.contains("allSatisfy { CGDisplayIsAsleep($0) != 0 }"))
-        #expect(
-            !source.contains("contains { CGDisplayIsAsleep"),
-            "One sleeping display among awake ones is not an absence, and that display may never wake"
-        )
-    }
 }

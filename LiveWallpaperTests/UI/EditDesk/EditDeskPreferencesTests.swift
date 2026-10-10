@@ -7,23 +7,13 @@ import Testing
 
 @Suite("Edit Desk shelf preferences")
 struct EditDeskPreferencesTests {
-    @Test("Defaults match the work package spec")
-    func defaultsMatchSpec() {
-        #expect(EditDeskPreferences.shelfStyleDefault == .facingIn)
-        // The settings picker lists the cases in this order, the default first.
-        #expect(ShelfStyle.allCases.map(\.rawValue) == ["facingIn", "crate", "folders", "fan", "focusRow"])
-        #expect(EditDeskPreferences.shelfCapacityDefault == 20)
-        #expect(EditDeskPreferences.backgroundDefault == .opaque)
-        #expect(EditDeskPreferences.background == "loomscreen.editDesk.background")
-        #expect(EditDeskBackground.allCases.map(\.rawValue) == ["opaque", "frosted"])
-        #expect(EditDeskPreferences.hoverAutoplayPreviewDefault == true)
-        #expect(EditDeskPreferences.statusCapsuleContentDefault == .systemHealth)
-        #expect(EditDeskPreferences.homeDefaultStateDefault == .hidden)
-    }
 
-    @Test("Storage keys are namespaced under loomscreen.editDesk")
+    @Test("Persisted Edit Desk keys and raw values remain compatible")
     func storageKeysAreNamespaced() {
         #expect(EditDeskPreferences.shelfStyle == "loomscreen.editDesk.shelfStyle")
+        #expect(EditDeskPreferences.background == "loomscreen.editDesk.background")
+        #expect(Set(ShelfStyle.allCases.map(\.rawValue)) == ["facingIn", "crate", "folders", "fan", "focusRow"])
+        #expect(Set(EditDeskBackground.allCases.map(\.rawValue)) == ["opaque", "frosted"])
         #expect(EditDeskPreferences.shelfCapacity == "loomscreen.editDesk.shelfCapacity")
         #expect(EditDeskPreferences.hoverAutoplayPreview == "loomscreen.editDesk.hoverAutoplayPreview")
         #expect(EditDeskPreferences.statusCapsuleContent == "loomscreen.editDesk.statusCapsuleContent")
@@ -73,8 +63,6 @@ struct EditDeskPreferencesTests {
         // The fan turns in the screen's plane where the others lean about their vertical axis.
         #expect(Set(placements.map { [$0.rotationYDegrees, $0.rotationZDegrees] }).count == ShelfStyle.allCases.count)
         #expect(placements.allSatisfy { $0.translateZ <= 0 })
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(source.contains("stage.shelfStyle = shelfStyle"), "HomePage does not forward the shelf style")
     }
 
     /// The `.flat` shell is 2pt of padding round equal segments with no gap and no inner padding, so

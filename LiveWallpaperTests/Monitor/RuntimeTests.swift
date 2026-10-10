@@ -51,11 +51,13 @@ struct RuntimeTests {
         let lease = runtime.makeLeaseSlot().acquire(options: quietOptions)
 
         await lease.waitUntilSettled()
+        #expect(await runtime.debugActiveOptions?.topProcesses == false)
         var refreshed = quietOptions
         refreshed.topProcesses = true
         await lease.updateOptions(refreshed).value
 
         #expect(await runtime.debugActiveLeaseCount == 1)
+        #expect(await runtime.debugActiveOptions?.topProcesses == true)
         await lease.release().value
     }
 
@@ -126,15 +128,21 @@ struct RuntimeTests {
         )
         var agentLease = quietOptions
         agentLease.agents = true
-        let first = runtime.makeLeaseSlot().acquire(options: quietOptions)
+        var firstOptions = quietOptions
+        firstOptions.topProcesses = true
+        let first = runtime.makeLeaseSlot().acquire(options: firstOptions)
         let second = runtime.makeLeaseSlot().acquire(options: agentLease)
 
         await first.waitUntilSettled()
         await second.waitUntilSettled()
         #expect(await runtime.debugActiveLeaseCount == 2)
+        #expect(await runtime.debugActiveOptions?.topProcesses == true)
+        #expect(await runtime.debugActiveOptions?.agents == true)
 
         await second.release().value
         #expect(await runtime.debugActiveLeaseCount == 1)
+        #expect(await runtime.debugActiveOptions?.topProcesses == true)
+        #expect(await runtime.debugActiveOptions?.agents == false)
         await first.release().value
         #expect(await runtime.debugActiveLeaseCount == 0)
     }

@@ -153,20 +153,6 @@ struct GlobalShortcutCarbonWiringTests {
         #expect(GlobalShortcutAction.action(forSignatureID: GlobalShortcutAction.allCases.count + 1) == nil)
     }
 
-    /// Source fence, not a delivery test: an inline `@MainActor` closure on
-    /// `GetApplicationEventTarget()` still returns `noErr` from `RegisterEventHotKey`, so
-    /// registration "succeeds" and the key never fires.
-    @Test("Registration keeps the dispatcher target and the C trampoline")
-    func registrationKeepsDispatcherTargetAndCTrampoline() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Platform/GlobalShortcutManager.swift"
-        )
-        #expect(source.contains("RegisterEventHotKey("))
-        #expect(source.contains("GetEventDispatcherTarget()"))
-        #expect(source.contains("InstallEventHandler("))
-        #expect(source.contains("private func carbonHotKeyEventHandler("))
-        #expect(source.contains("carbonHotKeyEventHandler,"))
-    }
 }
 
 @Suite("WeatherLocationProvider: fallback chain", .serialized) @MainActor

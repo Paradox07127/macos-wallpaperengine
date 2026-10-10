@@ -5,40 +5,6 @@ import SwiftUI
 import Testing
 
 /// On the Edit Desk canvas a library page separates its filter bar from the grid by spacing alone.
-@Suite("Edit Desk library pages — filter-bar rule source contract")
-struct EditDeskPageSeparatorSourceTests {
-    enum Rule: Equatable {
-        case drawn
-        /// No rule under the filter bar at all.
-        case missing
-    }
-
-    /// How the `Divider()` right under a page's filter bar is drawn.
-    static func filterBarRule(in source: String) -> Rule {
-        let lines = source.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        for (index, line) in lines.enumerated() where line == "filterBar" || line.hasPrefix("LibraryFilterBar(") {
-            if lines[(index + 1)...].first == "Divider()" {
-                return .drawn
-            }
-        }
-        return .missing
-    }
-
-    @Test("Schemes and System Wallpaper draw no rule under the filter bar", arguments: [
-        "LiveWallpaper/Views/Schemes/SchemeLibraryView.swift",
-        "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
-    ])
-    func noRuleUnderTheFilterBar(path: String) throws {
-        let rule = try Self.filterBarRule(in: RepositoryRoot.source(path))
-        #expect(rule == .missing, Comment(rawValue: "\(path): the rule under the filter bar is \(rule)"))
-    }
-
-    @Test("Control: the checker sees a rule under the filter bar")
-    func drawnRuleIsSeen() {
-        let rule = Self.filterBarRule(in: "filterBar\nDivider()\ngrid")
-        #expect(rule == .drawn, Comment(rawValue: "the checker no longer sees a drawn rule: \(rule)"))
-    }
-}
 
 #if !LITE_BUILD
 /// The Workshop browse pane over the canvas colour, once as it is and once with a control rule laid over it.

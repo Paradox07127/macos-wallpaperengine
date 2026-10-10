@@ -49,50 +49,6 @@ struct WallpaperVideoPlayerOutputNegotiationTests {
         }
     }
 
-    @Test("The composition readiness probe no longer hardcodes a BGRA output")
-    func readinessProbeUsesNegotiatedFormats() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let probe = try Self.slice(
-            source,
-            from: "func prepareForCurrentComposition(",
-            to: "private func installPreparedPlayback("
-        )
-        let compactProbe = Self.compact(probe)
-
-        #expect(
-            compactProbe.contains(
-                "WallpaperVideoOutputNegotiation.pixelBufferAttributes( forcingBGRA: self.usesExtendedDynamicRange )"
-            )
-        )
-        #expect(!probe.contains("kCVPixelFormatType_32BGRA"))
-        // The probe's output must be owned so suspension can drain it.
-        #expect(compactProbe.contains("self.bindVideoOutput(nextOutput, to: item)"))
-        #expect(!compactProbe.contains("item.add(nextOutput)"))
-    }
-
-    private enum SourceContractError: Error {
-        case missingBoundary(String)
-    }
-
-    private static func slice(
-        _ source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> String {
-        guard let start = source.range(of: startMarker)?.lowerBound else {
-            throw SourceContractError.missingBoundary(startMarker)
-        }
-        guard let end = source.range(of: endMarker, range: start ..< source.endIndex)?.lowerBound else {
-            throw SourceContractError.missingBoundary(endMarker)
-        }
-        return String(source[start ..< end])
-    }
-
-    private static func compact(_ source: String) -> String {
-        source.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
-    }
 }
 
 // MARK: - Suspension and deep hibernation
@@ -337,20 +293,6 @@ struct WallpaperVideoPlayerHibernationTests {
         #expect(!harness.player.isShowingHibernationStillFrameForTesting)
     }
 
-    @Test("Cleanup and hibernation share one teardown path")
-    func teardownIsFactoredOnce() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let cleanup = try Self.slice(source, from: "\n    func cleanup() {", to: "\n    deinit {")
-
-        #expect(cleanup.contains("retirePlaybackState()"))
-        #expect(!cleanup.contains("playerLooper?.disableLooping()"))
-        #expect(!cleanup.contains("inMemoryAssetLoader = nil"))
-        #expect(source.contains("private func retirePlaybackState() {"))
-        #expect(source.contains("setupPlayer(with: url)"))
-    }
-
     // MARK: - Cover capture
 
     /// A scheme saved while the video is paused still needs a cover; the output attached for
@@ -423,23 +365,6 @@ struct WallpaperVideoPlayerHibernationTests {
         }
     }
 
-    private enum SourceContractError: Error {
-        case missingBoundary(String)
-    }
-
-    private static func slice(
-        _ source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> String {
-        guard let start = source.range(of: startMarker)?.lowerBound else {
-            throw SourceContractError.missingBoundary(startMarker)
-        }
-        guard let end = source.range(of: endMarker, range: start ..< source.endIndex)?.lowerBound else {
-            throw SourceContractError.missingBoundary(endMarker)
-        }
-        return String(source[start ..< end])
-    }
 }
 
 // MARK: - Synthetic MP4 fixture

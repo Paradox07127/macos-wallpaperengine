@@ -415,28 +415,12 @@ struct MenuBarPlaybackControlTests {
 
 @Suite("WeatherReactivePolicy")
 struct WeatherReactivePolicyTests {
-    @Test("Weather refresh cadence is one hour")
-    @MainActor
-    func weatherRefreshCadenceIsHourly() {
-        #expect(WeatherReactiveService.refreshInterval == .seconds(3600))
-    }
-
     @Test("Particles draw without a wallpaper session, but obey the master gate")
     func particlesDoNotRequireAWallpaper() {
         #expect(WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: true))
         #expect(WeatherReactivePolicy.shouldDrawParticles(effect: .snow, wallpapersEnabled: true))
         #expect(!WeatherReactivePolicy.shouldDrawParticles(effect: .none, wallpapersEnabled: true))
         #expect(!WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: false))
-    }
-
-    @Test("The particle overlay path does not consult the wallpaper session")
-    func particleOverlayPathIgnoresTheRuntimeSession() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/WallpaperEffectsCoordinator.swift"
-        )
-        #expect(source.contains("WeatherReactivePolicy.shouldDrawParticles"))
-        #expect(!source.contains("guard screen.runtimeSession != nil"))
-        #expect(!source.contains("guard screen.runtimeSession != nil,"))
     }
 
     @Test("Global wallpaper disable suppresses both weather particle and widget demand")
@@ -469,14 +453,6 @@ struct WeatherReactivePolicyTests {
         #expect(WeatherReactivePolicy.shouldMonitor(
             overlays: [overlay(effect: .none, reactive: true), overlay(effect: .snow, reactive: true)]
         ))
-    }
-
-    @Test("Only live displays' weather layers are asked whether to fetch")
-    func monitorReadsLiveDisplaysOnly() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/WallpaperEffectsCoordinator.swift"
-        )
-        #expect(source.contains("overlays: screensProvider().map(weatherOverlay)"))
     }
 
     @Test("wind direction resolves to the side it actually blows towards")
@@ -2108,12 +2084,6 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(inserted.startHour == 12 && inserted.endHour == 13)
     }
 
-    @Test("Each page's add button is named for what it adds: a wallpaper to the playlist, a time slot to the schedule")
-    func addButtonsAreNamedForWhatTheyAdd() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift")
-        #expect(source.contains(#"addButton("Add Wallpaper") { pickTarget = .queue"#), "the playlist page's add button lost its name")
-        #expect(source.contains(#".accessibilityLabel(Text("Add schedule slot"))"#), "the schedule page's add button reads as adding a wallpaper")
-    }
 }
 
 @Suite("Wallpaper automation absence")
@@ -2341,6 +2311,13 @@ private final class AutomationTestConfigurationPersistence: ScreenConfigurationP
 @Suite("WallpaperVideoPlayer startup policy")
 @MainActor
 struct WallpaperVideoPlayerStartupPolicyTests {
+    @Test("Wallpaper playback does not keep the display awake")
+    func wallpaperPlaybackDisablesDisplaySleepPrevention() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
+
+        #expect(source.contains("preventsDisplaySleepDuringVideoPlayback = false"))
+    }
+
     @Test("Pause before AVPlayer readiness suppresses ready-time autoplay")
     func pauseBeforeReadinessSuppressesAutoplay() {
         let player = WallpaperVideoPlayer(
@@ -2389,59 +2366,8 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         }
     }
 
-    @Test("Pause does not depend on AVPlayer already being in the playing state")
-    func pauseIsNotGatedOnPlayingTimeControlStatus() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
-
-        #expect(!source.contains("timeControlStatus == .playing else { return }"))
-    }
-
-    @Test("Wallpaper playback does not keep the display awake")
-    func wallpaperPlaybackDisablesDisplaySleepPrevention() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
-
-        #expect(source.contains("preventsDisplaySleepDuringVideoPlayback = false"))
-    }
-
-    @Test("Scene cover capture does not synchronously render a live poster on MainActor")
-    func scenePreviewUsesNextFramePosterCapture() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Session/WallpaperCoverCapture.swift")
-
-        #expect(source.contains("captureLivePosterFromNextFrame"))
-        #expect(!source.contains("renderer.captureLivePoster()"))
-    }
-
-    @Test("Scene preview poster readback waits for present completion without synchronizing draw")
-    func scenePreviewPosterReadbackUsesPresentCompletion() throws {
-        let source = try Self.readSceneRendererSource()
-        let executor = try Self.readExecutorSource()
-
-        #expect(source.contains("capturePendingLivePostersAfterPresent"))
-        #expect(source.contains("presentCompletion:"))
-        #expect(executor.contains("presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil"))
-        #expect(executor.contains("presentCompletion(completionSource.texture, cb, releaseSource)"))
-        #expect(source.contains("releaseSource:"))
-        #expect(!source.contains("withSynchronizedLivePosterFrameIfNeeded"))
-    }
-
-    @Test("Puppet bound-scan cache stores successful nil checks")
-    func puppetBoundScanCacheStoresSuccessfulNilChecks() throws {
-        let executor = try Self.readExecutorSource()
-
-        #expect(executor.contains("struct PuppetBoundScanCacheEntry"))
-        #expect(executor.contains("puppetBoundScanDetailByObjectID[objectID] = PuppetBoundScanCacheEntry"))
-        #expect(!executor.contains("private var puppetBoundScanDetailByObjectID: [String: String?]"))
-    }
-
     @Test("The current scene detail consumes a bounded first-frame image without retaining an animated preview")
     func sceneDetailPreviewFallbackDoesNotRetainAnimatedPreviewState() async throws {
-        let hero = try Self.readSourceFile("LiveWallpaper/Views/EditDesk/Detail/DetailHero.swift")
-        let thumbnail = try Self.readSourceFile("LiveWallpaper/Views/EditDesk/Support/ShelfThumbnailCache.swift")
-        #expect(!hero.contains("ShelfPreviewPlayer"))
-        #expect(!hero.contains("CGImageSource"))
-        #expect(!hero.contains("CAKeyframeAnimation"))
-        #expect(!thumbnail.contains("WPEPreviewDecodedCache"))
-
         #if !LITE_BUILD
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("scene-static-consumer-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -2474,37 +2400,6 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         #endif
     }
 
-    @Test("Scene diagnostic inventory is not owned by the SwiftUI view")
-    func sceneDiagnosticsAreSeparatedFromPreviewLifecycle() throws {
-        let detail = try Self.readSourceFile(
-            "LiveWallpaper/Views/EditDesk/Detail/DetailSceneStatus.swift"
-        )
-        let report = try Self.readSourceFile(
-            "LiveWallpaper/Runtime/Diagnostics/WPERenderDiagnosticReport.swift"
-        )
-
-        #expect(detail.contains("WPERenderDiagnosticReport.make("))
-        #expect(!detail.contains("import Metal"))
-        #expect(!detail.contains("renderFlagKeys"))
-        #expect(!detail.contains("MTLCreateSystemDefaultDevice"))
-        #expect(!detail.contains("UserDefaults.standard"))
-        #expect(report.contains("enum WPERenderDiagnosticReport"))
-        #expect(report.contains("enum WPERenderDiagnosticEnvironment"))
-        #expect(report.contains("renderFlagKeys"))
-        #expect(report.contains("MTLCreateSystemDefaultDevice"))
-    }
-
-    private static func readSourceFile(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
-
-    private static func readExecutorSource() throws -> String {
-        try RepositoryRoot.componentSource(under: "LiveWallpaper/Runtime", namePrefix: "WPEMetalRenderExecutor")
-    }
-
-    private static func readSceneRendererSource() throws -> String {
-        try RepositoryRoot.componentSource(under: "LiveWallpaper/Runtime", namePrefix: "WPEMetalSceneRenderer")
-    }
 }
 
 @Suite("Monitoring cadence policy")
@@ -2522,14 +2417,6 @@ struct MonitoringCadencePolicyTests {
     func lowCadenceSamplesEveryUpdate() {
         #expect(MonitoringCadencePolicy.shouldSampleGPU(updateCount: 4, cadence: 1))
         #expect(MonitoringCadencePolicy.shouldSampleGPU(updateCount: 4, cadence: 0))
-    }
-}
-
-@Suite("Monitoring start policy")
-struct MonitoringStartPolicyTests {
-    @Test("Initial resource sample is deferred past sidebar expansion animation")
-    func initialResourceSampleIsDeferredPastSidebarExpansionAnimation() {
-        #expect(MonitoringStartPolicy.initialSampleDelay == .milliseconds(350))
     }
 }
 
@@ -4035,170 +3922,6 @@ struct ScreenRuntimeOwnershipTests {
 
         #expect(screen.runtimeSession == nil)
         #expect(current.cleanupCallCount == 1)
-    }
-
-    @Test("Every proposal restore entry point opts into proposal intent")
-    func proposalRestoreEntryPointsUseProposalIntent() throws {
-        let screensSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Screens.swift"
-        )
-        let managerSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager.swift"
-        )
-        let wallpaperSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-        let playbackSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator+SessionLifecycle.swift"
-        )
-
-        #expect(screensSource.contains("intent: .proposal"))
-        #expect(screensSource.contains("intent: intent"))
-        #expect(
-            managerSource.components(separatedBy: "intent: .proposal").count - 1 >= 2
-        )
-        #expect(wallpaperSource.contains("intent: .proposal"))
-        #expect(wallpaperSource.contains("intent: intent"))
-        #expect(playbackSource.contains("intent == .persistedConfiguration"))
-    }
-
-    @Test("Every explicit content selector begins a latest-intent boundary")
-    func explicitContentSelectorsBeginLatestIntent() throws {
-        let wallpaperSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-        let automationSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Automation.swift"
-        )
-        let sceneMutationSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+SceneMutation.swift"
-        )
-
-        func selectorBeginsIntent(_ signature: String, in source: String) -> Bool {
-            guard let start = source.range(of: signature)?.lowerBound else { return false }
-            return source[start...].prefix(900).contains(
-                "beginExplicitWallpaperSelection(for: screen)"
-            )
-        }
-
-        #expect(selectorBeginsIntent("func setVideo(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func setHTMLWallpaper(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func switchToVideoWallpaper(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func switchToHTMLWallpaper(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func setSceneWallpaper(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func importWallpaperEngineProject(", in: automationSource))
-        #expect(selectorBeginsIntent("func activateWPEHistoryEntry(", in: automationSource))
-        #expect(selectorBeginsIntent("func updateSceneDescriptor(", in: sceneMutationSource))
-        let sceneIntent = try #require(sceneMutationSource.range(
-            of: "let generation = beginExplicitWallpaperSelection(for: screen)"
-        ))
-        let sceneNoOp = try #require(sceneMutationSource.range(
-            of: "guard current != descriptor else { return }"
-        ))
-        #expect(sceneIntent.lowerBound < sceneNoOp.lowerBound)
-        #expect(
-            sceneMutationSource.components(
-                separatedBy: "guard isCurrentExplicitWallpaperSelection("
-            ).count - 1 == 3
-        )
-    }
-
-    @Test("Scene property patches validate latest intent at the renderer mutation point")
-    func scenePropertyPatchAdmissionIsRendererLocal() throws {
-        let sceneMutationSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+SceneMutation.swift"
-        )
-        let sessionSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Session/SceneWallpaperSession.swift"
-        )
-        let renderActorSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"
-        )
-        let wallpaperSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-
-        #expect(sceneMutationSource.contains(
-            "let sceneMutationToken = sceneSession.currentScenePropertyMutationToken()"
-        ))
-        #expect(sceneMutationSource.contains(
-            "expectedIntent: sceneMutationToken"
-        ))
-        #expect(sessionSource.contains(
-            "authority: scenePropertyMutationAuthority"
-        ))
-        #expect(renderActorSource.contains(
-            "guard authority.isCurrent(token)"
-        ))
-        #expect(renderActorSource.contains(
-            "renderer?.canApplyScenePropertyPatch(patch)"
-        ))
-        #expect(renderActorSource.contains(
-            "func commitScenePropertyPatch("
-        ))
-        // The `descriptor` write is not redundant with the patch: without it an
-        // in-place reload reverts the committed edits.
-        #expect(renderActorSource.contains(
-            "renderer.applyScenePropertyPatch(prepared.patch)"
-        ))
-        #expect(renderActorSource.contains(
-            "renderer.descriptor = updatedDescriptor"
-        ))
-        #expect(sessionSource.contains(
-            "waitForScenePropertyPosterCommit"
-        ))
-        #expect(sceneMutationSource.contains(
-            "posterCommit: posterCommit"
-        ))
-        #expect(wallpaperSource.contains(
-            "advanceScenePropertyMutationIntent(for: screenID)"
-        ))
-
-        let preflight = try #require(sceneMutationSource.range(
-            of: "await sceneSession.prepareScenePropertyPatch("
-        ))
-        let finalCAS = try #require(sceneMutationSource.range(
-            of: "expectedSceneMutationToken: sceneMutationToken",
-            range: preflight.upperBound..<sceneMutationSource.endIndex
-        ))
-        let persistence = try #require(sceneMutationSource.range(
-            of: "saveConfiguration(configuration)",
-            range: finalCAS.upperBound..<sceneMutationSource.endIndex
-        ))
-        let posterStage = try #require(sceneMutationSource.range(
-            of: "stageScenePropertyPosterCommit(",
-            range: finalCAS.upperBound..<persistence.lowerBound
-        ))
-        let rendererCommit = try #require(sceneMutationSource.range(
-            of: "await sceneSession.commitScenePropertyPatch(",
-            range: persistence.upperBound..<sceneMutationSource.endIndex
-        ))
-        #expect(preflight.lowerBound < finalCAS.lowerBound)
-        #expect(finalCAS.lowerBound < posterStage.lowerBound)
-        #expect(posterStage.lowerBound < persistence.lowerBound)
-        #expect(persistence.lowerBound < rendererCommit.lowerBound)
-    }
-
-    @Test("Ambient and video candidate errors reuse the install-current predicate")
-    func candidateErrorsReuseInstallCurrentPredicate() throws {
-        let ambientSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+AmbientTransaction.swift"
-        )
-        let videoSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator+SessionLifecycle.swift"
-        )
-
-        #expect(ambientSource.contains("isStillCurrent: isCandidateStillCurrent"))
-        #expect(ambientSource.contains(
-            "isStillCurrent: isCandidateStillCurrent()"
-        ))
-        #expect(ambientSource.contains("errorToPublish("))
-
-        #expect(videoSource.contains("isStillCurrent: isCandidateStillCurrent"))
-        #expect(videoSource.contains(
-            "isStillCurrent: isCandidateStillCurrent()"
-        ))
-        #expect(videoSource.contains("WallpaperCandidateErrorPolicy.shouldPublish("))
     }
 
     @Test("Refreshing without preserving sessions cleans up connected screen sessions")

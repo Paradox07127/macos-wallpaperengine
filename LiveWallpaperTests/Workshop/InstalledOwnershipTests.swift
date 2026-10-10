@@ -140,17 +140,6 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(await service.fetch(publishedFileID: 100) == .failure(.networkUnreachable))
     }
 
-    @Test("Installed state and commands route through one library model")
-    func lifecycleOwnerProductionWiring() throws {
-        let model = try installedModelSource()
-        #expect(model.contains("@Observable"))
-        #expect(model.contains("final class InstalledLibraryModel"))
-        #expect(model.contains("let lifecycleOwner: InstalledPageLifecycleOwner"))
-        #expect(model.contains("lifecycleOwner.replaceUpdate"))
-        #expect(model.components(separatedBy: "lifecycleOwner.canContinue(ticket)").count - 1 == 2)
-        #expect(model.contains("lifecycleOwner.commitUpdate(replacement)"))
-    }
-
     @Test("replacement and cancellation reject late generation publication")
     @MainActor
     func updateLifecycleIsNewestWins() async {
@@ -224,32 +213,6 @@ struct InstalledOwnershipCharacterizationTests {
         let cancelledValue = await cancelled.value
         #expect(cancelledValue == nil)
         #expect(publications == ["new", "successor"])
-    }
-
-    @Test("update policy keeps the daily throttle, partial results and retry semantics")
-    func updateLifecyclePolicySourceContract() throws {
-        let source = try installedModelSource()
-        #expect(source.contains("private static let updateInterval: TimeInterval = 86400"))
-        let update = try sourceSlice(
-            source,
-            from: "func checkForUpdatesIfNeeded() async",
-            to: "private func scheduleUpdateCheck()"
-        )
-        #expect(update.contains("let snapshot = entries"))
-        #expect(update.contains("let initialEpochs = cachedRemoteUpdateEpochs.filter"))
-        #expect(update.contains("if case .rateLimited = error"))
-        #expect(update.contains("break fetchLoop"))
-        #expect(update.contains("continue"))
-        #expect(update.contains("cachedRemoteUpdateEpochs = remoteEpochs"))
-        let commit = try sourceSlice(
-            update,
-            from: "lifecycleOwner.commitUpdate(replacement)",
-            to: "\n        }\n    }"
-        )
-        #expect(commit.contains("cachedRemoteUpdateEpochs = remoteEpochs"))
-        #expect(commit.contains("dependencies.saveRemoteUpdateEpochs(remoteEpochs)"))
-        #expect(update.contains("reconcileUpdateFlags()"))
-        #expect(update.contains("dependencies.saveLastUpdateCheckEpoch(now)"))
     }
 
     @Test("production model skips fresh checks then saves stale metadata and clears re-import badge")
@@ -515,10 +478,6 @@ struct InstalledOwnershipCharacterizationTests {
             await Task.yield()
         }
         #expect(condition())
-    }
-
-    private func installedModelSource() throws -> String {
-        try projectSource("LiveWallpaper/Views/Workshop/InstalledLibrary.swift")
     }
 
     @Test("The auto-ingest scan never deletes library records")

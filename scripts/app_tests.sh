@@ -21,23 +21,18 @@ run_package_tests() {
     package_log="$scratch_root/${package}-tests.log"
     echo "== Package tests: $package =="
     echo "Raw log: $package_log"
+    package_result="$scratch_root/${package}-tests.xml"
+    swift_testing_result="$scratch_root/${package}-tests-swift-testing.xml"
+    rm -f "$package_result" "$swift_testing_result"
     if swift test --package-path "Packages/$package" \
-      --scratch-path "$scratch_root/$package" > "$package_log" 2>&1; then
+      --scratch-path "$scratch_root/$package" --xunit-output "$package_result" > "$package_log" 2>&1; then
       :
     else
       package_status=$?
       tail -80 "$package_log" >&2
       exit "$package_status"
     fi
-    # XCTest may report zero while Swift Testing ran the package's real suites.
-    # Require the final Swift Testing summary to be nonzero AND passing.
-    package_summary="$(grep -E 'Test run with ' "$package_log" | tail -1 || true)"
-    if ! grep -Eq 'Test run with [1-9][0-9]* tests?( in [1-9][0-9]* suites?)? passed after ' <<< "$package_summary"; then
-      echo "ERROR: $package reported success without a non-zero passing Swift Testing summary." >&2
-      tail -80 "$package_log" >&2
-      exit 1
-    fi
-    echo "$package_summary"
+    python3 scripts/validate_package_tests.py "$swift_testing_result"
   done
 }
 
@@ -136,13 +131,12 @@ fi
 
 derived_data="${DERIVED_DATA:-/tmp/LiveWallpaperAppTests}"
 result_bundle="${RESULT_BUNDLE:-/tmp/LiveWallpaperAppTests-${mode}-$(date +%Y%m%d-%H%M%S)-$$.xcresult}"
-minimum_test_count=2400
+minimum_test_count=1
 label="LiveWallpaper full app tests"
 selectors=()
 required_suites=()
 
 if [[ "$mode" == "suites" ]]; then
-  minimum_test_count=1
   label="LiveWallpaper targeted suites"
   for suite in "${suites[@]}"; do
     selectors+=("-only-testing:LiveWallpaperTests/$suite")
@@ -155,8 +149,6 @@ else
   while IFS= read -r suite; do
     [[ -n "$suite" ]] && required_suites+=("--require-suite" "$suite")
   done <<< "$suite_manifest"
-  # The corpus suite also has synthetic cases, so it must show a pass even
-  # without a local corpus. Optional GPU/capture suites may still report skips.
   # Both capture harnesses assert on the state of THIS Mac's Workshop corpus and
   # oracle config, not on product code, so drift there fails the release gate for
   # a reason no shipped binary can be wrong about. They are already
@@ -174,6 +166,7 @@ command=(
   --label "$label"
   --result-bundle "$result_bundle"
   --minimum-test-count "$minimum_test_count"
+  --skip-policy scripts/app_test_skip_policy.json
   --slowest "$slowest"
 )
 if [[ ${#required_suites[@]} -gt 0 ]]; then

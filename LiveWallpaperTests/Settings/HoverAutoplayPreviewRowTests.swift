@@ -64,14 +64,4 @@ struct HoverAutoplayPreviewRowTests {
         #expect(control.state == .off, "the switch did not follow the saved choice to off")
     }
 
-    /// `SettingRow` keeps its subtitle for current state and a static explanation behind ⓘ; this row has no state to show.
-    @Test("How hover playback behaves sits behind the info button, and the row has no subtitle")
-    func explanationIsInfoNotSubtitle() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Settings/ShelfSettingsRows.swift")
-        let start = try #require(source.range(of: "struct HoverAutoplayPreviewRow"), "the row's own view is gone")
-        let row = String(source[start.lowerBound...])
-        let sentence = "\"A card's GIF preview plays when the pointer rests on it, but not while Reduce Motion is on.\""
-        #expect(row.contains("info: \(sentence)"), "the explanation is not the row's info")
-        #expect(!row.contains("subtitle:"), "the row still has a subtitle, but nothing on it changes with state")
-    }
 }

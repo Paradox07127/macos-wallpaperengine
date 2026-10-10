@@ -1,12 +1,24 @@
 #if !LITE_BUILD
-import Foundation
 import Metal
 import Testing
-import simd
 @testable import LiveWallpaper
 
 @Suite("WPE uniform arena")
 struct WPEMetalUniformArenaTests {
+    @Test("render() registers the arena submission before the first commit")
+    func renderRegistersArenaSubmissionBeforeCommit() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
+        )
+        let renderBody = try source[#require(source.range(of: "\n    func render(")).upperBound...]
+        let track = try #require(
+            renderBody.range(of: "uniformArena.trackSubmission(of: commandBuffer, frameSlot:"),
+            "render() no longer registers the uniform arena submission"
+        )
+        let commit = try #require(renderBody.range(of: "commandBuffer.commit()"))
+        #expect(track.lowerBound < commit.lowerBound)
+    }
+
 
     private static func makeArena(
         slotCount: Int = WPEMetalRenderExecutor.maxFramesInFlight,
@@ -204,22 +216,5 @@ struct WPEMetalUniformArenaTests {
         #expect(arena.inFlightCount(ofSlot: 7) == 0)
     }
 
-    // MARK: - Production wiring
-
-    /// Source-level because nothing observes the attach: reformatting the
-    /// `trackSubmission(` call across lines fails this, and is a one-line fix here.
-    @Test("render() registers the arena submission before the first commit")
-    func renderRegistersArenaSubmissionBeforeCommit() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
-        )
-        let renderBody = source[try #require(source.range(of: "\n    func render(")).upperBound...]
-        let track = try #require(
-            renderBody.range(of: "uniformArena.trackSubmission(of: commandBuffer, frameSlot:"),
-            "render() no longer registers the uniform arena submission"
-        )
-        let commit = try #require(renderBody.range(of: "commandBuffer.commit()"))
-        #expect(track.lowerBound < commit.lowerBound)
-    }
 }
 #endif

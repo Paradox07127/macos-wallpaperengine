@@ -163,10 +163,6 @@ struct WPESceneScriptB2bResourceLimitTests {
             #expect(token.failureReason == nil)
         }
 
-        // Behavioural twin of the source characterization in
-        // WPESceneScriptContainmentCharacterizationTests: the async dispatch
-        // owner parks the reservation in a one-slot state, so releasing the
-        // reservation alone is not equivalent to releasing it through the owner.
         @Test("Async dispatch slot re-arms only when released through its owner")
         func asyncDispatchSlotReleaseIsNotInterchangeable() throws {
             let quarantine = WPESceneScriptQuarantine(limit: 16)
@@ -278,51 +274,6 @@ struct WPESceneScriptB2bResourceLimitTests {
             expectEveryOperationRejected(by: token)
         }
 
-        @Test("Production timeout/fail-close wiring has one bounded quarantine owner")
-        func productionWiringSourceOracle() throws {
-            // Two files since the layer-script engine was split out of the
-            // runtime; the wiring contract below is on the subsystem, not on
-            // whichever half a given call site happens to live in.
-            let runtime = try Self.read("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
-                + "\n"
-                + Self.read("LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift")
-            let resources = try Self.read("LiveWallpaper/Runtime/Scene/WPESceneScriptResourceBudget.swift")
-            let rendererContainment = try Self.read(
-                "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
-            )
-            let frameFailClose = try Self.read(
-                "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptFailClose.swift"
-            )
-            let frame = try Self.read("LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift")
-
-            #expect(!runtime.contains("static var quarantine"))
-            #expect(!runtime.contains("quarantine.append"))
-            #expect(Self.occurrences(
-                of: "sceneScriptLoadToken?.failClosed(.executionTimedOut(operation: .setup))",
-                in: runtime
-            ) == 3)
-            #expect(Self.occurrences(
-                of: "instanceLimitToken?.failClosed(.executionTimedOut(operation: operation))",
-                in: runtime
-            ) == 1)
-            #expect(Self.occurrences(
-                of: "func runWithBudget<T>(",
-                in: runtime
-            ) == 1)
-            #expect(resources.contains("state.quarantinedEngines.count + state.activeReservationIDs.count < limit"))
-            #expect(resources.contains("precondition(state.quarantinedEngines.count < limit"))
-            #expect(rendererContainment.contains("resetSceneScriptsToBakedIfFailed"))
-            #expect(frame.contains("let publicationBeforeFrame = captureSceneScriptFramePublication()"))
-            #expect(frame.contains("restoreSceneScriptPresentation(publicationBeforeFrame.presentation)"))
-            #expect(frameFailClose.contains("restoreSceneScriptPresentation(publicationBeforeFrame.presentation)"))
-            #expect(frameFailClose.contains("lastStableScriptTransforms = publicationBeforeFrame.stableTransforms"))
-            #expect(frameFailClose.contains("lastStableScriptTextByID = publicationBeforeFrame.stableTextByID"))
-            #expect(frameFailClose.contains("lastFramePipeline = publicationBeforeFrame.lastFramePipeline"))
-            #expect(runtime.contains("instanceLimitToken?.admitCreatedLayer()"))
-            #expect(runtime.contains("evaluationResourceBudget.admitVideoCommand()"))
-            #expect(runtime.contains("sceneScriptLoadToken?.admitNewSharedStateEntry()"))
-        }
-
         private func preparedToken(
             generation: Int,
             inventory: WPESceneScriptInstanceInventory = .init(text: 0, layer: 0, transform: 0)
@@ -339,15 +290,6 @@ struct WPESceneScriptB2bResourceLimitTests {
                 #expect(!token.allows(operation))
             }
             #expect(!token.acceptsCompletion())
-        }
-
-        private static func read(_ repositoryRelativePath: String) throws -> String {
-        // swiftformat:disable:next indent
-            try RepositoryRoot.source(repositoryRelativePath)
-        }
-
-        private static func occurrences(of needle: String, in haystack: String) -> Int {
-            haystack.components(separatedBy: needle).count - 1
         }
 
         private static func createdLayerScript(count: Int) -> String {

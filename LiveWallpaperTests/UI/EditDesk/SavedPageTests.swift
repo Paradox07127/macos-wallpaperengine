@@ -22,25 +22,6 @@ struct SavedPageTests {
         ))
     }
 
-    @Test("Manage Schemes opens the Schemes page")
-    func manageSchemesOpensThePage() throws {
-        let router = Self.makeRouter()
-        router.select(.schemes)
-        #expect(router.page == .schemes)
-        let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
-        #expect(host.contains("router.select(.schemes)"), "Manage Schemes does not open the Schemes page")
-    }
-
-    @Test("The page is the scheme list alone, and the top navigation names it Schemes")
-    func pageListsSchemesAlone() throws {
-        let page = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/SchemesPage.swift")
-        #expect(page.contains("SchemeLibraryView("), "the page does not list the schemes")
-        for leftover in ["GlassSegmentedPicker(", "WorkshopModalHost(", "@AppStorage("] {
-            #expect(!page.contains(leftover), Comment(rawValue: "the page still carries the bookmarks tab's \(leftover)"))
-        }
-        #expect(NavPill.title(for: .schemes) == LocalizedStringKey("Schemes"))
-    }
-
     /// Set by a `.task` on the page's container, which SwiftUI starts in the same pass as the page's own appearance hooks.
     @MainActor private final class Appearance {
         var done = false
@@ -83,23 +64,3 @@ struct SavedPageTests {
         }
     }
 }
-
-#if !LITE_BUILD
-/// Writes a picture and checks nothing, so like the Edit Desk fidelity probes it stays off the fast shard's suite list.
-@MainActor
-@Suite("Schemes page probe", .serialized)
-struct SchemesPageProbeTests {
-    @Test("Probe: the Schemes page at 1280×820")
-    func probeImage() async {
-        let manager = SavedPageTests.makeManager()
-        defer { manager.tearDownForTermination() }
-        let router = SavedPageTests.makeRouter()
-        router.select(.schemes)
-        _ = await ProbeRenderer.render("schemes-page", size: CGSize(width: 1280, height: 820), settle: 1) {
-            SchemesPage(router: router, toasts: EditDeskToastCenter())
-                .environment(manager)
-                .background { EditDeskBackdrop(frosted: false) }
-        }
-    }
-}
-#endif

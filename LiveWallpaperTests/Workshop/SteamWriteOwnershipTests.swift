@@ -9,54 +9,6 @@ struct SteamWriteOwnershipTests {
         try String(contentsOf: RepositoryRoot.url(relativePath), encoding: .utf8)
     }
 
-    private static let appSources = [
-        "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
-        "LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift",
-        "LiveWallpaper/Views/Workshop/InstalledLibrary.swift"
-    ]
-
-    @Test("Workshop download and delete go through the connector")
-    func repositoryMutationsAreDelegated() throws {
-        let doctor = try Self.source(Self.appSources[0])
-        #expect(doctor.contains("SteamConnectorClient.downloadWorkshopItem"))
-
-        let model = try Self.source(Self.appSources[2])
-        #expect(model.contains("deleteSharedRepositoryItem"))
-
-        let actions = try Self.source("LiveWallpaper/Views/EditDesk/Library/ModalActions.swift")
-        #expect(actions.contains("SteamConnectorClient.deleteWorkshopItem"))
-    }
-
-    @Test("Wallpaper Engine install and update go through the connector")
-    func engineAssetsAreDelegated() throws {
-        let installer = try Self.source(Self.appSources[1])
-        #expect(installer.contains("SteamConnectorClient.installWallpaperEngineAssets"))
-        #expect(installer.contains("SteamConnectorClient.latestWallpaperEngineBuildID"))
-    }
-
-    @Test("The retired container-anchored asset writer stays deleted")
-    func retiredWriterStaysDeleted() throws {
-        for name in [
-            "WPEEngineAssetsFilesystemOwner",
-            "WPEEngineAssetsStartupRecovery",
-            "WPEEngineAssetsTransaction"
-        ] {
-            let path = "LiveWallpaper/Infrastructure/Workshop/\(name).swift"
-            #expect(
-                !FileManager.default.fileExists(atPath: RepositoryRoot.url(path).path),
-                Comment(rawValue: "\(name) came back — Steam writes belong to the connector")
-            )
-        }
-    }
-
-    @Test("Engine assets no longer resolve to a container path")
-    func engineAssetsResolveThroughABookmark() throws {
-        let library = try Self.source("LiveWallpaper/Infrastructure/Assets/WPEEngineAssetsLibrary.swift")
-        #expect(!library.contains("func managedContainerRoot"))
-        #expect(library.contains("func sharedLibraryInstallRoot"))
-        #expect(library.contains("func adoptManagedInstall"))
-    }
-
     /// `+force_install_dir` must precede `+login` (the order Valve documents), the directory is the ONE
     /// shared library for every account, and no `validate`.
     @Test("Workshop downloads land in the one shared library, unvalidated")

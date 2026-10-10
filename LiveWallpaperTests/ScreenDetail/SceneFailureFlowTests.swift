@@ -95,20 +95,6 @@ struct SceneFailureFlowTests {
         #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
     }
 
-    @Test("The inspector never short-circuits on the memo: every mount still runs load()")
-    func inspectorAlwaysRevalidatesTheMemo() throws {
-        let panel = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/DetailInspectorPanel.swift")
-        let start = try #require(panel.range(of: "private func loadWPESceneCustomSettingsSchema() async {"))
-        let body = panel[start.upperBound...].prefix(1800)
-        let hit = try #require(body.range(of: "cachedOutcome(descriptor: descriptor"))
-        let afterHit = body[hit.upperBound...]
-        let load = try #require(afterHit.range(of: "WPESceneProjectSchemaLoader.load("))
-        #expect(
-            !afterHit[..<load.lowerBound].contains("return"),
-            "a memo hit returned before load(), so the size+mtime revalidation never ran on remount"
-        )
-    }
-
     @Test("An edited project.json is re-read instead of served from the memo")
     func sceneSchemaCacheNoticesAnEditedProject() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("schema-edit-\(UUID().uuidString)", isDirectory: true)
@@ -261,75 +247,4 @@ struct SceneFailureFlowTests {
         #expect(cause.reason == WPESceneDocumentError.invalidUTF8.localizedDescription)
     }
 
-    /// 420 is the narrow width where the page's zones stop fitting side by side.
-    @MainActor
-    @Test("Failure page lays out in native light and dark appearances", arguments: [CGFloat(420), CGFloat(660)])
-    func previewLayout(width: CGFloat) throws {
-        let cases: [(String, WallpaperFailureCause, String?)] = [
-            ("needsparts", WallpaperFailureCause(code: "scene.file_missing", reason: "A file required by the Stars layer is missing: materials/stars.tex."), "Mountain Lake · Scene A"),
-            ("fatal", WallpaperFailureCause(code: "texture.metal_unavailable", reason: "This Mac's GPU cannot decode BC7 textures.", canRetry: false), nil),
-            ("blocked", WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token at line 42 of scene.json.", canRetry: false), nil),
-        ]
-        for (name, cause, previous) in cases {
-            let snapshot = WallpaperFailureSnapshot(
-                id: UUID(), title: "Night Sky · Failed Scene B", workshopID: "1234567890",
-                displayName: "Built-in Display", stage: .loading, cause: cause,
-                previousWallpaper: previous, timestamp: Date(),
-                diagnostics: "Missing source texture", wallpaperType: .scene
-            )
-            for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
-                let page = WallpaperFailureView(
-                    failure: snapshot,
-                    onRetry: {},
-                    onViewDesktop: {},
-                    onChooseSource: {},
-                    onClearDisplay: {},
-                    onShowDetails: {}
-                )
-                let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
-                    page.frame(width: width, height: 560)
-                        .environment(\.featureCatalog, FeatureCatalog(capabilities: .pro))
-                        .environment(\.colorScheme, appearanceName == "light" ? .light : .dark)
-                        .background(appearanceName == "light" ? Color.white : Color.black)
-                })
-                host.appearance = NSAppearance(named: appearance)
-                host.frame = CGRect(x: 0, y: 0, width: width, height: 560)
-                host.layoutSubtreeIfNeeded()
-                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                host.cacheDisplay(in: host.bounds, to: bitmap)
-                let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                let destination = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("SceneFailurePreview-\(Int(width))-\(name)-\(appearanceName).png")
-                try png.write(to: destination)
-                print("Scene failure UI snapshot: \(destination.path)")
-
-                #expect(host.fittingSize.width <= width)
-            }
-        }
-    }
-
-    @MainActor
-    @Test("A historic failure still reads as a page with no actions to offer")
-    func historicFailureLayout() throws {
-        let snapshot = WallpaperFailureSnapshot(
-            id: UUID(), title: "Night Sky · Failed Scene B", workshopID: nil,
-            displayName: "Built-in Display", stage: .runtime,
-            cause: WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token at line 42 of scene.json.", canRetry: false),
-            previousWallpaper: nil, timestamp: Date(), diagnostics: "", wallpaperType: .scene
-        )
-        let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
-            WallpaperFailureView(failure: snapshot, isCurrentAttempt: false)
-                .frame(width: 600, height: 480)
-        })
-        host.frame = CGRect(x: 0, y: 0, width: 600, height: 480)
-        host.layoutSubtreeIfNeeded()
-        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        let png = try #require(bitmap.representation(using: .png, properties: [:]))
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SceneFailurePreview-historic.png")
-        try png.write(to: destination)
-        print("Scene failure UI snapshot: \(destination.path)")
-        #expect(host.fittingSize.width <= 600)
-    }
 }

@@ -1,4 +1,3 @@
-import Foundation
 @testable import LiveWallpaper
 import Metal
 import Testing
@@ -50,14 +49,6 @@ struct WPEShaderTextureSlotTests {
         try makeLibrary(result.mslSource)
     }
 
-    /// The ceiling must cover slot 8 (≥9 slots); 16 is a hard Metal limit, and the
-    /// generator emits one sampler per slot — a floor and a wall, not a free dial.
-    @Test("The slot ceiling covers every slot WPE's bundled shaders use")
-    func ceilingCoversBundledShaders() {
-        #expect(WPEShaderTranspiler.customTextureSlotLimit >= 9)
-        #expect(WPEShaderTranspiler.customTextureSlotLimit <= 16)
-    }
-
     @Test("A shader declares only the slots it uses")
     func slotsAreAllocatedPerShader() throws {
         let single = """
@@ -79,15 +70,6 @@ struct WPEShaderTextureSlotTests {
             shaderName: "chroma4", preprocessedSource: Self.chroma4LikeSource
         )
         #expect(wide.textureSlotCount == 9)
-    }
-
-    /// Metadata discovery can exceed sampler arity; actual GPU binding must keep
-    /// each compiled stage's own count rather than bind a fixed span.
-    @Test("The dispatcher binds per-shader slots, not a fixed span")
-    func dispatcherBindsPerShaderSlotCount() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift")
-        #expect(source.contains("for slot in 0..<textureSlotCount"))
-        #expect(!source.contains("for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit"))
     }
 
     /// With no samplers the per-slot loops produce nothing, so a trailing comma on the

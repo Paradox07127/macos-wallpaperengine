@@ -239,74 +239,6 @@ struct WPEVideoFrameConversionSchedulingTests {
 
     // MARK: - Source-order pins
 
-    @Test("The executor encodes staged conversions into the scene buffer before any pass")
-    func executorEncodesConversionsBeforeScenePasses() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
-        )
-        let makeBuffer = try #require(
-            source.range(of: "WPEFrameOccupancyMeter.count(.sceneCommandBuffer)")
-        )
-        let encode = try #require(
-            source.range(of: "source.encodeStagedFrameWork(into: commandBuffer)")
-        )
-        let firstScenePass = try #require(
-            source.range(of: "try copyTexture(preservedScene, to: output")
-        )
-        let initialClear = try #require(
-            source.range(of: "try clearTexture(output, color: clearColor(for: .scene)")
-        )
-        #expect(makeBuffer.upperBound < encode.lowerBound)
-        #expect(encode.upperBound < firstScenePass.lowerBound,
-                "a scene pass is encoded before the video conversion it may sample")
-        #expect(encode.upperBound < initialClear.lowerBound,
-                "the initial scene clear is encoded before the video conversion it may sample")
-
-        // paired == 2 = the async and the synchronous scene-buffer commit; a publish that ran before the commit
-        // would hand `drainRetiredFrames` an uncommitted fence.
-        let paired = source.components(
-            separatedBy: "commandBuffer.commit()\n            publishStagedTextureWork()"
-        ).count - 1
-        #expect(paired == 2, "expected both scene-buffer commits to be followed by the publish")
-        #expect(source.contains("source.rollbackStagedFrameWork()"))
-        #expect(source.contains("source.commitStagedFrameWork()"))
-    }
-
-    @Test("Neither publish path builds a command buffer any more")
-    func publishPathsCommitNothing() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Assets/WPEVideoTextureSource.swift"
-        )
-        for name in ["private func publishBiPlanar(", "private func publishBGRA("] {
-            let body = try Self.functionBody(of: name, in: source)
-            #expect(!body.contains("makeCommandBuffer"),
-                    "\(name) reintroduced a per-frame command buffer")
-            #expect(!body.contains(".commit()"), "\(name) reintroduced a per-frame commit")
-        }
-    }
-
-    /// Brace-matched so a pin cannot pass by reading a neighbouring function.
-    private static func functionBody(of declaration: String, in source: String) throws -> String {
-        let start = try #require(source.range(of: declaration))
-        var depth = 0
-        var started = false
-        var index = start.upperBound
-        var body = ""
-        while index < source.endIndex {
-            let character = source[index]
-            if character == "{" {
-                depth += 1
-                started = true
-            } else if character == "}" {
-                depth -= 1
-                if started, depth == 0 { return body }
-            }
-            if started { body.append(character) }
-            index = source.index(after: index)
-        }
-        throw HarnessError.unbalancedBraces(declaration)
-    }
-
     // MARK: - Harness
 
     /// Zero-ticket admission plus a zero-byte file keep `init` on the still-frame branch, so nothing publishes until a test ingests.
@@ -422,6 +354,5 @@ struct WPEVideoFrameConversionSchedulingTests {
 
     private enum HarnessError: Error {
         case pixelBufferCreateFailed(CVReturn)
-        case unbalancedBraces(String)
     }
 }

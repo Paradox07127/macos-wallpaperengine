@@ -146,19 +146,6 @@ struct StageGeometryTests {
         let firstCard = StageGeometry.gridFrame(index: 0, windowWidth: Self.designWindow.width).minY
         #expect(firstCard - rowBottom == DesignTokens.EditDesk.Spacing.filterRowToCards, Comment(rawValue: "first card at \(firstCard)"))
 
-        // The Workshop's ribbon hangs from the same two tokens under the page's top-bar inset.
-        let page = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift")
-        #expect(page.contains(".padding(.top, DesignTokens.EditDesk.Spacing.topBar)"))
-        let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
-        #expect(ribbon.contains(".padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)"))
-        #expect(ribbon.contains("DesignTokens.LibraryGrid.verticalPadding"), "the ribbon must account for the shared grid inset")
-        #expect(!ribbon.contains("DesignTokens.Settings.formVerticalMargin"), "settings padding disagrees with the shared grid inset")
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        let gridStart = try #require(pane.range(of: "private func cardGrid("))
-        let grid = try #require(String(pane[gridStart.lowerBound...]).components(separatedBy: "\n    }").first)
-        #expect(grid.contains(".libraryGridPadding()"), "the Workshop grid bypasses the shared inset")
-        #expect(!grid.contains(".padding("), "the Workshop grid adds a second page-specific inset")
-
         // Measure the shared modifier itself: its implementation can change without touching the caller.
         let contentSize = CGSize(width: 100, height: 80)
         let measured = NSHostingView(rootView: Color.clear

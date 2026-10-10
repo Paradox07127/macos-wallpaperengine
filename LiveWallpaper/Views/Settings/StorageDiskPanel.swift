@@ -262,7 +262,7 @@ struct StorageRingsCard: View {
 
     var body: some View {
         GroupBox {
-            HStack(alignment: .top, spacing: DesignTokens.Spacing.md) {
+            HStack(spacing: DesignTokens.Spacing.md) {
                 ForEach(Array(rings.enumerated()), id: \.element.id) { index, spec in
                     if index > 0 {
                         Divider()

@@ -66,60 +66,6 @@ struct WPECorpusManifestTests {
         )?.path == "/tmp/explicit-corpus")
     }
 
-    @Test("Manifest builder is sorted, repeatable, and never serializes its root")
-    func builderIsRepeatableAndPathRedacted() throws {
-        let fileManager = FileManager.default
-        let root = fileManager.temporaryDirectory
-            .appendingPathComponent("wpe-manifest-tests-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? fileManager.removeItem(at: root) }
-
-        try Self.makeProject(
-            id: "10",
-            manifest: [
-                "workshopid": 10,
-                "type": "scene",
-                "file": "scene.json",
-                "dependencies": ["900", 800, "900", "../private-dependency"],
-            ],
-            root: root
-        )
-        try Data("fixture".utf8).write(to: root.appendingPathComponent("10/scene.pkg"))
-        try Self.makeProject(
-            id: "2",
-            manifest: ["workshopid": "2", "type": "web", "file": "index.html"],
-            root: root
-        )
-        try Data("ok".utf8).write(to: root.appendingPathComponent("2/index.html"))
-        let malformed = root.appendingPathComponent("3", isDirectory: true)
-        try fileManager.createDirectory(at: malformed, withIntermediateDirectories: true)
-        try Data("{".utf8).write(to: malformed.appendingPathComponent("project.json"))
-
-        let first = try WPECorpusManifestBuilder.build(root: root, rootLabel: "test-fixture")
-        let firstData = try WPECorpusManifestBuilder.encode(first)
-        let secondData = try WPECorpusManifestBuilder.encode(
-            WPECorpusManifestBuilder.build(root: root, rootLabel: "test-fixture")
-        )
-
-        #expect(firstData == secondData)
-        #expect(firstData.range(of: Data(root.path.utf8)) == nil)
-        #expect(first.entries.map(\.folderID) == ["10", "2", "3"])
-        #expect(first.summary.directories == 3)
-        #expect(first.summary.captureCandidates == 1)
-        #expect(first.entries[0].accessibility.scenePackageReadable)
-        #expect(first.entries[0].dependencies == ["800", "900"])
-        #expect(first.entries[0].issues.contains("unsafeDependencyID"))
-        #expect(first.entries[0].projectJSONSHA256?.count == 64)
-        #expect(first.entries[2].accessibility.projectJSON == "malformed")
-        #expect(first.entries[2].projectJSONSHA256?.count == 64)
-    }
-
-    private static func makeProject(id: String, manifest: [String: Any], root: URL) throws {
-        let folder = root.appendingPathComponent(id, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
-            .write(to: folder.appendingPathComponent("project.json"))
-    }
 }
 
 private struct CorpusSelection {

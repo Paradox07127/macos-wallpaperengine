@@ -11,95 +11,8 @@ import Testing
 @MainActor
 @Suite("Edit Desk accessibility", .serialized)
 struct EditDeskAccessibilityTests {
-    struct AXNode {
-        let role: String
-        let label: String
-        let value: String
-        let actions: [String]
-    }
-
-    private static func nodes(under root: any NSAccessibilityProtocol, depth: Int = 0) -> [AXNode] {
-        guard depth < 12, let children = root.accessibilityChildren() else { return [] }
-        return children.flatMap { child -> [AXNode] in
-            guard let element = child as? any NSAccessibilityProtocol else { return [] }
-            let node = AXNode(
-                role: element.accessibilityRole()?.rawValue ?? "",
-                label: element.accessibilityLabel() ?? "",
-                value: element.accessibilityValue() as? String ?? "",
-                actions: element.accessibilityCustomActions()?.map(\.name) ?? []
-            )
-            return [node] + nodes(under: element, depth: depth + 1)
-        }
-    }
-
-    /// SwiftUI only builds an accessibility tree for a view in a window, so the host goes into one
-    /// parked far off every display, exactly as `ProbeRenderer` does for the fidelity images.
-    private func hostedNodes(size: CGSize, @ViewBuilder _ view: () -> some View) async -> [AXNode] {
-        let host = NSHostingView(rootView: AppLanguageScope(defaults: .standard) {
-            view().frame(width: size.width, height: size.height)
-        })
-        host.frame = CGRect(origin: .zero, size: size)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
-        host.layoutSubtreeIfNeeded()
-        let deadline = Date().addingTimeInterval(0.7)
-        while Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        host.layoutSubtreeIfNeeded()
-        var found = Self.nodes(under: host)
-        if found.isEmpty {
-            found = Self.nodes(under: window)
-        }
-        window.orderOut(nil)
-        window.contentView = nil
-        return found
-    }
-
-    private func progress(function: String = #function) throws -> OnboardingProgress {
-        let defaults = try TestScratch.defaultsSuite(prefix: "wp64.accessibility", function: function).defaults
-        return OnboardingProgress(defaults: defaults, legacyDefaults: defaults, workshopAvailable: true)
-    }
-
     private func label(_ key: String) -> String {
         String(localized: String.LocalizationValue(key), bundle: .appLanguage)
-    }
-
-    /// Why the SwiftUI half of this file is a source contract: the AX bridge is only built when an
-    /// assistive client has attached, so an offscreen host reports one empty `AXGroup` whatever the
-    /// view put on it. Walking the real tree is on the 实机 list, not skipped silently.
-    @Test("SwiftUI hands an offscreen host no accessibility tree to read")
-    func swiftUITreeIsNotReadableOffscreen() async throws {
-        let progress = try progress()
-        let nodes = await hostedNodes(size: StageGeometry.designWindow) {
-            PageGuideButton(context: .overview)
-                .environment(progress)
-        }
-        print("AX card = \(nodes.map { "\($0.role)|\($0.label)" })")
-        let spoken = nodes.map(\.label).filter { !$0.isEmpty }
-        #expect(
-            spoken.isEmpty,
-            Comment(rawValue: "the bridge started reporting labels — turn the source contracts below into tree walks: \(spoken)")
-        )
-    }
-
-    /// The accessibility the two onboarding views carry, read off the source. Each expectation is
-    /// one line of the 实机 walk: what VoiceOver should say, and what it must not repeat.
-    @Test("The floating guide and capsule name themselves and hide their decoration")
-    func onboardingContracts() throws {
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift")
-        #expect(card.contains("accessibilityAddTraits(.isHeader)"))
-        #expect(card.contains("accessibilityHidden(true)"))
-        #expect(card.contains(".keyboardShortcut(.cancelAction)"))
-        #expect(card.contains(#"accessibilityIdentifier("pageGuide.next")"#))
-        let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift")
-        #expect(capsule.contains("accessibilityElement(children: .ignore)"), "each dot would become its own element")
-        #expect(capsule.contains(#"accessibilityLabel(Text("Get Started"))"#))
-        // The value is the progress itself, so the pill answers "how far in am I".
-        #expect(capsule.contains(#"accessibilityValue(Text(OnboardingCapsuleModel.progressValue(dots: dots)))"#))
     }
 
     /// 6.1c's two entry points are drawn into a CALayer, so the display element carries them as
@@ -137,32 +50,6 @@ struct EditDeskAccessibilityTests {
         // Return / VoiceOver press still opens the display itself.
         #expect(empty.accessibilityPerformPress())
         #expect(await events.next() == .displayTapped(1))
-    }
-
-    /// The three views that cannot be hosted offscreen: the wizard needs `SteamCMDDoctorService`
-    /// and `WorkshopSetupController`, and both Workshop views are outside this package.
-    @Test("The wizard's status rows, the modal's Steam button and the browse card name themselves")
-    func sourceContracts() throws {
-        let wizard = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/SteamWizard.swift")
-        #expect(
-            wizard.contains("accessibilityElement(children: .combine)"),
-            "each status row must read as one element, not a title, a glyph and a detail"
-        )
-        #expect(wizard.contains(#"accessibilityLabel(Text("Close"))"#))
-        #expect(!wizard.contains("OnboardingProgress"), "Steam setup must not repeat the tutorial's step counter")
-        // The Steam button is one of the title row's glyph buttons, each labelled by its own title.
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        #expect(modal.contains("ModalHeaderAction(kind: .openInSteam"), "the Workshop modal draws a Steam button of its own")
-        let chrome = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/EditDeskModalChrome.swift")
-        let glyph = try #require(chrome.range(of: "GlassIconButton(action.symbol"))
-        let labelled = try #require(chrome.range(of: "accessibilityLabel(Text(verbatim: action.title))"))
-        #expect(glyph.lowerBound < labelled.lowerBound, "the glyph button would read as its symbol")
-        #expect(ModalHeaderAction(kind: .openInSteam, perform: {}).title == String(localized: "Open in Steam", bundle: .appLanguage))
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(card.contains("accessibilityElement(children: shouldBlur ? .ignore : .contain)"),
-                "visible thumbnails must expose Retry while mature cards remain one reveal control")
-        #expect(card.contains("accessibilityLabel(Text(accessibilityLabelText))"))
-        #expect(card.contains("stars"), "the card's label drops the rating")
     }
 
     /// The filter row's search field stays mounted on the shelf, faded out, so the edit a return

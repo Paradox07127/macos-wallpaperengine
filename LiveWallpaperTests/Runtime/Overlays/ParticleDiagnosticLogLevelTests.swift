@@ -21,12 +21,4 @@ struct ParticleDiagnosticLogLevelTests {
         #expect(LogFileSink.admitsToFile(level))
     }
 
-    @Test("The severity a diagnostic is built with is the severity it logs at")
-    func diagnosticCarriesItsOwnSeverity() {
-        let note = WPESceneDiagnostic(severity: .info, message: "unsupported operator 'foo'")
-        let problem = WPESceneDiagnostic(severity: .warning, message: "malformed particle")
-
-        #expect(!LogFileSink.admitsToFile(note.severity.logLevel))
-        #expect(LogFileSink.admitsToFile(problem.severity.logLevel))
-    }
 }

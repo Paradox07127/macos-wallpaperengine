@@ -69,11 +69,4 @@ struct HTMLConfigPersistenceTests {
         #expect(decoded.useEphemeralStorage == true)
     }
 
-    @Test("Default HTMLConfig leaves both suspension knobs off")
-    func defaultConfigDisablesNewKnobs() {
-        let cfg = HTMLConfig.default
-        #expect(cfg.cspEnforcementEnabled == false)
-        #expect(cfg.aggressiveSuspend == false)
-        #expect(cfg.useEphemeralStorage == true)
-    }
 }

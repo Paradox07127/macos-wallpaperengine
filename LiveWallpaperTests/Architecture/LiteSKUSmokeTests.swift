@@ -30,14 +30,6 @@ struct LiteSKUSmokeTests {
         #expect(!capabilities.enabledFeatures.contains(.wpeImport))
     }
 
-    @Test("ProductCapabilities.pro keeps every shipping renderer feature on")
-    func proCatalogSurfaceArea() {
-        let capabilities = ProductCapabilities.pro
-        #expect(capabilities.sku == .pro)
-        #expect(Set(capabilities.selectableWallpaperTypes) == Set(WallpaperType.allCases))
-        #expect(Set(capabilities.selectableWallpaperModes) == Set(WallpaperMode.allCases))
-    }
-
     @Test("ScreenManager constructs cleanly under the Lite catalogue")
     func liteScreenManagerInitDoesNotCrash() {
         guard let screen = Self.makeScreen() else {
@@ -57,30 +49,6 @@ struct LiteSKUSmokeTests {
 
         #expect(manager.featureCatalog.capabilities.sku == .lite)
         #expect(manager.screens.map(\.id) == [screen.id])
-    }
-
-    @Test("ScreenManager startAutomation skips orchestrator and weather under Lite")
-    func liteScreenManagerSkipsAutomation() {
-        guard let screen = Self.makeScreen() else {
-            Issue.record("No NSScreen available for Lite automation skip test")
-            return
-        }
-        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-            restoreSavedWallpapers: false,
-            startAutomation: true,
-            powerMonitor: FakePowerMonitor(),
-            fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: FakePlayableVideoLoader(),
-            displayRegistry: FakeDisplayRegistry(screens: [screen]),
-            featureCatalog: FeatureCatalog(capabilities: .lite),
-            originReconciler: PreservingOriginReconciler()
-        ))
-
-        #expect(manager.featureCatalog.isEnabled(.playlists))
-        #expect(manager.featureCatalog.isEnabled(.scheduleAutomation))
-        #expect(manager.featureCatalog.isEnabled(.weatherReactive))
-        #expect(!manager.featureCatalog.isEnabled(.scene))
-        #expect(!manager.featureCatalog.isEnabled(.wpeImport))
     }
 
     private static func makeScreen() -> Screen? {

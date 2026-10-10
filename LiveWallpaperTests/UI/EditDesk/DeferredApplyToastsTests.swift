@@ -177,8 +177,6 @@ struct DeferredApplyToastsTests {
             localized: "Added “\("Night sky")” to Presets. The wallpaper wasn't changed.", bundle: .appLanguage
         ))
         #expect(messages.first?.style == .info)
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(home.contains("toasts.post(ApplyOutcome.registeredPresetText(name), style: .info)"))
     }
 
     @Test("A display unplugged before the download landed is named from the ticket, not left blank")

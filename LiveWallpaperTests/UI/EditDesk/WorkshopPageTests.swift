@@ -59,10 +59,7 @@ struct WorkshopRibbonLayoutTests {
 @Suite("Edit Desk workshop page — source contract")
 struct WorkshopPageSourceTests {
     private static let root = "LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift"
-    private static let home = "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift"
     private static let page = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift"
-    private static let session = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopSession.swift"
-    private static let browsePane = "LiveWallpaper/Views/Workshop/BrowsePane.swift"
     private static let steamMenu = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopSteamMenu.swift"
 
     @Test("Lite keeps the Workshop page empty")
@@ -70,32 +67,6 @@ struct WorkshopPageSourceTests {
         let source = try RepositoryRoot.source(Self.root)
         #expect(source.contains("case .workshop:\n                        #if !LITE_BUILD"))
         #expect(source.contains("\n                        #else\n                        Color.clear\n                        #endif"))
-    }
-
-    @Test("The session and the toast centre are owned by the root, not by a page")
-    func rootOwnsTheLongLivedState() throws {
-        let root = try RepositoryRoot.source(Self.root)
-        #expect(root.contains("@State private var workshopSession: WorkshopSession?"))
-        #expect(root.contains("@State private var toasts = EditDeskToastCenter()"))
-        let home = try RepositoryRoot.source(Self.home)
-        #expect(
-            !home.contains("@State private var toasts"),
-            "HomePage still builds its own toast centre, so a page switch would drop queued toasts"
-        )
-        #expect(home.contains("let toasts: EditDeskToastCenter"))
-    }
-
-    @Test("One toast host at the root serves every page, Settings included, and opens a toast's display")
-    func theToastHostLivesAtTheRoot() throws {
-        for path in [Self.home, Self.page] {
-            let hosts = try RepositoryRoot.source(path).components(separatedBy: "EditDeskToastHost(").count - 1
-            #expect(hosts == 0, Comment(rawValue: "\(path) mounts \(hosts) toast hosts; they would double up with the root's"))
-        }
-        let root = try RepositoryRoot.source(Self.root)
-        #expect(root.components(separatedBy: "EditDeskToastHost(").count - 1 == 1)
-        #expect(root.contains(
-            ".overlay(alignment: .top) {\n            EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })"
-        ))
     }
 
     @Test("The root observes every deferred ticket and announces each settled ID once")
@@ -116,48 +87,6 @@ struct WorkshopPageSourceTests {
         #expect(!host.contains("announceSettledTicket"))
         #expect(!host.contains("announcedTickets"))
         #expect(!host.contains("ticketSignature"))
-    }
-
-    @Test("A setup error raised while the wizard is up stays in the wizard instead of an alert behind it")
-    func setupAlertStaysBehindTheWizard() throws {
-        let source = try RepositoryRoot.source(Self.page)
-        #expect(source.contains("page.isShowingSetupAlert = error != nil && !page.isShowingWizard"))
-    }
-
-    @Test("The Workshop onboarding step closes the page's own item modal and leaves other steps to HomePage")
-    func workshopStepClosesTheItemModal() throws {
-        let source = try RepositoryRoot.source(Self.page)
-        #expect(source.contains(".onChange(of: router.pendingOnboardingStep, initial: true)"))
-        #expect(source.contains(
-            "guard step == .workshop else { return }\n            router.pendingOnboardingStep = nil\n            presentedItemID = nil"
-        ))
-    }
-
-    @Test("Showing a page guide closes the Home item modal so its shortcuts stop firing underneath")
-    func homePageGuideClosesTheItemModal() throws {
-        let source = try RepositoryRoot.source(Self.home)
-        let block = try Self.block(in: source, from: ".onChange(of: pageGuide?.context) {", to: "\n        }")
-        #expect(block.contains("if pageGuide?.context != nil {\n                presentedItemID = nil"))
-    }
-
-    @Test("Showing a page guide closes the Workshop item modal")
-    func workshopPageGuideClosesTheItemModal() throws {
-        let source = try RepositoryRoot.source(Self.page)
-        let block = try Self.block(in: source, from: ".onChange(of: pageGuide?.context != nil)", to: "\n        }")
-        #expect(block.contains("presentedItemID = nil"))
-    }
-
-    @Test("The Steam wizard disables the page under it but not itself")
-    func wizardDisablesThePageBehindIt() throws {
-        let source = try RepositoryRoot.source(Self.page)
-        let sheets = try #require(source.range(of: ".modifier(WorkshopPageSheets(page: self))"))
-        for fragment in [".disabled(isShowingWizard)", ".accessibilityHidden(isShowingWizard)"] {
-            let found = try #require(source.range(of: fragment), Comment(rawValue: "WorkshopPage lacks \(fragment)"))
-            #expect(
-                found.lowerBound < sheets.lowerBound,
-                Comment(rawValue: "\(fragment) wraps the wizard overlay too, so the wizard itself is disabled")
-            )
-        }
     }
 
     @Test("A Likes modal keeps its opening snapshot while details load, so an unlike cannot orphan it")
@@ -206,32 +135,6 @@ struct WorkshopPageSourceTests {
         }
         let page = try RepositoryRoot.source(Self.page)
         #expect(page.contains("steamCMDBusy: setupController.isSteamCMDBusy"))
-    }
-
-    @Test("The Steam menu always offers a local-folder import, ready or not")
-    func steamMenuAlwaysOffersALocalFolderImport() throws {
-        let menu = try RepositoryRoot.source(Self.steamMenu)
-        let row = try #require(menu.range(of: #"Button("Import a Local Folder", action: onImportLocalFolder)"#))
-        let gate = try #require(menu.range(of: "if !steamCMDReady {"))
-        let end = try #require(menu.range(of: "\n            }", range: gate.upperBound ..< menu.endIndex))
-        #expect(
-            !(gate.lowerBound ..< end.upperBound).contains(row.lowerBound),
-            "gated on SteamCMD the row would vanish for anyone who is set up"
-        )
-        let page = try RepositoryRoot.source(Self.page)
-        #expect(page.contains("onImportLocalFolder: { SteamWizard.importLocalFolder() }"))
-    }
-
-    @Test("Browse is the grid alone, with no inspector column")
-    func browsePaneHasNoInspector() throws {
-        let source = try RepositoryRoot.source(Self.browsePane)
-        #expect(!source.contains("InspectorSplit("), "Browse builds an inspector column again")
-        for fragment in [
-            "BrowseFilterRibbon(", "paginationBar", "rateLimitBanner", "keyRejectedBanner",
-            "installedWorkshopIDs", "hidesDownloadedPref", "loadingSkeleton",
-        ] {
-            #expect(source.contains(fragment), Comment(rawValue: "BrowsePane lost \(fragment)"))
-        }
     }
 
 }

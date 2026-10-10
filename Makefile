@@ -1,15 +1,17 @@
-# Single entry point for "did I run everything".
+# Integration gate for the explicitly selected checks below.
 #
 # Before this file the gates lived in ~20 separate scripts, and whether a change
 # had been fully checked depended on remembering which ones applied. CI now runs
 # the hardware-free targets; local verify additionally runs the Metal contracts.
 #
-#   make verify        everything below, cheapest gate first
+#   make verify        selected integration gates, cheapest first
 #   make fast          seconds; structure/boundaries/i18n
 #   make contracts     ~15s; release tooling + entitlements + gate self-tests
 #   make lint          changed lines only (never the whole repo — see below)
 #   make test-packages SwiftPM package suites
-#   make test-app      hardware-free app contract shard (Pro + Lite hosts)
+#   make test-app      small daily data/security/apply/session shard (Pro + Lite hosts)
+#   make test-app-full complete signed Pro target, including tests outside the shard
+#   make test-app-interaction local window/input contracts excluded from hosted CI
 #   make test-wpe-metal local WPE GPU semantic contracts (requires Metal)
 #   make test-app-hosted  same, minus the Lite host — for machines with no cert
 #   make hooks         local agent-gate self-test (skipped where .claude is absent)
@@ -17,6 +19,7 @@
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
+.NOTPARALLEL:
 
 # Shipping toolchain is Xcode 27.0. CI overrides this with its own image path.
 DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
@@ -31,7 +34,7 @@ SWIFTPM_SCRATCH ?= /tmp/LiveWallpaperVerify-SwiftPM
 PACKAGES := LiveWallpaperCore LiveWallpaperProWPE
 
 .DEFAULT_GOAL := help
-.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted test-wpe-metal \
+.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted test-wpe-metal test-app-full test-app-interaction \
         unregister-build-appex
 
 help:
@@ -39,7 +42,7 @@ help:
 
 # Ordered cheapest-first so a structural break fails in seconds, not minutes.
 verify: fast contracts lint test-packages test-app test-wpe-metal
-	@echo "== make verify: all gates passed =="
+	@echo "== make verify: selected integration gates passed (not the full app suite or release gate) =="
 
 fast:
 	@echo "== Module import boundaries =="
@@ -78,6 +81,14 @@ test-packages:
 test-app:
 	@echo "== Fast app architecture/security contracts =="
 	DERIVED_DATA="$(DERIVED_DATA)" bash scripts/fast_app_contract_tests.sh
+
+test-app-full:
+	DERIVED_DATA="$(DERIVED_DATA)Full" bash scripts/app_tests.sh full
+
+test-app-interaction:
+	DERIVED_DATA="$(DERIVED_DATA)Interaction" bash scripts/app_tests.sh suites \
+	  ModalArrowWindowTests LibraryGridPreviewTests LibraryGridDragWindowTests \
+	  SettingsSearchRowEmphasisTests LibraryModalHostLoadTests
 
 # GPU execution and temporal feedback cannot be certified by a headless shard.
 # Keep the local gate explicit and require every listed suite to execute.

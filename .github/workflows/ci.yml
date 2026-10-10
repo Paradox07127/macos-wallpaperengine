@@ -111,10 +111,20 @@ jobs:
       - name: Run package tests (sequential)
         run: make test-packages SWIFTPM_SCRATCH="$RUNNER_TEMP/SwiftPM"
 
+      - name: Preserve package execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-test-results
+          path: |
+            ${{ runner.temp }}/SwiftPM/*-tests.log
+            ${{ runner.temp }}/SwiftPM/*-tests*.xml
+          if-no-files-found: warn
+
   fast-app-contracts:
-    # Hardware-free required shard. It catches source-layer dependency growth,
-    # entitlement widening, trust/privacy regressions and localization drift on
-    # every PR without running the Metal/display-heavy app suite.
+    # Small required data/security/apply/session shard. Feature-specific layout,
+    # parser/rendering and stress suites stay in targeted/full runs; structural
+    # and localization checks run in the separate release-contract job.
     name: Fast app architecture/security contracts
     runs-on: xcode-27
     timeout-minutes: 45
@@ -131,7 +141,17 @@ jobs:
         run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
 
       - name: Run hardware-free app contract shard
-        run: make test-app-hosted DERIVED_DATA="$RUNNER_TEMP/DerivedData-contracts"
+        run: make test-app-hosted DERIVED_DATA="$RUNNER_TEMP/DerivedData-contracts" RESULT_BUNDLE="$RUNNER_TEMP/AppContracts.xcresult"
+
+      - name: Preserve required app execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-contract-results
+          path: |
+            ${{ runner.temp }}/AppContracts*.xcresult
+            ${{ runner.temp }}/AppContracts*.log
+          if-no-files-found: warn
 
   release-contract:
     name: Release + quality tooling contract

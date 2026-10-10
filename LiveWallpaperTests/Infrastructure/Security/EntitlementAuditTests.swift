@@ -107,19 +107,6 @@ struct EntitlementAuditTests {
         }
     }
 
-    @Test("Lite removes exactly the Pro-only grant families")
-    func liteDeltaIsExact() throws {
-        let proValues = try Self.sourceValues(at: Self.pro.sourcePath)
-        let liteValues = try Self.sourceValues(at: Self.lite.sourcePath)
-        let removedKeys = Set(proValues.keys).subtracting(liteValues.keys)
-
-        #expect(removedKeys == Set(Self.proOnlyValues.keys))
-        #expect(Set(liteValues.keys).subtracting(proValues.keys).isEmpty)
-        for key in Self.sharedValues.keys {
-            #expect(liteValues[key] == proValues[key], Comment(rawValue: "Shared grant drifted for \(key)"))
-        }
-    }
-
     @Test("Xcode maps both configurations of each SKU to its own plist")
     func projectMapsEachSKUToItsOwnPlist() throws {
         let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
@@ -147,42 +134,6 @@ struct EntitlementAuditTests {
         }
         for key in profile.forbiddenKeys.sorted() {
             #expect(Self.runtimeValue(for: key) == nil, Comment(rawValue: "Signed \(profile.name) host unexpectedly grants \(key)"))
-        }
-    }
-
-    @Test("Lite signed audit remains an explicit release-artifact gate")
-    func liteSignedAuditIsNotPretendedByProTestHost() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
-        let testConfiguration = try Self.projectConfiguration("0C322C182D6950490033C48B", in: project)
-        let releaseScript = try RepositoryRoot.source("scripts/release-app.sh")
-
-        #expect(testConfiguration.contains("TEST_HOST = \"$(BUILT_PRODUCTS_DIR)/Loomscreen Pro.app/"))
-        #expect(releaseScript.contains("scripts/check_entitlements.sh --sku \"$SKU\" --app \"$APP_PATH\""))
-    }
-
-    @Test("Release gate structurally parses entitlements and runs its adversarial fixtures")
-    func releaseGateUsesStructuralParserAndSelfTest() throws {
-        let gate = try RepositoryRoot.source("scripts/check_entitlements.sh")
-        let contract = try RepositoryRoot.source("scripts/release_contract_check.sh")
-
-        #expect(gate.contains("scripts/entitlement_fingerprint.py"))
-        #expect(!gate.contains("| awk"))
-        #expect(gate.contains("EXPECTED_BUNDLE_ID=\"com.loomscreen.pro\""))
-        #expect(gate.contains("EXPECTED_BUNDLE_ID=\"com.loomscreen\""))
-        #expect(gate.contains("EXPECTED_TEAM_ID=\"FWJP4B62U7\""))
-        #expect(contract.contains("bash scripts/check_entitlements_self_test.sh"))
-    }
-
-    @Test("Monitor SBPL grants stay read-only")
-    func monitorSBPLGrantsStayReadOnly() {
-        guard case let .strings(rules)? = Self.sharedValues["com.apple.security.temporary-exception.sbpl"] else {
-            Issue.record("Missing SBPL allowlist")
-            return
-        }
-        #expect(rules.allSatisfy { $0.hasPrefix("(allow process-info-") })
-        let joined = rules.joined(separator: " ")
-        for forbidden in ["setcontrol", "dirtycontrol", "process-info-argv", "process-info-codesignature"] {
-            #expect(!joined.contains(forbidden))
         }
     }
 

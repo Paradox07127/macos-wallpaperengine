@@ -51,20 +51,4 @@ struct SteamCMDDownloadRetryTests {
         #expect(download.waits == [SteamCMDDownloadRetryPolicy.retryDelay])
     }
 
-    @Test("The install's download routes through the retry policy")
-    func installDownloadUsesThePolicy() throws {
-        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        let start = try #require(
-            source.range(of: "private static func download("),
-            "SteamConnector.swift has no download( — the scan is misconfigured, not passing."
-        )
-        let body = String(source[start.lowerBound...].prefix(600))
-        #expect(body.contains("SteamCMDDownloadRetryPolicy.run"))
-        #expect(body.contains("downloadOnce("))
-        // The digest gate is a separate outcome and must not be inside the
-        // retried region: identical bytes arriving twice are not transient.
-        let onceStart = try #require(source.range(of: "private static func downloadOnce("))
-        let onceBody = String(source[onceStart.lowerBound...].prefix(1_200))
-        #expect(!onceBody.contains("SteamCMDDownloadRetryPolicy"))
-    }
 }

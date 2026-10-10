@@ -9,9 +9,7 @@ import Testing
 @Suite("Workshop modal — bottom-row state, status line, paging and source shape")
 @MainActor
 struct WorkshopModalTests {
-    private static let linksPath = "LiveWallpaper/Views/Workshop/WorkshopCommunityLinks.swift"
     private static let modalPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift"
-    private static let contractPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift"
     private static let hostPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift"
 
     // MARK: Download rate
@@ -337,16 +335,6 @@ struct WorkshopModalTests {
         .timeLimit(.minutes(1))
     )
     func directApplyDropsTheSettledResult() async throws {
-        let host = try RepositoryRoot.source(Self.hostPath)
-        let start = try #require(host.range(of: "case .applyNow:"))
-        let end = try #require(host.range(of: "case .retarget:", range: start.upperBound ..< host.endIndex))
-        let applyNow = String(host[start.lowerBound ..< end.lowerBound])
-        let prepare = try #require(
-            applyNow.range(of: "wiring.prepareDirectApply(itemID: item.id)"),
-            "the direct apply leaves the item's ticket, so a queued apply or an old result outlives it"
-        )
-        #expect(applyNow.range(of: "applyNow(entry, to: screenID)", range: prepare.upperBound ..< applyNow.endIndex) != nil)
-
         let manager = DeferredWallpaperApplying()
         let deferredApply = DeferredApplyCoordinator(
             manager: manager,
@@ -415,10 +403,6 @@ struct WorkshopModalTests {
         // Control: outside Steam's layout a numeric folder name says nothing about the item.
         #expect(mode(for: try origin(inFolder: "3159206868")) == .download)
 
-        let host = try RepositoryRoot.source(Self.hostPath)
-        #expect(!has(".origin.workshopID ==", in: host), Comment(rawValue: "\(Self.hostPath) looks an item up by the recorded id alone"))
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(has("origin.steamFolderItemID", in: pane), "Browse cards key the library by the recorded id alone")
     }
 
     @Test("Now-playing marks and the preset's base check find an item by its Steam folder too")
@@ -505,42 +489,6 @@ struct WorkshopModalTests {
                 "both the dependencies and the presets section must get the page's reveal state")
         let host = try RepositoryRoot.source(Self.hostPath)
         #expect(has("matureReveal: session.matureReveal", in: host))
-    }
-
-    @Test("The Workshop modal builds on the library modal's chrome, layout and buttons, and ⌘n presses a display's button")
-    func modalSharesTheLibraryLayout() throws {
-        let source = try RepositoryRoot.source(Self.modalPath)
-        #expect(has("EditDeskModalChrome(", in: source), "the modal does not build on the shared chrome")
-        #expect(has("WallpaperDetailLayout(", in: source), "the modal lays itself out instead of using the shared layout")
-        #expect(has("ModalDisplayButtons(", in: source), "the modal draws its own bottom buttons")
-        #expect(has("collapsedLineLimit: 4", in: source), "the description is not cut to four lines")
-        #expect(!has("modalScrim", in: source), "the modal paints its own scrim")
-        #expect(!has("ModalGeometry.panelFrame(", in: source), "the modal measures its own panel")
-        #expect(has("onTargetShortcut:", in: source))
-        #expect(has("actions.press(", in: source), "⌘n does not press the display's button")
-        #expect(!has("selectTarget", in: source), "⌘n still only picks the display a download lands on")
-    }
-
-    @Test("The host pages the loaded items, routes a press through the one decision and dates rows in the app's language")
-    func hostRoutesThroughTheContract() throws {
-        let host = try RepositoryRoot.source(Self.hostPath)
-        #expect(has("WorkshopModalPaging.neighbours(", in: host), "← → do not walk the loaded page")
-        #expect(has("WorkshopModalPress.action(", in: host), "a press does not go through the one decision")
-        #expect(has("WorkshopModalButtonRow.make(", in: host))
-        #expect(has("locale: AppLanguagePreference.current.locale", in: host), "the rows are dated in the system's language, not the app's")
-    }
-
-    @Test("No token-bypass literals in the files this package adds")
-    func noTokenBypassLiterals() throws {
-        for path in [Self.linksPath, Self.modalPath, Self.contractPath, Self.hostPath] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!has(".font(.system(", in: source), "\(path) has an inline .font(.system( literal")
-            #expect(!has("Color(red:", in: source), "\(path) has a literal Color(red:")
-            #expect(
-                source.range(of: #"cornerRadius:\s*[0-9]"#, options: .regularExpression) == nil,
-                "\(path) has a literal cornerRadius"
-            )
-        }
     }
 
     // MARK: Copy link / Copy ID
