@@ -1188,7 +1188,7 @@ struct BrowseRequestShapeTests {
         services.hasWebAPIKey = true
         let model = BrowseViewModel(
             services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() },
-            publicSource: Self.makeStubbedPublicSource()
+            publicSource: Self.makeStubbedPublicSource(in: servicesDirectory)
         )
         await model.reload()
         try #require(model.hasLoadedPage && !model.usesKeylessSearch)
@@ -1253,7 +1253,7 @@ struct BrowseRequestShapeTests {
         services.hasWebAPIKey = true
         await services.noteAuthVerdict(accepted: false, keyFingerprint: WorkshopQueryService.keyFingerprint(Self.stubbedKey))
         try #require(services.isKeyless)
-        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource())
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource(in: servicesDirectory))
 
         #expect(model.usesKeylessSearch)
         #expect(model.makeRequest(page: 1).numPerPage == WorkshopPublicBrowseURL.itemsPerPage)
@@ -1276,7 +1276,7 @@ struct BrowseRequestShapeTests {
         let (services, servicesDirectory) = Self.makeStubbedServices()
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
-        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource())
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource(in: servicesDirectory))
         model.applyScopeForTesting(creator: .init(steamID: "76561198000000001", name: nil))
         try #require(model.makeRequest(page: 1).creatorSteamID != nil)
 
@@ -1297,7 +1297,7 @@ struct BrowseRequestShapeTests {
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         await services.noteAuthVerdict(accepted: false, keyFingerprint: WorkshopQueryService.keyFingerprint(Self.stubbedKey))
-        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource())
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource(in: servicesDirectory))
         model.applyScopeForTesting(creator: .init(steamID: "76561198000000001", name: nil))
 
         let marker = "76561198000000001"
@@ -1332,9 +1332,7 @@ struct BrowseRequestShapeTests {
         #expect(services.apiKeyRejected, "dismissing the notice does not forgive the key")
     }
 
-    private static func makeStubbedPublicSource() -> WorkshopPublicSearchSource {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("workshop-browse-public-\(UUID().uuidString)", isDirectory: true)
+    private static func makeStubbedPublicSource(in directory: URL) -> WorkshopPublicSearchSource {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [BrowseReloadStub.self]
         let session = URLSession(configuration: config)

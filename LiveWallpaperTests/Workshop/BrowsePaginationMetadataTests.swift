@@ -59,8 +59,8 @@ struct BrowsePaginationMetadataTests {
         let firstLoad = Task { await model.reload() }
         await Task.yield()
         try #require(model.isLoading && !model.hasLoadedPage)
-        // Typed during the load: a second reload would fold it into `currentRequest`.
-        model.searchInput = "pending"
+        // A second reload would fold this into `currentRequest`; not `searchInput`, whose auto-search outlives cleanup.
+        model.applyScopeForTesting(pinnedTag: "Anime")
 
         model.onAppear()
         await Task.yield()
