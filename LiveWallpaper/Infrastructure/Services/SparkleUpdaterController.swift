@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 import Sparkle
@@ -123,6 +124,11 @@ final class SparkleUpdaterController {
         set { controller.updater.automaticallyChecksForUpdates = newValue }
     }
 
+    var sendsSystemProfile: Bool {
+        get { controller.updater.sendsSystemProfile }
+        set { controller.updater.sendsSystemProfile = newValue }
+    }
+
     var lastUpdateCheckDate: Date? {
         controller.updater.lastUpdateCheckDate
     }
@@ -152,6 +158,37 @@ final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
     /// check came back empty does not change what these surfaces show.
     nonisolated func updaterDidNotFindUpdate(_: SPUUpdater) {
         onMain { [weak self] in self?.onNoUpdateFound?() }
+    }
+
+    nonisolated func feedParameters(for _: SPUUpdater, sendingSystemProfile: Bool) -> [[String: String]] {
+        guard sendingSystemProfile else { return [] }
+        let displays = Self.activeDisplayIDs()
+        var parameters = [["key": "displays", "value": String(displays.count)]]
+        let pixelCounts = displays.compactMap { id in
+            CGDisplayCopyDisplayMode(id).map { $0.pixelWidth * $0.pixelHeight }
+        }
+        if let largest = pixelCounts.max() {
+            parameters.append(["key": "maxRes", "value": Self.resolutionBucket(pixelCount: largest)])
+        }
+        return parameters
+    }
+
+    nonisolated static func resolutionBucket(pixelCount: Int) -> String {
+        // 2.5M ≈ 1920×1200, 6.0M covers 3024×1964, 9.5M covers 3840×2400.
+        switch pixelCount {
+        case ...2_500_000: "fhd"
+        case ...6_000_000: "qhd"
+        case ...9_500_000: "4k"
+        default: "5k+"
+        }
+    }
+
+    private nonisolated static func activeDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
+        return Array(ids.prefix(Int(count)))
     }
 }
 

@@ -25,6 +25,7 @@ struct GeneralSettingsView: View {
     @Environment(EditDeskUndoStack.self) var undo: EditDeskUndoStack?
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
+    @State var sendsHardwareProfile: Bool = SparkleUpdaterController.shared.sendsSystemProfile
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
     @State var loginItemStatus: SMAppService.Status

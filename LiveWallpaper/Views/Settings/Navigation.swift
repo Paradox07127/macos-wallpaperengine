@@ -419,8 +419,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Startup",
                     anchor: .generalStartup,
-                    rows: ["Start at login", "Check for updates automatically", "Show in Dock"],
-                    keywords: ["login", "start", "launch", "update", "dock", "menu bar"]
+                    rows: ["Start at login", "Check for updates automatically", "Share anonymous hardware info", "Show in Dock"],
+                    keywords: ["login", "start", "launch", "update", "dock", "menu bar", "privacy", "hardware", "analytics"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
