@@ -151,6 +151,60 @@ struct WPESceneScriptEntrySemanticsTests {
         #expect(Self.number(shared, "frametime") == 0.25)
     }
 
+    // MARK: Property-patch redraw
+
+    private static let patchFrametimeScript = """
+    var scriptProperties = { speed: 1 };
+    export function update(value) { shared.frametime = engine.frametime; return value; }
+    """
+
+    @Test("A text scriptProperties patch redraws with frametime 0 and leaves the next frame's delta intact")
+    func textPatchRedrawsWithZeroFrameTime() throws {
+        let shared = WPESharedScriptState()
+        let text = try WPESceneScriptInstance(
+            script: Self.patchFrametimeScript, initialValue: "v", scriptProperties: ["speed": .number(1)],
+            shared: shared, governor: governor
+        )
+        _ = text.tickString(runtimeSeconds: 0)
+        _ = text.tickString(runtimeSeconds: 0.25)
+        #expect(text.applyScriptPropertiesSuperseding(["speed": .number(2)], runtimeSeconds: 0.25))
+        #expect(Self.number(shared, "frametime") == 0, "a frametime-integrated animation would step once per patch")
+        _ = text.tickString(runtimeSeconds: 0.5)
+        #expect(Self.number(shared, "frametime") == 0.25)
+    }
+
+    @Test("A layer scriptProperties patch redraws with frametime 0 and leaves the next frame's delta intact")
+    func layerPatchRedrawsWithZeroFrameTime() throws {
+        let shared = WPESharedScriptState()
+        let layer = try WPELayerScriptInstance(
+            script: Self.patchFrametimeScript, scriptProperties: ["speed": .number(1)], shared: shared,
+            setupBudget: 2, tickBudget: 0.5, governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 0)
+        _ = layer.tick(runtimeSeconds: 0.25)
+        _ = layer.applyScriptPropertiesSuperseding(["speed": .number(2)], runtimeSeconds: 0.25)
+        #expect(Self.number(shared, "frametime") == 0, "a frametime-integrated animation would step once per patch")
+        _ = layer.tick(runtimeSeconds: 0.5)
+        #expect(Self.number(shared, "frametime") == 0.25)
+    }
+
+    @Test("A transform scriptProperties patch redraws with frametime 0 and leaves the next frame's delta intact")
+    func transformPatchRedrawsWithZeroFrameTime() throws {
+        let shared = WPESharedScriptState()
+        let transform = try WPEDynamicTransformScriptInstance(
+            script: Self.patchFrametimeScript, scriptProperties: ["speed": .number(1)], seed: .zero,
+            canvasSize: SIMD2(1920, 1080), shared: shared, setupBudget: 2, tickBudget: 0.5, governor: governor
+        )
+        _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 0)
+        _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 0.25)
+        #expect(transform.applyScriptPropertiesSuperseding(
+            ["speed": .number(2)], pointerPosition: Self.pointer, runtimeSeconds: 0.25
+        ))
+        #expect(Self.number(shared, "frametime") == 0, "a frametime-integrated animation would step once per patch")
+        _ = transform.tick(pointerPosition: Self.pointer, runtimeSeconds: 0.5)
+        #expect(Self.number(shared, "frametime") == 0.25)
+    }
+
     // MARK: X3-05 / X3-06
 
     private static let dxProperty = """
@@ -348,5 +402,47 @@ struct WPESceneScriptEntrySemanticsTests {
         _ = layer.tick(runtimeSeconds: 1)
         #expect(shared.get("same") as? Bool == true)
         #expect(shared.get("child") as? String == "0,2,-3,0,300,60")
+    }
+
+    @Test("X3-14: a particle child's getTransformMatrix does not compose its parent again")
+    func particleTransformMatrixStopsAtWorldOrigin() throws {
+        // A particle layer's info origin is already the parser's world value (parent 100 + local 10).
+        let shared = WPESharedScriptState(layers: [
+            WPESceneScriptLayerInfo(
+                id: "1", name: "Root", size: SIMD2(100, 100), origin: SIMD2(100, 0), index: 0, parentName: nil
+            ),
+            WPESceneScriptLayerInfo(
+                id: "2", name: "Sparks", size: SIMD2(10, 10), origin: SIMD2(110, 0), index: 1,
+                parentName: "Root", parentID: "1", isParticleSystem: true
+            ),
+        ])
+        let layer = try WPELayerScriptInstance(
+            script: """
+            export function update() { shared.x = thisScene.getLayer('Sparks').getTransformMatrix().m[12]; }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5,
+            ownLayerName: "Root", ownObjectID: "1", governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        #expect(Self.number(shared, "x") == 110)
+    }
+
+    @Test("X3-14: getTransformMatrix on a self-parented layer applies its transform once")
+    func selfParentedTransformMatrixAppliesOnce() throws {
+        let shared = WPESharedScriptState(layers: [
+            WPESceneScriptLayerInfo(
+                id: "1", name: "Loop", size: SIMD2(10, 10), origin: SIMD2(10, 0), index: 0,
+                parentName: "Loop", parentID: "1"
+            ),
+        ])
+        let layer = try WPELayerScriptInstance(
+            script: """
+            export function update() { shared.x = thisLayer.getTransformMatrix().m[12]; }
+            """,
+            shared: shared, setupBudget: 2, tickBudget: 0.5,
+            ownLayerName: "Loop", ownObjectID: "1", governor: governor
+        )
+        _ = layer.tick(runtimeSeconds: 1)
+        #expect(Self.number(shared, "x") == 10)
     }
 }

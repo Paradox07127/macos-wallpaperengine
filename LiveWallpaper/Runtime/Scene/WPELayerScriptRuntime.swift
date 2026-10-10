@@ -958,7 +958,7 @@ final class WPELayerScriptInstance {
         ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput> {
             guard allows(.tick) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .tick, admission: .failFast) {
-                self.tickOnQueue(runtimeSeconds: runtimeSeconds, pointerFrame: pointerFrame, isFrameTick: true)
+                self.tickOnQueue(runtimeSeconds: runtimeSeconds, pointerFrame: pointerFrame, clock: .frame)
             }
         }
 
@@ -1066,7 +1066,7 @@ final class WPELayerScriptInstance {
                     value: self.tickOnQueue(
                         runtimeSeconds: runtimeSeconds,
                         pointerFrame: nil,
-                        isFrameTick: false
+                        clock: .redraw
                     )
                 )
             }
@@ -1121,7 +1121,7 @@ final class WPELayerScriptInstance {
                 let outcome = tickOnQueue(
                     runtimeSeconds: runtimeSeconds,
                     pointerFrame: pointerFrame,
-                    isFrameTick: true
+                    clock: .frame
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -1226,7 +1226,7 @@ final class WPELayerScriptInstance {
                 engineClockWriter = WPEEngineClockWriter(context: context)
                 cachedTrueArgument = JSValue(bool: true, in: context)
                 cachedFalseArgument = JSValue(bool: false, in: context)
-                _ = updateEngineRuntime(0, isFrameTick: true)
+                _ = updateEngineRuntime(0, clock: .frame)
                 installLayerBridge(in: context)
                 if let shared {
                     wpeInstallSharedState(shared, in: context)
@@ -1322,7 +1322,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return }
                 guard let context,
                       let fn = context.objectForKeyedSubscript(event.handlerName),
                       !fn.isUndefined, fn.hasProperty("call") else {
@@ -1346,7 +1346,7 @@ final class WPELayerScriptInstance {
         private func tickOnQueue(
             runtimeSeconds: Double?,
             pointerFrame: WPEPointerFrame?,
-            isFrameTick: Bool
+            clock: WPEScriptClockStep
         ) -> WPELayerScriptOutput {
             // WPE retains a destroyed handle through the first update after init;
             // retire it after that frame's callback, not before an unrelated event.
@@ -1354,7 +1354,7 @@ final class WPELayerScriptInstance {
             return evaluateLayerEntry {
                 audioBridge?.refresh()
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: clock)) else { return }
                 updateInput(pointerFrame)
                 guard let context, let updateFunction else { return }
                 let now = WPEScriptFaultPolicy.monotonicNow()
@@ -1410,7 +1410,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return }
                 updateInput(pointerFrame)
                 guard let context,
                       let fn = context.objectForKeyedSubscript(event.handlerName),
@@ -1444,7 +1444,7 @@ final class WPELayerScriptInstance {
         ) -> WPELayerScriptOutput {
             evaluateLayerEntry {
                 evaluationResourceBudget.beginEvaluation()
-                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return }
                 guard let context,
                       let fn = context.objectForKeyedSubscript("applyUserProperties"),
                       !fn.isUndefined, fn.hasProperty("call"),
@@ -1518,19 +1518,20 @@ final class WPELayerScriptInstance {
         }
 
         /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
-        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, clock: WPEScriptClockStep) -> Double? {
             guard let context else { return nil }
             let supplied = runtimeSeconds.flatMap { $0.isFinite ? $0 : nil }
             let runtime = max(lastRuntimeSeconds ?? 0, supplied ?? lastRuntimeSeconds ?? 0)
             lastRuntimeSeconds = runtime
-            if isFrameTick {
+            if clock == .frame {
                 lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? max(runtime, 1.0 / 30.0)
                 lastFrameRuntimeSeconds = runtime
             }
+            let frameTime = clock == .redraw ? 0 : lastFrameTime
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
             }
             return supplied == nil ? nil : runtime
         }
@@ -2636,8 +2637,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         var level = (key: key, info: info)
         // Ancestors are keyed by handle key, but this entry's own layer stores its assignments under ownKey.
         let ownID = layerInfo(forKey: Self.ownKey)?.id
+        var visited: Set<String> = []
         // Bounded so a malformed parent cycle cannot hang the script's call.
         for _ in 0 ..< 100 {
+            guard visited.insert(level.info.id).inserted else { break }
             let isOwn = level.key == Self.ownKey || level.info.id == ownID
             let assigned = isOwn ? assignedOwnTransform : assignedOtherTransforms[level.key] ?? .init()
             let live = shared?.layerTransform(id: level.info.id)?.transform
@@ -2647,7 +2650,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
                 // Script-assigned angles are degrees; live and authored angles are radians.
                 angles: assigned.angles.map { $0 * (.pi / 180) } ?? live?.angles ?? level.info.angles
             ) * world
-            guard let parentID = level.info.parentID, let shared,
+            // Particle info carries the parser's already-composed world transform; going higher would apply the parents twice.
+            guard !level.info.isParticleSystem,
+                  let parentID = level.info.parentID, let shared,
                   let parent = shared.layers.first(where: { $0.id == parentID }) else { break }
             level = (shared.layerHandleKey(parent), parent)
         }
