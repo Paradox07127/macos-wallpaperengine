@@ -356,6 +356,7 @@ final class WPEMetalSceneRenderer: NSObject {
     #endif
     /// Effect / custom-shader passes animate via `g_Time` / `g_AudioSpectrum*`. Without this the view draws one frame and freezes.
     var hasAnimatedShaderPasses = false
+    var hasPointerReadingShaderPasses = false
     /// WPE `general.supportsaudioprocessing`. `pipelineHasAnimatedPasses` misses custom-path audio shaders, which would otherwise freeze on the static path.
     var sceneSupportsAudioProcessing = false
     var liveEffectConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
