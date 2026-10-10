@@ -237,10 +237,16 @@ final class WallpaperAutomationOrchestrator {
             candidates = []
             source = .schedule
         }
-        guard !candidates.isEmpty else {
+        guard let next = candidates.first else {
             onExhausted()
             return
         }
+        // The worker below may be abandoned (wallpapers off, user away) without landing anything, so the saved row must not keep the deleted content.
+        var replacement = config.applyingAutomationEntry(next.entry)
+        if let cursor = next.cursor {
+            replacement.playlistCursorIndex = cursor
+        }
+        saveConfiguration(replacement)
         startAutomaticSelection(candidates, source: source, for: screen, onExhausted: onExhausted)
     }
 
