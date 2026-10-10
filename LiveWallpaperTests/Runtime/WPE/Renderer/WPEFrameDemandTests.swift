@@ -493,6 +493,35 @@ struct WPEFrameDemandTests {
         #expect(stack.surface.mtkView.isPaused)
     }
 
+    @Test(
+        "Click capture demands pointer frames only for a shader that reads g_Pointer*",
+        arguments: [(true, true, true), (true, false, false), (false, true, false)]
+    )
+    func pointerReadingShaderDemandsFramesUnderClickCapture(
+        readsPointer: Bool, clickCapture: Bool, expectsPointer: Bool
+    ) async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let fragment = readsPointer
+            ? "uniform vec2 g_PointerPosition; varying vec2 v_TexCoord; void main(){gl_FragColor=vec4(g_PointerPosition,0.0,1.0);}"
+            : "varying vec2 v_TexCoord; void main(){gl_FragColor=vec4(v_TexCoord,0.0,1.0);}"
+        try fixture.installProbeShader(fragment: fragment)
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+
+        let passes = try #require(renderer.renderPipeline?.layers.first?.passes)
+        let probe = try #require(passes.first { $0.pass.shader == "probe" })
+        #expect(passes.allSatisfy { !$0.pass.shader.contains("effects/") && !$0.pass.shader.contains("workshop/") })
+        #expect(probe.shader?.fragmentSource.contains("g_PointerPosition") == readsPointer)
+        #expect(!renderer.hasAnimatedShaderPasses)
+
+        renderer.setClickCaptureEnabled(clickCapture)
+        #expect(renderer.frameDemand.contains(.pointer) == expectsPointer)
+        #expect(stack.surface.mtkView.isPaused == !expectsPointer)
+    }
+
     @Test("The runtime-activity mirror publishes idle for a static scene and flips with demand")
     func runtimeActivityMirrorFollowsDemand() async throws {
         let fixture = try FrameDemandFixture.make()
@@ -596,6 +625,33 @@ struct FrameDemandFixture {
                 capabilityTier: .imageOnly
             )
         )
+    }
+
+    func installProbeShader(fragment: String) throws {
+        let files = [
+            "scene.json": """
+            {"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64,"auto":true}},
+             "objects":[{"id":"probe","name":"Probe","type":"image","image":"models/probe.json","alpha":1,"visible":true,
+                         "effects":[{"id":3,"file":"probe/probe.json"}]}]}
+            """,
+            "models/probe.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": #"{"passes":[{"shader":"solidlayer","blending":"normal"}]}"#,
+            "probe/probe.json": #"{"passes":[{"material":"materials/probe.json"}]}"#,
+            "materials/probe.json": #"{"passes":[{"shader":"probe","blending":"normal"}]}"#,
+            "shaders/probe.vert": """
+            uniform mat4 g_ModelViewProjectionMatrix;
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 v_TexCoord;
+            void main(){gl_Position=mul(vec4(a_Position,1.0),g_ModelViewProjectionMatrix);v_TexCoord=a_TexCoord;}
+            """,
+            "shaders/probe.frag": fragment,
+        ]
+        for (path, source) in files {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(source.utf8).write(to: url)
+        }
     }
 
     func cleanup() {

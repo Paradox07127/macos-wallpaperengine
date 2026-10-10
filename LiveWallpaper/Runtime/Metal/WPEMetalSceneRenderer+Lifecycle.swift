@@ -115,6 +115,7 @@ extension WPEMetalSceneRenderer {
         cachedSnapshot = nil
         // Left stale, frameDemand stays non-empty and the wake's `.quality` command would unpause the display link for the whole reload.
         hasAnimatedShaderPasses = false
+        hasPointerReadingShaderPasses = false
         sceneSupportsAudioProcessing = false
         // Scene-scoped: do not reset inside `releaseTransientResources()` — that is also the `.suspended` path and would blank the inspector's failure list for a still-loaded scene.
         executor.shaderErrorSink.reset()
@@ -678,6 +679,7 @@ extension WPEMetalSceneRenderer {
             && settings.amount != 0
             && settings.mouseInfluence != 0)
             || hasAnimatedShaderPasses
+            || hasPointerReadingShaderPasses
             || !particleSystems.isEmpty
             || !dynamicOriginScriptInstances.isEmpty
             || !dynamicScaleScriptInstances.isEmpty
@@ -722,6 +724,17 @@ extension WPEMetalSceneRenderer {
                 guard let program = prepared.shader else { return false }
                 return [program.vertexSource, program.fragmentSource]
                     .contains { $0.lowercased().contains("g_time") }
+            }
+        }
+    }
+
+    /// Matches `g_PointerPosition` / `g_PointerDown` etc.; a time-free shader in neither `effects/` nor `workshop/` is otherwise invisible to `hasAnimatedShaderPasses`.
+    static func pipelineReadsPointerUniforms(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
+        pipeline.layers.contains { layer in
+            layer.passes.contains { prepared in
+                guard let program = prepared.shader else { return false }
+                return [program.vertexSource, program.fragmentSource]
+                    .contains { $0.lowercased().contains("g_pointer") }
             }
         }
     }

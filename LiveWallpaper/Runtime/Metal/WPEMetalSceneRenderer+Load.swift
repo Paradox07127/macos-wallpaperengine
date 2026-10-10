@@ -361,6 +361,7 @@ extension WPEMetalSceneRenderer {
         executor.invalidateStaticLayerCache()
         textureCacheBudgetBytesResolved = Self.textureCacheBudgetBytes
         hasAnimatedShaderPasses = Self.pipelineHasAnimatedPasses(pipeline)
+        hasPointerReadingShaderPasses = Self.pipelineReadsPointerUniforms(pipeline)
         scenePropertyBindings = document.propertyBindings
         objectParentByID = document.objectParentByID
         ownVisibilityByID = document.ownVisibilityByID
