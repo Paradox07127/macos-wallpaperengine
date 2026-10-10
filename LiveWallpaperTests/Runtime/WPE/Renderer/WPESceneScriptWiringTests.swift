@@ -426,7 +426,7 @@ struct WPESceneScriptWiringTests {
         #expect(!hovered(40))
     }
 
-    @Test("A commit-time script failure rebuilds the camera from the stable script transforms")
+    @Test("A denied frame commit restores the camera and refuses the speculative texture")
     func commitFailureRollsCameraBack() async throws {
         let fixture = try MetalSceneFixture.solidColorScene()
         defer { fixture.cleanup() }
@@ -447,8 +447,12 @@ struct WPESceneScriptWiringTests {
             .failClosed(.executionTimedOut(operation: .tick))
         let submission = try renderer.executor.beginFrameSubmission()
         defer { submission.seal() }
-        _ = try renderer.finishSceneScriptFrame(
-            speculativeFrame: #require(renderer.outputTexture),
+        let speculativeDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false
+        )
+        let speculative = try #require(renderer.outputTexture?.device.makeTexture(descriptor: speculativeDescriptor))
+        let committedFrame = try renderer.finishSceneScriptFrame(
+            speculativeFrame: speculative,
             failureBeforeFrame: nil,
             publicationBeforeFrame: publication,
             basePipeline: #require(renderer.renderPipeline),
@@ -460,6 +464,7 @@ struct WPESceneScriptWiringTests {
             videoCommandsOutcome: false
         )
         #expect(renderer.cameraUniforms.sceneMotion.zoom == 1)
+        #expect(committedFrame !== speculative)
     }
 
     @Test("A layer alpha script's thisLayer is its own object when another layer shares the name")
@@ -527,6 +532,7 @@ struct WPESceneScriptWiringTests {
         try await actor.loadVideoSourceForWiringTest(handoff: WPERendererHandoff(renderer: renderer), key: key)
         let source = try #require(renderer.dynamicTextureSources[key] as? WPEVideoTextureSource)
         renderer.layerVideoSourceKey["video"] = key
+        let staleToken = renderer.sceneScriptLoadState.begin(generation: renderer.loadGeneration)
         let token = renderer.sceneScriptLoadState.begin(generation: renderer.loadGeneration)
         renderer.beginSceneScriptVideoCommands()
         renderer.sceneScriptVideoCommandBuffer.enqueue(
@@ -536,6 +542,24 @@ struct WPESceneScriptWiringTests {
         try renderer.finishSceneScriptLoadVideoCommands(for: token, scriptsAreBaked: &scriptsAreBaked)
         source.applyPerformanceProfile(renderer.currentProfile)
         let snapshot = try #require(source.scriptPlaybackSnapshot)
+        renderer.beginSceneScriptVideoCommands()
+        renderer.sceneScriptVideoCommandBuffer.enqueue([.setLoop(true), .play], objectID: "video")
+        #expect(throws: CancellationError.self) {
+            try renderer.finishSceneScriptLoadVideoCommands(for: staleToken, scriptsAreBaked: &scriptsAreBaked)
+        }
+        let afterStaleCommit = try #require(source.scriptPlaybackSnapshot)
+        #expect(afterStaleCommit.loop == false)
+        #expect(afterStaleCommit.isPlaying == loopOnly)
+
+        let stalePhase = renderer.introPhaseToken
+        renderer.invalidateIntroPhaseAlign()
+        #expect(renderer.introLoopOffset == nil)
+        await actor.applyIntroLoopOffset(17, token: stalePhase, scriptLoadToken: token)
+        #expect(renderer.introLoopOffset == nil)
+        await actor.applyIntroLoopOffset(23, token: renderer.introPhaseToken, scriptLoadToken: token)
+        #expect(renderer.introLoopOffset == 23)
+        await actor.applyIntroLoopOffset(99, token: renderer.introPhaseToken, scriptLoadToken: staleToken)
+        #expect(renderer.introLoopOffset == 23)
         await actor.teardownRenderer()
         #expect(await actor.shutdown())
         #expect(snapshot.loop == false)

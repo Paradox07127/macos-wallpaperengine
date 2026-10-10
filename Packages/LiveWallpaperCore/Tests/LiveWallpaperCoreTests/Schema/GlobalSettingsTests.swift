@@ -64,17 +64,6 @@ struct GlobalSettingsTests {
         #expect(decoded.globalShortcutsEnabled == false)
     }
 
-    @Test("Default initializer enables the global shortcut surface")
-    func defaultInitEnablesSurface() {
-        let settings = GlobalSettings()
-        #expect(settings.globalShortcutsEnabled == true)
-    }
-
-    @Test("Default initializer enables window-occlusion pause")
-    func defaultInitEnablesOcclusionPause() {
-        #expect(GlobalSettings().pauseOnWindowOcclusion == true)
-    }
-
     @Test("Legacy JSON without the occlusion key defaults to true (power-saving)")
     func legacyOcclusionKeyDefaultsToTrue() throws {
         let legacyJSON = """

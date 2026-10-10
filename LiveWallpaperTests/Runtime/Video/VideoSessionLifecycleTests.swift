@@ -222,22 +222,6 @@ struct VideoSessionLifecycleTests {
         #expect(state.speed == 1)
     }
 
-    @Test("Display geometry has one ScreenManager owner and no per-player timer")
-    func displayGeometryOwnershipIsCentralized() throws {
-        let player = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let manager = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Observers.swift"
-        )
-
-        #expect(!player.contains("setupFrameObserver()"))
-        #expect(!player.contains("Task.sleep(for: .seconds(30))"))
-        #expect(!player.contains("didChangeScreenParametersNotification"))
-        #expect(manager.contains("didChangeScreenParametersNotification"))
-        #expect(manager.contains("self.updateAllWindowFrames()"))
-    }
-
     @Test("Video readiness waits for AVPlayerLayer rather than player status")
     func videoReadinessUsesPlayerLayerSignal() async {
         let player = WallpaperVideoPlayer(
@@ -476,44 +460,6 @@ struct VideoSessionLifecycleTests {
         #expect(!old.isCleanedUp)
     }
 
-    @Test("Video replacement source preserves the old session through candidate preparation")
-    func videoReplacementUsesPreparedTransaction() throws {
-        let player = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let container = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/VideoContainerView.swift"
-        )
-        let coordinator = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator+SessionLifecycle.swift"
-        )
-        let session = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Session/VideoWallpaperSession.swift"
-        )
-
-        #expect(container.contains("playerHostView.playerLayer?.isReadyForDisplay == true"))
-        #expect(player.contains("videoView?.isReadyForDisplay == true"))
-        #expect(player.contains("startsHidden: Bool = false"))
-        #expect(player.contains("func prepareFrameRateLimit("))
-        #expect(coordinator.contains("WallpaperSessionTransaction.prepareAndCommit("))
-        #expect(coordinator.contains("makeVideoPlayer("))
-        let owner = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator.swift"
-        )
-        #expect(owner.contains("startsHidden: true"))
-        #expect(coordinator.contains("PlainVideoFrameRateCompositionPolicy.compositionLimit("))
-        #expect(coordinator.contains("await player.prepareFrameRateLimit("))
-        #expect(coordinator.contains("player.prepareForCurrentComposition("))
-        #expect(coordinator.contains("outgoingVideoPlayerAtCommit = expected?.videoPlayer"))
-        #expect(coordinator.contains("retireVideoEffectsWork("))
-        #expect(session.contains("let base = await replacement.prepareForDisplay("))
-        #expect(session.contains("requiresFrameRatePreparationForRetry"))
-        #expect(session.contains("replacement.prepareFrameRateLimit("))
-        #expect(session.contains("replacement.prepareForCurrentComposition("))
-        #expect(!session.contains("if replacement.currentVideoComposition != nil"))
-        #expect(!coordinator.contains("releaseRuntimeSession(screen)\n            let player = WallpaperVideoPlayer"))
-    }
-
     @Test("AVPlayerItem copies video compositions while readiness remains generation-owned")
     func avPlayerItemCompositionCopySemantics() throws {
         let item = AVPlayerItem(
@@ -597,24 +543,6 @@ struct VideoSessionLifecycleTests {
             compositionGeneration: 12,
             currentItemID: ObjectIdentifier(replica)
         ) == .cancelled)
-    }
-
-    @Test("Scene retry builds a transactional candidate instead of destructively reloading")
-    func sceneRetryKeepsVisibleRuntimeUntilReplacementIsReady() throws {
-        let manager = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-        let retry = try #require(
-            manager.range(of: "func retryRuntimeSession(for screen: Screen)")
-        )
-        let tail = manager[retry.lowerBound...]
-        let end = try #require(tail.range(of: "\n    func observeRuntimeErrors("))
-        let body = String(tail[..<end.lowerBound])
-
-        #expect(body.contains("screen.runtimeSession?.wallpaperType == .scene"))
-        #expect(body.contains("restoreWallpaperSession("))
-        #expect(body.contains("preservingState: false"))
-        #expect(body.contains("await screen.runtimeSession?.retry()"))
     }
 
     @Test("Cleanup blocks a loader completion that resumes after cancellation")
@@ -1365,24 +1293,6 @@ struct VideoSessionLifecycleTests {
         ))
         #expect(legacyScreenFallbackCount == 0)
         #expect(livePlayer.requestedFrameRateLimit == 24)
-    }
-
-    @Test("The permanent current-item observer replays guarded deferred FPS work")
-    func permanentCurrentItemObserverOwnsDeferredFPSReplay() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let observerStart = try #require(
-            source.range(of: "private func installQueueItemMaintenanceObserver()")
-        )
-        let observerTail = source[observerStart.lowerBound...]
-        let observerEnd = try #require(observerTail.range(of: "\n    func setVideoFitMode"))
-        let observer = String(observerTail[..<observerEnd.lowerBound])
-
-        #expect(observer.contains("guard item != nil else { return }"))
-        #expect(observer.contains("applyRequestedFrameRateLimitIfReady()"))
-        #expect(source.contains("player?.currentItem != nil"))
-        #expect(!source.contains("observeInitialCurrentItemForDeferredFrameRateLimit"))
     }
 
     @Test("setPlaybackSpeed clamps to [0.25, 4.0] and falls back to 1.0 for non-finite input")

@@ -4,6 +4,29 @@ import Testing
 
 @Suite("System wallpaper provider identity")
 struct SystemWallpaperProviderIdentityTests {
+    @Test("The appex runs the idle verdict when the Agent disconnects — the only moment before RunningBoard suspends it")
+    func idleRetirementIsWired() throws {
+        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
+        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
+        let invalidation = try #require(bridge.range(of: "connection.invalidationHandler = {"))
+        #expect(bridge[invalidation.upperBound...].prefix(700).contains("WallpaperXPCHandler.evaluateIdleRetirement("))
+        #expect(handler.contains("ProviderStaleness.exitIfIdleAndSuperseded("))
+        // Never while the Agent still holds a proxy: it keeps using it until its own 5-minute disconnection and every call errors instead of relaunching.
+        #expect(staleness.contains("guard surfaces == 0, !connected else {"))
+    }
+
+    @Test("A serving extension never exits from accept or its playback heartbeat")
+    func activeProviderNeverRetires() throws {
+        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
+        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
+        #expect(!bridge.contains("exitIfStale"))
+        #expect(!handler.contains("exitIfStale"))
+        #expect(!staleness.contains("func exitIfStale"))
+        #expect(staleness.contains("guard surfaces == 0, !connected else"))
+    }
+
     private func identity(
         build: String = "42",
         path: String = "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
@@ -136,30 +159,7 @@ struct SystemWallpaperProviderIdentityTests {
         #expect(changed == .buildChanged(loaded: "9", onDisk: "10"))
     }
 
-    @Test("The appex runs the idle verdict when the Agent disconnects — the only moment before RunningBoard suspends it")
-    func idleRetirementIsWired() throws {
-        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
-        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
-        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
-        let invalidation = try #require(bridge.range(of: "connection.invalidationHandler = {"))
-        #expect(bridge[invalidation.upperBound...].prefix(700).contains("WallpaperXPCHandler.evaluateIdleRetirement("))
-        #expect(handler.contains("ProviderStaleness.exitIfIdleAndSuperseded("))
-        // Never while the Agent still holds a proxy: it keeps using it until its own 5-minute disconnection and every call errors instead of relaunching.
-        #expect(staleness.contains("guard surfaces == 0, !connected else {"))
-    }
-
     // MARK: - Source guards (appex sources never compile into this bundle)
-
-    @Test("A serving extension never exits from accept or its playback heartbeat")
-    func activeProviderNeverRetires() throws {
-        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
-        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
-        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
-        #expect(!bridge.contains("exitIfStale"))
-        #expect(!handler.contains("exitIfStale"))
-        #expect(!staleness.contains("func exitIfStale"))
-        #expect(staleness.contains("guard surfaces == 0, !connected else"))
-    }
 
     @Test("Playback failures survive IPC persistence without breaking legacy heartbeats")
     func playbackFailureRoundTrip() throws {
@@ -172,15 +172,4 @@ struct SystemWallpaperProviderIdentityTests {
         #expect(legacy.playbackFailures == nil)
     }
 
-    @Test("The bridge builds its observers on first connection, not on discovery")
-    func observersAreDeferred() throws {
-        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
-        #expect(bridge.contains("activateObserversIfNeeded()"))
-        let initBody = try #require(
-            bridge.range(of: "init(store: SharedLibraryStore) {")
-                .map { bridge[$0.upperBound...].prefix(400) }
-        )
-        #expect(!initBody.contains("LibraryChangeObserver("))
-        #expect(!initBody.contains("PowerConditionObserver("))
-    }
 }

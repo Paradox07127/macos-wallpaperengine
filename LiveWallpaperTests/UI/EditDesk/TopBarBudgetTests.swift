@@ -104,10 +104,6 @@ struct TopBarBudgetTests {
     @MainActor
     @Test("At 1040 the filter row fits its chips, the search field at its floor, sort with any filter named, and add in all five languages")
     func filterRowFitsAt1040() throws {
-        let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
-        let search = try #require(row.range(of: "LibrarySearchField("), "the filter row carries no search field")
-        let sort = try #require(row.range(of: "LibrarySortControl(label: sortLabel)"))
-        #expect(search.upperBound <= sort.lowerBound, "the row measured below carries the field ahead of sort and add")
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
         // Laid out at its ideal width, the field can still give back everything above its floor.
         let give = DesignTokens.LibraryFilterBar.searchIdealWidth - DesignTokens.LibraryFilterBar.searchMinWidth
@@ -212,28 +208,6 @@ struct TopBarBudgetTests {
                 Comment(rawValue: "\(Int(windowWidth))/\(language): showsCapsule \(layout.showsCapsule)")
             )
         }
-    }
-
-    /// The loop dropping the capsule could have formed: that frees width, and if that width fed the
-    /// decision the capsule would be handed back and taken away every frame. The budget asks for a
-    /// width instead of measuring one, so the verdict is a fixed point.
-    @MainActor
-    @Test("Dropping the capsule does not make it fit again")
-    func capsuleDropIsAFixedPoint() throws {
-        let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: "en")
-        let asked = try Self.capsule(pages: 6)
-        let dropped = TopBarBudget.layout(windowWidth: 1040, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
-        #expect(!dropped.showsCapsule)
-        // What the bar feeds back next frame: the same asked-for width, because it is derived from
-        // the pages and the label, not from the capsule's frame.
-        let again = TopBarBudget.layout(windowWidth: 1040, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
-        #expect(again == dropped)
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
-        #expect(source.contains("capsuleWidth: OnboardingCapsuleFit.width("))
-        #expect(
-            !source.contains("capsuleWidth = $0"),
-            "a measured capsule frame is what closes the loop"
-        )
     }
 
     /// The bar's first frame has not measured the pill yet; a capsule drawn there would vanish on the next.

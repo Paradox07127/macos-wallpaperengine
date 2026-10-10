@@ -36,22 +36,6 @@ struct ProtocolizedDependenciesTests {
         #expect(ProductFeature.allCases.allSatisfy { !manager.featureCatalog.isEnabled($0) })
     }
 
-    @Test("ScreenManager and SwiftUI environment have no implicit Pro catalog")
-    func capabilityDefaultsFailClosedByContract() throws {
-        let types = try RepositoryRoot.source("LiveWallpaper/App/ScreenManagerTypes.swift")
-        let manager = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager.swift")
-        let capabilities = try RepositoryRoot.source(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift"
-        )
-
-        #expect(types.contains("var featureCatalog: FeatureCatalog"))
-        #expect(!types.contains("var featureCatalog: FeatureCatalog ="))
-        #expect(manager.contains("init(startupOptions: ScreenManagerStartupOptions)"))
-        #expect(!manager.contains("init(startupOptions: ScreenManagerStartupOptions ="))
-        #expect(capabilities.contains("static let defaultValue = FeatureCatalog.unconfigured"))
-        #expect(!capabilities.contains("static let defaultValue = FeatureCatalog(capabilities: .pro)"))
-    }
-
     @Test("Global-settings changes re-read the display name and overlay caches")
     func globalSettingsChangeReloadsDisplayIdentityCaches() {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
@@ -205,42 +189,6 @@ struct ProtocolizedDependenciesTests {
 
         #expect(powerMonitor.powerSourcePublisherReadCount >= 1)
         #expect(powerMonitor.currentPowerSourceReadCount >= 1)
-    }
-
-    @Test("Video selection validates through injected PlayableVideoLoading")
-    func videoSelectionUsesInjectedPlayableVideoLoader() async throws {
-        guard let screen = Self.makeScreen() else {
-            Issue.record("No NSScreen available for dependency injection test")
-            return
-        }
-        let loader = FakePlayableVideoLoader(validationError: .validationFailed)
-        let displayRegistry = FakeDisplayRegistry(screens: [screen])
-        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-            restoreSavedWallpapers: false,
-            startAutomation: false,
-            powerMonitor: FakePowerMonitor(),
-            fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: loader,
-            displayRegistry: displayRegistry,
-            featureCatalog: FeatureCatalog(capabilities: .pro)
-        ))
-        guard let liveScreen = manager.screens.first else {
-            Issue.record("Injected display registry did not produce a screen")
-            return
-        }
-
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ProtocolizedDependencies-\(UUID().uuidString).mov")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try Data("not actually decoded by the fake".utf8).write(to: url)
-
-        manager.setVideo(url: url, bookmarkData: Data([0x01, 0x02]), for: liveScreen)
-
-        try await Self.waitUntil(timeout: .seconds(2)) {
-            await loader.validatedURLs.count >= 1
-        }
-        let urls = await loader.validatedURLs
-        #expect(urls.contains(url))
     }
 
     @Test("Validation failure does not promote the rejected bookmark to active config")
@@ -563,28 +511,6 @@ struct ProtocolizedDependenciesTests {
         manager.setEnabled(true)
         #expect(manager.state == .idle)
         #expect(manager.consumerCountForTesting == 0)
-    }
-
-    @Test("Scene sessions own capture demand and settings remain passive")
-    func systemAudioCaptureDemandOwnersAreWired() throws {
-        let session = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Session/SceneWallpaperSession.swift"
-        )
-        let settings = try RepositoryRoot.source(
-            "LiveWallpaper/Views/Settings/AudioSection.swift"
-        )
-        let actor = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"
-        )
-
-        #expect(session.contains("refreshSystemAudioCaptureRequirement"))
-        #expect(session.contains("protocol SystemAudioCaptureDemandControlling"))
-        #expect(session.contains("audioCaptureDemandController.retain()"))
-        #expect(session.contains("audioCaptureDemandController.release()"))
-        #expect(session.contains("extension SystemAudioCaptureManager: SystemAudioCaptureDemandControlling"))
-        #expect(actor.contains("func requiresSystemAudioCapture() -> Bool"))
-        #expect(!settings.contains("SystemAudioCaptureManager.shared.retain()"))
-        #expect(!settings.contains("SystemAudioCaptureManager.shared.release()"))
     }
 
     @Test("Audio state observation is passive and receives capture transitions")

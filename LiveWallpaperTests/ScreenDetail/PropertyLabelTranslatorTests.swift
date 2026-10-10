@@ -20,8 +20,8 @@ struct PropertyLabelTranslatorTests {
     @Test("Mixed Chinese labels use a Chinese source and an English target", arguments: [
         "音量 Volume", "显示触发区域 Show trigger area", "静音 Mute", "音量 4K HDR",
     ])
+    @available(macOS 15.0, *)
     func mixedChineseSource(label: String) async {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         translator.enqueue(labels: [label])
         await translator.availabilityCheck?.value
@@ -83,8 +83,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A Simplified target skips Simplified labels; a Japanese target configures only after the pack check")
+    @available(macOS 15.0, *)
     func targetLanguageGatesQueue() async {
-        guard #available(macOS 15.0, *) else { return }
         let label = "显示触发区域"
         let chinese = WPEPropertyLabelTranslator(targetLanguage: simplifiedChinese, isInstalled: { _, _ in true })
         chinese.enqueue(labels: [label])
@@ -103,8 +103,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A pair without an installed pack never configures a session and keeps the author label")
+    @available(macOS 15.0, *)
     func uninstalledPairStaysOriginal() async {
-        guard #available(macOS 15.0, *) else { return }
         let label = "显示触发区域"
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in false })
         translator.enqueue(labels: [label])
@@ -118,8 +118,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Labels skipped for a missing pack queue again once a re-check finds it installed")
+    @available(macOS 15.0, *)
     func recheckRequeuesSkippedLabels() async {
-        guard #available(macOS 15.0, *) else { return }
         let label = "显示触发区域"
         let installed = OSAllocatedUnfairLock(initialState: false)
         let translator = WPEPropertyLabelTranslator(
@@ -139,8 +139,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Changing the app language clears translations and re-queues every seen label for the new target")
+    @available(macOS 15.0, *)
     func retargetRequeuesSeenLabels() async {
-        guard #available(macOS 15.0, *) else { return }
         let simplified = "显示触发区域"
         let traditional = "顯示觸發區域"
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
@@ -159,8 +159,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A label already in the app language translates once the app switches to another language")
+    @available(macOS 15.0, *)
     func retargetTranslatesLabelsSeenInTargetLanguage() async {
-        guard #available(macOS 15.0, *) else { return }
         let label = "显示触发区域"
         let translator = WPEPropertyLabelTranslator(targetLanguage: simplifiedChinese, isInstalled: { _, _ in true })
         translator.enqueue(labels: [label])
@@ -231,8 +231,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Chinese variants drain separately and cancelled labels can be retried")
+    @available(macOS 15.0, *)
     func mixedLanguageQueuePreservesUnfinishedLabels() async {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         let chinese = "显示触发区域并启用音频响应"
         let traditional = "顯示觸發區域並啟用音頻響應"
@@ -249,8 +249,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Internal failures can retry without immediately restarting the session")
+    @available(macOS 15.0, *)
     func internalFailureCanRetry() async {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         let label = "音量 Volume"
         translator.enqueue(labels: [label])
@@ -269,8 +269,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A label queued while a session is draining joins its queue instead of restarting the session", .timeLimit(.minutes(1)))
+    @available(macOS 15.0, *)
     func enqueueDuringTranslationKeepsSession() async {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         translator.enqueue(labels: ["显示触发区域"])
         await translator.availabilityCheck?.value
@@ -286,8 +286,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Chunks hold at most eight labels and the newest queued come out first", .timeLimit(.minutes(1)))
+    @available(macOS 15.0, *)
     func chunksAreNewestFirst() async {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         let labels = (1 ... 10).map { "显示区域\($0)" }
         translator.enqueue(labels: labels)
@@ -299,8 +299,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A disabled translator shows author text, opens no session, and queues seen labels once enabled", .timeLimit(.minutes(1)))
+    @available(macOS 15.0, *)
     func disabledTranslatorShowsOriginals() async {
-        guard #available(macOS 15.0, *) else { return }
         let stored = "显示触发区域"
         let seen = "音频响应"
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true }, isEnabled: false)
@@ -333,8 +333,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Revision advances when the switch flips, not when it is set to its current value")
+    @available(macOS 15.0, *)
     func revisionAdvancesOnToggle() {
-        guard #available(macOS 15.0, *) else { return }
         let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
         let start = translator.revision
         translator.setEnabled(true)
@@ -366,8 +366,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A persisted library name shows its cached translation after a relaunch without queuing again", .timeLimit(.minutes(1)))
+    @available(macOS 15.0, *)
     func persistedNameLoadsFromCache() async {
-        guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let title = "夕阳下的海边小镇"
@@ -386,8 +386,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Names queued without persist stay out of the cache")
+    @available(macOS 15.0, *)
     func unpersistedNameIsNotCached() {
-        guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let library = "夕阳下的海边小镇"
@@ -404,8 +404,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("Pruning drops cached names that left the library")
+    @available(macOS 15.0, *)
     func retainPersistedPrunesCache() {
-        guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let kept = "夕阳下的海边小镇"
@@ -422,8 +422,8 @@ struct PropertyLabelTranslatorTests {
 
     @MainActor
     @Test("A different target language never reads another language's cached names")
+    @available(macOS 15.0, *)
     func cacheIsPerTargetLanguage() {
-        guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let title = "夕阳下的海边小镇"

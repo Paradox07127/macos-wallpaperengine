@@ -21,36 +21,7 @@ struct SystemWallpaperHonestReplyTests {
 
     // MARK: - Private layout
 
-    @Test("An object the private layout would not let us build is reported, not replied as success")
-    func unbuildablePrivateObjectIsReportedUnhealthy() throws {
-        let source = try handler()
-        let report = try member(source, from: "private func reportUnbuildable")
-        #expect(
-            report.contains("runtimeHealthy: false"),
-            "the health bit has to mean 'this call really produced the object'"
-        )
-        for site in ["func provideSettingsViewModels", "func acquire"] {
-            let body = try member(source, from: site)
-            #expect(
-                body.contains("reportUnbuildable("),
-                "\(site) still answers with a healthy nothing when the factory returns nil"
-            )
-        }
-    }
-
     // MARK: - Switch hand-off
-
-    @Test("The switch hand-off ceiling replies the hosted context, not an error")
-    func firstFrameCeilingRepliesContext() throws {
-        let body = try member(handler(), from: "func acquire")
-        let timer = try #require(body.range(of: "deadline: .now() + Self.firstFrameReplyTimeout"))
-        let after = body[timer.upperBound...].prefix(200)
-        #expect(
-            after.contains("once.fire(nil)"),
-            "a slow first frame falls back to the already-built context; an error reply tells the Agent the switch failed while the decoder is still opening the file"
-        )
-        #expect(!after.contains("code: 7"))
-    }
 
     // MARK: - Removal
 
@@ -79,23 +50,27 @@ struct SystemWallpaperHonestReplyTests {
 
     // MARK: - Surface keys
 
-    @Test("Acquire, update and invalidate derive the surface key the same way")
-    func surfaceKeyIsDerivedOneWay() throws {
-        let source = try handler()
-        for site in ["func acquire", "func update", "func invalidate"] {
-            let body = try member(source, from: site)
+    // MARK: - Heartbeat
+
+    // MARK: - Panel refresh
+
+    // MARK: - Wire allowlist
+
+    @Test("Every selector taking an opaque choice id is allowlisted")
+    func choiceIDSelectorsAreAllowlisted() throws {
+        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
+        let start = try #require(bridge.range(of: "let argumentSelectors"))
+        let end = try #require(bridge.range(of: "\n        ]\n", range: start.upperBound ..< bridge.endIndex))
+        let list = String(bridge[start.upperBound ..< end.lowerBound])
+        for selector in ["download(choiceID:reply:)", "pauseDownload(for:reply:)",
+                         "cancelDownload(for:reply:)", "resumeDownload(for:reply:)",
+                         "removeDownload(for:reply:)"] {
             #expect(
-                body.contains("Self.surfaceUUID("),
-                "\(site) derives its own key, so the three can disagree"
-            )
-            #expect(
-                !body.contains("MirrorProbe.firstUUID("),
-                "\(site) still probes the id itself instead of going through the shared ladder"
+                list.contains(selector),
+                "\(selector) carries a private choice-ID object the interface was never told about"
             )
         }
     }
-
-    // MARK: - Heartbeat
 
     @MainActor
     @Test("A wallpaper that just plays keeps its own heartbeat fresh")
@@ -124,35 +99,4 @@ struct SystemWallpaperHonestReplyTests {
         #expect(sync.contains("cancel()"))
     }
 
-    // MARK: - Panel refresh
-
-    @Test("A library change pushes the new view models, not only a snapshot invalidation")
-    func libraryChangePushesViewModels() throws {
-        let source = try handler()
-        let changed = try member(source, from: "func libraryDidChange")
-        #expect(
-            changed.contains("pushSettingsViewModels()"),
-            "an added or removed item needs the model list, not a re-render of the old one"
-        )
-        let push = try member(source, from: "private func pushSettingsViewModels")
-        #expect(push.contains("proxy.updateSettingsViewModels("))
-    }
-
-    // MARK: - Wire allowlist
-
-    @Test("Every selector taking an opaque choice id is allowlisted")
-    func choiceIDSelectorsAreAllowlisted() throws {
-        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
-        let start = try #require(bridge.range(of: "let argumentSelectors"))
-        let end = try #require(bridge.range(of: "\n        ]\n", range: start.upperBound ..< bridge.endIndex))
-        let list = String(bridge[start.upperBound ..< end.lowerBound])
-        for selector in ["download(choiceID:reply:)", "pauseDownload(for:reply:)",
-                         "cancelDownload(for:reply:)", "resumeDownload(for:reply:)",
-                         "removeDownload(for:reply:)"] {
-            #expect(
-                list.contains(selector),
-                "\(selector) carries a private choice-ID object the interface was never told about"
-            )
-        }
-    }
 }

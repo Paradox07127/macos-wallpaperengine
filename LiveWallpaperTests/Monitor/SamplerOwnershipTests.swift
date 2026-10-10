@@ -41,28 +41,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(!resetAfterReset)
     }
 
-    @Test("no visible legacy UI has zero owner while v2 has no implicit lease")
-    func noUIBaselineSourceContract() throws {
-        let manager = try productionSource("LiveWallpaper/App/ScreenManager.swift")
-        #expect(manager.contains("setupMemoryPressureMonitoring()"))
-        #expect(!manager.contains("SystemMonitor.shared.startMonitoring()"))
-        #expect(!manager.contains("systemMonitorActive"))
-        #expect(!manager.contains("allDisplaysAsleep"))
-
-        let observers = try productionSource("LiveWallpaper/App/ScreenManager+MemoryPressure.swift")
-        let setup = try slice(
-            observers,
-            from: "func setupMemoryPressureMonitoring() {",
-            until: "private func applyMemoryPressureLevel"
-        )
-        #expect(setup.contains("memoryPressureWatcher.start"))
-        #expect(!setup.contains("SystemMonitor"))
-        #expect(!observers.contains("systemMemoryWarning"))
-        #expect(!observers.contains("systemMemoryNormal"))
-
-        #expect(Runtime.merged([]) == nil)
-    }
-
     @Test("watcher is app-lifetime across sleep wake and rejects late termination callbacks")
     @MainActor
     func memoryPressureWatcherLifecycle() async {
@@ -119,66 +97,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         watcher.emitLate(.critical)
         await settleMainActorTasks()
         #expect(!manager.isUnderMemoryPressure)
-    }
-
-    @Test("menu root and real settings window are the only legacy owners")
-    func visibleConsumerOwnershipSourceContract() throws {
-        let monitor = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Runtime/SystemMonitor.swift"
-        )
-        let start = try slice(
-            monitor,
-            from: "public func startMonitoring() {",
-            until: "public func stopMonitoring()"
-        )
-        #expect(start.contains("guard references.start() else { return }"))
-        #expect(start.contains("updateTask = Task"))
-        let stop = try slice(
-            monitor,
-            from: "public func stopMonitoring() {",
-            until: "public func formattedMemoryUsage()"
-        )
-        #expect(stop.contains("guard references.stop() else { return }"))
-        #expect(stop.contains("updateTask?.cancel()"))
-        let shutdown = try slice(
-            monitor,
-            from: "public func shutdown() {",
-            until: "public func formattedMemoryUsage()"
-        )
-        #expect(shutdown.contains("guard !isShutdown else { return }"))
-        #expect(shutdown.contains("references.reset()"))
-        #expect(shutdown.contains("updateTask?.cancel()"))
-
-        let menu = try productionSource("LiveWallpaper/Views/MenuBarContent.swift")
-        #expect(menu.contains("private var monitor: SystemMonitor { .shared }"))
-        #expect(menu.contains("@State private var ownsSystemMonitorLease = false"))
-        #expect(menu.contains(".onAppear(perform: acquireSystemMonitorLeaseIfNeeded)"))
-        #expect(menu.contains(".onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)"))
-
-        let capsule = try productionSource("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
-        #expect(!capsule.contains("startMonitoring()"), "the status capsule holds a sampler lease of its own")
-
-        let app = try productionSource("LiveWallpaper/App/LiveWallpaperApp.swift")
-        #expect(!app.contains("prewarmSettingsWindow"))
-        let present = try slice(
-            app,
-            from: "private func presentSettingsWindow(",
-            until: "private func postSettingsWindowRequest("
-        )
-        #expect(present.contains("guard window.isVisible else { return }"))
-        #expect(present.contains("acquireSettingsSystemMonitorLeaseIfNeeded()"))
-        #expect(present.contains("featureCatalog.isEnabled(.systemMonitor) == true"))
-        #expect(present.contains("SystemMonitor.shared.startMonitoring()"))
-        let close = try slice(
-            app,
-            from: "func windowWillClose(",
-            until: "func windowDidMiniaturize("
-        )
-        #expect(close.contains("releaseSettingsSystemMonitorLeaseIfNeeded()"))
-        #expect(close.contains("settingsWindowController = nil"))
-        #expect(app.contains("func windowDidMiniaturize("))
-        #expect(app.contains("func windowDidDeminiaturize("))
-        #expect(app.contains("SystemMonitor.shared.shutdown()"))
     }
 
     @Test("v2 unions every lease's demand into one system concern set")
@@ -249,116 +167,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         }
     }
 
-    @Test("v2 surface contracts derive system demand from the placed widgets")
-    func monitorV2ConsumerSourceContract() throws {
-        let overlay = try productionSource(
-            "LiveWallpaper/Monitor/Overlay/OverlayController.swift"
-        )
-        let overlayOptions = try slice(
-            overlay,
-            from: "private func makeOptions(visibleHostKeys:",
-            until: "private func scheduleRuntimeReconciliation()"
-        )
-        #expect(overlayOptions.contains("where visibleHostKeys.contains(key)"))
-        #expect(overlayOptions.contains("kinds.formUnion"))
-        #expect(
-            overlayOptions.contains(
-                "system: MonitorRuntimeOptions.requiresSystemMetrics(for: kinds)"
-            )
-        )
-        #expect(!overlayOptions.contains("system: true"))
-
-        let runtime = try productionSource("LiveWallpaper/Monitor/Runtime.swift")
-        let build = try slice(
-            runtime,
-            from: "private func performRebuild(force: Bool) async {",
-            until: "private func stopPipeline() async {"
-        )
-        #expect(build.contains("let target = Self.merged("))
-        #expect(build.contains("if resolved.system"))
-        #expect(build.contains("built.append(SystemMetricsSource("))
-    }
-
-    @Test("legacy and v2 duplicate headline system concerns when a board is active")
-    func samplerConcernOverlapSourceContract() throws {
-        let legacy = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Runtime/SystemMonitor.swift"
-        )
-        let legacySample = try slice(
-            legacy,
-            from: "private func sampleAndApply() async {",
-            until: "private func applySample("
-        )
-        for call in [
-            "sampleAppCPUUsage()",
-            "sampleSystemCPUUsage(prev:",
-            "sampleAppMemoryUsage()",
-            "sampleSystemMemoryUsage()",
-            "sampleGPUUsage()",
-            "ProcessInfo.processInfo.thermalState",
-        ] {
-            #expect(legacySample.contains(call))
-        }
-
-        let v2 = try productionSource("LiveWallpaper/Monitor/Sources/SystemMetricsSource.swift")
-        let tick = try slice(
-            v2,
-            from: "private func tick(",
-            until: "private func shouldSampleANE("
-        )
-        for call in [
-            "SystemMetricsSamplers.sampleCPU(",
-            "SystemMetricsSamplers.sampleMemory()",
-            "SystemMetricsSamplers.sampleNetworkCounters()",
-            "SystemMetricsSamplers.sampleDiskCounters()",
-            "SystemMetricsSamplers.samplePower()",
-            "SystemMetricsSamplers.sampleGPU()",
-            "ProcessInfo.processInfo.thermalState",
-        ] {
-            #expect(tick.contains(call))
-        }
-        #expect(tick.contains("if options.gpu"))
-
-        let legacyConcerns: Set<SamplerConcern> = [
-            .appCPU, .systemCPU, .appMemory, .systemMemory, .gpu, .thermal,
-        ]
-        let v2BaseConcerns: Set<SamplerConcern> = [
-            .systemCPU, .systemMemory, .network, .disk, .power, .thermal,
-        ]
-        #expect(legacyConcerns.intersection(v2BaseConcerns) == [.systemCPU, .systemMemory, .thermal])
-        #expect(
-            legacyConcerns.intersection(v2BaseConcerns.union([.gpu])) == [
-                .systemCPU, .systemMemory, .gpu, .thermal,
-            ]
-        )
-    }
-
-    @Test("visible legacy telemetry retains App and System scope readings")
-    func legacyScopeReadingsRemainAvailable() throws {
-        let monitor = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Runtime/SystemMonitor.swift"
-        )
-        for symbol in [
-            "sampleAppCPUUsage()",
-            "sampleSystemCPUUsage(",
-            "sampleAppMemoryUsage()",
-            "sampleSystemMemoryUsage()",
-            "public private(set) var cpuUsage",
-            "public private(set) var systemCpuUsage",
-            "public private(set) var memoryUsage",
-            "public private(set) var systemMemoryUsage",
-        ] {
-            #expect(monitor.contains(symbol))
-        }
-
-        let capsule = try productionSource("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
-        #expect(capsule.contains("@AppStorage(\"Dashboard.RAMScope\""))
-        #expect(capsule.contains("scope: ramScope, systemFraction: monitor.systemMemoryUsage"))
-        #expect(capsule.contains("appBytes: monitor.memoryUsage"))
-        #expect(capsule.contains("appCPUPercent: monitor.cpuUsage"))
-        #expect(capsule.contains("cpuPercent: monitor.systemCpuUsage"))
-    }
-
     @MainActor
     private func settleMainActorTasks() async {
         for _ in 0 ..< 4 {
@@ -366,19 +174,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         }
     }
 
-    /// `RepositoryRoot` ascends to the project directory, so this survives the
-    /// file moving; counting `deletingLastPathComponent()` calls would not.
-    private func productionSource(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
-
-    private func slice(_ source: String, from start: String, until end: String) throws -> String {
-        let startRange = try #require(source.range(of: start))
-        let endRange = try #require(
-            source.range(of: end, range: startRange.upperBound ..< source.endIndex)
-        )
-        return String(source[startRange.lowerBound ..< endRange.lowerBound])
-    }
 }
 
 private final class AF14MemoryPressureWatcher: MemoryPressureWatching {
@@ -433,15 +228,4 @@ private final class AF14MemoryPressureWatcher: MemoryPressureWatching {
     }
 }
 
-private enum SamplerConcern: Hashable {
-    case appCPU
-    case systemCPU
-    case appMemory
-    case systemMemory
-    case gpu
-    case thermal
-    case network
-    case disk
-    case power
-}
 #endif

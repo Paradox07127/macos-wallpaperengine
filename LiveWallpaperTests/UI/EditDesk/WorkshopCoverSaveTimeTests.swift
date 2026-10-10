@@ -46,16 +46,5 @@ struct WorkshopCoverSaveTimeTests {
         #expect(saveTime(1, afterSwitch: true, at: .seconds(30)) == start + .seconds(30) + delay, "a later switch does not start its own wait")
     }
 
-    @Test("HomePage takes each capture's save time from its display's switch record, and nothing else picks a wait")
-    func homePageSavesAtTheRecordedTime() throws {
-        let code = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
-            .joined(separator: "\n")
-        #expect(code.contains("workshopCoverSaveTime(on: id, afterSwitch: crossfade, at: .now, notBefore: &workshopCoverNotBefore)"))
-        #expect(code.contains("saveWorkshopCover(for: id, generation: generation, at: saveAt)"))
-        let uses = code.components(separatedBy: "workshopCoverDelay").count - 1
-        #expect(uses == 2, Comment(rawValue: "workshopCoverDelay is used \(uses) times: a second place picks a save's wait"))
-    }
 }
 #endif

@@ -25,14 +25,6 @@ struct WallpaperAutomationRotationResetTests {
         #expect(outcome.rotationsAt31 == 1)
     }
 
-    @Test("Applying a scheme restarts the rotation countdown")
-    func schemeApplyRestartsCountdown() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+Schemes.swift")
-        let start = try #require(source.range(of: "func applyScheme(")?.lowerBound)
-        let dispatch = try #require(source.range(of: "restoreWallpaperSession(", range: start ..< source.endIndex)?.lowerBound)
-        #expect(source[start ..< dispatch].contains("automationCoordinator.resetRotationClock(for: screen.id)"))
-    }
-
     private func runTimeline(resetAtMinute: Double?) async -> Outcome? {
         guard let nsScreen = NSScreen.screens.first else {
             Issue.record("No NSScreen available for test")

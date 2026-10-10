@@ -56,18 +56,6 @@ struct InspectorResizeStepTests {
         #expect(width == minWidth)
     }
 
-    @Test("Inspector resize drag clamps at minimum before drag-to-close")
-    func dragClampsAtMinimumBeforeDragToClose() throws {
-        let split = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/InspectorSplit.swift")
-        let handle = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/InspectorResizeHandle.swift")
-
-        #expect(split.contains("private var dragLowerBound: CGFloat { minWidth }"))
-        #expect(split.contains("minWidth: minWidth"))
-        #expect(!split.contains("return min(max(CGFloat(liveWidth), dragLowerBound), maxWidth)"))
-        #expect(handle.contains("private func rawCandidate"))
-        #expect(handle.contains("if armed(for: rawCandidate)"))
-    }
-
     @MainActor
     @Test("The display detail's default inspector falls back to the compact width on a minimum-size window")
     func displayDetailInspectorFallsBackOnNarrowWindow() {

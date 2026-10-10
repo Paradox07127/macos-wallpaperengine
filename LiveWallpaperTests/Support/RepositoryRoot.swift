@@ -160,13 +160,6 @@ struct RepositoryRootTests {
         #expect(RepositoryRoot.swiftFiles(under: "LiveWallpaper/DirectoryThatDoesNotExist").isEmpty)
     }
 
-    @Test("A component sweep spans the files its type was split into")
-    func componentSourceSpansSplitParts() throws {
-        let executor = try RepositoryRoot.componentSource(under: "LiveWallpaper/Runtime", namePrefix: "WPEMetalRenderExecutor")
-        #expect(executor.contains("final class WPEMetalRenderExecutor"))
-        #expect(executor.contains("func present("))
-    }
-
     @Test("A component sweep matching nothing throws instead of returning empty")
     func componentSourceRejectsEmptySweep() {
         #expect(throws: RepositoryRoot.SweepError.self) {

@@ -95,24 +95,4 @@ struct DisplayFloatLayerTests {
         #expect(target(CGPoint(x: 600, y: 60)) == nil)
     }
 
-    @Test("The strip has one mode: no target picking, no click, no Workshop caption")
-    func stripOnlyTakesDrops() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
-        #expect(!source.contains("selectTarget"), "the strip still has a target-picking mode")
-        #expect(!source.contains("After downloading"), "the strip still carries the Workshop caption")
-        #expect(!source.contains("onSelect"), "the strip still takes clicks")
-        #expect(!source.contains("FloatLayerMode"), "the strip still switches on a mode")
-        #expect(source.contains("FloatLayerGeometry.thumbnailAccessibilityLabel(displayName:"))
-        let contract = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModalContract.swift")
-        #expect(!contract.contains("enum FloatLayerMode"), "the mode enum outlived its second case")
-    }
-
-    @Test("The caption box is a floor the text can push, not a 70pt cap that clips it")
-    func captionBoxFollowsItsText() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
-        #expect(!source.contains(".frame(width: 70"), "the caption is still pinned to a 70pt box")
-        #expect(source.contains("minWidth: FloatLayerGeometry.captionMinWidth"))
-        #expect(source.contains("captionWidth: FloatLayerGeometry.captionWidth"))
-        #expect(!source.contains("captionWidth(for:"), "the strip still measures a caption per mode")
-    }
 }

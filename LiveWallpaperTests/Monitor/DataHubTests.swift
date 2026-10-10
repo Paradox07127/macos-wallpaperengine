@@ -105,23 +105,36 @@ struct DataHubTests {
     }
 
     @Test("Re-enabling a module clears prior state until fresh data arrives")
-    func reEnableClearsState() async {
+    func reEnableClearsState() async throws {
         let broker = SnapshotBroker()
         let hub = DataHub(broker: broker, throttleInterval: 0.01)
 
         await hub.updateAgents(sourceID: "claude", sessions: [
             session(id: "claude:a", provider: .claude, status: .running, lastEventAt: 100)
         ])
-        _ = await waitForPublish(broker, after: 0)
+        let initialPublish = await waitForPublish(broker, after: 0)
+        let initial = try #require(initialPublish)
+        #expect(initial.agents?.map(\.id) == ["claude:a"])
         let before = broker.currentGeneration
 
         await hub.setModuleEnabled(agents: false)
-        let disabled = await waitForPublish(broker, after: before)
-        #expect(disabled?.agents == nil)
+        let disabledPublish = await waitForPublish(broker, after: before)
+        let disabled = try #require(disabledPublish)
+        #expect(disabled.agents == nil)
 
+        let beforeReEnable = broker.currentGeneration
         await hub.setModuleEnabled(agents: true)
-        let reEnabled = broker.latest(after: 0)?.snapshot
-        #expect(reEnabled?.agents == nil)
+        let reEnabledPublish = await waitForPublish(broker, after: beforeReEnable)
+        let reEnabled = try #require(reEnabledPublish)
+        #expect(reEnabled.agents == nil)
+
+        let beforeFreshData = broker.currentGeneration
+        await hub.updateAgents(sourceID: "codex", sessions: [
+            session(id: "codex:fresh", provider: .codex, status: .running, lastEventAt: 200),
+        ])
+        let freshPublish = await waitForPublish(broker, after: beforeFreshData)
+        let fresh = try #require(freshPublish)
+        #expect(fresh.agents?.map(\.id) == ["codex:fresh"])
     }
 
     @Test("Burst of updates coalesces into a leading plus a trailing publish")

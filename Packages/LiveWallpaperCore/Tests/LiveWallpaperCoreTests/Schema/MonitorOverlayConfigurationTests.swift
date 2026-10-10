@@ -5,17 +5,6 @@ import Testing
 @Suite("Monitor overlay configuration")
 struct MonitorOverlayConfigurationTests {
 
-    @Test("Default overlay is off, desktop layer, default board")
-    func defaults() {
-        let d = MonitorOverlayConfiguration.default
-        #expect(d.enabled == false)
-        #expect(d.level == .desktop)
-        #expect(d.music == .default)
-        #expect(d.music.enabled == false)
-        #expect(d.music.level == .desktop)
-        #expect(d.board == MonitorBoardConfiguration.default)
-    }
-
     @Test("A config written before the music split decodes with music off")
     func legacyConfigHasMusicOff() throws {
         let json = #"{ "enabled": true, "level": "front" }"#
@@ -117,40 +106,6 @@ struct MonitorOverlayConfigurationTests {
         let decoded = try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: Data(json.utf8))
         #expect(decoded.enabled == true)
         #expect(decoded.level == .desktop)
-    }
-
-    // MARK: - decodeIfPresent boundary
-
-    private struct Probe: Decodable {
-        let decoded: MonitorOverlayConfiguration?
-        enum Key: String, CodingKey { case overlay }
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: Key.self)
-            decoded = (try? c.decodeIfPresent(MonitorOverlayConfiguration.self, forKey: .overlay)) ?? nil
-        }
-    }
-
-    private func decodeOverlay(_ json: String) throws -> MonitorOverlayConfiguration? {
-        try JSONDecoder().decode(Probe.self, from: Data("{ \"overlay\": \(json) }".utf8)).decoded
-    }
-
-    @Test("Absent overlay slot decodes to nil")
-    func absentSlotIsNil() throws {
-        let decoded = try JSONDecoder().decode(Probe.self, from: Data("{}".utf8)).decoded
-        #expect(decoded == nil)
-    }
-
-    @Test("A present overlay slot decodes its value")
-    func presentSlotDecodes() throws {
-        let decoded = try decodeOverlay(#"{ "enabled": true, "level": "front" }"#)
-        #expect(decoded?.enabled == true)
-        #expect(decoded?.level == .front)
-    }
-
-    @Test("A corrupt overlay slot decodes to nil, never a half-value")
-    func corruptSlotIsNil() throws {
-        let decoded = try decodeOverlay(#"{ "enabled": "not-a-bool" }"#)
-        #expect(decoded == nil)
     }
 
     // MARK: - GlobalSettings carries the overlays

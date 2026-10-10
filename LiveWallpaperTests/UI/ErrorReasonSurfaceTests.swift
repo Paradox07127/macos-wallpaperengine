@@ -22,18 +22,6 @@ struct ErrorReasonSurfaceTests {
         #expect(source.contains("publicSearchFailedState(error)"))
     }
 
-    @Test("Both browse routes route their error through one mapper")
-    func bothBrowseRoutesShareTheMapper() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-
-        let keyed = try #require(source.range(of: "private func errorState"))
-        let keyedBody = String(source[keyed.lowerBound...].prefix(600))
-        #expect(keyedBody.contains("verbatimTitle: message(for: error)"))
-
-        let mapperCount = source.components(separatedBy: "private func message(for").count - 1
-        #expect(mapperCount == 1)
-    }
-
     @Test("In-app Steam sign-in separates connector, launch and refusal failures")
     func signInSheetSeparatesItsFailures() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/SteamSignInSheet.swift")

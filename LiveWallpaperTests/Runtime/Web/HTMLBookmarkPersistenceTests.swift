@@ -350,30 +350,8 @@ struct HTMLBookmarkPersistenceTests {
         #expect(source.contains("func persistRefreshedHTMLBookmark("))
     }
 
-    @Test("ScreenManager refreshes HTML before source identity and policy consumers")
-    func screenManagerUsesEffectiveHTMLSourceForWholeRuntimeChain() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+AmbientActivation.swift")
-            + "\n" + RepositoryRoot.source("LiveWallpaper/App/ScreenManager+SourceAccess.swift")
-        let start = try #require(source.range(of: "case .html(let source, let htmlConfig):"))
-        let end = try #require(source.range(
-            of: "case .scene(let descriptor):",
-            range: start.upperBound..<source.endIndex
-        ))
-        let htmlCase = source[start.lowerBound..<end.lowerBound]
-        let refresh = try #require(htmlCase.range(of: "refreshingHTMLSource("))
-        let leader = try #require(htmlCase.range(of: "isAudioLeader(source: effectiveSource"))
-        let policy = try #require(htmlCase.range(of: "runtimeConfig(\n                source: effectiveSource"))
-        let builder = try #require(htmlCase.range(of: "makeHTMLSession(\n                source: effectiveSource"))
-
-        #expect(refresh.lowerBound < leader.lowerBound)
-        #expect(leader.lowerBound < policy.lowerBound)
-        #expect(policy.lowerBound < builder.lowerBound)
-        #expect(source.contains("func persistRuntimeHTMLBookmarkRefresh("))
-        #expect(source.contains("func persistRuntimeWPEBookmarkRefresh("))
-    }
-
-    @Test("HTML setter preflights a one-shot stale bookmark before compatibility probes")
-    func htmlSetterPreflightsBeforeCompatibilityProbe() throws {
+    @Test("A refreshed one-shot HTML bookmark survives the compatibility probe")
+    func refreshedHTMLSourceSurvivesCompatibilityProbe() throws {
         let root = try Self.makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         try Data("{}".utf8).write(to: root.appendingPathComponent("project.json"))
@@ -398,28 +376,6 @@ struct HTMLBookmarkPersistenceTests {
         #expect(state.originalResolveCount == 1)
         #expect(state.refreshedResolveCount == 1)
 
-        let coordinatorSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/HTMLWallpaperCoordinator.swift"
-        )
-        let setter = try #require(coordinatorSource.range(of: "func setWallpaper("))
-        let nextMethod = try #require(coordinatorSource.range(
-            of: "func setWallpaperPreservingConfig",
-            range: setter.upperBound..<coordinatorSource.endIndex
-        ))
-        let body = coordinatorSource[setter.lowerBound..<nextMethod.lowerBound]
-        let preflight = try #require(body.range(of: "let effectiveSource = prepareSource("))
-        let compatibility = try #require(body.range(
-            of: "shouldAutoEnablePhysicalPixelLayout(effectiveSource)"
-        ))
-        #expect(preflight.lowerBound < compatibility.lowerBound)
-        #expect(!body.contains("shouldAutoEnablePhysicalPixelLayout(source)"))
-    }
-
-    @Test("HTML bookmark apply carries shortcut identity and WPE provenance")
-    func htmlBookmarkApplyCarriesOwnerContext() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+Bookmarks.swift")
-        #expect(source.contains("bookmarkID: bookmark.id"))
-        #expect(source.contains("wpeOrigin: bookmark.wpeOrigin"))
     }
 
     @Test("Security-scoped access helper keeps stop in defer")

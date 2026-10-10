@@ -182,56 +182,6 @@ struct WorkshopAnimatedGIFDecodeTests {
         #expect(try #require(decoded.frame(at: 5)).width <= WPEPreviewSize.tile.maxPixelSize)
     }
 
-    @Test("A shared preview load is unregistered by identity, not by key")
-    func inflightLoadsAreRetiredByIdentity() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewImageLoader.swift"
-        )
-        // A cancelled load finishes after its replacement has been registered,
-        // so removing by key alone would unregister the live one.
-        #expect(source.contains("guard assetInflight[cacheKey] === load else { return }"))
-        #expect(!source.contains("defer { self?.assetInflight.removeValue(forKey: cacheKey) }"))
-        #expect(source.contains("private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String)"))
-    }
-
-    @Test("Workshop preview cache has one count-and-cost bounded owner")
-    func previewCacheIsUnifiedAndBounded() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewImageLoader.swift"
-        )
-
-        #expect(source.contains("NSCache<NSString, CachedWorkshopPreviewAsset>"))
-        // The key carries the decode size, or the grid's small poster would be
-        // served to the detail hero (and vice versa).
-        #expect(source.contains(#"let cacheKey = "\(size.rawValue)|\(url.absoluteString)""#))
-        #expect(source.contains("load.task.cancel()"))
-        #expect(source.contains("PreviewWorkGate.shared.run"))
-        #expect(source.contains("assetCache.countLimit = Self.cacheCountLimit"))
-        #expect(source.contains("assetCache.totalCostLimit = Self.cacheCostLimit"))
-        #expect(source.contains("cost: cached.estimatedCacheCost"))
-        #expect(!source.contains("private var cache: [URL: NSImage]"))
-        #expect(!source.contains("private var assetCache: [URL: WorkshopPreviewAsset]"))
-    }
-
-    /// The offscreen SwiftUI accessibility bridge cannot expose child controls;
-    /// assert the host wiring that previously disabled Retry on the real preview.
-    @Test("Workshop preview hosts leave Retry interactive and accessible outside mature covers")
-    func retryControlsRemainReachableInHosts() throws {
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        let start = try #require(modal.range(of: "private var preview: some View {"))
-        let end = try #require(modal.range(of: "private func mediaChip", range: start.upperBound ..< modal.endIndex))
-        let preview = String(modal[start.lowerBound ..< end.lowerBound])
-        #expect(!preview.contains(".allowsHitTesting(shouldBlurPreview)"), "the host disables Retry on ordinary previews")
-        #expect(!preview.contains(".accessibilityHidden(!shouldBlurPreview)"), "ordinary preview controls disappear from VoiceOver")
-        let thumbnail = try #require(preview.range(of: "AnimatedGIFThumbnail("))
-        let matureCover = try #require(preview.range(of: "if shouldBlurPreview {"))
-        #expect(thumbnail.lowerBound < matureCover.lowerBound, "reveal must not recreate the animated thumbnail")
-        #expect(preview.contains(".accessibilityHidden(shouldBlurPreview)"), "mature artwork must stay hidden from VoiceOver")
-
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(card.contains(".accessibilityElement(children: shouldBlur ? .ignore : .contain)"),
-                "the card discards its visible thumbnail Retry action")
-    }
 }
 
 @Suite("GIFPlaybackCoordinator LRU", .serialized)

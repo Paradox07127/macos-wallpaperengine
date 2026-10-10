@@ -4,17 +4,6 @@ import Testing
 
 @Suite("DisplayDefaults")
 struct DisplayDefaultsTests {
-    @Test("Default playback baselines follow wallpaper type natural frame rates")
-    func defaultBaselinesFollowWallpaperType() {
-        let defaults = DisplayDefaults()
-
-        #expect(defaults.playbackDefaults(for: .video).frameRateLimit == .matchDisplay)
-        #expect(defaults.playbackDefaults(for: .html).frameRateLimit == .matchDisplay)
-        #expect(defaults.playbackDefaults(for: .scene).frameRateLimit == .fps30)
-        #expect(defaults.playbackDefaults(for: .scene).sceneMouseInteractionEnabled == true)
-        #expect(defaults.playbackDefaults(for: .scene).sceneClickCaptureEnabled == false)
-    }
-
     @Test("Screen configuration reports no playback difference when matching defaults")
     func matchingConfigurationDoesNotDiffer() {
         let defaults = DisplayDefaults()

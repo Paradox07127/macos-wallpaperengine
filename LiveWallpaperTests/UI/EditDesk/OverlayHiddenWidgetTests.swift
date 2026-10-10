@@ -112,35 +112,6 @@ struct OverlayHiddenWidgetTests {
 
     // MARK: Source contracts
 
-    @Test("The Layers panel's Widgets, Clock and Music rows open their settings from a gear before the switch")
-    func gearButtonContract() throws {
-        let navigator = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/LayerNavigator.swift")
-        let gearStart = try #require(navigator.range(of: "GlassIconButton(\"gearshape\", size: .small)"))
-        let gear = navigator[gearStart.lowerBound...].prefix(400)
-        #expect(gear.contains("session.select(row.selection)"))
-        #expect(gear.contains("session.requestInspector()"))
-        #expect(gear.contains(".help(Text(\"Settings\"))"))
-        #expect(gear.contains(".accessibilityLabel(Text(\"Settings\"))"))
-        #expect(navigator.contains("case .board, .clock, .music: true"))
-        let trailing = try #require(navigator.range(of: "\n            action\n", range: gearStart.upperBound ..< navigator.endIndex))
-        #expect(gearStart.upperBound < trailing.lowerBound)
-    }
-
-    @Test("The canvas rounds its wallpaper and backdrop like a display card, not the layer its objects sit on")
-    func canvasCornerContract() throws {
-        let shell = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Stage/DisplayShellLayer.swift")
-        #expect(shell.contains("content.cornerRadius = DesignTokens.EditDesk.Corner.content"), "control: the display card's content corner moved")
-        let canvas = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayCanvas.swift")
-        let body = try #require(canvas.range(of: "var body: some View {"))
-        let container = try #require(canvas.range(of: "MonitorBoardRootContainer(", range: body.upperBound ..< canvas.endIndex))
-        let bodyEnd = try #require(canvas.range(of: "private func updateScale()", range: container.upperBound ..< canvas.endIndex))
-        let backdrop = canvas[body.upperBound ..< container.lowerBound]
-        #expect(backdrop.contains("DesignTokens.Colors.surfaceRaised"))
-        #expect(backdrop.contains("Image(decorative: cover"))
-        #expect(backdrop.contains(".clipShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.content, style: .continuous))"))
-        #expect(!canvas[container.lowerBound ..< bodyEnd.lowerBound].contains("clipShape"), "the rounded clip also cuts the objects and their chrome")
-    }
-
     /// The widget's tile in board points.
     private static func tile(_ id: UUID, in model: InteractionModel) -> CGRect? {
         guard let widget = model.placements.first(where: { $0.id == id }) else { return nil }

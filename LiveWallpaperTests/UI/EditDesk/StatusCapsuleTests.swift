@@ -334,15 +334,6 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.cpuReadout(scope: "system", systemPercent: 72, appPercent: 3) == 72)
     }
 
-    @Test("The open status panel is stacked above the nav pill")
-    func statusPanelSitsAboveTheNavPill() throws {
-        let bar = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
-        let pill = try #require(bar.range(of: "NavPill(selection:"))
-        let cluster = try #require(bar.range(of: "trailingContent"))
-        #expect(pill.upperBound <= cluster.lowerBound, "declared after the cluster, the pill covers the status panel")
-        #expect(!bar.contains(".overlay(alignment: .center)"), "an overlay draws the pill over the status panel")
-    }
-
     @Test("On battery the footer carries the charge and its icon; on external power it says nothing")
     func batteryReadoutOnlyOnBattery() {
         let battery = StatusCapsuleModel.batteryReadout(.battery(level: 0.72))

@@ -1,0 +1,11 @@
+{
+  "WPEMdlParserTests/workshopModelsParseCompletely()": "Requires explicit external Workshop corpus access; synthetic parser cases must still pass.",
+  "WPEMdlParserTests/workshopSkeletonCorpusParses()": "Requires explicit external Workshop corpus access; synthetic skeleton cases must still pass.",
+  "WPEMdlParserTests/workshopClipGroupsUsePartTableIndices()": "Requires explicit external Workshop corpus access; synthetic clip cases must still pass.",
+  "WPEScriptAsyncTickSemanticsTests/realSceneScriptCostDistribution()": "Optional external corpus timing probe; synthetic async semantics cases must still pass.",
+  "ScreenRuntimeOwnershipTests/screenRefreshMidCrossfadeCleansUpRetiringSession()": "Crossfade is disabled when the host enables Reduce Motion; other session ownership cases must still pass.",
+  "WPELinkedShaderStageTests/actualDepthParallaxVertexFeedsResolutionAndProjectionVaryings()": "Requires an explicitly supplied external depth-parallax vertex shader; synthetic linked-stage cases must still pass.",
+  "WPEEffectFBOSwapTests/officialFluidPreviewRenders()": "Requires locally installed official fluid-preview assets; synthetic FBO execution cases must still pass.",
+  "WPEPuppetSkinningGateTests/realModelPreparationCostProbe()": "Opt-in real-model preparation timing probe, requiring LW_PUPPET_PREPARATION_MODEL; synthetic skinning contracts must still pass.",
+  "WPEFrameOverlayTests/benchmark()": "CPU timing probe requires LOOMSCREEN_FRAME_OVERLAY_BENCHMARK=1; overlay behavior cases must still pass."
+}

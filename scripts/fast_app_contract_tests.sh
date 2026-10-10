@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hardware-free app architecture/security shard for required PR validation.
+# Small daily shard for data safety, trust boundaries and app/session behavior.
 set -euo pipefail
 
 # The required shard always uses synthetic fixtures, even in an opted-in shell.
@@ -17,381 +17,54 @@ usage() {
   cat <<'EOF'
 Usage: scripts/fast_app_contract_tests.sh [--without-building|--pro-only|--list]
 
-Runs the hardware-free architecture/security suites with concise xcresult
+Runs the critical data/security/apply/session suites with concise xcresult
 reporting. --without-building reuses products in DERIVED_DATA. --pro-only skips
 the Lite host, which needs a real signing certificate (see below).
 EOF
 }
 
-# Run together in one test host with Swift Testing's in-process parallelism.
-# A suite that fails beside others belongs in SERIAL_SUITES.
+# The daily shard protects data, trust boundaries and core apply/session behavior.
+# Feature-specific import formats, layout, parser, renderer and stress suites stay available via
+# app_tests.sh suites/full rather than accumulating in every PR run.
 PARALLEL_SUITES=(
-  GeneralSettingsOwnershipCharacterizationTests
-  PlaylistEntryTitleTests
-  # Capture lifecycle resets use fake sources.
-  AudioSpectrumBrokerTests
-  AudioSpectrumCadenceTests
-  AudioSpectrumProcessorTests
+  AtomicFileStoreTests
   SettingsPersistenceFailureTests
   SettingsManagerParkedConfigurationTests
-  # One grid inset and one column ladder across every library page.
-  SystemWallpaperTileGeometryTests
-  WorkshopCardPreviewLayoutTests
-  WorkshopDownloadByteProgressTests
-  EntitlementAuditTests
-  QAControlPlaneScreenIdentityTests
-  QAControlPlaneWindowObservationTests
-  QAApplyOperationsTests
-  WallpaperOpeningBatchTests
-  WallpaperStartBarrierTests
-  WallpaperStartBarrierCommitTests
-  # Failure surfaces that have a classified cause must render it rather
-  # than collapsing every cause into one sentence.
-  ErrorReasonSurfaceTests
-  SceneFailurePresentationTests
-  WPESceneSectionStateTests
-  WPEUniqueEffectGraphTests
-  WPEPreparedPassAccessTests
-  WPEShaderInterfaceTests
-  WPEPassColorContractTests
-  WPEPassVertexPathTests
-  WPESceneScriptParticlePlaybackTests
-  # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
-  # code into a severity tier and a set of recovery buttons has to be gated, or
-  # a newly minted code lands in the wrong tier without anything going red.
-  WallpaperFailureClassificationTests
-  HTMLTrustVerdictTests
-  LogPrivacySourceAuditTests
-  LocalizationCoverageTests
-  PluralCountCopyTests
-  MonitorBoardPlacementAccessibilityCharacterizationTests
-  # The inspector lays the board out at the display's point size and draws it
-  # down, so edit chrome has to undo that shrink or a 36pt control bar lands
-  # seven points tall. Both the conversion arithmetic and the laid-out box.
-  BoardChromeScaleTests
-  BoardChromeScaleLayoutTests
-  # A scene wallpaper's only now-playing path; the dispatcher tests exercise the
-  # far side, so fan-out / replay / demand had nothing of their own.
-  WPEEnrichedNowPlayingFeedTests
-  # The cache pane's latest-wins arbitration lives in private SwiftUI state, so
-  # this pins the ordering in source; deleting the guard left everything green.
-  CacheInventoryArbitrationTests
-  BoardPointerScopeTests
-  MusicLayerPointerGateTests
-  RuntimeLeaseChurnCharacterizationTests
-  MonitorSamplerOwnershipCharacterizationTests
-  SuspendEnergyTests
-  RepositoryRootTests
-  SchemeEnvironmentContractTests
-  SecurityScopedBookmarkResolverTests
-  SteamCMDDoctorBoundaryCharacterizationTests
-  SteamCMDDoctorLifecycleTests
-  # Cached-login verdict wording: a blocked network must not read as an
-  # unrecognized response or send the user to re-sign in.
-  SteamCachedLoginVerdictTests
-  SteamCMDOutputStreamTests
-  DesktopPictureFrameExtractorTests
-  SparkleUpdaterOwnershipTests
-  SystemMemoryPressureWatcherTests
-  WPECorpusManifestTests
-  WallpaperEngineProjectPropertiesTests
-  WPEProjectPropertyInputSafetyTests
-  WPEDottedFileNameTests
-  WallpaperEngineWebPropertyBridgeTests
-  # String transform only, no Metal device: a workshop varying with no
-  # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
-  WPEWorkshopVaryingReconstructionTests
-  WPERendererOwnershipCharacterizationTests
-  WPEMetalFBOAliasPlannerTests
-  WPEProjectedComposeQuadTests
-  WPEProjectedComposeRoutingTests
-  # Shared scene output geometry and frame leases use synthetic, hardware-free fixtures.
-  WPESceneSpanMappingTests
-  WPESceneSpanFramesTests
-  # Name-table only, no Metal device: an unrecognised model material shader
-  # silently swaps a .mdl mesh for a billboard quad (3470948192 star dome).
-  # .mdl section versions. The corpus completeness case skips without
-  # LIVEWALLPAPER_EXTERNAL_FIXTURES; the synthetic per-version cases still run.
-  WPEMdlParserTests
-  WPESceneModelMaterialShaderTests
-  WPESceneScriptB2bResourceLimitTests
-  WPESceneScriptInitialLayerConfigurationTests
-  WPESceneScriptSharedLayerOrderTests
-  WPESceneScriptVideoBridgeTests
-  WPEUploadCancellationOracleTests
-  WPESceneParallaxBindingInferenceTests
-  WPESceneCameraParallaxScriptTests
-  WPESceneTestingReportTests
-  InstalledOwnershipCharacterizationTests
-  # Persistence/config/storage correctness. Deterministic, hardware-free, and
-  # each one covers a defect that shipped: a lost settings generation, a refused
-  # Lite/Pro restore, a main-thread library walk.
-  AtomicFileStoreTests
   DisplayConfigurationControllerTests
-  BookmarkContentOnlyTests
   ConfigurationPorterTests
   ScreenSchemePersistenceTests
-  # Preview ownership and authored slider values must survive UI refactors.
-  WPESliderDetentBudgetTests
-  WallpaperCoverStoreTests
-  PreviewFilesystemWorkTests
-  HTMLSnapshotProducerOwnershipTests
-  WPEPreviewURLCacheTests
-  PreviewFrameTimingTests
-  # System Wallpaper publish/status machine, including the provider stamp: a
-  # leftover appex used to condemn the installed one and pause the whole page.
-  SystemWallpaperMaintenanceTests
-  WPEStorageInventoryTests
-  # Edit Desk (2026-09-18): the stage ↔ SwiftUI contract and the pure geometry
-  # that SCREENS.md S1–S3 pins numerically; both are hardware-free.
-  EditDeskStageModelTests
-  StageGeometryTests
-  EditDeskShelfContinuityTests
-  EditDeskRouterTests
-  LibraryMetadataSidecarTests
-  ScreenPresentationTests
-  EditDeskPreferencesTests
-  # Wallpaper transition setting: default, persistence and search. The shader and
-  # controller suites need Metal and windows, so they stay out of this shard.
-  WallpaperTransitionSettingTests
-  WallpaperOpeningSettingTests
-  StageSpringTests
-  # Edit Desk M4/M5 (2026-09-20): overlay canvas session/geometry, modal chrome,
-  # workshop session/page and deferred apply. Pure-value and source-probe suites.
-  OverlayEditorSessionTests
-  OverlayGeometryTests
-  OverlayLayerListTests
-  OverlayRuntimeContractTests
-  OverlayObjectRemoveWindowTests
-  SavedPageTests
-  DetailBookmarkTests
-  BookmarkStorageErrorToastTests
-  LibraryBookmarkStorageErrorToastTests
-  OverlayRemoveAllTests
-  OverlayHiddenWidgetTests
-  EditDeskModalChromeTests
-  MatureRevealStateTests
-  CollapsibleDescriptionTests
-  WorkshopSessionTests
-  BrowsePaginationMetadataTests
-  BrowseRequestShapeTests
-  WorkshopBookmarkTests
-  WorkshopBookmarkMetadataTests
-  WorkshopMetadataBatchTests
-  BrowseCardEqualityTests
-  WorkshopPageSourceTests
-  GalleryCardPreferencesTests
-  WallpaperEngineProjectWorkshopIDTests
-  DeferredApplyToastsTests
-  OnboardingProgressTests
-  OnboardingUITests
-  MenuBarBehaviorTests
-  OnboardingMultiScreenTests
-  ModalGeometryTests
-  EditDeskAccessibilityTests
-  ShelfGestureControllerTests
-  CodexAgentSourceTests
-  SchedulePolicyTests
-  WallpaperAutomationCoordinatorTests
-  WallpaperAutomationRotationResetTests
-  WallpaperAutomationSwitchGroupTests
-  WallpaperManualSwitchGroupTests
-  VolumeMountReloadTests
-  HTMLWebTransformLayoutTests
-  WPESceneModelSubmeshMaterialGraphTests
-  WPEParticleSpawnFailureTests
-  WallpaperPolicyEngineThermalTests
-  ShelfGridFlightTests
-  ApplyRouterTests
-  LibraryImporterTests
-  EditDeskApplyQueueTests
-  EditDeskToastCenterTests
-  EditDeskUndoStackTests
-  StatusCapsuleTests
-  EditDeskChromeSourceTests
-  EditDeskCanvasOwnershipTests
-  EditDeskPageSeparatorSourceTests
-  EditDeskBrowseSeparatorRenderTests
-  SettingsSidebarLegibilityTests
-  SettingsSearchFocusTests
-  HoverAutoplayPreviewRowTests
-  DisplayFloatLayerTests
-  WallpaperModalTests
-  WorkshopCoverSaveTimeTests
-  HomeCoverCaptureRetryTests
-  DisplayDetailTests
-  DetailTransitionTests
-  StorageDiskTests
-  StorageSourceCoverageTests
-  AppStorageInventoryTests
-  InspectorResizeStepTests
-  WorkshopDetailCopyTests
-  SettingsConfirmationSourceTests
-  # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
-  # closure on GetApplicationEventTarget() registered but never fired.
-  GlobalShortcutCarbonWiringTests
-  # Source probes that were all red at some point in 2026-09 while `make verify`
-  # stayed green, because a contract suite outside this list never runs:
-  # a queued deleteWorkshopItem with no expiry guard, a video session whose
-  # startsHidden moved into a factory, two unaudited package write sites, and
-  # the rule that only the XPC connector writes the user's Steam library.
-  ConnectorQueueExpiryTests
-  VideoSessionLifecycleTests
-  WPEMappedPackageWriteFenceTests
-  SteamWriteOwnershipTests
-  # The connector's id/containment predicates are the last line of defence
-  # before a write lands in the user's real Steam library.
+  EntitlementAuditTests
+  HTMLTrustVerdictTests
+  LogPrivacySourceAuditTests
+  SecurityScopedBookmarkResolverTests
   SteamLibraryPathsTests
-  SteamCMDProfileTests
-  LitePathSafetyShadowTests
-  WallpaperEngineImportServiceTests
-  # Pure alpha arithmetic, no view host: the paused dim used to multiply the
-  # music tile's type as well as its cover, so a dialled-down overlay went
-  # unreadable the moment playback stopped.
-  NowPlayingVisibilityTests
-  # Source probes over the widget headers: which tiles carry an icon, where it
-  # comes from, and that the gauge column cannot strand width beside the ring.
-  MonitorWidgetChromeTests
-  # Old-shell inspector rules held in statics: Reset Color & Filters keeps the
-  # weather and particle fields, and the particle picker offers no "none".
-  ColorAdjustmentsViewResetTests
-  OverlaysInspectorPanelPickerTests
-  WPESceneTimelineTests
-  # Acf parsing, cache-clear accounting, modal display targets and pass-contract resolution are pure model checks.
-  SteamWorkshopManifestACFTests
-  CacheClearAccountingTests
-  ModalDisplayTargetTests
-  WPERenderContractResolutionTests
+  SteamLibrarySymlinkContainmentTests
+  SteamWriteOwnershipTests
 )
 
-# These fail when other suites run beside them: they share process-wide state
-# (display configuration, the undo stack, the one ScreenManager, preview queues)
-# or hold a wall-clock budget. Run afterwards with parallelism off.
+# These share settings, AppKit/WebKit delivery, or process-wide factories.
 SERIAL_SUITES=(
-  WeatherOverlayMigrationTests
-  # ScreenManager owns shared settings across await; scope tokens isolate notifications,
-  # while this pass keeps its persistence snapshots exclusive from parallel suites.
+  DefaultsIsolationTests
   PersistentUserPauseTests
   ScreenManagerCoordinationTests
-  DeletedSceneFallbackTests
-  ScreenSignatureBaselineTests
-  ResetPlaybackColorSpaceTests
-  ScenePresetLiveUpdateTests
-  LibraryShuffleLazyResolutionTests
-  DefaultsIsolationTests
-  # AppLanguageOverride writes the process-wide argument domain. Its lock orders
-  # writers, but unscoped localized UI readers in the parallel pass do not take it.
-  WorkshopDateLanguageTests
-  BrowseFilterTests
-  CPUWidgetTests
-  # Glyph-width arithmetic against the measured gauge centre: a CPU at 100%
-  # needed a 0.561 scale against a 0.6 floor and rendered as "1...".
-  WidgetReadoutFitTests
-  NavigationTests
-  TopBarBudgetTests
-  SettingsSearchLocalizationTests
-  # Native menu localization reads process-wide language changed by parallel fixtures.
-  EditDeskWindowHostTests
-  # These fixtures mutate global render defaults/language or need prompt AppKit/decoder delivery.
-  WPEDisplayRenderActorTests
-  SavedLibraryModelTests
-  QAControlPlaneLibraryTests
-  WallpaperExportServiceTests
-  BrowseCardEditDeskLayoutTests
-  # XPC factory substitution and blocked filesystem fixtures require an isolated pass.
-  SteamConnectorClientCancellationTests
-  SteamConnectorEnvironmentTests
-  SteamCMDSelfUpdateRestartTests
-  SteamWorkshopDownloadCompletionTests
-  # Pin native menu/page persistence, child-frame script ownership and static preview fallback.
-  EditDeskLibraryStateTests
-  HTMLWallpaperFrameLifecycleTests
-  WallpaperVideoPlayerStartupPolicyTests
-  # HAL services are injected; AppKit/WK fixtures share host delivery and must run in isolation.
-  SystemAudioCaptureRecoveryTests
-  WPESceneMediaEventDispatchTests
-  MountedGIFHostVisibilityTests
-  HTMLWallpaperRuntimeScriptTests
-  # Web isolation enforced by WebKit itself: CSP egress, WebRTC blocker, folder nonce, navigation policy.
-  NetworkIsolationEnforcementTests
-  FolderURLSchemeHandlerIsolationTests
-  HTMLWallpaperViewSourceIsolationTests
-  HTMLWallpaperNavigationPolicyTests
-  WPEHoverHitRectTests
-  WorkshopFolderImportCoordinatorTests
-  WPELocalCopySupersedeTests
-  WorkshopMutationGateTests
-  WorkshopDownloadReadinessTests
-  WorkshopDownloadQueueTests
-  WallpaperEnginePackageTests
-  # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated
-  # parallel suites can exhaust the dispatch pool before their workers start.
-  # Keep the oracles' own concurrent operations and assertions unchanged.
-  WPESceneScriptContainmentCharacterizationTests
-  WPESceneScriptBatchCompletionTests
-  WPESceneScriptRuntimeTests
-  WPESceneScriptCanvasVectorTests
-  WPESceneScriptTransformGetterCopyTests
-  WPESceneScriptInitializationOrderingTests
-  WPESceneScriptLaneRunLoopTests
-  WPETransformEvaluatorRunLoopTests
-  WPESceneScriptInitReturnTests
-  WPESceneScriptCreatedLayerQuotaTests
-  WPESceneScriptB2bResourceLimitTests
-  WPESceneScriptLaneLifetimeTests
-  WPESceneScriptQuarantineCompletionTests
-  WPEScriptAsyncTickSemanticsTests
-  WPETimerAliasCharacterizationTests
-  WPESceneScriptEntrySemanticsTests
-  WPENativeTimerSurfaceTests
-  # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
-  # with other UI probes; the isolated 119-test suite passes without contention.
-  EditDeskStageViewTests
-  HomePageTeardownTests
-  # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
-  OverlayVisibilityLifecycleCharacterizationTests
-  # Error snapshots compare app-language text across calls; locale probes change it process-wide.
-  SceneFailureFlowTests
-  ModalActionsTests
-  # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   RuntimeTests
-  PreviewWorkGateTests
-  PreviewRequestPoolTests
-  ThumbnailServiceAdmissionTests
-  # Cancelled playlist media work must not repopulate an invalidated cache.
-  PlaylistMetadataLifecycleTests
-  TileTaskTests
-  ShelfThumbnailCacheTests
-  OverlayInspectorOpeningTests
-  OverlayTopBarWindowTests
-  DetailResizeWindowTests
-  EditDeskToastHostPlacementTests
-  PopoverEscapeTests
+  ApplyRouterTests
   DeferredApplyCoordinatorTests
-  WorkshopModalTests
-  WorkshopModalHostTests
-  DisplayStateResolverTests
-  LibraryDragControllerTests
-  SchemeDragSourceTests
-  VideoSpanContainerLayoutTests
-  SchemeDetailRowsTests
-  DisplayDetailHostTests
-  SceneSettingsOwnerTests
+  WallpaperAutomationCoordinatorTests
+  WallpaperManualSwitchGroupTests
+  NetworkIsolationEnforcementTests
+  FolderURLSchemeHandlerIsolationTests
+  HTMLWallpaperNavigationPolicyTests
+  HTMLWallpaperViewSourceIsolationTests
   ConfigurationPorterBookmarkMergeTests
-  WPEEffectProjectionReplayTests
-  WPEUniformSourceTraceTests
-  WPEEffectTextureProjectionTests
-  WPEEffectTextureProjectionConsumerReplayTests
-  # Subscription sync writes the shared download coordinator's settled phases.
-  WorkshopSubscriptionSyncTests
-  WorkshopSteamDeletedPruneTests
+  WorkshopMutationGateTests
+  WorkshopDownloadQueueTests
+  SteamConnectorClientCancellationTests
+  WallpaperVideoPlayerStartupPolicyTests
+  WPESceneScriptB2bResourceLimitTests
+  WPESceneScriptContainmentCharacterizationTests
 )
-
-# Kept out on purpose: they drive parked windows with synthetic events and flake on
-# CI runners, so only the local merge gate runs them as extra suites.
-#   ModalArrowWindowTests LibraryGridPreviewTests LibraryGridDragWindowTests
-#   SettingsSearchRowEmphasisTests LibraryModalHostLoadTests
 
 action="test"
 run_lite=1
@@ -436,6 +109,7 @@ run_pass() {
     --label "$label" \
     --result-bundle "$result_bundle" \
     --minimum-test-count 1 \
+    --skip-policy scripts/app_test_skip_policy.json \
     --slowest 10 \
     "${required_suites[@]}" \
     -- \

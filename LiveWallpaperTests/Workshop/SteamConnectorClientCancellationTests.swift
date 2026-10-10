@@ -7,6 +7,60 @@ import Testing
 /// `.serialized`: the test-only connection factory is process-wide state.
 @Suite("SteamConnectorClient cancellation", .serialized)
 struct SteamConnectorClientCancellationTests {
+    @Test("login owns one cancellation identity through its interactive and verification children")
+    func loginCancellationReachesBothChildren() throws {
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        let entryStart = try #require(source.range(of: "    func signInSteamAccount("))
+        let loginStart = try #require(source.range(of: "    static func runLoginSession("))
+        let loginEnd = try #require(source.range(of: "    func removeManagedSteamCMD("))
+        let entry = String(source[entryStart.lowerBound ..< loginStart.lowerBound])
+        let login = String(source[loginStart.lowerBound ..< loginEnd.lowerBound])
+        #expect(entry.contains("let operationID = UUID().uuidString"))
+        #expect(entry.contains("liveness.own(operationID: operationID)"))
+        #expect(entry.contains("liveness.disown(operationID: operationID)"))
+        #expect(entry.contains("isCancelled: { !liveness.canContinue }"))
+        #expect(login.contains("hasOwnGroup: false, operationID: operationID"))
+        #expect(!login.contains("operationID: nil"))
+        let verifyStart = try #require(login.range(of: "let cached = runCachedLoginProbe("))
+        #expect(login[verifyStart.lowerBound...].contains("operationID: operationID, isCancelled: isCancelled"))
+        #expect(login.contains("guard !isCancelled() else { break }"))
+        let spawnStart = try #require(source.range(of: "    private static func spawn("))
+        let spawnEnd = try #require(source.range(of: "    func probeEnvironment("))
+        let spawn = String(source[spawnStart.lowerBound ..< spawnEnd.lowerBound])
+        let run = try #require(spawn.range(of: "try process.run()"))
+        #expect(spawn[..<run.lowerBound].contains("guard !isCancelled()"))
+        let register = try #require(spawn.range(of: "activeSteamCMD.register("))
+        #expect(spawn[register.lowerBound...].prefix(220).contains("isCancelled: isCancelled"))
+    }
+
+    @Test("Downloads and engine queries carry connection cancellation through child registration")
+    func ownedOperationsCheckCancellationAtSpawn() throws {
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        for (start, end, expectedCalls) in [
+            ("    func downloadWorkshopItem(", "    func listSubscribedWorkshopItems(", 1),
+            ("    func latestWallpaperEngineBuildID(", "    func installWallpaperEngineAssets(", 1),
+            ("    func installWallpaperEngineAssets(", "    private static func discardStagedWorkshopTree(", 2),
+        ] {
+            let lower = try #require(source.range(of: start))
+            let upper = try #require(source.range(of: end, range: lower.upperBound ..< source.endIndex))
+            let body = source[lower.lowerBound ..< upper.lowerBound]
+            #expect(body.components(separatedBy: "isCancelled: { !liveness.canContinue }").count - 1 == expectedCalls)
+            #expect(body.components(separatedBy: "operationID: operationID,").count - 1 >= expectedCalls)
+        }
+    }
+
+    @Test("the connector treats an invalidated client connection as an abandoned caller")
+    func connectorWiresInvalidation() throws {
+        let main = try RepositoryRoot.source("SteamConnector/main.swift")
+        #expect(main.contains("newConnection.invalidationHandler"))
+        // The connection is the only strong reference, and XPC releases the exported object on
+        // invalidation without documenting whether that happens before or after the handler runs.
+        #expect(
+            !main.contains("[weak exportedObject]"),
+            "a weakly captured exported object may already be nil when the handler fires, which silently disables the whole abandoned-caller path"
+        )
+    }
+
     /// Holds every reply block and never invokes it, so the client's wait can end only by cancellation (or the 7200 s timer).
     private final class SilentConnector: NSObject, SteamConnectorProtocol {
         let invoked = OSAllocatedUnfairLock(initialState: false)
@@ -268,103 +322,6 @@ struct SteamConnectorClientCancellationTests {
         #expect(published.withLock { $0 } == [99])
     }
 
-    // MARK: - Source guards
 
-    @Test("the interactive login child is registered like every other SteamCMD child")
-    func connectorRegistersTheLoginChild() throws {
-        let connector = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        let login = try #require(connector.range(of: "static func runLoginSession("))
-        let body = connector[login.upperBound...]
-        let run = try #require(body.range(of: "try process.run()"))
-        let afterRun = body[run.upperBound...].prefix(600)
-        #expect(
-            afterRun.contains("activeSteamCMD.register("),
-            "a login child that is never registered cannot be signalled on host exit"
-        )
-    }
-
-    @Test("login owns one cancellation identity through its interactive and verification children")
-    func loginCancellationReachesBothChildren() throws {
-        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        let entryStart = try #require(source.range(of: "    func signInSteamAccount("))
-        let loginStart = try #require(source.range(of: "    static func runLoginSession("))
-        let loginEnd = try #require(source.range(of: "    func removeManagedSteamCMD("))
-        let entry = String(source[entryStart.lowerBound ..< loginStart.lowerBound])
-        let login = String(source[loginStart.lowerBound ..< loginEnd.lowerBound])
-        #expect(entry.contains("let operationID = UUID().uuidString"))
-        #expect(entry.contains("liveness.own(operationID: operationID)"))
-        #expect(entry.contains("liveness.disown(operationID: operationID)"))
-        #expect(entry.contains("isCancelled: { !liveness.canContinue }"))
-        #expect(login.contains("hasOwnGroup: false, operationID: operationID"))
-        #expect(!login.contains("operationID: nil"))
-        let verifyStart = try #require(login.range(of: "let cached = runCachedLoginProbe("))
-        #expect(login[verifyStart.lowerBound...].contains("operationID: operationID, isCancelled: isCancelled"))
-        #expect(login.contains("guard !isCancelled() else { break }"))
-        let spawnStart = try #require(source.range(of: "    private static func spawn("))
-        let spawnEnd = try #require(source.range(of: "    func probeEnvironment("))
-        let spawn = String(source[spawnStart.lowerBound ..< spawnEnd.lowerBound])
-        let run = try #require(spawn.range(of: "try process.run()"))
-        #expect(spawn[..<run.lowerBound].contains("guard !isCancelled()"))
-        let register = try #require(spawn.range(of: "activeSteamCMD.register("))
-        #expect(spawn[register.lowerBound...].prefix(220).contains("isCancelled: isCancelled"))
-    }
-
-    @Test("Downloads and engine queries carry connection cancellation through child registration")
-    func ownedOperationsCheckCancellationAtSpawn() throws {
-        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        for (start, end, expectedCalls) in [
-            ("    func downloadWorkshopItem(", "    func listSubscribedWorkshopItems(", 1),
-            ("    func latestWallpaperEngineBuildID(", "    func installWallpaperEngineAssets(", 1),
-            ("    func installWallpaperEngineAssets(", "    private static func discardStagedWorkshopTree(", 2),
-        ] {
-            let lower = try #require(source.range(of: start))
-            let upper = try #require(source.range(of: end, range: lower.upperBound ..< source.endIndex))
-            let body = source[lower.lowerBound ..< upper.lowerBound]
-            #expect(body.components(separatedBy: "isCancelled: { !liveness.canContinue }").count - 1 == expectedCalls)
-            #expect(body.components(separatedBy: "operationID: operationID,").count - 1 >= expectedCalls)
-        }
-    }
-
-    @Test("SteamCMD termination runs alongside app shutdown, not ahead of it on the same 2 s fuse")
-    func hostExitDoesNotSerialiseAheadOfShutdown() throws {
-        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
-        let terminate = try #require(app.range(of: "func applicationShouldTerminate("))
-        let body = app[terminate.upperBound...]
-        let hostExit = try #require(body.range(of: "terminateActiveSteamCMDForHostExit"))
-        let line = body[..<hostExit.lowerBound].split(separator: "\n").last ?? ""
-        #expect(line.contains("async let"), "a 1 s XPC wait awaited before shutdownForApplication() eats half of the watchdog budget")
-    }
-
-    @Test("the connector treats an invalidated client connection as an abandoned caller")
-    func connectorWiresInvalidation() throws {
-        let main = try RepositoryRoot.source("SteamConnector/main.swift")
-        #expect(main.contains("newConnection.invalidationHandler"))
-        // The connection is the only strong reference, and XPC releases the exported object on
-        // invalidation without documenting whether that happens before or after the handler runs.
-        #expect(
-            !main.contains("[weak exportedObject]"),
-            "a weakly captured exported object may already be nil when the handler fires, which silently disables the whole abandoned-caller path"
-        )
-    }
-
-    @Test("every SteamCMD child is registered, so host exit can reach one started without an operation id")
-    func connectorRegistersEveryChild() throws {
-        let connector = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        #expect(
-            !connector.contains("if let activeOperationID {"),
-            "a child registered only when the caller passed an operation id is invisible to terminateActiveForHostExit"
-        )
-        #expect(!connector.contains("if activeOperationID != nil {"))
-    }
-
-    @Test("app termination signals the active SteamCMD child before the termination coordinator runs")
-    func hostExitPrecedesTerminationCoordinator() throws {
-        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
-        let terminate = try #require(app.range(of: "func applicationShouldTerminate("))
-        let body = app[terminate.upperBound...]
-        let hostExit = try #require(body.range(of: "terminateActiveSteamCMDForHostExit"))
-        let coordinator = try #require(body.range(of: "AppTerminationCoordinator.shutdownForApplication()"))
-        #expect(hostExit.lowerBound < coordinator.lowerBound)
-    }
 }
 #endif

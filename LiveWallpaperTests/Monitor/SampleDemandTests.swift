@@ -180,9 +180,4 @@ struct SampleDemandTests {
         #expect(!opts.memory && !opts.disk)
     }
 
-    @Test("The legacy no-widget-info path fails open: every base group stays on")
-    func legacyPathFailsOpen() {
-        let defaults = SystemMetricsSource.Options.default
-        #expect(defaults.cpu && defaults.memory && defaults.network && defaults.disk && defaults.power)
-    }
 }

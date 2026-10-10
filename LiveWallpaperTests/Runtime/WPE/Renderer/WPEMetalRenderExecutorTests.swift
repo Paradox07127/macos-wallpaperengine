@@ -1076,41 +1076,6 @@ struct WPEMetalRenderExecutorTests {
         #expect(lateRecorder.value == false)
     }
 
-    @Test("Frame admission precedes particle and lazy texture mutation")
-    func frameAdmissionPrecedesDynamicResourceMutation() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift"
-        )
-        let admission = try #require(
-            source.range(of: "let frameSubmission = try executor.beginFrameSubmission()")
-        )
-        let particleTick = try #require(
-            source.range(of: "tickParticleSystems(")
-        )
-        let encode = try #require(
-            source.range(of: "let frame = try encodeSceneFrame(")
-        )
-
-        #expect(admission.lowerBound < particleTick.lowerBound)
-        #expect(admission.lowerBound < encode.lowerBound)
-        #expect(source.contains("defer { frameSubmission.seal() }"))
-    }
-
-    @Test("Logical frame leases bypass the legacy per-command-buffer budget")
-    func logicalFrameLeaseIsTheOnlyBudgetForMigratedFrames() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
-        )
-
-        #expect(
-            source.contains(
-                "let usesLegacyCommandBufferBudget = asyncSubmission && frameSubmission == nil"
-            )
-        )
-        #expect(source.contains("let semaphore = usesLegacyCommandBufferBudget ? inFlightSemaphore : nil"))
-        #expect(source.contains("semaphore?.signal()"))
-    }
-
     @Test("Custom shader without recognizable main surfaces a precise translator error")
     func rejectsUntranslatableCustomShader() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

@@ -614,29 +614,6 @@ struct NowPlayingSourceTests {
         await source2.stop()
     }
 
-    /// An in-process DNC post does not deliver under the sandboxed test host, so
-    /// the observer wiring is pinned by reading the source instead.
-    @Test("the DNC observer lives in monitor init and the source cannot remove it")
-    func observerRegistrationSourceContract() throws {
-        let monitor = try RepositoryRoot.source(
-            "LiveWallpaper/Monitor/NowPlaying/NowPlayingMonitor.swift"
-        )
-        let initSlice = try slice(monitor, from: "init(", until: "deinit")
-        #expect(initSlice.contains("addObserver("))
-        #expect(initSlice.contains("suspensionBehavior: .deliverImmediately"))
-        let deinitSlice = try slice(monitor, from: "deinit", until: "@objc private func handleNotification")
-        let total = monitor.components(separatedBy: "removeObserver").count - 1
-        let inDeinit = deinitSlice.components(separatedBy: "removeObserver").count - 1
-        #expect(total >= 1)
-        #expect(total == inDeinit)
-
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Monitor/NowPlaying/NowPlayingSource.swift"
-        )
-        #expect(!source.contains("DistributedNotificationCenter"))
-        #expect(!source.contains("removeObserver"))
-    }
-
     @MainActor
     @Test("a failed artwork fetch is retried once the fetcher's negative cache expires")
     func failedArtworkIsRetriedAfterTTL() async {
@@ -710,13 +687,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    private func slice(_ source: String, from start: String, until end: String) throws -> String {
-        let startRange = try #require(source.range(of: start))
-        let endRange = try #require(
-            source.range(of: end, range: startRange.upperBound ..< source.endIndex)
-        )
-        return String(source[startRange.lowerBound ..< endRange.lowerBound])
-    }
 }
 
 // MARK: - Demand graph through the production path

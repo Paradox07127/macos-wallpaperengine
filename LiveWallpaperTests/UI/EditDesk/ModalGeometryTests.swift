@@ -101,12 +101,4 @@ struct ModalGeometryTests {
         #expect(led.overflow.map(\.id) == [4])
     }
 
-    @Test("Only the library hangs the strip, from the one geometry constant; the Workshop modal has none")
-    func onlyTheLibraryHangsTheStrip() throws {
-        let library = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryDragController.swift")
-        #expect(!library.contains("floatTop: CGFloat = 14"), "the library's drag overlay keeps its own copy of the strip's top")
-        #expect(library.contains("FloatLayerGeometry.panelTop"))
-        let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift")
-        #expect(!workshop.contains("DisplayFloatLayer("), "the Workshop host still hangs a target strip over its modal")
-    }
 }

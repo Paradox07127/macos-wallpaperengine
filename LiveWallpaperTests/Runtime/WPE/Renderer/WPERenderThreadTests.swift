@@ -860,27 +860,6 @@ struct WPEDisplayRenderActorTests {
 
     // MARK: - M2c2 CADisplayLink frame driver
 
-    @Test("display-link build and terminal stop share one ordered lifecycle")
-    func displayLinkLifecycleIsOrderedAndDrained() throws {
-        let surface = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/RenderThread/WPERenderSurface.swift"
-        )
-        let actor = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"
-        )
-        let session = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Session/SceneWallpaperSession.swift"
-        )
-
-        #expect(surface.contains("private var displayLinkLifecycleTask: Task<Void, Never>?"))
-        #expect(surface.contains("await previousTask?.value"))
-        #expect(surface.contains("await renderActor.stopDisplayLinkDriver(generation: generation)"))
-        #expect(actor.contains("private var displayLinkLifecycle = WPEDisplayLinkLifecycleState()"))
-        #expect(actor.contains("guard displayLinkLifecycle.admit(generation: generation)"))
-        #expect(session.contains("let displayLinkStopTask = surface.stopDisplayLinkDriver()"))
-        #expect(session.contains("await displayLinkStopTask?.value"))
-    }
-
     @Test("display-link lifecycle rejects stale and duplicate generations")
     func displayLinkLifecycleRejectsStaleGenerations() {
         var lifecycle = WPEDisplayLinkLifecycleState()

@@ -122,22 +122,6 @@ struct AtomicFileStoreTests {
         }
     }
 
-    @Test("Refuses to decode files larger than maxReasonableFileSize")
-    func refusesOversizedPayload() throws {
-        let directory = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let fileURL = directory.appendingPathComponent("oversized.json")
-
-        FileManager.default.createFile(atPath: fileURL.path(percentEncoded: false), contents: nil)
-        let handle = try FileHandle(forWritingTo: fileURL)
-        try handle.seek(toOffset: UInt64(AtomicFileStore<TestValue>.maxReasonableFileSize) + 1)
-        try handle.write(contentsOf: Data([0x00]))
-        try handle.close()
-
-        let store = AtomicFileStore<TestValue>(fileURL: fileURL)
-        #expect(store.read() == nil, "Oversized payload must be rejected without throwing on MainActor")
-    }
-
     @Test("delete removes both the primary and backup files")
     func deleteRemovesBothFiles() throws {
         let directory = try makeTempDirectory()

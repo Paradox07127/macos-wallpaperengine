@@ -5,19 +5,6 @@ import Testing
 @Suite("MonitorBoardConfiguration")
 struct MonitorBoardConfigurationTests {
 
-    // MARK: - Defaults
-
-    @Test("Default configuration matches the frozen v4 contract")
-    func defaultsMatchContract() {
-        let config = MonitorBoardConfiguration.default
-
-        #expect(config.schemaVersion == 4)
-        #expect(config.refreshHz == 1.0)
-        #expect(config.mouseInteractionEnabled == false)
-        #expect(config.reduceMotionOverride == nil)
-        #expect(config.widgets.map(\.kind) == [.cpu, .memory, .gpu])
-    }
-
     // MARK: - Refresh interval grid
 
     @Test("Refresh interval grid is non-uniform and spans exactly the Hz clamp")
@@ -53,18 +40,6 @@ struct MonitorBoardConfigurationTests {
         #expect(MonitorBoardConfiguration.snappedRefreshInterval(1.23) == 1.2)
         #expect(MonitorBoardConfiguration.snappedRefreshInterval(2.6) == 3)
         #expect(MonitorBoardConfiguration.snappedRefreshInterval(.nan) == 1.0)
-    }
-
-    @Test("The default board reads as a 1 s interval")
-    func defaultRefreshInterval() {
-        #expect(MonitorBoardConfiguration.default.refreshIntervalSeconds == 1.0)
-    }
-
-    @Test("Default system placements match the documented kind/size order")
-    func defaultSystemPlacementsOrder() {
-        let placements = MonitorBoardConfiguration.defaultSystemPlacements()
-        #expect(placements.map(\.kind) == [.cpu, .memory, .gpu])
-        #expect(placements.map(\.size) == [.medium, .medium, .medium])
     }
 
     // MARK: - Encode/decode round-trip

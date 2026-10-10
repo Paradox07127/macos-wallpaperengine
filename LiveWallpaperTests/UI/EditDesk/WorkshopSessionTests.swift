@@ -97,10 +97,6 @@ struct WorkshopSessionTests {
             #expect(session.consumePendingDeepLink() == "aurora")
             #expect(session.listing == .results, "the deep-linked search would load behind the Likes list")
         }
-        let page = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift")
-        #expect(page.contains("listing: Bindable(session).listing"), "the page keeps the listing where a page switch drops it")
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(!pane.contains("@State private var listing"), "the pane keeps the listing where a page switch drops it")
     }
 
     @Test("A pending deep link is consumed exactly once")

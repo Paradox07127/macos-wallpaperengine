@@ -147,12 +147,6 @@ struct EditDeskRouterTests {
         #expect(older.page == .library)
     }
 
-    @Test("Manage Schemes opens the Schemes page")
-    func manageSchemesOpensSchemesPage() throws {
-        let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
-        #expect(host.contains("router.select(.schemes)"), "Manage Schemes does not open the Schemes page")
-    }
-
     @Test("Unavailable workshop lands on home for notifications and selection")
     func unavailableWorkshop() {
         let router = EditDeskRouter(

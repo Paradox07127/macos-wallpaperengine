@@ -94,8 +94,8 @@ struct SystemMemoryPressureWatcherTests {
         #expect(received.withLock { $0 }.isEmpty)
     }
 
-    @Test("App startup owns shared watcher while Monitor uses only its read seam")
-    func sharedOwnerSourceContract() throws {
+    @Test("App startup owns the shared watcher; isolated startup options use an inactive watcher")
+    func startupPlansChooseTheWatcher() {
         let runtimeOptions = AppRuntimeOptions(
             arguments: [],
             environment: [:],
@@ -113,16 +113,6 @@ struct SystemMemoryPressureWatcherTests {
                 .memoryPressureWatcher is InactiveMemoryPressureWatcher
         )
 
-        let metricsSource = try productionSource(
-            "LiveWallpaper/Monitor/Sources/SystemMetricsSource.swift"
-        )
-        #expect(
-            metricsSource.contains(
-                "memoryPressureReader: any MemoryPressureReading = SystemMemoryPressureWatcher.shared"
-            )
-        )
-        #expect(!metricsSource.contains("pressure.start()"))
-        #expect(!metricsSource.contains("pressure.stop()"))
     }
 
     @Test("Monitor pressure wire mapping reads without owning a source")
@@ -137,9 +127,6 @@ struct SystemMemoryPressureWatcherTests {
         }
     }
 
-    private func productionSource(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
 }
 
 private final class TestMemoryPressureSource: MemoryPressureSourceLifecycle {

@@ -164,14 +164,6 @@ struct SparkleUpdaterOwnershipTests {
         #expect(await flag.fired)
     }
 
-    @Test("Release packaging re-signs Sparkle helpers and allows a dirty appcast between SKUs")
-    func releaseScriptWiresSparkleInstall() throws {
-        let source = try RepositoryRoot.source("scripts/release-app.sh")
-        #expect(source.contains("XPCServices/Installer.xpc"), "Installer.xpc would stay ad-hoc")
-        #expect(source.contains("loomscreen-sparkle-ent"), "must reseal with extracted archive entitlements")
-        #expect(source.contains("appcast-lite.xml"))
-        #expect(source.contains("ACTUAL_BUNDLE_VERSION"))
-    }
     /// Availability and session lifetime arrive through different delegates:
     /// "Remind Me Later" ends the session without withdrawing the update.
     @MainActor

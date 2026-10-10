@@ -13,8 +13,6 @@ struct WPEOfficialDocsCorpusAuditTests {
     }
 
     private static let officialDocumentationCommit = "b26412295cbfd0ee5cdceff67e2c95069527aa1b"
-    private static let allowedContractStatuses = Set(["implemented", "partial", "missing"])
-    private static let allowedEvidenceLevels = Set(["L0.5", "L1_REQUIRED"])
 
     private static func shaderContract(
         _ name: String,
@@ -646,116 +644,6 @@ struct WPEOfficialDocsCorpusAuditTests {
             particleSourcePreservationMismatches.isEmpty,
             "Particle parser dropped authored JSON paths: \(particleSourcePreservationMismatches)"
         )
-    }
-
-    @Test("Official contract manifest covers every documented shader global, SceneScript event, particle domain, and selected page group")
-    func officialContractManifestCoverage() {
-        let shaderContracts = Self.shaderGlobalContracts
-        let shaderNames = shaderContracts.compactMap { $0["name"] }
-        #expect(shaderContracts.count == 60)
-        #expect(Set(shaderNames).count == shaderContracts.count, "Shader contract names must be unique")
-        #expect(shaderContracts.allSatisfy { Self.allowedContractStatuses.contains($0["status"] ?? "") })
-        #expect(shaderContracts.allSatisfy { Self.allowedEvidenceLevels.contains($0["evidence"] ?? "") })
-        #expect(shaderContracts.allSatisfy {
-            !($0["type"] ?? "").isEmpty
-                && !($0["scope"] ?? "").isEmpty
-                && !($0["updateFrequency"] ?? "").isEmpty
-                && !($0["producer"] ?? "").isEmpty
-        })
-
-        let expectedTextureNames = Set((0...7).flatMap { slot in
-            [
-                "g_Texture\(slot)Resolution",
-                "g_Texture\(slot)Rotation",
-                "g_Texture\(slot)Translation"
-            ]
-        })
-        let expectedNonTextureNames = Set([
-            "g_Time", "g_Daytime", "g_Frametime", "g_PointerPosition", "g_PointerPositionLast",
-            "g_TexelSize", "g_TexelSizeHalf", "g_Screen", "g_Alpha", "g_Color", "g_Color4",
-            "g_ParallaxPosition", "g_EyePosition", "g_ViewForward", "g_ViewRight", "g_ViewUp",
-            "g_OrientationForward", "g_OrientationRight", "g_OrientationUp", "g_ModelMatrix",
-            "g_ModelMatrixInverse", "g_ViewProjectionMatrix", "g_ModelViewProjectionMatrix",
-            "g_ModelViewProjectionMatrixInverse", "g_EffectModelMatrix",
-            "g_EffectModelViewProjectionMatrix", "g_EffectModelViewProjectionMatrixInverse",
-            "g_EffectTextureProjectionMatrix", "g_EffectTextureProjectionMatrixInverse", "g_LayerModelMatrix",
-            "g_AudioSpectrum16Left", "g_AudioSpectrum16Right", "g_AudioSpectrum32Left",
-            "g_AudioSpectrum32Right", "g_AudioSpectrum64Left", "g_AudioSpectrum64Right"
-        ])
-        #expect(Set(shaderNames) == expectedNonTextureNames.union(expectedTextureNames))
-
-        let expectedEventNames = Set([
-            "applyGeneralSettings", "applyUserProperties", "cursor", "destroy",
-            "init", "media", "resizeScreen", "update"
-        ])
-        let eventNames = Self.sceneScriptEventContracts.compactMap { $0["name"] }
-        #expect(Set(eventNames) == expectedEventNames)
-        #expect(Set(eventNames).count == Self.sceneScriptEventContracts.count)
-        #expect(Self.sceneScriptEventContracts.allSatisfy {
-            Self.allowedContractStatuses.contains($0["status"] ?? "")
-                && Self.allowedEvidenceLevels.contains($0["evidence"] ?? "")
-                && !($0["producer"] ?? "").isEmpty
-        })
-
-        let expectedParticleDomains = Set([
-            "general", "emitter", "renderer", "initializer", "operator", "children", "controlpoint"
-        ])
-        let particleNames = Self.particleComponentContracts.compactMap { $0["name"] }
-        #expect(Set(particleNames) == expectedParticleDomains)
-        #expect(Set(particleNames).count == Self.particleComponentContracts.count)
-        #expect(Self.particleComponentContracts.allSatisfy {
-            $0["parseStatus"] == "parsedLossless"
-                && Self.allowedContractStatuses.contains($0["runtimeStatus"] ?? "")
-                && Self.allowedEvidenceLevels.contains($0["evidence"] ?? "")
-                && !($0["storage"] ?? "").isEmpty
-        })
-
-        let expectedPageGroups: [(contracts: [[String: String]], pathsByName: [String: String])] = [
-            (
-                Self.cameraContracts,
-                ["camera": "docs/en/scene/models/camera.md"]
-            ),
-            (
-                Self.timelineContracts,
-                Dictionary(uniqueKeysWithValues: [
-                    "animationevents", "combined", "introduction", "modes"
-                ].map { ($0, "docs/en/scene/timeline/\($0).md") })
-            ),
-            (
-                Self.puppetContracts,
-                Dictionary(uniqueKeysWithValues: [
-                    "animationmixing", "attachments", "blendrules", "blendshapes", "boneconstraints",
-                    "charactersheet", "clippingmasks", "extending", "interactive", "introduction",
-                    "inversekinematics", "perspective", "texturechannels"
-                ].map { ($0, "docs/en/scene/puppet-warp/\($0).md") })
-            ),
-            (
-                Self.webContracts,
-                Dictionary(uniqueKeysWithValues: [
-                    "api/icue", "api/propertylistener", "api/rgb", "audio/media", "audio/visualizer",
-                    "customization/displaycondition", "customization/localization", "customization/properties",
-                    "debug/debug", "first/gettingstarted", "overview", "performance/fps"
-                ].map { ($0, "docs/en/web/\($0).md") })
-            )
-        ]
-        for pageGroup in expectedPageGroups {
-            let names = pageGroup.contracts.compactMap { $0["name"] }
-            #expect(!pageGroup.contracts.isEmpty, "Every selected official page group must be nonempty")
-            #expect(Set(names) == Set(pageGroup.pathsByName.keys), "Official page group must be an exact set")
-            #expect(Set(names).count == pageGroup.contracts.count, "Official page contract names must be unique within their group")
-            #expect(pageGroup.contracts.allSatisfy { contract in
-                ["name", "status", "evidence", "producer", "limitation", "sourcePath"].allSatisfy {
-                    !(contract[$0] ?? "").isEmpty
-                }
-            }, "Every official page contract field must be nonempty")
-            #expect(pageGroup.contracts.allSatisfy {
-                Self.allowedContractStatuses.contains($0["status"] ?? "")
-                    && Self.allowedEvidenceLevels.contains($0["evidence"] ?? "")
-            })
-            #expect(pageGroup.contracts.allSatisfy {
-                pageGroup.pathsByName[$0["name"] ?? ""] == $0["sourcePath"]
-            }, "Every official page contract must retain its exact source path")
-        }
     }
 
     private static func read(

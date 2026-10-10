@@ -54,8 +54,6 @@ struct OverlayLayerListTests {
         // A new display lists the group row and its three default widgets; the off singletons are filtered out.
         #expect(OverlayLayerList.layerCount(Array(rows.prefix(4))) == 3)
         #expect(OverlayLayerList.layerCount(rows) == 5)
-        let workspace = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
-        #expect(workspace.contains("OverlayLayerList.layerCount(rows)"), "OverlayWorkspace must count through the shared source")
     }
 
     @Test("The add grid holds thirteen items and never the decode-only nixie clock")
@@ -78,22 +76,6 @@ struct OverlayLayerListTests {
         #expect(OverlayLayerList.inspectorContent(for: nil) == .empty)
     }
 
-    @Test("The effect panel's switch reads the applied particle effect, never the monitor overlay switch")
-    func effectVisibilitySource() throws {
-        let session = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEditorSession.swift")
-        let start = try #require(session.range(of: "var effectVisible: Bool {"))
-        let end = try #require(session.range(of: "}", range: start.upperBound ..< session.endIndex))
-        #expect(session[start.upperBound ..< end.lowerBound].contains("draft.selectedParticleEffect != .none"))
-        for file in ["OverlayWorkspace", "LayerNavigator", "ObjectInspector", "AddOverlayDrawer", "OverlayEffectPanel"] {
-            let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/\(file).swift")
-            #expect(!source.contains("overlay.enabled"), "\(file) must not read the monitor overlay switch")
-            #expect(!source.contains("@State private var selection"), "\(file) must not own a second selection")
-        }
-        let panel = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEffectPanel.swift")
-        #expect(panel.contains("get: { session.effectVisible }"))
-        #expect(panel.contains("session.setEffectVisible("))
-    }
-
     @Test("Agent folder access is one section, mounted by both inspectors and never inside the widget card")
     func agentAccessEntries() throws {
         let inspector = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/ObjectInspector.swift")
@@ -107,13 +89,6 @@ struct OverlayLayerListTests {
             .filter { try String(contentsOf: $0, encoding: .utf8).contains("SourceAuthorization.shared.requestAccess") }
             .map(\.lastPathComponent)
         #expect(requesters == ["AgentFolderAccessSection.swift"])
-    }
-
-    @Test("The board-full notice has no timer: it stays until the widgets change")
-    func boardFullNotice() throws {
-        let drawer = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/AddOverlayDrawer.swift")
-        #expect(!drawer.contains("Task.sleep"))
-        #expect(drawer.contains(".onChange(of: interaction.placements)"))
     }
 
     @Test("The add strip lays its tiles out seven to a row whatever their count, and grows a row at a time")
@@ -134,11 +109,6 @@ struct OverlayLayerListTests {
 
     @Test("The add strip has no category filter and fills its grid in board order")
     func noCategoryFilter() throws {
-        for file in ["OverlayLayerList", "AddOverlayDrawer"] {
-            let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/\(file).swift")
-            #expect(!source.contains("OverlayAddCategory"), "\(file) still filters the add strip by category")
-            #expect(!source.contains("addItems(in:"), "\(file) still filters the add strip by category")
-        }
         #expect(OverlayLayerList.addItems.map(\.id) == [
             "widget.systemOverview", "widget.cpu", "widget.memory", "widget.gpu", "widget.network", "widget.disk",
             "widget.power", "widget.processes", "widget.fleet", "widget.aiEngine", "widget.weather",

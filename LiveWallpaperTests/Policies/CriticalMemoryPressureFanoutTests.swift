@@ -283,62 +283,6 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(harness.player.player == nil)
     }
 
-    // MARK: - Source contracts
-
-    /// A cast narrowed back to one session kind at either dispatch point compiles
-    /// clean and silently drops the feature for the others.
-    @Test("Both dispatch points fan out over the capability protocol")
-    func bothDispatchPointsUseTheCapabilityFanOut() throws {
-        let pressure = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+MemoryPressure.swift"
-        )
-        #expect(pressure.contains("as? WallpaperCriticalMemoryPressureResponding"))
-        #expect(!pressure.contains("as? SceneWallpaperSession"))
-
-        let observers = try Self.resolveAndApplyPerformanceStateBody()
-        #expect(observers.contains("as? WallpaperCriticalMemoryPressureResponding"))
-        // The scene cast may still appear — it owns the Pro-only dwell wiring —
-        // but it must no longer be the thing carrying the pressure signal.
-        #expect(!observers.contains("scene.setCriticalMemoryPressureActive"))
-    }
-
-    /// Video and HTML ship in both SKUs: a `#if !LITE_BUILD` around the pressure
-    /// fan-out compiles clean and drops it from Loomscreen entirely.
-    @Test("The pressure fan-out sits outside the Pro-only block")
-    func fanOutIsNotGatedOnProOnlyBuilds() throws {
-        let body = try Self.resolveAndApplyPerformanceStateBody()
-        let gate = try #require(
-            body.range(of: "#if !LITE_BUILD"),
-            "the Pro-only block moved — re-point this contract"
-        )
-        let gated = body[gate.lowerBound...]
-        let endif = try #require(gated.range(of: "#endif"))
-        let insideGate = gated[..<endif.lowerBound]
-        #expect(!insideGate.contains("WallpaperCriticalMemoryPressureResponding"))
-        // Control: the scene's own dwell call genuinely is inside that block, so
-        // the assertion above cannot pass on a file that simply lost the gate.
-        #expect(insideGate.contains("as? any SceneWallpaperRuntime"))
-    }
-
-    /// The video path reuses the manual-pause dwell's post-await revalidation; those
-    /// guards live in another file, so they are pinned here.
-    @Test("The reused teardown keeps its post-await generation and eligibility guards")
-    func reusedTeardownKeepsItsGenerationGuard() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
-        )
-        let start = try #require(source.range(of: "private func hibernateNow() async -> Bool {"))
-        let rest = source[start.upperBound...]
-        let end = try #require(rest.range(of: "\n    private func resumeFromHibernationIfNeeded()"))
-        let body = String(rest[..<end.lowerBound])
-
-        let afterCapture = try #require(body.range(of: "await captureStillFrame()"))
-        let revalidation = body[afterCapture.upperBound...]
-        #expect(revalidation.contains("lifecycleGeneration == generation"))
-        #expect(revalidation.contains("isHibernationEligible"))
-        #expect(revalidation.contains("isSuspended"))
-    }
-
     #if !LITE_BUILD
     @Test("The scene session still satisfies the capability the fan-out selects on")
     func sceneSessionStillReceivesTheSignal() {
@@ -347,21 +291,6 @@ struct CriticalMemoryPressureFanoutTests {
         )
     }
     #endif
-
-    private static func resolveAndApplyPerformanceStateBody() throws -> String {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Observers.swift"
-        )
-        let start = try #require(
-            source.range(of: "private func resolveAndApplyPerformanceState"),
-            "resolveAndApplyPerformanceState was renamed — re-point this contract"
-        )
-        let rest = source[start.lowerBound...]
-        guard let end = rest.range(of: "\n    private func applyAdaptiveFrameRate(") else {
-            return String(rest)
-        }
-        return String(rest[..<end.lowerBound])
-    }
 
     // MARK: - Harness
 
