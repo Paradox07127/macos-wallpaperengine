@@ -35,9 +35,12 @@ struct DeletedSceneFallbackTests {
     }
 
     /// Runs `body` against a manager whose automatic selection commits every candidate except those whose workshop id is in `failing`.
+    /// A non-nil result from `preparing` ends the prepare with that result and commits nothing.
     private static func withManager(
         seeding seeded: ScreenConfiguration, deleting deleted: Item,
         library: [WallpaperQueueEntry] = [], failing: Set<String> = [],
+        beforeDeleting: (ScreenManager) -> Void = { _ in },
+        preparing: @MainActor @escaping (ScreenManager) -> WallpaperPreparationResult? = { _ in nil },
         _ body: (ScreenManager, Screen) async throws -> Void
     ) async throws {
         SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
@@ -64,6 +67,9 @@ struct DeletedSceneFallbackTests {
                 // Mirrors the product commit: a revision that moved after the prepare began voids the candidate.
                 let revision = manager.configurationStore.revision(for: screen.id)
                 await Task.yield()
+                if let result = preparing(manager) {
+                    return result
+                }
                 let failed = proposed.wpeOrigin.map { failing.contains($0.workshopID) } ?? false
                 guard !failed, intended(), manager.configurationStore.revision(for: screen.id) == revision else { return .failed }
                 manager.saveConfiguration(proposed)
@@ -77,6 +83,7 @@ struct DeletedSceneFallbackTests {
         configuration.screenID = screen.id
         configuration.displayFingerprint = screen.displayFingerprint
         manager.saveConfiguration(configuration)
+        beforeDeleting(manager)
         #expect(manager.removeWPEImport(workshopID: deleted.history.origin.workshopID, matchingImportedAt: deleted.history.importedAt))
         try await body(manager, screen)
     }
@@ -163,6 +170,69 @@ struct DeletedSceneFallbackTests {
             }
             #expect(stored.wpeOrigin == b.entry.origin)
             #expect(stored.wallpaperMode == .libraryShuffle)
+        }
+    }
+
+    private static func expectSaved(_ item: Item, in manager: ScreenManager, for screen: Screen, cursor: Int) {
+        guard let stored = manager.getConfiguration(for: screen) else {
+            Issue.record("the row was deleted instead of moving on")
+            return
+        }
+        guard case let .scene(showing) = stored.activeWallpaper, showing.isSameScene(as: item.descriptor) else {
+            Issue.record("the saved wallpaper is not \(item.entry.title): \(stored.activeWallpaper)")
+            return
+        }
+        #expect(stored.wpeOrigin == item.entry.origin)
+        #expect(stored.playlistCursorIndex == cursor)
+    }
+
+    private static func seededPlaylist(_ items: [Item]) -> ScreenConfiguration {
+        var seeded = Self.showing(items[0])
+        seeded.wallpaperQueue = items.map(\.entry)
+        seeded.playlistCursorIndex = 0
+        return seeded
+    }
+
+    @Test("A replacement cancelled because wallpapers are off still saves the next playlist entry")
+    func cancelledReplacementSavesNextEntry() async throws {
+        let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
+        let globallyOff: @MainActor (ScreenManager) -> WallpaperPreparationResult? = { _ in .cancelled }
+        try await Self.withManager(seeding: Self.seededPlaylist([a, b, c]), deleting: a, preparing: globallyOff) { manager, screen in
+            await Self.settle { false }
+            Self.expectSaved(b, in: manager, for: screen, cursor: 1)
+        }
+    }
+
+    @Test("Deleting while the user is away still saves the next playlist entry")
+    func deletionWhileAwaySavesNextEntry() async throws {
+        let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
+        let leave: (ScreenManager) -> Void = { $0.automationOrchestrator.suspendForUserAbsence() }
+        try await Self.withManager(seeding: Self.seededPlaylist([a, b, c]), deleting: a, beforeDeleting: leave) { manager, screen in
+            await Self.settle { false }
+            Self.expectSaved(b, in: manager, for: screen, cursor: 1)
+        }
+    }
+
+    @Test("The user leaving while the replacement prepares still saves the next playlist entry")
+    func absenceDuringReplacementSavesNextEntry() async throws {
+        let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
+        let leaveWhilePreparing: @MainActor (ScreenManager) -> WallpaperPreparationResult? = { manager in
+            manager.automationOrchestrator.suspendForUserAbsence()
+            return .cancelled
+        }
+        try await Self.withManager(seeding: Self.seededPlaylist([a, b, c]), deleting: a, preparing: leaveWhilePreparing) { manager, screen in
+            await Self.settle { false }
+            Self.expectSaved(b, in: manager, for: screen, cursor: 1)
+        }
+    }
+
+    @Test("A row the user picks while the replacement prepares is not overwritten")
+    func explicitPickDuringReplacementWins() async throws {
+        let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
+        try await Self.withManager(seeding: Self.seededPlaylist([a, b, c]), deleting: a) { manager, screen in
+            manager.playPlaylistEntry(at: 2, for: screen)
+            await Self.settle { false }
+            Self.expectSaved(c, in: manager, for: screen, cursor: 2)
         }
     }
 }
