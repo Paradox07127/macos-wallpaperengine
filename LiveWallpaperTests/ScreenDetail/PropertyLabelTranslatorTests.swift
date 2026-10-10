@@ -369,6 +369,7 @@ struct PropertyLabelTranslatorTests {
     func persistedNameLoadsFromCache() async {
         guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let title = "夕阳下的海边小镇"
         let first = cachedTranslator(url)
         first.enqueue(labels: [title], persist: true)
@@ -388,6 +389,7 @@ struct PropertyLabelTranslatorTests {
     func unpersistedNameIsNotCached() {
         guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let library = "夕阳下的海边小镇"
         let workshop = "雨夜的霓虹街道"
         let first = cachedTranslator(url)
@@ -405,6 +407,7 @@ struct PropertyLabelTranslatorTests {
     func retainPersistedPrunesCache() {
         guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let kept = "夕阳下的海边小镇"
         let removed = "雨夜的霓虹街道"
         let first = cachedTranslator(url)
@@ -422,6 +425,7 @@ struct PropertyLabelTranslatorTests {
     func cacheIsPerTargetLanguage() {
         guard #available(macOS 15.0, *) else { return }
         let url = scratchCacheURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let title = "夕阳下的海边小镇"
         let translator = cachedTranslator(url)
         translator.enqueue(labels: [title], persist: true)
