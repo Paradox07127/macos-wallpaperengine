@@ -7,42 +7,32 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.5</title>
-      <pubDate>Thu, 08 Oct 2026 14:52:55 +0000</pubDate>
-      <sparkle:version>0.8.5</sparkle:version>
-      <sparkle:shortVersionString>0.8.5</sparkle:shortVersionString>
+      <title>Version 0.8.6</title>
+      <pubDate>Sat, 10 Oct 2026 05:45:43 +0000</pubDate>
+      <sparkle:version>0.8.6</sparkle:version>
+      <sparkle:shortVersionString>0.8.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>What's New</strong></p>
-<ul>
-<li>Pro: a Downloads sheet tracks Workshop downloads with progress, speed and stalls; you can cancel downloads, and failed ones come back after a restart so you can retry them — thanks @Aleem2Z (#145)</li>
-<li>The weather layer works on a display without a wallpaper and stays when you clear the wallpaper; schemes no longer change it</li>
-<li>Lite: importing a Pro backup keeps its scene displays, and the summary counts the ones Lite cannot run</li>
-<li>The System Wallpaper panel flags an extension copy that is out of date</li>
-</ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Playback actions use the same short names (Pause, Play, Previous, Next) in the menu bar, the display page and VoiceOver</li>
-<li>The display inspector gets narrower in narrow windows</li>
-<li>Pro: Workshop tags and resolution labels use Wallpaper Engine's own Chinese wording, and multi-display and portrait resolution tags are translated</li>
-<li>Pro: Download and apply shows one notice instead of two</li>
-<li>Pro: the Workshop page rescans downloads less often, which puts less load on the macOS bookmark service</li>
-<li>Automation queue rows use friendly titles, show the folder of local videos, and keep the row you previewed selected</li>
+<li>Pro: static scenes stop drawing frames while nothing changes, which saves power</li>
+<li>Pro: scenes that span several displays present each frame once</li>
+<li>The Edit Desk window releases its memory when you close it and stays smoother during gestures</li>
+<li>Library shuffle opens a Workshop scene only when its turn comes</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: perspective and tilted composition layers render in place instead of covering the screen</li>
-<li>Pro: shader inputs, cursor ripples, flipped layers and text, and puppet layers render correctly — thanks @Aleem2Z (#146)</li>
-<li>Pro: scene scripts get canvasSize as a vector, get copies from transform getters, and handle missing layers in createLayer and getLayer</li>
-<li>Pro: applying an installed Workshop item straight to a display cancels the apply that its update download queued for another display</li>
-<li>Pro: a waiting apply keeps its status, refreshed approvals retry, and download failure reasons are translated</li>
-<li>Transitions across several displays use the displays' current positions</li>
-<li>The music visualizer stops capturing audio when Reduce Motion is on</li>
-<li>The CPU gauge legend fits its column in every language</li>
+<li>Deleting the scene a display is showing moves on to the display's playlist, or clears the display if there is nothing else to play — also while wallpapers are turned off or the screen is locked</li>
+<li>Pro: scenes stored on an external drive reload when the drive mounts</li>
+<li>Pro: a static scene redraws when a texture finishes loading, instead of keeping the placeholder</li>
+<li>Pro: more scene scripts run correctly — timers, frametime, getParent, getTransformMatrix, and click and media handlers after a script error</li>
+<li>Preset, volume and color-space changes apply right away</li>
+<li>Web wallpapers recover after their content process crashes</li>
+<li>Pro: Workshop downloads say when Steam has no connection</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.5">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.5">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.6">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.6">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.5/Loomscreen-0.8.5.dmg" type="application/octet-stream" sparkle:edSignature="7Va51SKswmG5QONFmBArzvQp8B98WNUKDUcdlTOWUBFaf/TmU539MCaLvbBwi0Y/YSO5omjOJM8fW5YkbV9wBQ==" length="12353603" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.6/Loomscreen-0.8.6.dmg" type="application/octet-stream" sparkle:edSignature="JMRsCTtKbsddSy71+x8X91Mo1T3KXs2zRoFClzhrqhNurO2bjZjLOAEHFAJFCzjIdNteGKlJ8EL4Iqv1/oSUCg==" length="12358447" />
     </item>
   </channel>
 </rss>
