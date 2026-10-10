@@ -1211,7 +1211,7 @@ final class WPESceneScriptInstance {
         ) -> WPESceneScriptBoundedExecutionResult<String?> {
             guard allows(.tick) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .tick, admission: .failFast) {
-                self.tickOnQueue(lastValue: lastValue, runtimeSeconds: runtimeSeconds, isFrameTick: true)
+                self.tickOnQueue(lastValue: lastValue, runtimeSeconds: runtimeSeconds, clock: .frame)
             }
         }
 
@@ -1235,7 +1235,7 @@ final class WPESceneScriptInstance {
                     value: self.tickOnQueue(
                         lastValue: lastValue,
                         runtimeSeconds: runtimeSeconds,
-                        isFrameTick: false
+                        clock: .redraw
                     )
                 )
             }
@@ -1299,7 +1299,7 @@ final class WPESceneScriptInstance {
                 let outcome = tickOnQueue(
                     lastValue: lastValue,
                     runtimeSeconds: runtimeSeconds,
-                    isFrameTick: true
+                    clock: .frame
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -1400,7 +1400,7 @@ final class WPESceneScriptInstance {
             installCanvasSize(in: context)
             layerBridge.installLayerBridge(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
-            _ = updateEngineRuntime(0, isFrameTick: true)
+            _ = updateEngineRuntime(0, clock: .frame)
             if let shared {
                 wpeInstallSharedState(shared, in: context)
             }
@@ -1471,7 +1471,7 @@ final class WPESceneScriptInstance {
         ) -> Bool {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return false }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return false }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return false }
@@ -1493,12 +1493,12 @@ final class WPESceneScriptInstance {
         private func tickOnQueue(
             lastValue: String,
             runtimeSeconds: Double?,
-            isFrameTick: Bool
+            clock: WPEScriptClockStep
         ) -> String? {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
             audioBridge?.refresh()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return nil }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: clock)) else { return nil }
             guard let context, let updateFunction else { return nil }
             let now = WPEScriptFaultPolicy.monotonicNow()
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
@@ -1531,19 +1531,20 @@ final class WPESceneScriptInstance {
         }
 
         /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
-        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, clock: WPEScriptClockStep) -> Double? {
             guard let context else { return nil }
             let supplied = runtimeSeconds.flatMap { $0.isFinite ? $0 : nil }
             let runtime = max(lastRuntimeSeconds ?? 0, supplied ?? lastRuntimeSeconds ?? 0)
             lastRuntimeSeconds = runtime
-            if isFrameTick {
+            if clock == .frame {
                 lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? 0
                 lastFrameRuntimeSeconds = runtime
             }
+            let frameTime = clock == .redraw ? 0 : lastFrameTime
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
             }
             return supplied == nil ? nil : runtime
         }
@@ -2889,6 +2890,12 @@ struct WPEScriptPropertyPatchOutcome<Value> {
     let value: Value?
 }
 
+/// frame: frametime is the delta since the last frame; event: keeps the last frame's;
+/// redraw (property patch): 0, without moving the frame baseline the next delta is measured from.
+enum WPEScriptClockStep {
+    case frame, event, redraw
+}
+
 /// Mutates only the addressed entries on the JS engine's owning lane. The
 /// object itself is retained so authored references to `scriptProperties`
 /// remain valid; replacing the global would break closures that captured it.
@@ -3764,7 +3771,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     currentValue: currentValue,
                     pointerPosition: pointerPosition,
                     runtimeSeconds: runtimeSeconds,
-                    isFrameTick: true
+                    clock: .frame
                 )
             }
         }
@@ -3805,7 +3812,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                         currentValue: currentValue,
                         pointerPosition: pointerPosition,
                         runtimeSeconds: runtimeSeconds,
-                        isFrameTick: false
+                        clock: .redraw
                     )
                 )
             }
@@ -3938,7 +3945,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     currentValue: currentValue,
                     pointerPosition: pointerPosition,
                     runtimeSeconds: runtimeSeconds,
-                    isFrameTick: true
+                    clock: .frame
                 )
                 guard acceptsCompletion() else {
                     slot.rejectTick(claim)
@@ -3970,7 +3977,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             installInput(in: context)
             installLayerBridge(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
-            _ = updateEngineRuntime(0, isFrameTick: true)
+            _ = updateEngineRuntime(0, clock: .frame)
             if let shared {
                 wpeInstallSharedState(shared, in: context)
             }
@@ -4060,7 +4067,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         ) {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return }
@@ -4088,7 +4095,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
             updateInput(pointerFrame.position)
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: false)) else { return }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: .event)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return }
@@ -4193,7 +4200,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             currentValue: SIMD3<Double>,
             pointerPosition: SIMD2<Double>,
             runtimeSeconds: Double?,
-            isFrameTick: Bool
+            clock: WPEScriptClockStep
         ) -> SIMD3<Double>? {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
@@ -4201,7 +4208,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             audioBridge?.refresh()
             // Before timers: a timer-only module has no update() but its callbacks read input.
             updateInput(pointerPosition)
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, isFrameTick: isFrameTick)) else { return nil }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds, clock: clock)) else { return nil }
             guard let updateFunction else { return nil }
 
             didThrow = false
@@ -4253,7 +4260,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         /// Event entries advance runtime but keep the last frame's frametime, so they cannot eat the next frame's delta.
-        private func updateEngineRuntime(_ runtimeSeconds: Double?, isFrameTick: Bool) -> Double? {
+        private func updateEngineRuntime(_ runtimeSeconds: Double?, clock: WPEScriptClockStep) -> Double? {
             guard let context else { return nil }
             let runtime: Double
             if let runtimeSeconds, runtimeSeconds.isFinite {
@@ -4262,14 +4269,15 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 runtime = (lastRuntimeSeconds ?? 0) + 1.0 / 30.0
             }
             lastRuntimeSeconds = runtime
-            if isFrameTick {
+            if clock == .frame {
                 lastFrameTime = lastFrameRuntimeSeconds.map { max(runtime - $0, 0) } ?? 1.0 / 30.0
                 lastFrameRuntimeSeconds = runtime
             }
+            let frameTime = clock == .redraw ? 0 : lastFrameTime
             if let engineClockWriter {
-                engineClockWriter.refresh(runtime: runtime, frameTime: lastFrameTime)
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
             } else {
-                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: lastFrameTime)
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
             }
             return runtimeSeconds?.isFinite == true ? runtime : nil
         }
