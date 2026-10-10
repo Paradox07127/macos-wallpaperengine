@@ -21,6 +21,8 @@
 [🛠 构建](docs/zh-Hans/building.md) ·
 [🇬🇧 English](README.md)
 
+<img src="docs/images/overview-zh.png" width="880" alt="全景页：两台显示器按桌面排列，下方是壁纸架" />
+
 </div>
 
 > Lite 与 Pro 均免费、MIT 开源。渲染器为独立实现，与 Wallpaper Engine 无关联，兼容程度随项目而异；创意工坊内容通过你自己的 Steam 账号与授权下载。
@@ -33,6 +35,10 @@
 
 日常控制留在菜单栏，关闭管理窗口后壁纸仍继续运行。[了解工作台](docs/zh-Hans/workspace.md)。
 
+| **一块画布，安排所有图层。** 小组件、时钟与音乐一起摆放。 | **在 Mac 上运行 Wallpaper Engine 场景。** Pro 用 Metal 原生渲染兼容场景。 |
+|:---:|:---:|
+| <img src="docs/images/editor-overlays-zh.png" alt="显示器编辑器的叠加层画布：小组件、图层列表与添加小组件面板" /> | <img src="docs/images/editor-wallpaper-zh.png" alt="显示器编辑器的壁纸页：场景预览与场景自定义设置" /> |
+
 ## 壁纸类型
 
 | 类型 | 版本 | 能力 |
@@ -41,6 +47,11 @@
 | **视频** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`，平滑循环，HDR 感知色彩管线，可逐屏播放或跨所有屏幕铺展。 |
 | **网页** | Lite + Pro | 沙盒化 `WKWebView`，支持 JavaScript 开关、跟踪器拦截、自定义 CSS、定时自动刷新。 |
 | **Apple 航拍** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
+
+<p align="center">
+  <img src="docs/images/workshop-browse-zh.jpg" width="720" alt="Pro 创意工坊页：Steam 创意工坊壁纸网格" /><br />
+  <sub>Pro：浏览 Steam 创意工坊，用你自己的 Steam 账号下载。</sub>
+</p>
 
 ## 不只是播放器
 
