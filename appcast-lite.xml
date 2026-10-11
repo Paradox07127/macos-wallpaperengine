@@ -7,32 +7,27 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.6</title>
-      <pubDate>Sat, 10 Oct 2026 05:45:43 +0000</pubDate>
-      <sparkle:version>0.8.6</sparkle:version>
-      <sparkle:shortVersionString>0.8.6</sparkle:shortVersionString>
+      <title>Version 0.8.7</title>
+      <pubDate>Sun, 11 Oct 2026 09:43:50 +0000</pubDate>
+      <sparkle:version>0.8.7</sparkle:version>
+      <sparkle:shortVersionString>0.8.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>Improvements</strong></p>
+<p><strong>What's New</strong></p>
 <ul>
-<li>Pro: static scenes stop drawing frames while nothing changes, which saves power</li>
-<li>Pro: scenes that span several displays present each frame once</li>
-<li>The Edit Desk window releases its memory when you close it and stays smoother during gestures</li>
-<li>Library shuffle opens a Workshop scene only when its turn comes</li>
+<li>Settings › Advanced has a Share anonymous hardware info switch, off by default</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Deleting the scene a display is showing moves on to the display's playlist, or clears the display if there is nothing else to play — also while wallpapers are turned off or the screen is locked</li>
-<li>Pro: scenes stored on an external drive reload when the drive mounts</li>
-<li>Pro: a static scene redraws when a texture finishes loading, instead of keeping the placeholder</li>
-<li>Pro: more scene scripts run correctly — timers, frametime, getParent, getTransformMatrix, and click and media handlers after a script error</li>
-<li>Preset, volume and color-space changes apply right away</li>
-<li>Web wallpapers recover after their content process crashes</li>
-<li>Pro: Workshop downloads say when Steam has no connection</li>
+<li>Paused video wallpapers keep their color adjustments and wide-gamut colors after they sleep in the background</li>
+<li>Choosing a Workshop scene or applying a scheme to a paused display starts it playing, the same as picking from the library</li>
+<li>Wallpaper setups saved for disconnected displays are kept when one of them points to a missing file</li>
+<li>Local web wallpapers whose file names contain % escapes load the right file</li>
+<li>Pro: importing a package that contains a named pipe or other special file no longer hangs</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.6">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.6">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.7">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.7">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.6/Loomscreen-0.8.6.dmg" type="application/octet-stream" sparkle:edSignature="JMRsCTtKbsddSy71+x8X91Mo1T3KXs2zRoFClzhrqhNurO2bjZjLOAEHFAJFCzjIdNteGKlJ8EL4Iqv1/oSUCg==" length="12358447" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.7/Loomscreen-0.8.7.dmg" type="application/octet-stream" sparkle:edSignature="lZWoInCjQMnYs58+e8/jpSjxLAUwT4Jb57pq1WczOyxO6DoKlln3UK95Q3EZVDzIdobb6WFjYIECWTcy1q3rBw==" length="12358919" />
     </item>
   </channel>
 </rss>
