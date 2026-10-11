@@ -2529,7 +2529,7 @@ struct WallpaperConfigurationStoreInvalidConfigTests {
 
         let pruned = WallpaperConfigurationStore.removingInvalidResourceConfigurations(
             from: configs,
-            invalidScreenIDs: [1, 2, 3]
+            invalidConfigurations: configs
         )
 
         #expect(pruned.count == 1)

@@ -201,13 +201,13 @@ public final class WallpaperConfigurationStore {
         }
     }
 
-    public func pruneInvalidResourceConfigurations(using validator: (CGDirectDisplayID) -> Bool) -> [CGDirectDisplayID] {
-        let candidateIDs = persistence
+    public func pruneInvalidResourceConfigurations(using validator: (ScreenConfiguration) -> Bool) -> [CGDirectDisplayID] {
+        let candidates = persistence
             .loadConfigurations()
             .filter(Self.requiresResourceValidation)
-            .map(\.screenID)
 
-        let invalidIDs = Set(candidateIDs.filter { !validator($0) })
+        let invalidConfigurations = candidates.filter { !validator($0) }
+        let invalidIDs = Set(invalidConfigurations.map(\.screenID))
 
         guard !invalidIDs.isEmpty else {
             _ = loadAll()
@@ -217,7 +217,7 @@ public final class WallpaperConfigurationStore {
         let postValidationConfigs = persistence.loadConfigurations()
         let pruned = Self.removingInvalidResourceConfigurations(
             from: postValidationConfigs,
-            invalidScreenIDs: invalidIDs
+            invalidConfigurations: invalidConfigurations
         )
 
         synchronizePersistenceRevisions()
@@ -233,10 +233,12 @@ public final class WallpaperConfigurationStore {
 
     public nonisolated static func removingInvalidResourceConfigurations(
         from configs: [ScreenConfiguration],
-        invalidScreenIDs: Set<CGDirectDisplayID>
+        invalidConfigurations: [ScreenConfiguration]
     ) -> [ScreenConfiguration] {
         configs.filter { config in
-            guard invalidScreenIDs.contains(config.screenID),
+            guard invalidConfigurations.contains(where: {
+                $0.screenID == config.screenID && $0.displayFingerprint == config.displayFingerprint
+            }),
                   requiresResourceValidation(config) else {
                 return true
             }

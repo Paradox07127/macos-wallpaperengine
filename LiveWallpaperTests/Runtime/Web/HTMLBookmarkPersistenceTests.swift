@@ -70,6 +70,55 @@ struct HTMLBookmarkPersistenceTests {
         await TestScratch.discard(root, flushing: manager, reloaded)
     }
 
+    @Test("Pruning validates and refreshes each parked panel without deleting its neighbours", arguments: [false, true])
+    func parkedResourceValidationPreservesOtherPanels(isHTML: Bool) async throws {
+        let root = try Self.makeTempDirectory()
+        let folder = root.appendingPathComponent("site", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: folder.appendingPathComponent("index.html"))
+        let missing = Data("missing".utf8)
+        let untouched = Data("untouched".utf8)
+        let resolver = SecurityScopedBookmarkResolver(
+            resolveData: { data in
+                if data == missing {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                return (folder, data == original)
+            },
+            refreshData: { _ in refreshed }
+        )
+        let configurationRoot = root.appendingPathComponent("configuration", isDirectory: true)
+        let manager = SettingsManager(
+            directory: ConfigurationDirectory(root: configurationRoot),
+            bookmarkResolver: resolver
+        )
+        func configuration(_ bookmark: Data, panel: String) -> ScreenConfiguration {
+            var configuration = ScreenConfiguration(
+                screenID: WallpaperConfigurationStore.parkedScreenID,
+                wallpaper: isHTML
+                    ? .html(source: .folder(bookmarkData: bookmark, indexFileName: "index.html"), config: .default)
+                    : .video(bookmarkData: bookmark)
+            )
+            configuration.displayFingerprint = panel
+            return configuration
+        }
+        let invalid = configuration(missing, panel: "uuid:missing")
+        let valid = configuration(original, panel: "uuid:refresh")
+        let other = configuration(untouched, panel: "uuid:other")
+        manager.replaceAllConfigurations([invalid, valid, other])
+        let store = WallpaperConfigurationStore(persistence: SettingsManagerScreenConfigurationPersistence(manager: manager))
+
+        let removed = store.pruneInvalidResourceConfigurations(using: manager.validateConfiguration)
+
+        #expect(removed == [WallpaperConfigurationStore.parkedScreenID])
+        let expected = [configuration(refreshed, panel: "uuid:refresh"), other]
+        #expect(manager.loadConfigurations() == expected)
+        await manager.flushPendingWrites()
+        let reloaded = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
+        #expect(reloaded.loadConfigurations() == expected)
+        await TestScratch.discard(root, flushing: manager, reloaded)
+    }
+
     @Test("File bookmarks update active and saved copies together")
     func fileBookmarkUpdatesBothOwners() throws {
         let configuration = ScreenConfiguration(

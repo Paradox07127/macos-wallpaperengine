@@ -5,8 +5,12 @@ import LiveWallpaperCore
 
 extension SettingsManager {
     func validateConfiguration(for screenID: CGDirectDisplayID) -> Bool {
-        guard let configuration = loadConfigurations().first(where: { $0.screenID == screenID }) else { return false }
+        guard let configuration = getConfiguration(for: screenID) else { return false }
+        return validateConfiguration(configuration)
+    }
 
+    func validateConfiguration(_ configuration: ScreenConfiguration) -> Bool {
+        let screenID = configuration.screenID
         guard let definition = WallpaperSessionDefinition(configuration: configuration) else {
             Logger.error("Malformed wallpaper configuration for screen \(screenID)", category: .settings)
             return false
@@ -16,7 +20,7 @@ extension SettingsManager {
         case .video(let bookmarkData, _):
             return validateVideoBookmark(bookmarkData, for: screenID, configuration: configuration)
         case .html(let source, _):
-            return validateHTMLSource(source, for: screenID)
+            return validateHTMLSource(source, configuration: configuration)
         case .scene(let descriptor):
             return !descriptor.workshopID.isEmpty
                 && !descriptor.cacheRelativePath.isEmpty
@@ -88,7 +92,8 @@ extension SettingsManager {
         }
     }
 
-    private func validateHTMLSource(_ source: HTMLSource, for screenID: CGDirectDisplayID) -> Bool {
+    private func validateHTMLSource(_ source: HTMLSource, configuration: ScreenConfiguration) -> Bool {
+        let screenID = configuration.screenID
         switch source {
         case .inline:
             return true
@@ -100,17 +105,18 @@ extension SettingsManager {
             }
             return true
         case .file(let bookmarkData):
-            return validateLocalHTMLBookmark(bookmarkData, indexFileName: nil, for: screenID)
+            return validateLocalHTMLBookmark(bookmarkData, indexFileName: nil, configuration: configuration)
         case .folder(let bookmarkData, let indexFileName):
-            return validateLocalHTMLBookmark(bookmarkData, indexFileName: indexFileName, for: screenID)
+            return validateLocalHTMLBookmark(bookmarkData, indexFileName: indexFileName, configuration: configuration)
         }
     }
 
     private func validateLocalHTMLBookmark(
         _ bookmarkData: Data,
         indexFileName: String?,
-        for screenID: CGDirectDisplayID
+        configuration: ScreenConfiguration
     ) -> Bool {
+        let screenID = configuration.screenID
         switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
         case .success(let resolved):
             let url = resolved.url
@@ -118,7 +124,7 @@ extension SettingsManager {
                 persistRefreshedHTMLBookmark(
                     matching: bookmarkData,
                     with: resolved.bookmarkData,
-                    for: screenID
+                    configuration: configuration
                 )
             }
 
@@ -181,7 +187,19 @@ extension SettingsManager {
         with refreshed: Data,
         for screenID: CGDirectDisplayID
     ) -> Bool {
-        guard let current = getConfiguration(for: screenID) else { return false }
+        guard let configuration = getConfiguration(for: screenID) else { return false }
+        return persistRefreshedHTMLBookmark(matching: original, with: refreshed, configuration: configuration)
+    }
+
+    @discardableResult
+    private func persistRefreshedHTMLBookmark(
+        matching original: Data,
+        with refreshed: Data,
+        configuration: ScreenConfiguration
+    ) -> Bool {
+        guard let current = loadConfigurations().first(where: {
+            $0.screenID == configuration.screenID && $0.displayFingerprint == configuration.displayFingerprint
+        }) else { return false }
 
         let updated: ScreenConfiguration?
         if let origin = current.wpeOrigin,
