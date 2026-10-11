@@ -46,9 +46,9 @@ struct WPEUserShortcutBridgeTests {
         let log = LaunchLog()
         bridge.setBindings(
             declared: ["k"],
-            bound: bound ? ["k": .init(commandType: "web", displayName: "Example")] : [:]
+            bound: bound ? ["k": .init(commandType: "web", displayName: "Example", revision: 1)] : [:]
         )
-        bridge.setLauncher { log.record($0) }
+        bridge.setLauncher { key, _ in log.record(key) }
         return (WPESharedScriptState(userShortcuts: bridge), log)
     }
 
@@ -216,9 +216,102 @@ struct WPEUserShortcutBridgeTests {
         }
         """, shared: shared)
         #expect(shared.get("initial") as? String == "object,false,undefined,undefined")
-        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example")])
+        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 1)])
         _ = instance.tick(runtimeSeconds: 1)
         #expect(shared.get("live") as? String == "true,web,Example")
+    }
+
+    @Test("A bridge error clears an earlier script fault's backoff", arguments: [false, true])
+    func bridgeErrorResetsBackoff(useTransform: Bool) throws {
+        let (shared, _) = makeShared(bound: false)
+        let script = """
+        export function init(value) { shared.runs = 0; return value; }
+        export function cursorClick() {
+            shared.runs += 1;
+            if (shared.mode === 'quota') {
+                engine.openUserShortcut('k');
+                engine.openUserShortcut('k');
+            } else {
+                throw new Error('own');
+            }
+        }
+        """
+        // A first fault skips one click and a second consecutive one skips eight.
+        let modes = ["own", "own", "quota", "own", "own", "own"]
+        if useTransform {
+            let instance = try transform(script, shared: shared)
+            defer { _ = instance.destroy() }
+            for mode in modes {
+                shared.set("mode", mode)
+                #expect(send(instance, .click, frame(WPEPointerGesture.next())))
+            }
+        } else {
+            let instance = try layer(script, shared: shared)
+            for mode in modes {
+                shared.set("mode", mode)
+                send(instance, .click, frame(WPEPointerGesture.next()))
+            }
+        }
+        #expect(shared.get("runs") as? Double == 4, "the quota error left the earlier fault's streak in place")
+    }
+
+    @Test("A script that replaces SyntaxError still gets the native one from the bridge")
+    func replacedSyntaxErrorIsIgnored() throws {
+        let (shared, _) = makeShared(bound: true)
+        let instance = try layer("""
+        const Native = SyntaxError;
+        SyntaxError = function () { return { name: 'Fake', message: 'fake' }; };
+        export function update() {
+            try { engine.openUserShortcut('k'); shared.outcome = 'returned'; }
+            catch (e) { shared.outcome = e.name + ':' + e.message + ':' + (e instanceof Native); }
+        }
+        """, shared: shared)
+        _ = instance.tick(runtimeSeconds: 1)
+        #expect(shared.get("outcome") as? String == "SyntaxError:\(Self.outsideMessage):true")
+    }
+
+    @Test("A gesture evicted from the ledger stays spent")
+    func evictedGestureStaysSpent() {
+        let first = WPEPointerGesture.next()
+        #expect(WPEUserShortcutGestureLedger.claim(first))
+        for _ in 0 ..< 300 {
+            _ = WPEUserShortcutGestureLedger.claim(WPEPointerGesture.next())
+        }
+        #expect(!WPEUserShortcutGestureLedger.claim(first))
+    }
+
+    @Test("A release outside the view keeps its gesture, so its cursorUp may still launch")
+    func outsideReleaseKeepsGesture() {
+        let present = WPEPresentUniforms.make(
+            fitMode: .stretch, sourceWidth: 100, sourceHeight: 100, targetWidth: 100, targetHeight: 100
+        )
+        var release = frame(42)
+        release.dragged = true
+        let space = WPEMetalSceneRenderer.pointerSpace(
+            present: present, sample: .inactive, frame: release, followEnabled: false, clickEnabled: true
+        )
+        #expect(!space.clickPointerIsLive)
+        #expect(space.pointerFrame.gesture == 42)
+        #expect(space.pointerFrame.dragged)
+    }
+
+    @Test("applyUserProperties hands a usershortcut key the object engine.userProperties exposes")
+    func applyUserPropertiesCarriesShortcutObject() throws {
+        let bridge = WPEUserShortcutScriptBridge()
+        bridge.setBindings(declared: ["k"], bound: [:])
+        let shared = WPESharedScriptState(userProperties: ["k": .string("")], userShortcuts: bridge)
+        let instance = try layer("""
+        export function applyUserProperties(p) {
+            const s = p.k;
+            shared.seen = [typeof s, s.isbound, String(s.commandtype), String(s.file),
+                           'commandtype' in s, 'file' in s].join(',');
+        }
+        """, shared: shared)
+        _ = instance.applyUserProperties(["k": .string("")])
+        #expect(shared.get("seen") as? String == "object,false,undefined,undefined,true,true")
+        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 1)])
+        _ = instance.applyUserProperties(["k": .string("")])
+        #expect(shared.get("seen") as? String == "object,true,web,Example,true,true")
     }
 
     @Test("A cancellation-synthesised release carries no gesture number")

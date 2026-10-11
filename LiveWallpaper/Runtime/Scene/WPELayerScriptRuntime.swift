@@ -1245,7 +1245,9 @@ final class WPELayerScriptInstance {
                     self?.didThrow = true
                     self?.shortcutScope.noteUncaught(exception)
                     self?.failEvaluation()
-                    self?.logFirstThrow(exception)
+                    if self?.shortcutScope.uncaughtIsBridgeError == false {
+                        self?.logFirstThrow(exception)
+                    }
                 }
                 evaluationResourceBudget.beginEvaluation()
                 _ = context.evaluateScript(wpeLowerBuiltinImports(script, in: context, acceptsCompletion: acceptsCompletion))
@@ -1438,11 +1440,9 @@ final class WPELayerScriptInstance {
                     hit: hit,
                     in: context
                 )])
-                if didThrow {
-                    // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
-                    if !shortcutScope.uncaughtIsBridgeError {
-                        faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
-                    }
+                // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
+                if didThrow, !shortcutScope.uncaughtIsBridgeError {
+                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
                 } else {
                     faultPolicy.recordSuccess(entryPoint: event.handlerName)
                 }
@@ -1459,11 +1459,10 @@ final class WPELayerScriptInstance {
                 guard let context,
                       let fn = context.objectForKeyedSubscript("applyUserProperties"),
                       !fn.isUndefined, fn.hasProperty("call"),
-                      let bag = JSValue(newObjectIn: context) else {
+                      let bag = WPESceneScriptInstance.userPropertyBag(
+                          properties, userShortcuts: shared?.userShortcuts, in: context
+                      ) else {
                     return
-                }
-                for (name, value) in properties {
-                    bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
                 }
                 _ = fn.call(withArguments: [bag])
             }.output

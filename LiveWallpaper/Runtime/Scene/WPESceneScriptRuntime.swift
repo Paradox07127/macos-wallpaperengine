@@ -1190,10 +1190,9 @@ final class WPESceneScriptInstance {
                 guard let context = self.context,
                       let function = context.objectForKeyedSubscript("applyUserProperties"),
                       !function.isUndefined, function.hasProperty("call"),
-                      let bag = JSValue(newObjectIn: context) else { return false }
-                for (name, value) in properties {
-                    bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
-                }
+                      let bag = WPESceneScriptInstance.userPropertyBag(
+                          properties, userShortcuts: self.shared?.userShortcuts, in: context
+                      ) else { return false }
                 self.didThrow = false
                 _ = function.call(withArguments: [bag])
                 return !self.didThrow
@@ -1605,6 +1604,31 @@ final class WPESceneScriptInstance {
         install?.call(withArguments: [bag, keys, read])
     }
 
+    /// The `applyUserProperties` argument; a declared usershortcut key carries WPE's
+    /// `{isbound, commandtype, file}` object instead of its manifest scalar.
+    nonisolated static func userPropertyBag(
+        _ properties: [String: WPESceneScriptPropertyValue],
+        userShortcuts: WPEUserShortcutScriptBridge?,
+        in context: JSContext
+    ) -> JSValue? {
+        guard let bag = JSValue(newObjectIn: context) else { return nil }
+        let shortcuts = userShortcuts?.snapshot()
+        for (name, value) in properties {
+            guard let shortcuts, shortcuts.declared.contains(name),
+                  let shortcut = JSValue(newObjectIn: context),
+                  let undefined = JSValue(undefinedIn: context) else {
+                bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
+                continue
+            }
+            let entry = shortcuts.bound[name]
+            shortcut.setObject(entry != nil, forKeyedSubscript: "isbound" as NSString)
+            shortcut.setObject(entry.map { $0.commandType as Any } ?? undefined, forKeyedSubscript: "commandtype" as NSString)
+            shortcut.setObject(entry.map { $0.displayName as Any } ?? undefined, forKeyedSubscript: "file" as NSString)
+            bag.setObject(shortcut, forKeyedSubscript: name as NSString)
+        }
+        return bag
+    }
+
     @discardableResult
     nonisolated static func installSandbox(
         in context: JSContext,
@@ -1683,6 +1707,10 @@ final class WPESceneScriptInstance {
         engine.setObject(setProperty, forKeyedSubscript: "setPropertyValue" as NSString)
         let audioBridge = WPESceneScriptAudioBridge()
         audioBridge.install(in: engine, context: context)
+        // Non-writable and non-enumerable, so a script's own `SyntaxError = …` cannot change what the bridge throws.
+        _ = context.evaluateScript(
+            "Object.defineProperty(globalThis, '\(WPEUserShortcutCallScope.nativeSyntaxErrorName)', { value: SyntaxError });"
+        )
         let openUserShortcut: @convention(block) (String) -> Bool = { name in
             guard let gesture = shortcutScope?.gesture else {
                 WPEUserShortcutCallScope.raise("Cannot execute user command outside of cursor callbacks.", scope: shortcutScope)
@@ -4041,7 +4069,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 didThrow = true
                 shortcutScope.noteUncaught(exception)
                 layerBridge.failEvaluation()
-                guard !didLogException else { return }
+                guard !didLogException, !shortcutScope.uncaughtIsBridgeError else { return }
                 // Set the latch before reading JS properties: a custom error getter may itself throw.
                 didLogException = true
                 let message = String((exception?.toString() ?? "unknown").prefix(512))
@@ -4164,11 +4192,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 hit: hit,
                 in: context
             )])
-            if didThrow {
-                // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
-                if !shortcutScope.uncaughtIsBridgeError {
-                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
-                }
+            // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
+            if didThrow, !shortcutScope.uncaughtIsBridgeError {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
             } else {
                 faultPolicy.recordSuccess(entryPoint: event.handlerName)
             }
@@ -4404,10 +4430,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             guard let context,
                   let function = context.objectForKeyedSubscript("applyUserProperties"),
                   !function.isUndefined, function.hasProperty("call"),
-                  let bag = JSValue(newObjectIn: context) else { return false }
-            for (name, value) in properties {
-                bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
-            }
+                  let bag = WPESceneScriptInstance.userPropertyBag(
+                      properties, userShortcuts: shared?.userShortcuts, in: context
+                  ) else { return false }
             didThrow = false
             _ = function.call(withArguments: [bag])
             return !didThrow

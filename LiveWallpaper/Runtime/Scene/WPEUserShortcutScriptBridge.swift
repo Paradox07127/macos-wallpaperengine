@@ -10,6 +10,8 @@ enum WPEUserShortcutGestureLedger {
     private struct State {
         var used: Set<UInt64> = []
         var order: [UInt64] = []
+        /// Gesture numbers only grow, so anything at or below an evicted one is already spent.
+        var evictedCeiling: UInt64 = 0
     }
 
     private static let state = OSAllocatedUnfairLock(initialState: State())
@@ -17,10 +19,12 @@ enum WPEUserShortcutGestureLedger {
     /// True only for the first claim of `gesture`.
     static func claim(_ gesture: UInt64) -> Bool {
         state.withLock { value in
-            guard value.used.insert(gesture).inserted else { return false }
+            guard gesture > value.evictedCeiling, value.used.insert(gesture).inserted else { return false }
             value.order.append(gesture)
             if value.order.count > capacity {
-                value.used.remove(value.order.removeFirst())
+                let evicted = value.order.removeFirst()
+                value.used.remove(evicted)
+                value.evictedCeiling = max(value.evictedCeiling, evicted)
             }
             return true
         }
@@ -32,36 +36,58 @@ final class WPEUserShortcutScriptBridge: Sendable {
     struct Entry: Sendable, Equatable {
         let commandType: String
         let displayName: String
+        let revision: UInt64
     }
 
     private struct State {
         var declared: Set<String> = []
         var bound: [String: Entry] = [:]
-        var launcher: (@Sendable (String) -> Void)?
+        var launcher: (@Sendable (String, UInt64) -> Void)?
+        /// Declared keys whose binding changed since the renderer last took them.
+        var changed: Set<String> = []
+        var onChange: (@Sendable () -> Void)?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     func setBindings(declared: Set<String>, bound: [String: Entry]) {
-        state.withLock {
-            $0.declared = declared
-            $0.bound = bound
+        let onChange = state.withLock { value -> (@Sendable () -> Void)? in
+            let changed = declared.filter { value.bound[$0] != bound[$0] }
+            value.declared = declared
+            value.bound = bound
+            value.changed.formUnion(changed)
+            return changed.isEmpty ? nil : value.onChange
         }
+        onChange?()
     }
 
     func snapshot() -> (declared: Set<String>, bound: [String: Entry]) {
         state.withLock { ($0.declared, $0.bound) }
     }
 
-    /// The launcher receives the user-property key.
-    func setLauncher(_ launcher: (@Sendable (String) -> Void)?) {
+    /// Runs after `setBindings` marks a key changed, outside the lock.
+    func setChangeHandler(_ handler: (@Sendable () -> Void)?) {
+        state.withLock { $0.onChange = handler }
+    }
+
+    func takeChangedKeys() -> Set<String> {
+        state.withLock { value in
+            defer { value.changed.removeAll() }
+            return value.changed.intersection(value.declared)
+        }
+    }
+
+    /// The launcher receives the user-property key and the revision of the binding the click saw.
+    func setLauncher(_ launcher: (@Sendable (String, UInt64) -> Void)?) {
         state.withLock { $0.launcher = launcher }
     }
 
     func requestLaunch(_ propertyKey: String) -> Bool {
-        let launcher = state.withLock { $0.bound[propertyKey] == nil ? nil : $0.launcher }
-        guard let launcher else { return false }
-        launcher(propertyKey)
+        let request = state.withLock { value in
+            value.bound[propertyKey].flatMap { entry in value.launcher.map { ($0, entry.revision) } }
+        }
+        guard let (launcher, revision) = request else { return false }
+        launcher(propertyKey, revision)
         return true
     }
 }
@@ -95,10 +121,13 @@ final class WPEUserShortcutCallScope {
         uncaughtIsBridgeError = exception.isEqual(to: thrown)
     }
 
-    /// Raises `SyntaxError(message)` in the calling context.
+    /// Global that `installSandbox` pins to the built-in SyntaxError before any script runs.
+    static let nativeSyntaxErrorName = "__wpeNativeSyntaxError"
+
+    /// Raises the built-in `SyntaxError(message)` in the calling context, even if the script reassigned the global.
     static func raise(_ message: String, scope: WPEUserShortcutCallScope?) {
         guard let context = JSContext.current(),
-              let error = context.objectForKeyedSubscript("SyntaxError")?.construct(withArguments: [message]) else { return }
+              let error = context.objectForKeyedSubscript(nativeSyntaxErrorName)?.construct(withArguments: [message]) else { return }
         scope?.thrownError = JSManagedValue(value: error)
         context.exception = error
     }

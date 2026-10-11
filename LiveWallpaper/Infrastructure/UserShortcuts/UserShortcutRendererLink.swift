@@ -11,7 +11,7 @@ final class UserShortcutRendererLink {
         weak var bridge: WPEUserShortcutScriptBridge?
         weak var icons: WPEUserShortcutIconStore?
         let wallpaperID: String
-        let declared: Set<String>
+        var declared: Set<String>
     }
 
     private let store: UserShortcutBindingStore
@@ -42,12 +42,20 @@ final class UserShortcutRendererLink {
         registrations.removeAll { $0.bridge == nil || $0.bridge === bridge }
         registrations.append(Registration(bridge: bridge, icons: icons, wallpaperID: wallpaperID, declared: declaredKeys))
         push(to: bridge, icons: icons, wallpaperID: wallpaperID, declared: declaredKeys)
-        bridge.setLauncher { [weak self] propertyKey in
-            Task { @MainActor in self?.launch(wallpaperID: wallpaperID, propertyKey: propertyKey) }
+        bridge.setLauncher { [weak self] propertyKey, revision in
+            Task { @MainActor in self?.launch(wallpaperID: wallpaperID, propertyKey: propertyKey, revision: revision) }
         }
     }
 
-    static func declaredKeys(manifestRoot: URL) -> Set<String> {
+    /// A reload's manifest may declare different keys; no-op for a bridge that was never attached.
+    func updateDeclaredKeys(_ declaredKeys: Set<String>, for bridge: WPEUserShortcutScriptBridge) {
+        guard let index = registrations.firstIndex(where: { $0.bridge === bridge }) else { return }
+        registrations[index].declared = declaredKeys
+        let registration = registrations[index]
+        push(to: bridge, icons: registration.icons, wallpaperID: registration.wallpaperID, declared: declaredKeys)
+    }
+
+    nonisolated static func declaredKeys(manifestRoot: URL) -> Set<String> {
         guard let schema = try? WallpaperEngineProjectPropertySchema.read(from: manifestRoot, includeSchemeColor: true) else {
             return []
         }
@@ -69,8 +77,8 @@ final class UserShortcutRendererLink {
         declared: Set<String>
     ) {
         let bindings = store.bindings(forWallpaper: wallpaperID)
-        let bound = bindings.mapValues {
-            WPEUserShortcutScriptBridge.Entry(commandType: $0.kind.rawValue, displayName: $0.displayName)
+        let bound = bindings.filter { declared.contains($0.key) }.mapValues {
+            WPEUserShortcutScriptBridge.Entry(commandType: $0.kind.rawValue, displayName: $0.displayName, revision: $0.revision)
         }
         bridge.setBindings(declared: declared, bound: bound)
         guard let icons else { return }
@@ -79,8 +87,10 @@ final class UserShortcutRendererLink {
         }
     }
 
-    private func launch(wallpaperID: String, propertyKey: String) {
-        guard let binding = store.binding(for: UserShortcutBindingKey(wallpaperID: wallpaperID, propertyKey: propertyKey)) else {
+    private func launch(wallpaperID: String, propertyKey: String, revision: UInt64) {
+        let key = UserShortcutBindingKey(wallpaperID: wallpaperID, propertyKey: propertyKey)
+        guard let binding = store.binding(for: key), binding.revision == revision else {
+            Logger.debug("User shortcut launch dropped: the binding changed after the click", category: .settings)
             return
         }
         execute(binding)

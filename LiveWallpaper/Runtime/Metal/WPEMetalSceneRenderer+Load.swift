@@ -507,6 +507,14 @@ extension WPEMetalSceneRenderer {
             userShortcutIconStore.onChange = { [weak displayActor] in Task { await displayActor?.forceContentRerender() } }
             executor.userShortcutIconStore = userShortcutIconStore
         }
+        // Before any script context installs `engine.userProperties`, which reads the declared keys once.
+        let shortcutKeys = UserShortcutRendererLink.declaredKeys(manifestRoot: projectManifestRootURL ?? cacheRootURL)
+        await MainActor.run { [userShortcutBridge] in
+            UserShortcutRendererLink.shared.updateDeclaredKeys(shortcutKeys, for: userShortcutBridge)
+        }
+        // New contexts read the current bindings, so earlier changes need no applyUserProperties.
+        _ = userShortcutBridge.takeChangedKeys()
+        userShortcutBridge.setChangeHandler { [weak displayActor] in Task { await displayActor?.forceContentRerender() } }
         #if DEBUG
         oracleMediaInputReceipt = mediaSubscriptions.2
         #endif

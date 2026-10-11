@@ -84,6 +84,7 @@ extension WPEMetalSceneRenderer {
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
         sceneScriptSharedState?.timelineAnimations.publishTime(uniforms.time)
+        dispatchUserShortcutPropertyChanges(runtimeSeconds: uniforms.time)
         var frameOverlay = tickLayerPresentationScripts(
             uniforms: uniforms,
             layerScriptPointerFrame: frameContext.layerScriptPointerFrame

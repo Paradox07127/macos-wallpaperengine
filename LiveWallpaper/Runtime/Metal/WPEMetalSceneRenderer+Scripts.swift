@@ -321,14 +321,7 @@ extension WPEMetalSceneRenderer {
         for (objectID, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
             append(ownerID: objectID, initialize: instance.initializePreparedScript)
         }
-        let layerFamilies: [([String: WPELayerScriptInstance], (WPELayerScriptOutput, String) -> Void)] = [
-            (layerScriptInstances, { self.applyLayerScriptOutput($0, ownObjectID: $1) }),
-            (layerAlphaScriptInstances, { self.applyLayerAlphaScriptOutput($0, ownObjectID: $1) }),
-            (textVisibleScriptInstances, { self.applyTextScriptOutput($0, ownObjectID: $1) }),
-            (textAlphaScriptInstances, { self.applyTextAlphaScriptOutput($0, ownObjectID: $1) }),
-            (particleAlphaScriptInstances, { self.applyParticleAlphaScriptOutput($0, ownObjectID: $1) }),
-        ]
-        for (instances, publish) in layerFamilies {
+        for (instances, publish) in layerScriptFamilies {
             for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
                 append(ownerID: objectID, initialize: instance.initializePreparedScript,
                        accepted: { publish(instance.initialOutput, objectID) })
@@ -342,17 +335,42 @@ extension WPEMetalSceneRenderer {
         }
         guard isCurrentSceneScriptLoad(scriptLoadToken), scriptLoadToken.allows(.event) else { return }
         consumeSceneScriptLayerOutputs()
-        let userProperties = currentSceneScriptUserProperties()
-        for (instances, publish) in layerFamilies {
+        dispatchSceneScriptUserProperties(currentSceneScriptUserProperties())
+        consumeSceneScriptLayerOutputs()
+        setUpIntroPhaseAlign(scripted: document.imageObjects.filter { $0.visibleScript != nil }, scriptLoadToken: scriptLoadToken)
+    }
+
+    private var layerScriptFamilies: [([String: WPELayerScriptInstance], (WPELayerScriptOutput, String) -> Void)] {
+        [
+            (layerScriptInstances, { self.applyLayerScriptOutput($0, ownObjectID: $1) }),
+            (layerAlphaScriptInstances, { self.applyLayerAlphaScriptOutput($0, ownObjectID: $1) }),
+            (textVisibleScriptInstances, { self.applyTextScriptOutput($0, ownObjectID: $1) }),
+            (textAlphaScriptInstances, { self.applyTextAlphaScriptOutput($0, ownObjectID: $1) }),
+            (particleAlphaScriptInstances, { self.applyParticleAlphaScriptOutput($0, ownObjectID: $1) }),
+        ]
+    }
+
+    func dispatchSceneScriptUserProperties(
+        _ properties: [String: WPESceneScriptPropertyValue],
+        runtimeSeconds: Double? = nil
+    ) {
+        for (instances, publish) in layerScriptFamilies {
             for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
-                if let output = applyScriptUserProperties(instance, userProperties) {
+                if let output = applyScriptUserProperties(instance, properties, runtimeSeconds: runtimeSeconds) {
                     publish(output, objectID)
                 }
             }
         }
-        dispatchTransformScriptUserProperties(userProperties)
-        consumeSceneScriptLayerOutputs()
-        setUpIntroPhaseAlign(scripted: document.imageObjects.filter { $0.visibleScript != nil }, scriptLoadToken: scriptLoadToken)
+        dispatchTransformScriptUserProperties(properties)
+    }
+
+    /// WPE calls applyUserProperties when the user (re)binds a shortcut; the bag builders
+    /// replace each key's placeholder value with its shortcut object.
+    func dispatchUserShortcutPropertyChanges(runtimeSeconds: Double) {
+        let keys = userShortcutBridge.takeChangedKeys()
+        guard !keys.isEmpty else { return }
+        let placeholders = Dictionary(uniqueKeysWithValues: keys.map { ($0, WPESceneScriptPropertyValue.string("")) })
+        dispatchSceneScriptUserProperties(placeholders, runtimeSeconds: runtimeSeconds)
     }
 
     func seedSceneScriptsAfterLoad(

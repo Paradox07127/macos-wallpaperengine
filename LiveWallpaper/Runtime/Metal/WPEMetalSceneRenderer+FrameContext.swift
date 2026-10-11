@@ -43,7 +43,9 @@ extension WPEMetalSceneRenderer {
             WPEPointerFrame(position: position, clickPosition: click, isDown: frame.isDown, isRightDown: frame.isRightDown,
                             gesture: frame.gesture, dragged: frame.dragged)
         } else {
-            WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
+            // Keeps the press identity: a release outside the view is still that gesture's cursorUp.
+            WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false,
+                            gesture: frame.gesture, dragged: frame.dragged)
         }
         return PointerSpace(
             pointer: pointer,

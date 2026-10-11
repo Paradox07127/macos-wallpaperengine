@@ -39,8 +39,9 @@ struct UserShortcutRendererLinkTests {
         try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run"])
 
         let snapshot = bridge.snapshot()
+        let open = try #require(store.binding(for: Self.key("w1", "open")))
         #expect(snapshot.declared == ["open", "run"])
-        #expect(snapshot.bound == ["open": Entry(commandType: "web", displayName: "example.com")])
+        #expect(snapshot.bound == ["open": Entry(commandType: "web", displayName: "example.com", revision: open.revision)])
     }
 
     @Test("Attaching gives bound keys an icon, unbound keys none, and clearing a binding drops its icon")
@@ -73,7 +74,8 @@ struct UserShortcutRendererLinkTests {
 
         try store.setShortcut(name: "Lights", arguments: "on", for: Self.key("w1", "run"))
 
-        let expected = ["run": Entry(commandType: "cmd", displayName: "Lights")]
+        let run = try #require(store.binding(for: Self.key("w1", "run")))
+        let expected = ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision)]
         #expect(first.snapshot().bound == expected)
         #expect(second.snapshot().bound == expected)
         #expect(first.snapshot().declared == ["run"])
@@ -126,36 +128,110 @@ struct UserShortcutRendererLinkTests {
         #expect(outcome.schema?.properties.map(\.key) == ["launch"])
     }
 
-    @Test("The launcher runs the binding current when it executes, and nothing for a key cleared meanwhile", .timeLimit(.minutes(1)))
-    func launcherExecutesCurrentBinding() async throws {
+    @Test("The launcher runs the clicked binding, and nothing for a key cleared meanwhile", .timeLimit(.minutes(1)))
+    func launcherExecutesClickedBinding() async throws {
         let store = Self.makeStore()
         let link = UserShortcutRendererLink(store: store)
         let bridge = WPEUserShortcutScriptBridge()
-        try store.setWebsite("https://old.example.com", for: Self.key("w1", "open"))
         try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
         try store.setWebsite("https://gone.example.com", for: Self.key("w1", "gone"))
-        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run", "gone"])
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["run", "gone"])
 
         var executed: [UserShortcutBinding] = []
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             link.execute = { binding in
                 executed.append(binding)
-                if executed.count == 2 {
+                if executed.count == 1 {
                     done.resume()
                 }
             }
             #expect(bridge.requestLaunch("gone"))
             store.clear(Self.key("w1", "gone"))
+            #expect(bridge.requestLaunch("run"))
+        }
+
+        let run = try #require(store.binding(for: Self.key("w1", "run")))
+        #expect(executed == [run])
+    }
+
+    @Test("A reload's declared keys replace the attached ones and push their bindings")
+    func updateDeclaredKeysRepushes() throws {
+        let store = Self.makeStore()
+        try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open"])
+        #expect(bridge.snapshot().bound.isEmpty)
+
+        link.updateDeclaredKeys(["run"], for: bridge)
+
+        let run = try #require(store.binding(for: Self.key("w1", "run")))
+        #expect(bridge.snapshot().declared == ["run"])
+        #expect(bridge.snapshot().bound == ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision)])
+        try store.setWebsite("https://example.com", for: Self.key("w1", "open"))
+        #expect(bridge.snapshot().bound["open"] == nil, "a store change re-pushed the stale declared keys")
+    }
+
+    @Test("A store change marks only the rebound key for applyUserProperties, once")
+    func storeChangeMarksChangedKey() throws {
+        let store = Self.makeStore()
+        try store.setWebsite("https://example.com", for: Self.key("w1", "open"))
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run"])
+        _ = bridge.takeChangedKeys()
+
+        try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
+
+        #expect(bridge.takeChangedKeys() == ["run"])
+        #expect(bridge.takeChangedKeys().isEmpty)
+    }
+
+    @Test("A binding replaced between the click and the launch is not executed", .timeLimit(.minutes(1)))
+    func launcherDropsReboundBinding() async throws {
+        let store = Self.makeStore()
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        try store.setWebsite("https://old.example.com", for: Self.key("w1", "open"))
+        try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run"])
+
+        var executed: [UserShortcutBinding] = []
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            link.execute = { binding in
+                executed.append(binding)
+                if executed.count == 1 {
+                    done.resume()
+                }
+            }
             #expect(bridge.requestLaunch("open"))
             try? store.setWebsite("https://new.example.com", for: Self.key("w1", "open"))
             #expect(bridge.requestLaunch("run"))
         }
 
-        let open = try #require(store.binding(for: Self.key("w1", "open")))
         let run = try #require(store.binding(for: Self.key("w1", "run")))
-        #expect(open.target == "https://new.example.com")
-        #expect(executed.count == 2)
-        #expect(executed.contains(open) && executed.contains(run))
+        #expect(executed == [run], "the click launched a binding the user chose after it")
+    }
+
+    @Test("A stored binding for a key the manifest doesn't declare is invisible to scripts")
+    func undeclaredBindingIsNotPushed() throws {
+        let store = Self.makeStore()
+        try store.setWebsite("https://example.com", for: Self.key("w1", "hidden"))
+        let link = UserShortcutRendererLink(store: store)
+        link.execute = { _ in }
+        let bridge = WPEUserShortcutScriptBridge()
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open"])
+        let shared = WPESharedScriptState(userShortcuts: bridge)
+        let instance = try WPELayerScriptInstance(
+            script: "export function cursorClick() { shared.result = engine.openUserShortcut('hidden'); }",
+            shared: shared, setupBudget: 2, tickBudget: 0.5, governor: WPESceneScriptExecutionGovernor(limit: 4)
+        )
+        var click = WPEPointerFrame.neutral
+        click.gesture = WPEPointerGesture.next()
+        _ = instance.dispatchCursorEvent(.click, pointerFrame: click, runtimeSeconds: 1)
+
+        #expect(shared.get("result") as? Bool == false)
+        #expect(bridge.snapshot().bound.isEmpty)
     }
 }
 #endif
