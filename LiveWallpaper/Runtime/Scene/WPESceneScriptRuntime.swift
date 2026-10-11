@@ -1390,7 +1390,8 @@ final class WPESceneScriptInstance {
             audioBridge = WPESceneScriptInstance.installSandbox(
                 in: context,
                 userProperties: shared?.userProperties ?? [:],
-                timerScheduler: timerScheduler
+                timerScheduler: timerScheduler,
+                userShortcuts: shared?.userShortcuts
             )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
@@ -1569,11 +1570,48 @@ final class WPESceneScriptInstance {
         return s
     }
 
+    /// Getters read the bridge on every access, so a binding change needs no rebuild.
+    private nonisolated static func installUserShortcutProperties(
+        _ userShortcuts: WPEUserShortcutScriptBridge,
+        into bag: JSValue,
+        in context: JSContext
+    ) {
+        let keys = userShortcuts.snapshot().declared.sorted()
+        guard !keys.isEmpty else { return }
+        let read: @convention(block) (String, String) -> JSValue? = { key, field in
+            guard let context = JSContext.current() else { return nil }
+            guard let entry = userShortcuts.snapshot().bound[key] else {
+                return field == "isbound" ? JSValue(bool: false, in: context) : JSValue(undefinedIn: context)
+            }
+            switch field {
+            case "isbound": return JSValue(bool: true, in: context)
+            case "commandtype": return JSValue(object: entry.commandType, in: context)
+            default: return JSValue(object: entry.displayName, in: context)
+            }
+        }
+        let install = context.evaluateScript("""
+        (function (bag, keys, read) {
+            keys.forEach(function (key) {
+                var shortcut = {};
+                ['isbound', 'commandtype', 'file'].forEach(function (field) {
+                    Object.defineProperty(shortcut, field, {
+                        get: function () { return read(key, field); }, enumerable: true
+                    });
+                });
+                bag[key] = shortcut;
+            });
+        })
+        """)
+        install?.call(withArguments: [bag, keys, read])
+    }
+
     @discardableResult
     nonisolated static func installSandbox(
         in context: JSContext,
         userProperties: [String: WPESceneScriptPropertyValue] = [:],
-        timerScheduler: WPESceneScriptTimerScheduler? = nil
+        timerScheduler: WPESceneScriptTimerScheduler? = nil,
+        userShortcuts: WPEUserShortcutScriptBridge? = nil,
+        shortcutScope: WPEUserShortcutCallScope? = nil
     ) -> WPESceneScriptAudioBridge {
         let console = JSValue(newObjectIn: context)!
         let log: @convention(block) (JSValue) -> Void = { _ in }
@@ -1615,6 +1653,9 @@ final class WPESceneScriptInstance {
                 userPropertyObject.setObject(text, forKeyedSubscript: key as NSString)
             }
         }
+        if let userShortcuts {
+            installUserShortcutProperties(userShortcuts, into: userPropertyObject, in: context)
+        }
         engine.setObject(userPropertyObject, forKeyedSubscript: "userProperties" as NSString)
         if let timerScheduler {
             timerScheduler.install(in: context, engine: engine)
@@ -1642,8 +1683,17 @@ final class WPESceneScriptInstance {
         engine.setObject(setProperty, forKeyedSubscript: "setPropertyValue" as NSString)
         let audioBridge = WPESceneScriptAudioBridge()
         audioBridge.install(in: engine, context: context)
-        // `openUserShortcut` stub must exist (an undefined call throws out of cursorClick mid-handler).
-        let openUserShortcut: @convention(block) (String) -> Bool = { _ in false }
+        let openUserShortcut: @convention(block) (String) -> Bool = { name in
+            guard let gesture = shortcutScope?.gesture else {
+                WPEUserShortcutCallScope.raise("Cannot execute user command outside of cursor callbacks.", scope: shortcutScope)
+                return false
+            }
+            guard WPEUserShortcutGestureLedger.claim(gesture) else {
+                WPEUserShortcutCallScope.raise("Cannot execute more than one user command per cursor click.", scope: shortcutScope)
+                return false
+            }
+            return userShortcuts?.requestLaunch(name) ?? false
+        }
         engine.setObject(openUserShortcut, forKeyedSubscript: "openUserShortcut" as NSString)
         // isRunningInEditor is always false here; an undefined call throws and discards the rest of update().
         let isRunningInEditor: @convention(block) () -> Bool = { false }
@@ -2038,6 +2088,7 @@ final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
     let userProperties: [String: WPESceneScriptPropertyValue]
     let layers: [WPESceneScriptLayerInfo]
+    let userShortcuts: WPEUserShortcutScriptBridge?
     let timelineAnimations = WPESceneTimelineStore()
     private let ambiguousLayerNames: Set<String>
     private let lock = NSLock()
@@ -2422,11 +2473,13 @@ final class WPESharedScriptState: @unchecked Sendable {
     init(
         sceneScriptLoadToken: WPESceneScriptInstanceLimitToken? = nil,
         userProperties: [String: WPESceneScriptPropertyValue] = [:],
-        layers: [WPESceneScriptLayerInfo] = []
+        layers: [WPESceneScriptLayerInfo] = [],
+        userShortcuts: WPEUserShortcutScriptBridge? = nil
     ) {
         self.sceneScriptLoadToken = sceneScriptLoadToken
         self.userProperties = userProperties
         self.layers = layers
+        self.userShortcuts = userShortcuts
         authoredLayerOrder = layers.enumerated().sorted {
             $0.element.index == $1.element.index ? $0.offset < $1.offset : $0.element.index < $1.element.index
         }.map(\.element.id)
@@ -3686,6 +3739,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var didLogException = false
         fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
+        private let shortcutScope = WPEUserShortcutCallScope()
         /// Written by every entry on the lane, read by the render thread's batch guard.
         private let pendingTimers = OSAllocatedUnfairLock(initialState: false)
         var hasPendingTimers: Bool {
@@ -3966,7 +4020,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             audioBridge = WPESceneScriptInstance.installSandbox(
                 in: context,
                 userProperties: shared?.userProperties ?? [:],
-                timerScheduler: timerScheduler
+                timerScheduler: timerScheduler,
+                userShortcuts: shared?.userShortcuts,
+                shortcutScope: shortcutScope
             )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
@@ -3983,6 +4039,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             context.exceptionHandler = { [weak self] _, exception in
                 guard let self else { return }
                 didThrow = true
+                shortcutScope.noteUncaught(exception)
                 layerBridge.failEvaluation()
                 guard !didLogException else { return }
                 // Set the latch before reading JS properties: a custom error getter may itself throw.
@@ -4099,6 +4156,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else { return }
             didThrow = false
             WPEFrameOccupancyMeter.count(.jscCall)
+            shortcutScope.begin(event, pointerFrame: pointerFrame)
+            defer { shortcutScope.end() }
             _ = fn.call(withArguments: [cursorEventObject(
                 event,
                 pointerFrame: pointerFrame,
@@ -4106,7 +4165,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 in: context
             )])
             if didThrow {
-                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
+                if !shortcutScope.uncaughtIsBridgeError {
+                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                }
             } else {
                 faultPolicy.recordSuccess(entryPoint: event.handlerName)
             }

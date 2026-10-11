@@ -249,6 +249,8 @@ final class WPELayerScriptCursorInbox: Sendable {
                 var neutral = value.lastDelivered
                 neutral.isDown = false
                 neutral.isRightDown = false
+                // A cancellation is not a physical release, so it must not carry the press's gesture.
+                neutral.gesture = 0
                 if value.lastDelivered.isDown {
                     result.append(.init(event: .up, pointerFrame: neutral, runtimeSeconds: value.lastRuntimeSeconds))
                 }
@@ -843,6 +845,7 @@ final class WPELayerScriptInstance {
         /// safely (run on the engine queue, so no synchronization needed).
         fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
+        private let shortcutScope = WPEUserShortcutCallScope()
         /// One-shot latch for `logFirstThrow` (per instance, not per tick).
         private var hasLoggedThrow = false
         private let nowProviderMillis: (@Sendable () -> Double)?
@@ -1218,7 +1221,9 @@ final class WPELayerScriptInstance {
                 audioBridge = WPESceneScriptInstance.installSandbox(
                     in: context,
                     userProperties: shared?.userProperties ?? [:],
-                    timerScheduler: timerScheduler
+                    timerScheduler: timerScheduler,
+                    userShortcuts: shared?.userShortcuts,
+                    shortcutScope: shortcutScope
                 )
                 WPESceneScriptBaseclasses.install(in: context)
                 installCanvasSize(in: context)
@@ -1238,6 +1243,7 @@ final class WPELayerScriptInstance {
                 }
                 context.exceptionHandler = { [weak self] _, exception in
                     self?.didThrow = true
+                    self?.shortcutScope.noteUncaught(exception)
                     self?.failEvaluation()
                     self?.logFirstThrow(exception)
                 }
@@ -1424,6 +1430,8 @@ final class WPELayerScriptInstance {
                     return
                 }
                 didThrow = false
+                shortcutScope.begin(event, pointerFrame: pointerFrame)
+                defer { shortcutScope.end() }
                 _ = fn.call(withArguments: [cursorEventObject(
                     event,
                     pointerFrame: pointerFrame,
@@ -1431,7 +1439,10 @@ final class WPELayerScriptInstance {
                     in: context
                 )])
                 if didThrow {
-                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                    // The bridge's own scope/quota error is WPE's documented outcome, not a script fault.
+                    if !shortcutScope.uncaughtIsBridgeError {
+                        faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                    }
                 } else {
                     faultPolicy.recordSuccess(entryPoint: event.handlerName)
                 }

@@ -1622,15 +1622,16 @@ struct WPESceneScriptRuntimeTests {
         #expect(value.x == 0.5)
     }
 
-    @Test("engine.openUserShortcut exists and reports that nothing was opened")
-    func engineOpenUserShortcutIsInert() throws {
-        // The method has to be callable: an undefined call throws out of the
-        // cursor handler that invokes it, discarding its other side effects.
+    @Test("engine.openUserShortcut outside a cursor callback throws WPE's SyntaxError")
+    func engineOpenUserShortcutOutsideCursorCallbackThrows() throws {
         let script = """
-        export function update(value) { return String(engine.openUserShortcut('anything')); }
+        export function update(value) {
+            try { engine.openUserShortcut('anything'); return 'returned'; }
+            catch (e) { return e.name + ': ' + e.message; }
+        }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "?")
-        #expect(instance.tickString() == "false")
+        #expect(instance.tickString() == "SyntaxError: Cannot execute user command outside of cursor callbacks.")
     }
 
 

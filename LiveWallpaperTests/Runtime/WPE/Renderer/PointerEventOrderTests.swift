@@ -57,6 +57,25 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(renderer.sharedScriptValueForTesting("events") as? String == expected)
     }
 
+    @Test("Each left press mints a gesture number that its release keeps; right presses do not")
+    func leftPressGestureNumbers() throws {
+        let view = try WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                                             device: #require(MTLCreateSystemDefaultDevice()))
+        view.clickCaptureEnabled = true
+        try view.mouseDown(with: event(.leftMouseDown))
+        let first = view.pointerFrame.gesture
+        #expect(first != 0)
+        try view.mouseUp(with: event(.leftMouseUp))
+        #expect(!view.pointerFrame.isDown)
+        #expect(view.pointerFrame.gesture == first)
+        try view.rightMouseDown(with: event(.rightMouseDown))
+        try view.rightMouseUp(with: event(.rightMouseUp))
+        #expect(view.pointerFrame.gesture == first)
+        try view.mouseDown(with: event(.leftMouseDown))
+        #expect(view.pointerFrame.gesture != 0)
+        #expect(view.pointerFrame.gesture != first)
+    }
+
     @Test("A full down/up between frame samples reaches authored SceneScript in order")
     func rapidClickBetweenFramesReachesScript() async throws {
         let scene = try fixture()

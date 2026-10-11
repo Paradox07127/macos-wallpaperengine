@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import MetalKit
+import os
 import simd
 
 @MainActor
@@ -57,6 +58,7 @@ final class WPEInteractiveMTKView: MTKView {
         pointerFrame.position = position
         pointerFrame.clickPosition = position
         pointerFrame.isDown = true
+        pointerFrame.gesture = WPEPointerGesture.next()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -102,6 +104,8 @@ struct WPEPointerFrame: Equatable, Sendable {
     var clickPosition: SIMD2<Double>
     var isDown: Bool
     var isRightDown: Bool
+    /// Left-press identity shared by its down/up/click; 0 = no physical press.
+    var gesture: UInt64 = 0
 
     static let neutral = WPEPointerFrame(
         position: SIMD2<Double>(0.5, 0.5),
@@ -109,5 +113,17 @@ struct WPEPointerFrame: Equatable, Sendable {
         isDown: false,
         isRightDown: false
     )
+}
+
+enum WPEPointerGesture {
+    private static let counter = OSAllocatedUnfairLock(initialState: UInt64(0))
+
+    /// Process-unique, starting at 1.
+    static func next() -> UInt64 {
+        counter.withLock { value in
+            value &+= 1
+            return value
+        }
+    }
 }
 #endif

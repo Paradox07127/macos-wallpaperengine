@@ -125,6 +125,7 @@ final class WPEMetalSceneRenderer: NSObject {
     /// than once per frame.
     var lastHoverPointerPixels: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
+    let userShortcutBridge = WPEUserShortcutScriptBridge()
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )

@@ -156,7 +156,8 @@ final class SceneSpanWallpaperGroup {
                   (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
         }
         owner.spanSurface.mailbox.publishPointerFrame(.init(position: global(frame.position), clickPosition: global(frame.clickPosition),
-                                                            isDown: frame.isDown, isRightDown: frame.isRightDown))
+                                                            isDown: frame.isDown, isRightDown: frame.isRightDown,
+                                                            gesture: frame.gesture))
         Task { await owner.spanRenderActor.renderFrame() }
     }
 }
