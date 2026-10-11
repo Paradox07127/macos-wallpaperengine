@@ -13,6 +13,8 @@ struct UserShortcutBindingRow: View {
     @State private var current: UserShortcutBinding?
     @State private var isResolvable = true
     @State private var editing: UserShortcutEditorKind?
+    @State private var testFailed = false
+    @State private var isDropTargeted = false
 
     private var isEditing: Binding<Bool> {
         Binding(get: { editing != nil }, set: { shown in
@@ -30,25 +32,33 @@ struct UserShortcutBindingRow: View {
         SettingRow(
             icon: WPEPropertyRowIcon.symbol(for: .userShortcut),
             iconColor: iconColor,
-            verbatimTitle: title
+            verbatimTitle: title,
+            verbatimSubtitle: testFailed ? String(
+                localized: "Couldn't open it. Check the website, shortcut name or file.",
+                bundle: .appLanguage,
+                comment: "Shown under a user shortcut row after its Test action failed to open the bound item."
+            ) : nil
         ) {
             Menu {
-                Button("Website", systemImage: "safari") { editing = .website }
-                Button("Apple Shortcut", systemImage: "square.2.layers.3d") { editing = .shortcut }
-                Button("File or App", systemImage: "doc") { choose(directory: false) }
-                Button("Folder", systemImage: "folder") { choose(directory: true) }
+                Button("Website", systemImage: "safari") { select { editing = .website } }
+                Button("Apple Shortcut", systemImage: "square.2.layers.3d") { select { editing = .shortcut } }
+                Button("File or App", systemImage: "doc") { select { choose(directory: false) } }
+                Button("Folder", systemImage: "folder") { select { choose(directory: true) } }
                 if current?.isApplication == true {
-                    Button("Edit Arguments", systemImage: "text.cursor") { editing = .arguments }
+                    Button("Edit Arguments", systemImage: "text.cursor") { select { editing = .arguments } }
                 }
                 Divider()
                 Button("Test", systemImage: "play") {
-                    if let current {
-                        _ = UserShortcutExecutor.execute(current)
+                    select {
+                        if let current {
+                            let failed = $testFailed
+                            _ = UserShortcutExecutor.execute(current, onFailure: { failed.wrappedValue = true })
+                        }
                     }
                 }
                 .disabled(current == nil)
                 Button("Clear", systemImage: "xmark.circle", role: .destructive) {
-                    UserShortcutBindingStore.shared.clear(key)
+                    select { UserShortcutBindingStore.shared.clear(key) }
                 }
                 .disabled(current == nil)
             } label: {
@@ -72,14 +82,80 @@ struct UserShortcutBindingRow: View {
                 }
             }
         }
+        .background {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                    .fill(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.dragFill))
+            }
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                    .stroke(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.quietStroke), lineWidth: 1)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            drop(urls)
+        } isTargeted: { isDropTargeted = $0 }
         .help(Text("Runs when the wallpaper's script asks for it after you click the wallpaper, including clicks on desktop icons."))
         .onAppear(perform: refresh)
         .onChange(of: key) { _, _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: UserShortcutBindingStore.didChange)) { _ in refresh() }
     }
 
+    enum DropTarget: Equatable {
+        case file(asksForArguments: Bool)
+        case directory
+    }
+
+    /// An `.app` is a package directory but binds as a file, like the File or App menu item.
+    static func dropTarget(for url: URL) -> DropTarget? {
+        guard url.isFileURL else { return nil }
+        if UserShortcutBinding.isApplication(url) {
+            return .file(asksForArguments: true)
+        }
+        let isDirectory = url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        return isDirectory ? .directory : .file(asksForArguments: false)
+    }
+
+    /// Binds only the first URL; nil = rejected and the store is unchanged.
+    @discardableResult
+    static func bindDropped(_ urls: [URL], to key: UserShortcutBindingKey, in store: UserShortcutBindingStore) throws -> DropTarget? {
+        guard let url = urls.first, let target = dropTarget(for: url) else { return nil }
+        switch target {
+        case .directory:
+            try store.setDirectory(url, for: key)
+        case .file:
+            try store.setFile(url, arguments: nil, for: key)
+        }
+        return target
+    }
+
+    /// The menu has no open callback, so any item picked from it dismisses a previous Test failure.
+    private func select(_ action: () -> Void) {
+        testFailed = false
+        action()
+    }
+
+    private func drop(_ urls: [URL]) -> Bool {
+        do {
+            guard let target = try Self.bindDropped(urls, to: key, in: .shared) else { return false }
+            if target == .file(asksForArguments: true) {
+                editing = .arguments
+            }
+            return true
+        } catch {
+            Logger.error("User shortcut: couldn't save the dropped item: \((error as NSError).code)", category: .settings)
+            return false
+        }
+    }
+
     private func refresh() {
-        current = UserShortcutBindingStore.shared.binding(for: key)
+        let binding = UserShortcutBindingStore.shared.binding(for: key)
+        if binding != current {
+            testFailed = false
+        }
+        current = binding
         isResolvable = current.map(UserShortcutExecutor.isResolvable) ?? true
     }
 
@@ -89,18 +165,26 @@ struct UserShortcutBindingRow: View {
         panel.canChooseDirectories = directory
         panel.treatsFilePackagesAsDirectories = false
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            if directory {
-                try UserShortcutBindingStore.shared.setDirectory(url, for: key)
-            } else {
-                try UserShortcutBindingStore.shared.setFile(url, arguments: nil, for: key)
-                if UserShortcutBinding.isApplication(url) {
-                    editing = .arguments
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                if directory {
+                    try UserShortcutBindingStore.shared.setDirectory(url, for: key)
+                } else {
+                    try UserShortcutBindingStore.shared.setFile(url, arguments: nil, for: key)
+                    if UserShortcutBinding.isApplication(url) {
+                        editing = .arguments
+                    }
                 }
+            } catch {
+                Logger.error("User shortcut: couldn't save the chosen item: \((error as NSError).code)", category: .settings)
             }
-        } catch {
-            Logger.error("User shortcut: couldn't save the chosen item: \((error as NSError).code)", category: .settings)
+        }
+        // Not `NSApp.windows.first`: that can be a wallpaper window.
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(panel.runModal())
         }
     }
 }
@@ -135,6 +219,7 @@ private struct UserShortcutEditorPopover: View {
             case .shortcut:
                 field("Shortcut Name") {
                     TextField("Shortcut Name", text: $name)
+                    shortcutNameHint
                 }
                 field("Input Text") {
                     TextField("Input Text", text: $input, prompt: Text("Optional"))
@@ -173,6 +258,22 @@ private struct UserShortcutEditorPopover: View {
                 .font(DesignTokens.Typography.body)
                 .onSubmit(save)
         }
+    }
+
+    private var shortcutNameHint: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
+            Text("Use the exact name shown in the Shortcuts app.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let shortcutsApp = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.shortcuts") {
+                Spacer(minLength: 0)
+                Button("Open Shortcuts") {
+                    NSWorkspace.shared.openApplication(at: shortcutsApp, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .font(DesignTokens.Typography.caption)
     }
 
     private func errorText(_ message: LocalizedStringKey) -> some View {

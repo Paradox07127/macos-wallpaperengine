@@ -31,18 +31,27 @@ enum UserShortcutExecutor {
     }
 
     /// `openFile` gets launch arguments only for an `.app` and must call `completion` once the open finishes.
+    /// `onFailure` runs once on the main actor for a synchronous failure or a failed asynchronous open.
     @MainActor
     static func execute(
         _ binding: UserShortcutBinding,
         open: (URL) -> Bool = { NSWorkspace.shared.open($0) },
-        openFile: @MainActor (URL, _ arguments: [String]?, _ completion: @escaping @Sendable () -> Void) -> Void = openWithWorkspace
+        openFile: @MainActor (URL, _ arguments: [String]?, _ completion: @escaping @Sendable (_ succeeded: Bool) -> Void) -> Void = openWithWorkspace,
+        onFailure: (@MainActor @Sendable () -> Void)? = nil
     ) -> Bool {
         switch binding.kind {
         case .web, .cmd:
-            guard let url = launchURL(for: binding) else { return false }
+            guard let url = launchURL(for: binding) else {
+                onFailure?()
+                return false
+            }
             let host = binding.kind == .web ? url.host ?? "" : ""
             Logger.info("User shortcut: \(binding.kind.rawValue) \(host)", category: .settings)
-            return open(url)
+            guard open(url) else {
+                onFailure?()
+                return false
+            }
+            return true
         case .file, .directory:
             let target = SecurityScopedBookmarkResolver.Target(label: "user-shortcut") { original, refreshed in
                 Task { @MainActor in
@@ -54,6 +63,7 @@ enum UserShortcutExecutor {
             }
             guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(binding.bookmark, target: target) else {
                 Logger.warning("User shortcut: \(binding.kind.rawValue) target can't be resolved", category: .settings)
+                onFailure?()
                 return false
             }
             let url = resolved.url
@@ -61,9 +71,12 @@ enum UserShortcutExecutor {
             Logger.info("User shortcut: \(binding.kind.rawValue)", category: .settings)
             // The scope must outlive the asynchronous open, so it is released in the completion, not on return.
             let didStart = url.startAccessingSecurityScopedResource()
-            openFile(url, arguments) {
+            openFile(url, arguments) { succeeded in
                 if didStart {
                     url.stopAccessingSecurityScopedResource()
+                }
+                if !succeeded, let onFailure {
+                    Task { @MainActor in onFailure() }
                 }
             }
             return true
@@ -114,13 +127,13 @@ enum UserShortcutExecutor {
     }
 
     @MainActor
-    static func openWithWorkspace(_ url: URL, arguments: [String]?, completion: @escaping @Sendable () -> Void) {
+    static func openWithWorkspace(_ url: URL, arguments: [String]?, completion: @escaping @Sendable (_ succeeded: Bool) -> Void) {
         let configuration = NSWorkspace.OpenConfiguration()
         let finish: @Sendable (NSRunningApplication?, (any Error)?) -> Void = { _, error in
             if let error {
                 Logger.warning("User shortcut: open failed (\((error as NSError).code))", category: .settings)
             }
-            completion()
+            completion(error == nil)
         }
         if let arguments {
             configuration.arguments = arguments

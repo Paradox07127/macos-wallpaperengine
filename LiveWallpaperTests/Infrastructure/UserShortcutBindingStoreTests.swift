@@ -262,9 +262,9 @@ struct UserShortcutBindingStoreTests {
 
         var opened: [(path: String, arguments: [String]?)] = []
         var completions = 0
-        let openFile: @MainActor (URL, [String]?, @escaping @Sendable () -> Void) -> Void = { url, arguments, completion in
+        let openFile: @MainActor (URL, [String]?, @escaping @Sendable (Bool) -> Void) -> Void = { url, arguments, completion in
             opened.append((url.resolvingSymlinksInPath().path, arguments))
-            completion()
+            completion(true)
             completions += 1
         }
         let fileBinding = try #require(store.binding(for: key))
@@ -290,6 +290,114 @@ struct UserShortcutBindingStoreTests {
         for target in ["javascript:alert(1)", "file:///etc/passwd", "shortcuts://run-shortcut?name=x"] {
             let binding = UserShortcutBinding(kind: .web, target: target, arguments: nil, displayName: "x", revision: 1)
             #expect(UserShortcutExecutor.launchURL(for: binding) == nil)
+        }
+    }
+
+    @Test func executeReportsSynchronousFailureOnce() throws {
+        let root = try makeTargetRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try makeFile("Notes.txt", in: root)
+        let store = UserShortcutBindingStore(fileURL: makeFileURL())
+        try store.setFile(file, arguments: nil, for: key)
+        let binding = try #require(store.binding(for: key))
+        try FileManager.default.removeItem(at: file)
+
+        let failures = FailureRecorder()
+        let missingOpened = UserShortcutExecutor.execute(binding, openFile: { _, _, _ in }, onFailure: { failures.record() })
+        #expect(!missingOpened)
+        #expect(failures.count == 1, "a deleted file target was not reported exactly once")
+
+        let web = UserShortcutBinding(kind: .web, target: "https://example.com", arguments: nil, displayName: "example.com", revision: 1)
+        let refusedOpened = UserShortcutExecutor.execute(web, open: { _ in false }, onFailure: { failures.record() })
+        #expect(!refusedOpened)
+        #expect(failures.count == 2, "a web open that returned false was not reported exactly once")
+        let webOpened = UserShortcutExecutor.execute(web, open: { _ in true }, onFailure: { failures.record() })
+        #expect(webOpened)
+        #expect(failures.count == 2, "a successful web open was reported as a failure")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func executeReportsAsynchronousOpenFailureOnMainActor() async throws {
+        let root = try makeTargetRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try makeFile("Notes.txt", in: root)
+        let store = UserShortcutBindingStore(fileURL: makeFileURL())
+        try store.setFile(file, arguments: nil, for: key)
+        let binding = try #require(store.binding(for: key))
+
+        var completions: [@Sendable (Bool) -> Void] = []
+        let openFile: @MainActor (URL, [String]?, @escaping @Sendable (Bool) -> Void) -> Void = { _, _, completion in
+            completions.append(completion)
+        }
+        let failures = FailureRecorder()
+        let firstStarted = UserShortcutExecutor.execute(binding, openFile: openFile, onFailure: { failures.record() })
+        let secondStarted = UserShortcutExecutor.execute(binding, openFile: openFile, onFailure: { failures.record() })
+        #expect(firstStarted && secondStarted)
+        try #require(completions.count == 2)
+
+        let succeed = completions[0]
+        let fail = completions[1]
+        await Task.detached { succeed(true) }.value
+        await Task.detached { fail(false) }.value
+        // Main-actor jobs run in enqueue order, so both completions' hops have run once this one does.
+        await Task { @MainActor in }.value
+        #expect(failures.count == 1, "an asynchronous open result was misreported")
+        #expect(failures.offMainCalls == 0)
+    }
+
+    @Test func dropTargetClassifiesFilesAppsAndFolders() throws {
+        let root = try makeTargetRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try makeFile("Notes.txt", in: root)
+        let app = try makeApp("Foo.app", in: root)
+        let folder = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folderWithoutSlash = URL(filePath: folder.path(percentEncoded: false), directoryHint: .notDirectory)
+
+        #expect(UserShortcutBindingRow.dropTarget(for: file) == .file(asksForArguments: false))
+        #expect(UserShortcutBindingRow.dropTarget(for: app) == .file(asksForArguments: true), "an .app package was treated as a folder")
+        #expect(UserShortcutBindingRow.dropTarget(for: folder) == .directory)
+        #expect(UserShortcutBindingRow.dropTarget(for: folderWithoutSlash) == .directory)
+        let web = try #require(URL(string: "https://example.com"))
+        #expect(UserShortcutBindingRow.dropTarget(for: web) == nil)
+    }
+
+    @Test func droppedItemsBindTheFirstURL() throws {
+        let root = try makeTargetRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try makeFile("Notes.txt", in: root)
+        let app = try makeApp("Foo.app", in: root)
+        let folder = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = UserShortcutBindingStore(fileURL: makeFileURL())
+
+        #expect(try UserShortcutBindingRow.bindDropped([file], to: key, in: store) == .file(asksForArguments: false))
+        #expect(store.binding(for: key)?.kind == .file)
+        #expect(store.binding(for: key)?.target == "Notes.txt")
+
+        #expect(try UserShortcutBindingRow.bindDropped([folder, file], to: key, in: store) == .directory)
+        #expect(store.binding(for: key)?.kind == .directory)
+        #expect(store.binding(for: key)?.target == "Projects")
+
+        #expect(try UserShortcutBindingRow.bindDropped([app], to: key, in: store) == .file(asksForArguments: true))
+        let appBinding = try #require(store.binding(for: key))
+        #expect(appBinding.isApplication)
+
+        let web = try #require(URL(string: "https://example.com"))
+        #expect(try UserShortcutBindingRow.bindDropped([web, file], to: key, in: store) == nil)
+        #expect(try UserShortcutBindingRow.bindDropped([], to: key, in: store) == nil)
+        #expect(store.binding(for: key) == appBinding, "a rejected drop replaced the stored binding")
+    }
+}
+
+@MainActor
+private final class FailureRecorder {
+    private(set) var count = 0
+    private(set) var offMainCalls = 0
+
+    func record() {
+        count += 1
+        if !Thread.isMainThread {
+            offMainCalls += 1
         }
     }
 }
