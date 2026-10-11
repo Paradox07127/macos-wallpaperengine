@@ -35,6 +35,32 @@ enum WPEMediaTextureDemand {
     }
 }
 
+enum WPEUserShortcutIconDemand {
+    /// Slot → property key, same override > pass > material precedence as `WPEMediaTextureDemand`.
+    static func slots(in bindings: WPERenderUserTextureBindings) -> [Int: String] {
+        var result: [Int: String] = [:]
+        for locus in [bindings.material, bindings.pass, bindings.override] {
+            for binding in locus {
+                guard let slot = binding.slot else { continue }
+                result[slot] = binding.type?.lowercased() == "usershortcut" ? binding.name : nil
+            }
+        }
+        return result
+    }
+
+    static func byPassID(in pipeline: WPEPreparedRenderPipeline) -> [String: [Int: String]] {
+        var result: [String: [Int: String]] = [:]
+        for layer in pipeline.layers {
+            for prepared in layer.passes {
+                let slots = slots(in: prepared.pass.userTextureBindings)
+                guard !slots.isEmpty else { continue }
+                result[prepared.pass.id] = slots
+            }
+        }
+        return result
+    }
+}
+
 /// `@unchecked Sendable`: every stored property is read and written only inside `lock` —
 /// `@MainActor` now-playing delivery calls `ingest` while the per-display render thread calls
 /// `declarations(forPassID:)`/`substituting(_:slot:declarations:)` mid-encode. `MTLTexture`

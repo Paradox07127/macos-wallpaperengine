@@ -126,6 +126,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var lastHoverPointerPixels: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
     let userShortcutBridge = WPEUserShortcutScriptBridge()
+    /// Outlives scene reloads: the link owns the icons, each load only replaces the slot table.
+    let userShortcutIconStore: WPEUserShortcutIconStore
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )
@@ -450,6 +452,7 @@ final class WPEMetalSceneRenderer: NSObject {
         }
         self.resolutionTracer = resolutionTracer
         self.executor = executor
+        self.userShortcutIconStore = WPEUserShortcutIconStore(device: device)
         self.textureLoader = WPEMetalTextureLoader(device: device)
         self.surfaceControl = surfaceControl
         self.mailbox = mailbox

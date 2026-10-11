@@ -363,6 +363,7 @@ final class AmbientWallpaperSessionBuilder {
         renderer.spanFrames = spanFrames
         UserShortcutRendererLink.shared.attach(
             renderer.userShortcutBridge,
+            icons: renderer.userShortcutIconStore,
             wallpaperID: descriptor.workshopID,
             declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot ?? cacheURL)
         )

@@ -38,7 +38,7 @@ struct WPERenderGraphBuilderTests {
                             "combos": ["OVERRIDE": 1],
                             "constantshadervalues": ["strength": 0.75],
                             "textures": [NSNull(), "masks/custom_mask"],
-                            "usertextures": [["name": "$effectOverride", "type": "usershortcut"]]
+                            "usertextures": [["name": "$effectOverride"]],
                         ]]
                     ]]
                 ]

@@ -106,11 +106,13 @@ struct WPEShaderImplementationInventoryEntry: Equatable, Sendable {
 }
 
 enum WPEShaderImplementationInventory {
-    /// `$mediaThumbnail` and `$mediaPreviousThumbnail` have a runtime consumer; only declarations without one go in the unsupported-metadata inventory.
+    /// `$mediaThumbnail`, `$mediaPreviousThumbnail` and `type: usershortcut` have a runtime consumer; only declarations without one go in the unsupported-metadata inventory.
     static func containsUnsupportedUserTexture(
         _ bindings: [WPESceneUserTextureBinding]
     ) -> Bool {
-        bindings.contains { WPEMediaSystemTexture(bindingName: $0.name) == nil }
+        bindings.contains {
+            WPEMediaSystemTexture(bindingName: $0.name) == nil && $0.type?.lowercased() != "usershortcut"
+        }
     }
 
     static func merging(

@@ -498,6 +498,15 @@ extension WPEMetalSceneRenderer {
         mediaEventMailbox = mediaSubscriptions.0?.mailbox
         mediaTextureSubscription = mediaSubscriptions.1
         executor.mediaTextureStore = mediaStore
+        let iconSlots = WPEUserShortcutIconDemand.byPassID(in: pipeline)
+        userShortcutIconStore.setDeclarations(iconSlots)
+        if iconSlots.isEmpty {
+            userShortcutIconStore.onChange = nil
+            executor.userShortcutIconStore = nil
+        } else {
+            userShortcutIconStore.onChange = { [weak displayActor] in Task { await displayActor?.forceContentRerender() } }
+            executor.userShortcutIconStore = userShortcutIconStore
+        }
         #if DEBUG
         oracleMediaInputReceipt = mediaSubscriptions.2
         #endif

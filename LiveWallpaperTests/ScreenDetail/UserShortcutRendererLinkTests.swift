@@ -2,6 +2,7 @@
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Metal
 import Testing
 
 @MainActor
@@ -19,6 +20,14 @@ struct UserShortcutRendererLinkTests {
         UserShortcutBindingKey(wallpaperID: wallpaperID, propertyKey: propertyKey)
     }
 
+    private static func makeIcons() throws -> WPEUserShortcutIconStore {
+        try WPEUserShortcutIconStore(device: #require(MTLCreateSystemDefaultDevice()))
+    }
+
+    private static func hasIcon(_ icons: WPEUserShortcutIconStore, _ key: String) -> Bool {
+        icons.substituting(nil, slot: 0, declarations: [0: key]) != nil
+    }
+
     @Test("Attaching pushes the declared keys and the stored bindings of that wallpaper")
     func attachPushesDeclaredAndBound() throws {
         let store = Self.makeStore()
@@ -27,11 +36,27 @@ struct UserShortcutRendererLinkTests {
         let link = UserShortcutRendererLink(store: store)
         let bridge = WPEUserShortcutScriptBridge()
 
-        link.attach(bridge, wallpaperID: "w1", declaredKeys: ["open", "run"])
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run"])
 
         let snapshot = bridge.snapshot()
         #expect(snapshot.declared == ["open", "run"])
         #expect(snapshot.bound == ["open": Entry(commandType: "web", displayName: "example.com")])
+    }
+
+    @Test("Attaching gives bound keys an icon, unbound keys none, and clearing a binding drops its icon")
+    func attachPushesIcons() throws {
+        let store = Self.makeStore()
+        try store.setWebsite("https://example.com/a", for: Self.key("w1", "open"))
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        let icons = try Self.makeIcons()
+
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: ["open", "run"])
+
+        #expect(Self.hasIcon(icons, "open"))
+        #expect(!Self.hasIcon(icons, "run"))
+        store.clear(Self.key("w1", "open"))
+        #expect(!Self.hasIcon(icons, "open"), "a cleared binding must fall back to the author's texture")
     }
 
     @Test("A store change reaches every bridge of that wallpaper and no other")
@@ -41,9 +66,10 @@ struct UserShortcutRendererLinkTests {
         let first = WPEUserShortcutScriptBridge()
         let second = WPEUserShortcutScriptBridge()
         let other = WPEUserShortcutScriptBridge()
-        link.attach(first, wallpaperID: "w1", declaredKeys: ["run"])
-        link.attach(second, wallpaperID: "w1", declaredKeys: ["run"])
-        link.attach(other, wallpaperID: "w2", declaredKeys: ["run"])
+        let icons = try Self.makeIcons()
+        link.attach(first, icons: icons, wallpaperID: "w1", declaredKeys: ["run"])
+        link.attach(second, icons: icons, wallpaperID: "w1", declaredKeys: ["run"])
+        try link.attach(other, icons: Self.makeIcons(), wallpaperID: "w2", declaredKeys: ["run"])
 
         try store.setShortcut(name: "Lights", arguments: "on", for: Self.key("w1", "run"))
 
@@ -60,7 +86,7 @@ struct UserShortcutRendererLinkTests {
         let link = UserShortcutRendererLink(store: store)
         var bridge: WPEUserShortcutScriptBridge? = WPEUserShortcutScriptBridge()
         weak var released = bridge
-        try link.attach(#require(bridge), wallpaperID: "w1", declaredKeys: ["run"])
+        try link.attach(#require(bridge), icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["run"])
         #expect(link.registrationCount == 1)
         bridge = nil
         #expect(released == nil, "the link kept the bridge alive")
@@ -108,7 +134,7 @@ struct UserShortcutRendererLinkTests {
         try store.setWebsite("https://old.example.com", for: Self.key("w1", "open"))
         try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
         try store.setWebsite("https://gone.example.com", for: Self.key("w1", "gone"))
-        link.attach(bridge, wallpaperID: "w1", declaredKeys: ["open", "run", "gone"])
+        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open", "run", "gone"])
 
         var executed: [UserShortcutBinding] = []
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in

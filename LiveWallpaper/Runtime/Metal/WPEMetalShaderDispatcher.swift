@@ -463,6 +463,13 @@ struct WPEMetalShaderDispatcher {
         return store.substituting(texture, slot: slot, declarations: declarations) ?? texture
     }
 
+    /// nil when the slot keeps its authored/media texture; checked after media, like the custom path.
+    private func userShortcutIcon(slot: Int, passID: String) -> MTLTexture? {
+        guard let store = executor.userShortcutIconStore,
+              let declarations = store.declarations(forPassID: passID) else { return nil }
+        return store.substituting(nil, slot: slot, declarations: declarations)
+    }
+
     private func dispatchGenericImage2(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -486,7 +493,7 @@ struct WPEMetalShaderDispatcher {
             nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
-        let texture = mediaSubstituted(
+        let authored = mediaSubstituted(
             try WPEMetalShaderInputs.resolve(
                 reference: reference,
                 textures: textures,
@@ -496,13 +503,16 @@ struct WPEMetalShaderDispatcher {
             slot: 0,
             passID: pass.pass.id
         )
+        let icon = userShortcutIcon(slot: 0, passID: pass.pass.id)
+        let texture = icon ?? authored
         encoder.setFragmentTexture(texture, index: 0)
         var uniforms = executor.genericImageUniforms(
             for: pass,
             layer: layer,
             hasMask: false,
             sourceTexture: texture,
-            spriteDescriptor: executor.textureSamplingDescriptor(for: reference)
+            // An icon is a whole image: the fallback's TEXS sprite transform would crop it.
+            spriteDescriptor: icon == nil ? executor.textureSamplingDescriptor(for: reference) : .identity
         )
         // The closed source-to-terminal contract stores straight RGBA before
         // the authored effect; other native image paths keep their PMA ABI.
@@ -542,7 +552,7 @@ struct WPEMetalShaderDispatcher {
             nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let primaryRef = pass.textureBindings[primarySlot] ?? pass.pass.textures[primarySlot] ?? pass.pass.source
-        let primary = mediaSubstituted(
+        let primaryAuthored = mediaSubstituted(
             try WPEMetalShaderInputs.resolve(
                 reference: primaryRef,
                 textures: textures,
@@ -552,6 +562,8 @@ struct WPEMetalShaderDispatcher {
             slot: primarySlot,
             passID: pass.pass.id
         )
+        let primaryIcon = userShortcutIcon(slot: primarySlot, passID: pass.pass.id)
+        let primary = primaryIcon ?? primaryAuthored
         WPESceneDebugArtifacts.shared.recordTextureBinding(
             passID: pass.pass.id,
             shader: pass.pass.shader,
@@ -565,7 +577,7 @@ struct WPEMetalShaderDispatcher {
         let hasMask = maskRef != nil
         let mask: MTLTexture
         if let maskRef {
-            mask = mediaSubstituted(
+            let maskAuthored = mediaSubstituted(
                 try WPEMetalShaderInputs.resolve(
                     reference: maskRef,
                     textures: textures,
@@ -575,6 +587,7 @@ struct WPEMetalShaderDispatcher {
                 slot: maskSlot,
                 passID: pass.pass.id
             )
+            mask = userShortcutIcon(slot: maskSlot, passID: pass.pass.id) ?? maskAuthored
             WPESceneDebugArtifacts.shared.recordTextureBinding(
                 passID: pass.pass.id,
                 shader: pass.pass.shader,
@@ -601,7 +614,7 @@ struct WPEMetalShaderDispatcher {
             hasMask: hasMask,
             sourceTexture: primary,
             maskTexture: hasMask ? mask : nil,
-            spriteDescriptor: executor.textureSamplingDescriptor(for: primaryRef)
+            spriteDescriptor: primaryIcon == nil ? executor.textureSamplingDescriptor(for: primaryRef) : .identity
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {
@@ -681,6 +694,8 @@ struct WPEMetalShaderDispatcher {
         // `$media*` resolved once per pass, not per slot: the store is nil for scenes with no `$media*` user texture, and its slot map is nil for every other pass.
         let mediaTextureStore = executor.mediaTextureStore
         let mediaSlots = mediaTextureStore?.declarations(forPassID: pass.pass.id)
+        let iconStore = executor.userShortcutIconStore
+        let iconSlots = iconStore?.declarations(forPassID: pass.pass.id)
         #if !LITE_BUILD && DEBUG
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
@@ -743,6 +758,15 @@ struct WPEMetalShaderDispatcher {
             if let mediaSlots, let mediaTextureStore {
                 let authoredTexture = texture
                 texture = mediaTextureStore.substituting(authoredTexture, slot: slot, declarations: mediaSlots)
+                samplingDescriptor = WPEMediaTextureStore.samplingDescriptor(
+                    authored: samplingDescriptor,
+                    authoredTexture: authoredTexture,
+                    boundTexture: texture
+                )
+            }
+            if let iconSlots, let iconStore {
+                let authoredTexture = texture
+                texture = iconStore.substituting(authoredTexture, slot: slot, declarations: iconSlots)
                 samplingDescriptor = WPEMediaTextureStore.samplingDescriptor(
                     authored: samplingDescriptor,
                     authoredTexture: authoredTexture,

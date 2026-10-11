@@ -9,6 +9,7 @@ final class UserShortcutRendererLink {
 
     private struct Registration {
         weak var bridge: WPEUserShortcutScriptBridge?
+        weak var icons: WPEUserShortcutIconStore?
         let wallpaperID: String
         let declared: Set<String>
     }
@@ -32,10 +33,15 @@ final class UserShortcutRendererLink {
         registrations.count
     }
 
-    func attach(_ bridge: WPEUserShortcutScriptBridge, wallpaperID: String, declaredKeys: Set<String>) {
+    func attach(
+        _ bridge: WPEUserShortcutScriptBridge,
+        icons: WPEUserShortcutIconStore,
+        wallpaperID: String,
+        declaredKeys: Set<String>
+    ) {
         registrations.removeAll { $0.bridge == nil || $0.bridge === bridge }
-        registrations.append(Registration(bridge: bridge, wallpaperID: wallpaperID, declared: declaredKeys))
-        push(to: bridge, wallpaperID: wallpaperID, declared: declaredKeys)
+        registrations.append(Registration(bridge: bridge, icons: icons, wallpaperID: wallpaperID, declared: declaredKeys))
+        push(to: bridge, icons: icons, wallpaperID: wallpaperID, declared: declaredKeys)
         bridge.setLauncher { [weak self] propertyKey in
             Task { @MainActor in self?.launch(wallpaperID: wallpaperID, propertyKey: propertyKey) }
         }
@@ -52,15 +58,25 @@ final class UserShortcutRendererLink {
         registrations.removeAll { $0.bridge == nil }
         for registration in registrations where registration.wallpaperID == wallpaperID {
             guard let bridge = registration.bridge else { continue }
-            push(to: bridge, wallpaperID: registration.wallpaperID, declared: registration.declared)
+            push(to: bridge, icons: registration.icons, wallpaperID: registration.wallpaperID, declared: registration.declared)
         }
     }
 
-    private func push(to bridge: WPEUserShortcutScriptBridge, wallpaperID: String, declared: Set<String>) {
-        let bound = store.bindings(forWallpaper: wallpaperID).mapValues {
+    private func push(
+        to bridge: WPEUserShortcutScriptBridge,
+        icons: WPEUserShortcutIconStore?,
+        wallpaperID: String,
+        declared: Set<String>
+    ) {
+        let bindings = store.bindings(forWallpaper: wallpaperID)
+        let bound = bindings.mapValues {
             WPEUserShortcutScriptBridge.Entry(commandType: $0.kind.rawValue, displayName: $0.displayName)
         }
         bridge.setBindings(declared: declared, bound: bound)
+        guard let icons else { return }
+        for key in declared {
+            icons.setIcon(bindings[key].flatMap(UserShortcutIconRenderer.icon(for:)), forKey: key)
+        }
     }
 
     private func launch(wallpaperID: String, propertyKey: String) {

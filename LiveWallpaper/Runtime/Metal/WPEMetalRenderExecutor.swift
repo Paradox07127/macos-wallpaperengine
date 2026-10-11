@@ -352,6 +352,14 @@ final class WPEMetalRenderExecutor {
 
     /// non-nil only for scenes whose pipeline declares one.
     var mediaTextureStore: WPEMediaTextureStore?
+    /// non-nil only for scenes whose pipeline declares a `usershortcut` slot.
+    var userShortcutIconStore: WPEUserShortcutIconStore?
+
+    /// Runtime-swapped slots (`$media*`, usershortcut icons) must not join a solid run.
+    func substitutesUserTexture(passID: String) -> Bool {
+        mediaTextureStore?.declarations(forPassID: passID) != nil
+            || userShortcutIconStore?.declarations(forPassID: passID) != nil
+    }
 
     /// Deliberately not a per-MTLTexture registry: eager sprite frames reuse one atlas texture.
     private var currentTextureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
@@ -1067,9 +1075,7 @@ final class WPEMetalRenderExecutor {
             let allowsSceneSharing = !(solidEligible && diagnosticControls.disableSolidBatching)
             var batchesSolid = diagnostics.solidBatchingEnabled && solidEligible
             if sceneQuadBatchingEnabled && allowsSceneSharing && !staticLayerCacheEnabled && !batchesSolid {
-                let hasMedia = layer.passes.first.map {
-                    mediaTextureStore?.declarations(forPassID: $0.pass.id) != nil
-                } ?? false
+                let hasMedia = layer.passes.first.map { substitutesUserTexture(passID: $0.pass.id) } ?? false
                 batchesSolid = WPEMetalSolidSceneRun.texturedRejectionReason(
                     layer, textures: textures, output: output, hasMediaSubstitution: hasMedia
                 ) == nil
@@ -1183,7 +1189,7 @@ final class WPEMetalRenderExecutor {
                         && WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .copy
                     let reason = WPEMetalSolidSceneRun.texturedRejectionReason(
                         layer, textures: textures, output: output,
-                        hasMediaSubstitution: mediaTextureStore?.declarations(forPassID: pass.pass.id) != nil,
+                        hasMediaSubstitution: substitutesUserTexture(passID: pass.pass.id),
                         finalCopyPass: finalCopy ? pass : nil, frameState: frameState
                     )
                     sharesSceneEncoder = reason == nil

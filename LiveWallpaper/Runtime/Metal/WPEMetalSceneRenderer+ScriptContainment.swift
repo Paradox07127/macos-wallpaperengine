@@ -483,6 +483,10 @@ extension WPEMetalSceneRenderer {
             Task { @MainActor in subscription.stop() }
         }
         executor.mediaTextureStore = nil
+        // Icons stay: the link owns them and does not re-push on a reload.
+        userShortcutIconStore.setDeclarations([:])
+        userShortcutIconStore.onChange = nil
+        executor.userShortcutIconStore = nil
         #if DEBUG
         oracleMediaInputReceipt = nil
         #endif

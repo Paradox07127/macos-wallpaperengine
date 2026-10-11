@@ -2163,7 +2163,8 @@ public enum WPESceneDocumentParser {
         if materialRelativePath != nil {
             diagnostics.append(.init(severity: .info, message: "Image \(name) declares material — rendered via the material shader pass"))
         }
-        if materialInstance?.userTextures.isEmpty == false {
+        // usershortcut slots are consumed by the app's user-shortcut icon store.
+        if materialInstance?.userTextures.contains(where: { $0.type?.lowercased() != "usershortcut" }) == true {
             diagnostics.append(.init(
                 severity: .info,
                 message: "Image \(name) declares dynamic instance user textures — preserved but awaiting a native provider"
