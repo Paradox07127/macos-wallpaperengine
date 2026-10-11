@@ -124,9 +124,9 @@ extension ScreenManager {
                       wallpaperLoads.attempt(for: screen)?.id == attempt.id,
                       screens.contains(where: { $0 === screen }) else { return }
                 if let origin = attempt.origin {
-                    await activateWPEHistoryEntry(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil), for: screen)
+                    await activateWPEHistoryEntry(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil), for: screen, preservingUserPause: true)
                 } else if let url = attempt.sourceURL {
-                    await importWallpaperEngineProject(at: url, for: screen)
+                    await importWallpaperEngineProject(at: url, for: screen, preservingUserPause: true)
                 }
             }
             #endif

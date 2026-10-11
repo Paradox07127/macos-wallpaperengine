@@ -396,13 +396,13 @@ struct PersistentUserPauseTests {
     }
 
     enum NewPick: CaseIterable {
-        case scene, htmlTypeSwitch, videoTypeSwitch, htmlPage, htmlPagePreservingConfig
+        case scene, htmlTypeSwitch, videoTypeSwitch, htmlPage, htmlPagePreservingConfig, scheme
     }
 
     /// Seeds a running wallpaper that the pick must replace rather than reuse.
     private static func seed(for pick: NewPick) -> (Seed, WallpaperType) {
         switch pick {
-        case .scene, .htmlPage, .htmlPagePreservingConfig: (.video, .video)
+        case .scene, .htmlPage, .htmlPagePreservingConfig, .scheme: (.video, .video)
         case .htmlTypeSwitch: (.htmlWithSavedHTML, .video)
         case .videoTypeSwitch: (.video, .html)
         }
@@ -413,6 +413,9 @@ struct PersistentUserPauseTests {
         case .scene:
             let scene = SceneDescriptor(workshopID: "pause-pick", cacheRelativePath: "pause-pick", entryFile: "scene.json", capabilityTier: .imageOnly)
             manager.setSceneWallpaper(descriptor: scene, origin: nil, for: screen)
+        case .scheme:
+            let configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: Self.inlineHTML, config: .default))
+            manager.applyScheme(ScreenScheme(name: "Pause pick", configuration: configuration, overlay: .default), to: screen)
         case .htmlTypeSwitch:
             manager.switchToHTMLWallpaper(for: screen)
         case .videoTypeSwitch:
@@ -453,6 +456,71 @@ struct PersistentUserPauseTests {
             #expect(commitFreshSession(on: screen, in: manager).userIntendsToPlay)
         }
     }
+
+    #if !LITE_BUILD
+    private func temporaryWPEProject() throws -> (URL, WPEOrigin) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pause-wpe-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let workshopID = "pause-\(UUID())"
+        let manifest: [String: String] = ["workshopid": workshopID, "title": "Pause fixture", "type": "web", "file": "index.html"]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: folder.appendingPathComponent("project.json"))
+        try Data("<html>pause fixture</html>".utf8).write(to: folder.appendingPathComponent("index.html"))
+        let origin = try WPEOrigin(workshopID: workshopID, title: "Pause fixture", originalType: .web,
+                                   sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+                                   cacheRelativePath: nil, previewFileName: nil, entryFile: "index.html", resourceLocation: .sourceFolder)
+        return (folder, origin)
+    }
+
+    @Test("Explicit Workshop picks clear pause only when the real product entry commits", arguments: [false, true], [false, true])
+    func workshopPickPauseFollowsCommit(history: Bool, valid: Bool) async throws {
+        let fixture = try #require(configuredScreen(.video))
+        defer { fixture.cleanUp() }
+        let (folder, origin) = try temporaryWPEProject()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        if !valid {
+            try FileManager.default.removeItem(at: folder.appendingPathComponent("index.html"))
+        }
+        let manager = fixture.manager
+        let screen = fixture.screen
+        manager.togglePlayback(for: screen)
+        try #require(persistedPause(manager, screen))
+        manager.wallpapersGloballyEnabled = false
+
+        if history {
+            _ = await manager.activateWPEHistoryEntry(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil), for: screen)
+        } else {
+            _ = await manager.importWallpaperEngineProject(at: folder, for: screen)
+        }
+
+        #expect(persistedPause(manager, screen) == !valid)
+        #expect((manager.getConfiguration(for: screen)?.wpeOrigin?.workshopID == origin.workshopID) == valid)
+        #expect(commitFreshSession(on: screen, in: manager).userIntendsToPlay == valid)
+    }
+
+    @Test("Retrying a failed Workshop load preserves the existing user pause", arguments: [false, true])
+    func workshopRetryPreservesPause(history: Bool) async throws {
+        let fixture = try #require(configuredScreen(.video))
+        defer { fixture.cleanUp() }
+        let (folder, origin) = try temporaryWPEProject()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let manager = fixture.manager
+        let screen = fixture.screen
+        manager.togglePlayback(for: screen)
+        manager.wallpapersGloballyEnabled = false
+        let attempt = manager.wallpaperLoads.begin(for: screen, title: origin.title, sourceURL: history ? nil : folder, origin: history ? origin : nil)
+        manager.failWallpaperAttempt(attempt, for: screen, cause: WallpaperFailureCause(code: "fixture.retry", reason: "Retry fixture"), stage: .importing)
+
+        manager.retryWallpaperAttempt(for: screen)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while manager.getConfiguration(for: screen)?.wpeOrigin?.workshopID != origin.workshopID, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        try #require(manager.getConfiguration(for: screen)?.wpeOrigin?.workshopID == origin.workshopID)
+        #expect(persistedPause(manager, screen))
+        #expect(!commitFreshSession(on: screen, in: manager).userIntendsToPlay)
+    }
+    #endif
 
     @Test("An HTML page pick runs its commit hook only when the new page commits", arguments: [false, true])
     func htmlPickCommitHookFollowsCommit(commits: Bool) throws {

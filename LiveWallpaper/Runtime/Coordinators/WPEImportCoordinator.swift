@@ -129,7 +129,7 @@ final class WPEImportCoordinator {
     }
 
     @discardableResult
-    func importProject(at folderURL: URL, for screen: Screen) async -> ApplyOutcome {
+    func importProject(at folderURL: URL, for screen: Screen, onCommit: @MainActor @escaping () -> Void = {}) async -> ApplyOutcome {
         guard isLifecycleActive(), !tracker.isTerminated else {
             return .rejected(reason: String(
                 localized: "Loomscreen is quitting.",
@@ -145,7 +145,8 @@ final class WPEImportCoordinator {
         return await importProject(
             at: folderURL,
             for: screen,
-            expectedGeneration: generation
+            expectedGeneration: generation,
+            onCommit: onCommit
         )
     }
 
@@ -153,7 +154,8 @@ final class WPEImportCoordinator {
         at folderURL: URL,
         for screen: Screen,
         expectedGeneration generation: Int,
-        onFailure: (@MainActor (Screen, WallpaperFailureCause, WPEOrigin?, SceneDescriptor?) -> Void)? = nil
+        onFailure: (@MainActor (Screen, WallpaperFailureCause, WPEOrigin?, SceneDescriptor?) -> Void)? = nil,
+        onCommit: @MainActor @escaping () -> Void = {}
     ) async -> ApplyOutcome {
         let outcome = await prepareProject(at: folderURL)
         guard isLifecycleActive(), tracker.isCurrentGeneration(generation, for: screen.id) else {
@@ -177,7 +179,8 @@ final class WPEImportCoordinator {
                 importedAt: now,
                 lastUsedAt: now,
                 expectedGeneration: generation,
-                for: screen
+                for: screen,
+                onCommit: onCommit
             )
             return .applied(origin: origin)
 
@@ -207,7 +210,7 @@ final class WPEImportCoordinator {
         }
     }
 
-    func activateHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
+    func activateHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen, onCommit: @MainActor @escaping () -> Void = {}) async {
         guard isLifecycleActive(), !tracker.isTerminated else { return }
         let generation = tracker.bumpGeneration(for: screen.id)
         do {
@@ -237,7 +240,8 @@ final class WPEImportCoordinator {
                 if applyCachedHistoryEntry(
                     effectiveEntry,
                     expectedGeneration: generation,
-                    for: screen
+                    for: screen,
+                    onCommit: onCommit
                 ) {
                     return
                 }
@@ -251,14 +255,15 @@ final class WPEImportCoordinator {
                 at: folderURL,
                 for: screen,
                 expectedGeneration: generation,
-                onFailure: { _, cause, origin, descriptor in importFailure = (cause, origin, descriptor) }
+                onFailure: { _, cause, origin, descriptor in importFailure = (cause, origin, descriptor) },
+                onCommit: onCommit
             )
             guard isLifecycleActive(),
                   tracker.isCurrentGeneration(generation, for: screen.id) else {
                 return
             }
             if tracker.error(for: screen.id) != nil,
-               applyCachedHistoryEntry(effectiveEntry, expectedGeneration: generation, for: screen) {
+               applyCachedHistoryEntry(effectiveEntry, expectedGeneration: generation, for: screen, onCommit: onCommit) {
                 return
             }
             if let (cause, origin, descriptor) = importFailure {
@@ -272,7 +277,8 @@ final class WPEImportCoordinator {
             if applyCachedHistoryEntry(
                 entry,
                 expectedGeneration: generation,
-                for: screen
+                for: screen,
+                onCommit: onCommit
             ) {
                 return
             }
@@ -315,7 +321,8 @@ final class WPEImportCoordinator {
         importedAt: Date,
         lastUsedAt: Date?,
         expectedGeneration: Int,
-        for screen: Screen
+        for screen: Screen,
+        onCommit: @MainActor @escaping () -> Void
     ) {
         guard isLifecycleActive(),
               tracker.isCurrentGeneration(expectedGeneration, for: screen.id) else {
@@ -351,6 +358,7 @@ final class WPEImportCoordinator {
                 return false
             }
             self.saveConfiguration(config)
+            onCommit()
             self.postDidComplete(
                 screenID: screen.id,
                 type: origin.originalType,
@@ -365,7 +373,8 @@ final class WPEImportCoordinator {
     private func applyCachedHistoryEntry(
         _ entry: WPEHistoryEntry,
         expectedGeneration: Int,
-        for screen: Screen
+        for screen: Screen,
+        onCommit: @MainActor @escaping () -> Void
     ) -> Bool {
         guard isLifecycleActive(),
               tracker.isCurrentGeneration(expectedGeneration, for: screen.id) else {
@@ -380,7 +389,8 @@ final class WPEImportCoordinator {
             importedAt: entry.importedAt,
             lastUsedAt: Date(),
             expectedGeneration: expectedGeneration,
-            for: screen
+            for: screen,
+            onCommit: onCommit
         )
         return true
     }

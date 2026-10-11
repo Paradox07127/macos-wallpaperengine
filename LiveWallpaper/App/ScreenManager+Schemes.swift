@@ -75,6 +75,7 @@ extension ScreenManager {
             beforeCommit: { [weak self] in
                 guard let self else { return false }
                 saveConfiguration(configuration)
+                persistUserPause(false, for: screen)
                 setMonitorOverlay(scheme.overlay, for: screen)
                 Logger.info(
                     "Apply Scheme: applied scheme \(scheme.id) to screen \(screen.id)",

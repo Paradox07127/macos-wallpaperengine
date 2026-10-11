@@ -259,14 +259,15 @@ struct WPEImportTrackerTests {
         #expect(sessionRestores.value == 0)
     }
 
-    @Test("WPE import generation remains guarded through transaction commit")
-    func importGenerationGuardsTransactionCommit() async {
+    @Test("WPE import generation remains guarded through transaction commit", arguments: [false, true])
+    func importGenerationGuardsTransactionCommit(superseded: Bool) async {
         guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
             Issue.record("No NSScreen available for WPE commit-guard test")
             return
         }
         let tracker = WPEImportTracker()
         let commitCapture = WPECommitCapture()
+        let commits = ChangeCounter()
         let configurationWrites = ChangeCounter()
         let notifications = ChangeCounter()
         let coordinator = WPEImportCoordinator(
@@ -294,7 +295,8 @@ struct WPEImportTrackerTests {
 
         let outcome = await coordinator.importProject(
             at: FileManager.default.temporaryDirectory,
-            for: screen
+            for: screen,
+            onCommit: { commits.increment() }
         )
         guard case .applied = outcome else {
             Issue.record("Expected an admitted import proposal, got \(outcome)")
@@ -302,11 +304,15 @@ struct WPEImportTrackerTests {
         }
         #expect(commitCapture.hasCommit)
 
-        _ = tracker.bumpGeneration(for: screen.id)
+        #expect(commits.value == 0, "Admitting a proposal must not invoke its successful-pick hook")
+        if superseded {
+            _ = tracker.bumpGeneration(for: screen.id)
+        }
 
-        #expect(commitCapture.commit() == false)
-        #expect(configurationWrites.value == 0)
-        #expect(notifications.value == 0)
+        #expect(commitCapture.commit() == !superseded)
+        #expect(configurationWrites.value == (superseded ? 0 : 1))
+        #expect(notifications.value == (superseded ? 0 : 1))
+        #expect(commits.value == (superseded ? 0 : 1))
     }
 
     @Test("Import-and-apply refuses a folder whose Workshop id the library holds from another folder", .timeLimit(.minutes(1)))

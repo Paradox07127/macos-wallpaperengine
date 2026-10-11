@@ -9,12 +9,19 @@ extension ScreenManager {
 
     @discardableResult
     func importWallpaperEngineProject(at folderURL: URL, for screen: Screen) async -> WPEProjectApplyOutcome {
+        await importWallpaperEngineProject(at: folderURL, for: screen, preservingUserPause: false)
+    }
+
+    @discardableResult
+    func importWallpaperEngineProject(at folderURL: URL, for screen: Screen, preservingUserPause: Bool) async -> WPEProjectApplyOutcome {
         guard !isTerminating else {
             return .rejected(reason: "Application terminating")
         }
         beginExplicitWallpaperSelection(for: screen)
         let id = wallpaperLoads.begin(for: screen, title: folderURL.lastPathComponent, sourceURL: folderURL)
-        let outcome = await wpeImportCoordinator.importProject(at: folderURL, for: screen)
+        let outcome = await wpeImportCoordinator.importProject(at: folderURL, for: screen) { [weak self] in
+            if !preservingUserPause { self?.persistUserPause(false, for: screen) }
+        }
         if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
             if case .rejected(let reason) = outcome {
                 failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.rejected", reason: reason), stage: .importing)
@@ -25,10 +32,17 @@ extension ScreenManager {
 
     @discardableResult
     func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot? {
+        await activateWPEHistoryEntry(entry, for: screen, preservingUserPause: false)
+    }
+
+    @discardableResult
+    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen, preservingUserPause: Bool) async -> WallpaperFailureSnapshot? {
         guard !isTerminating else { return nil }
         beginExplicitWallpaperSelection(for: screen)
         let id = wallpaperLoads.begin(for: screen, title: entry.origin.title, origin: entry.origin)
-        await wpeImportCoordinator.activateHistoryEntry(entry, for: screen)
+        await wpeImportCoordinator.activateHistoryEntry(entry, for: screen) { [weak self] in
+            if !preservingUserPause { self?.persistUserPause(false, for: screen) }
+        }
         if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
             if let error = wpeImportTracker.error(for: screen.id) {
                 failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.source", reason: error.localizedDescription), stage: .importing)
