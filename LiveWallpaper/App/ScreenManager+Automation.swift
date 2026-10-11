@@ -60,6 +60,10 @@ extension ScreenManager {
             matchingScene: { $0.workshopID == workshopID || $0.cacheRelativePath == cacheRelativePath }
         )
         wpeImportCoordinator.removeWorkshop(workshopID: workshopID)
+        UserShortcutBindingStore.shared.removeAllUnlessUsed(
+            forWallpaper: workshopID,
+            by: SettingsManager.shared.loadGlobalSettings().recentWPEImports
+        )
     }
     /// Installed-page CAS delete: only an exact persisted identity match may
     /// disturb live sessions or scrub configuration references.

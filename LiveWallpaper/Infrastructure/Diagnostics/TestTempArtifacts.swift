@@ -34,6 +34,8 @@ enum TestTempArtifacts {
         "UsageBackfill-",
         "UsageOversized-",
         "UsageStream-",
+        "UserShortcutBindingStoreTests-",
+        "UserShortcutRendererLinkTests-",
         "WPEDelete-",
         "WPEDependencyMountResolverTests-",
         "WPEMetalDiagnostics-",

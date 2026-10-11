@@ -14,6 +14,7 @@ struct UserShortcutBindingRow: View {
     @State private var isResolvable = true
     @State private var editing: UserShortcutEditorKind?
     @State private var testFailed = false
+    @State private var saveFailed = false
     @State private var isDropTargeted = false
 
     private var isEditing: Binding<Bool> {
@@ -33,11 +34,7 @@ struct UserShortcutBindingRow: View {
             icon: WPEPropertyRowIcon.symbol(for: .userShortcut),
             iconColor: iconColor,
             verbatimTitle: title,
-            verbatimSubtitle: testFailed ? String(
-                localized: "Couldn't open it. Check the website, shortcut name or file.",
-                bundle: .appLanguage,
-                comment: "Shown under a user shortcut row after its Test action failed to open the bound item."
-            ) : nil
+            verbatimSubtitle: statusMessage
         ) {
             Menu {
                 Button("Website", systemImage: "safari") { select { editing = .website } }
@@ -52,13 +49,19 @@ struct UserShortcutBindingRow: View {
                     select {
                         if let current {
                             let failed = $testFailed
-                            _ = UserShortcutExecutor.execute(current, onFailure: { failed.wrappedValue = true })
+                            let (key, revision) = (key, current.revision)
+                            _ = UserShortcutExecutor.execute(current, onFailure: {
+                                // A late failure for a binding replaced since must not flag the new one.
+                                if UserShortcutBindingStore.shared.binding(for: key)?.revision == revision {
+                                    failed.wrappedValue = true
+                                }
+                            })
                         }
                     }
                 }
                 .disabled(current == nil)
                 Button("Clear", systemImage: "xmark.circle", role: .destructive) {
-                    select { UserShortcutBindingStore.shared.clear(key) }
+                    select { saveFailed = !UserShortcutBindingStore.shared.clear(key) }
                 }
                 .disabled(current == nil)
             } label: {
@@ -99,7 +102,10 @@ struct UserShortcutBindingRow: View {
         } isTargeted: { isDropTargeted = $0 }
         .help(Text("Runs when the wallpaper's script asks for it after you click the wallpaper, including clicks on desktop icons."))
         .onAppear(perform: refresh)
-        .onChange(of: key) { _, _ in refresh() }
+        .onChange(of: key) { _, _ in
+            editing = nil
+            refresh()
+        }
         .onReceive(NotificationCenter.default.publisher(for: UserShortcutBindingStore.didChange)) { _ in refresh() }
     }
 
@@ -118,26 +124,44 @@ struct UserShortcutBindingRow: View {
         return isDirectory ? .directory : .file(asksForArguments: false)
     }
 
-    /// Binds only the first URL; nil = rejected and the store is unchanged.
+    /// Binds only the first URL; nil = rejected and the store is unchanged. Throws when the binding couldn't be saved.
     @discardableResult
     static func bindDropped(_ urls: [URL], to key: UserShortcutBindingKey, in store: UserShortcutBindingStore) throws -> DropTarget? {
         guard let url = urls.first, let target = dropTarget(for: url) else { return nil }
-        switch target {
+        let saved = switch target {
         case .directory:
             try store.setDirectory(url, for: key)
         case .file:
             try store.setFile(url, arguments: nil, for: key)
         }
+        guard saved else { throw CocoaError(.fileWriteUnknown) }
         return target
     }
 
-    /// The menu has no open callback, so any item picked from it dismisses a previous Test failure.
+    private var statusMessage: String? {
+        if saveFailed {
+            return String(
+                localized: "Couldn't save the binding.",
+                bundle: .appLanguage,
+                comment: "Shown for a user shortcut binding when choosing, editing or clearing it couldn't be saved."
+            )
+        }
+        return testFailed ? String(
+            localized: "Couldn't open it. Check the website, shortcut name or file.",
+            bundle: .appLanguage,
+            comment: "Shown under a user shortcut row after its Test action failed to open the bound item."
+        ) : nil
+    }
+
+    /// The menu has no open callback, so any item picked from it dismisses a previous Test or save failure.
     private func select(_ action: () -> Void) {
         testFailed = false
+        saveFailed = false
         action()
     }
 
     private func drop(_ urls: [URL]) -> Bool {
+        saveFailed = false
         do {
             guard let target = try Self.bindDropped(urls, to: key, in: .shared) else { return false }
             if target == .file(asksForArguments: true) {
@@ -146,6 +170,7 @@ struct UserShortcutBindingRow: View {
             return true
         } catch {
             Logger.error("User shortcut: couldn't save the dropped item: \((error as NSError).code)", category: .settings)
+            saveFailed = true
             return false
         }
     }
@@ -154,6 +179,7 @@ struct UserShortcutBindingRow: View {
         let binding = UserShortcutBindingStore.shared.binding(for: key)
         if binding != current {
             testFailed = false
+            saveFailed = false
         }
         current = binding
         isResolvable = current.map(UserShortcutExecutor.isResolvable) ?? true
@@ -169,15 +195,16 @@ struct UserShortcutBindingRow: View {
             guard response == .OK, let url = panel.url else { return }
             do {
                 if directory {
-                    try UserShortcutBindingStore.shared.setDirectory(url, for: key)
+                    saveFailed = try !UserShortcutBindingStore.shared.setDirectory(url, for: key)
                 } else {
-                    try UserShortcutBindingStore.shared.setFile(url, arguments: nil, for: key)
-                    if UserShortcutBinding.isApplication(url) {
+                    saveFailed = try !UserShortcutBindingStore.shared.setFile(url, arguments: nil, for: key)
+                    if !saveFailed, UserShortcutBinding.isApplication(url) {
                         editing = .arguments
                     }
                 }
             } catch {
                 Logger.error("User shortcut: couldn't save the chosen item: \((error as NSError).code)", category: .settings)
+                saveFailed = true
             }
         }
         // Not `NSApp.windows.first`: that can be a wallpaper window.
@@ -208,6 +235,9 @@ private struct UserShortcutEditorPopover: View {
     @State private var input = ""
     @State private var failure: UserShortcutValidationError?
     @State private var targetMissing = false
+    @State private var saveFailed = false
+    /// Revision of the app binding the arguments editor opened on; nil for other editors.
+    @State private var openedRevision: UInt64?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
@@ -234,6 +264,8 @@ private struct UserShortcutEditorPopover: View {
                 errorText(Self.message(for: failure))
             } else if targetMissing {
                 errorText("The file or folder can't be found. Choose it again.")
+            } else if saveFailed {
+                errorText("Couldn't save the binding.")
             }
 
             HStack {
@@ -294,6 +326,7 @@ private struct UserShortcutEditorPopover: View {
             input = binding.arguments ?? ""
         case (.arguments, .file):
             input = binding.arguments ?? ""
+            openedRevision = binding.revision
             targetMissing = !UserShortcutExecutor.isResolvable(binding)
         default:
             break
@@ -301,23 +334,33 @@ private struct UserShortcutEditorPopover: View {
     }
 
     private func save() {
+        (failure, targetMissing, saveFailed) = (nil, false, false)
+        let store = UserShortcutBindingStore.shared
         do {
+            let saved: Bool
             switch kind {
             case .website:
-                try UserShortcutBindingStore.shared.setWebsite(url, for: key)
+                saved = try store.setWebsite(url, for: key)
             case .shortcut:
-                try UserShortcutBindingStore.shared.setShortcut(name: name, arguments: input, for: key)
+                saved = try store.setShortcut(name: name, arguments: input, for: key)
             case .arguments:
+                // Arguments belong to the app the editor opened on; a binding replaced since then is left alone.
+                guard let binding = store.binding(for: key), binding.revision == openedRevision, binding.isApplication else {
+                    dismiss()
+                    return
+                }
                 // The bookmark is re-resolved on every save: a cached scoped URL loses its access.
-                guard let binding = UserShortcutBindingStore.shared.binding(for: key),
-                      case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(binding.bookmark, target: .transient)
-                else {
+                guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(binding.bookmark, target: .transient) else {
                     targetMissing = true
                     return
                 }
-                try SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-                    try UserShortcutBindingStore.shared.setFile(resolved.url, arguments: input, for: key)
+                saved = try SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+                    try store.setFile(resolved.url, arguments: input, for: key)
                 }
+            }
+            guard saved else {
+                saveFailed = true
+                return
             }
             dismiss()
         } catch let error as UserShortcutValidationError {

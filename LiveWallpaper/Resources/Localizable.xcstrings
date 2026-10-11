@@ -19044,6 +19044,41 @@
         }
       }
     },
+    "Couldn't save the binding." : {
+      "comment" : "Shown for a user shortcut binding when choosing, editing or clearing it couldn't be saved.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save the binding."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar la asignación."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "割り当てを保存できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存绑定。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存綁定。"
+          }
+        }
+      }
+    },
     "Couldn't save your bookmarks. Your existing bookmarks have been kept." : {
       "localizations" : {
         "en" : {

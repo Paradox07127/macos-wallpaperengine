@@ -120,6 +120,129 @@ struct UserShortcutBindingStoreTests {
         #expect(try Data(contentsOf: fileURL) == Data("not json".utf8), "a corrupt file was rewritten on load")
     }
 
+    private func writeRaw(_ json: String, to fileURL: URL) throws {
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: fileURL)
+    }
+
+    private func entryJSON(_ propertyKey: String, kind: String = "web", revision: String) -> String {
+        #"{"key":{"wallpaperID":"wp-1","propertyKey":"\#(propertyKey)"},"#
+            + #""binding":{"kind":"\#(kind)","target":"https://example.com","displayName":"example.com","revision":\#(revision)}}"#
+    }
+
+    private func backups(besides fileURL: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: fileURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("bindings.corrupt-") && $0.pathExtension == "json" }
+    }
+
+    private func observeChanges(of store: UserShortcutBindingStore) -> (FailureRecorder, any NSObjectProtocol) {
+        let posts = FailureRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: UserShortcutBindingStore.didChange, object: store, queue: nil
+        ) { _ in
+            MainActor.assumeIsolated { posts.record() }
+        }
+        return (posts, observer)
+    }
+
+    @Test func unreadableEntryIsDroppedAndOriginalIsBackedUpBeforeTheNextWrite() throws {
+        let fileURL = makeFileURL()
+        let original = #"{"revision":5,"entries":["#
+            + [entryJSON("a", revision: "1"), entryJSON("b", kind: "telnet", revision: "2"), entryJSON("c", revision: "3")].joined(separator: ",")
+            + "]}"
+        try writeRaw(original, to: fileURL)
+        let store = UserShortcutBindingStore(fileURL: fileURL)
+        #expect(Set(store.bindings(forWallpaper: "wp-1").keys) == ["a", "c"], "one unknown entry discarded the readable ones")
+        #expect(try backups(besides: fileURL).isEmpty, "loading alone moved the original file")
+
+        try store.setShortcut(name: "Run", arguments: nil, for: key)
+        #expect(Set(UserShortcutBindingStore(fileURL: fileURL).bindings(forWallpaper: "wp-1").keys) == ["a", "c", "open"])
+        let backup = try #require(try backups(besides: fileURL).first, "the partly unreadable file was overwritten without a backup")
+        #expect(try Data(contentsOf: backup) == Data(original.utf8))
+    }
+
+    @Test func overflowingRevisionsLoadAsCorruptEntries() throws {
+        let fileURL = makeFileURL()
+        let huge = String(UInt64.max)
+        try writeRaw(#"{"revision":\#(huge),"entries":["# + entryJSON("a", revision: "3") + "," + entryJSON("b", revision: huge) + "]}", to: fileURL)
+        let store = UserShortcutBindingStore(fileURL: fileURL)
+        try #require(
+            store.binding(for: UserShortcutBindingKey(wallpaperID: "wp-1", propertyKey: "b")) == nil,
+            "an entry whose revision would overflow was loaded"
+        )
+        #expect(store.binding(for: UserShortcutBindingKey(wallpaperID: "wp-1", propertyKey: "a")) != nil)
+
+        try store.setWebsite("https://example.net", for: key)
+        let revision = try #require(store.binding(for: key)?.revision)
+        #expect(revision > 3 && revision <= UInt64.max / 2)
+        #expect(try !backups(besides: fileURL).isEmpty)
+    }
+
+    @Test func readFailureMakesTheStoreRefuseWrites() throws {
+        let fileURL = makeFileURL()
+        let original = #"{"revision":1,"entries":["# + entryJSON("a", revision: "1") + "]}"
+        try writeRaw(original, to: fileURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fileURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path) }
+        let store = UserShortcutBindingStore(fileURL: fileURL)
+        let (posts, observer) = observeChanges(of: store)
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        #expect(try !store.setWebsite("https://example.com", for: key))
+        #expect(store.binding(for: key) == nil, "a store that couldn't read its file kept an unsaved binding")
+        #expect(posts.count == 0)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
+        #expect(try Data(contentsOf: fileURL) == Data(original.utf8), "an unreadable file was overwritten")
+        #expect(try backups(besides: fileURL).isEmpty)
+    }
+
+    @Test func writeFailureLeavesMemoryAndRevisionUnchanged() throws {
+        let fileURL = makeFileURL()
+        let store = UserShortcutBindingStore(fileURL: fileURL)
+        try store.setWebsite("https://example.com", for: key)
+        let saved = try #require(store.binding(for: key))
+        let folder = fileURL.deletingLastPathComponent()
+        try FileManager.default.removeItem(at: folder)
+        try Data("blocks the store's folder".utf8).write(to: folder)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (posts, observer) = observeChanges(of: store)
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        #expect(try !store.setWebsite("https://example.org", for: key))
+        #expect(!store.clear(key))
+        #expect(store.binding(for: key) == saved, "an unsaved change stayed in memory")
+        #expect(posts.count == 0, "a failed write announced a change")
+
+        try FileManager.default.removeItem(at: folder)
+        try store.setWebsite("https://example.org", for: key)
+        #expect(store.binding(for: key)?.revision == saved.revision + 1, "failed writes consumed revisions")
+    }
+
+    @Test func deletingOneOfTwoEntriesSharingAnIDKeepsItsBindings() throws {
+        let id = "usershortcut-shared-\(UUID().uuidString)"
+        let shortcuts = UserShortcutBindingStore.shared
+        defer { shortcuts.removeAll(forWallpaper: id) }
+        try shortcuts.setWebsite("https://example.com", for: UserShortcutBindingKey(wallpaperID: id, propertyKey: "open"))
+        let history = HistoryProbe(entries: [10, 20].map { seconds in
+            WPEHistoryEntry(
+                origin: WPEOrigin(
+                    workshopID: id, title: "Fixture", originalType: .scene,
+                    sourceFolderBookmark: Data(id.utf8), cacheRelativePath: nil, previewFileName: nil,
+                    resourceLocation: .sourceFolder
+                ),
+                importedAt: Date(timeIntervalSince1970: seconds)
+            )
+        })
+        let model = InstalledLibraryModel(dependencies: history.dependencies)
+
+        model.performDelete(history.entries[0], services: history.services)
+        #expect(history.entries.count == 1)
+        #expect(shortcuts.bindings(forWallpaper: id).count == 1, "deleting a local copy cleared the bindings its Steam twin still uses")
+        model.performDelete(history.entries[0], services: history.services)
+        #expect(history.entries.isEmpty)
+        #expect(shortcuts.bindings(forWallpaper: id).isEmpty, "deleting the last entry kept its bindings")
+    }
+
     @Test func backupExportNeverCarriesBindings() throws {
         let marker = "usershortcut-marker-\(UUID().uuidString)"
         let store = UserShortcutBindingStore(fileURL: ConfigurationDirectory().url(for: .userShortcutBindings))
@@ -386,6 +509,42 @@ struct UserShortcutBindingStoreTests {
         #expect(try UserShortcutBindingRow.bindDropped([web, file], to: key, in: store) == nil)
         #expect(try UserShortcutBindingRow.bindDropped([], to: key, in: store) == nil)
         #expect(store.binding(for: key) == appBinding, "a rejected drop replaced the stored binding")
+    }
+}
+
+@MainActor
+private final class HistoryProbe {
+    var entries: [WPEHistoryEntry]
+
+    init(entries: [WPEHistoryEntry]) {
+        self.entries = entries
+    }
+
+    var dependencies: InstalledLibraryModel.Dependencies {
+        InstalledLibraryModel.Dependencies(
+            loadEntries: { [weak self] in self?.entries ?? [] },
+            loadRemoteUpdateEpochs: { [:] },
+            saveRemoteUpdateEpochs: { _ in },
+            loadLastUpdateCheckEpoch: { 0 },
+            saveLastUpdateCheckEpoch: { _ in },
+            makeMetadataService: { SteamWorkshopMetadataService() },
+            now: { .distantPast },
+            prefetchPreviewURLs: { _ in }
+        )
+    }
+
+    var services: InstalledLibraryModel.DeleteServices {
+        InstalledLibraryModel.DeleteServices(
+            containsBookmark: { _ in false },
+            removeBookmarks: { _ in },
+            removeImportIfMatching: { [weak self] identity in
+                guard let self, let index = entries.firstIndex(where: { WorkshopInstalledEntryIdentity($0) == identity }) else { return false }
+                entries.remove(at: index)
+                return true
+            },
+            isMutating: { _ in false },
+            deleteSharedRepositoryItem: { _ in nil }
+        )
     }
 }
 
