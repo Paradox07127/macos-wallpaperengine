@@ -39,7 +39,9 @@ struct OverlayBareDisplayTests {
     @Test("A music layer on a bare display is saved and gets a music host")
     func music() throws {
         try onBareDisplay { manager, screen in
-            manager.setMusicOverlayEnabled(true, for: screen)
+            var music = manager.monitorOverlay(for: screen).music
+            music.enabled = true
+            manager.setMusicOverlay(music, for: screen)
             manager.reconcileMonitorOverlays()
 
             #expect(SettingsManager.shared.loadMonitorOverlays()[screen.displayFingerprint]?.music.enabled == true)

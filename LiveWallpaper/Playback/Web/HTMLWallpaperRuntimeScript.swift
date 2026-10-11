@@ -806,7 +806,6 @@ enum HTMLWallpaperRuntimeScript {
             var gpuCanvasContexts = [];
             var nativeSetTimeout = window.setTimeout;
             var nativeClearTimeout = window.clearTimeout;
-            var nativeSetInterval = window.setInterval;
             var nativeClearInterval = window.clearInterval;
             var timerRecords = Object.create(null);
             var nextTimerId = 1000000000;

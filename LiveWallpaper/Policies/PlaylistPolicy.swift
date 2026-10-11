@@ -20,41 +20,6 @@ enum PlaylistPolicy {
         }
     }
 
-    static func nextCursor(
-        currentCursor: Int,
-        playlistCount: Int,
-        shuffle: Bool,
-        randomIndex: (Int) -> Int = { Int.random(in: 0..<$0) }
-    ) -> Int? {
-        guard playlistCount > 1 else { return nil }
-        let normalized = ((currentCursor % playlistCount) + playlistCount) % playlistCount
-
-        if shuffle {
-            // A nonzero offset gives every alternative item equal probability.
-            let offset = randomIndex(playlistCount - 1) + 1
-            return (normalized + offset) % playlistCount
-        }
-
-        return (normalized + 1) % playlistCount
-    }
-
-    static func previousCursor(
-        currentCursor: Int,
-        playlistCount: Int,
-        shuffle: Bool,
-        randomIndex: (Int) -> Int = { Int.random(in: 0..<$0) }
-    ) -> Int? {
-        guard playlistCount > 1 else { return nil }
-        let normalized = ((currentCursor % playlistCount) + playlistCount) % playlistCount
-
-        if shuffle {
-            let offset = randomIndex(playlistCount - 1) + 1
-            return (normalized + offset) % playlistCount
-        }
-
-        return (normalized - 1 + playlistCount) % playlistCount
-    }
-
     static func shouldRotate(
         now: Date,
         lastRotation: Date,

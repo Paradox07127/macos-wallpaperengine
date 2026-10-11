@@ -154,11 +154,6 @@ extension ScreenManager {
         effectsCoordinator.startWeatherMonitoring()
     }
 
-    func updatePlaylistBookmarks(_ bookmarks: [Data], for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.updatePlaylistBookmarks(bookmarks, for: screen)
-    }
-
     func updateWallpaperAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
         rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
@@ -177,17 +172,6 @@ extension ScreenManager {
         automationOrchestrator.replaceWallpaperQueue(entries, for: screen)
     }
 
-    func setPrimaryVideo(bookmark: Data, for screen: Screen) {
-        guard !isTerminating else { return }
-        beginExplicitWallpaperSelection(for: screen)
-        automationOrchestrator.setPrimaryVideo(bookmark: bookmark, for: screen)
-    }
-
-    func replacePlaylist(ordered: [Data], primary: Data, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.replacePlaylist(ordered: ordered, primary: primary, for: screen)
-    }
-
     func playPlaylistEntry(at index: Int, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
@@ -200,17 +184,10 @@ extension ScreenManager {
         automationOrchestrator.previewEntry(entry, for: screen)
     }
 
-    func updateShufflePlaylist(_ shuffle: Bool, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.updateShufflePlaylist(shuffle, for: screen)
-    }
-
     func advancePlaylist(for screen: Screen) {
         guard !isTerminating else { return }
         automationOrchestrator.advancePlaylist(for: screen)
     }
-
-    var automationTime: Date { automationCoordinator.currentTime }
 
     func resetRotationClock(for screen: Screen) {
         automationCoordinator.resetRotationClock(for: screen.id)
@@ -274,29 +251,9 @@ extension ScreenManager {
         automationOrchestrator.regressPlaylist(for: screen)
     }
 
-    func replaceActiveBookmark(_ bookmarkData: Data, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.replaceActiveBookmark(bookmarkData, for: screen)
-    }
-
-    func updateWallpaperMode(_ mode: WallpaperMode, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.updateWallpaperMode(mode, for: screen)
-    }
-
-    func updateScheduleSlots(_ slots: [ScheduleSlot]?, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.updateScheduleSlots(slots, for: screen)
-    }
-
     func resumeSchedule(for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationOrchestrator.checkAndApplySchedule(for: screen, force: true)
-    }
-
-    func updatePlaylistRotationMinutes(_ minutes: Int?, for screen: Screen) {
-        guard !isTerminating else { return }
-        automationOrchestrator.updatePlaylistRotationMinutes(minutes, for: screen)
     }
 }

@@ -59,33 +59,31 @@ struct ApplicationPerformanceRuleTests {
 
     @Test("Empty rule list never pauses")
     func emptyNeverPauses() {
-        #expect(!ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.apple.dt.Xcode",
-            runningBundleIDs: ["com.apple.dt.Xcode"],
-            rules: []
-        ))
+        #expect(!ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.apple.dt.Xcode", rules: [], runningBundleIDs: { ["com.apple.dt.Xcode"] }
+        ).shouldPause)
     }
 
     @Test("Frontmost trigger matches only when the app is frontmost")
     func frontmostTrigger() {
         let rule = ApplicationPerformanceRule(bundleID: "com.apple.dt.Xcode", displayName: "Xcode", trigger: .frontmost)
-        #expect(ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.apple.dt.Xcode", runningBundleIDs: [], rules: [rule]
-        ))
-        #expect(!ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.apple.Safari", runningBundleIDs: ["com.apple.dt.Xcode"], rules: [rule]
-        ))
+        #expect(ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.apple.dt.Xcode", rules: [rule], runningBundleIDs: { [] }
+        ).shouldPause)
+        #expect(!ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.apple.Safari", rules: [rule], runningBundleIDs: { ["com.apple.dt.Xcode"] }
+        ).shouldPause)
     }
 
     @Test("Running trigger matches even when the app is in the background")
     func runningTrigger() {
         let rule = ApplicationPerformanceRule(bundleID: "com.apple.FinalCut", displayName: "Final Cut Pro", trigger: .running)
-        #expect(ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.apple.Safari", runningBundleIDs: ["com.apple.FinalCut"], rules: [rule]
-        ))
-        #expect(!ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.apple.Safari", runningBundleIDs: ["com.apple.Music"], rules: [rule]
-        ))
+        #expect(ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.apple.Safari", rules: [rule], runningBundleIDs: { ["com.apple.FinalCut"] }
+        ).shouldPause)
+        #expect(!ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.apple.Safari", rules: [rule], runningBundleIDs: { ["com.apple.Music"] }
+        ).shouldPause)
     }
 
     @Test("An active app rule forces the suspended profile")
@@ -101,18 +99,21 @@ struct ApplicationPerformanceRuleTests {
     @Test("A neverPause trigger is not itself a pause match")
     func neverPauseDoesNotPause() {
         let rule = ApplicationPerformanceRule(bundleID: "com.example.tool", displayName: "Tool", trigger: .neverPause)
-        #expect(!ApplicationPerformanceRuleEngine.shouldPause(
-            frontmostBundleID: "com.example.tool", runningBundleIDs: ["com.example.tool"], rules: [rule]
-        ))
+        #expect(!ApplicationPerformanceRuleEngine.evaluate(
+            frontmostBundleID: "com.example.tool", rules: [rule], runningBundleIDs: { ["com.example.tool"] }
+        ).shouldPause)
     }
 
-    @Test("frontmostIsExcluded matches only a neverPause rule on the frontmost app")
+    @Test("frontmostExcluded matches only a neverPause rule on the frontmost app")
     func frontmostExcludedMatching() {
         let never = ApplicationPerformanceRule(bundleID: "com.example.tool", displayName: "Tool", trigger: .neverPause)
         let pause = ApplicationPerformanceRule(bundleID: "com.example.tool", displayName: "Tool", trigger: .frontmost)
-        #expect(ApplicationPerformanceRuleEngine.frontmostIsExcluded(frontmostBundleID: "com.example.tool", rules: [never]))
-        #expect(!ApplicationPerformanceRuleEngine.frontmostIsExcluded(frontmostBundleID: "com.other.app", rules: [never]))
-        #expect(!ApplicationPerformanceRuleEngine.frontmostIsExcluded(frontmostBundleID: "com.example.tool", rules: [pause]))
+        func excluded(_ frontmost: String, _ rule: ApplicationPerformanceRule) -> Bool {
+            ApplicationPerformanceRuleEngine.evaluate(frontmostBundleID: frontmost, rules: [rule], runningBundleIDs: { [] }).frontmostExcluded
+        }
+        #expect(excluded("com.example.tool", never))
+        #expect(!excluded("com.other.app", never))
+        #expect(!excluded("com.example.tool", pause))
     }
 
     @Test("A frontmost neverPause exception vetoes discretionary pauses but not safety ones")

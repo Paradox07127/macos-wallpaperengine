@@ -100,32 +100,6 @@ final class WallpaperAutomationOrchestrator {
 
     // MARK: - Playlist
 
-    func updatePlaylistBookmarks(_ bookmarks: [Data], for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        config.playlistBookmarks = bookmarks.isEmpty ? nil : bookmarks
-        saveConfiguration(config)
-    }
-
-    /// Promotes to primary without reordering (star stays put).
-    func setPrimaryVideo(bookmark: Data, for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              config.savedVideoBookmarkData != bookmark else { return }
-
-        let combined = config.combinedPlaylist
-        guard let newPrimaryPosition = combined.firstIndex(of: bookmark) else { return }
-
-        let extras = combined.enumerated().compactMap { idx, b -> Data? in
-            idx == newPrimaryPosition ? nil : b
-        }
-
-        config.savedVideoBookmarkData = bookmark
-        config.activeWallpaper = .video(bookmarkData: bookmark)
-        config.playlistBookmarks = extras.isEmpty ? nil : extras
-        config.playlistPrimaryIndex = newPrimaryPosition
-        config.playlistCursorIndex = newPrimaryPosition
-        restoreProposedConfiguration(screen, config)
-    }
-
     /// Keeps the active bookmark when only playlist order changed.
     func replacePlaylist(ordered: [Data], primary: Data, for screen: Screen) {
         guard let primaryIndex = ordered.firstIndex(of: primary) else { return }
@@ -191,13 +165,6 @@ final class WallpaperAutomationOrchestrator {
         automaticSelections[screenID] = nil
     }
 
-    func updateShufflePlaylist(_ shuffle: Bool, for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              config.shufflePlaylist != shuffle else { return }
-        config.shufflePlaylist = shuffle
-        saveConfiguration(config)
-    }
-
     func advancePlaylist(for screen: Screen) {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.canNavigatePlaylist else { return }
@@ -261,50 +228,6 @@ final class WallpaperAutomationOrchestrator {
         startAutomaticSelection(indices.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
     }
 
-    func replaceActiveBookmark(_ bookmarkData: Data, for screen: Screen) {
-        guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        let updated = config.withUpdatedActiveBookmark(bookmarkData)
-        saveConfiguration(updated)
-        if let original = config.activeWallpaper.activeVideoBookmarkData {
-            SchemeStore.shared.replaceVideoBookmark(matching: original, with: bookmarkData)
-        }
-    }
-
-    func updateWallpaperMode(_ mode: WallpaperMode, for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-              mode == .libraryShuffle || config.wallpaperQueue != nil || config.hasConfiguredVideoSource,
-              config.wallpaperMode != mode else { return }
-        if mode == .schedule, config.scheduleFallback == nil, config.wallpaperQueue != nil {
-            config.scheduleFallback = WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
-        }
-        config.wallpaperMode = mode
-        saveConfiguration(config)
-
-        switch mode {
-        case .playlist:
-            if let queue = config.wallpaperQueue {
-                guard !queue.isEmpty else { return }
-                let cursor = max(0, min(config.playlistCursorIndex ?? 0, queue.count - 1))
-                applyEntry(queue[cursor], cursor: cursor, for: screen)
-                return
-            }
-            let combined = config.combinedPlaylist
-            guard !combined.isEmpty else { return }
-            let cursor = max(0, min(config.playlistCursorIndex ?? 0, combined.count - 1))
-            applyCursor(cursor, combined: combined, screen: screen, label: "entering playlist mode")
-        case .schedule:
-            checkAndApplySchedule(for: screen, force: true)
-        case .libraryShuffle:
-            advanceLibraryShuffle(for: screen)
-        }
-    }
-
-    func updatePlaylistRotationMinutes(_ minutes: Int?, for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        config.playlistRotationMinutes = minutes
-        saveConfiguration(config)
-    }
-
     private func applyCursor(
         _ cursor: Int,
         combined: [Data],
@@ -343,7 +266,7 @@ final class WallpaperAutomationOrchestrator {
                 liveConfig.playlistCursorIndex = cursor
                 liveConfig.activeWallpaper = .video(bookmarkData: resolvedBookmark)
                 if resolved.didRefresh {
-                    self.replacePlaylistBookmark(in: &liveConfig, cursor: cursor, bookmarkData: resolvedBookmark)
+                    PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &liveConfig, with: resolvedBookmark)
                 }
                 Logger.info("Playlist: \(label) to \(url.lastPathComponent) (cursor \(cursor)) for screen \(screenID)", category: .screenManager)
                 self.setupPreparedVideoPlayback(
@@ -562,16 +485,6 @@ final class WallpaperAutomationOrchestrator {
 
     // MARK: - Schedule
 
-    func updateScheduleSlots(_ slots: [ScheduleSlot]?, for screen: Screen) {
-        guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        config.scheduleSlots = slots
-        saveConfiguration(config)
-
-        if slots != nil {
-            checkAndApplySchedule(for: screen, force: true)
-        }
-    }
-
     func checkAndApplySchedule(for screen: Screen, force: Bool = false) {
         guard !isSuspendedForUserAbsence,
               var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -691,13 +604,5 @@ final class WallpaperAutomationOrchestrator {
         for validation in pending {
             validation.task.cancel()
         }
-    }
-
-    private func replacePlaylistBookmark(
-        in config: inout ScreenConfiguration,
-        cursor: Int,
-        bookmarkData: Data
-    ) {
-        PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &config, with: bookmarkData)
     }
 }

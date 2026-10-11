@@ -409,9 +409,9 @@ private struct Localization: Equatable {
     }
 
     func displayText(for raw: String) -> String {
-        let cleaned = Self.clean(raw)
+        let cleaned = WPEPropertyLabelText.clean(raw)
         if let localized = selected[cleaned] ?? fallback[cleaned] {
-            return Self.clean(localized)
+            return WPEPropertyLabelText.clean(localized)
         }
         return Self.resolveDisplayText(cleaned)
     }
@@ -419,7 +419,7 @@ private struct Localization: Equatable {
     /// Raw + localized strings for promo-link detection (keep markup uncleaned).
     func detectionCandidates(for raw: String) -> [String] {
         var candidates = [raw]
-        let cleaned = Self.clean(raw)
+        let cleaned = WPEPropertyLabelText.clean(raw)
         guard !cleaned.isEmpty else { return candidates }
         if let localized = selected[cleaned] { candidates.append(localized) }
         if let localized = fallback[cleaned], localized != selected[cleaned] {
@@ -508,10 +508,6 @@ private struct Localization: Equatable {
         }
         guard let first = lower.first else { return "" }
         return String(first).uppercased() + lower.dropFirst()
-    }
-
-    private static func clean(_ raw: String) -> String {
-        WPEPropertyLabelText.clean(raw)
     }
 }
 

@@ -40,28 +40,4 @@ enum ApplicationPerformanceRuleEngine {
         }
         return (pause, excluded)
     }
-
-    static func frontmostIsExcluded(frontmostBundleID: String?, rules: [ApplicationPerformanceRule]) -> Bool {
-        guard let frontmostBundleID else { return false }
-        return rules.contains { $0.trigger == .neverPause && $0.bundleID == frontmostBundleID }
-    }
-
-    static func shouldPause(
-        frontmostBundleID: String?,
-        runningBundleIDs: Set<String>,
-        rules: [ApplicationPerformanceRule]
-    ) -> Bool {
-        guard !rules.isEmpty else { return false }
-        for rule in rules {
-            switch rule.trigger {
-            case .frontmost:
-                if let frontmostBundleID, frontmostBundleID == rule.bundleID { return true }
-            case .running:
-                if runningBundleIDs.contains(rule.bundleID) { return true }
-            case .neverPause:
-                continue
-            }
-        }
-        return false
-    }
 }

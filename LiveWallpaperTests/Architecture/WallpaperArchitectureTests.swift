@@ -2718,44 +2718,6 @@ struct PlaylistPolicyTests {
         #expect(configuration.savedVideoBookmarkData == (cursor == primary ? refreshed : Data([1])))
     }
 
-    @Test("Sequential cursor advances 0 → 1 → 2 → 0")
-    func sequentialCursorAdvances() {
-        let count = 3
-
-        let step1 = PlaylistPolicy.nextCursor(currentCursor: 0, playlistCount: count, shuffle: false)
-        let step2 = PlaylistPolicy.nextCursor(currentCursor: 1, playlistCount: count, shuffle: false)
-        let step3 = PlaylistPolicy.nextCursor(currentCursor: 2, playlistCount: count, shuffle: false)
-
-        #expect(step1 == 1)
-        #expect(step2 == 2)
-        #expect(step3 == 0)
-    }
-
-    @Test("Playlist with fewer than two entries does not rotate")
-    func tooFewEntriesDoesNotRotate() {
-        #expect(PlaylistPolicy.nextCursor(currentCursor: 0, playlistCount: 1, shuffle: false) == nil)
-        #expect(PlaylistPolicy.nextCursor(currentCursor: 0, playlistCount: 0, shuffle: true) == nil)
-    }
-
-    @Test("Shuffle excludes the currently playing cursor")
-    func shuffleExcludesCurrentCursor() {
-        let next = PlaylistPolicy.nextCursor(
-            currentCursor: 2,
-            playlistCount: 4,
-            shuffle: true,
-            randomIndex: { _ in 2 }
-        )
-
-        #expect(next != 2)
-        #expect(next != nil)
-    }
-
-    @Test("Stale cursor (past end) normalizes before advancing")
-    func staleCursorNormalizes() {
-        let next = PlaylistPolicy.nextCursor(currentCursor: 7, playlistCount: 3, shuffle: false)
-        #expect(next == 2)
-    }
-
     @Test("Playlist rotation waits until configured interval elapses")
     func playlistRotationInterval() {
         let lastRotation = Date(timeIntervalSince1970: 100)
@@ -2772,36 +2734,7 @@ struct PlaylistPolicyTests {
         ))
     }
 
-    @Test("Sequential previousCursor decrements 2 → 1 → 0 → 2")
-    func sequentialPreviousCursorDecrements() {
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 2, playlistCount: 3, shuffle: false) == 1)
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 1, playlistCount: 3, shuffle: false) == 0)
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 0, playlistCount: 3, shuffle: false) == 2)
-    }
-
-    @Test("Previous with fewer than two entries does not rotate")
-    func previousTooFewEntries() {
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 0, playlistCount: 1, shuffle: false) == nil)
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 0, playlistCount: 0, shuffle: false) == nil)
-    }
-
-    @Test("Shuffle previous excludes the current cursor")
-    func shufflePreviousExcludesCurrent() {
-        let result = PlaylistPolicy.previousCursor(
-            currentCursor: 2,
-            playlistCount: 4,
-            shuffle: true,
-            randomIndex: { _ in 2 }
-        )
-        #expect(result != nil && result != 2)
-    }
-
-    @Test("Stale previousCursor (past end) normalizes before stepping back")
-    func stalePreviousCursorNormalizes() {
-        #expect(PlaylistPolicy.previousCursor(currentCursor: 7, playlistCount: 3, shuffle: false) == 0)
-    }
-
-    // MARK: - resolveCursor (used by ScreenManager.replacePlaylist after reorder)
+    // MARK: - resolveCursor (used by WallpaperAutomationOrchestrator.replacePlaylist after reorder)
 
     @Test("resolveCursor: active bookmark found at its new index")
     func resolveCursorFound() {

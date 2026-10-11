@@ -96,10 +96,6 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.board = board }
     }
 
-    func setMusicOverlayEnabled(_ enabled: Bool, for screen: Screen) {
-        mutateMonitorOverlays(of: [screen]) { $0.music.enabled = enabled }
-    }
-
     func setMusicOverlayLevel(_ level: MonitorOverlayLevel, for screen: Screen) {
         mutateMonitorOverlays(of: [screen]) { $0.music.level = level }
     }
