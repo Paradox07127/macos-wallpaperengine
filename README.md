@@ -21,7 +21,7 @@ Native macOS live wallpapers, a visual workspace for every display, and widgets,
 [🛠 Build](docs/en/building.md) ·
 [🌐 中文](README.zh-Hans.md)
 
-<img src="docs/images/overview.png" width="880" alt="Overview showing two displays in their desktop arrangement above the wallpaper shelf" />
+<img src="docs/images/overview.webp" width="880" alt="Overview showing two displays in their desktop arrangement above the wallpaper shelf" />
 
 </div>
 
@@ -37,7 +37,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 
 | **One canvas for your layers.** Arrange widgets, clock and music together. | **Wallpaper Engine scenes on Mac.** Pro renders compatible scenes natively with Metal. |
 |:---:|:---:|
-| <img src="docs/images/editor-overlays.png" alt="Display editor Overlays canvas with widgets, the layer list and the Add Widget palette" /> | <img src="docs/images/editor-wallpaper.png" alt="Display editor Wallpaper tab with a scene preview and its custom settings" /> |
+| <img src="docs/images/editor-overlays.webp" alt="Display editor Overlays canvas with widgets, the layer list and the Add Widget palette" /> | <img src="docs/images/editor-wallpaper.webp" alt="Display editor Wallpaper tab with a scene preview and its custom settings" /> |
 
 ## Wallpaper types
 
@@ -49,7 +49,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 | **Apple Aerials** | Lite + Pro | Browse and apply the Apple TV aerial videos already on your Mac. |
 
 <p align="center">
-  <img src="docs/images/workshop-browse.jpg" width="720" alt="Pro Workshop page with a grid of Steam Workshop wallpapers" /><br />
+  <img src="docs/images/workshop-browse.webp" width="720" alt="Pro Workshop page with a grid of Steam Workshop wallpapers" /><br />
   <sub>Pro: browse Steam Workshop and download with your own Steam account.</sub>
 </p>
 

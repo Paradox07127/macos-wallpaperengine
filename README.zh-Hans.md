@@ -21,7 +21,7 @@
 [🛠 构建](docs/zh-Hans/building.md) ·
 [🇬🇧 English](README.md)
 
-<img src="docs/images/overview-zh.png" width="880" alt="全景页：两台显示器按桌面排列，下方是壁纸架" />
+<img src="docs/images/overview-zh.webp" width="880" alt="全景页：两台显示器按桌面排列，下方是壁纸架" />
 
 </div>
 
@@ -37,7 +37,7 @@
 
 | **一块画布，安排所有图层。** 小组件、时钟与音乐一起摆放。 | **在 Mac 上运行 Wallpaper Engine 场景。** Pro 用 Metal 原生渲染兼容场景。 |
 |:---:|:---:|
-| <img src="docs/images/editor-overlays-zh.png" alt="显示器编辑器的叠加层画布：小组件、图层列表与添加小组件面板" /> | <img src="docs/images/editor-wallpaper-zh.png" alt="显示器编辑器的壁纸页：场景预览与场景自定义设置" /> |
+| <img src="docs/images/editor-overlays-zh.webp" alt="显示器编辑器的叠加层画布：小组件、图层列表与添加小组件面板" /> | <img src="docs/images/editor-wallpaper-zh.webp" alt="显示器编辑器的壁纸页：场景预览与场景自定义设置" /> |
 
 ## 壁纸类型
 
@@ -49,7 +49,7 @@
 | **Apple 航拍** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
 
 <p align="center">
-  <img src="docs/images/workshop-browse-zh.jpg" width="720" alt="Pro 创意工坊页：Steam 创意工坊壁纸网格" /><br />
+  <img src="docs/images/workshop-browse-zh.webp" width="720" alt="Pro 创意工坊页：Steam 创意工坊壁纸网格" /><br />
   <sub>Pro：浏览 Steam 创意工坊，用你自己的 Steam 账号下载。</sub>
 </p>
 
