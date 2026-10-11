@@ -13,6 +13,24 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.7] — 2026-10-11
+
+### Added
+
+- Settings › Advanced adds **Share anonymous hardware info**, off by default.
+
+### Fixed
+
+- Paused video wallpapers keep their color adjustments and wide-gamut colors
+  after they hibernate in the background.
+- Choosing a Workshop scene or applying a scheme to a paused display starts it
+  playing, the same as picking from the library.
+- Wallpaper setups saved for disconnected displays are kept when one of them
+  points to a missing file.
+- Local web wallpapers whose file names contain `%` escapes load the right file.
+- Pro: importing a package that contains a named pipe or other special file no
+  longer hangs.
+
 ## [0.8.6] — 2026-10-10
 
 ### Changed
@@ -1300,5 +1318,6 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.8.7]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.6...loomscreen-v0.8.7
 [0.8.6]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.5...loomscreen-v0.8.6
 [0.8.5]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.4...loomscreen-v0.8.5

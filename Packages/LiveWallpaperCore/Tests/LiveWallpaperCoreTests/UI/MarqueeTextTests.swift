@@ -27,6 +27,7 @@ struct MarqueeTextTests {
             .frame(width: 210, height: 150, alignment: .topLeading)
             .background(.black)
             .animation(.easeOut(duration: 0.15), value: model.active)
+            .environment(\._accessibilityReduceMotion, false)
         }
     }
 
