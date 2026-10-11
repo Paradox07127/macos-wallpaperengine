@@ -8399,6 +8399,40 @@
         }
       }
     },
+    "Arguments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arguments"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Argumentos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引数"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "参数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "參數"
+          }
+        }
+      }
+    },
     "Arrange and configure" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13193,6 +13227,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇「空照圖」連接本機空照圖資料夾。列表為空時，先到 macOS「系統設定 › 背景圖片」下載影片。"
+          }
+        }
+      }
+    },
+    "Choose Again" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a elegir"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新选择"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新選擇"
           }
         }
       }
@@ -24431,6 +24499,40 @@
         }
       }
     },
+    "Edit Arguments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Arguments"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar argumentos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引数を編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑参数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯參數"
+          }
+        }
+      }
+    },
     "Edit application exceptions" : {
       "localizations" : {
         "es" : {
@@ -26785,6 +26887,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檔案遺失或無法開啟"
+          }
+        }
+      }
+    },
+    "File or App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File or App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivo o app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルまたはアプリ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件或应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檔案或 App"
           }
         }
       }
@@ -54051,36 +54187,36 @@
         }
       }
     },
-    "Runs when the wallpaper's script asks for it after you click the wallpaper." : {
+    "Runs when the wallpaper's script asks for it after you click the wallpaper, including clicks on desktop icons." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Runs when the wallpaper's script asks for it after you click the wallpaper."
+            "value" : "Runs when the wallpaper's script asks for it after you click the wallpaper, including clicks on desktop icons."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ejecuta cuando el script del fondo de pantalla lo solicita tras hacer clic en él."
+            "value" : "Se ejecuta cuando el script del fondo de pantalla lo solicita tras hacer clic en él, incluidos los clics en los iconos del escritorio."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "壁紙をクリックした後、壁紙のスクリプトが要求したときに実行されます。"
+            "value" : "壁紙をクリックした後（デスクトップアイコンのクリックを含む）、壁紙のスクリプトが要求したときに実行されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击壁纸后，在壁纸脚本请求时运行。"
+            "value" : "点击壁纸（包括点击桌面图标）后，在壁纸脚本请求时运行。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點按桌布後，在桌布腳本要求時執行。"
+            "value" : "點按桌布（包括點按桌面圖像）後，在桌布腳本要求時執行。"
           }
         }
       }
@@ -67099,6 +67235,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此檔案沒有可辨識的設定。"
+          }
+        }
+      }
+    },
+    "The file or folder can't be found. Choose it again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file or folder can't be found. Choose it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encuentra el archivo o la carpeta. Vuelve a elegirlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルまたはフォルダが見つかりません。もう一度選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到该文件或文件夹，请重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到該檔案或資料夾，請重新選擇。"
           }
         }
       }

@@ -454,6 +454,30 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(try Data(contentsOf: sentinel) == Data("source stays".utf8))
     }
 
+    @Test("Deleting an installed item clears its user shortcut bindings and no one else's")
+    @MainActor
+    func deleteClearsUserShortcutBindings() throws {
+        let deleted = "usershortcut-delete-\(UUID().uuidString)"
+        let kept = "usershortcut-keep-\(UUID().uuidString)"
+        let shortcuts = UserShortcutBindingStore.shared
+        defer {
+            shortcuts.removeAll(forWallpaper: deleted)
+            shortcuts.removeAll(forWallpaper: kept)
+        }
+        try shortcuts.setWebsite("https://example.com", for: UserShortcutBindingKey(wallpaperID: deleted, propertyKey: "open"))
+        try shortcuts.setWebsite("https://example.org", for: UserShortcutBindingKey(wallpaperID: kept, propertyKey: "open"))
+        let target = entry(id: deleted, location: .sourceFolder)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
+        let probe = WorkshopInstalledDeleteProbe(store: store)
+        let model = InstalledLibraryModel(dependencies: store.dependencies)
+        #expect(!model.deletesFiles(target))
+
+        model.performDelete(target, services: probe.services)
+        #expect(store.entries.isEmpty)
+        #expect(shortcuts.bindings(forWallpaper: deleted).isEmpty, "a deleted wallpaper kept its user shortcut bindings")
+        #expect(shortcuts.bindings(forWallpaper: kept).count == 1, "deleting one wallpaper cleared another's bindings")
+    }
+
     @Test("The live deletion closure validates the source library before opening the mutation gate")
     func liveDeletionChecksSourceRoot() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/ModalActions.swift")

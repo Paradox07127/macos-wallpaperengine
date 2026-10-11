@@ -206,6 +206,7 @@ final class InstalledLibraryModel {
         if services.containsBookmark(identity.workshopID) {
             services.removeBookmarks(identity.workshopID)
         }
+        UserShortcutBindingStore.shared.removeAll(forWallpaper: identity.workshopID)
         reload()
         return true
     }

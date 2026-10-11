@@ -75,15 +75,37 @@ final class UserShortcutBindingStore {
         guard !Self.containsControlCharacter(trimmedName, allowingNewline: false) else {
             throw UserShortcutValidationError.controlCharacters
         }
-        var storedArguments: String?
-        if let arguments, !arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            guard arguments.count <= Self.maxArgumentsLength else { throw UserShortcutValidationError.tooLong }
-            guard !Self.containsControlCharacter(arguments, allowingNewline: true) else {
-                throw UserShortcutValidationError.controlCharacters
-            }
-            storedArguments = arguments
-        }
+        let storedArguments = try Self.validatedArguments(arguments)
         store(kind: .cmd, target: trimmedName, arguments: storedArguments, displayName: trimmedName, for: key)
+    }
+
+    /// Arguments are kept only for an `.app`; any other file drops them.
+    func setFile(_ url: URL, arguments: String?, for key: UserShortcutBindingKey) throws {
+        let isApplication = UserShortcutBinding.isApplication(url)
+        let storedArguments = isApplication ? try Self.validatedArguments(arguments) : nil
+        let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: url)
+        let name = url.lastPathComponent
+        let displayName = isApplication ? url.deletingPathExtension().lastPathComponent : name
+        store(kind: .file, target: name, arguments: storedArguments, displayName: displayName, bookmark: bookmark, for: key)
+    }
+
+    func setDirectory(_ url: URL, for key: UserShortcutBindingKey) throws {
+        let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: url)
+        let name = url.lastPathComponent
+        store(kind: .directory, target: name, arguments: nil, displayName: name, bookmark: bookmark, for: key)
+    }
+
+    /// Compare-and-swap: a refresh of a bookmark the user has since replaced is dropped.
+    func replaceBookmark(_ original: Data, with refreshed: Data, for key: UserShortcutBindingKey) {
+        guard var binding = bindings[key], binding.bookmark == original else { return }
+        binding.bookmark = refreshed
+        bindings[key] = binding
+        commit(wallpaperID: key.wallpaperID)
+    }
+
+    /// The executor gets a binding without its key, so a stale-bookmark refresh finds its owners here.
+    func keys(boundTo bookmark: Data) -> [UserShortcutBindingKey] {
+        bindings.filter { $0.value.bookmark == bookmark }.map(\.key)
     }
 
     func clear(_ key: UserShortcutBindingKey) {
@@ -98,15 +120,33 @@ final class UserShortcutBindingStore {
         commit(wallpaperID: wallpaperID)
     }
 
-    private func store(kind: UserShortcutKind, target: String, arguments: String?, displayName: String, for key: UserShortcutBindingKey) {
+    private func store(
+        kind: UserShortcutKind,
+        target: String,
+        arguments: String?,
+        displayName: String,
+        bookmark: Data? = nil,
+        for key: UserShortcutBindingKey
+    ) {
         bindings[key] = UserShortcutBinding(
             kind: kind,
             target: target,
             arguments: arguments,
             displayName: displayName,
-            revision: revision + 1
+            revision: revision + 1,
+            bookmark: bookmark
         )
         commit(wallpaperID: key.wallpaperID)
+    }
+
+    /// nil for nil or blank input.
+    private static func validatedArguments(_ arguments: String?) throws -> String? {
+        guard let arguments, !arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard arguments.count <= maxArgumentsLength else { throw UserShortcutValidationError.tooLong }
+        guard !containsControlCharacter(arguments, allowingNewline: true) else {
+            throw UserShortcutValidationError.controlCharacters
+        }
+        return arguments
     }
 
     private func commit(wallpaperID: String) {

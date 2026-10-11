@@ -13,12 +13,23 @@ struct UserShortcutBindingKey: Hashable, Codable, Sendable {
 
 struct UserShortcutBinding: Codable, Sendable, Equatable {
     var kind: UserShortcutKind
-    /// web: normalized absolute http(s) URL string; cmd: the Shortcuts shortcut name.
+    /// web: normalized absolute http(s) URL string; cmd: the Shortcuts shortcut name;
+    /// file/directory: the chosen item's last path component only, never the full path.
     var target: String
-    /// cmd only: text input for the shortcut; nil = run without input.
+    /// cmd: text input for the shortcut; file: launch arguments, kept only for an `.app`. nil = none.
     var arguments: String?
     var displayName: String
     var revision: UInt64
+    /// file/directory: read-only security-scoped bookmark; nil for web/cmd and in files written before it existed.
+    var bookmark: Data?
+
+    var isApplication: Bool {
+        kind == .file && Self.isApplication(URL(filePath: target))
+    }
+
+    static func isApplication(_ url: URL) -> Bool {
+        url.pathExtension.caseInsensitiveCompare("app") == .orderedSame
+    }
 }
 
 enum UserShortcutValidationError: Error, Equatable {

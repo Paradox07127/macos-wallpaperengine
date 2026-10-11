@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
@@ -10,7 +11,16 @@ struct UserShortcutBindingRow: View {
     var iconColor: Color = .accentColor
 
     @State private var current: UserShortcutBinding?
+    @State private var isResolvable = true
     @State private var editing: UserShortcutEditorKind?
+
+    private var isEditing: Binding<Bool> {
+        Binding(get: { editing != nil }, set: { shown in
+            if !shown {
+                editing = nil
+            }
+        })
+    }
 
     private var key: UserShortcutBindingKey {
         UserShortcutBindingKey(wallpaperID: wallpaperID, propertyKey: propertyKey)
@@ -25,6 +35,11 @@ struct UserShortcutBindingRow: View {
             Menu {
                 Button("Website", systemImage: "safari") { editing = .website }
                 Button("Apple Shortcut", systemImage: "square.2.layers.3d") { editing = .shortcut }
+                Button("File or App", systemImage: "doc") { choose(directory: false) }
+                Button("Folder", systemImage: "folder") { choose(directory: true) }
+                if current?.isApplication == true {
+                    Button("Edit Arguments", systemImage: "text.cursor") { editing = .arguments }
+                }
                 Divider()
                 Button("Test", systemImage: "play") {
                     if let current {
@@ -37,7 +52,10 @@ struct UserShortcutBindingRow: View {
                 }
                 .disabled(current == nil)
             } label: {
-                if let current {
+                if current != nil, !isResolvable {
+                    Text("Choose Again")
+                        .help(Text("The file or folder can't be found. Choose it again."))
+                } else if let current {
                     Text(verbatim: current.displayName)
                 } else {
                     Text("Not Set")
@@ -48,11 +66,13 @@ struct UserShortcutBindingRow: View {
             .frame(minWidth: 96, alignment: .trailing)
             .layoutPriority(1)
             .accessibilityLabel(title)
-            .popover(item: $editing, arrowEdge: .bottom) { kind in
-                UserShortcutEditorPopover(kind: kind, key: key, current: current)
+            .appLanguagePopover(isPresented: isEditing, arrowEdge: .bottom) {
+                if let editing {
+                    UserShortcutEditorPopover(kind: editing, key: key, current: current)
+                }
             }
         }
-        .help(Text("Runs when the wallpaper's script asks for it after you click the wallpaper."))
+        .help(Text("Runs when the wallpaper's script asks for it after you click the wallpaper, including clicks on desktop icons."))
         .onAppear(perform: refresh)
         .onChange(of: key) { _, _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: UserShortcutBindingStore.didChange)) { _ in refresh() }
@@ -60,11 +80,33 @@ struct UserShortcutBindingRow: View {
 
     private func refresh() {
         current = UserShortcutBindingStore.shared.binding(for: key)
+        isResolvable = current.map(UserShortcutExecutor.isResolvable) ?? true
+    }
+
+    private func choose(directory: Bool) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = !directory
+        panel.canChooseDirectories = directory
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            if directory {
+                try UserShortcutBindingStore.shared.setDirectory(url, for: key)
+            } else {
+                try UserShortcutBindingStore.shared.setFile(url, arguments: nil, for: key)
+                if UserShortcutBinding.isApplication(url) {
+                    editing = .arguments
+                }
+            }
+        } catch {
+            Logger.error("User shortcut: couldn't save the chosen item: \((error as NSError).code)", category: .settings)
+        }
     }
 }
 
 private enum UserShortcutEditorKind: Identifiable {
-    case website, shortcut
+    case website, shortcut, arguments
 
     var id: Self {
         self
@@ -81,6 +123,7 @@ private struct UserShortcutEditorPopover: View {
     @State private var name = ""
     @State private var input = ""
     @State private var failure: UserShortcutValidationError?
+    @State private var targetMissing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
@@ -96,13 +139,16 @@ private struct UserShortcutEditorPopover: View {
                 field("Input Text") {
                     TextField("Input Text", text: $input, prompt: Text("Optional"))
                 }
+            case .arguments:
+                field("Arguments") {
+                    TextField("Arguments", text: $input, prompt: Text("Optional"))
+                }
             }
 
             if let failure {
-                Text(Self.message(for: failure))
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(DesignTokens.Colors.Status.danger)
-                    .fixedSize(horizontal: false, vertical: true)
+                errorText(Self.message(for: failure))
+            } else if targetMissing {
+                errorText("The file or folder can't be found. Choose it again.")
             }
 
             HStack {
@@ -129,14 +175,25 @@ private struct UserShortcutEditorPopover: View {
         }
     }
 
+    private func errorText(_ message: LocalizedStringKey) -> some View {
+        Text(message)
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(DesignTokens.Colors.Status.danger)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func prefill() {
-        guard let current else { return }
-        switch (kind, current.kind) {
+        // Read the store, not `current`: right after a pick the row's snapshot can still be the previous binding.
+        guard let binding = kind == .arguments ? UserShortcutBindingStore.shared.binding(for: key) : current else { return }
+        switch (kind, binding.kind) {
         case (.website, .web):
-            url = current.target
+            url = binding.target
         case (.shortcut, .cmd):
-            name = current.target
-            input = current.arguments ?? ""
+            name = binding.target
+            input = binding.arguments ?? ""
+        case (.arguments, .file):
+            input = binding.arguments ?? ""
+            targetMissing = !UserShortcutExecutor.isResolvable(binding)
         default:
             break
         }
@@ -149,10 +206,23 @@ private struct UserShortcutEditorPopover: View {
                 try UserShortcutBindingStore.shared.setWebsite(url, for: key)
             case .shortcut:
                 try UserShortcutBindingStore.shared.setShortcut(name: name, arguments: input, for: key)
+            case .arguments:
+                // The bookmark is re-resolved on every save: a cached scoped URL loses its access.
+                guard let binding = UserShortcutBindingStore.shared.binding(for: key),
+                      case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(binding.bookmark, target: .transient)
+                else {
+                    targetMissing = true
+                    return
+                }
+                try SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+                    try UserShortcutBindingStore.shared.setFile(resolved.url, arguments: input, for: key)
+                }
             }
             dismiss()
+        } catch let error as UserShortcutValidationError {
+            failure = error
         } catch {
-            failure = error as? UserShortcutValidationError
+            targetMissing = true
         }
     }
 
