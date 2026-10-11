@@ -151,6 +151,37 @@ struct FolderURLSchemeHandlerIsolationTests {
         #expect(http?.value(forHTTPHeaderField: "Content-Length") == "\(jsBytes.count)")
     }
 
+    @Test("Literal percent escapes in filenames serve their authored bytes", arguments: [false, true])
+    func literalPercentFilenameServesExactBytes(packaged: Bool) async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let expected = Data("<html>literal-percent</html>".utf8)
+        let alias = Data("<html>space-alias</html>".utf8)
+        let handler = FolderURLSchemeHandler()
+        handler.folderURL = folder
+        if packaged {
+            let packageURL = folder.appendingPathComponent("scene.pkg")
+            try Self.makePackageData(entries: [
+                ("index%20one.html", expected),
+                ("index one.html", alias),
+            ]).write(to: packageURL)
+            try handler.setPackageBacking(Self.packageBacking(at: packageURL))
+        } else {
+            try expected.write(to: folder.appendingPathComponent("index%20one.html"))
+            try alias.write(to: folder.appendingPathComponent("index one.html"))
+        }
+        let url = try #require(URL(string: "livewallpaper://wallpaper/index%2520one.html?n=\(handler.currentSessionNonce ?? "")"))
+        let task = FakeURLSchemeTask(request: URLRequest(url: url))
+        let webView = makeWebView()
+        defer { handler.webView(webView, stop: task) }
+        handler.webView(webView, start: task)
+        try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
+
+        try #require(task.didFinishCalled)
+        #expect(task.failedError == nil)
+        #expect(task.receivedData.reduce(Data(), +) == expected)
+    }
+
     @Test("Package backend honours a Range request against an entry slice")
     func packageBackendHonoursRange() async throws {
         let handler = FolderURLSchemeHandler()

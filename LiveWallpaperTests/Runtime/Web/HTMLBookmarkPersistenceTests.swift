@@ -14,7 +14,7 @@ struct HTMLBookmarkPersistenceTests {
         let root = try Self.makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appendingPathComponent("site", isDirectory: true)
-        let index = folder.appendingPathComponent("index.html")
+        let index = folder.appendingPathComponent("index%20one.html")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data("<title>fixture</title>".utf8).write(to: index)
 
@@ -32,7 +32,7 @@ struct HTMLBookmarkPersistenceTests {
             ScreenConfiguration(
                 screenID: screenID,
                 wallpaper: .html(
-                    source: .folder(bookmarkData: original, indexFileName: "index.html"),
+                    source: .folder(bookmarkData: original, indexFileName: "index%20one.html"),
                     config: .default
                 )
             ),
@@ -40,11 +40,11 @@ struct HTMLBookmarkPersistenceTests {
 
         #expect(manager.validateConfiguration(for: screenID))
         let updated = try #require(manager.getConfiguration(for: screenID))
-        #expect(updated.savedHTMLSource == .folder(bookmarkData: refreshed, indexFileName: "index.html"))
+        #expect(updated.savedHTMLSource == .folder(bookmarkData: refreshed, indexFileName: "index%20one.html"))
         #expect(
             updated.activeWallpaper
                 == .html(
-                    source: .folder(bookmarkData: refreshed, indexFileName: "index.html"),
+                    source: .folder(bookmarkData: refreshed, indexFileName: "index%20one.html"),
                     config: .default
                 )
         )

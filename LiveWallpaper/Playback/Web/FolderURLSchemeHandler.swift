@@ -271,7 +271,7 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
     private func packageByteSource(for url: URL) -> (source: ByteSource, mime: String)? {
         guard let backing = activePackageBacking else { return nil }
         // Normalize Windows `\` paths; canonicalLookupName still rejects `..`.
-        let requestPath = (url.path.removingPercentEncoding ?? url.path)
+        let requestPath = url.path
             .replacingOccurrences(of: "\\", with: "/")
         let relativePath = requestPath.hasPrefix("/") ? String(requestPath.dropFirst()) : requestPath
         guard let lookup = WallpaperEnginePackage.canonicalLookupName(relativePath) else { return nil }
@@ -417,7 +417,7 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
     nonisolated static func resolvedFileURL(for requestURL: URL, inside folderURL: URL) throws -> URL {
         let rootURL = folderURL.standardizedFileURL.resolvingSymlinksInPath()
         // Windows `\` → `/`; containment check still rejects `..`.
-        let requestPath = (requestURL.path.removingPercentEncoding ?? requestURL.path)
+        let requestPath = requestURL.path
             .replacingOccurrences(of: "\\", with: "/")
         let relativePath = requestPath.hasPrefix("/") ? String(requestPath.dropFirst()) : requestPath
         let candidate = rootURL
