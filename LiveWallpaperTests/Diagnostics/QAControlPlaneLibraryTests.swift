@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import os
 import Testing
 
 @Suite("QA full library", .serialized)
@@ -36,9 +37,11 @@ struct QAControlPlaneLibraryTests {
 
     @Test("Pagination rejects changed content, filters, malformed limits and unknown fields")
     func pagination() throws {
-        var saved = (0 ..< 3).map { WallpaperBookmark(label: "Item \($0)", content: .video(bookmarkData: Data([UInt8($0)]))) }
+        let saved = OSAllocatedUnfairLock(initialState: (0 ..< 3).map {
+            WallpaperBookmark(label: "Item \($0)", content: .video(bookmarkData: Data([UInt8($0)])))
+        })
         var inputs = SavedLibraryModel.Inputs()
-        inputs.bookmarks = { saved }
+        inputs.bookmarks = { saved.withLock { $0 } }
         let entries = try QALibraryCatalog.entries(inputs: inputs)
         let page = try QALibraryCatalog.list(entries, arguments: ["limit": 1])
         let cursor = try #require(page["nextCursor"] as? String)
@@ -46,7 +49,7 @@ struct QAControlPlaneLibraryTests {
         #expect(next["count"] as? Int == 2)
         #expect(next["nextCursor"] is NSNull)
         #expect(throws: (any Error).self) { try QALibraryCatalog.list(entries, arguments: ["cursor": cursor, "query": "different"]) }
-        saved.removeLast()
+        saved.withLock { _ = $0.removeLast() }
         #expect(throws: (any Error).self) { try QALibraryCatalog.list(QALibraryCatalog.entries(inputs: inputs), arguments: ["cursor": cursor]) }
         for arguments: [String: Any] in [["limit": true], ["limit": 1.5], ["limit": 201], ["type": "web"], ["unknown": 1]] {
             #expect(throws: (any Error).self) { try QALibraryCatalog.list(entries, arguments: arguments) }

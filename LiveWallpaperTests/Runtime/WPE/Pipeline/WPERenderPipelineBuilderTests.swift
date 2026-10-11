@@ -675,10 +675,11 @@ struct WPERenderPipelineBuilderTests {
         #expect(prewarm.count == count * 4 + 2)
         #expect(prewarm[0].pass.target == .layerComposite(name: owner.graphLayer.compositeA) && prewarm[0].pass.blending == "disabled")
         #expect(prewarm[1].pass.target == .scene && prewarm[1].pass.blending == "normal")
-        #expect(prewarm.prefix(2).allSatisfy { $0.alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false) })
+        let straightContract = WPEShaderAlphaContract(unpremultipliedInputSlots: [], premultipliedOutput: false)
+        #expect(prewarm.prefix(2).allSatisfy { $0.alphaContract == straightContract })
         #expect(prewarm.prefix(2).allSatisfy { $0.publicationVertexRole == nil })
-        #expect(prewarm.dropFirst(2).allSatisfy {
-            $0.publicationVertexRole == ($0.pass.target == .scene ? nil : .localEffect)
+        #expect(prewarm.dropFirst(2).allSatisfy { (prepared: WPEPreparedRenderPass) -> Bool in
+            prepared.publicationVertexRole == (prepared.pass.target == .scene ? nil : WPEPublicationVertexRole.localEffect)
         })
         #expect(WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: canonical, sceneHDR: true).pipeline == canonical)
         #expect(WPERenderGraphBuilder.elidingFullFramePassthroughs(in: canonical, sceneHDR: true).pipeline == canonical)
@@ -688,7 +689,7 @@ struct WPERenderPipelineBuilderTests {
         let cold = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
         #expect(cold.layers[0].passes.count == 1 && cold.layers[0].passes[0].pass.target == .scene)
         #expect(cold.layers[0].passes[0].pass.blending == "normal")
-        #expect(cold.layers[0].passes[0].alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false))
+        #expect(cold.layers[0].passes[0].alphaContract == straightContract)
         #expect(cold.layers[0].passes[0].uniformValues["g_Color"] == .vector([0.8, 0.2, 0.6, 0.375]))
         #if DEBUG
         #expect(WPEMetalShaderDispatcher.builtinTraceMetadata(for: .solidLayer, passShader: "solidlayer",
@@ -720,7 +721,7 @@ struct WPERenderPipelineBuilderTests {
                 #expect(effect.textureBindings.values.allSatisfy { $0 == predecessor })
                 #expect(effect.access.matches(pass: effect.pass, textureBindings: effect.textureBindings))
                 #expect(!effect.access.readsCurrentTarget && !effect.access.hasPreviousReference)
-                #expect(effect.alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false))
+                #expect(effect.alphaContract == straightContract)
                 let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
                 #expect(request.premultipliedInputSlots.isEmpty && !request.premultipliedOutput)
                 if index == selected.count - 1 {
@@ -735,9 +736,12 @@ struct WPERenderPipelineBuilderTests {
                     predecessor = .fbo(expected)
                 }
             }
+            let roleProbes: [String: [String: WPESceneShaderConstantValue]] = Dictionary(
+                uniqueKeysWithValues: layer.passes.map { ($0.id, ["roleProbe": .number(1)]) }
+            )
             let rebuilt = frame.addingMetalRuntimeUniforms(
                 .init(time: 0, daytime: 0, brightness: 1, pointerPosition: .zero), camera: camera,
-                scriptedConstants: Dictionary(uniqueKeysWithValues: layer.passes.map { ($0.id, ["roleProbe": .number(1)]) })
+                scriptedConstants: roleProbes
             ).pipeline
             #expect(rebuilt.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
             let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]))
@@ -1128,7 +1132,7 @@ struct WPERenderPipelineBuilderTests {
         guard scope == "combined" else { return }
         let mvp = try #require(frame.frameUniforms.value(named: "g_ModelViewProjectionMatrix", passID: layer.passes[1].id)?.vectorValue)
         // Windows parent-r2 9000808, terminal event 48; column-major bound VS MVP.
-        let captured = [0.009494711644947529, 0.007795349694788456, 0, 0,
+        let captured: [Double] = [0.009494711644947529, 0.007795349694788456, 0, 0,
                         -0.0024985559284687042, 0.010167608968913555, 0, 0,
                         0, 0, 0.0002500000118743628, 0,
                         0.42107200622558594, 0.6958420276641846, 0.5, 1]
@@ -1277,7 +1281,8 @@ struct WPERenderPipelineBuilderTests {
         var tex = Data()
         tex.appendCString("TEXV0005")
         tex.appendCString("TEXI0001")
-        for value in [0, 0, 32, physicalHeight, scope == "oversize" ? 33 : width, height, 0] {
+        let header: [Int] = [0, 0, 32, physicalHeight, scope == "oversize" ? 33 : width, height, 0]
+        for value in header {
             tex.appendLE(UInt32(value))
         }
         tex.appendCString("TEXB0001")
@@ -1321,11 +1326,12 @@ struct WPERenderPipelineBuilderTests {
         if scope == "gated" {
             effect["visible"] = ["value": true, "script": "export function update(v){return v;}"]
         }
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+        let sceneJSON: [String: Any] = [
             "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 256, "height": 128]],
             "objects": [["id": 1, "image": "models/image.json", "origin": "144 52 0", "size": "160 96", "effects": [effect]]],
-        ]))
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: sceneJSON))
         let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
         let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
         let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)

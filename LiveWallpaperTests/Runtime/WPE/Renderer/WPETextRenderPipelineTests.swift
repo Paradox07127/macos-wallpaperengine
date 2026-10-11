@@ -1013,9 +1013,10 @@ struct WPETextRenderPipelineTests {
         for (channel, expected) in [2.0, -0.25, 0.5, sourceAlpha].enumerated() {
             #expect(abs(source[channel] - expected) < 0.002)
         }
-        let previousScene = try #require(pipeline.layers.prefix(2).flatMap { layer in
+        let earlierPasses: [(layerID: String, prepared: WPEPreparedRenderPass)] = pipeline.layers.prefix(2).flatMap { layer in
             layer.passes.map { (layerID: layer.graphLayer.objectID, prepared: $0) }
-        }.last { $0.prepared.pass.target == .scene })
+        }
+        let previousScene = try #require(earlierPasses.last { $0.prepared.pass.target == .scene })
         try #require(previousScene.prepared.pass.target == .scene)
         #expect(previousScene.layerID == background.id)
         let destination = try center(dumped(previousScene.prepared.id, layerID: previousScene.layerID))

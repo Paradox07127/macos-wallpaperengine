@@ -91,7 +91,7 @@ struct WPEPassRenderContract: Equatable, Sendable {
                 }
             }
             let usage = textureUsage(shader: pass.shader, slot: slot, program: shader)
-            if usage.isData, let input = resolved[slot] {
+            if usage.isData, resolved[slot] != nil {
                 resolved[slot] = .init(reference: reference, semantics: .data(usage), origin: .declaration)
             }
             if resolved[slot]?.semantics.alpha == .unknown {

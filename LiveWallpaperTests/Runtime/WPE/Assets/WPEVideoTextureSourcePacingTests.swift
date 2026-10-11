@@ -640,7 +640,7 @@ struct WPEVideoTextureSourcePacingTests {
             }
             #expect(snapshot.loop && snapshot.rate == 1)
             if label == "pause.before" || label == "pause.seek1_5.before" {
-                retained = try #require(texture)
+                retained = texture
             }
             if retained != nil, !snapshot.isPlaying {
                 #expect(texture === retained)
@@ -721,7 +721,7 @@ struct WPEVideoTextureSourcePacingTests {
         qualification["committedWarmSourceFrame"] = warm.hasPresentedFrame
         try #require(warm.hasPresentedFrame)
         durationQualified = true
-        retained = try #require(source.texture(at: 0))
+        retained = source.texture(at: 0)
         if history == "B" {
             try command("pause.seek1_5", operation: 3, expected: [.pause, .seek(1.5)])
             try await updates("pause.seek1_5")

@@ -348,7 +348,7 @@ final class Screen: Identifiable, Hashable {
                     newWindow: incoming.wallpaperWindow ?? incoming.videoPlayer?.playbackWindow,
                     renderer: renderer,
                     makeClock: makeClock,
-                    onFinish: { [weak self, weak incoming] in self?.completeDistortion(token, incoming: incoming) }
+                    onFinish: { [weak self, weak incoming = incoming] in self?.completeDistortion(token, incoming: incoming) }
                 )
             }
             if let transition {

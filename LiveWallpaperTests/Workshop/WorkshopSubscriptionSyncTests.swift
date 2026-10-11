@@ -11,7 +11,7 @@ struct WorkshopSubscriptionSyncTests {
     @Test("An item downloaded earlier in this run, then deleted, is offered again by the next check")
     func downloadedThenDeletedIsOfferedAgain() async throws {
         let fixture = try SyncFixture()
-        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
             fixture.listing.ids = [itemID]
             await fixture.sync.refresh(using: fixture.doctor)
             fixture.sync.downloadSelected(using: fixture.downloader)
@@ -43,7 +43,7 @@ struct WorkshopSubscriptionSyncTests {
     @Test("An item SteamCMD installs while the subscription list is read is not missing")
     func installedDuringListingIsNotMissing() async throws {
         let fixture = try SyncFixture()
-        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
             fixture.listing.ids = [itemID]
             fixture.listing.installsBeforeAnswering = SteamLibraryPaths.workshopContentRoot(steamRoot: fixture.root)
                 .appendingPathComponent(String(itemID), isDirectory: true)
@@ -87,7 +87,7 @@ struct WorkshopSubscriptionSyncTests {
     @Test("A check that fails mid-download keeps the download active and cancellable")
     func failedCheckKeepsActiveDownload() async throws {
         let fixture = try SyncFixture(parks: true)
-        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
             fixture.listing.ids = [itemID]
             await fixture.sync.refresh(using: fixture.doctor)
             fixture.sync.downloadSelected(using: fixture.downloader)

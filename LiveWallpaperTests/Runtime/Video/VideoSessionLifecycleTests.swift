@@ -1502,8 +1502,8 @@ struct VideoSessionLifecycleTests {
         ))
         #expect(player.videoCompositionOwner == .effects)
         try #require(player.player != nil && player.player?.currentItem != nil)
-        weak var retiredPlayer = player.player
-        weak var retiredItem = player.player?.currentItem
+        weak let retiredPlayer = player.player
+        weak let retiredItem = player.player?.currentItem
         try await Task.sleep(for: .milliseconds(100))
 
         session.pause()

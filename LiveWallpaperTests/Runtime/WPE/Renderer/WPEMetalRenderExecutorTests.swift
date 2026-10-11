@@ -2707,13 +2707,13 @@ struct WPEMetalRenderExecutorTests {
     @Test("Puppet terminal composite keeps every mesh, including geometry beyond the local texture", arguments: [false, true])
     func puppetMaterialPassRendersMeshesIntoLocalComposite(overflows: Bool) throws {
         let output = try renderEffectPuppet(overflows: overflows)
-        #expect(try nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
+        #expect(nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
     }
 
     @Test("Ordinary image puppets keep overflowing geometry through effects", arguments: ["genericimage2", "genericimage4"], [false, true])
     func ordinaryPuppetEffectsPreserveOverflow(shader: String, overflows: Bool) throws {
         let output = try renderEffectPuppet(shader: shader, overflows: overflows, withEffects: true)
-        #expect(try nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
+        #expect(nonBlackBounds(output) == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
     }
 
     @Test("Contained static puppet applies effect masks to the assembled layer", arguments: ["genericimage2", "genericimage4"])
@@ -2729,8 +2729,8 @@ struct WPEMetalRenderExecutorTests {
     func animatedPuppetEffectsPreserveOverflow(shader: String) throws {
         let rest = try renderEffectPuppet(shader: shader, withEffects: true, animated: true)
         let moved = try renderEffectPuppet(shader: shader, withEffects: true, animated: true, time: 1)
-        #expect(try nonBlackBounds(rest) == PixelBounds(minX: 4, minY: 4, maxX: 11, maxY: 11))
-        #expect(try nonBlackBounds(moved) == PixelBounds(minX: 2, minY: 4, maxX: 9, maxY: 11))
+        #expect(nonBlackBounds(rest) == PixelBounds(minX: 4, minY: 4, maxX: 11, maxY: 11))
+        #expect(nonBlackBounds(moved) == PixelBounds(minX: 2, minY: 4, maxX: 9, maxY: 11))
     }
 
     private func renderEffectPuppet(

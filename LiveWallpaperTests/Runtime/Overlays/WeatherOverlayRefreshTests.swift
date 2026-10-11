@@ -1,6 +1,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import os
 import Testing
 
 @Suite("Weather layer refresh after display and batch changes", .serialized)
@@ -9,10 +10,10 @@ struct WeatherOverlayRefreshTests {
     @Test("A hand-picked particle layer on a display with no wallpaper comes back when the display does")
     func manualLayerReturnsWithBareDisplay() throws {
         let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
-        var live = [screen]
+        let live = OSAllocatedUnfairLock(initialState: [screen])
         let coordinator = WallpaperEffectsCoordinator(
             configurationStore: WallpaperConfigurationStore(persistence: ScreenManagerFixtureState()),
-            screensProvider: { live },
+            screensProvider: { live.withLock { $0 } },
             saveConfiguration: { _ in },
             weatherOverlay: { _ in WeatherOverlayConfiguration(particleEffect: .snow) },
             saveWeatherOverlay: { _, _ in },
@@ -22,12 +23,12 @@ struct WeatherOverlayRefreshTests {
         defer { coordinator.shutdown() }
 
         coordinator.reconcileEnvironmentOverlays()
-        live = []
+        live.withLock { $0 = [] }
         coordinator.screensDidChange(arrivedScreenIDs: [])
         let removed = coordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id) == nil
         try #require(removed, "the layer outlived its display")
 
-        live = [screen]
+        live.withLock { $0 = [screen] }
         coordinator.screensDidChange(arrivedScreenIDs: [screen.id])
         let hosted = coordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id) != nil
         #expect(hosted, "the returning display got no particle host")
@@ -49,13 +50,13 @@ struct WeatherOverlayRefreshTests {
         saved.displayFingerprint = screen.displayFingerprint
         saved.frameRateLimit = .fps15
         store.save(saved)
-        var overlay = WeatherOverlayConfiguration(weatherReactive: true)
+        let overlay = OSAllocatedUnfairLock(initialState: WeatherOverlayConfiguration(weatherReactive: true))
         var appliedLimits: [FrameRateLimit] = []
         let coordinator = WallpaperEffectsCoordinator(
             configurationStore: store,
             screensProvider: { [screen] },
             saveConfiguration: { _ in },
-            weatherOverlay: { _ in overlay },
+            weatherOverlay: { _ in overlay.withLock { $0 } },
             saveWeatherOverlay: { _, _ in },
             applyFrameRateLimit: { limit, _ in appliedLimits.append(limit) },
             screenRefreshRate: { _ in 60 }
@@ -64,7 +65,7 @@ struct WeatherOverlayRefreshTests {
 
         coordinator.weatherOverlaysDidChange()
         appliedLimits = []
-        overlay.weatherReactive = false
+        overlay.withLock { $0.weatherReactive = false }
         coordinator.weatherOverlaysDidChange()
 
         #expect(appliedLimits == [.fps15], "the saved configuration was not re-applied to the video")

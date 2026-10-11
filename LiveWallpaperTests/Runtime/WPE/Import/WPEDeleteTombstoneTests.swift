@@ -114,7 +114,7 @@ struct WPEDeleteTombstoneTests {
     func deletingLocalCopyKeepsSteamItem() throws {
         let fixture = try LocalCopyFixture()
         defer { fixture.discard() }
-        try withIsolatedGlobalSettings {
+        withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(fixture.steam)
             manager.recordWPEImport(fixture.local)
@@ -135,7 +135,7 @@ struct WPEDeleteTombstoneTests {
     func deletingLocalCopyKeepsScreenPlayingSteamItem() throws {
         let fixture = try LocalCopyFixture()
         defer { fixture.discard() }
-        try withIsolatedGlobalSettings {
+        withIsolatedGlobalSettings {
             SettingsManager.shared.recordWPEImport(fixture.steam)
             SettingsManager.shared.recordWPEImport(fixture.local)
             let screen = Screen(nsScreen: TombstoneTestNSScreen())

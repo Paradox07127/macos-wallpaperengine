@@ -53,6 +53,7 @@ struct LibraryGridMetricsTests {
     }
 
     @Test("The Edit Desk Workshop preset shares the row: five columns at 1040, six at 1280, eight at 1728")
+    @MainActor
     func workshopPresetSharesTheRow() {
         let preset = DesignTokens.LibraryGrid.workshopBrowseColumnWidth
         let spacing = DesignTokens.LibraryGrid.spacing

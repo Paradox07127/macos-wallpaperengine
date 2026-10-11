@@ -50,8 +50,8 @@ struct WPEProjectedQuadShaderTests {
         let queue = try #require(device.makeCommandQueue())
         let library = try #require(device.makeDefaultLibrary())
         let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = try #require(library.makeFunction(name: vertexName))
-        descriptor.fragmentFunction = try #require(try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: .rgba8Unorm))
+        descriptor.vertexFunction = library.makeFunction(name: vertexName)
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: .rgba8Unorm)
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
         let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
 

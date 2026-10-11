@@ -14,7 +14,7 @@ struct SubscriptionSyncSheet: View {
     /// Leading edge of a row's title text, so dividers start after the checkbox.
     @State private var titleInset: CGFloat = 0
 
-    private static let rowSpace = "SubscriptionSyncRows"
+    private nonisolated static let rowSpace = "SubscriptionSyncRows"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

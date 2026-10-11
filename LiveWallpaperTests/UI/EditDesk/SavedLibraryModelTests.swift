@@ -714,17 +714,17 @@ struct SavedLibraryModelTests {
         let oldBookmark = Data("old scan".utf8)
         var source = inputs(aerials: [aerial(), aerial("other")])
         var resolves = 0
-        var available = false
+        let available = OSAllocatedUnfairLock(initialState: false)
         source.filePath = { _ in
             resolves += 1
-            return available ? "/sky.mov" : nil
+            return available.withLock { $0 } ? "/sky.mov" : nil
         }
         let model = SavedLibraryModel(inputs: source)
         let content = WallpaperContent.video(bookmarkData: oldBookmark)
         #expect(!model.aerial(aerial(), matches: content))
         #expect(!model.aerial(aerial("other"), matches: content))
         #expect(resolves == 1)
-        available = true
+        available.withLock { $0 = true }
         #expect(!model.aerial(aerial(), matches: content))
         #expect(resolves == 1)
         model.refresh()

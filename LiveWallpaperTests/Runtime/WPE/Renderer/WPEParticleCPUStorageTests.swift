@@ -28,7 +28,7 @@ struct WPEParticleCPUStorageTests {
         let pool = WPEParticleCPUStoragePool(maximumRetainedBytes: 1024 * 1024)
         let prototype = try system(device, definition: definition(), pool: pool)
         var old = prototype.makeEventInstance(device: device, seed: 2)
-        weak var weakOld = old
+        weak let weakOld = old
         let oldStorage = try #require(old).cpuStorageIdentity
         old?.tick(now: 0)
         old?.tick(now: 0.1)

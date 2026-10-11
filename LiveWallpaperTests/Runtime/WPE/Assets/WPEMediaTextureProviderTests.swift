@@ -28,7 +28,8 @@ struct WPEMediaTextureProviderTests {
         defer { dispatcher.stop(); subscription.stop() }
         #expect(source.subscriberCount == 2)
         #expect(source.replayCount == 2)
-        #expect(dispatcher.mailbox.drain().contains(.propertiesChanged(.init(title: "Controlled"))))
+        let receivedTitle = dispatcher.mailbox.drain().contains(.propertiesChanged(.init(title: "Controlled")))
+        #expect(receivedTitle)
         #expect(store.uploadCount == 1)
         #expect(store.texture(for: .thumbnail) != nil)
         let receipt = source.receipt(generation: 1, scripts: true, textures: true)

@@ -25,7 +25,7 @@ extension WorkshopDownloadTests {
     @MainActor
     func refusedDependencyGateSkipsHook() async throws {
         let fixture = try HookFixture()
-        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
             let holder = fixture.holdMutation(of: HookFixture.dependencyID)
             #expect(await fixture.waitUntilMutating(HookFixture.dependencyID))
 
@@ -47,7 +47,7 @@ extension WorkshopDownloadTests {
     @MainActor
     func refusedReimportGateSkipsHook() async throws {
         let fixture = try HookFixture()
-        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
             var holder: Task<Void, Never>?
             fixture.downloader.afterDependency = {
                 holder = fixture.holdMutation(of: HookFixture.rootID)
