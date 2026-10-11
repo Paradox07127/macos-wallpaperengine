@@ -1276,16 +1276,37 @@ final class WallpaperVideoPlayer {
 
     // MARK: - Cover capture
 
-    /// Read through a temporary `AVPlayerItemVideoOutput` rather than `AVAssetImageGenerator`: the output delivers the composited frame (colour effects / Force SDR), not the file as stored.
+    /// Read through a temporary `AVPlayerItemVideoOutput`: it delivers the
+    /// composited frame (colour effects / Force SDR), not the file as stored.
     func currentFrameImage(timeout: Duration = .milliseconds(600)) async -> NSImage? {
         guard !isCleanedUp else { return nil }
-        guard let item = player?.currentItem else {
-            // Deep hibernation released the player; the desktop is showing the still it left behind.
+        if player?.currentItem == nil {
+            // Deep hibernation released the player; the desktop is showing its still.
             guard let still = videoView?.currentStillFrame else { return nil }
             return NSImage(cgImage: still, size: NSSize(width: still.width, height: still.height))
         }
+        guard let frame = await captureCurrentFrame(timeout: timeout) else { return nil }
+        return NSImage(cgImage: frame.image, size: NSSize(width: frame.image.width, height: frame.image.height))
+    }
+
+    /// Shared by saved covers and deep hibernation. A capture belongs to one item
+    /// and composition revision; an awaited read must never publish an older frame.
+    private func captureCurrentFrame(
+        timeout: Duration = .milliseconds(600),
+        maximumDimension: CGFloat? = nil
+    ) async -> (image: CGImage, time: CMTime)? {
+        guard !isCleanedUp, !Task.isCancelled,
+              let player, let item = player.currentItem else { return nil }
+        let generation = lifecycleGeneration
+        let compositionRevision = videoCompositionGeneration
+        let deadline = ContinuousClock.now.advanced(by: timeout)
         // Orientation lives in the track transform; a composition already applied it.
         let orientation: CGAffineTransform = item.videoComposition == nil ? await Self.preferredTransform(of: item) : .identity
+        guard !isCleanedUp, !Task.isCancelled,
+              lifecycleGeneration == generation,
+              videoCompositionGeneration == compositionRevision,
+              self.player?.currentItem === item,
+              ContinuousClock.now < deadline else { return nil }
         let output = AVPlayerItemVideoOutput(
             pixelBufferAttributes: WallpaperVideoOutputNegotiation.pixelBufferAttributes(
                 forcingBGRA: usesExtendedDynamicRange
@@ -1294,16 +1315,19 @@ final class WallpaperVideoPlayer {
         bindVideoOutput(output, to: item)
         defer { unbindVideoOutput(output, from: item) }
 
-        let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
-            guard player?.currentItem === item, !isCleanedUp else { return nil }
+            guard !isCleanedUp, !Task.isCancelled,
+                  lifecycleGeneration == generation,
+                  videoCompositionGeneration == compositionRevision,
+                  self.player?.currentItem === item,
+                  boundVideoOutputs.contains(where: { $0.output === output }) else { return nil }
             let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
             var displayTime = CMTime.invalid
             if let buffer = output.copyPixelBuffer(
                 forItemTime: itemTime,
                 itemTimeForDisplay: &displayTime
-            ) {
-                return Self.image(from: buffer, orientation: orientation)
+            ), let image = Self.image(from: buffer, orientation: orientation, maximumDimension: maximumDimension) {
+                return (image, displayTime.isNumeric ? displayTime : player.currentTime())
             }
             do {
                 try await Task.sleep(for: .milliseconds(16))
@@ -1321,15 +1345,22 @@ final class WallpaperVideoPlayer {
     }
 
     /// `orientation` is the track's preferred transform; a rotated phone video is otherwise captured on its side.
-    static func image(from buffer: CVPixelBuffer, orientation: CGAffineTransform = .identity) -> NSImage? {
+    private static func image(
+        from buffer: CVPixelBuffer,
+        orientation: CGAffineTransform,
+        maximumDimension: CGFloat?
+    ) -> CGImage? {
         var ciImage = CIImage(cvPixelBuffer: buffer)
         if !orientation.isIdentity {
             ciImage = ciImage.transformed(by: orientation)
             ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -ciImage.extent.minX, y: -ciImage.extent.minY))
         }
+        if let maximumDimension {
+            let scale = min(1, maximumDimension / max(ciImage.extent.width, ciImage.extent.height))
+            ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
         let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        return context.createCGImage(ciImage, from: ciImage.extent)
     }
 
     // MARK: - Video Output Ownership
@@ -1473,31 +1504,7 @@ final class WallpaperVideoPlayer {
     private static let stillFrameWakeDeadlineSeconds: TimeInterval = 10
 
     private func captureStillFrame() async -> (image: CGImage, time: CMTime)? {
-        guard let player, let item = player.currentItem else { return nil }
-        let generator = AVAssetImageGenerator(asset: item.asset)
-        generator.appliesPreferredTrackTransform = true
-        // Exact time, not the nearest keyframe: the still replaces a frame that
-        // is currently on screen, so a tolerance window would pop.
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        generator.maximumSize = CGSize(
-            width: Self.maxStillFrameWidth,
-            height: Self.maxStillFrameWidth
-        )
-        let time = player.currentTime()
-        // Non-Sendable generator crossing the await; same escape as
-        // DesktopPictureFrameExtractor.
-        nonisolated(unsafe) let capture = generator
-        do {
-            let (image, _) = try await capture.image(at: time)
-            return (image, time)
-        } catch {
-            Logger.debug(
-                "Hibernation still frame unavailable: \(error.localizedDescription)",
-                category: .videoPlayer
-            )
-            return nil
-        }
+        await captureCurrentFrame(maximumDimension: Self.maxStillFrameWidth)
     }
 
     private func retirePlaybackState(preservingEffects: Bool = false) {

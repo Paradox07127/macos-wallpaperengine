@@ -105,6 +105,43 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
         expectColor(pixels.rgba(x: pixels.width * 3 / 4, y: pixels.height * 3 / 4), (0, 0, 255, 255), "blue half")
     }
 
+    @Test("The deep-hibernation cover keeps the displayed color effects")
+    func hibernationCoverKeepsCompositedFrame() async throws {
+        let harness = try await Harness.make(fitMode: .aspectFill)
+        defer { harness.cleanup() }
+        try await harness.waitUntilPlaying()
+        let raw = try await harness.capture()
+        expectColor(raw.rgba(x: raw.width / 4, y: raw.height * 3 / 4), (255, 0, 0, 255), "control: saturated source")
+
+        let effects = VideoEffectsApplicationService()
+        var configuration = ScreenConfiguration(screenID: 43, videoBookmarkData: Data())
+        configuration.effectConfig.saturation = 0
+        #expect(await effects.prepareEffects(
+            to: harness.player,
+            screenID: 43,
+            config: configuration,
+            screenRefreshRate: 60,
+            noEffectsHandler: {}
+        ))
+        try await Task.sleep(for: .milliseconds(150))
+        let displayed = try await harness.capture()
+        let expected = displayed.rgba(x: displayed.width / 4, y: displayed.height * 3 / 4)
+        #expect(abs(expected.r - expected.g) <= 3 && abs(expected.g - expected.b) <= 3)
+
+        harness.player.pause()
+        harness.player.setSuspended(true)
+        harness.player.setHibernationEligible(true, immediately: true)
+        try await Harness.waitUntil("the composited cover replaces the player") { harness.player.isHibernated }
+        #expect(harness.player.player == nil)
+        #expect(harness.player.boundVideoOutputCountForTesting == 0)
+        let image = try #require(await harness.player.currentFrameImage())
+        let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let pixel = try #require(NSBitmapImageRep(cgImage: cgImage).colorAt(x: cgImage.width / 4, y: cgImage.height * 3 / 4)?.usingColorSpace(.deviceRGB))
+        let actual = (Int((pixel.redComponent * 255).rounded()), Int((pixel.greenComponent * 255).rounded()), Int((pixel.blueComponent * 255).rounded()), 255)
+        print("hibernate cover effect pixel: \(actual), displayed: \(expected)")
+        expectColor((actual.0, actual.1, actual.2, actual.3), (expected.r, expected.g, expected.b, expected.a), "hibernation still matches the composited picture")
+    }
+
     @Test("Extended dynamic range declines the capture")
     func extendedDynamicRangeReturnsNil() async throws {
         let harness = try await Harness.make(fitMode: .aspectFill)
