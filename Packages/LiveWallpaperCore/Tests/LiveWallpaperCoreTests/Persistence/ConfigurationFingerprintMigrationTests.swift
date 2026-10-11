@@ -108,6 +108,19 @@ struct ConfigurationFingerprintMigrationTests {
         #expect(store.get(for: 42)?.displayFingerprint == "A", "The store must hand back the row persistence resolves, not its own pick")
     }
 
+    @Test("Prune reports a screenID only once none of its rows survive", arguments: [true, false])
+    func pruneReportsOnlyEmptiedScreenIDs(keepsValidSibling: Bool) {
+        let invalid = makeVideoConfig(screenID: 42, fingerprint: "A")
+        let valid = makeVideoConfig(screenID: 42, fingerprint: "B")
+        let persistence = DuplicateTolerantConfigPersistence(keepsValidSibling ? [invalid, valid] : [invalid])
+        let store = WallpaperConfigurationStore(persistence: persistence)
+
+        let removed = store.pruneInvalidResourceConfigurations { $0.displayFingerprint != "A" }
+
+        #expect(removed == (keepsValidSibling ? [] : [42]), "the returned screenID's runtime is released though a row for it survives")
+        #expect(persistence.loadConfigurations() == (keepsValidSibling ? [valid] : []))
+    }
+
     @Test("Per-screen revision advances for every semantic write")
     func revisionAdvancesForEveryWrite() {
         let store = WallpaperConfigurationStore(

@@ -114,6 +114,7 @@ extension GeneralSettingsView {
         audioResponseEnabled = settings.audioResponseEnabled
         adaptiveFrameRateEnabled = settings.adaptiveFrameRateEnabled
         weatherLocation = settings.weatherLocation
+        sendsHardwareProfile = SparkleUpdaterController.shared.sendsSystemProfile
         #if !LITE_BUILD
         applyAudioResponseEnabled(settings.audioResponseEnabled)
         #endif

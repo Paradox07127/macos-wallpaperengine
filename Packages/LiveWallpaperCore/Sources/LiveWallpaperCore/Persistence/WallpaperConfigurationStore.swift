@@ -228,7 +228,8 @@ public final class WallpaperConfigurationStore {
             acknowledgePersistenceRevision(for: screenID)
         }
 
-        return Array(invalidIDs)
+        // Callers release each returned screen's runtime, so an ID that still owns a row is left out.
+        return Array(invalidIDs.subtracting(pruned.map(\.screenID)))
     }
 
     public nonisolated static func removingInvalidResourceConfigurations(

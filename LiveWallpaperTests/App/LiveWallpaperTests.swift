@@ -298,12 +298,13 @@ struct SettingsManagerTests {
         for key in auxiliaryKeys {
             defaults.set(Data([0x01]), forKey: key)
         }
+        defaults.set(true, forKey: "SUSendProfileInfo")
         #expect(defaults.object(forKey: "Settings.MigrationVersion") != nil)
         #expect(defaults.object(forKey: "Settings.BlobSchemaVersion") != nil)
 
         manager.cleanAllSettings(applyLoginSetting: false)
 
-        for key in auxiliaryKeys + ["Settings.MigrationVersion", "Settings.BlobSchemaVersion"] {
+        for key in auxiliaryKeys + ["SUSendProfileInfo", "Settings.MigrationVersion", "Settings.BlobSchemaVersion"] {
             #expect(defaults.object(forKey: key) == nil, "\(key) must be cleared by cleanAllSettings")
         }
         await TestScratch.discard(root, flushing: manager)

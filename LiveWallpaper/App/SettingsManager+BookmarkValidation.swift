@@ -53,8 +53,7 @@ extension SettingsManager {
         case .success(let resolved):
             let url = resolved.url
             if resolved.didRefresh {
-                let updatedConfig = configuration.withUpdatedActiveBookmark(resolved.bookmarkData)
-                saveConfiguration(updatedConfig)
+                replacePersistedRow(with: configuration.withUpdatedActiveBookmark(resolved.bookmarkData))
                 SchemeStore.shared.replaceVideoBookmark(matching: bookmarkData, with: resolved.bookmarkData)
                 Logger.info("Refreshed stale bookmark for screen \(screenID)", category: .fileAccess)
             }
@@ -229,7 +228,17 @@ extension SettingsManager {
             )
             return false
         }
-        saveConfiguration(updated)
+        replacePersistedRow(with: updated)
         return true
+    }
+
+    /// saveConfiguration overwrites the first row with this screenID; an imported table can hold several, told apart by fingerprint.
+    private func replacePersistedRow(with updated: ScreenConfiguration) {
+        var configs = loadConfigurations()
+        guard let index = configs.firstIndex(where: {
+            $0.screenID == updated.screenID && $0.displayFingerprint == updated.displayFingerprint
+        }) else { return }
+        configs[index] = updated
+        replaceAllConfigurations(configs)
     }
 }

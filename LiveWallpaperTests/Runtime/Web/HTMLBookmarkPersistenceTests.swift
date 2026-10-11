@@ -110,13 +110,46 @@ struct HTMLBookmarkPersistenceTests {
 
         let removed = store.pruneInvalidResourceConfigurations(using: manager.validateConfiguration)
 
-        #expect(removed == [WallpaperConfigurationStore.parkedScreenID])
+        #expect(removed.isEmpty)
         let expected = [configuration(refreshed, panel: "uuid:refresh"), other]
         #expect(manager.loadConfigurations() == expected)
         await manager.flushPendingWrites()
         let reloaded = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
         #expect(reloaded.loadConfigurations() == expected)
         await TestScratch.discard(root, flushing: manager, reloaded)
+    }
+
+    @Test("Refreshing a stale bookmark rewrites only its own row, not another row sharing the screenID", arguments: [false, true])
+    func refreshKeepsSameScreenIDNeighbour(isHTML: Bool) async throws {
+        let root = try Self.makeTempDirectory()
+        let folder = root.appendingPathComponent("site", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: folder.appendingPathComponent("index.html"))
+        let resolver = SecurityScopedBookmarkResolver(
+            resolveData: { data in (folder, data == original) },
+            refreshData: { _ in refreshed }
+        )
+        let manager = SettingsManager(
+            directory: ConfigurationDirectory(root: root.appendingPathComponent("configuration", isDirectory: true)),
+            bookmarkResolver: resolver
+        )
+        func configuration(_ bookmark: Data, panel: String) -> ScreenConfiguration {
+            var configuration = ScreenConfiguration(
+                screenID: 980_010,
+                wallpaper: isHTML
+                    ? .html(source: .folder(bookmarkData: bookmark, indexFileName: "index.html"), config: .default)
+                    : .video(bookmarkData: bookmark)
+            )
+            configuration.displayFingerprint = panel
+            return configuration
+        }
+        let neighbour = configuration(Data("untouched".utf8), panel: "uuid:A")
+        manager.replaceAllConfigurations([neighbour, configuration(original, panel: "uuid:B")])
+        let store = WallpaperConfigurationStore(persistence: SettingsManagerScreenConfigurationPersistence(manager: manager))
+
+        #expect(store.pruneInvalidResourceConfigurations(using: manager.validateConfiguration).isEmpty)
+        #expect(manager.loadConfigurations() == [neighbour, configuration(refreshed, panel: "uuid:B")])
+        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("File bookmarks update active and saved copies together")
