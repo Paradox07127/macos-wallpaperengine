@@ -132,38 +132,4 @@ enum MonitorBoardPreviewStrings {
     static var noReadings: LocalizedStringKey {
         "No readings captured yet"
     }
-
-    static var sampleDataCaption: String {
-        String(
-            localized: "Sample data, not this Mac",
-            bundle: .appLanguage,
-            comment: "Inspector board preview caption for the fixed sample-data mode."
-        )
-    }
-
-    static var noSnapshotCaption: String {
-        String(
-            localized: "No readings captured yet",
-            bundle: .appLanguage,
-            comment: "Inspector board preview caption when the desktop has never delivered a reading."
-        )
-    }
-
-    /// `age` is a formatted relative date ("12 seconds ago").
-    static func snapshotAge(_ age: String) -> String {
-        String(
-            format: String(
-                localized: "Frozen: reading from %@",
-                bundle: .appLanguage,
-                comment: "Inspector board preview caption; %@ is a relative time such as \"12 seconds ago\"."
-            ),
-            age
-        )
-    }
-
-    static func relativeAge(_ date: Date, now: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: now)
-    }
 }

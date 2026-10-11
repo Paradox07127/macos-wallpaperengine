@@ -61,7 +61,6 @@ struct GeneralSettingsView: View {
     @State private var loginItemAlert: LoginItemFailure?
 
     @State var pendingImportBundle: ConfigurationBundle?
-    @State var pendingImportSource: URL?
     @State var importFeedback: String?
     @State var importErrorMessage: String?
     @State var exportErrorMessage: String?
@@ -106,19 +105,17 @@ struct GeneralSettingsView: View {
                     get: { pendingImportBundle != nil },
                     set: {
                         if !$0 {
-                            pendingImportBundle = nil; pendingImportSource = nil
+                            pendingImportBundle = nil
                         }
                     }
                 )
             ) {
                 Button("Cancel", role: .cancel) {
                     pendingImportBundle = nil
-                    pendingImportSource = nil
                 }
                 Button("Import", role: .destructive) { applyPendingImport() }
                 Button("Export Current Configuration First") {
                     pendingImportBundle = nil
-                    pendingImportSource = nil
                     beginExportFromAlert()
                 }
             } message: {

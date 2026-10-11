@@ -31,7 +31,7 @@ struct CacheInventoryArbitrationTests {
         #expect(capture.lowerBound < awaitScan.lowerBound, "captured after the await, so it can never go stale")
         #expect(awaitScan.lowerBound < guardLine.lowerBound, "checked staleness before the walk could finish")
 
-        for mutation in ["inventory = scanned", "isLoadingInventory = false", "inventoryScan = nil"] {
+        for mutation in ["inventory = scanned", "inventoryScan = nil"] {
             let write = try #require(body.range(of: mutation), "\(mutation) is gone — re-derive this guard")
             #expect(
                 guardLine.lowerBound < write.lowerBound,

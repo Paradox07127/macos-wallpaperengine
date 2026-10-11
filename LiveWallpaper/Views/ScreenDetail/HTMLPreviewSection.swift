@@ -111,18 +111,6 @@ enum HTMLPreviewKey {
     }
 }
 
-extension Text {
-    func informationOverlayTag(
-        background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
-    ) -> some View {
-        font(DesignTokens.Typography.badge)
-            .textCase(.uppercase)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(background, in: Capsule())
-    }
-}
-
 struct HTMLRenderingDiagnosticsGrid: View {
     let diagnostics: HTMLRenderingDiagnostics
 

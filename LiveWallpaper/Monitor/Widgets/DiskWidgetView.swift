@@ -495,8 +495,6 @@ private func diskMockContext(size: MonitorWidgetSize) -> MonitorWidgetContext {
     history.diskRead = reads
     history.diskWrite = writes
     history.sampleTimes = (0..<reads.count).map { Date().timeIntervalSince1970 - Double(reads.count - $0) }
-    history.diskReadPeak = reads.max() ?? 0
-    history.diskWritePeak = writes.max() ?? 0
     history.diskReadSessionBytes = 4.2 * 1_073_741_824
     history.diskWriteSessionBytes = 1.1 * 1_073_741_824
 

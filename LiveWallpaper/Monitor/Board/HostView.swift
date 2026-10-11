@@ -24,15 +24,6 @@ final class HostView: NSView {
     private(set) var isSuspended = false
     private(set) var preview: MonitorBoardPreview?
 
-    var isInspectorPreview: Bool {
-        preview != nil
-    }
-
-    /// What each tile draws in this host; nil on the desktop, which draws live.
-    var previewTile: MonitorBoardPreview.Tile? {
-        preview?.tile
-    }
-
     /// Live sky for the Weather tile. Nil in the preview and in tests.
     private var weatherService: WeatherReactiveService?
 
@@ -173,12 +164,6 @@ final class HostView: NSView {
     func setSuspended(_ suspended: Bool) {
         guard isSuspended != suspended else { return }
         isSuspended = suspended
-        rebuildRootView()
-    }
-
-    func setPreview(_ preview: MonitorBoardPreview) {
-        guard self.preview != nil, self.preview != preview else { return }
-        self.preview = preview
         rebuildRootView()
     }
 

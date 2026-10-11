@@ -58,7 +58,7 @@ enum NowPlayingNetwork {
     }
 }
 
-private final class AllowListRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+private final class AllowListRedirectPolicy: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

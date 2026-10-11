@@ -67,7 +67,6 @@ extension GeneralSettingsView {
 
             do {
                 let bundle = try ConfigurationPorter.decode(from: source)
-                pendingImportSource = source
                 pendingImportBundle = bundle
             } catch let error as ConfigurationPorter.ImportError {
                 importErrorMessage = error.errorDescription
@@ -86,7 +85,6 @@ extension GeneralSettingsView {
         guard let bundle = pendingImportBundle else { return }
         let summary = ConfigurationPorter.apply(bundle)
         pendingImportBundle = nil
-        pendingImportSource = nil
 
         postSettingsNotificationAsync(.dockVisibilityDidChange)
         postSettingsNotificationAsync(.globalShortcutsDidChange)

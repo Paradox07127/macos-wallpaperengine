@@ -740,14 +740,6 @@ final class SavedLibraryModel {
         url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
-    private func displays(for content: WallpaperContent) -> [CGDirectDisplayID] {
-        #if !LITE_BUILD
-        inputs.nowPlaying(content, nil)
-        #else
-        inputs.nowPlaying(content)
-        #endif
-    }
-
     private static func isSteam(_ id: String?) -> Bool {
         guard let id, !id.isEmpty else { return false }
         return id.allSatisfy(\.isNumber)

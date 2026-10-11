@@ -61,7 +61,6 @@ struct MonitorHistoryPlaceholderTests {
 
         #expect(store.current.sampleTimes == [100, 101, 102, 103])
         #expect(store.current.cpuTotal == [0.4, 0, nil, 0.2])
-        #expect(store.current.cpuPeak == 0.4)
     }
 
     @Test("A measured zero rate is kept while an unsampled one is not")

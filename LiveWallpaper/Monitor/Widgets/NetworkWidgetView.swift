@@ -445,8 +445,6 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
     history.sampleTimes = rx.indices.map { now.timeIntervalSince1970 - Double(rx.count - 1 - $0) }
     history.netRx = rx
     history.netTx = tx
-    history.netRxPeak = 88 * 1_048_576
-    history.netTxPeak = 12 * 1_048_576
     history.netRxSessionBytes = 41.7 * 1_073_741_824
     history.netTxSessionBytes = 6.3 * 1_073_741_824
 

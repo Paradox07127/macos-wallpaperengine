@@ -40,14 +40,5 @@ extension WPECacheManagementView {
         }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
-
-    func openFolderIconButton(_ url: URL, scopeRoot: URL? = nil) -> some View {
-        Button { openFolder(url, scopeRoot: scopeRoot) } label: {
-            Image(systemName: "folder")
-        }
-        .buttonStyle(.borderless)
-        .help(Text("Open Folder"))
-        .accessibilityLabel(Text("Open Folder"))
-    }
 }
 #endif

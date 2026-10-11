@@ -23,7 +23,6 @@ struct ClaudeTranscriptLine {
     var toolNames: [String] // names of tool_use content blocks, in order
     var toolUses: [ToolUse] // tool_use blocks with their ids, in order
     var toolResults: [ToolResult] // tool_result blocks (paired back by tool_use_id)
-    var hasTextOutput: Bool // assistant emitted a text/thinking block
     var usage: Usage? // flattened assistant token usage, if present
 
     /// One tool_use content block, name + optional id (name only — never args).
@@ -77,7 +76,6 @@ struct ClaudeTranscriptLine {
         var tools: [String] = []
         var toolUses: [ToolUse] = []
         var toolResults: [ToolResult] = []
-        var sawText = false
         var sawToolResult = false
         var sawTextContentBlock = false
 
@@ -90,7 +88,6 @@ struct ClaudeTranscriptLine {
                         toolUses.append(ToolUse(name: name, id: block["id"] as? String))
                     }
                 case "text", "thinking":
-                    sawText = true
                     sawTextContentBlock = true
                 case "tool_result":
                     sawToolResult = true
@@ -104,7 +101,6 @@ struct ClaudeTranscriptLine {
         toolNames = tools
         self.toolUses = toolUses
         self.toolResults = toolResults
-        hasTextOutput = sawText
 
         if type == .assistant, let usageDict = message?["usage"] as? [String: Any] {
             usage = Usage(
@@ -167,8 +163,6 @@ struct ClaudeSessionModel {
     /// Cap outstanding calls; a result that never arrives would sit in `outstandingToolIDs` forever (and is persisted).
     static let outstandingToolCap = 64
 
-    private(set) var lastUsageInput: Int?
-    private(set) var lastUsageCacheRead: Int?
     private(set) var recentEventTimes: [Double] = []
     private(set) var recentTools: [MonitorAgentToolEvent] = []
 
@@ -277,8 +271,6 @@ struct ClaudeSessionModel {
 
     private mutating func recordLastUsage(from line: ClaudeTranscriptLine) {
         guard let usage = line.usage else { return }
-        lastUsageInput = usage.input
-        lastUsageCacheRead = usage.cacheRead
         activity.contextTokens = (MonitorTokenTotals(input: max(0, usage.input), output: max(0, usage.cacheRead)) + MonitorTokenTotals(input: max(0, usage.cacheWrite))).total
     }
 

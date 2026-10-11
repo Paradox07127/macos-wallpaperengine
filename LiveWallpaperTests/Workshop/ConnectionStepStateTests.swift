@@ -40,7 +40,7 @@ struct ConnectionStepStateTests {
         // cachedLogin left at .notRun, exactly as it is right after a Locate.
 
         #expect(service.accountStepState == .notStarted)
-        #expect(service.connectionStepState != .attention)
+        #expect(service.steamLibraryAndAccountState != .attention)
     }
 
     @Test("Configuring the library notifies observers of the step state")
@@ -114,7 +114,6 @@ struct ConnectionStepStateTests {
         service.binaryPath = "/tmp/steamcmd"
 
         #expect(service.binaryStepState == .working)
-        #expect(service.connectionStepState != .attention)
     }
 
     @Test("A failing probe is what turns the bar amber")
@@ -125,7 +124,6 @@ struct ConnectionStepStateTests {
         service.setProbe(.binaryIdentity, status: .red(message: "not Valve's binary", command: nil))
 
         #expect(service.binaryStepState == .attention)
-        #expect(service.connectionStepState == .attention)
     }
 
     @Test("A check that ended without a verdict asks for attention and says why")
@@ -143,7 +141,7 @@ struct ConnectionStepStateTests {
         #expect(service.binaryStepState == .working)
     }
 
-    @Test("All three steps green is the only way to read ready")
+    @Test("Library and account both green is the only way to read ready")
     func allStepsGreenReadsAsReady() throws {
         let (service, _) = try makeService()
         let grant = try resolvableBookmark()
@@ -154,7 +152,7 @@ struct ConnectionStepStateTests {
         service.username = "someone"
         service.setProbe(.cachedLogin, status: .green(detail: "someone"))
 
-        #expect(service.connectionStepState == .ready)
+        #expect(service.steamLibraryAndAccountState == .ready)
     }
 
     @Test("Green probes cannot outrank a library grant that no longer resolves")
@@ -167,14 +165,14 @@ struct ConnectionStepStateTests {
         service.setProbe(.cachedLogin, status: .green(detail: "someone"))
 
         #expect(service.libraryStepState == .attention)
-        #expect(service.connectionStepState == .attention)
+        #expect(service.steamLibraryAndAccountState == .attention)
     }
 
     @Test("Nothing set up at all reads as not started")
     func nothingSetUpReadsAsNotStarted() throws {
         let (service, _) = try makeService()
 
-        #expect(service.connectionStepState == .notStarted)
+        #expect(service.steamLibraryAndAccountState == .notStarted)
     }
 }
 #endif

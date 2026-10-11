@@ -161,13 +161,6 @@ struct MonitorHistorySnapshot: Sendable, Equatable {
     var diskRead: [Double?] = []
     var diskWrite: [Double?] = []
 
-    var cpuPeak: Double = 0
-    var gpuPeak: Double = 0
-    var netRxPeak: Double = 0
-    var netTxPeak: Double = 0
-    var diskReadPeak: Double = 0
-    var diskWritePeak: Double = 0
-
     var netRxSessionBytes: Double = 0
     var netTxSessionBytes: Double = 0
     var diskReadSessionBytes: Double = 0
@@ -354,13 +347,6 @@ final class MonitorHistoryStore: ObservableObject {
         trim(&next.diskRead)
         trim(&next.diskWrite)
 
-        next.cpuPeak = Self.peak(next.cpuTotal)
-        next.gpuPeak = Self.peak(next.gpuDevice)
-        next.netRxPeak = Self.peak(next.netRx)
-        next.netTxPeak = Self.peak(next.netTx)
-        next.diskReadPeak = Self.peak(next.diskRead)
-        next.diskWritePeak = Self.peak(next.diskWrite)
-
         next.netRxSessionBytes += sys.netRxBytesPerSec * dt
         next.netTxSessionBytes += sys.netTxBytesPerSec * dt
         next.diskReadSessionBytes += sys.diskReadBytesPerSec * dt
@@ -374,10 +360,6 @@ final class MonitorHistoryStore: ObservableObject {
     private static func sampled(_ sys: MonitorSystemSnapshot, _ key: String) -> Bool {
         guard let samples = sys.metricSamples else { return true }
         return samples[key]?.available ?? false
-    }
-
-    private static func peak(_ series: [Double?]) -> Double {
-        series.lazy.compactMap(\.self).max() ?? 0
     }
 
     private func trim<T>(_ array: inout [T]) {

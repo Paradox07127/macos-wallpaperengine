@@ -986,7 +986,6 @@ private extension MonitorWidgetContext {
         history.cpuTotal = curve
         history.cpuUser = curve.map { $0 * 0.7 }
         history.cpuSystem = curve.map { $0 * 0.3 }
-        history.cpuPeak = 0.63
 
         var snapshot = MonitorSnapshot()
         snapshot.system = sys

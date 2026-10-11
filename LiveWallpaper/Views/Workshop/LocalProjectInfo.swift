@@ -8,10 +8,6 @@ struct LocalProjectInfo: Sendable, Equatable {
     var tags: [String]
     var contentRating: String?
     var sizeBytes: Int64?
-
-    var hasContent: Bool {
-        (cleanedDescription?.isEmpty == false) || !tags.isEmpty
-    }
 }
 
 /// Display-only fields; `WallpaperEngineProject` (the runtime import model)

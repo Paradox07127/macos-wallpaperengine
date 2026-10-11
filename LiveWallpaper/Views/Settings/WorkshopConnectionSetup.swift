@@ -332,13 +332,5 @@ extension SteamCMDDoctorService {
         default: return nil
         }
     }
-
-    var connectionStepState: WorkshopStepState {
-        let steps = [libraryStepState, binaryStepState, accountStepState]
-        if steps.contains(.attention) { return .attention }
-        if steps.allSatisfy({ $0 == .ready }) { return .ready }
-        if steps.contains(.working) { return .working }
-        return .notStarted
-    }
 }
 #endif

@@ -734,7 +734,6 @@ private func gpuPreviewContext(
     if gpuUsage != nil {
         history.gpuDevice = curve
         history.gpuSampleTimes = curve.indices.map { now.timeIntervalSince1970 - Double(curve.count - 1 - $0) * 6 }
-        history.gpuPeak = 0.82
         history.gpuRenderer = curve.enumerated().map { i, v in i == 3 ? nil : min(1, v * 0.79) }
         history.gpuTiler = curve.enumerated().map { i, v in i == 3 ? nil : min(1, v * 0.65) }
     }

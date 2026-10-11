@@ -17,7 +17,6 @@ extension WPECacheManagementView {
         inventoryGeneration &+= 1
         let generation = inventoryGeneration
         isLoading = true
-        isLoadingInventory = true
         let locations = storageLocations
         let externalRoots = [
             exportService.videosDirectory,
@@ -44,7 +43,6 @@ extension WPECacheManagementView {
         inventoryScan = nil
         storageScan = nil
         isLoading = false
-        isLoadingInventory = false
         #if DEBUG
         await refreshTestArtifacts()
         #endif

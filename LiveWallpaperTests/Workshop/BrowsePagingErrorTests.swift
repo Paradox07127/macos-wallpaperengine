@@ -21,7 +21,7 @@ struct BrowsePagingErrorTests {
         #expect(model.totalPages == 2)
         #expect(!model.showsPagingError)
 
-        await model.goToNextPage()
+        await model.goToPage(model.pageIndex + 1)
         #expect(model.pageIndex == 1)
         #expect(model.items.map(\.id) == [1], "the previous page stays on screen")
         #expect(model.lastError != nil)
@@ -50,7 +50,7 @@ struct BrowsePagingErrorTests {
         #expect(model.currentPageIsFilteredOut)
         #expect(model.totalPages == 2)
 
-        await model.goToNextPage()
+        await model.goToPage(model.pageIndex + 1)
         #expect(model.lastError != nil)
         #expect(model.failedPageTarget == 2)
         #expect(model.showsPagingError)

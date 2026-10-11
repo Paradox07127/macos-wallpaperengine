@@ -432,9 +432,6 @@ final class BrowseViewModel {
         _ = await runFetch(request, replacingItems: true, paging: false)
     }
 
-    func goToNextPage() async { await goToPage(pageIndex + 1) }
-    func goToPrevPage() async { await goToPage(pageIndex - 1) }
-
     /// Clamped to `totalPages` when known. Page index commits only on a
     /// successful fetch, so a failed jump leaves the pager consistent.
     func goToPage(_ target: Int) async {

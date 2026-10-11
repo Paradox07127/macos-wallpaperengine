@@ -106,30 +106,6 @@ struct BoardPreviewContentTests {
         #expect(runtime.broker.currentGeneration == generationBefore)
     }
 
-    @Test("an inspector host draws what its preview resolves to")
-    func hostDrawsResolvedPreview() {
-        let configuration = MonitorBoardConfiguration(
-            widgets: [MonitorWidgetPlacement(kind: .cpu, size: .medium)],
-            refreshHz: 1,
-            mouseInteractionEnabled: false
-        )
-        let live = HostView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
-        #expect(live.previewTile == nil, "the desktop board has no preview")
-
-        let host = HostView(
-            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
-            configuration: configuration,
-            preview: MonitorBoardPreview.resolve(mode: .snapshot, latest: delivered())
-        )
-        #expect(host.previewTile == .widget)
-
-        host.setPreview(MonitorBoardPreview.resolve(mode: .names, latest: delivered()))
-        #expect(host.previewTile == .names)
-
-        host.setPreview(MonitorBoardPreview.resolve(mode: .snapshot, latest: nil))
-        #expect(host.previewTile == .empty)
-    }
-
     @Test("sample mode is available with no desktop reading at all")
     func sampleModeIndependentOfDesktop() {
         let preview = MonitorBoardPreview.resolve(mode: .sample, latest: nil)

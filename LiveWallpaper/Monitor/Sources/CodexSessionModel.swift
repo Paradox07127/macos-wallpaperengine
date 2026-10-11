@@ -16,8 +16,6 @@ struct CodexSessionModel: Sendable {
     private(set) var lastTerminalEventIsTaskComplete = false
     private(set) var cwd: String?
 
-    private(set) var lastUsageInput: Int?
-    private(set) var lastUsageCacheRead: Int?
     private(set) var recentEventTimes: [Double] = []
     private(set) var recentTools: [MonitorAgentToolEvent] = []
 
@@ -345,29 +343,19 @@ struct CodexSessionModel: Sendable {
             }
             if let total = info["total_token_usage"] as? [String: Any] {
                 tokens = Self.tokenTotals(from: total)
-                recordLastUsage(from: (info["last_token_usage"] as? [String: Any]) ?? total)
                 return
             }
             if let last = info["last_token_usage"] as? [String: Any] {
                 tokens = tokens + Self.tokenTotals(from: last)
-                recordLastUsage(from: last)
                 return
             }
         }
 
         if let total = payload["total_token_usage"] as? [String: Any] {
             tokens = Self.tokenTotals(from: total)
-            recordLastUsage(from: total)
         } else if let last = payload["last_token_usage"] as? [String: Any] {
             tokens = tokens + Self.tokenTotals(from: last)
-            recordLastUsage(from: last)
         }
-    }
-
-    private mutating func recordLastUsage(from usage: [String: Any]) {
-        let totals = Self.tokenTotals(from: usage)
-        lastUsageInput = totals.input
-        lastUsageCacheRead = totals.cacheRead
     }
 
     // MARK: - State helpers
