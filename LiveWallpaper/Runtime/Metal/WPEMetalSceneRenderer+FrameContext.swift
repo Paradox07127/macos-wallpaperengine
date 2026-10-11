@@ -41,7 +41,7 @@ extension WPEMetalSceneRenderer {
         let clickPointerIsLive = clickEnabled && sample.isInsideView && position != nil && click != nil
         let pointerFrame = if clickPointerIsLive, let position, let click {
             WPEPointerFrame(position: position, clickPosition: click, isDown: frame.isDown, isRightDown: frame.isRightDown,
-                            gesture: frame.gesture)
+                            gesture: frame.gesture, dragged: frame.dragged)
         } else {
             WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
         }

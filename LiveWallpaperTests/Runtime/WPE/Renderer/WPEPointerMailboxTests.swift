@@ -192,6 +192,41 @@ struct WPEPointerMailboxTests {
             #expect(allOK)
         }
     }
+
+    private func desktopFrame(_ down: Bool) -> WPEPointerFrame {
+        var frame = WPEPointerFrame(position: SIMD2(0.25, 0.75), clickPosition: SIMD2(0.5, 0.5),
+                                    isDown: down, isRightDown: false)
+        frame.gesture = 7
+        return frame
+    }
+
+    @Test("With click capture off, desktop press/release queue fromDesktop edges without touching the native frame")
+    func desktopButtonEdgesWhileCaptureOff() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.publishDesktopButtonFrame(desktopFrame(true), isInsideView: true)
+        mailbox.publishDesktopButtonFrame(desktopFrame(true), isInsideView: true)
+        mailbox.publishDesktopButtonFrame(desktopFrame(false), isInsideView: false)
+        let reading = mailbox.read()
+        #expect(reading.pointerFrame == .neutral, "Desktop frames would leak into the shader click uniform")
+        let edges = mailbox.takeButtonEvents(through: reading.buttonCursor).edges
+        #expect(edges.map(\.frame) == [desktopFrame(true), desktopFrame(false)])
+        #expect(edges.map(\.fromDesktop) == [true, true])
+        #expect(edges.map(\.isInsideView) == [true, false])
+    }
+
+    @Test("With click capture on, desktop frames are ignored and native frames queue as before")
+    func desktopButtonIgnoredWhileCaptureOn() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.setClickCaptureEnabled(true)
+        mailbox.publishDesktopButtonFrame(desktopFrame(true), isInsideView: true)
+        #expect(mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges.isEmpty)
+        mailbox.publishPointerFrame(desktopFrame(true))
+        let reading = mailbox.read()
+        #expect(reading.pointerFrame == desktopFrame(true))
+        let edges = mailbox.takeButtonEvents(through: reading.buttonCursor).edges
+        #expect(edges.map(\.frame) == [desktopFrame(true)])
+        #expect(edges.map(\.fromDesktop) == [false])
+    }
 }
 
 @Suite("WPE pointer publisher")

@@ -182,7 +182,7 @@ extension WPEMetalSceneRenderer {
                 present: presentUniforms(),
                 sample: edge.isInsideView ? .inside(edge.frame.position) : .inactive,
                 frame: edge.frame, followEnabled: mouseInteractionEnabled,
-                clickEnabled: inputs.clickCaptureEnabled
+                clickEnabled: inputs.clickCaptureEnabled || edge.fromDesktop
             )
             dispatchLayerHoverEvents(
                 pointer: space.clickPointerIsLive ? space.pointerFrame.position : nil,

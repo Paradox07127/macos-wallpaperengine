@@ -48,7 +48,8 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
 }
 
 @MainActor
-final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
+final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting,
+    SceneDesktopClickReceiving {
     let wallpaperType: WallpaperType = .scene
 
     var spanRenderActor: WPEDisplayRenderActor {
@@ -76,6 +77,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var hasRenderer = true
     private var currentProfile: WallpaperPerformanceProfile = .quality
     private var transitionHold = false
+    /// The "Interaction" toggle as last applied; while on, native click capture owns this screen's clicks.
+    private var clickCaptureEnabled = false
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
     private var requiresSystemAudioCapture = false
     private var lastLoggedAudioDemandInputs = ""
@@ -491,8 +494,26 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
+        clickCaptureEnabled = enabled
         (window as? VideoWallpaperWindow)?.setWallpaperMouseInteractionEnabled(enabled)
         renderActor.submitConfig(.clickCaptureEnabled(enabled))
+    }
+
+    var acceptsDesktopClicks: Bool {
+        isPlaying && !clickCaptureEnabled
+    }
+
+    func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
+        guard acceptsDesktopClicks else { return }
+        let sample = surface.mailbox.sample(screenLocation: location)
+        var frame = WPEPointerFrame(position: sample.position,
+                                    clickPosition: surface.mailbox.sample(screenLocation: pressLocation).position,
+                                    isDown: isDown, isRightDown: false)
+        frame.gesture = gesture
+        frame.dragged = dragged
+        surface.mailbox.publishDesktopButtonFrame(frame, isInsideView: sample.isInsideView)
+        // A static scene's display link may be parked; without this wake the edge waits for the next unrelated frame.
+        Task { [renderActor] in await renderActor.renderFrame() }
     }
 
     func setSceneFitMode(_ mode: VideoFitMode) {

@@ -160,10 +160,35 @@ final class SceneSpanWallpaperGroup {
                                                             gesture: frame.gesture))
         Task { await owner.spanRenderActor.renderFrame() }
     }
+
+    /// Mirrors `reconcile`: one playing member with Interaction on turns click capture on for the shared mailbox.
+    var clickCaptureActive: Bool {
+        sessions.contains { $0.isPlaying && $0.clickEnabled }
+    }
+
+    func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool,
+                              from session: SceneSpanWallpaperSession) {
+        guard session.acceptsDesktopClicks else { return }
+        let canvas = canvasFrame
+        let display = session.displayFrame
+        func canvasUV(_ point: CGPoint) -> SIMD2<Double> {
+            let local = WPEPointerMailbox.pointerSample(forScreenLocation: point,
+                                                        geometry: .init(viewFrameInScreen: display)).position
+            return SIMD2((Double(display.minX - canvas.minX) + local.x * Double(display.width)) / Double(canvas.width),
+                         (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
+        }
+        var frame = WPEPointerFrame(position: canvasUV(location), clickPosition: canvasUV(pressLocation),
+                                    isDown: isDown, isRightDown: false)
+        frame.gesture = gesture
+        frame.dragged = dragged
+        owner.spanSurface.mailbox.publishDesktopButtonFrame(frame, isInsideView: true)
+        Task { await owner.spanRenderActor.renderFrame() }
+    }
 }
 
 @MainActor
-final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRateConfigurable, WallpaperAudioConfigurable {
+final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRateConfigurable, WallpaperAudioConfigurable,
+    SceneDesktopClickReceiving {
     let wallpaperType: WallpaperType = .scene
     let group: SceneSpanWallpaperGroup
     let screenID: CGDirectDisplayID
@@ -334,6 +359,15 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
 
     func setClickCaptureEnabled(_ enabled: Bool) {
         clickEnabled = enabled; reconcile()
+    }
+
+    var acceptsDesktopClicks: Bool {
+        isPlaying && !group.clickCaptureActive
+    }
+
+    func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
+        group.publishDesktopButton(location: location, pressLocation: pressLocation, isDown: isDown,
+                                   gesture: gesture, dragged: dragged, from: self)
     }
 
     func setSceneFitMode(_ mode: VideoFitMode) {

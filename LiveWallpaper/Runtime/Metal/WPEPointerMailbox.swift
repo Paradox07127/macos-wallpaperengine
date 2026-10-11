@@ -22,6 +22,8 @@ final class WPEPointerMailbox: Sendable {
         let cursor: ButtonCursor
         let frame: WPEPointerFrame
         let isInsideView: Bool
+        /// Delivered by the desktop-click observer while the wallpaper stays click-through.
+        let fromDesktop: Bool
     }
 
     struct ButtonBatch: Sendable {
@@ -44,6 +46,8 @@ final class WPEPointerMailbox: Sendable {
         var mouseTimestampNanos: UInt64
         var geometry: Geometry
         var pointerFrame: WPEPointerFrame
+        /// Edge detection for desktop clicks only; `pointerFrame` stays the native path and shader-uniform source.
+        var desktopFrame: WPEPointerFrame = .neutral
         var clickCaptureEnabled: Bool
         var epoch: UInt64 = 0
         var sequence: UInt64 = 0
@@ -108,7 +112,31 @@ final class WPEPointerMailbox: Sendable {
                                                           geometry: state.geometry).isInsideView
             }
             state.edges.append(ButtonEdge(cursor: .init(epoch: state.epoch, sequence: state.sequence),
-                                          frame: frame, isInsideView: eligible))
+                                          frame: frame, isInsideView: eligible, fromDesktop: false))
+        }
+    }
+
+    /// Dropped while click capture is on: that screen's native path already delivers the same press.
+    func publishDesktopButtonFrame(_ frame: WPEPointerFrame, isInsideView: Bool) {
+        lock.withLock { state in
+            guard !state.clickCaptureEnabled else { return }
+            let changed = frame.isDown != state.desktopFrame.isDown
+            state.desktopFrame = frame
+            if state.suppressed {
+                if !frame.isDown {
+                    state.suppressed = false
+                    state.epoch &+= 1
+                }
+                return
+            }
+            guard changed else { return }
+            guard state.edges.count < buttonCapacity else {
+                Self.cancel(&state)
+                return
+            }
+            state.sequence &+= 1
+            state.edges.append(ButtonEdge(cursor: .init(epoch: state.epoch, sequence: state.sequence),
+                                          frame: frame, isInsideView: isInsideView, fromDesktop: true))
         }
     }
 
@@ -129,6 +157,8 @@ final class WPEPointerMailbox: Sendable {
         state.epoch &+= 1
         state.cancelled = true
         state.suppressed = state.pointerFrame.isDown || state.pointerFrame.isRightDown
+        // Otherwise a press cut off here leaves desktopFrame down and the next desktop press is not seen as a change.
+        state.desktopFrame = .neutral
     }
 
     func isCurrentButtonCursor(_ cursor: ButtonCursor) -> Bool {

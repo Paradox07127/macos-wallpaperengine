@@ -508,6 +508,59 @@ struct WPEPointerEdgeDeliveryTests {
         try await waitForEvents("du", renderer: renderer)
     }
 
+    private func desktopPress(_ down: Bool, gesture: UInt64, dragged: Bool = false) -> WPEPointerFrame {
+        var frame = pointer(down)
+        frame.gesture = gesture
+        frame.dragged = dragged
+        return frame
+    }
+
+    private func clickCaptureOffRenderer(script: String) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
+        let scene = try fixture(script: script)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        try await renderer.load()
+        #expect(!renderer.makeFrameInputs().clickCaptureEnabled)
+        return (renderer, scene)
+    }
+
+    @Test("Desktop press and release between frames reach cursor callbacks with Interaction off, all under one gesture")
+    func desktopClickReachesScriptWithoutClickCapture() async throws {
+        // openUserShortcut claims the gesture on the first call, so later callbacks of the same gesture hit the per-click quota.
+        let (renderer, scene) = try await clickCaptureOffRenderer(script: """
+        export function init() { shared.events = ''; }
+        export function update(value) { return value; }
+        function attempt(tag) {
+            try { engine.openUserShortcut('k'); shared.events += tag; }
+            catch (e) { shared.events += e.message.indexOf('per cursor click') >= 0 ? tag.toUpperCase() : '!'; }
+        }
+        export function cursorDown() { attempt('d'); }
+        export function cursorUp() { attempt('u'); }
+        export function cursorClick() { attempt('c'); }
+        """)
+        defer { renderer.cleanup(); scene.cleanup() }
+        let gesture = WPEPointerGesture.next()
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(true, gesture: gesture), isInsideView: true)
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(false, gesture: gesture), isInsideView: true)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("dUC", renderer: renderer)
+    }
+
+    @Test("A dragged desktop release ends the press without synthesizing click")
+    func draggedDesktopReleaseDoesNotClick() async throws {
+        let (renderer, scene) = try await clickCaptureOffRenderer(script: Self.buttonEdgeScript)
+        defer { renderer.cleanup(); scene.cleanup() }
+        let gesture = WPEPointerGesture.next()
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(true, gesture: gesture), isInsideView: true)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(false, gesture: gesture, dragged: true), isInsideView: true)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("du", renderer: renderer)
+    }
+
     @Test("Disable/reload drops old clicks and a fresh click reaches the replacement scene")
     func disableAndReloadDiscardOldClicks() async throws {
         let scene = try fixture()

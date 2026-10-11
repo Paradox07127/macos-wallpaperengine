@@ -79,6 +79,34 @@ struct SceneSpanGroupTests {
         #expect(emptied == 1)
     }
 
+    @Test("A desktop press on a member display reaches the owner's mailbox in canvas UV; Interaction on refuses it")
+    func desktopPressMapsToCanvasUV() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        // A stand-in left display: canvas (0,0,200,200), member display (100,0,100,100).
+        let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
+                                            density: 1, displayFrames: [screen.id &+ 1: CGRect(x: 0, y: 0, width: 100, height: 200)])
+        let member = try group.makeMember(for: screen, configuration: Self.configuration(for: screen))
+        defer { member.cleanup() }
+        member.updateFrame(to: CGRect(x: 100, y: 0, width: 100, height: 100))
+        try #require(group.canvasFrame == CGRect(x: 0, y: 0, width: 200, height: 200))
+        #expect(member.acceptsDesktopClicks)
+
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 75), pressLocation: CGPoint(x: 125, y: 50),
+                                    isDown: true, gesture: 9, dragged: false)
+        let mailbox = owner.spanSurface.mailbox
+        let edges = mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges
+        #expect(edges.map(\.frame.position) == [SIMD2(0.75, 0.625)])
+        #expect(edges.map(\.frame.clickPosition) == [SIMD2(0.625, 0.75)])
+        #expect(edges.map(\.frame.gesture) == [9])
+        #expect(edges.map(\.fromDesktop) == [true])
+        #expect(edges.map(\.isInsideView) == [true])
+
+        member.setClickCaptureEnabled(true)
+        #expect(!member.acceptsDesktopClicks)
+    }
+
     @Test("A member joining a failed shared runtime reloads it instead of inheriting the old error")
     func joiningFailedRuntimeRetriesLoad() async throws {
         let (owner, actor) = try Self.makeOwner()

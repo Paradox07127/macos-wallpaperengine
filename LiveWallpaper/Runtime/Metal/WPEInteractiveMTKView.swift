@@ -106,6 +106,8 @@ struct WPEPointerFrame: Equatable, Sendable {
     var isRightDown: Bool
     /// Left-press identity shared by its down/up/click; 0 = no physical press.
     var gesture: UInt64 = 0
+    /// True once the pointer moved past the drag threshold since this press; its release synthesises no click.
+    var dragged = false
 
     static let neutral = WPEPointerFrame(
         position: SIMD2<Double>(0.5, 0.5),

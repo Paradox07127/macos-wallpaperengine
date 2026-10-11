@@ -854,7 +854,7 @@ extension WPEMetalSceneRenderer {
             var batch: [WPELayerScriptCursorEvent] = []
             for event in events {
                 batch.append(event)
-                if event == .up,
+                if event == .up, !current.dragged,
                    layerPressStates[objectID] == true,
                    layerHoverStates[objectID] == true {
                     batch.append(.click)
