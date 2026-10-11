@@ -30,7 +30,7 @@ extension PlaybackCoordinator {
 
     func updateVideoVolume(_ volume: Double, for screen: Screen) {
         guard var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        let clampedVolume = Self.clampedVideoVolume(volume)
+        let clampedVolume = DisplayPlaybackDefaults.clampedVolume(volume)
         guard abs(configuration.videoVolume - clampedVolume) > 0.001 else { return }
 
         configuration.videoVolume = clampedVolume

@@ -22,8 +22,6 @@ protocol SceneWallpaperRuntime: WallpaperPlaybackControllable, WallpaperIntentMa
     var audioController: (any WallpaperAudioConfigurable)? { get }
     func pollRendererState() async
     func captureLivePosterFromNextFrame() async -> NSImage?
-    func applyPreviewPerformanceProfile(_ profile: WallpaperPerformanceProfile)
-    func clearPreviewPerformanceOverride()
     func setHibernationEligible(_ eligible: Bool)
     func setMouseInteractionEnabled(_ enabled: Bool)
     func setClickCaptureEnabled(_ enabled: Bool)

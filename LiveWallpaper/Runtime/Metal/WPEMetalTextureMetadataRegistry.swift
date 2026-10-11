@@ -192,7 +192,7 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         var result = Census()
         var items: [(String, Int, Int, Int, String)] = []
         for texture in live {
-            let bytes = Self.approximateBytes(of: texture)
+            let bytes = WPEMetalTextureByteEstimator.estimatedBytes(of: texture)
             let label = texture.label ?? "(unlabelled)"
             let category = Self.category(for: label)
             if label.hasSuffix(Self.aliasLabelSuffix) {
@@ -233,10 +233,6 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
             return entry.name
         }
         return label.split(separator: " ").prefix(2).joined(separator: " ")
-    }
-
-    private static func approximateBytes(of texture: MTLTexture) -> Int {
-        WPEMetalTextureByteEstimator.estimatedBytes(of: texture)
     }
 }
 #endif

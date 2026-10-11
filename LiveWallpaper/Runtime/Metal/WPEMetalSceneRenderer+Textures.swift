@@ -698,7 +698,7 @@ extension WPEMetalSceneRenderer {
         for candidate in textureCandidates(for: relativePath) {
             try Task.checkCancellation()
             do {
-                if shouldTryTexturePayload(candidate) {
+                if Self.shouldTryTexturePayload(candidate) {
                     do {
                         if let streaming = try resolveStreamingPayloadIfHeavy(candidate) {
                             let source = try textureLoader.makeLazyAnimatedTextureSource(
@@ -1169,10 +1169,6 @@ extension WPEMetalSceneRenderer {
         loadedTextures.removeAll()
         loadedTextureSamplingDescriptors.removeAll()
         resetTextureCacheBudgetState()
-    }
-
-    private func shouldTryTexturePayload(_ path: String) -> Bool {
-        Self.shouldTryTexturePayload(path)
     }
 
     /// Mirrors the resolver's payload-path rule (`.json` follows its reference first): any other suffix only fails the

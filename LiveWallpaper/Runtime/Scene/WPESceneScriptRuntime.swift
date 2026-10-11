@@ -185,7 +185,6 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
         var consumedGeneration: UInt64 = 0
         var nextTickGeneration: UInt64 = 0
         var inFlightTickGeneration: UInt64?
-        var tickStartedAtUptimeNanos: UInt64?
         var lastCompletedTickGeneration: UInt64?
     }
 
@@ -214,7 +213,6 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
             guard s.inFlightTickGeneration == nil else { return nil }
             s.nextTickGeneration &+= 1
             s.inFlightTickGeneration = s.nextTickGeneration
-            s.tickStartedAtUptimeNanos = DispatchTime.now().uptimeNanoseconds
             return Claim(generation: s.nextTickGeneration)
         }
     }
@@ -225,7 +223,6 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
         state.withLock { s in
             guard s.inFlightTickGeneration == claim.generation else { return false }
             s.inFlightTickGeneration = nil
-            s.tickStartedAtUptimeNanos = nil
             return true
         }
     }
@@ -241,7 +238,6 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
         state.withLock { s in
             guard s.inFlightTickGeneration == claim.generation else { return false }
             s.inFlightTickGeneration = nil
-            s.tickStartedAtUptimeNanos = nil
             Self.store(outcome, into: &s, combine: combine)
             s.lastCompletedTickGeneration = claim.generation
             return true

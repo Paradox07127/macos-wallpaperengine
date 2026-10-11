@@ -15,11 +15,6 @@ extension PlaybackCoordinator {
         configurationCommands.remove(for: screenID)
     }
 
-    static func clampedVideoVolume(_ value: Double) -> Double {
-        guard value.isFinite else { return 1.0 }
-        return min(max(value, 0), 1)
-    }
-
     func syncVideoAudioLeadership() {
         let screens = screensProvider()
         let entries = screens.compactMap { screen -> VideoAudioLeadershipPolicy.Entry? in

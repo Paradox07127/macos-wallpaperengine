@@ -320,14 +320,6 @@ struct WPEEffectDispatchDescriptor: Sendable {
                     let scale = WPEMetalShaderInputs.floatScalar(named: ["g_Scale", "scale"], in: pass, default: 200)
                     let strength = WPEMetalShaderInputs.floatScalar(named: ["g_Strength", "strength"], in: pass, default: 0.1)
 
-                    if !executor.loggedWaterWavesDispatch {
-                        executor.loggedWaterWavesDispatch = true
-                        Logger.info(
-                            "WPE waterwaves dispatch ran (builtin effect_waterwaves): hasMask=\(hasMask) mask=\(maskTexture.width)x\(maskTexture.height) dest=\(destination.texture.width)x\(destination.texture.height) speed=\(speed) scale=\(scale) strength=\(strength)",
-                            category: .wpeRender
-                        )
-                    }
-
                     let maskResolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: maskTexture)
                     var uniforms = WPEWaterWavesUniforms(
                         time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: executor.frameUniformContext, default: 0),

@@ -31,19 +31,6 @@ func wpeInstallInitialLayerConfiguration(
     scene.setObject(get, forKeyedSubscript: "getInitialLayerConfig" as NSString)
 }
 
-func wpeInitialLayerConfigurationLookup(_ value: JSValue, shared: WPESharedScriptState?) -> WPESceneJSONValue? {
-    if value.isString, let name = value.toString() {
-        return shared?.layers.first(where: { $0.name == name })?.initialConfiguration
-    }
-    if value.isNumber {
-        let index = Int(value.toInt32())
-        let layers = shared?.orderedLayerInfos() ?? []
-        guard layers.indices.contains(index) else { return nil }
-        return layers[index].initialConfiguration
-    }
-    return nil
-}
-
 func wpeCreatedInitialLayerConfiguration(_ specification: JSValue, in context: JSContext) -> WPESceneJSONValue? {
     if specification.isString, let image = specification.toString() {
         return .object(["image": .string(image)])

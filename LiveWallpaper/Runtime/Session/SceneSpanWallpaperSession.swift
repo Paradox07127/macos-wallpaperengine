@@ -174,7 +174,6 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     private(set) var stopped = false
     private(set) var presentation: VideoSpanRenderConfiguration
     private var profile: WallpaperPerformanceProfile = .quality
-    private var preview: WallpaperPerformanceProfile?
     var playbackMachine = WallpaperPlaybackStateMachine()
     private(set) var displayFrame: CGRect
     private(set) var frameRateCeiling: Int
@@ -226,7 +225,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     var isPlaying: Bool {
-        !stopped && userIntendsToPlay && profile == .quality && preview != .suspended
+        !stopped && userIntendsToPlay && profile == .quality
     }
 
     var isHibernated: Bool {
@@ -302,14 +301,6 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         self.profile = profile; reconcile()
-    }
-
-    func applyPreviewPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
-        preview = profile == .quality ? nil : profile; reconcile()
-    }
-
-    func clearPreviewPerformanceOverride() {
-        preview = nil; reconcile()
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {

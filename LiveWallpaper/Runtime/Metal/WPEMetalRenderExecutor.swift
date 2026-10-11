@@ -655,7 +655,6 @@ final class WPEMetalRenderExecutor {
         stagedTextureWork = sources
     }
 
-    var loggedWaterWavesDispatch = false
     private(set) var currentSceneSize: CGSize = .zero
 
     /// `.inactive` until planned, so an executor that is never planned renders at full resolution — the pre-feature path, bit for bit.

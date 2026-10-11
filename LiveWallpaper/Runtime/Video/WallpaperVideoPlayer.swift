@@ -865,7 +865,7 @@ final class WallpaperVideoPlayer {
     }
 
     func setPlaybackSpeed(_ speed: Double) {
-        let clamped = Self.clampedPlaybackSpeed(speed)
+        let clamped = DisplayPlaybackDefaults.clampedPlaybackSpeed(speed)
         playbackSpeed = clamped
         player?.defaultRate = Float(clamped)
         if player?.timeControlStatus == .playing {
@@ -881,7 +881,7 @@ final class WallpaperVideoPlayer {
     }
 
     func setVolume(_ volume: Double) {
-        let clampedVolume = Self.clampedVolume(volume)
+        let clampedVolume = DisplayPlaybackDefaults.clampedVolume(volume)
         guard abs(audioVolume - clampedVolume) > 0.001 else { return }
         audioVolume = clampedVolume
         updatePlayerAudioOutput()
@@ -912,17 +912,6 @@ final class WallpaperVideoPlayer {
         for track in playerItem.tracks where track.assetTrack?.mediaType == .audio {
             track.isEnabled = enable
         }
-    }
-
-    private static func clampedVolume(_ value: Double) -> Double {
-        guard value.isFinite else { return 1.0 }
-        return min(max(value, 0), 1)
-    }
-
-    /// Same [0.25, 4.0] range as DisplayPlaybackDefaults.clampedPlaybackSpeed (Packages/LiveWallpaperCore/.../DisplayDefaults.swift).
-    private static func clampedPlaybackSpeed(_ value: Double) -> Double {
-        guard value.isFinite else { return 1.0 }
-        return min(max(value, 0.25), 4.0)
     }
 
     private func installQueueItemMaintenanceObserver() {
@@ -1405,7 +1394,7 @@ final class WallpaperVideoPlayer {
             }
         } else {
             isHibernationEligible = false
-            cancelHibernationDwell()
+            hibernationDwell.cancel()
             resumeFromHibernationIfNeeded()
         }
     }
@@ -1415,7 +1404,7 @@ final class WallpaperVideoPlayer {
         isHibernationEligible = eligible
         // Deliberately not gated on `player != nil`: a wake rebuilds the player asynchronously, so an absence returning during that window would cancel the dwell and never see another push; `hibernateNow` treats a missing player as transient instead.
         guard eligible, !isCleanedUp, !isHibernated, isSuspended else {
-            cancelHibernationDwell()
+            hibernationDwell.cancel()
             return
         }
         hibernationDwell.arm(initial: immediately ? .zero : hibernationDelay, retry: hibernationDelay) {
@@ -1423,10 +1412,6 @@ final class WallpaperVideoPlayer {
             guard let self else { return true }
             return await hibernateNow()
         }
-    }
-
-    private func cancelHibernationDwell() {
-        hibernationDwell.cancel()
     }
 
     /// Returns false only on a transient blocker (an in-flight load or frame-rate build) so the countdown re-arms; true when hibernated or no longer applicable.
@@ -1593,7 +1578,7 @@ final class WallpaperVideoPlayer {
         Logger.debug("Cleaning up video player resources", category: .videoPlayer)
 
         isHibernationEligible = false
-        cancelHibernationDwell()
+        hibernationDwell.cancel()
         pause()
         retirePlaybackState()
 

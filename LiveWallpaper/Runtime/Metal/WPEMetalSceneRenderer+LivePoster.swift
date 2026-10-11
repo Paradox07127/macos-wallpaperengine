@@ -90,30 +90,12 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    nonisolated private static func capturePendingLivePostersAfterPresent(
-        _ batch: LivePosterCaptureBatch,
-        from texture: MTLTexture,
-        commandBuffer: MTLCommandBuffer,
-        releaseSource: @escaping @Sendable () -> Void
-    ) {
-        batch.captureAfterPresent(
-            from: texture,
-            completed: commandBuffer.status == .completed,
-            releaseSource: releaseSource
-        )
-    }
-
     static func livePosterPresentCompletion(
         for batch: LivePosterCaptureBatch?
     ) -> (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? {
         guard let batch else { return nil }
         return { source, commandBuffer, releaseSource in
-            Self.capturePendingLivePostersAfterPresent(
-                batch,
-                from: source,
-                commandBuffer: commandBuffer,
-                releaseSource: releaseSource
-            )
+            batch.captureAfterPresent(from: source, completed: commandBuffer.status == .completed, releaseSource: releaseSource)
         }
     }
 

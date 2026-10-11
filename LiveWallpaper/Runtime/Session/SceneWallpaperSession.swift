@@ -75,7 +75,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// True while a renderer is adopted (construction → cleanup).
     private var hasRenderer = true
     private var currentProfile: WallpaperPerformanceProfile = .quality
-    private var previewProfileOverride: WallpaperPerformanceProfile?
     private var transitionHold = false
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
     private var requiresSystemAudioCapture = false
@@ -103,7 +102,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var didStartLoad = false
     private var loadTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
-    private var cleanupTask: Task<Void, Never>?
     private var diagnosticPollTask: Task<Void, Never>?
     private let diagnosticSessionID = UUID()
     /// nil until a renderer poll has recorded a testing-report entry.
@@ -159,8 +157,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private var unheldPerformanceProfile: WallpaperPerformanceProfile {
         guard userIntendsToPlay,
-              currentProfile == .quality,
-              previewProfileOverride != .suspended else {
+              currentProfile == .quality else {
             return .suspended
         }
         return .quality
@@ -264,18 +261,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         return WallpaperFrameCapture(texture: capture.texture, colorSpace: capture.colorSpace, isEDR: capture.isEDR)
     }
 
-    /// .quality clears the override; it does not force play over a folded suspension.
-    func applyPreviewPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
-        previewProfileOverride = profile == .quality ? nil : profile
-        applyEffectivePerformanceProfile()
-    }
-
-    func clearPreviewPerformanceOverride() {
-        previewProfileOverride = nil
-        applyEffectivePerformanceProfile()
-    }
-
-    /// Pins the effective profile to `.suspended` over policy, preview and intent until released.
+    /// Pins the effective profile to `.suspended` over policy and intent until released.
     func setTransitionHold(_ held: Bool) {
         transitionHold = held
         applyEffectivePerformanceProfile()
@@ -549,8 +535,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         startupTask = nil
         loadTask?.cancel()
         loadTask = nil
-        // cleanup() is sync; drain happens in the retained task so teardown cannot overtake adopt/load.
-        cleanupTask = Task {
+        // cleanup() is sync; drain happens in this task so teardown cannot overtake adopt/load.
+        Task {
             startup?.cancel()
             await displayLinkStopTask?.value
             await startup?.value

@@ -932,8 +932,8 @@ struct WPEMetalSceneRendererTests {
         #expect(session.rendererDiagnostics?.resolution.events.count == eventCount)
     }
 
-    @Test("System audio demand requires scene opt-in and releases during preview suspension")
-    func previewSuspensionReconcilesSystemAudioDemand() async throws {
+    @Test("System audio demand requires scene opt-in and releases during suspension")
+    func suspensionReconcilesSystemAudioDemand() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let surface = WPERenderSurface(
             frame: CGRect(x: 0, y: 0, width: 64, height: 64),
@@ -964,12 +964,7 @@ struct WPEMetalSceneRendererTests {
         #expect(demand.consumerCount == 1)
         #expect(session.isPlaying)
 
-        session.applyPreviewPerformanceProfile(.suspended)
-        #expect(demand.consumerCount == 0)
-        #expect(!session.isPlaying)
-
         session.applyPerformanceProfile(.suspended)
-        session.clearPreviewPerformanceOverride()
         #expect(demand.consumerCount == 0)
         #expect(!session.isPlaying)
 
@@ -977,15 +972,9 @@ struct WPEMetalSceneRendererTests {
         #expect(demand.consumerCount == 1)
         session.pause()
         #expect(demand.consumerCount == 0)
-        session.applyPreviewPerformanceProfile(.suspended)
-        session.clearPreviewPerformanceOverride()
-        #expect(demand.consumerCount == 0)
 
         session.play()
         #expect(demand.consumerCount == 1)
-        session.applyPreviewPerformanceProfile(.suspended)
-        #expect(demand.consumerCount == 0)
-        #expect(demand.retainCount == demand.releaseCount)
     }
 
     @Test("Transition hold freezes the scene and its audio without reporting a pause")
