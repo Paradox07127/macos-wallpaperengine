@@ -187,6 +187,22 @@ struct SceneSettingsOwnerTests {
         #expect(reports.first?.after == after)
     }
 
+    @Test("A user shortcut row is visible but never an override or a change")
+    func userShortcutIsVisibleWithoutOverride() throws {
+        let harness = try Harness(displayID: 0xED33_000C)
+        defer { harness.close() }
+        let json = #"{"general":{"properties":{"launch":{"type":"usershortcut","text":"Launch","value":"","order":0},"gain":{"type":"slider","text":"Gain","value":0,"min":0,"max":1,"order":1}}}}"#
+        let owner = try SceneSettingsOwner(
+            screen: harness.screen, screenManager: harness.manager,
+            descriptor: SceneDescriptor(workshopID: "probe", cacheRelativePath: "probe", entryFile: "scene.json", capabilityTier: .imageOnly),
+            schema: WallpaperEngineProjectPropertySchema.parse(data: Data(json.utf8))
+        )
+        #expect(owner.editor.presentation?.visibleKeys.contains("launch") == true)
+        #expect(owner.changedSettingCount == 0)
+        #expect(owner.editor.overrides.isEmpty)
+        #expect(owner.editor.layeredValues["launch"] == nil)
+    }
+
     enum UndoableEdit: CaseIterable {
         case preset, reset
 

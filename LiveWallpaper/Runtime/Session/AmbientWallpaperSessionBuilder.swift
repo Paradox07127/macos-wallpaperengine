@@ -361,6 +361,11 @@ final class AmbientWallpaperSessionBuilder {
         }
 
         renderer.spanFrames = spanFrames
+        UserShortcutRendererLink.shared.attach(
+            renderer.userShortcutBridge,
+            wallpaperID: descriptor.workshopID,
+            declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot ?? cacheURL)
+        )
         if spanFrames != nil {
             renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
         }

@@ -5,17 +5,16 @@ import SwiftUI
 enum WPEPropertyRowIcon {
     static func symbol(for type: WallpaperEngineProjectPropertySchema.PropertyType) -> String {
         switch type {
-        case .bool:        return "switch.2"
-        case .slider:      return "slider.horizontal.3"
-        case .combo:       return "list.bullet"
-        case .color:       return "paintpalette"
-        case .textinput:   return "character.cursor.ibeam"
-        case .file:        return "doc.badge.plus"
-        case .directory:   return "folder.badge.plus"
-        case .sceneTexture: return "photo.badge.plus"
-        case .userShortcut: return "lock.shield"
-        case .group, .text, .unsupported:
-            return "questionmark"
+        case .bool: "switch.2"
+        case .slider: "slider.horizontal.3"
+        case .combo: "list.bullet"
+        case .color: "paintpalette"
+        case .textinput: "character.cursor.ibeam"
+        case .file: "doc.badge.plus"
+        case .directory: "folder.badge.plus"
+        case .sceneTexture: "photo.badge.plus"
+        case .userShortcut: "bolt.circle"
+        case .group, .text, .unsupported: "questionmark"
         }
     }
 }

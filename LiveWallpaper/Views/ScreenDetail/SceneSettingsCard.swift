@@ -526,6 +526,13 @@ struct SceneSettingsRows: View {
                     .accessibilityLabel(title)
             }
             .wpeAuthorLabelHelp(titleHelp)
+        case .userShortcut:
+            UserShortcutBindingRow(
+                wallpaperID: owner.descriptor.workshopID,
+                propertyKey: property.key,
+                title: title,
+                iconColor: rowIconColor
+            )
         // Only the interactive types reach here: the presentation's `isInteractive`
         // filter drops file/directory/text/unsupported and turns `group` into a
         // section boundary before any row is built.
