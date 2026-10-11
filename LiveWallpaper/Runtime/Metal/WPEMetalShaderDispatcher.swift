@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
-/// Puppet/model/text never reach here (executor encodes them). Absent compose slot 1 / image-4 mask / effect mask rebinds slot 0 (clears has-mask); godrays_combine slot 2 absent rebinds albedo and clears copy-background.
+/// Model/text and non-deferred puppet material passes never reach here (executor encodes them); a deferred-warp puppet's do. Absent compose slot 1 / image-4 mask / effect mask rebinds slot 0 (clears has-mask); godrays_combine slot 2 absent rebinds albedo and clears copy-background.
 /// Buffers: fragment uniforms=0, object/shape-quad vertex uniforms=1, skew params=2.
 struct WPEMetalShaderDispatcher {
     let executor: WPEMetalRenderExecutor
@@ -115,6 +115,19 @@ struct WPEMetalShaderDispatcher {
         switch WPEBuiltinShaderKind(normalizing: shaderName) {
         case nil, .genericImage2, .genericImage4, .genericParticle: true
         default: false
+        }
+    }
+
+    /// Whether the route `dispatch` picks for this graph pass binds the usershortcut icon at `slot`.
+    /// Graph-level: a puppet/model layer's material pass counts as unsupported even when its warp would be deferred.
+    static func substitutesUserShortcutIcon(pass: WPERenderPass, layer: WPERenderLayer, slot: Int) -> Bool {
+        if pass.phase == .material, layer.puppetPath != nil { return false }
+        if WPEBuiltinShaderName.isGodraysCombine(pass.shader) { return false }
+        switch WPEBuiltinShaderKind(normalizing: pass.shader) {
+        case nil, .genericParticle: return true
+        case .genericImage2: return slot == 0
+        case .genericImage4: return slot == 0 || (slot == 1 && (pass.binds[1] ?? pass.textures[1]) != nil)
+        default: return false
         }
     }
 

@@ -41,6 +41,8 @@ enum WPEMetalStaticLayerClassifier {
                       // A script-gated pass turns on and off at runtime, so the layer's
                       // composite is not frame-invariant even when every input is.
                       pass.pass.visibilityGate == nil,
+                  // `$media*` and usershortcut slots swap textures at runtime; a cached composite would keep the old one.
+                  pass.pass.userTextureBindings.isEmpty,
                   !usesAnimatedShader(pass),
                   !hasAnimatedConstant(pass) else { return nil }
 

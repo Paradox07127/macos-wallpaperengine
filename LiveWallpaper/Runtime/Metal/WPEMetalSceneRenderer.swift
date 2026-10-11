@@ -126,7 +126,7 @@ final class WPEMetalSceneRenderer: NSObject {
     var lastHoverPointerPixels: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
     let userShortcutBridge = WPEUserShortcutScriptBridge()
-    /// Outlives scene reloads: the link owns the icons, each load only replaces the slot table.
+    /// Outlives scene reloads: the renderer owns the store; `UserShortcutRendererLink` holds it weakly and is its only writer.
     let userShortcutIconStore: WPEUserShortcutIconStore
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth

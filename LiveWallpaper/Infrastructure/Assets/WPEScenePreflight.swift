@@ -165,21 +165,28 @@ enum WPEShaderImplementationInventory {
         }
     }
 
-    /// `substitutesMedia(shader)`: whether the runtime route for that shader name swaps `$media*` slots;
-    /// passed in because the answer lives in Runtime, which Infrastructure must not name.
+    /// `substitutesMedia(shader)`: whether the runtime route for that shader name swaps `$media*` slots.
     static func graphEntries(
         graph: WPERenderGraph,
         substitutesMedia: (String) -> Bool
     ) -> [WPEShaderImplementationInventoryEntry] {
         graph.layers.flatMap { layer in
             layer.passes.compactMap { pass in
+                let identity = pass.authoredJSON.effectIdentity
                 guard !pass.userTextureBindings.isEmpty,
-                      let identity = pass.authoredJSON.effectIdentity else {
+                      identity != nil || pass.phase == .material else {
                     return nil
                 }
                 let mediaConsumed = substitutesMedia(pass.shader)
                 func unconsumed(_ bindings: [WPESceneUserTextureBinding]) -> Bool {
-                    mediaConsumed ? containsUnsupportedUserTexture(bindings) : !bindings.isEmpty
+                    bindings.contains { binding in
+                        if WPEMediaSystemTexture(bindingName: binding.name) != nil {
+                            return !mediaConsumed
+                        }
+                        // The runtime icon demand skips slot-less bindings, so they never get an icon.
+                        guard binding.type?.lowercased() == "usershortcut", let slot = binding.slot else { return true }
+                        return !WPEMetalShaderDispatcher.substitutesUserShortcutIcon(pass: pass, layer: layer, slot: slot)
+                    }
                 }
                 var sources: [String] = []
                 if unconsumed(pass.userTextureBindings.material) {
@@ -193,11 +200,11 @@ enum WPEShaderImplementationInventory {
                 }
                 guard !sources.isEmpty else { return nil }
                 return WPEShaderImplementationInventoryEntry(
-                    stableEffectID: identity.stableEffectID,
-                    stablePassID: identity.stablePassID,
-                    authoredOverrideID: identity.authoredOverrideID,
+                    stableEffectID: identity?.stableEffectID ?? "\(layer.objectID):material",
+                    stablePassID: identity?.stablePassID ?? "\(layer.objectID):material:\(pass.id)",
+                    authoredOverrideID: identity?.authoredOverrideID,
                     renderPassID: pass.id,
-                    authoredEffectPath: identity.authoredEffectPath,
+                    authoredEffectPath: identity?.authoredEffectPath ?? layer.materialPath ?? layer.imagePath,
                     authoredShaderPath: pass.shader,
                     classification: .unsupportedMetadataOnly,
                     consumerDisposition: .noRuntimeTextureProviderConsumer,

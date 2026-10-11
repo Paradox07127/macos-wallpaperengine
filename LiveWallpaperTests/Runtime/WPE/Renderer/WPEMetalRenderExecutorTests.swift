@@ -6270,6 +6270,17 @@ private extension WPEMetalRenderExecutorTests {
         ) == nil)
     }
 
+    @Test("Layers with user textures are not cached")
+    func userTextureLayerIsNotCached() {
+        let layer = staticCachePreparedLayer(
+            shaderNames: ["genericimage4", "compose", "commands/copy"],
+            firstPassUserTextures: WPERenderUserTextureBindings(
+                material: [WPESceneUserTextureBinding(name: "shortcut", type: "usershortcut", slot: 0)]
+            )
+        )
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(for: layer, dynamicTextureNames: []) == nil)
+    }
+
     @Test("Single-pass layers are below the cache cost gate")
     func singlePassLayerIsNotCached() {
         #expect(WPEMetalStaticLayerClassifier.cachePlan(
@@ -6354,6 +6365,7 @@ private func staticCachePreparedLayer(
     isBuiltin: Bool = true,
     injectReadIntoFirstPass: WPETextureReference? = nil,
     firstPassConstants: [String: WPESceneShaderConstantValue] = [:],
+    firstPassUserTextures: WPERenderUserTextureBindings = .empty,
     extraScenePass: Bool = false
 ) -> WPEPreparedRenderLayer {
     let compA = "_rt_imageLayerComposite_static_a"
@@ -6381,6 +6393,7 @@ private func staticCachePreparedLayer(
             binds: [:],
             constants: index == 0 ? firstPassConstants : [:],
             combos: [:],
+            userTextureBindings: index == 0 ? firstPassUserTextures : .empty,
             blending: "disabled",
             cullMode: "nocull",
             depthTest: "disabled",
