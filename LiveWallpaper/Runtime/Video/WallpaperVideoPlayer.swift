@@ -1348,8 +1348,10 @@ final class WallpaperVideoPlayer {
             let scale = min(1, maximumDimension / max(ciImage.extent.width, ciImage.extent.height))
             ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
+        // The default output space is sRGB, which would clip a wide-gamut frame for good.
+        let colorSpace = ciImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         let context = CIContext()
-        return context.createCGImage(ciImage, from: ciImage.extent)
+        return context.createCGImage(ciImage, from: ciImage.extent, format: .RGBA8, colorSpace: colorSpace)
     }
 
     // MARK: - Video Output Ownership

@@ -136,10 +136,35 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
         #expect(harness.player.boundVideoOutputCountForTesting == 0)
         let image = try #require(await harness.player.currentFrameImage())
         let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        let pixel = try #require(NSBitmapImageRep(cgImage: cgImage).colorAt(x: cgImage.width / 4, y: cgImage.height * 3 / 4)?.usingColorSpace(.deviceRGB))
-        let actual = (Int((pixel.redComponent * 255).rounded()), Int((pixel.greenComponent * 255).rounded()), Int((pixel.blueComponent * 255).rounded()), 255)
+        let cover = try Self.pixels(of: cgImage, in: Self.sRGB)
+        let actual = cover.rgba(x: cover.width / 4, y: cover.height * 3 / 4)
         print("hibernate cover effect pixel: \(actual), displayed: \(expected)")
-        expectColor((actual.0, actual.1, actual.2, actual.3), (expected.r, expected.g, expected.b, expected.a), "hibernation still matches the composited picture")
+        expectColor(actual, (expected.r, expected.g, expected.b, expected.a), "hibernation still matches the composited picture")
+    }
+
+    @Test("The deep-hibernation cover keeps a Display P3 source's gamut")
+    func hibernationCoverKeepsWideGamut() async throws {
+        let harness = try await Harness.make(
+            fitMode: .aspectFill,
+            solidBGRA: [0, 0xFF, 0, 0xFF],
+            colorPrimaries: AVVideoColorPrimaries_P3_D65
+        )
+        defer { harness.cleanup() }
+        try await harness.waitUntilPlaying()
+
+        harness.player.pause()
+        harness.player.setSuspended(true)
+        harness.player.setHibernationEligible(true, immediately: true)
+        try await Harness.waitUntil("the cover replaces the player") { harness.player.isHibernated }
+        let image = try #require(await harness.player.currentFrameImage())
+        let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let colorSpace = try #require(cgImage.colorSpace)
+        #expect(colorSpace.isWideGamutRGB, "cover was flattened to \(String(describing: colorSpace.name))")
+
+        // sRGB's own green reads about (117, 251, 76) in Display P3; a P3-green source must stay well past it.
+        let cover = try Self.pixels(of: cgImage, in: #require(CGColorSpace(name: CGColorSpace.displayP3)))
+        let actual = cover.rgba(x: cover.width / 2, y: cover.height / 2)
+        #expect(actual.g > 230 && actual.r < 40 && actual.b < 40, "P3 green was clipped to sRGB, got \(actual)")
     }
 
     @Test("Extended dynamic range declines the capture")
@@ -206,6 +231,23 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
         )
     }
 
+    /// Colour-matches `image` into `colorSpace`; `NSBitmapImageRep.colorAt` would drop the image's profile.
+    private static func pixels(of image: CGImage, in colorSpace: CGColorSpace) throws -> Pixels {
+        let context = try #require(CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: image.width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let data = try #require(context.data)
+        let bytes = Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: image.width * image.height * 4))
+        return Pixels(width: image.width, height: image.height, bytes: bytes, isBGRA: false)
+    }
+
     private struct Pixels {
         let width: Int
         let height: Int
@@ -232,11 +274,12 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
             holdPaused: Bool = false,
             videoSize: (width: Int, height: Int) = (192, 144),
             windowFrame: CGRect = WallpaperVideoPlayerDisplayedFrameCaptureTests.windowFrame,
-            solidBGRA: [UInt8]? = nil
+            solidBGRA: [UInt8]? = nil,
+            colorPrimaries: String = AVVideoColorPrimaries_ITU_R_709_2
         ) async throws -> Harness {
             let device = try #require(MTLCreateSystemDefaultDevice())
             let url = try await SplitColorVideoFixture.writeMP4(
-                width: videoSize.width, height: videoSize.height, solidBGRA: solidBGRA
+                width: videoSize.width, height: videoSize.height, solidBGRA: solidBGRA, colorPrimaries: colorPrimaries
             )
             let player = WallpaperVideoPlayer(url: url, frame: windowFrame, fitMode: fitMode)
             if holdPaused {
@@ -334,7 +377,7 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
 
 // MARK: - Fixture
 
-/// Top quarter green; below it the left half is red and the right half blue. Tagged Rec.709 so the decoded
+/// Top quarter green; below it the left half is red and the right half blue. Tagged (Rec.709 by default) so the decoded
 /// buffer carries the colour attachments the capture has to honour.
 private enum SplitColorVideoFixture {
     /// `solidBGRA` replaces the split pattern with one colour; nil keeps the pattern.
@@ -342,6 +385,7 @@ private enum SplitColorVideoFixture {
         width: Int,
         height: Int,
         solidBGRA: [UInt8]? = nil,
+        colorPrimaries: String = AVVideoColorPrimaries_ITU_R_709_2,
         durationSeconds: TimeInterval = 2,
         frameRate: Int32 = 30
     ) async throws -> URL {
@@ -364,7 +408,7 @@ private enum SplitColorVideoFixture {
                 AVVideoWidthKey: width,
                 AVVideoHeightKey: height,
                 AVVideoColorPropertiesKey: [
-                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoColorPrimariesKey: colorPrimaries,
                     AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                     AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
                 ],
@@ -387,6 +431,8 @@ private enum SplitColorVideoFixture {
         writer.startSession(atSourceTime: .zero)
 
         let frame = try makePatternBuffer(width: width, height: height, solidBGRA: solidBGRA)
+        // An untagged frame is read as Rec.709 and converted into the output primaries, which would pin P3 green to sRGB green.
+        CVBufferSetAttachment(frame, kCVImageBufferColorPrimariesKey, colorPrimaries as CFString, .shouldPropagate)
         let totalFrames = max(2, Int(Double(frameRate) * durationSeconds))
         for index in 0 ..< totalFrames {
             while !input.isReadyForMoreMediaData {
