@@ -73,7 +73,8 @@ struct WPERenderGraphBuilderTests {
         let effectPass = layer.passes[1]
         expectCustomEffectPass(effectPass)
         let metadataOnly = WPEShaderImplementationInventory.graphEntries(
-            graph: graph, substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+            graph: graph, substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
+            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
         )
         #expect(metadataOnly.count == 1)
         #expect(metadataOnly.first?.stableEffectID == "7:effect:3")

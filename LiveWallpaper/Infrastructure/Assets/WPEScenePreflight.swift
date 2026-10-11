@@ -166,9 +166,11 @@ enum WPEShaderImplementationInventory {
     }
 
     /// `substitutesMedia(shader)`: whether the runtime route for that shader name swaps `$media*` slots.
+    /// Both route predicates live in Runtime, which Infrastructure must not name, so they are passed in.
     static func graphEntries(
         graph: WPERenderGraph,
-        substitutesMedia: (String) -> Bool
+        substitutesMedia: (String) -> Bool,
+        substitutesUserShortcutIcon: (WPERenderPass, WPERenderLayer, Int) -> Bool
     ) -> [WPEShaderImplementationInventoryEntry] {
         graph.layers.flatMap { layer in
             layer.passes.compactMap { pass in
@@ -185,7 +187,7 @@ enum WPEShaderImplementationInventory {
                         }
                         // The runtime icon demand skips slot-less bindings, so they never get an icon.
                         guard binding.type?.lowercased() == "usershortcut", let slot = binding.slot else { return true }
-                        return !WPEMetalShaderDispatcher.substitutesUserShortcutIcon(pass: pass, layer: layer, slot: slot)
+                        return !substitutesUserShortcutIcon(pass, layer, slot)
                     }
                 }
                 var sources: [String] = []

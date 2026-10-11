@@ -176,6 +176,7 @@ extension WPEMetalSceneRenderer {
         if buttonBatch?.cancelled == true {
             layerPressStates.removeAll(keepingCapacity: true)
             previousLayerScriptPointerFrame = .neutral
+            lastDesktopEdgeHoverPointer = nil
             forEachCursorScriptInstance { _, instance in instance.cancelPendingCursorEvents() }
         }
         for edge in buttonBatch?.edges ?? [] {
@@ -185,8 +186,10 @@ extension WPEMetalSceneRenderer {
                 frame: edge.frame, followEnabled: mouseInteractionEnabled,
                 clickEnabled: inputs.clickCaptureEnabled || edge.fromDesktop
             )
+            let hoverPointer = space.clickPointerIsLive ? space.pointerFrame.position : nil
+            lastDesktopEdgeHoverPointer = edge.fromDesktop ? hoverPointer : nil
             dispatchLayerHoverEvents(
-                pointer: space.clickPointerIsLive ? space.pointerFrame.position : nil,
+                pointer: hoverPointer,
                 pipeline: framePipeline, pointerFrame: space.pointerFrame,
                 attachmentGeometry: cursorAttachmentGeometry, deliver: deliver
             )
@@ -202,7 +205,7 @@ extension WPEMetalSceneRenderer {
         }
         dispatchLayerHoverEvents(
             pointer: frameContext.clickPointerIsLive ? finalCursorFrame.position
-                : (frameContext.followPointerIsLive ? frameContext.pointer : nil),
+                : (frameContext.followPointerIsLive ? frameContext.pointer : lastDesktopEdgeHoverPointer),
             pipeline: framePipeline, pointerFrame: finalCursorFrame,
             attachmentGeometry: cursorAttachmentGeometry, deliver: deliver
         )

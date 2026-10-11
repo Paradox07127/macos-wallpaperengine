@@ -275,7 +275,8 @@ extension WPEMetalSceneRenderer {
         #if DEBUG
         let graphShaderImplementationInventory = WPEShaderImplementationInventory.graphEntries(
             graph: graph,
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
+            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
         )
         shaderImplementationInventory = WPEShaderImplementationInventory.merging(
             shaderImplementationInventory,

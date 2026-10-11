@@ -124,6 +124,8 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Last hover-test pointer position, so `cursorMove` fires on movement rather
     /// than once per frame.
     var lastHoverPointerPixels: SIMD2<Double>?
+    /// Hover position of the latest desktop button edge; nil = no desktop edge in effect.
+    var lastDesktopEdgeHoverPointer: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
     let userShortcutBridge = WPEUserShortcutScriptBridge()
     /// Outlives scene reloads: the renderer owns the store; `UserShortcutRendererLink` holds it weakly and is its only writer.

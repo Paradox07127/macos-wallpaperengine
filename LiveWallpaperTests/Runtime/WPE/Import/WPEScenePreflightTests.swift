@@ -315,7 +315,8 @@ struct WPEScenePreflightTests {
 
         let entries = WPEShaderImplementationInventory.graphEntries(
             graph: WPERenderGraph(layers: [layer]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
+            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
         )
 
         let entry = try #require(entries.first)
@@ -331,7 +332,8 @@ struct WPEScenePreflightTests {
                 Self.makeUserShortcutPass(id: "slot0", phase: .material, shader: "genericimage2", slot: 0),
                 Self.makeUserShortcutPass(id: "slot1", phase: .material, shader: "genericimage2", slot: 1),
             ])]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
+            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
         )
 
         let entry = try #require(entries.first)
@@ -359,7 +361,8 @@ struct WPEScenePreflightTests {
                     effectIdentity: identity
                 ),
             ])]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
+            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
         )
 
         let entry = try #require(entries.first)

@@ -545,13 +545,16 @@ struct WPEPointerEdgeDeliveryTests {
         return frame
     }
 
-    private func clickCaptureOffRenderer(script: String) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
+    private func clickCaptureOffRenderer(
+        script: String, followCursor: Bool = true
+    ) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
         let scene = try fixture(script: script)
         let renderer = try WPEMetalSceneRenderer(
             descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
             frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
             pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
         )
+        renderer.setMouseInteractionEnabled(followCursor)
         try await renderer.load()
         #expect(!renderer.makeFrameInputs().clickCaptureEnabled)
         return (renderer, scene)
@@ -577,6 +580,25 @@ struct WPEPointerEdgeDeliveryTests {
         renderer.mailbox.publishDesktopButtonFrame(desktopPress(false, gesture: gesture), isInsideView: true)
         _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
         try await waitForEvents("dUC", renderer: renderer)
+    }
+
+    @Test("A desktop click with Follow Cursor and Interaction off enters the clicked layer once and never leaves it")
+    func desktopClickHoverDoesNotLeave() async throws {
+        let (renderer, scene) = try await clickCaptureOffRenderer(script: """
+        export function init() { shared.events = ''; }
+        export function update(value) { return value; }
+        export function cursorEnter() { shared.events += 'e'; }
+        export function cursorLeave() { shared.events += 'l'; }
+        export function cursorDown() { shared.events += 'd'; }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        """, followCursor: false)
+        defer { renderer.cleanup(); scene.cleanup() }
+        let gesture = WPEPointerGesture.next()
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(true, gesture: gesture), isInsideView: true)
+        renderer.mailbox.publishDesktopButtonFrame(desktopPress(false, gesture: gesture), isInsideView: true)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("educ", renderer: renderer)
     }
 
     @Test("A dragged desktop release ends the press without synthesizing click")
