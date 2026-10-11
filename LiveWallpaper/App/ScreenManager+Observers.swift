@@ -122,6 +122,17 @@ extension ScreenManager {
                 self?.refreshAppNapAssertion()
             }
             .store(in: &cleanupTasks)
+
+        #if !LITE_BUILD
+        let clickObserver = DesktopClickObserver { [weak self] in
+            self?.screens.compactMap { screen in
+                (screen.runtimeSession as? any SceneDesktopClickReceiving)
+                    .map { DesktopClickTarget(frame: screen.frame, receiver: $0) }
+            } ?? []
+        }
+        clickObserver.start()
+        desktopClickObserver = clickObserver
+        #endif
     }
 
     private func handleScreenLocked() {

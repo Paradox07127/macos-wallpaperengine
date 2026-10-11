@@ -42,6 +42,7 @@ final class ScreenManager {
     #if !LITE_BUILD
     @ObservationIgnored var sceneSpanGroups: [UUID: SceneSpanWallpaperGroup] = [:]
     @ObservationIgnored var sceneSpanProposals: [UUID: [CGDirectDisplayID: ScreenConfiguration]] = [:]
+    @ObservationIgnored var desktopClickObserver: DesktopClickObserver?
     #endif
     @ObservationIgnored let automationCoordinator = WallpaperAutomationCoordinator()
     @ObservationIgnored let powerMonitor: any PowerMonitoring

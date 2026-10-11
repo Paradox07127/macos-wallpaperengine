@@ -174,6 +174,7 @@ extension ScreenManager {
         automationOrchestrator.stopMonitoring()
         #if !LITE_BUILD
         wpeImportTracker.invalidateForTermination()
+        desktopClickObserver?.stop()
         #endif
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.shutdown()
