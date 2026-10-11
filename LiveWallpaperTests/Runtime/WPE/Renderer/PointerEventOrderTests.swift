@@ -6,6 +6,11 @@ import Testing
 
 #if !LITE_BUILD
 @MainActor
+private final class PublishedFrames {
+    var frames: [WPEPointerFrame] = []
+}
+
+@MainActor
 @Suite("Pointer button edge delivery")
 struct WPEPointerEdgeDeliveryTests {
     private static let buttonEdgeScript = """
@@ -74,6 +79,31 @@ struct WPEPointerEdgeDeliveryTests {
         try view.mouseDown(with: event(.leftMouseDown))
         #expect(view.pointerFrame.gesture != 0)
         #expect(view.pointerFrame.gesture != first)
+    }
+
+    @Test("Each button handler publishes one complete frame; the press frame already carries its new gesture number")
+    func buttonHandlersPublishOneCompleteFrame() throws {
+        let view = try WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                                             device: #require(MTLCreateSystemDefaultDevice()))
+        view.clickCaptureEnabled = true
+        let log = PublishedFrames()
+        view.onPointerFrameChange = { log.frames.append($0) }
+
+        try view.mouseDown(with: event(.leftMouseDown))
+        let gesture = view.pointerFrame.gesture
+        #expect(gesture != 0)
+        #expect(log.frames.count == 1, "every extra frame is one more publish of the same press")
+        #expect(log.frames.first { $0.isDown }?.gesture == gesture, "cursorDown would carry a stale gesture number")
+
+        log.frames.removeAll()
+        try view.mouseUp(with: event(.leftMouseUp))
+        #expect(log.frames.map(\.isDown) == [false])
+        #expect(log.frames.map(\.gesture) == [gesture])
+
+        log.frames.removeAll()
+        try view.rightMouseDown(with: event(.rightMouseDown))
+        try view.rightMouseUp(with: event(.rightMouseUp))
+        #expect(log.frames.map(\.isRightDown) == [true, false])
     }
 
     @Test("A full down/up between frame samples reaches authored SceneScript in order")

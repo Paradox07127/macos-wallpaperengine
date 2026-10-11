@@ -12,6 +12,7 @@ final class WPEInteractiveMTKView: MTKView {
 
     private(set) var pointerIsInsideView = false
 
+    /// Handlers assign this once with the whole frame: each `didSet` publishes, and the mailbox keeps the frame of the edge-changing write.
     private(set) var pointerFrame: WPEPointerFrame = .neutral {
         didSet { onPointerFrameChange?(pointerFrame) }
     }
@@ -55,10 +56,12 @@ final class WPEInteractiveMTKView: MTKView {
     override func mouseDown(with event: NSEvent) {
         guard clickCaptureEnabled else { super.mouseDown(with: event); return }
         let position = uv(for: event)
-        pointerFrame.position = position
-        pointerFrame.clickPosition = position
-        pointerFrame.isDown = true
-        pointerFrame.gesture = WPEPointerGesture.next()
+        var frame = pointerFrame
+        frame.position = position
+        frame.clickPosition = position
+        frame.isDown = true
+        frame.gesture = WPEPointerGesture.next()
+        pointerFrame = frame
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -68,8 +71,10 @@ final class WPEInteractiveMTKView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         guard clickCaptureEnabled else { super.mouseUp(with: event); return }
-        pointerFrame.position = uv(for: event)
-        pointerFrame.isDown = false
+        var frame = pointerFrame
+        frame.position = uv(for: event)
+        frame.isDown = false
+        pointerFrame = frame
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -80,15 +85,19 @@ final class WPEInteractiveMTKView: MTKView {
     override func rightMouseDown(with event: NSEvent) {
         guard clickCaptureEnabled else { super.rightMouseDown(with: event); return }
         let position = uv(for: event)
-        pointerFrame.position = position
-        pointerFrame.clickPosition = position
-        pointerFrame.isRightDown = true
+        var frame = pointerFrame
+        frame.position = position
+        frame.clickPosition = position
+        frame.isRightDown = true
+        pointerFrame = frame
     }
 
     override func rightMouseUp(with event: NSEvent) {
         guard clickCaptureEnabled else { super.rightMouseUp(with: event); return }
-        pointerFrame.position = uv(for: event)
-        pointerFrame.isRightDown = false
+        var frame = pointerFrame
+        frame.position = uv(for: event)
+        frame.isRightDown = false
+        pointerFrame = frame
     }
 
     override func rightMouseDragged(with event: NSEvent) {

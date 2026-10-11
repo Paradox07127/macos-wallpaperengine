@@ -117,9 +117,10 @@ final class WPEPointerMailbox: Sendable {
     }
 
     /// Dropped while click capture is on: that screen's native path already delivers the same press.
-    func publishDesktopButtonFrame(_ frame: WPEPointerFrame, isInsideView: Bool) {
+    /// `gatedByClickCapture: false` = the caller judged capture per display (span: the flag is any member's Interaction).
+    func publishDesktopButtonFrame(_ frame: WPEPointerFrame, isInsideView: Bool, gatedByClickCapture: Bool = true) {
         lock.withLock { state in
-            guard !state.clickCaptureEnabled else { return }
+            guard !(gatedByClickCapture && state.clickCaptureEnabled) else { return }
             let changed = frame.isDown != state.desktopFrame.isDown
             state.desktopFrame = frame
             if state.suppressed {

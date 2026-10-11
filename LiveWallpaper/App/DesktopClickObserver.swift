@@ -31,16 +31,20 @@ final class DesktopClickObserver {
     func start() {
         guard monitors.isEmpty else { return }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        // Global monitor events arrive asynchronously, so each uses its own recorded location rather than `NSEvent.mouseLocation`.
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            let type = event.type
-            MainActor.assumeIsolated { self?.handleMonitored(type) }
+            let (type, window, point) = (event.type, event.window, event.locationInWindow)
+            MainActor.assumeIsolated {
+                self?.handleMonitored(type, at: Self.screenLocation(point, in: window))
+            }
         }) {
             monitors.append(global)
         }
         // The global monitor never sees releases delivered to this app, so a press that ends over our own window is closed here.
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp], handler: { [weak self] event in
+            let (window, point) = (event.window, event.locationInWindow)
             MainActor.assumeIsolated {
-                self?.handle(.up, at: NSEvent.mouseLocation, isDesktop: DesktopClickObserver.isDesktop(at:))
+                self?.handle(.up, at: Self.screenLocation(point, in: window), isDesktop: DesktopClickObserver.isDesktop(at:))
             }
             return event
         }) {
@@ -68,7 +72,7 @@ final class DesktopClickObserver {
         }
     }
 
-    private func handleMonitored(_ type: NSEvent.EventType) {
+    private func handleMonitored(_ type: NSEvent.EventType, at location: CGPoint) {
         let kind: Kind
         switch type {
         case .leftMouseDown: kind = .down
@@ -76,7 +80,12 @@ final class DesktopClickObserver {
         case .leftMouseUp: kind = .up
         default: return
         }
-        handle(kind, at: NSEvent.mouseLocation, isDesktop: Self.isDesktop(at:))
+        handle(kind, at: location, isDesktop: Self.isDesktop(at:))
+    }
+
+    /// With no window (global monitor) `locationInWindow` is already in Cocoa screen coordinates.
+    private static func screenLocation(_ point: CGPoint, in window: NSWindow?) -> CGPoint {
+        window?.convertPoint(toScreen: point) ?? point
     }
 
     private func begin(at location: CGPoint, isDesktop: @MainActor (CGPoint) -> Bool) {
@@ -97,13 +106,18 @@ final class DesktopClickObserver {
     private func finish(at location: CGPoint) {
         guard let gesture else { return }
         self.gesture = nil
+        // A release can land far from its press with no drag event seen in between.
+        let moved = hypot(location.x - gesture.pressLocation.x, location.y - gesture.pressLocation.y) > Self.dragThreshold
         gesture.receiver?.publishDesktopButton(location: location, pressLocation: gesture.pressLocation,
-                                               isDown: false, gesture: gesture.id, dragged: gesture.dragged)
+                                               isDown: false, gesture: gesture.id, dragged: gesture.dragged || moved)
     }
 
     /// Finder's desktop icon window, or the system wallpaper window below it when desktop icons are hidden.
-    static func isDesktopWindow(layer: Int) -> Bool {
-        layer <= Int(CGWindowLevelForKey(.desktopIconWindow))
+    /// Only system processes own windows that low; an unknown owner (nil bundle id and name) is refused.
+    static func isDesktopWindow(layer: Int, ownerBundleIdentifier: String?, ownerName: String?) -> Bool {
+        guard layer <= Int(CGWindowLevelForKey(.desktopIconWindow)) else { return false }
+        // WindowServer has no bundle identifier.
+        return ownerBundleIdentifier?.hasPrefix("com.apple.") == true || ownerName == "Window Server"
     }
 
     static func isDesktop(at location: CGPoint) -> Bool {
@@ -116,7 +130,9 @@ final class DesktopClickObserver {
               let pid = info[kCGWindowOwnerPID as String] as? pid_t,
               pid != ProcessInfo.processInfo.processIdentifier
         else { return false }
-        return isDesktopWindow(layer: layer)
+        return isDesktopWindow(layer: layer,
+                               ownerBundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+                               ownerName: info[kCGWindowOwnerName as String] as? String)
     }
 }
 #endif

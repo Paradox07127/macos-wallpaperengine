@@ -76,6 +76,16 @@ struct DesktopClickObserverTests {
         #expect(receiver.edges.last?.dragged == expectDragged)
     }
 
+    @Test("A release far from the press counts as dragged even with no drag event in between")
+    func releaseFarFromPressIsDragged() {
+        let receiver = RecordingReceiver()
+        let observer = makeObserver([(Self.left, receiver)])
+        observer.handle(.down, at: CGPoint(x: 50, y: 50), isDesktop: onDesktop)
+        observer.handle(.up, at: CGPoint(x: 60, y: 50), isDesktop: onDesktop)
+
+        #expect(receiver.edges.last?.dragged == true, "the scene would synthesize a click for a drag")
+    }
+
     @Test("The release goes to the screen that took the press, even when it lands on another screen")
     func routesByPressScreen() {
         let first = RecordingReceiver()
@@ -132,10 +142,27 @@ struct DesktopClickObserverTests {
     func desktopWindowLevels() {
         let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
         let wallpaperLevel = Int(CGWindowLevelForKey(.desktopWindow))
-        #expect(DesktopClickObserver.isDesktopWindow(layer: iconLevel))
-        #expect(DesktopClickObserver.isDesktopWindow(layer: wallpaperLevel))
-        #expect(!DesktopClickObserver.isDesktopWindow(layer: 0))
-        #expect(!DesktopClickObserver.isDesktopWindow(layer: 24))
+        func isDesktop(_ layer: Int) -> Bool {
+            DesktopClickObserver.isDesktopWindow(layer: layer, ownerBundleIdentifier: "com.apple.finder", ownerName: "Finder")
+        }
+        #expect(isDesktop(iconLevel))
+        #expect(isDesktop(wallpaperLevel))
+        #expect(!isDesktop(0))
+        #expect(!isDesktop(24))
+    }
+
+    @Test("A desktop-level window counts only when a system process owns it", arguments: [
+        ("com.apple.finder" as String?, "Finder" as String?, true),
+        ("com.apple.wallpaper.agent", "Wallpaper", true),
+        (nil, "Window Server", true),
+        ("com.example.desktop-widgets", "Widgets", false),
+        (nil, "Widgets", false),
+        (nil, nil, false),
+    ])
+    func desktopWindowOwners(bundleIdentifier: String?, name: String?, expected: Bool) {
+        let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+        #expect(DesktopClickObserver.isDesktopWindow(layer: iconLevel, ownerBundleIdentifier: bundleIdentifier,
+                                                     ownerName: name) == expected)
     }
 }
 #endif

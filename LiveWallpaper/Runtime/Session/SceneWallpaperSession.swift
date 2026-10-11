@@ -499,12 +499,14 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         renderActor.submitConfig(.clickCaptureEnabled(enabled))
     }
 
+    /// Also waits for the mailbox's own capture gate, which flips later on the render actor and would drop the press.
     var acceptsDesktopClicks: Bool {
-        isPlaying && !clickCaptureEnabled
+        isPlaying && !clickCaptureEnabled && !surface.mailbox.read().clickCaptureEnabled
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
-        guard acceptsDesktopClicks else { return }
+        // A release always reaches the scene that took its press; dropping it would leave the mailbox's desktop frame down.
+        guard !isDown || acceptsDesktopClicks else { return }
         let sample = surface.mailbox.sample(screenLocation: location)
         var frame = WPEPointerFrame(position: sample.position,
                                     clickPosition: surface.mailbox.sample(screenLocation: pressLocation).position,

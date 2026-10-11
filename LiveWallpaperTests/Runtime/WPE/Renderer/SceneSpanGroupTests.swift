@@ -107,6 +107,96 @@ struct SceneSpanGroupTests {
         #expect(!member.acceptsDesktopClicks)
     }
 
+    /// Canvas (0,0,200,200): a non-member stand-in display (0,0,100,200) plus the member at (100,0,100,100).
+    private static func makeStandInMember(owner: SceneWallpaperSession) throws -> SceneSpanWallpaperSession {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
+                                            density: 1, displayFrames: [screen.id &+ 1: CGRect(x: 0, y: 0, width: 100, height: 200)])
+        let member = try group.makeMember(for: screen, configuration: Self.configuration(for: screen))
+        member.updateFrame(to: CGRect(x: 100, y: 0, width: 100, height: 100))
+        try #require(group.canvasFrame == CGRect(x: 0, y: 0, width: 200, height: 200))
+        return member
+    }
+
+    private static func takeEdges(_ mailbox: WPEPointerMailbox) -> [WPEPointerMailbox.ButtonEdge] {
+        mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges
+    }
+
+    @Test("Another member's Interaction does not shut this member's desktop presses out of the shared mailbox")
+    func desktopPressPassesSharedClickCapture() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+        let mailbox = owner.spanSurface.mailbox
+        // Stands in for the group-wide capture turned on by a member on another display.
+        mailbox.setClickCaptureEnabled(true)
+        #expect(member.acceptsDesktopClicks)
+
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: true, gesture: 3, dragged: false)
+        #expect(Self.takeEdges(mailbox).map(\.frame.gesture) == [3])
+    }
+
+    @Test("A desktop release on a non-member display maps to its canvas UV and reads as outside")
+    func releaseOffMemberMapsToCanvas() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: true, gesture: 4, dragged: false)
+        member.publishDesktopButton(location: CGPoint(x: 50, y: 100), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: false, gesture: 4, dragged: true)
+        let edges = Self.takeEdges(owner.spanSurface.mailbox)
+        #expect(edges.map(\.isInsideView) == [true, false])
+        #expect(edges.last?.frame.position == SIMD2(0.25, 0.5))
+        #expect(edges.last?.frame.clickPosition == SIMD2(0.75, 0.75))
+    }
+
+    @Test("A span member paused mid-press still delivers that press's release")
+    func spanReleaseAfterPause() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: true, gesture: 5, dragged: false)
+        member.pause()
+        #expect(!member.acceptsDesktopClicks)
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: false, gesture: 5, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).map(\.frame.isDown) == [true, false],
+                "a dropped release leaves the mailbox pressed and eats the next press")
+    }
+
+    @Test("A single-screen scene paused mid-press still delivers that press's release")
+    func ownerReleaseAfterPause() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        try #require(owner.acceptsDesktopClicks)
+
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: true, gesture: 6, dragged: false)
+        owner.pause()
+        #expect(!owner.acceptsDesktopClicks)
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: false, gesture: 6, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).map(\.frame.isDown) == [true, false])
+    }
+
+    @Test("A single-screen scene refuses desktop presses while its mailbox still has click capture on")
+    func ownerFollowsMailboxCaptureGate() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        try #require(owner.acceptsDesktopClicks)
+
+        owner.spanSurface.mailbox.setClickCaptureEnabled(true)
+        #expect(!owner.acceptsDesktopClicks, "the observer would hand over a press the mailbox then drops")
+    }
+
     @Test("A member joining a failed shared runtime reloads it instead of inheriting the old error")
     func joiningFailedRuntimeRetriesLoad() async throws {
         let (owner, actor) = try Self.makeOwner()

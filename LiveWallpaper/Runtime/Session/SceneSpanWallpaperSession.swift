@@ -161,27 +161,21 @@ final class SceneSpanWallpaperGroup {
         Task { await owner.spanRenderActor.renderFrame() }
     }
 
-    /// Mirrors `reconcile`: one playing member with Interaction on turns click capture on for the shared mailbox.
-    var clickCaptureActive: Bool {
-        sessions.contains { $0.isPlaying && $0.clickEnabled }
-    }
-
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool,
                               from session: SceneSpanWallpaperSession) {
-        guard session.acceptsDesktopClicks else { return }
+        // A release always reaches the member that took its press; dropping it would leave the mailbox's desktop frame down.
+        guard !isDown || session.acceptsDesktopClicks else { return }
         let canvas = canvasFrame
-        let display = session.displayFrame
         func canvasUV(_ point: CGPoint) -> SIMD2<Double> {
-            let local = WPEPointerMailbox.pointerSample(forScreenLocation: point,
-                                                        geometry: .init(viewFrameInScreen: display)).position
-            return SIMD2((Double(display.minX - canvas.minX) + local.x * Double(display.width)) / Double(canvas.width),
-                         (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
+            SIMD2(Double((point.x - canvas.minX) / canvas.width),
+                  Double((canvas.maxY - point.y) / canvas.height)).clamped(lowerBound: .zero, upperBound: .one)
         }
         var frame = WPEPointerFrame(position: canvasUV(location), clickPosition: canvasUV(pressLocation),
                                     isDown: isDown, isRightDown: false)
         frame.gesture = gesture
         frame.dragged = dragged
-        owner.spanSurface.mailbox.publishDesktopButtonFrame(frame, isInsideView: true)
+        let inside = sessions.contains { $0.displayFrame.contains(location) }
+        owner.spanSurface.mailbox.publishDesktopButtonFrame(frame, isInsideView: inside, gatedByClickCapture: false)
         Task { await owner.spanRenderActor.renderFrame() }
     }
 }
@@ -362,7 +356,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     var acceptsDesktopClicks: Bool {
-        isPlaying && !group.clickCaptureActive
+        isPlaying && !clickEnabled
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
