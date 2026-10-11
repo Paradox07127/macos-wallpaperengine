@@ -1489,6 +1489,23 @@ struct VideoSessionLifecycleTests {
         }
         #expect(player.hasInMemoryAssetLoaderForTesting)
 
+        try await Self.waitForCondition("the layer has a picture") { player.isReadyForDisplay }
+        let effects = VideoEffectsApplicationService()
+        var configuration = ScreenConfiguration(screenID: 42, videoBookmarkData: Data())
+        configuration.effectConfig.brightness = 1
+        #expect(await effects.prepareEffects(
+            to: player,
+            screenID: 42,
+            config: configuration,
+            screenRefreshRate: 60,
+            noEffectsHandler: {}
+        ))
+        #expect(player.videoCompositionOwner == .effects)
+        try #require(player.player != nil && player.player?.currentItem != nil)
+        weak var retiredPlayer = player.player
+        weak var retiredItem = player.player?.currentItem
+        try await Task.sleep(for: .milliseconds(100))
+
         session.pause()
         #expect(!player.isSuspended)
         #expect(!player.isHibernated)
@@ -1501,6 +1518,12 @@ struct VideoSessionLifecycleTests {
         #expect(player.boundVideoOutputCountForTesting == 0)
         #expect(player.isShowingHibernationStillFrameForTesting)
         #expect(player.hasInstalledPlaybackWindow)
+        let retirementStart = ContinuousClock.now
+        try await Self.waitForCondition("retired decoder owners are released", timeout: .seconds(5)) {
+            retiredPlayer == nil && retiredItem == nil
+        }
+        #expect(retiredPlayer == nil && retiredItem == nil)
+        print("hibernation old decoder owners released after \(ContinuousClock.now - retirementStart)")
 
         session.play()
 
@@ -1512,6 +1535,17 @@ struct VideoSessionLifecycleTests {
         try await Self.waitForCondition("the still frame is retired after the wake") {
             !player.isShowingHibernationStillFrameForTesting
         }
+        #expect(player.videoCompositionOwner == .effects)
+        #expect(player.player?.currentItem?.videoComposition != nil)
+        let image = try #require(await player.currentFrameImage())
+        let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let pixel = NSBitmapImageRep(cgImage: cgImage).colorAt(x: cgImage.width / 2, y: cgImage.height / 2)
+        let color = try #require(pixel?.usingColorSpace(.deviceRGB))
+        print("hibernate wake effect pixel: \(color.redComponent), \(color.greenComponent), \(color.blueComponent)")
+        #expect(color.redComponent > 0.95 && color.greenComponent > 0.95 && color.blueComponent > 0.95)
+        session.cleanup()
+        #expect(player.currentVideoComposition == nil)
+        #expect(player.videoCompositionOwner == .none)
     }
 
     @Test("Neither an absence-false push nor a quality refresh cancels a manual-pause hibernation")

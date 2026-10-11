@@ -169,6 +169,8 @@ final class WallpaperVideoPlayer {
     private let hibernationDwell = AbsenceDwell()
     /// Where the hibernation still was captured, keyed to its source; nil = the next build starts from the top.
     private var hibernationResumePoint: (url: URL, time: CMTime)?
+    /// The retained effects describe this source, never a later replacement URL.
+    private var hibernatedEffectsSourceURL: URL?
     /// Latch + generation: detached mmap/property loads may finish after cancel.
     private(set) var isCleanedUp = false
     private var lifecycleGeneration: UInt64 = 0
@@ -1049,6 +1051,7 @@ final class WallpaperVideoPlayer {
             invalidateFrameRateCompositionBuild()
         }
         videoCompositionGeneration &+= 1
+        hibernatedEffectsSourceURL = nil
         currentVideoComposition = composition
         videoCompositionOwner = composition == nil ? .none : owner
         if composition != nil, owner == .frameRate {
@@ -1434,7 +1437,7 @@ final class WallpaperVideoPlayer {
         } else {
             nil
         }
-        retirePlaybackState()
+        retirePlaybackState(preservingEffects: true)
         Logger.info(
             "Video wallpaper hibernated: \(videoURL?.lastPathComponent ?? "<unknown>")",
             category: .videoPlayer
@@ -1450,6 +1453,10 @@ final class WallpaperVideoPlayer {
         if hibernationResumePoint?.url != url {
             hibernationResumePoint = nil
         }
+        if let sourceURL = hibernatedEffectsSourceURL, sourceURL != url {
+            setVideoComposition(nil, owner: .none)
+        }
+        hibernatedEffectsSourceURL = nil
         // Armed here, not at the end of the rebuild: a load that fails before `configurePlaybackComponents` never reaches the readiness handoff, so the still frame would stay on screen for the rest of the session.
         videoView?.clearStillFrameNoLaterThan(Self.stillFrameWakeDeadlineSeconds)
         Logger.info(
@@ -1493,7 +1500,9 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    private func retirePlaybackState() {
+    private func retirePlaybackState(preservingEffects: Bool = false) {
+        let keepsEffects = preservingEffects && videoCompositionOwner == .effects
+        hibernatedEffectsSourceURL = keepsEffects ? videoURL : nil
         lifecycleGeneration &+= 1
         frameRateGeneration &+= 1
 
@@ -1522,9 +1531,13 @@ final class WallpaperVideoPlayer {
         currentItemSubscription?.cancel()
         currentItemSubscription = nil
         videoCompositionGeneration &+= 1
-        currentVideoComposition = nil
+        // Effects are source metadata + a filter chain, not a player/item. Keep
+        // them for the same-session wake; terminal cleanup still releases them.
+        if !keepsEffects {
+            currentVideoComposition = nil
+            videoCompositionOwner = .none
+        }
         colorComposition.reset()
-        videoCompositionOwner = .none
         frameRatePlan = requestedFrameRateLimit > 0 ? .pending : .native
 
         if inMemoryAssetLoader != nil {
