@@ -390,18 +390,10 @@ public enum WPEPuppetAnimationEvaluator {
         bones: [WPEPuppetBone],
         at time: Double
     ) -> [simd_float4x4] {
-        evaluate(layers: layers, bones: bones, at: time).palette
+        paletteEvaluation(layers: layers, bones: bones, at: time).palette
     }
 
     public static func paletteEvaluation(
-        layers: [WPEPuppetAnimationLayer],
-        bones: [WPEPuppetBone],
-        at time: Double
-    ) -> WPEPuppetPaletteEvaluation {
-        evaluate(layers: layers, bones: bones, at: time)
-    }
-
-    private static func evaluate(
         layers: [WPEPuppetAnimationLayer],
         bones: [WPEPuppetBone],
         at time: Double

@@ -40,14 +40,6 @@ public enum MonitoringStartPolicy {
     public static let initialSampleDelay: Duration = .milliseconds(350)
 }
 
-/// Collapsed pill status-dot pressure (thermal vs utilisation, take max).
-public enum SystemLoadLevel: Int, Sendable, Comparable {
-    case calm = 0
-    case elevated = 1
-    case high = 2
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
-}
-
 @MainActor @Observable
 public final class SystemMonitor {
     public static let shared = SystemMonitor()
@@ -123,59 +115,23 @@ public final class SystemMonitor {
         prevHostCpuLoad = nil
     }
 
-    public func formattedMemoryUsage() -> String { FormatUtils.formatBytes(memoryUsage) }
-    public func formattedTotalMemory() -> String { FormatUtils.formatBytes(totalMemory) }
-    public func memoryPercentage() -> Double {
-        guard totalMemory > 0 else { return 0 }
-        return Double(memoryUsage) / Double(totalMemory) * 100.0
-    }
-
-    public var thermalStateDescription: String {
-        switch thermalState {
-        case .nominal:
-            return String(localized: "Thermal Nominal", defaultValue: "Normal", bundle: .appLanguage, comment: "Thermal state label.")
-        case .fair:
-            return String(localized: "Thermal Fair", defaultValue: "Warm", bundle: .appLanguage, comment: "Thermal state label.")
-        case .serious:
-            return String(localized: "Thermal Serious", defaultValue: "Hot", bundle: .appLanguage, comment: "Thermal state label.")
-        case .critical:
-            return String(localized: "Thermal Critical", defaultValue: "Critical", bundle: .appLanguage, comment: "Thermal state label.")
-        @unknown default:
-            return String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Thermal state label.")
-        }
-    }
-
-    /// Peak thermal/utilisation; 50/80% cuts match dashboard gauge colors.
-    public var loadLevel: SystemLoadLevel {
-        let peak = max(systemCpuUsage, gpuUsage ?? 0, systemMemoryUsage * 100)
-        let utilisation: SystemLoadLevel = peak >= 80 ? .high : (peak >= 50 ? .elevated : .calm)
-        let thermal: SystemLoadLevel
-        switch thermalState {
-        case .nominal:           thermal = .calm
-        case .fair:              thermal = .elevated
-        case .serious, .critical: thermal = .high
-        @unknown default:        thermal = .calm
-        }
-        return max(utilisation, thermal)
-    }
-
     // MARK: - Update Loop
 
     private func sampleAndApply() async {
         resourceUpdateCount += 1
         let updateCount = resourceUpdateCount
-        let prev = HostCpuLoadSnapshot(value: prevHostCpuLoad)
+        let prev = prevHostCpuLoad
         let shouldSampleGPU = MonitoringCadencePolicy.shouldSampleGPU(
             updateCount: updateCount,
             cadence: gpuSampleCadence
         )
 
         let sample = await Task.detached(priority: .utility) { () -> SystemSample in
-            let cpuResult = SystemMonitor.sampleSystemCPUUsage(prev: prev.value)
+            let cpuResult = SystemMonitor.sampleSystemCPUUsage(prev: prev)
             return SystemSample(
                 cpuUsage: SystemMonitor.sampleAppCPUUsage(),
                 systemCpuUsage: cpuResult.usage,
-                newHostCpuLoad: HostCpuLoadSnapshot(value: cpuResult.newPrev),
+                newHostCpuLoad: cpuResult.newPrev,
                 memoryUsage: SystemMonitor.sampleAppMemoryUsage(),
                 systemMemoryUsage: SystemMonitor.sampleSystemMemoryUsage(),
                 gpuUsage: shouldSampleGPU ? SystemMonitor.sampleGPUUsage() : nil,
@@ -196,7 +152,7 @@ public final class SystemMonitor {
            abs(systemCpuUsage - systemCpu) > Self.percentMaterialEpsilon {
             systemCpuUsage = systemCpu
         }
-        prevHostCpuLoad = sample.newHostCpuLoad.value
+        prevHostCpuLoad = sample.newHostCpuLoad
         if memoryUsage != sample.memoryUsage {
             memoryUsage = sample.memoryUsage
         }
@@ -207,7 +163,8 @@ public final class SystemMonitor {
             if gpuUsage == nil || abs((gpuUsage ?? 0) - gpu) > Self.percentMaterialEpsilon {
                 gpuUsage = gpu
             }
-        } else if shouldApplyUnavailableGPU(for: sample) {
+            // A cadence skip also has `nil`; only clear a previous value on a real GPU poll.
+        } else if sample.didAttemptGPUSample {
             gpuUsage = nil
         }
         if thermalState != sample.thermalState {
@@ -215,23 +172,14 @@ public final class SystemMonitor {
         }
     }
 
-    /// A cadence skip also has `nil`; only clear a previous value on a real GPU poll.
-    private func shouldApplyUnavailableGPU(for sample: SystemSample) -> Bool {
-        sample.didAttemptGPUSample
-    }
-
     // 2s sample cadence: sub-percent noise only churns SwiftUI.
     @ObservationIgnored private static let percentMaterialEpsilon: Double = 1.0
     @ObservationIgnored private static let ratioMaterialEpsilon: Double = 0.01
 
-    private struct HostCpuLoadSnapshot: @unchecked Sendable {
-        let value: host_cpu_load_info?
-    }
-
-    private struct SystemSample: @unchecked Sendable {
+    private struct SystemSample: Sendable {
         let cpuUsage: Double
         let systemCpuUsage: Double?
-        let newHostCpuLoad: HostCpuLoadSnapshot
+        let newHostCpuLoad: host_cpu_load_info?
         let memoryUsage: UInt64
         let systemMemoryUsage: Double
         let gpuUsage: Double?

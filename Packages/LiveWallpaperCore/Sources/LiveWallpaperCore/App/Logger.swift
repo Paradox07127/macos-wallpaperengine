@@ -277,10 +277,6 @@ public final class Logger {
         }
         log(message, category: .powerMonitor, level: .notice, file: file, function: function, line: line)
     }
-
-    public static func settingsChanged(setting: String, value: Any, file: String = #file, function: String = #function, line: Int = #line) {
-        log("Setting changed: \(setting) = \(value)", category: .settings, level: .info, file: file, function: function, line: line)
-    }
 }
 
 // MARK: - Performance Measuring

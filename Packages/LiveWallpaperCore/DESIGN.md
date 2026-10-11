@@ -106,7 +106,7 @@ System `NSColor`-backed → automatic light/dark + Increase Contrast.
 
 Semantic tiers for state-dependent transparency (W2-B5, 2026-08-31). Fills:
 `hoverFill` .05 · `dragFill` .08 · `activeFill` .10 · `selectedFill` .12.
-Strokes: `quietStroke` .28 · `strongStroke` .55 · `alertStroke` .75 ·
+Strokes: `quietStroke` .28 · `strongStroke` .55 ·
 `emphasisStroke` .85. Content: `dimmedContent` .45 · `disabledContent` .55 ·
 `dimmedIcon` .70. Chart segments: `fadedSegment` .35 (another segment hovered) ·
 `restingSegment` .80 (nothing hovered). New state-dependent opacities use these — never a fresh
@@ -203,7 +203,6 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Typography.floatName` | 11pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 12pt bold | SCREENS S5 (「松手替换」) |
 | `Typography.footnote` | 11pt | SCREENS S9 (onboarding card footnote) |
-| `Typography.wizardTitle` | alias of `DesignTokens.Typography.modalTitle` (22pt semibold) | SCREENS S9 (Steam wizard title) |
 | `Typography.workshopCardTitle` | 13pt semibold | SCREENS S8 (Workshop grid card title) |
 
 Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.

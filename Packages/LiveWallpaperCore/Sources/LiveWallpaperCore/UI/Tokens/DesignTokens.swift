@@ -287,7 +287,6 @@ public enum DesignTokens {
         public static let selectedFill: Double = 0.12
         public static let quietStroke: Double = 0.28
         public static let strongStroke: Double = 0.55
-        public static let alertStroke: Double = 0.75
         public static let emphasisStroke: Double = 0.85
         public static let dimmedContent: Double = 0.45
         public static let disabledContent: Double = 0.55
@@ -341,7 +340,6 @@ public enum DesignTokens {
     public enum LibraryFilterBar {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 10
-        public static let contentSpacing: CGFloat = 10
         /// Every control on a filter bar is this tall: the HIG macOS large control height.
         public static let controlHeight: CGFloat = 28
         // Also reused by the narrow detail inspector, so they must stay legible at minimum width.
@@ -368,7 +366,6 @@ public enum DesignTokens {
 
     public enum GuidedLibrary {
         public static let outerPadding: CGFloat = 40
-        public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
         public static let messageWidth: CGFloat = 360
     }
@@ -696,7 +693,6 @@ public enum DesignTokens {
             public static let floatName = Font.system(size: 11, weight: .semibold)
             public static let dropLabel = Font.system(size: 12, weight: .bold)
             public static let footnote = Font.system(size: 11)
-            public static let wizardTitle = DesignTokens.Typography.modalTitle
             /// S8a's grid card title; one step above `cardTitle`, which the library tiles keep.
             public static let workshopCardTitle = Font.system(size: 13, weight: .semibold)
         }
