@@ -21,7 +21,7 @@ Native macOS live wallpapers, a visual workspace for every display, and widgets,
 [🛠 Build](docs/en/building.md) ·
 [🌐 中文](README.zh-Hans.md)
 
-<img src="docs/images/overview.webp" width="880" alt="Overview showing two displays in their desktop arrangement above the wallpaper shelf" />
+<img src="docs/images/overview.webp" width="640" alt="Overview showing two displays in their desktop arrangement above the wallpaper shelf" />
 
 </div>
 

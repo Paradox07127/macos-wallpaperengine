@@ -21,7 +21,7 @@
 [🛠 构建](docs/zh-Hans/building.md) ·
 [🇬🇧 English](README.md)
 
-<img src="docs/images/overview-zh.webp" width="880" alt="全景页：两台显示器按桌面排列，下方是壁纸架" />
+<img src="docs/images/overview-zh.webp" width="640" alt="全景页：两台显示器按桌面排列，下方是壁纸架" />
 
 </div>
 
