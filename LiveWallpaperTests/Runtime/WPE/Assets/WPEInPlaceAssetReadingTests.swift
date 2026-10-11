@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Darwin
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -204,6 +205,43 @@ struct WPEInPlaceAssetReadingTests {
             _ = try provider.data(atRelativePath: "missing.tex")
         }
         #expect(provider.entryNames == ["materials/a.tex", "scene.json"])
+    }
+
+    @Test("Synchronous package readers reject no-writer FIFOs and then accept regular symlinks", arguments: [false, true])
+    func synchronousPackageReadersRejectFIFO(video: Bool) throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fifo = root.appendingPathComponent("blocked.pkg")
+        try #require(mkfifo(fifo.path, 0o600) == 0)
+        let rescue = DispatchWorkItem {
+            let descriptor = Darwin.open(fifo.path, O_RDWR | O_NONBLOCK)
+            if descriptor >= 0 {
+                Darwin.close(descriptor)
+            }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: rescue)
+        defer { rescue.cancel() }
+        let start = ContinuousClock.now
+        #expect(throws: (any Error).self) {
+            if video {
+                _ = try InMemoryVideoAssetLoader.loadPackageEntry(packageURL: fifo, entryName: "clip.mp4")
+            } else {
+                _ = try WPEPackageSceneAssetProvider(packageURL: fifo)
+            }
+        }
+        #expect(start.duration(to: .now) < .seconds(2))
+        let regular = root.appendingPathComponent("actual.pkg")
+        let payload = Data([0xDE, 0xAD])
+        try makePackageData([("clip.mp4", payload)]).write(to: regular)
+        let link = root.appendingPathComponent("scene.pkg")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: regular)
+        if video {
+            let result = try InMemoryVideoAssetLoader.loadPackageEntry(packageURL: link, entryName: "clip.mp4")
+            #expect(result.customURL.lastPathComponent == "clip.mp4")
+        } else {
+            let provider = try WPEPackageSceneAssetProvider(packageURL: link)
+            #expect(try provider.data(atRelativePath: "clip.mp4") == payload)
+        }
     }
 
     @Test("Package provider stages an entry to a readable file URL")

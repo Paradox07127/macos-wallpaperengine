@@ -24,7 +24,7 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
     init(packageURL: URL) throws {
         self.stagingRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("\(Self.stagingDirectoryNamePrefix)\(UUID().uuidString)", isDirectory: true)
-        let handle = try FileHandle(forReadingFrom: packageURL)
+        let handle = try WallpaperEnginePackage.openForReading(from: packageURL)
         do {
             self.package = try WallpaperEnginePackage.parseIndex(streamingFrom: handle)
         } catch {

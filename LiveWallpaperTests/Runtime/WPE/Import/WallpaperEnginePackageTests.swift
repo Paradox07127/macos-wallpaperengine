@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import LiveWallpaper
@@ -223,6 +224,52 @@ struct WallpaperEnginePackageTests {
         let provider = try await WPEPackageSceneAssetProvider.open(packageURL: url)
 
         #expect(try provider.data(atRelativePath: "assets/value.bin") == Data([0xde, 0xad]))
+    }
+
+    @Test("Cancelled FIFO packages do not strand the loader or a subsequent valid read")
+    func fifoPackagesDoNotStrandLoader() async throws {
+        let root = temporaryRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fifos = ["first.pkg", "second.pkg"].map { root.appendingPathComponent($0) }
+        for fifo in fifos {
+            try #require(mkfifo(fifo.path, 0o600) == 0)
+        }
+        // Release a regressed blocking open so a failed assertion cannot hang the host.
+        let rescue = DispatchWorkItem {
+            for fifo in fifos {
+                let descriptor = Darwin.open(fifo.path, O_RDWR | O_NONBLOCK)
+                if descriptor >= 0 {
+                    Darwin.close(descriptor)
+                }
+            }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: rescue)
+        defer { rescue.cancel() }
+        let start = ContinuousClock.now
+        let readers = fifos.map { fifo in
+            Task {
+                do {
+                    let prepared = try await WPEPackageIndexLoader.load(from: fifo)
+                    try? prepared.handle.close()
+                    return false
+                } catch {
+                    return true
+                }
+            }
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        for reader in readers {
+            reader.cancel()
+        }
+        let regular = root.appendingPathComponent("regular.pkg")
+        try makePackage(entries: [EntrySpec("assets/value.bin", [0xDE, 0xAD])]).write(to: regular)
+        let provider = try await WPEPackageSceneAssetProvider.open(packageURL: regular)
+        #expect(try provider.data(atRelativePath: "assets/value.bin") == Data([0xDE, 0xAD]))
+        for reader in readers {
+            #expect(await reader.value)
+        }
+        #expect(start.duration(to: .now) < .seconds(2))
     }
 
     /// Parses in-memory package bytes through the shipping streaming parser —

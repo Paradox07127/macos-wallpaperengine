@@ -47,7 +47,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     ) throws -> (loader: InMemoryVideoAssetLoader, customURL: URL) {
         let package: WallpaperEnginePackage
         do {
-            let handle = try FileHandle(forReadingFrom: packageURL)
+            let handle = try WallpaperEnginePackage.openForReading(from: packageURL)
             defer { try? handle.close() }
             package = try WallpaperEnginePackage.parseIndex(streamingFrom: handle)
         }
@@ -74,7 +74,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
             start = mappedStart
             windowLength = length
         } else {
-            let handle = try FileHandle(forReadingFrom: packageURL)
+            let handle = try WallpaperEnginePackage.openForReading(from: packageURL)
             defer { try? handle.close() }
             let fileSize = try handle.seekToEnd()
             guard let offset = UInt64(exactly: package.dataStart + entry.dataOffset),

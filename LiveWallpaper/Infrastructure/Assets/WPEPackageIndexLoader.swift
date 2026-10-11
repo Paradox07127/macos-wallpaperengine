@@ -26,7 +26,7 @@ enum WPEPackageIndexLoader {
                 queue.addOperation {
                     do {
                         guard !cancellation.isCancelled else { throw CancellationError() }
-                        let handle = try FileHandle(forReadingFrom: packageURL)
+                        let handle = try WallpaperEnginePackage.openForReading(from: packageURL)
                         do {
                             let package = try WallpaperEnginePackage.parseIndex(
                                 streamingFrom: handle,

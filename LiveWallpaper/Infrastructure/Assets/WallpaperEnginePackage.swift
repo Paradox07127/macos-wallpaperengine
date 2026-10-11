@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct WallpaperEnginePackage: Sendable, Equatable {
@@ -42,6 +43,31 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         self.dataStart = dataStart
         self.nameIndex = nameIndex
         self.caseFoldCollisions = caseFoldCollisions
+    }
+
+    /// Validate the opened descriptor; a path preflight alone can race with replacement by a FIFO.
+    static func openForReading(from url: URL) throws -> FileHandle {
+        guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
+        let descriptor = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { errno = EINVAL; return Int32(-1) }
+            return Darwin.open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        do {
+            var info = stat()
+            guard Darwin.fstat(descriptor, &info) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            guard info.st_mode & S_IFMT == S_IFREG else {
+                throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: url.path])
+            }
+            return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        } catch {
+            Darwin.close(descriptor)
+            throw error
+        }
     }
 
     /// Per-component cap when writing to disk. APFS rejects a component over 255 UTF-8 bytes, so over-long components are shortened on extraction.
