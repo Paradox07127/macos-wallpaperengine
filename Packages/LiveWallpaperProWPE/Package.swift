@@ -15,6 +15,7 @@ let package = Package(
             name: "LiveWallpaperProWPE",
             dependencies: [
                 .product(name: "LiveWallpaperCore", package: "LiveWallpaperCore"),
+                "CFreeType",
                 "CHarfBuzz",
             ],
             path: "Sources/LiveWallpaperProWPE",
