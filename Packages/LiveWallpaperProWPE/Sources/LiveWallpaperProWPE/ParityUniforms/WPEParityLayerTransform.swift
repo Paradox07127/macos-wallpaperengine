@@ -111,4 +111,11 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
                                                                             halfHeight: parentSize.y / 2,
                                                                             depth: 1000))
     }
+
+    /// The albedo filling a layer composite of `size`: M = V = I, P = ortho(0, w, 0, h, ±1000) (1401e8aa0.c:569-611).
+    public static func compositeFillMatrices(size: SIMD2<Float>) -> WPEParityUniformMatrices {
+        WPEParityUniformMatrices(model: matrix_identity_float4x4, view: matrix_identity_float4x4,
+                                 projection: WPEParityCamera.ortho(left: 0, right: size.x, bottom: 0, top: size.y,
+                                                                   near: -1000, far: 1000))
+    }
 }

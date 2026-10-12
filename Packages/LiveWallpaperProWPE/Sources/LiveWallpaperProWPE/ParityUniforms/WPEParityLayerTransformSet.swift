@@ -3,6 +3,8 @@ import simd
 public enum WPEParityLayerDrawKind: Sendable, Equatable {
     /// Layer albedo, or the last effect pass drawn onto the layer-size mesh.
     case layer
+    /// The albedo filling the layer's first composite of `size` (R10 step 1).
+    case compositeFill(size: SIMD2<Float>)
     /// An intermediate effect pass on the 2×2 quad.
     case effectPass
 }
@@ -73,23 +75,32 @@ public struct WPEParityLayerTransformSet: Sendable {
         layers[id]?.perspective == true ? camera.perspectiveProjection : camera.projection
     }
 
-    /// Matrices and effect-pass values for one draw of `id`; `inParentComposite` places it in its parent's
-    /// composite instead of the scene.
-    public func draw(_ id: String, kind: WPEParityLayerDrawKind, inParentComposite: Bool = false,
+    /// Matrices and effect-pass values for one draw of `id`; `compositeOwnerID` places it in that layer's
+    /// composite instead of the scene, also when the owner is a grandparent (140207b50.c:386-458).
+    public func draw(_ id: String, kind: WPEParityLayerDrawKind, compositeOwnerID: String? = nil,
                      parallax: SIMD2<Float>) -> WPEParityUniformDraw {
         var matrices = WPEParityUniformMatrices(model: model(id), view: view(id, parallax: parallax),
                                                 projection: projection(id))
-        if inParentComposite, let parentID = layers[id]?.parentID, let parent = layers[parentID] {
-            matrices = WPEParityLayerTransform.compositeMatrices(parentModel: model(parentID), parentSize: parent.size,
+        if let ownerID = compositeOwnerID, let owner = layers[ownerID] {
+            matrices = WPEParityLayerTransform.compositeMatrices(parentModel: model(ownerID), parentSize: owner.size,
                                                                  childModel: matrices.model)
         }
         let effectPass = WPEParityUniformEffectPass(layerModel: matrices.model,
                                                     layerModelViewProjection: matrices.modelViewProjection,
                                                     size: layers[id]?.size ?? .zero, isLastPass: kind == .layer)
-        return WPEParityUniformDraw(matrices: kind == .layer ? matrices : .effectPass, effectPass: effectPass)
+        let drawn = switch kind {
+        case .layer: matrices
+        case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
+        case .effectPass: WPEParityUniformMatrices.effectPass
+        }
+        return WPEParityUniformDraw(matrices: drawn, effectPass: effectPass)
     }
 
     public func quad(_ id: String, kind: WPEParityLayerDrawKind, uvMax: SIMD2<Float> = .one) -> WPEParityLayerQuad {
-        kind == .layer ? .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax) : .effectPass
+        switch kind {
+        case .layer: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
+        case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
+        case .effectPass: .effectPass
+        }
     }
 }

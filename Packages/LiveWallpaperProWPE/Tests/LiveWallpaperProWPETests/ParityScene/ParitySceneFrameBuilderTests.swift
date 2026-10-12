@@ -257,12 +257,24 @@ struct ParitySceneCompositionTests {
             F.layer("P", copyBackground: true, effects: [F.effect("pe")]),
             F.layer("C", parentID: "P"),
             F.layer("D", parentID: "P", effects: [F.effect("d1"), F.effect("d2")]),
+            F.layer("G", parentID: "C"),
         ]))
-        #expect(frame.draws["C/albedo"]?.inParentComposite == true)
-        #expect(frame.draws["D/albedo"]?.inParentComposite == false)
-        #expect(frame.draws["D/d1/0"]?.inParentComposite == false)
-        #expect(frame.draws["D/d2/0"]?.inParentComposite == true)
-        #expect(frame.draws["P/pe/0"]?.inParentComposite == false)
+        #expect(frame.draws["C/albedo"]?.compositeOwnerID == "P")
+        #expect(frame.draws["G/albedo"]?.compositeOwnerID == "P")
+        #expect(frame.draws["D/albedo"]?.compositeOwnerID == nil)
+        #expect(frame.draws["D/d1/0"]?.compositeOwnerID == nil)
+        #expect(frame.draws["D/d2/0"]?.compositeOwnerID == "P")
+        #expect(frame.draws["P/pe/0"]?.compositeOwnerID == nil)
+    }
+
+    @Test func onlyTheAlbedoIntoTheLayerCompositeFillsIt() {
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([
+            F.layer("P", copyBackground: true, effects: [F.effect("pe")]),
+            F.layer("C", parentID: "P"),
+        ]))
+        #expect(frame.draws["P/albedo"]?.fillsComposite == true)
+        #expect(frame.draws["P/pe/0"]?.fillsComposite == false)
+        #expect(frame.draws["C/albedo"]?.fillsComposite == false)
     }
 }
 

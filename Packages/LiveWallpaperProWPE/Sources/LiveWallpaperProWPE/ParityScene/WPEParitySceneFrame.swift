@@ -19,10 +19,13 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let blend: WPEParitySceneBlend
     /// Alpha blend op MAX (RD+0xe8) while drawing into a parent composite that did not copy the background.
     public let alphaMax: Bool
-    /// The draw lands in its parent layer's composite rather than the scene, so it uses the composite camera.
-    public let inParentComposite: Bool
+    /// The layer whose composite the draw lands in, rather than the scene; the draw uses that layer's composite
+    /// camera. A grandchild drawn through a parent without a composite names the grandparent.
+    public let compositeOwnerID: String?
     public let writeMask: WPEParitySceneWriteMask
     public let geometry: Geometry
+    /// The albedo filling the layer's own first composite: composite-size mesh and camera instead of the 2×2 quad.
+    public let fillsComposite: Bool
     /// Set by model draws and the bit4 composite draw only; every other scene draw runs with depth off.
     public let depthTest: Bool
     public let depthWrite: Bool
@@ -31,8 +34,9 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
                 shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
-                inParentComposite: Bool = false, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
-                depthTest: Bool = false, depthWrite: Bool = false, cullsBackFaces: Bool = false) {
+                compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
+                fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
+                cullsBackFaces: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -43,9 +47,10 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.target = target
         self.blend = blend
         self.alphaMax = alphaMax
-        self.inParentComposite = inParentComposite
+        self.compositeOwnerID = compositeOwnerID
         self.writeMask = writeMask
         self.geometry = geometry
+        self.fillsComposite = fillsComposite
         self.depthTest = depthTest
         self.depthWrite = depthWrite
         self.cullsBackFaces = cullsBackFaces

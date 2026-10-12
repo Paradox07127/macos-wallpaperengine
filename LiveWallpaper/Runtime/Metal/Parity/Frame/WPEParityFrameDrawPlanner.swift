@@ -35,10 +35,10 @@ struct WPEParityFrameDrawPlan {
         let layers: WPEParityLayerTransformSet
         let objectID: String
         let kind: WPEParityLayerDrawKind
-        let inParentComposite: Bool
+        let compositeOwnerID: String?
 
         func draw(parallax: SIMD2<Float>) -> WPEParityUniformDraw {
-            layers.draw(objectID, kind: kind, inParentComposite: inParentComposite, parallax: parallax)
+            layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
         }
     }
 
@@ -206,12 +206,25 @@ struct WPEParityFrameDrawPlanner {
         // Post-process draws have no layer and keep the effect-pass matrices.
         let placement: WPEParityFrameDrawPlan.Placement? = switch description {
         case let .scene(draw):
-            WPEParityFrameDrawPlan.Placement(layers: layers, objectID: draw.objectID,
-                                             kind: draw.geometry == .fullscreenQuad ? .effectPass : .layer,
-                                             inParentComposite: draw.inParentComposite)
+            WPEParityFrameDrawPlan.Placement(
+                layers: layers, objectID: draw.objectID,
+                kind: draw.fillsComposite ? .compositeFill(size: SIMD2(Float(color.width), Float(color.height)))
+                    : draw.geometry == .fullscreenQuad ? .effectPass : .layer,
+                compositeOwnerID: draw.compositeOwnerID
+            )
         case .post: nil
         }
-        let quad = placement.map { layers.quad($0.objectID, kind: $0.kind) } ?? .effectPass
+        // R10: the composite fill samples only the image part of a padded albedo texture.
+        let fillUVMax = uniformTextures[0].map {
+            SIMD2(Float($0.imageWidth) / Float($0.textureWidth), Float($0.imageHeight) / Float($0.textureHeight))
+        } ?? .one
+        let quad = placement.map { placed in
+            if case .compositeFill = placed.kind {
+                layers.quad(placed.objectID, kind: placed.kind, uvMax: fillUVMax)
+            } else {
+                layers.quad(placed.objectID, kind: placed.kind)
+            }
+        } ?? .effectPass
         let indices = WPEParityLayerQuad.indices
         guard let vertexBuffer = Self.vertexBuffer(quad, inputs: artifact.vertex.reflection.vertexInputs,
                                                    device: device),

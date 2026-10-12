@@ -20,7 +20,8 @@ private struct WPEParitySceneDestination {
     let color: WPEResourceID
     let depth: WPEResourceID?
     let alphaMax: Bool
-    let inParentComposite: Bool
+    /// The layer whose composite `color` is; nil for the scene.
+    let compositeOwnerID: String?
     /// Top level writes RGB only; a parent composite gets RGBA once any ancestor counted R+0x1c9.
     var writeMask: WPEParitySceneWriteMask {
         alphaMax ? .rgba : .rgb
@@ -100,7 +101,7 @@ private struct WPEParitySceneEmitter {
             emit(pass, .clearDepth(WPETextureView(sceneDepth), depth: 0))
         }
         let top = WPEParitySceneDestination(color: sceneColor, depth: sceneDepth, alphaMax: false,
-                                            inParentComposite: false)
+                                            compositeOwnerID: nil)
         for object in roots {
             render(object, into: top, ancestors: [])
         }
@@ -150,7 +151,7 @@ private struct WPEParitySceneEmitter {
         fillComposite(object, composites[current])
         let childDestination = WPEParitySceneDestination(color: composites[current], depth: nil,
                                                          alphaMax: destination.alphaMax || !object.copyBackground,
-                                                         inParentComposite: true)
+                                                         compositeOwnerID: object.id)
         for child in children {
             render(child, into: childDestination, ancestors: ancestors + [composites[current]])
         }
@@ -176,7 +177,7 @@ private struct WPEParitySceneEmitter {
                 var depth: WPEResourceID?
                 var blend = pass.blend
                 var alphaMax = false
-                var inParentComposite = false
+                var compositeOwnerID: String?
                 var mask = WPEParitySceneWriteMask.rgba
                 var geometry = WPEParitySceneDraw.Geometry.fullscreenQuad
                 if let name = pass.target {
@@ -186,7 +187,7 @@ private struct WPEParitySceneEmitter {
                     depth = destination.depth
                     blend = object.blend
                     alphaMax = destination.alphaMax
-                    inParentComposite = destination.inParentComposite
+                    compositeOwnerID = destination.compositeOwnerID
                     mask = destination.writeMask
                     geometry = .layerMesh
                 } else {
@@ -201,7 +202,7 @@ private struct WPEParitySceneEmitter {
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id,
                                         passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
                                         target: target, blend: blend, alphaMax: alphaMax,
-                                        inParentComposite: inParentComposite, writeMask: mask, geometry: geometry))
+                                        compositeOwnerID: compositeOwnerID, writeMask: mask, geometry: geometry))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
                 }
@@ -225,7 +226,7 @@ private struct WPEParitySceneEmitter {
                                                           layerFog: object.materialFog),
                                 reads: [composites[current], Resource.fullFrameBuffer], target: destination.color,
                                 blend: object.colorBlendMode == 31 ? .additive : object.blend,
-                                alphaMax: destination.alphaMax, inParentComposite: destination.inParentComposite,
+                                alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
                                 writeMask: destination.writeMask, geometry: .layerMesh, depthTest: object.materialState.depthTest,
                                 depthWrite: object.materialState.depthWrite))
     }
@@ -245,7 +246,8 @@ private struct WPEParitySceneEmitter {
         }
         let (shader, source, reads) = albedoSource(object)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
-                                target: composite, blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad))
+                                target: composite, blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad,
+                                fillsComposite: true))
     }
 
     /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and its children
@@ -269,7 +271,7 @@ private struct WPEParitySceneEmitter {
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
                                         reads: reads, target: destination.color, blend: object.blend,
                                         alphaMax: destination.alphaMax,
-                                        inParentComposite: destination.inParentComposite, writeMask: mask,
+                                        compositeOwnerID: destination.compositeOwnerID, writeMask: mask,
                                         geometry: .modelMesh,
                                         depthTest: state.depthTest,
                                         depthWrite: state.depthWrite && object.blend == .normal,
@@ -278,7 +280,7 @@ private struct WPEParitySceneEmitter {
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
                                         reads: reads, target: destination.color, blend: object.blend,
                                         alphaMax: destination.alphaMax,
-                                        inParentComposite: destination.inParentComposite,
+                                        compositeOwnerID: destination.compositeOwnerID,
                                         writeMask: destination.writeMask, geometry: .layerMesh))
             }
         }

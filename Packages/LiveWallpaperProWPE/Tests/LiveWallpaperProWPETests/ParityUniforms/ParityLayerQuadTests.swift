@@ -21,7 +21,7 @@ final class ParityLayerQuadTests: XCTestCase {
         XCTAssertEqual(quad.vertices[3].position, SIMD3(50.5, -25, 0))
     }
 
-    func testUVMaxInsetAndFlip() {
+    func testUVMaxInsetAndUnflippedEffectQuad() {
         let scaled = WPEParityLayerQuad(size: SIMD2(100, 50), uvMax: SIMD2(0.5, 0.25))
         XCTAssertEqual(scaled.vertices[3].texcoord, SIMD2(0.5, 0.25))
         let inset = WPEParityLayerQuad(size: SIMD2(100, 50), insetsUV: true)
@@ -33,6 +33,7 @@ final class ParityLayerQuadTests: XCTestCase {
         let effect = WPEParityLayerQuad.effectPass
         XCTAssertEqual(effect.vertices.map(\.position), [SIMD3(-1, 1, 0), SIMD3(1, 1, 0), SIMD3(-1, -1, 0),
                                                          SIMD3(1, -1, 0)])
-        XCTAssertEqual(effect.vertices.map(\.texcoord), [SIMD2(0, 1), SIMD2(1, 1), SIMD2(0, 0), SIMD2(1, 0)])
+        // R10: Main+0x118 bit0 is set on Windows, so the 2×2 quad keeps v = 0 on its y = +1 edge.
+        XCTAssertEqual(effect.vertices.map(\.texcoord), [SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)])
     }
 }

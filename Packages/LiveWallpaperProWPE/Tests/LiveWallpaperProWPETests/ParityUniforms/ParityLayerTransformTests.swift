@@ -120,11 +120,46 @@ final class ParityLayerTransformTests: XCTestCase {
                            alignment: .left)
         let child = layer("c", parent: "p", origin: SIMD3(30, 40, 0))
         let layers = set([parent, child])
-        let draw = layers.draw("c", kind: .layer, inParentComposite: true, parallax: canvas / 2)
+        let draw = layers.draw("c", kind: .layer, compositeOwnerID: "p", parallax: canvas / 2)
         assertEqual(draw.matrices.model, layers.model("p").inverse * layers.model("c"))
         assertEqual(draw.matrices.view, matrix_identity_float4x4)
         assertEqual(draw.matrices.projection, WPEParityUniformMatrices.ortho(halfWidth: 200, halfHeight: 150,
                                                                              depth: 1000))
+    }
+
+    /// R10: a grandchild drawn through a parent without a composite is P_owner·inverse(W'_owner)·W'_grandchild.
+    func testGrandchildInGrandparentCompositeUsesOwnerMatrices() {
+        let owner = layer("g", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, 0.4), size: SIMD2(400, 300),
+                          alignment: .left)
+        let parent = layer("p", parent: "g", origin: SIMD3(-50, 20, 0), angles: SIMD3(0, 0, 0.2),
+                           scale: SIMD3(1.5, 1.5, 1), size: SIMD2(100, 80))
+        let child = layer("c", parent: "p", origin: SIMD3(30, 40, 0))
+        let layers = set([owner, parent, child])
+        let draw = layers.draw("c", kind: .layer, compositeOwnerID: "g", parallax: canvas / 2)
+        let expected = WPEParityUniformMatrices.ortho(halfWidth: 200, halfHeight: 150, depth: 1000)
+            * layers.model("g").inverse * layers.model("c")
+        assertEqual(draw.matrices.modelViewProjection, expected, accuracy: 1e-6)
+        // Negative control: the direct parent's composite matrices differ, so the check above can fail.
+        let direct = WPEParityLayerTransform.compositeMatrices(parentModel: layers.model("p"), parentSize: parent.size,
+                                                               childModel: layers.model("c"))
+        XCTAssertFalse(simd_almost_equal_elements(direct.modelViewProjection, expected, 1e-3))
+    }
+
+    /// R10 step 1, capture eid144: the albedo fills a 3756×1936 composite with M = V = I and a y-up ortho.
+    func testAlbedoIntoCompositeMatchesCaptureEid144() {
+        let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(400, 200))])
+        let kind = WPEParityLayerDrawKind.compositeFill(size: SIMD2(3756, 1936))
+        let draw = layers.draw("a", kind: kind, parallax: canvas / 2)
+        var expected = simd_float4x4(diagonal: SIMD4(2.0 / 3756, 2.0 / 1936, 1.0 / 2000, 1))
+        expected.columns.3 = SIMD4(-1, -1, 0.5, 1)
+        assertEqual(draw.matrices.modelViewProjection, expected, accuracy: 1e-7)
+        assertEqual(draw.matrices.model, matrix_identity_float4x4)
+        assertEqual(draw.matrices.view, matrix_identity_float4x4)
+        let quad = layers.quad("a", kind: kind, uvMax: SIMD2(0.75, 0.5))
+        XCTAssertEqual(quad.vertices.map(\.position), [SIMD3(0, 1936, 0), SIMD3(3756, 1936, 0), SIMD3(0, 0, 0),
+                                                       SIMD3(3756, 0, 0)])
+        XCTAssertEqual(quad.vertices.map(\.texcoord), [SIMD2(0, 0), SIMD2(0.75, 0), SIMD2(0, 0.5), SIMD2(0.75, 0.5)])
+        XCTAssertEqual((expected * SIMD4(quad.vertices[0].position, 1)).y, 1, accuracy: 1e-6)
     }
 
     func testLayerAndEffectPassDraws() {
