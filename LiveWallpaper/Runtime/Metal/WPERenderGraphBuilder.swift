@@ -110,6 +110,7 @@ struct WPERenderGraphBuilder: Sendable {
             originalIndexByID: originalIndexByID
         )
 
+        let scriptEffectHandleIDs = Self.scriptEffectHandleObjectIDs(in: document)
         let rawLayers = try orderedLayerIDs
             .compactMap { objectByID[$0] }
             .map { object in
@@ -124,7 +125,8 @@ struct WPERenderGraphBuilder: Sendable {
                         for: object.id,
                         objectByID: authoredSceneObjectByID,
                         parentByID: document.objectParentByID
-                    )
+                    ),
+                    scriptEffectHandles: scriptEffectHandleIDs.contains(object.id)
                 )
             }
         let parallaxAligned = Self.propagatingParallaxDepthThroughParents(
@@ -833,6 +835,33 @@ struct WPERenderGraphBuilder: Sendable {
         return WPEPassVisibilityGate(script: script, initialVisible: effect.visible)
     }
 
+    /// Gate source is a lookup key, never JS: it must not be installed as a visibility script.
+    private static let scriptEffectHandleGatePrefix = "\u{0}getEffect\u{1}"
+
+    /// Gate a SceneScript `getEffect` handle opens and closes; unique per object + authored effect.
+    static func scriptEffectHandleGate(objectID: String, effect: WPESceneImageEffect) -> WPEPassVisibilityGate {
+        WPEPassVisibilityGate(
+            script: WPESceneTransformScript(
+                script: "\(scriptEffectHandleGatePrefix)\(objectID)\u{1}\(effect.id)",
+                seed: SIMD3<Double>(effect.visible ? 1 : 0, 0, 0)
+            ),
+            initialVisible: effect.visible
+        )
+    }
+
+    static func isScriptEffectHandleGate(_ gate: WPEPassVisibilityGate) -> Bool {
+        gate.script.script.hasPrefix(scriptEffectHandleGatePrefix)
+    }
+
+    /// Objects whose effects a `getEffect` call may reach: script-referenced layers plus owners of a getEffect script.
+    private static func scriptEffectHandleObjectIDs(in document: WPESceneDocument) -> Set<String> {
+        guard allScriptSources(in: document).contains(where: { $0.contains("getEffect") }) else { return [] }
+        let owners = document.imageObjects.filter { object in
+            cursorRoutedScripts(of: object).contains { $0.contains("getEffect") }
+        }.map(\.id)
+        return layerScriptControlledVisibilityIDs(in: document).union(owners)
+    }
+
         static func buildsIntoGraph(_ effect: WPESceneImageEffect) -> Bool {
             effect.visible || scriptVisibilityGate(for: effect) != nil
         }
@@ -1043,7 +1072,8 @@ struct WPERenderGraphBuilder: Sendable {
         finalUntargetedPassToScene: Bool,
         preserveFinalCompositeForScene: Bool,
         sortIndex: Int,
-        authoredSceneObjects: [WPESceneJSONValue]
+        authoredSceneObjects: [WPESceneJSONValue],
+        scriptEffectHandles: Bool
     ) throws -> WPERenderLayer {
         let model = try resolveModelDescriptor(for: object)
         let materialPath = model.materialPath
@@ -1090,8 +1120,9 @@ struct WPERenderGraphBuilder: Sendable {
             )
         }
 
-        for (effectIndex, effect) in object.effects.enumerated() where Self.buildsIntoGraph(effect) {
-                let visibilityGate = Self.scriptVisibilityGate(for: effect)
+        for (effectIndex, effect) in object.effects.enumerated() where scriptEffectHandles || Self.buildsIntoGraph(effect) {
+            let visibilityGate = Self.scriptVisibilityGate(for: effect)
+                ?? (scriptEffectHandles ? Self.scriptEffectHandleGate(objectID: object.id, effect: effect) : nil)
             let asset = try loadEffect(path: effect.fileRelativePath)
             // WPE's unique buffers belong to this effect instance, including when
             // the same effect occurs twice on one object. Shared scratch and scene

@@ -2040,6 +2040,13 @@ extension WPESceneScriptPropertyValue {
 
 // MARK: - Shared cross-script state (`shared` global)
 
+/// One authored `effects[]` entry; `id` is the effect's scene.json id, which render passes carry.
+struct WPESceneScriptEffectInfo: Sendable, Equatable {
+    let id: String
+    let name: String
+    let visible: Bool
+}
+
 struct WPESceneScriptLayerInfo: Sendable {
     let id: String
     let name: String
@@ -2065,6 +2072,8 @@ struct WPESceneScriptLayerInfo: Sendable {
     let initialAlpha: Double?
     /// Complete load-time configuration, never synthesized from mutable layer state.
     let initialConfiguration: WPESceneJSONValue?
+    /// Authored order, which is what `getEffect(index)` indexes.
+    let effects: [WPESceneScriptEffectInfo]
 
     init(
         id: String,
@@ -2083,7 +2092,8 @@ struct WPESceneScriptLayerInfo: Sendable {
         particleInstanceSeed: WPEParticleInstanceValues = .init(),
         initialVisible: Bool? = nil,
         initialAlpha: Double? = nil,
-        initialConfiguration: WPESceneJSONValue? = nil
+        initialConfiguration: WPESceneJSONValue? = nil,
+        effects: [WPESceneScriptEffectInfo] = []
     ) {
         self.id = id
         self.name = name
@@ -2102,6 +2112,7 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.initialVisible = initialVisible
         self.initialAlpha = initialAlpha
         self.initialConfiguration = initialConfiguration
+        self.effects = effects
     }
 }
 

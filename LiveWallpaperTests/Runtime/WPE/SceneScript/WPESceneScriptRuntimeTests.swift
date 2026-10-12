@@ -5419,6 +5419,69 @@ struct WPESceneScriptInitializationOrderingTests {
         #expect(output.others["[201] package"]?.visible == true)
     }
 
+    private static func effectLayerStore() -> WPESharedScriptState {
+        WPESharedScriptState(layers: [
+            .init(id: "1", name: "Host", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+            .init(id: "1201", name: "[201] package", size: SIMD2(8, 8), origin: .zero, index: 1, parentName: nil,
+                  effects: [
+                      .init(id: "11", name: "源描边溶解", visible: true),
+                      .init(id: "12", name: "源纸张图集", visible: false),
+                  ]),
+        ])
+    }
+
+    @Test("IEffectLayer.getEffect resolves by name and index, and its writes reach the layer output (3798688689)")
+    func getEffectWritesReachOutput() throws {
+        let store = Self.effectLayerStore()
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             export function init(value) {
+                                                                 const layer = thisScene.getLayerByID(String(1201));
+                                                                 const stroke = layer.getEffect('源描边溶解');
+                                                                 const paper = layer.getEffect(1);
+                                                                 shared.names = stroke.name + '|' + paper.name;
+                                                                 shared.count = layer.getEffectCount();
+                                                                 shared.missing = layer.getEffect('nope') === null && layer.getEffect(2) === null;
+                                                                 shared.seed = String(paper.visible);
+                                                                 stroke.setMaterialProperty('threshold1', 0.25);
+                                                                 stroke.setMaterialProperty('offset', new Vec2(1, 2));
+                                                                 stroke.setMaterialProperty('tint', new Vec4(1, 2, 3, 4));
+                                                                 paper.setMaterialProperty('frame', 3);
+                                                                 paper.visible = true;
+                                                                 return value;
+                                                             }
+                                                             export function update(value) { return value; }
+                                                             """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Host", ownObjectID: "1",
+                                                             shared: store, governor: WPESceneScriptExecutionGovernor(limit: 4))
+        #expect(store.get("names") as? String == "源描边溶解|源纸张图集")
+        #expect(store.get("count") as? Double == 2)
+        #expect(store.get("missing") as? Bool == true)
+        #expect(store.get("seed") as? String == "false")
+        let output = try #require(instance.takeLayerOutput())
+        let effects = try #require(output.effects["[201] package"])
+        #expect(effects["11"]?.visible == nil)
+        #expect(effects["11"]?.materialProperties == [
+            "threshold1": .number(0.25), "offset": .vector([1, 2]), "tint": .vector([1, 2, 3, 4]),
+        ])
+        #expect(effects["12"]?.visible == true)
+        #expect(effects["12"]?.materialProperties == ["frame": .number(3)])
+    }
+
+    @Test("Reading an effect handle without writing it leaves the layer output empty")
+    func getEffectReadOnlyDoesNotDrive() throws {
+        let store = Self.effectLayerStore()
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             export function init(value) {
+                                                                 const effect = thisScene.getLayerByID('1201').getEffect(0);
+                                                                 shared.read = effect.visible;
+                                                                 return value;
+                                                             }
+                                                             export function update(value) { return value; }
+                                                             """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Host", ownObjectID: "1",
+                                                             shared: store, governor: WPESceneScriptExecutionGovernor(limit: 4))
+        #expect(store.get("read") as? Bool == true)
+        #expect(instance.takeLayerOutput()?.effects.isEmpty ?? true)
+    }
+
     @Test("thisObject.getChildren returns authored children in paint order (3812566774 slideshow)")
     func getChildrenFeedsSlideshowInit() throws {
         // Workshop 3812566774 (EasyTransitions+): init() does

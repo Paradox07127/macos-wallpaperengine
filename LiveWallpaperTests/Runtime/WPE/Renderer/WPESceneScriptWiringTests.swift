@@ -493,6 +493,50 @@ struct WPESceneScriptWiringTests {
         #expect(renderer.sharedScriptValueForTesting("ownX") as? Double == 40)
     }
 
+    @Test("getEffect writes land on the effect's gate and on its passes under the material alias; reads change nothing",
+          arguments: [true, false])
+    func getEffectWritesReachEffectGateAndConstants(writes: Bool) async throws {
+        let fixture = try MetalSceneFixture.audioSpectrumEffectScene()
+        defer { fixture.cleanup() }
+        try Data("""
+        uniform float u_Threshold1; // {"material":"threshold1","default":0}
+        void main() { gl_FragColor = vec4(u_Threshold1); }
+        """.utf8).write(to: fixture.root.appendingPathComponent("shaders/effects/audioprobe.frag"))
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        var effects = try #require(objects[0]["effects"] as? [[String: Any]])
+        effects[0]["visible"] = false
+        objects[0]["effects"] = effects
+        let body = writes
+            ? "e.visible = true; e.setMaterialProperty('threshold1', 0.5); e.setMaterialProperty('u_Threshold1', 0.75);"
+            : "shared.seen = e.visible;"
+        objects[0]["alpha"] = ["value": 1, "script": """
+        export function init() { const e = thisLayer.getEffect('AudioProbe'); \(body) }
+        export function update(value) { return value; }
+        """]
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+
+        let effectPass = try #require(renderer.renderPipeline?.layers.flatMap(\.passes).first {
+            $0.pass.authoredJSON.effectIdentity?.authoredEffectID == "1"
+        })
+        #expect(effectPass.materialUniformNames["threshold1"] == "u_Threshold1")
+        let gate = try #require(effectPass.pass.visibilityGate)
+        #expect(renderer.effectVisibilityScriptInstances.isEmpty)
+        if writes {
+            #expect(renderer.liveEffectVisibility[gate.id] == true)
+            #expect(renderer.liveEffectConstants[effectPass.pass.id] == ["threshold1": .number(0.5)])
+        } else {
+            #expect(renderer.sharedScriptValueForTesting("seen") as? Bool == false)
+            #expect(renderer.liveEffectVisibility[gate.id] == false)
+            #expect(renderer.liveEffectConstants.isEmpty)
+        }
+    }
+
     @Test("Text script writes addressed by object identity reach the duplicate-named layer")
     func textScriptIdentityKeysResolve() throws {
         let fixture = try MetalSceneFixture.solidColorScene()

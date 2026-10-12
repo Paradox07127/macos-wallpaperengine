@@ -748,7 +748,8 @@ extension WPEMetalSceneRenderer {
                 parallaxDepth: object.parallaxDepth,
                 initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
                 initialAlpha: object.alpha,
-                initialConfiguration: initialConfiguration(object.id)
+                initialConfiguration: initialConfiguration(object.id),
+                effects: object.effects.map { .init(id: $0.id, name: $0.name, visible: $0.visible) }
             ))
         }
         for object in document.transformHostObjects {

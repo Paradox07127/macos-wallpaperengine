@@ -3366,6 +3366,41 @@ struct WPERenderGraphBuilderTests {
         #expect(hidden.count == 1)
     }
 
+    @Test("A getEffect script keeps the referenced layer's authored-hidden effect behind a gate; without getEffect it is dropped",
+          arguments: [true, false])
+    func getEffectScriptRetainsHiddenEffect(callsGetEffect: Bool) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGatedEffectAssets(root: root)
+
+        var payload = gatedEffectScene(effectVisible: false)
+        var objects = try #require(payload["objects"] as? [[String: Any]])
+        let body = callsGetEffect
+            ? "thisScene.getLayer('DAY-NIGHT').getEffect('Night (Cycle)').visible = true;"
+            : "thisScene.getLayer('DAY-NIGHT').visible = true;"
+        objects.append([
+            "id": 9, "name": "controller", "type": "image", "image": "models/layer.json",
+            "alpha": ["value": 1, "script": "export function init() { \(body) }"],
+        ])
+        payload["objects"] = objects
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let passes = try #require(graph.layers.first(where: { $0.objectID == "7" })).passes
+
+        if callsGetEffect {
+            #expect(passes.map(\.shader) == ["genericimage2", "effects/lut", "materials/util/copy.json"])
+            let gate = try #require(passes.first(where: { $0.shader == "effects/lut" })?.visibilityGate)
+            #expect(gate.initialVisible == false)
+            #expect(WPERenderGraphBuilder.isScriptEffectHandleGate(gate))
+            #expect(passes.filter { $0.target == .scene }.map(\.visibilityGate) == [nil])
+        } else {
+            #expect(passes.count == 1)
+            #expect(passes.allSatisfy { $0.visibilityGate == nil })
+        }
+    }
+
     @Test("Clones of one gated effect share a single gate id so they share one script instance")
     func clonedGatedEffectsShareOneGateID() throws {
         let root = FileManager.default.temporaryDirectory

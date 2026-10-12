@@ -82,6 +82,17 @@ struct WPECreatedLayerScriptState: Sendable, Equatable {
     var perspective: Bool?
 }
 
+/// IEffect writes. `materialProperties` is keyed by the shader's `"material"` alias, not the uniform name.
+struct WPELayerScriptEffectMutation: Sendable, Equatable {
+    var visible: Bool?
+    var materialProperties: [String: WPESceneShaderConstantValue] = [:]
+
+    mutating func merge(_ newer: Self) {
+        visible = newer.visible ?? visible
+        materialProperties.merge(newer.materialProperties) { _, latest in latest }
+    }
+}
+
 struct WPELayerScriptTextDelivery: Sendable, Equatable {
     let stateIdentity: UUID
     let publicationRevision: UInt64
@@ -104,6 +115,8 @@ struct WPELayerScriptOutput: Sendable, Equatable {
     /// Every handle's video commands in call order; the renderer replays this, not the per-layer
     /// `videoCommands`, so handles sharing one source keep their interleaving.
     var videoCalls: [WPELayerScriptVideoCall] = []
+    /// Layer key ("" = thisLayer) → authored effect id → assigned fields; read-only handles never appear.
+    var effects: [String: [String: WPELayerScriptEffectMutation]] = [:]
 
     func acceptsTextDelivery(in shared: WPESharedScriptState?, key: String) -> Bool {
         guard let textDelivery else { return true }
@@ -808,6 +821,15 @@ final class WPELayerScriptInstance {
                 accumulated.merge(newerPresentation)
             }
             merged.presentation[name] = accumulated
+        }
+        for (name, pendingEffects) in pending.effects {
+            for (id, pendingEffect) in pendingEffects {
+                var accumulated = pendingEffect
+                if let newerEffect = merged.effects[name]?[id] {
+                    accumulated.merge(newerEffect)
+                }
+                merged.effects[name, default: [:]][id] = accumulated
+            }
         }
         merged.videoCalls = pending.videoCalls + newer.videoCalls
         merged.own.videoCommands = pending.own.videoCommands + newer.own.videoCommands
@@ -1699,6 +1721,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
     private var authoredLayerOrderMutationAllowed = false
     fileprivate var scriptWorkshopID: String?
     fileprivate var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
+    fileprivate var assignedEffects: [String: [String: WPELayerScriptEffectMutation]] = [:]
+    /// Keyed "layerKey\u{1}effectID" so repeated getEffect calls return the same object.
+    fileprivate var effectHandles: [String: JSValue] = [:]
     fileprivate var createdAngles: [String: SIMD3<Double>] = [:]
     fileprivate var hasLoggedUnsupportedLayerOperation = false
     /// Call order across all handles; `sourceKey` nil = no published source. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
@@ -1744,6 +1769,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let ownTransform: WPELayerScriptTransformMutation
         let otherTransforms: [String: WPELayerScriptTransformMutation]
         let presentation: [String: WPELayerScriptPresentationMutation]
+        let effects: [String: [String: WPELayerScriptEffectMutation]]
         let video: [(call: WPELayerScriptVideoCall, sourceKey: String?)]
         let sound: [(String, WPELayerSoundCommand)]
         let soundIntent: [String: Bool]
@@ -1824,7 +1850,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         evaluationJournal = EvaluationJournal(
             visible: assignedVisible, alpha: assignedAlpha, text: assignedText,
             ownTransform: assignedOwnTransform, otherTransforms: assignedOtherTransforms,
-            presentation: presentationMutations, video: pendingVideo, sound: pendingSound,
+            presentation: presentationMutations, effects: assignedEffects, video: pendingVideo, sound: pendingSound,
             soundIntent: soundIntent, soundVolume: assignedSoundVolume,
             created: createdLayers, destroyed: destroyedCreatedKeys,
             pendingDestruction: pendingCreatedDestruction, order: currentLayerOrder, didSort: didSortLayers,
@@ -1912,6 +1938,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         assignedOwnTransform = previous.ownTransform
         assignedOtherTransforms = previous.otherTransforms
         presentationMutations = previous.presentation
+        assignedEffects = previous.effects
         pendingVideo = previous.video
         pendingSound = previous.sound
         soundIntent = previous.soundIntent
@@ -2417,6 +2444,15 @@ class WPELayerScriptBridge: @unchecked Sendable {
             self?.neutralAnimationStubCache
         }
         handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
+        let getEffect: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] selector in
+            guard let self, let context else { return nil }
+            return effectHandle(layerKey: key, selector: selector, in: context) ?? JSValue(nullIn: context)
+        }
+        handle.setObject(getEffect, forKeyedSubscript: "getEffect" as NSString)
+        let getEffectCount: @convention(block) () -> Int = { [weak self] in
+            self?.layerInfo(forKey: key)?.effects.count ?? 0
+        }
+        handle.setObject(getEffectCount, forKeyedSubscript: "getEffectCount" as NSString)
         if let info {
             wpeInstallTimelineAnimation(on: handle, objectID: info.id, shared: shared, in: context)
         }
@@ -2444,6 +2480,60 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
         handle.setObject(isPlaying, forKeyedSubscript: "isPlaying" as NSString)
         return handle
+    }
+
+    /// IEffect for an authored effect by name or `effects[]` index; nil when the layer has no such effect.
+    fileprivate func effectHandle(layerKey key: String, selector: JSValue, in context: JSContext) -> JSValue? {
+        guard let effects = layerInfo(forKey: key)?.effects else { return nil }
+        let match: WPESceneScriptEffectInfo?
+        if selector.isNumber {
+            let index = selector.toDouble()
+            match = index >= 0 && index < Double(effects.count) ? effects[Int(index)] : nil
+        } else if selector.isString, let name = selector.toString() {
+            match = effects.first { $0.name == name }
+        } else {
+            match = nil
+        }
+        guard let effect = match else { return nil }
+        let cacheKey = "\(key)\u{1}\(effect.id)"
+        if let existing = effectHandles[cacheKey] {
+            return existing
+        }
+        guard let handle = JSValue(newObjectIn: context) else { return nil }
+        handle.setObject(effect.name, forKeyedSubscript: "name" as NSString)
+        let effectID = effect.id
+        let authoredVisible = effect.visible
+        let getVisible: @convention(block) () -> Bool = { [weak self] in
+            self?.assignedEffects[key]?[effectID]?.visible ?? authoredVisible
+        }
+        let setVisible: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.assignedEffects[key, default: [:]][effectID, default: .init()].visible = value.toBool()
+        }
+        defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
+        let setMaterialProperty: @convention(block) (JSValue, JSValue) -> Void = { [weak self] name, value in
+            guard name.isString, let property = name.toString(),
+                  let constant = WPELayerScriptBridge.materialPropertyValue(value) else { return }
+            self?.assignedEffects[key, default: [:]][effectID, default: .init()].materialProperties[property] = constant
+        }
+        handle.setObject(setMaterialProperty, forKeyedSubscript: "setMaterialProperty" as NSString)
+        effectHandles[cacheKey] = handle
+        return handle
+    }
+
+    /// A Number, or a Vec2/Vec3/Vec4 read by the leading x/y/z/w components it carries; nil if not finite.
+    fileprivate static func materialPropertyValue(_ value: JSValue) -> WPESceneShaderConstantValue? {
+        if value.isNumber {
+            let scalar = value.toDouble()
+            return scalar.isFinite ? .number(scalar) : nil
+        }
+        guard value.isObject else { return nil }
+        var components: [Double] = []
+        for axis in ["x", "y", "z", "w"] {
+            guard let component = value.objectForKeyedSubscript(axis), component.isNumber else { break }
+            components.append(component.toDouble())
+        }
+        guard components.count >= 2, components.allSatisfy(\.isFinite) else { return nil }
+        return .vector(components)
     }
 
     fileprivate func installAssignmentAccessors(
@@ -3004,7 +3094,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
             textDelivery: textSnapshot.map {
                 .init(stateIdentity: $0.stateIdentity, publicationRevision: $0.revision, explicitKeys: explicitTextKeys)
             },
-            videoCalls: videoCalls
+            videoCalls: videoCalls,
+            effects: assignedEffects
         )
     }
 

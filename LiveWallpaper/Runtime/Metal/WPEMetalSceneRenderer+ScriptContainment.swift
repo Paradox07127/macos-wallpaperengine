@@ -359,7 +359,7 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
-        for (id, gate) in gatesByID.sorted(by: { $0.key < $1.key }) {
+        for (id, gate) in gatesByID.sorted(by: { $0.key < $1.key }) where !WPERenderGraphBuilder.isScriptEffectHandleGate(gate) {
             let ownerID = ownerIDsByGate[id]
             guard installTransformScript(
                 gate.script, shape: .boolean, owner: (ownerID, sharedState.layers.first(where: { $0.id == ownerID })?.name),

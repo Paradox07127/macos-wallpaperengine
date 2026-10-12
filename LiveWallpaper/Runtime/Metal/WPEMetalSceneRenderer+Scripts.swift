@@ -271,6 +271,7 @@ extension WPEMetalSceneRenderer {
             )
         }
         applyScriptTextAssignments(output, ownObjectID: ownObjectID)
+        applyScriptEffectMutations(output, ownObjectID: ownObjectID)
     }
 
     /// Duplicate or empty layer names reach scripts as object-ID keys; plain names map through the scene name index.
@@ -1027,6 +1028,7 @@ extension WPEMetalSceneRenderer {
             liveLayerPresentation[id, default: .init()].merge(mutation)
         }
         applyScriptTextAssignments(output, ownObjectID: ownObjectID)
+        applyScriptEffectMutations(output, ownObjectID: ownObjectID)
         for created in output.created {
             guard !created.imagePath.isEmpty else { continue }
             var state = created
@@ -1043,6 +1045,28 @@ extension WPEMetalSceneRenderer {
             guard let id = name.isEmpty ? ownObjectID : scriptTargetObjectID(name),
                   output.acceptsTextDelivery(in: sceneScriptSharedState, key: name) else { continue }
             liveScriptAssignedText[id] = text
+        }
+    }
+
+    /// IEffect writes: `visible` drives the effect's pass gate; a material property lands only on passes whose shader declares that alias.
+    private func applyScriptEffectMutations(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        guard !output.effects.isEmpty, let pipeline = renderPipeline else { return }
+        for (name, mutations) in output.effects {
+            guard let objectID = name.isEmpty ? ownObjectID : scriptTargetObjectID(name) else { continue }
+            for layer in pipeline.layers where layer.graphLayer.objectID == objectID {
+                for prepared in layer.passes {
+                    guard let identity = prepared.pass.authoredJSON.effectIdentity, identity.objectID == objectID,
+                          let mutation = mutations[identity.authoredEffectID] else { continue }
+                    if let visible = mutation.visible, let gate = prepared.pass.visibilityGate {
+                        liveEffectVisibility[gate.id] = visible
+                    }
+                    for (alias, value) in mutation.materialProperties {
+                        let key = wpeNativized(alias)
+                        guard prepared.materialUniformNames[key] != nil else { continue }
+                        liveEffectConstants[prepared.pass.id, default: [:]][key] = value
+                    }
+                }
+            }
         }
     }
 
