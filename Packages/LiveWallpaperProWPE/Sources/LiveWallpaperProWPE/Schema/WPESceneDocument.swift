@@ -1660,14 +1660,22 @@ public struct WPESceneAnimationLayer: Equatable, Sendable, Identifiable {
     /// Composed ADDITIVELY on top of the base (non-additive) layer — e.g. a
     /// blink/face layer over an idle-sway base. Drives multi-layer palette blending.
     public let additive: Bool
+    public let blendIn: Bool
+    public let blendOut: Bool
+    /// Seconds; each ramp lasts min(duration × 0.5, blendTime) (FUN_14026c8b0).
+    public let blendTime: Double
 
-    public init(id: Int, rate: Double, visible: Bool, blend: Double, animation: Int, additive: Bool = false) {
+    public init(id: Int, rate: Double, visible: Bool, blend: Double, animation: Int, additive: Bool = false,
+                blendIn: Bool = false, blendOut: Bool = false, blendTime: Double = 0) {
         self.id = id
         self.rate = rate
         self.visible = visible
         self.blend = blend
         self.animation = animation
         self.additive = additive
+        self.blendIn = blendIn
+        self.blendOut = blendOut
+        self.blendTime = blendTime
     }
 }
 

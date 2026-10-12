@@ -2531,7 +2531,10 @@ public enum WPESceneDocumentParser {
                 visible: parseBool(dict["visible"]) ?? true,
                 blend: parseDouble(dict["blend"]) ?? 1,
                 animation: animation,
-                additive: parseBool(dict["additive"]) ?? false
+                additive: parseBool(dict["additive"]) ?? false,
+                blendIn: parseBool(dict["blendin"]) ?? false,
+                blendOut: parseBool(dict["blendout"]) ?? false,
+                blendTime: parseDouble(dict["blendtime"]) ?? 0
             ))
         }
         return layers
