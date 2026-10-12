@@ -172,7 +172,8 @@ final class WPEParityGraphExecutor {
             guard case let .copy(source, destination) = step.kind else { continue }
             guard let from = textures[source], let to = textures[destination],
                   from.width == to.width, from.height == to.height, from.pixelFormat == to.pixelFormat,
-                  from.mipmapLevelCount == to.mipmapLevelCount, from.sampleCount == to.sampleCount,
+                  from.mipmapLevelCount == to.mipmapLevelCount || from.mipmapLevelCount == 1,
+                  from.sampleCount == to.sampleCount,
                   from.textureType == to.textureType
             else { throw WPEParityGraphExecutionError.incompatibleCopy(source: source, destination: destination) }
         }
@@ -207,7 +208,10 @@ final class WPEParityGraphExecutor {
         switch step.kind {
         case let .copy(source, destination):
             let (from, to) = try (texture(source), texture(destination))
-            try blit { $0.copy(from: from, to: to) }
+            try blit {
+                $0.copy(from: from, sourceSlice: 0, sourceLevel: 0, to: to, destinationSlice: 0, destinationLevel: 0,
+                        sliceCount: 1, levelCount: from.mipmapLevelCount)
+            }
             return
         case let .generateMips(id):
             let mipmapped = try texture(id)

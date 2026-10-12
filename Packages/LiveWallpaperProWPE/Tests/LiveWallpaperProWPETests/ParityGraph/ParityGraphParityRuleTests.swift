@@ -134,3 +134,22 @@ struct ParityGraphHeapLayoutTests {
         #expect(layout(graph).offsets == ["T1": 0])
     }
 }
+
+struct ParityGraphMipCopyTests {
+    @Test func singleMipSourceCopiesIntoMipZeroOfAMipmappedDestination() throws {
+        let resources = [S.persistent("A"), S.transient("M", mips: 4)]
+        let graph = try S.compile(resources, [S.bind("A"), S.clear("A"), S.copy("A", "M"), S.generateMips("M")])
+        #expect(S.depends(graph, 2, on: 1, "M", mip: 0, .readAfterWrite))
+        #expect(!graph.dependencies.contains { $0.producer == 1 && $0.subresource.mip > 0 })
+    }
+
+    @Test func unequalMipCountsAboveOneAreRejected() {
+        let resources = [S.transient("A", mips: 2), S.transient("M", mips: 4)]
+        #expect(throws: WPEParityGraphError.incompatibleCopy(operation: 0)) {
+            try S.compile(resources, [S.copy("A", "M")])
+        }
+        #expect(throws: WPEParityGraphError.incompatibleCopy(operation: 0)) {
+            try S.compile([S.transient("M", mips: 4), S.transient("A")], [S.copy("M", "A")])
+        }
+    }
+}

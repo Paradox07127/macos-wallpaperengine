@@ -83,6 +83,23 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         }
     }
 
+    func testSingleMipCopyFillsMipZeroBeforeGenerateMips() throws {
+        let harness = try makeHarness()
+        let mips = 3
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [resource("I", .imported), resource("A", .frameTransient),
+                        resource("M", .persistent, mips: mips)],
+            operations: [bind("A"), draw(sampling: "I", overwrites: true), op(.copy(source: "A", destination: "M")),
+                         op(.generateMips("M"))]
+        )
+        let input = try makeInput(harness)
+        let target = try makeTexture(harness, mips: mips)
+        try execute(harness, graph, external: ["I": input, "M": target],
+                    draws: [1: passthroughDraw(harness, sampleCount: 1, input: input)])
+        try assertPixels(readBack(harness, target), equal: Self.texels)
+        XCTAssertEqual(try readBack(harness, target, level: mips - 1).count, 4)
+    }
+
     func testMultisampledTargetResolvesAtEncoderExit() throws {
         let harness = try makeHarness()
         let graph = try WPERenderGraphCompiler.compile(

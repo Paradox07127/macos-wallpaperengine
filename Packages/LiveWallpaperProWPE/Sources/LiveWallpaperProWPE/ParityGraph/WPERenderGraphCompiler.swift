@@ -135,12 +135,14 @@ private func normalize(_ operations: [WPERenderOperation],
             result.append(.draw(colors: colors, depth: depth, samples: samples, draw))
         case let .copy(sourceID, destinationID):
             let (source, destination) = try (resource(sourceID), resource(destinationID))
+            // A single-mip source fills only mip 0 of a mipmapped destination (_rt_MipMappedFrameBuffer).
             guard sourceID != destinationID, source.width == destination.width, source.height == destination.height,
-                  source.format == destination.format, source.mipCount == destination.mipCount,
-                  source.sampleCount == destination.sampleCount
+                  source.format == destination.format, source.sampleCount == destination.sampleCount,
+                  source.mipCount == destination.mipCount || source.mipCount == 1
             else { throw .incompatibleCopy(operation: index) }
-            try result.append(.transfer(.copy(source: sourceID, destination: destinationID),
-                                        reads: allMips(sourceID), writes: allMips(destinationID)))
+            let mips = try allMips(sourceID)
+            result.append(.transfer(.copy(source: sourceID, destination: destinationID),
+                                    reads: mips, writes: mips.map { WPESubresource(destinationID, mip: $0.mip) }))
         case let .generateMips(id):
             let mips = try allMips(id)
             result.append(.transfer(.generateMips(id), reads: [mips[0]], writes: Array(mips.dropFirst())))
