@@ -4,6 +4,8 @@ import LiveWallpaperCore
 
 public struct WPESceneDocument: Equatable, Sendable {
     public let sourceJSON: WPESceneJSONValue
+    /// User-resolved authored general fields for the parity pipeline.
+    public let resolvedGeneralJSON: WPESceneJSONValue
     public let camera: WPESceneCamera
     /// Root static camera, distinct from the selected camera object.
     public let staticCamera: WPESceneCamera
@@ -31,6 +33,7 @@ public struct WPESceneDocument: Equatable, Sendable {
 
     public init(
         sourceJSON: WPESceneJSONValue = .object([:]),
+        resolvedGeneralJSON: WPESceneJSONValue? = nil,
         camera: WPESceneCamera,
         staticCamera: WPESceneCamera? = nil,
         authoredCamera: WPESceneAuthoredCamera = .empty,
@@ -51,6 +54,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         diagnostics: [WPESceneDiagnostic]
     ) {
         self.sourceJSON = sourceJSON
+        self.resolvedGeneralJSON = resolvedGeneralJSON ?? sourceJSON["general"] ?? .object([:])
         self.camera = camera
         self.staticCamera = staticCamera ?? camera
         self.authoredCamera = authoredCamera

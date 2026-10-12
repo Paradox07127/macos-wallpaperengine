@@ -38,6 +38,7 @@ public struct WPEParityProgramScene: Sendable {
 
     public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
         let general = document.sourceJSON["general"]
+        let bloomGeneral = document.resolvedGeneralJSON
         let objects = Self.array(document.sourceJSON["objects"])
         var flags = WPEEngineComboFlags()
         // 140186c90.c:356-393
@@ -48,7 +49,7 @@ public struct WPEParityProgramScene: Sendable {
         flags.fogDistance = Self.flag(general?["fogdistance"])
         flags.fogHeight = Self.flag(general?["fogheight"])
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
-        let sceneBloom = general?["bloom"].map { Self.flag($0) } ?? true
+        let sceneBloom = bloomGeneral["bloom"].map { Self.flag($0) } ?? true
         // 14010df40.c:299-335, 365, 519-552
         flags.hdr = sceneBloom && Self.flag(general?["hdr"]) && settings.hdrPostProcessing
         flags.backbufferMSAA = settings.msaa && objects.contains { $0["model"] != nil }
@@ -158,30 +159,26 @@ public struct WPEParityProgramScene: Sendable {
                                           objects: sceneObjects, diagnostics: diagnostics)
         postProcess = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                                  objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
-                                                 bloomSettings: Self.bloomSettings(general, resolved: document.general.bloom),
+                                                 bloomSettings: Self.bloomSettings(bloomGeneral),
                                                  backbufferWidth: width, backbufferHeight: height,
                                                  backbufferFormat: format)
     }
 
-    /// Only keys present in the authored `general` override WPE's defaults (1401730d0.c:35-49). The parser resolves
-    /// user properties only for the HDR keys, and only with `hdr` and `bloom` on; other keys read the authored value.
-    private static func bloomSettings(_ general: WPESceneJSONValue?,
-                                      resolved: WPESceneBloomSettings?) -> WPEParityBloomSettings {
+    /// Only authored keys override WPE's defaults, after user-property resolution (1401730d0.c:35-49).
+    private static func bloomSettings(_ general: WPESceneJSONValue) -> WPEParityBloomSettings {
         var settings = WPEParityBloomSettings()
-        func value(_ key: String, _ resolvedValue: Double? = nil) -> Float? {
-            guard let authored = general?[key] else { return nil }
-            return (resolvedValue ?? number(authored)).map(Float.init)
+        func value(_ key: String) -> Float? {
+            number(general[key]).map(Float.init)
         }
         settings.strength = value("bloomstrength") ?? settings.strength
         settings.threshold = value("bloomthreshold") ?? settings.threshold
-        settings.hdrStrength = value("bloomhdrstrength", resolved?.strength) ?? settings.hdrStrength
-        settings.hdrThreshold = value("bloomhdrthreshold", resolved?.threshold) ?? settings.hdrThreshold
-        settings.hdrFeather = value("bloomhdrfeather", resolved?.feather) ?? settings.hdrFeather
-        settings.hdrScatter = value("bloomhdrscatter", resolved?.scatter) ?? settings.hdrScatter
-        settings.hdrIterations = value("bloomhdriterations", resolved.map { Double($0.iterations) })
-            .map { Int($0) } ?? settings.hdrIterations
-        if let authored = general?["bloomtint"],
-           let tint = resolved.map({ [$0.tint.x, $0.tint.y, $0.tint.z] }) ?? WPEParityProgramConstants.components(authored),
+        settings.hdrStrength = value("bloomhdrstrength") ?? settings.hdrStrength
+        settings.hdrThreshold = value("bloomhdrthreshold") ?? settings.hdrThreshold
+        settings.hdrFeather = value("bloomhdrfeather") ?? settings.hdrFeather
+        settings.hdrScatter = value("bloomhdrscatter") ?? settings.hdrScatter
+        settings.hdrIterations = value("bloomhdriterations").map { Int($0) } ?? settings.hdrIterations
+        if let tintValue = general["bloomtint"],
+           let tint = WPEParityProgramConstants.components(tintValue),
            tint.count == 3 {
             settings.tint = SIMD3<Float>(Float(tint[0]), Float(tint[1]), Float(tint[2]))
         }
