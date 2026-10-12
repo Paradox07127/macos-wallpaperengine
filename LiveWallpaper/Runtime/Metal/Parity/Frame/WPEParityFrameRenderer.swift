@@ -44,6 +44,7 @@ final class WPEParityFrameRenderer {
     /// Render targets the renderer allocates; layer images are not among them.
     let targets: [WPEResourceID: MTLTexture]
     private let images: [WPEResourceID: MTLTexture]
+    private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
     private let executors: [WPEParityGraphExecutor]
     private let draws: [Int: WPEParityFrameDrawPlan]
@@ -85,6 +86,11 @@ final class WPEParityFrameRenderer {
         targets.values.reduce(0) { $0 + $1.allocatedSize }
     }
 
+    /// The fixed textures video .tex draws sample.
+    var videoTextures: [MTLTexture] {
+        videos.textures
+    }
+
     init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue,
          shaders: WPEParityFrameShaderSource) async throws {
         let factory = WPEParityPipelineFactory(device: device)
@@ -103,6 +109,9 @@ final class WPEParityFrameRenderer {
         }
 
         try planner.fillImportedImages()
+        let videos = try await WPEParityVideoTextures(streams: planner.videos,
+                                                      workshopID: plan.scene.assets.roots[0].lastPathComponent,
+                                                      device: device, queue: queue)
 
         // Each draw needs at most two argument tables and a few cbuffers, all 256-byte aligned.
         guard let arena = WPEParityFrameArena(device: device, capacity: max(1 << 16, draws.count * 16 * 1024)) else {
@@ -124,7 +133,7 @@ final class WPEParityFrameRenderer {
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
         }
-        try Self.clear(Array(targets.values), queue: queue)
+        try Self.clear(Array(targets.values) + videos.textures, queue: queue)
 
         self.skipped = skipped
         drawCount = plan.frames[0].operations.count {
@@ -137,6 +146,7 @@ final class WPEParityFrameRenderer {
         self.backbuffer = backbuffer
         self.targets = targets
         images = planner.layerImages
+        self.videos = videos
         self.queue = queue
         self.executors = executors
         self.draws = draws
@@ -168,7 +178,9 @@ final class WPEParityFrameRenderer {
                                              audio: audio)
         let variant = frameIndex % executors.count
         frameIndex += 1
-        return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 }) { operation, textures in
+        defer { videos.finishFrame() }
+        return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
+                                                  prepare: videos.encode) { operation, textures in
             try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures,
                                            textureSlots: &textureSlots)
         }

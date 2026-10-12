@@ -10,7 +10,7 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
     case noShader(String)
     case pipeline(String)
     case texture(String)
-    /// The `.tex` holds a video stream, which this renderer does not decode.
+    /// The `.tex` holds a video stream this renderer does not play: no TEXI flag 0x20, or no payload behind it.
     case videoTexture(String)
 
     var category: String {

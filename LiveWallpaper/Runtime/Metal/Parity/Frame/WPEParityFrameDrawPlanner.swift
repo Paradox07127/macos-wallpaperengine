@@ -130,6 +130,8 @@ struct WPEParityFrameDrawPlanner {
 
     /// TEXI flag 0x4: the file carries TEXS sprite frames.
     private static let spriteFlag: UInt32 = 0x4
+    /// TEXI flag 0x20: the first mip is a video stream (1400ec220.c:851).
+    private static let videoFlag: UInt32 = 0x20
 
     let device: MTLDevice
     let factory: WPEParityPipelineFactory
@@ -144,6 +146,8 @@ struct WPEParityFrameDrawPlanner {
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
+    /// Video .tex files the planned draws sample, filled as draws are planned.
+    private(set) var videos: [WPEParityVideoTextures.Stream] = []
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
@@ -325,18 +329,45 @@ struct WPEParityFrameDrawPlanner {
         if let cached = assetImages[name] {
             return cached
         }
-        guard let data = plan.scene.assets.data("materials/\(name).tex") else {
-            throw .texture("materials/\(name).tex not found")
+        let path = "materials/\(name).tex"
+        guard let data = plan.scene.assets.data(path) else {
+            throw .texture("\(path) not found")
         }
-        do {
-            let image = try Self.image(WPEMappedByteSpan(data: data), device: device)
-            assetImages[name] = image
-            return image
-        } catch WPETexDecodeError.unsupportedAnimation {
-            throw .videoTexture("materials/\(name).tex")
-        } catch {
-            throw .texture("materials/\(name).tex: \(error)")
+        let span = WPEMappedByteSpan(data: data)
+        let image: Image
+        if case let .success(info) = WPETexDecoder().probe(span: span), info.flags & Self.videoFlag != 0 {
+            image = try videoImage(span, info: info, path: path)
+        } else {
+            do {
+                image = try Self.image(span, device: device)
+            } catch WPETexDecodeError.unsupportedAnimation {
+                throw .videoTexture(path)
+            } catch {
+                throw .texture("\(path): \(error)")
+            }
         }
+        assetImages[name] = image
+        return image
+    }
+
+    /// WPE samples a cleared BGRA texture of the TEXI size and stretches each new video frame into it
+    /// (1400ec220.c:851-1054); the renderer creates the decoder and clears the texture.
+    private mutating func videoImage(_ span: WPEMappedByteSpan, info: WPETexInfo,
+                                     path: String) throws(WPEParityFrameSkip) -> Image {
+        guard case let .success(payload) = WPETexDecoder().extractTexturePayload(span: span),
+              let video = payload.videoPayload
+        else { throw .videoTexture("\(path) has TEXI flag 0x20 but no video payload") }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: info.width,
+                                                                  height: info.height, mipmapped: false)
+        descriptor.storageMode = .private
+        // Render target for the clear, shader write for the MPS stretch.
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            throw .texture("\(path): video texture allocation failed")
+        }
+        texture.label = path
+        videos.append(WPEParityVideoTextures.Stream(texture: texture, bytes: video.bytes))
+        return Image(texture: texture, info: info)
     }
 
     /// Uploads a .tex's first image and, for a TEXS sprite sheet, every other image its frames sample.

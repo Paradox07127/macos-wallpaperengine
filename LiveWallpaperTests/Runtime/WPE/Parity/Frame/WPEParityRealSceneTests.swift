@@ -58,10 +58,10 @@ final class WPEParityRealSceneTests: XCTestCase {
         )
 
         let reasons = Dictionary(grouping: renderer.skipped.values, by: \.category).mapValues(\.count)
-        // Models are out of scope and video streams are not decoded; every other draw must reach a pipeline.
+        // Models are out of scope; every other draw must reach a pipeline.
         for (index, skip) in renderer.skipped.sorted(by: { $0.key < $1.key }) {
             switch skip {
-            case .modelMesh, .videoTexture:
+            case .modelMesh:
                 print("scene \(sceneID) operation \(index) skipped: \(skip)")
             default:
                 XCTFail("\(sceneID) operation \(index): \(skip)")
@@ -108,16 +108,15 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
 
         for frame in 1 ... 3 {
-            guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
-                return XCTFail("\(sceneID) frame \(frame) was skipped")
-            }
-            await commandBuffer.completed()
-            XCTAssertNil(commandBuffer.error, "\(sceneID) frame \(frame)")
-            let milliseconds = (commandBuffer.gpuEndTime - commandBuffer.gpuStartTime) * 1000
-            print("scene \(sceneID) frame \(frame): GPU \(String(format: "%.3f", milliseconds)) ms")
+            try await renderFrame(renderer, label: "scene \(sceneID) frame \(frame)")
         }
         print("scene \(sceneID): heap \(renderer.heapBytes) bytes, dedicated textures "
             + "\(renderer.dedicatedTextureBytes) bytes")
+        if sceneID == "3660962877" {
+            try await assertVideoPlays(renderer: renderer, device: device, queue: queue)
+        } else {
+            XCTAssertEqual(renderer.videoTextures.count, 0)
+        }
 
         let backbuffer = renderer.backbuffer
         XCTAssertEqual(backbuffer.pixelFormat, .rgba8Unorm)
@@ -131,6 +130,42 @@ final class WPEParityRealSceneTests: XCTestCase {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "wpe-parity-\(sceneID).png")
         try writePNG(pixels, width: backbuffer.width, height: backbuffer.height, to: url)
         print("scene \(sceneID): frame 3 written to \(url.path)")
+    }
+
+    private func renderFrame(_ renderer: WPEParityFrameRenderer, label: String) async throws {
+        guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+            return XCTFail("\(label) was skipped")
+        }
+        await commandBuffer.completed()
+        XCTAssertNil(commandBuffer.error, label)
+        let milliseconds = (commandBuffer.gpuEndTime - commandBuffer.gpuStartTime) * 1000
+        print("\(label): GPU \(String(format: "%.3f", milliseconds)) ms")
+    }
+
+    /// Object 1003 samples a 4000x2300 video .tex. Playback follows AVPlayer's wall clock, so once the first decoded
+    /// frame lands, frames rendered 0.5 s apart hold different video pixels.
+    private func assertVideoPlays(renderer: WPEParityFrameRenderer, device: MTLDevice,
+                                  queue: MTLCommandQueue) async throws {
+        XCTAssertEqual(renderer.videoTextures.count, 1)
+        let video = try XCTUnwrap(renderer.videoTextures.first)
+        XCTAssertEqual([video.width, video.height], [4000, 2300])
+        XCTAssertEqual(video.pixelFormat, .bgra8Unorm)
+        var before = try readBack(video, device: device, queue: queue)
+        let deadline = Date().addingTimeInterval(10)
+        var waits = 0
+        while !before.contains(where: { $0 != 0 }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+            waits += 1
+            try await renderFrame(renderer, label: "scene 3660962877 waiting for video frame \(waits)")
+            before = try readBack(video, device: device, queue: queue)
+        }
+        XCTAssertTrue(before.contains { $0 != 0 }, "no decoded video frame reached the texture within 10 s")
+        try await Task.sleep(for: .milliseconds(500))
+        try await renderFrame(renderer, label: "scene 3660962877 video frame 0.5 s later")
+        let after = try readBack(video, device: device, queue: queue)
+        let changed = stride(from: 0, to: after.count, by: 4).count { after[$0 ..< $0 + 4] != before[$0 ..< $0 + 4] }
+        print("scene 3660962877: \(changed) of \(after.count / 4) video texels changed over 0.5 s")
+        XCTAssertGreaterThan(changed, 0)
     }
 
     /// R8 Q4: object 935's layer-mesh draw packs MVP rows as cbuffer registers. The spec values assume V = I, which

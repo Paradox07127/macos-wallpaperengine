@@ -132,8 +132,9 @@ final class WPEParityGraphExecutor {
     }
 
     /// Thrown errors after the arena slot is taken still commit the partial frame, so the slot and
-    /// the heap event are released.
+    /// the heap event are released. `prepare` encodes ahead of the graph and runs only on a buffer that is committed.
     func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
+                     prepare: (MTLCommandBuffer) throws -> Void = { _ in },
                      draw: DrawProvider) throws -> Submission {
         let textures = try frameTextures(external)
         guard let commandBuffer = queue.makeCommandBuffer() else {
@@ -147,6 +148,7 @@ final class WPEParityGraphExecutor {
 
         var failure: (any Error)?
         do {
+            try prepare(commandBuffer)
             for index in graph.steps.indices {
                 try encodeStep(index, textures: textures, frame: frame, commandBuffer: commandBuffer, draw: draw)
             }
