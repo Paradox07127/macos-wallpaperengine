@@ -15,7 +15,7 @@ struct ParityPostProcessTests {
         try verifyCompilation(frame)
     }
 
-    @Test func hdrBloomHasExactPyramidAndCubicLastTwoUpsamples() throws {
+    @Test func hdrBloomHasExactPyramidAndCubicCoarsestTwoUpsamples() throws {
         var config = bloomConfig()
         config.hdrEnabled = true
         config.backbufferFormat = "rgba16float"
@@ -158,11 +158,15 @@ struct ParityPostProcessTests {
         try verifyCompilation(enabled)
     }
 
-    @Test func uniformValuesAndTexelsReachDrawStateWithoutConversion() throws {
+    @Test func ldrBloomValuesReachOnlyTheQuarterDownsample() throws {
         var config = bloomConfig()
-        config.bloomParameters = ["g_Bloom": SIMD4<Float>(0.37, 1.7, -0.2, 4.25)]
+        config.bloomSettings.strength = 0.37
+        config.bloomSettings.threshold = 1.7
+        config.bloomSettings.tint = SIMD3<Float>(-0.2, 4.25, 0.5)
         let frame = WPEParityPostProcessBuilder.build(config)
-        #expect(frame.draws.allSatisfy { $0.bloomParameters == config.bloomParameters })
+        #expect(frame.draws.map(\.constants) == [
+            ["g_BloomStrength": [0.37], "g_BloomThreshold": [1.7], "g_BloomTint": [-0.2, 4.25, 0.5]], [:], [:], [:],
+        ])
         #expect(frame.draws.map(\.texelSizes) == [
             [SIMD2<Float>(1 / 3840, 1 / 2160)],
             [SIMD2<Float>(1 / 960, 1 / 540)],
@@ -178,10 +182,25 @@ struct ParityPostProcessTests {
         config.backbufferWidth = 17
         config.backbufferHeight = 3
         let frame = WPEParityPostProcessBuilder.build(config)
+        #expect(config.hdrBloomLevelCount == 1)
         #expect(frame.resources.first { $0.id == "_rt_2FrameBuffer" }?.width == 8)
         #expect(frame.resources.first { $0.id == "_rt_2FrameBuffer" }?.height == 1)
-        #expect(frame.resources.first { $0.id == "_rt_256FrameBuffer" }?.width == 1)
-        #expect(frame.resources.first { $0.id == "_rt_256FrameBuffer" }?.height == 1)
+        #expect(!frame.resources.contains { $0.id == "_rt_4FrameBuffer" })
+        #expect(frame.draws.map(\.shader) == ["hdr_downsample_bloom", "combine_hdr"])
+        try verifyCompilation(frame)
+    }
+
+    /// N = max(1, min(iterations, L)); L counts halvings of min(W, H) that stay ≥ 1, at most 8.
+    @Test(arguments: [(8, 100, 60, 5), (8, 3840, 2160, 8), (6, 1920, 1080, 6), (0, 1920, 1080, 1), (8, 2, 2, 1)])
+    func hdrLevelCountClampsToTheSmallerSide(iterations: Int, width: Int, height: Int, levels: Int) throws {
+        var config = bloomConfig()
+        config.hdrEnabled = true
+        config.bloomSettings.hdrIterations = iterations
+        (config.backbufferWidth, config.backbufferHeight) = (width, height)
+        #expect(config.hdrBloomLevelCount == levels)
+        let frame = WPEParityPostProcessBuilder.build(config)
+        #expect(frame.draws.count(where: { $0.shader.hasPrefix("hdr_downsample") }) == levels)
+        #expect(frame.draws.count(where: { $0.shader.hasPrefix("hdr_upsample") }) == levels - 1)
         try verifyCompilation(frame)
     }
 
@@ -326,9 +345,9 @@ struct ParityPostProcessTests {
             "bind _rt_256FrameBuffer depth=none",
             "draw hdr_downsample [_rt_128FrameBuffer] normal",
             "bind _rt_128FrameBuffer depth=none",
-            "draw hdr_upsample [_rt_256FrameBuffer] additive",
+            "draw hdr_upsample_cubic [_rt_256FrameBuffer] additive",
             "bind _rt_64FrameBuffer depth=none",
-            "draw hdr_upsample [_rt_128FrameBuffer] additive",
+            "draw hdr_upsample_cubic [_rt_128FrameBuffer] additive",
             "bind _rt_32FrameBuffer depth=none",
             "draw hdr_upsample [_rt_64FrameBuffer] additive",
             "bind _rt_16FrameBuffer depth=none",
@@ -336,9 +355,9 @@ struct ParityPostProcessTests {
             "bind _rt_8FrameBuffer depth=none",
             "draw hdr_upsample [_rt_16FrameBuffer] additive",
             "bind _rt_4FrameBuffer depth=none",
-            "draw hdr_upsample_cubic [_rt_8FrameBuffer] additive",
+            "draw hdr_upsample [_rt_8FrameBuffer] additive",
             "bind _rt_2FrameBuffer depth=none",
-            "draw hdr_upsample_cubic [_rt_4FrameBuffer] additive",
+            "draw hdr_upsample [_rt_4FrameBuffer] additive",
             "bind backbuffer depth=backbufferDepth",
             "draw combine_hdr [_rt_FullFrameBuffer,_rt_2FrameBuffer] normal",
         ]

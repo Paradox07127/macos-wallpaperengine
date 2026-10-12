@@ -94,16 +94,23 @@ final class WPEParitySceneDriver {
         executor.drawableAcquisitionSeconds
     }
 
+    var isPaused: Bool {
+        paused
+    }
+
     init(device: MTLDevice) throws {
         self.device = device
         executor = try WPEMetalRenderExecutor(device: device)
     }
 
     /// `document` already carries the user property values. Compiles every program (seconds when the disk cache is
-    /// cold); a load superseded by `cleanup()` throws `CancellationError`.
-    func load(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
-              drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
-              diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache()) async throws {
+    /// cold); a load superseded by `cleanup()` throws `CancellationError`. Runs on the caller's actor, which owns the
+    /// driver.
+    nonisolated(nonsending) func load(
+        document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
+        drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
+        diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache()
+    ) async throws {
         loadGeneration &+= 1
         let generation = loadGeneration
         presentState.reset(generation: generation)
@@ -228,6 +235,33 @@ final class WPEParitySceneDriver {
         guard !didLogFrameFailure else { return }
         didLogFrameFailure = true
         Logger.warning("Parity scene frame render/present failed: \(error)", category: .wpeRender)
+    }
+}
+
+/// Everything the render actor needs to build, load and drive a parity scene on a session's surface.
+struct WPEParitySceneInputs: Sendable {
+    let descriptor: SceneDescriptor
+    let entryResolver: SceneResourceResolver
+    /// Holds project.json, as `WPEMetalSceneRenderer.projectManifestRootURL`.
+    let projectRoot: URL
+    let assets: WPEParityProgramAssets
+    let settings: WPEParityProgramSettings
+    let compiler: WPEParityHelperShaderCompiler
+    let device: any MTLDevice
+    let presentLayer: WPEPresentLayer
+    let mailbox: WPEPointerMailbox
+    let surfaceControl: any WPESurfaceControl
+    let drawableSize: CGSize
+    let pixelFormat: MTLPixelFormat
+
+    /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does.
+    func makeDocument() throws -> WPESceneDocument {
+        let data = try entryResolver.data(relativePath: descriptor.entryFile)
+        let userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
+                                                                                   cacheRootURL: projectRoot)
+        let repaired = (try? WallpaperEngineProjectPropertySchema.read(from: projectRoot, includeSchemeColor: true))
+            .map { WPESceneParallaxBindingInference.applying(to: data, schema: $0) } ?? data
+        return try WPESceneDocumentParser.parse(data: repaired, userValues: userValues)
     }
 }
 #endif

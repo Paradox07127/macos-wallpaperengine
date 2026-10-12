@@ -605,6 +605,22 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
+    func startAdoptingParityScene(_ inputs: WPEParitySceneInputs) {
+        let generation = lifecycleGeneration
+        startupTask = Task { [weak self, renderActor] in
+            do {
+                try await renderActor.adoptParity(inputs)
+            } catch {
+                guard let self, isCurrentLifecycle(generation) else { return }
+                Logger.warning("Parity scene driver could not be created: \(error)", category: .screenManager)
+                loadError = await mapLoadFailure(error)
+                return
+            }
+            guard let self, isCurrentLifecycle(generation) else { return }
+            await beginLoad()
+        }
+    }
+
     private func isCurrentLifecycle(_ generation: Int) -> Bool {
         lifecycleGeneration == generation
     }

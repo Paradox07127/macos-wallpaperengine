@@ -20,7 +20,9 @@ enum WPEParityMSCRuntime {
 }
 
 enum WPEParityExecutionError: Error, Equatable {
-    case geometryStageUnsupported
+    /// Geometry emulation here draws non-indexed point lists only, as every WPE particle renderer does.
+    case geometryDrawUnsupported
+    case geometryReflectionMissing(String)
     case missingFunction(String)
     case unsupportedVertexInput(String)
     case pipelineObjectUnavailable
@@ -46,8 +48,11 @@ struct WPEParityPipeline {
     }
 
     let state: MTLRenderPipelineState
+    /// Bound to the object stage when `geometry` is set.
     let vertex: Stage
     let fragment: Stage
+    /// Set when `state` is a mesh pipeline emulating a WPE geometry shader.
+    var geometry: WPEParityGeometryEmulation?
 }
 
 final class WPEParityPipelineFactory {
@@ -66,7 +71,24 @@ final class WPEParityPipelineFactory {
         depthStencilPixelFormat: MTLPixelFormat = .invalid,
         sampleCount: Int = 1
     ) throws -> WPEParityPipeline {
-        guard artifact.geometry == nil else { throw WPEParityExecutionError.geometryStageUnsupported }
+        if let geometry = artifact.geometry {
+            let descriptor = MTLMeshRenderPipelineDescriptor()
+            descriptor.colorAttachments[0].pixelFormat = colorPixelFormat
+            descriptor.isAlphaToCoverageEnabled = blend.alphaToCoverageEnable
+            WPEParityMetalStateMapping.apply(blend.renderTarget0, to: descriptor.colorAttachments[0])
+            descriptor.depthAttachmentPixelFormat = depthStencilPixelFormat
+            if [.depth32Float_stencil8, .depth24Unorm_stencil8].contains(depthStencilPixelFormat) {
+                descriptor.stencilAttachmentPixelFormat = depthStencilPixelFormat
+            }
+            descriptor.rasterSampleCount = sampleCount
+            let (state, emulation) = try WPEParityGeometryEmulation.makePipeline(
+                device: device, vertex: artifact.vertex, geometry: geometry,
+                fragment: makeFunction(artifact.fragment), descriptor: descriptor
+            )
+            return try WPEParityPipeline(state: state, vertex: WPEParityPipeline.Stage(artifact.vertex.reflection),
+                                         fragment: WPEParityPipeline.Stage(artifact.fragment.reflection),
+                                         geometry: emulation)
+        }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = try makeFunction(artifact.vertex)
         descriptor.fragmentFunction = try makeFunction(artifact.fragment)

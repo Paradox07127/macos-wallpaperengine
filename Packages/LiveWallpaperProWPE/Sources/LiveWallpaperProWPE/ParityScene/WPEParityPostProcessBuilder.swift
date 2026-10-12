@@ -1,3 +1,5 @@
+import Foundation
+
 public enum WPEParityPostProcessBuilder {
     /// Starts after `WPEParitySceneFrameBuilder`, which leaves the scene targets bound and, with MSAA, has already
     /// resolved the multisampled scene into the backbuffer while the multisampled target stays bound.
@@ -22,11 +24,14 @@ public enum WPEParityPostProcessBuilder {
             // Main+0x3150 (14017fa70.c:152-175)
             if config.hdrEnabled {
                 let upsample = config.displayHDREnabled ? "combine_dhdr_upsample" : "combine_hdr_upsample"
+                // 14017fa70.c:728-731: zw keep the last pyramid pass's values.
+                let scale = stream.displayLuminanceScale
                 stream.draw("combine_hdr", material: "materials/util/\(upsample).json",
-                            reads: ["_rt_FullFrameBuffer", "_rt_2FrameBuffer"], bloom: true)
+                            reads: ["_rt_FullFrameBuffer", "_rt_2FrameBuffer"],
+                            constants: ["g_RenderVar0": [scale.x, scale.y, stream.renderVar0[2], stream.renderVar0[3]]])
             } else {
                 stream.draw("combine", material: "materials/util/combine_ldr.json",
-                            reads: ["_rt_FullFrameBuffer", "_rt_Bloom"], bloom: true, outputAlpha: 1)
+                            reads: ["_rt_FullFrameBuffer", "_rt_Bloom"], outputAlpha: 1)
             }
         } else {
             if config.hdrEnabled {
@@ -58,6 +63,8 @@ private struct WPEParityPostProcessStream {
     var resources: [WPELogicalResource]
     var operations: [WPERenderOperation] = []
     var draws: [WPEParityPostProcessDraw] = []
+    /// Main+0xb8, the engine's g_RenderVar0, as the last HDR pass left it.
+    var renderVar0: [Float] = [0, 0, 0, 0]
 
     init(config: WPEParityPostProcessConfig) {
         self.config = config
@@ -108,7 +115,7 @@ private struct WPEParityPostProcessStream {
 
     /// `material` defaults to `materials/util/<shader>.json`.
     mutating func draw(_ shader: String, material: String? = nil, reads: [WPEResourceID] = [],
-                       blend: WPEParityPostProcessDraw.Blend = .normal, bloom: Bool = false,
+                       blend: WPEParityPostProcessDraw.Blend = .normal, constants: [String: [Float]] = [:],
                        outputAlpha: Float? = nil) {
         let texels = reads.map { id in
             let resource = resources.first { $0.id == id }!
@@ -118,9 +125,10 @@ private struct WPEParityPostProcessStream {
                                                    material: material ?? "materials/util/\(shader).json",
                                                    reads: reads, blend: blend,
                                                    geometry: .fullScreenQuad,
-                                                   bloomParameters: bloom ? config.bloomParameters : [:],
+                                                   constants: constants,
                                                    texelSizes: texels, outputAlpha: outputAlpha)
         draws.append(description)
+        renderVar0 = constants["g_RenderVar0"] ?? renderVar0
         append(shader, .draw(WPEDrawOperation(reads: reads.map { WPETextureView($0) },
                                               readsDestination: blend != .normal, overwritesTargets: blend == .normal,
                                               state: WPEDrawStateKey(description))))
@@ -132,26 +140,63 @@ private struct WPEParityPostProcessStream {
         resource("_rt_8FrameBuffer", divisor: 8, format: "rgba8unorm")
         resource("_rt_Bloom", divisor: 8, format: "rgba8unorm")
         bind("_rt_4FrameBuffer")
-        draw("downsample_quarter_bloom", reads: ["_rt_FullFrameBuffer"], bloom: true)
+        // 14017f1b0.c:316-330
+        let bloom = config.bloomSettings
+        draw("downsample_quarter_bloom", reads: ["_rt_FullFrameBuffer"],
+             constants: ["g_BloomStrength": [bloom.strength], "g_BloomThreshold": [bloom.threshold],
+                         "g_BloomTint": tint])
         bind("_rt_8FrameBuffer")
-        draw("downsample_eighth_blur_v", reads: ["_rt_4FrameBuffer"], bloom: true)
+        draw("downsample_eighth_blur_v", reads: ["_rt_4FrameBuffer"])
         bind("_rt_Bloom")
-        draw("blur_h_bloom", reads: ["_rt_8FrameBuffer"], bloom: true)
+        draw("blur_h_bloom", reads: ["_rt_8FrameBuffer"])
     }
 
+    /// FUN_140183610: N − 1 downsamples below the bloom pass, then upsamples back to `_rt_2FrameBuffer`.
     mutating func hdrBloom() {
-        let divisors = [2, 4, 8, 16, 32, 64, 128, 256]
-        for divisor in divisors {
-            resource(pyramid(divisor), divisor: divisor, format: "rgba16float")
-            bind(pyramid(divisor))
-            draw(divisor == 2 ? "hdr_downsample_bloom" : "hdr_downsample",
-                 reads: [divisor == 2 ? "_rt_FullFrameBuffer" : pyramid(divisor / 2)], bloom: true)
+        let bloom = config.bloomSettings
+        let levels = config.hdrBloomLevelCount
+        let (threshold, feather) = (bloom.hdrThreshold, bloom.hdrFeather)
+        // 0x14017f847-0x14017f89b
+        let strength = bloom.hdrStrength / (pow(bloom.hdrScatter, Float(max(levels, 2) - 2)) + 1)
+        resource(pyramid(2), divisor: 2, format: "rgba16float")
+        bind(pyramid(2))
+        // 14017f1b0.c:364-371
+        draw("hdr_downsample_bloom", reads: ["_rt_FullFrameBuffer"], constants: [
+            "g_BloomStrength": [strength],
+            "g_BloomBlendParams": [threshold, threshold - threshold * feather, 2 * threshold * feather,
+                                   0.25 / (threshold * feather + 1e-5)],
+            "g_BloomTint": tint, "g_RenderVar0": texelVariable(1),
+        ])
+        for level in 1 ..< levels {
+            let scale = 1 << level
+            resource(pyramid(scale * 2), divisor: scale * 2, format: "rgba16float")
+            bind(pyramid(scale * 2))
+            draw("hdr_downsample", reads: [pyramid(scale)], constants: ["g_RenderVar0": texelVariable(scale)])
         }
-        for divisor in divisors.dropLast().reversed() {
-            bind(pyramid(divisor))
-            draw(divisor <= 4 ? "hdr_upsample_cubic" : "hdr_upsample",
-                 reads: [pyramid(divisor * 2)], blend: .additive, bloom: true)
+        for level in stride(from: levels - 1, through: 1, by: -1) {
+            let scale = 1 << level
+            bind(pyramid(scale))
+            draw(level >= levels - 2 ? "hdr_upsample_cubic" : "hdr_upsample", reads: [pyramid(scale * 2)],
+                 blend: .additive,
+                 constants: ["g_RenderVar0": texelVariable(scale), "g_BloomScatter": [bloom.hdrScatter]])
         }
+    }
+
+    /// combine_hdr's g_RenderVar0.xy: displayhdr would read SDR white and peak luminance here (14012ac60.c:189-191).
+    var displayLuminanceScale: SIMD2<Float> {
+        SIMD2(1, 1)
+    }
+
+    var tint: [Float] {
+        let tint = config.bloomSettings.tint
+        return [tint.x, tint.y, tint.z]
+    }
+
+    /// `scale` texels of the backbuffer, as (x, y, −x, −y).
+    func texelVariable(_ scale: Int) -> [Float] {
+        let x = Float(scale) / Float(config.backbufferWidth)
+        let y = Float(scale) / Float(config.backbufferHeight)
+        return [x, y, -x, -y]
     }
 
     func pyramid(_ divisor: Int) -> WPEResourceID {

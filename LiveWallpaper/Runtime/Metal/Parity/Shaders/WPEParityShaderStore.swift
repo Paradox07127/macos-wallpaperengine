@@ -52,13 +52,18 @@ actor WPEParityShaderStore {
               compiled.stages[.vertex] != nil, compiled.stages[.fragment] != nil else {
             throw ArtifactError.invalidStages
         }
+        let geometry = request.stages.contains(.geometry)
         func stage(_ name: WPEParityShaderKey.Stage) throws -> WPEParityShaderArtifact.Stage {
-            guard let bytes = compiled.stages[name], !bytes.metallib.isEmpty else { throw ArtifactError.invalidStages }
+            guard let bytes = compiled.stages[name], !bytes.metallib.isEmpty,
+                  (bytes.stageIn?.isEmpty == false) == (geometry && name == .vertex) else {
+                throw ArtifactError.invalidStages
+            }
             let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: bytes.reflectionJSON)
             guard reflection.schema == 1, reflection.stage.rawValue == name.rawValue, !reflection.entry.isEmpty else {
                 throw ArtifactError.invalidReflection
             }
-            return .init(metallib: bytes.metallib, reflection: reflection, functionName: reflection.entry)
+            return .init(metallib: bytes.metallib, reflection: reflection, functionName: reflection.entry,
+                         stageIn: bytes.stageIn)
         }
         return try WPEParityShaderArtifact(vertex: stage(.vertex), fragment: stage(.fragment),
                                            geometry: compiled.stages[.geometry] == nil ? nil : stage(.geometry))

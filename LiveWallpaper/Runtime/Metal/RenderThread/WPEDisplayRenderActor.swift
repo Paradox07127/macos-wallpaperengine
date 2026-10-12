@@ -39,6 +39,9 @@ actor WPEDisplayRenderActor {
 
     #if !LITE_BUILD
     private var renderer: WPEMetalSceneRenderer?
+    /// Set instead of `renderer` for scenes listed by `WPEParityRendererFlag`; both are never set at once.
+    private var parityDriver: WPEParitySceneDriver?
+    private var parityInputs: WPEParitySceneInputs?
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
@@ -166,6 +169,14 @@ actor WPEDisplayRenderActor {
         startConfigConsumer()
     }
 
+    /// The driver is built here because it is not Sendable and must live on this actor.
+    func adoptParity(_ inputs: WPEParitySceneInputs) throws {
+        scenePropertyRendererGeneration &+= 1
+        parityDriver = try WPEParitySceneDriver(device: inputs.device)
+        parityInputs = inputs
+        startConfigConsumer()
+    }
+
     private func startConfigConsumer() {
         guard configConsumerTask == nil else { return }
         configConsumerTask = Task { [weak self, configStream] in
@@ -188,6 +199,15 @@ actor WPEDisplayRenderActor {
     func renderFrame() {
         if let spanPresenter {
             spanPresenter.present()
+            return
+        }
+        if let parityDriver, let parityInputs {
+            let acquisitionStart = parityDriver.drawableAcquisitionSeconds
+            let start = CACurrentMediaTime()
+            parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer, timestamp: start,
+                                               pointer: parityInputs.mailbox.read().pointerSample.position)
+            thread?.noteFrameDuration(CACurrentMediaTime() - start,
+                                      drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             return
         }
         // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
@@ -299,6 +319,10 @@ actor WPEDisplayRenderActor {
 
     var hasDisplayLinkForTesting: Bool {
         displayLink != nil
+    }
+
+    var usesParityDriverForTesting: Bool {
+        parityDriver != nil
     }
     #endif
 
@@ -413,6 +437,10 @@ actor WPEDisplayRenderActor {
     }
 
     func load() async throws {
+        if parityDriver != nil {
+            try await loadParity()
+            return
+        }
         try await renderer?.load(on: self)
         if renderer?.spanFrames != nil {
             renderer?.renderAndPresentFrame()
@@ -423,11 +451,33 @@ actor WPEDisplayRenderActor {
 
     func reload() async throws {
         scenePropertyRendererGeneration &+= 1
+        if parityDriver != nil {
+            try await loadParity()
+            return
+        }
         try await renderer?.reload(on: self)
         if renderer?.spanFrames != nil {
             renderer?.renderAndPresentFrame()
         }
         thread?.boostRenderQoSWarmup()
+    }
+
+    private func loadParity() async throws {
+        guard let parityDriver, let inputs = parityInputs else { return }
+        let document = try await CancellableBackgroundWork.run { try inputs.makeDocument() }
+        try await parityDriver.load(document: document, assets: inputs.assets, settings: inputs.settings,
+                                    drawableSize: inputs.drawableSize, pixelFormat: inputs.pixelFormat,
+                                    compiler: inputs.compiler)
+        applyParityPacing()
+        thread?.boostRenderQoSWarmup()
+    }
+
+    /// The display link starts paused; the parity scene runs it while loaded and not suspended.
+    private func applyParityPacing() {
+        guard let parityDriver, let parityInputs else { return }
+        let running = parityDriver.didLoad && !parityDriver.isPaused
+        parityInputs.surfaceControl.applyPacing(WPERenderPacingUpdate(isPaused: !running,
+                                                                      enableSetNeedsDisplay: !running))
     }
 
     func hibernate() async -> Bool {
@@ -441,6 +491,9 @@ actor WPEDisplayRenderActor {
         let retiringRenderer = renderer
         renderer = nil
         spanPresenter = nil
+        parityDriver?.cleanup()
+        parityDriver = nil
+        parityInputs = nil
         if let retiringRenderer {
             let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()
             let staticDrain = await retiringRenderer.staticTextureReloadTaskOwner.quiesce()
@@ -455,6 +508,11 @@ actor WPEDisplayRenderActor {
     // MARK: - Configuration Forwarders
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        if let parityDriver {
+            parityDriver.applyPerformanceProfile(profile)
+            applyParityPacing()
+            return
+        }
         if spanPresenter != nil {
             setLinkPaused(profile == .suspended)
         }
@@ -578,7 +636,7 @@ actor WPEDisplayRenderActor {
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {
-        renderer?.loadDiagnostics
+        renderer?.loadDiagnostics ?? parityDriver?.loadDiagnostics
     }
 
     func isCurrentLoadGeneration(_ generation: Int) -> Bool {
@@ -602,6 +660,23 @@ actor WPEDisplayRenderActor {
     }
 
     func rendererStateSnapshot() -> WPERendererStateSnapshot? {
+        if let parityDriver {
+            let shader = parityDriver.shaderErrorSummary
+            return WPERendererStateSnapshot(
+                isLoaded: parityDriver.didLoad,
+                currentLoadGeneration: parityDriver.loadGeneration,
+                completedPresentGeneration: parityDriver.completedPresentGeneration,
+                failedPresentGeneration: parityDriver.failedPresentGeneration,
+                hasPresentedFrame: parityDriver.hasPresentedFrame,
+                loadDiagnostics: parityDriver.loadDiagnostics,
+                resolution: WPEResolutionDiagnosticsSnapshot(events: []),
+                shaderErrors: shader.entries.map { .init(shader: $0.shader, reason: $0.reason) },
+                shaderErrorCount: shader.count,
+                gpuErrorCount: 0,
+                gpuErrorLast: nil,
+                descriptor: parityInputs?.descriptor
+            )
+        }
         guard let renderer else { return nil }
         let shader = renderer.shaderErrorSummary
         let gpu = renderer.gpuErrorSummary

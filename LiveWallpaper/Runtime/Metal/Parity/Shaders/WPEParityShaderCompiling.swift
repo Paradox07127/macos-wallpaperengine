@@ -38,6 +38,8 @@ struct WPEParityCompiledStages: Sendable {
     struct Stage: Sendable {
         let metallib: Data
         let reflectionJSON: Data
+        /// Vertex stage of a geometry program only: MSC's synthesized stage-in function.
+        var stageIn: Data?
     }
 
     let stages: [WPEParityShaderKey.Stage: Stage]

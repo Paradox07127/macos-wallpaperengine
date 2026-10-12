@@ -27,14 +27,15 @@ resources; MSC provides argument offsets, input/output signatures, and its raw
 JSON object. DXC diagnostics go to stderr; compilation and output I/O failures
 return nonzero.
 
-Geometry stages enable MSC geometry/tessellation emulation. A lone stage can
-produce a metallib with MSC 4.0.1 on this Mac. If conversion cannot produce one,
-the helper retains DXC reflection, removes the metallib output, explains the
-failure on stderr, and returns zero. Executing geometry needs
-`IRRuntimeNewGeometryEmulationPipeline` with companion vertex, fragment and
-stage-in libraries, reflection/pipeline configuration, and a mesh pipeline
-descriptor; see the installed MSC manual's “Emulating geometry and tessellation
-pipelines” section. This helper does not build that pipeline.
+Geometry programs run as MSC geometry emulation (a mesh pipeline). The geometry
+stage is always compiled with emulation enabled. Its vertex stage is compiled
+with `--output-stage-in path`: emulation plus a separate stage-in function, which
+MSC synthesizes from one interleaved slot-0 layout packed tightly in VS input
+signature order, written as a second metallib. The fragment stage compiles as
+usual. The VS reflection's `state.vertex_output_size_in_bytes` and the GS's
+`state.max_input_primitives_per_mesh_threadgroup` configure the pipeline and
+draw (`IRRuntimeGeometryPipelineConfig`). Without `--output-stage-in`, vertex
+and fragment output is unchanged.
 
 The standard-library-only verifier uses the supplied 145 captures, enables
 bounds checking, and removes temporary artifacts from the ignored build

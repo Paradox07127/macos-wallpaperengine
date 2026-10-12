@@ -9,6 +9,8 @@ struct WPEParityShaderArtifact: Sendable {
         let reflection: WPEStageReflection
         /// Function name inside `metallib`; Metal Shader Converter keeps the HLSL entry point name.
         let functionName: String
+        /// Vertex stage of a geometry program only: compiled for geometry emulation, with this stage-in metallib.
+        var stageIn: Data?
     }
 
     let vertex: Stage

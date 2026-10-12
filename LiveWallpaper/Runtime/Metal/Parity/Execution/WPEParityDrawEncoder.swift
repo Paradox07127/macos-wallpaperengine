@@ -4,6 +4,7 @@ import Metal
 
 /// One draw, indexed with 16-bit indices when `indexBuffer` is set. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
 /// material keys; textures and samplers are shared. Each stage packs only the names its own reflection declares.
+/// With a geometry-emulation pipeline the draw is a non-indexed point list, one vertex per particle.
 struct WPEParityDraw {
     var pipeline: WPEParityPipeline
     var depthStencil: WPEParityDepthStencilState
@@ -25,6 +26,10 @@ struct WPEParityDrawEncoder {
 
     func encode(_ draw: WPEParityDraw, frame: WPEParityFrameArena.Frame,
                 on encoder: MTLRenderCommandEncoder) throws {
+        let emulation = draw.pipeline.geometry
+        if emulation != nil, draw.primitiveType != .point || draw.indexBuffer != nil {
+            throw WPEParityExecutionError.geometryDrawUnsupported
+        }
         encoder.setRenderPipelineState(draw.pipeline.state)
         try encoder.setDepthStencilState(factory.depthStencilState(draw.depthStencil))
         let raster = WPEParityMetalStateMapping.rasterSettings(draw.rasterizer)
@@ -35,9 +40,19 @@ struct WPEParityDrawEncoder {
         encoder.setDepthClipMode(raster.depthClipMode)
 
         var textureStages: [ObjectIdentifier: (MTLTexture, MTLRenderStages)] = [:]
-        if let offset = try encodeArguments(draw.pipeline.vertex, stages: .vertex, constants: draw.constants[.vertex],
-                                            draw: draw, frame: frame, textureStages: &textureStages) {
-            encoder.setVertexBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
+        if let offset = try encodeArguments(draw.pipeline.vertex, stages: emulation == nil ? .vertex : .object,
+                                            constants: draw.constants[.vertex], draw: draw, frame: frame,
+                                            textureStages: &textureStages) {
+            if emulation == nil {
+                encoder.setVertexBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
+            } else {
+                encoder.setObjectBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
+            }
+        }
+        if let emulation, let offset = try encodeArguments(emulation.geometry, stages: .mesh,
+                                                           constants: draw.constants[.geometry], draw: draw,
+                                                           frame: frame, textureStages: &textureStages) {
+            encoder.setMeshBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
         }
         if let offset = try encodeArguments(draw.pipeline.fragment, stages: .fragment,
                                             constants: draw.constants[.fragment], draw: draw, frame: frame,
@@ -49,6 +64,11 @@ struct WPEParityDrawEncoder {
             encoder.useResource(texture, usage: .read, stages: stages)
         }
 
+        if let emulation {
+            emulation.drawPoints(on: encoder, vertexBuffer: draw.vertexBuffer, offset: draw.vertexBufferOffset,
+                                 vertexStart: draw.vertexStart, vertexCount: draw.vertexCount)
+            return
+        }
         encoder.setVertexBuffer(draw.vertexBuffer, offset: draw.vertexBufferOffset,
                                 index: WPEParityMSCRuntime.vertexBufferBindPoint)
         // IRRuntimeDrawParams is a union of IRRuntimeDrawArgument and the 20-byte IRRuntimeDrawIndexedArgument.

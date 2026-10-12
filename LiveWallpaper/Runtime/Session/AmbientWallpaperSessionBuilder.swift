@@ -339,6 +339,39 @@ final class AmbientWallpaperSessionBuilder {
         // the layer here returns 0x0 — it stays zero until the first
         // `nextDrawable()`, whatever the window and layout have done.
         let seededDrawableSize = spanFrames == nil ? surface.backingDrawableSize : CGSize(width: frame.width * spanDensity, height: frame.height * spanDensity)
+        if spanFrames == nil, WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
+            switch WPEParityShaderToolchain.makeCompiler() {
+            case let .success(compiler):
+                let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
+                surface.attach(client: shim)
+                window.orderBack(nil)
+                if case .renderThread = backing {
+                    surface.startDisplayLinkDriver(renderActor: renderActor)
+                }
+                let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+                session.startAdoptingParityScene(WPEParitySceneInputs(
+                    descriptor: descriptor,
+                    entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
+                        ?? SceneResourceResolver(cacheRootURL: cacheURL),
+                    projectRoot: assets.projectRoot,
+                    assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,
+                                                      dependencyMounts: dependencyMounts,
+                                                      engineAssetsRootURL: engineAssetsRootURL),
+                    settings: WPEParityProgramSettings(),
+                    compiler: compiler,
+                    device: device,
+                    presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+                    mailbox: surface.mailbox,
+                    surfaceControl: surfaceControl,
+                    drawableSize: seededDrawableSize,
+                    pixelFormat: surface.metalLayer.pixelFormat
+                ))
+                return session
+            case let .failure(reason):
+                Logger.warning("Parity renderer unavailable for \(descriptor.workshopID), using the Metal scene renderer: \(reason)",
+                               category: .screenManager)
+            }
+        }
         let renderer: WPEMetalSceneRenderer
         do {
             renderer = try WPEMetalSceneRenderer(

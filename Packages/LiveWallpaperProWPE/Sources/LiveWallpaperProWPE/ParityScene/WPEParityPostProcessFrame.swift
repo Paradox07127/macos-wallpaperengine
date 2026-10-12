@@ -13,7 +13,8 @@ public struct WPEParityPostProcessDraw: Hashable, Sendable {
     public let reads: [WPEResourceID]
     public let blend: Blend
     public let geometry: Geometry
-    public let bloomParameters: [String: SIMD4<Float>]
+    /// Uniforms the engine writes for this pass; they win over material and engine values.
+    public let constants: [String: [Float]]
     /// One texel's UV extent, in the same order as `reads`.
     public let texelSizes: [SIMD2<Float>]
     /// The LDR combine writes alpha 1.

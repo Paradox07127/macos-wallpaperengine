@@ -3,6 +3,7 @@ import Foundation
 import LiveWallpaperProWPE
 
 actor WPEParityShaderDiskCache {
+    private static let stageInName = "vertex-stage-in.metallib"
     private let rootURL: URL
     private let sizeBudget: Int
 
@@ -18,7 +19,10 @@ actor WPEParityShaderDiskCache {
             let manifest = try JSONDecoder().decode(WPEParityShaderCacheManifest.self,
                                                     from: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
             let stages = Set(manifest.stages)
-            let names = Set(stages.flatMap { ["\($0.rawValue).metallib", "\($0.rawValue).json"] })
+            var names = Set(stages.flatMap { ["\($0.rawValue).metallib", "\($0.rawValue).json"] })
+            if stages.contains(.geometry) {
+                names.insert(Self.stageInName)
+            }
             guard manifest.key == key.rawValue, !stages.isEmpty,
                   stages.count == manifest.stages.count, Set(manifest.files.keys) == names else {
                 remove(key)
@@ -37,7 +41,8 @@ actor WPEParityShaderDiskCache {
             for stage in stages {
                 guard let metallib = files["\(stage.rawValue).metallib"],
                       let reflection = files["\(stage.rawValue).json"] else { return nil }
-                compiled[stage] = .init(metallib: metallib, reflectionJSON: reflection)
+                compiled[stage] = .init(metallib: metallib, reflectionJSON: reflection,
+                                        stageIn: stage == .vertex ? files[Self.stageInName] : nil)
             }
             // Directory mtime records last access; creation time lives in the manifest.
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: directory.path)
@@ -59,8 +64,11 @@ actor WPEParityShaderDiskCache {
             let stages = WPEParityShaderKey.Stage.allCases.filter { compiled.stages[$0] != nil }
             for stage in stages {
                 guard let bytes = compiled.stages[stage] else { continue }
-                for (suffix, data) in [("metallib", bytes.metallib), ("json", bytes.reflectionJSON)] {
-                    let name = "\(stage.rawValue).\(suffix)"
+                var outputs = [("\(stage.rawValue).metallib", bytes.metallib), ("\(stage.rawValue).json", bytes.reflectionJSON)]
+                if let stageIn = bytes.stageIn {
+                    outputs.append((Self.stageInName, stageIn))
+                }
+                for (name, data) in outputs {
                     try data.write(to: temporary.appendingPathComponent(name))
                     files[name] = .init(data: data)
                 }

@@ -10,8 +10,7 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var msaaSampleCount: Int
     public var sceneMipMappedFrameBufferEnabled: Bool
     public var qualityMipMappedFrameBufferEnabled: Bool
-    /// Shader uniform names and values are passed through without normalization.
-    public var bloomParameters: [String: SIMD4<Float>]
+    public var bloomSettings: WPEParityBloomSettings
     public var colorCorrectionEnabled: Bool
     public var fadeActive: Bool
     public var backbufferWidth: Int
@@ -22,7 +21,7 @@ public struct WPEParityPostProcessConfig: Sendable {
                 objectTableNonEmpty: Bool = false, hdrEnabled: Bool = false, displayHDREnabled: Bool = false,
                 msaaSampleCount: Int = 1,
                 sceneMipMappedFrameBufferEnabled: Bool = false, qualityMipMappedFrameBufferEnabled: Bool = false,
-                bloomParameters: [String: SIMD4<Float>] = [:], colorCorrectionEnabled: Bool = false,
+                bloomSettings: WPEParityBloomSettings = WPEParityBloomSettings(), colorCorrectionEnabled: Bool = false,
                 fadeActive: Bool = false, backbufferWidth: Int, backbufferHeight: Int,
                 backbufferFormat: String = "rgba8unorm") {
         self.sceneBloomEnabled = sceneBloomEnabled
@@ -33,7 +32,7 @@ public struct WPEParityPostProcessConfig: Sendable {
         self.msaaSampleCount = msaaSampleCount
         self.sceneMipMappedFrameBufferEnabled = sceneMipMappedFrameBufferEnabled
         self.qualityMipMappedFrameBufferEnabled = qualityMipMappedFrameBufferEnabled
-        self.bloomParameters = bloomParameters
+        self.bloomSettings = bloomSettings
         self.colorCorrectionEnabled = colorCorrectionEnabled
         self.fadeActive = fadeActive
         self.backbufferWidth = backbufferWidth
@@ -48,4 +47,30 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var mipMappedFrameBufferRequested: Bool {
         sceneMipMappedFrameBufferEnabled && qualityMipMappedFrameBufferEnabled
     }
+
+    /// HDR pyramid depth N: the iterations, clamped to the halvings of min(W, H) that stay ≥ 1, at most 8
+    /// (14017f1b0.c:126-210, 340-355).
+    public var hdrBloomLevelCount: Int {
+        var size = min(backbufferWidth, backbufferHeight)
+        var halvings = 0
+        while halvings < 8, size / 2 >= 1 {
+            size /= 2
+            halvings += 1
+        }
+        return max(1, min(bloomSettings.hdrIterations, halvings))
+    }
+}
+
+/// Scene `general` bloom values, initialised to WPE's defaults (140186c90.c:215-241).
+public struct WPEParityBloomSettings: Hashable, Sendable {
+    public var strength: Float = 2
+    public var threshold: Float = 0.65
+    public var hdrStrength: Float = 2
+    public var hdrThreshold: Float = 1
+    public var hdrFeather: Float = 0.1
+    public var hdrScatter: Float = 1.619
+    public var hdrIterations = 8
+    public var tint = SIMD3<Float>(1, 1, 1)
+
+    public init() {}
 }

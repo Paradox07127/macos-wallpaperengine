@@ -44,9 +44,9 @@ public extension WPEParityProgramBuilder {
             case let .post(draw):
                 let material = scene.engineMaterial(draw)
                 var (constants, _) = resolve(material, assets: scene.assets, layerColor: white)
-                let bloom = draw.bloomParameters.mapValues { WPECBufferValue.vector([$0.x, $0.y, $0.z, $0.w]) }
+                let engine = draw.constants.mapValues { $0.count == 1 ? WPECBufferValue.float($0[0]) : .vector($0) }
                 for stage in constants.keys {
-                    constants[stage]?.merge(bloom) { $1 }
+                    constants[stage]?.merge(engine) { $1 }
                 }
                 var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
                 for (slot, read) in draw.reads.enumerated() {

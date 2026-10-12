@@ -68,13 +68,16 @@ private:
 struct Options {
     std::string stage, input, metallib, reflection, dxcompiler, metalirconverter;
     std::string entry = "main", minMacOS = "14.6.0";
+    /// Set only for a vertex stage that feeds a geometry shader.
+    std::string stageIn;
     bool boundsCheck = false;
 };
 
 const char* usage =
     "wpe-shaderc --stage vertex|fragment|geometry --input file.hlsl\n"
     "  --output-metallib path --output-reflection path --dxcompiler path\n"
-    "  --metalirconverter path [--entry main] [--bounds-check] [--min-macos 14.6.0]\n";
+    "  --metalirconverter path [--entry main] [--bounds-check] [--min-macos 14.6.0]\n"
+    "  [--output-stage-in path]  (vertex only: compile for geometry emulation)\n";
 
 Options parseOptions(int argc, char** argv) {
     Options options;
@@ -87,6 +90,11 @@ Options parseOptions(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string argument = argv[i];
         if (argument == "--bounds-check") { options.boundsCheck = true; continue; }
+        if (argument == "--output-stage-in") {
+            require(i + 1 < argc, "Missing value for " + argument);
+            options.stageIn = argv[++i];
+            continue;
+        }
         auto field = fields.find(argument);
         require(field != fields.end(), "Unknown argument: " + argument);
         require(i + 1 < argc, "Missing value for " + argument);
@@ -102,6 +110,12 @@ Options parseOptions(int argc, char** argv) {
     auto reflection = std::filesystem::absolute(options.reflection).lexically_normal();
     require(input != metallib && input != reflection && metallib != reflection,
             "Input and output paths must be distinct");
+    if (!options.stageIn.empty()) {
+        require(options.stage == "vertex", "--output-stage-in requires --stage vertex");
+        auto stageIn = std::filesystem::absolute(options.stageIn).lexically_normal();
+        require(stageIn != input && stageIn != metallib && stageIn != reflection,
+                "Input and output paths must be distinct");
+    }
     return options;
 }
 
@@ -236,6 +250,43 @@ void reflectDXC(ID3D12ShaderReflection* shader, Reflection& reflection) {
     reflection.resources = array(resources);
 }
 
+IRFormat inputFormat(D3D_REGISTER_COMPONENT_TYPE type, unsigned columns) {
+    static const IRFormat floats[] = {IRFormatR32Float, IRFormatR32G32Float, IRFormatR32G32B32Float, IRFormatR32G32B32A32Float};
+    static const IRFormat uints[] = {IRFormatR32Uint, IRFormatR32G32Uint, IRFormatR32G32B32Uint, IRFormatR32G32B32A32Uint};
+    static const IRFormat sints[] = {IRFormatR32Sint, IRFormatR32G32Sint, IRFormatR32G32B32Sint, IRFormatR32G32B32A32Sint};
+    require(columns >= 1 && columns <= 4, "Unsupported vertex input width");
+    switch (type) {
+        case D3D_REGISTER_COMPONENT_FLOAT32: return floats[columns - 1];
+        case D3D_REGISTER_COMPONENT_UINT32: return uints[columns - 1];
+        case D3D_REGISTER_COMPONENT_SINT32: return sints[columns - 1];
+        default: throw std::runtime_error("Unsupported vertex input component type");
+    }
+}
+
+/// One interleaved buffer in slot 0, attributes packed tightly in signature order (the WPE vertex layout).
+IRVersionedInputLayoutDescriptor inputLayout(ID3D12ShaderReflection* shader) {
+    D3D12_SHADER_DESC desc{};
+    check(shader->GetDesc(&desc), "Shader GetDesc");
+    IRVersionedInputLayoutDescriptor layout{};
+    layout.version = IRInputLayoutDescriptorVersion_1;
+    uint32_t offset = 0;
+    for (UINT i = 0; i < desc.InputParameters; ++i) {
+        D3D12_SIGNATURE_PARAMETER_DESC parameter{};
+        check(shader->GetInputParameterDesc(i, &parameter), "Input parameter");
+        if (parameter.SystemValueType != D3D_NAME_UNDEFINED) continue;
+        auto& count = layout.desc_1_0.numElements;
+        require(count < 31, "Too many vertex inputs");
+        unsigned columns = 0;
+        for (BYTE mask = parameter.Mask; mask; mask >>= 1) ++columns;
+        layout.desc_1_0.semanticNames[count] = parameter.SemanticName;
+        layout.desc_1_0.inputElementDescs[count] = {parameter.SemanticIndex, inputFormat(parameter.ComponentType, columns),
+                                                    0, offset, 0, IRInputClassificationPerVertexData};
+        offset += columns * 4;
+        ++count;
+    }
+    return layout;
+}
+
 // Extract complete JSON values without reserializing MSC's raw reflection.
 class JSONView {
 public:
@@ -348,11 +399,21 @@ struct MSC : Library {
     MSC_FUNCTION(IRShaderReflectionGetResourceLocations);
     MSC_FUNCTION(IRShaderReflectionCopyJSONString);
     MSC_FUNCTION(IRShaderReflectionReleaseString);
+    MSC_FUNCTION(IRCompilerSetStageInGenerationMode);
+    MSC_FUNCTION(IRMetalLibSynthesizeStageInFunction);
 #undef MSC_FUNCTION
     using Library::Library;
 };
 
-std::vector<uint8_t> convert(MSC& msc, const Options& options, IDxcBlob* dxil, Reflection& reflection) {
+std::vector<uint8_t> bytecode(MSC& msc, const IRMetalLibBinary* binary) {
+    std::vector<uint8_t> bytes(msc.IRMetalLibGetBytecodeSize(binary));
+    require(!bytes.empty() && msc.IRMetalLibGetBytecode(binary, bytes.data()) == bytes.size(), "MSC empty or incomplete metallib");
+    return bytes;
+}
+
+/// `layout` is set only for a vertex stage compiled for geometry emulation; its stage-in function goes to `stageIn`.
+std::vector<uint8_t> convert(MSC& msc, const Options& options, IDxcBlob* dxil, Reflection& reflection,
+                             const IRVersionedInputLayoutDescriptor* layout, std::vector<uint8_t>& stageIn) {
     auto compiler = std::unique_ptr<IRCompiler, decltype(msc.IRCompilerDestroy)>(
         msc.IRCompilerCreate(), msc.IRCompilerDestroy);
     require(bool(compiler), "MSC could not create compiler");
@@ -360,7 +421,8 @@ std::vector<uint8_t> convert(MSC& msc, const Options& options, IDxcBlob* dxil, R
     msc.IRCompilerSetCompatibilityFlags(compiler.get(), options.boundsCheck ? IRCompatibilityFlagBoundsCheck : IRCompatibilityFlagNone);
     msc.IRCompilerSetEntryPointName(compiler.get(), options.entry.c_str());
     bool geometry = options.stage == "geometry";
-    if (geometry) msc.IRCompilerEnableGeometryAndTessellationEmulation(compiler.get(), true);
+    if (geometry || layout) msc.IRCompilerEnableGeometryAndTessellationEmulation(compiler.get(), true);
+    if (layout) msc.IRCompilerSetStageInGenerationMode(compiler.get(), IRStageInCodeGenerationModeUseSeparateStageInFunction);
     auto input = std::unique_ptr<IRObject, decltype(msc.IRObjectDestroy)>(
         msc.IRObjectCreateFromDXIL(static_cast<const uint8_t*>(dxil->GetBufferPointer()),
                                  dxil->GetBufferSize(), IRBytecodeOwnershipNone), msc.IRObjectDestroy);
@@ -410,9 +472,14 @@ std::vector<uint8_t> convert(MSC& msc, const Options& options, IDxcBlob* dxil, R
     auto binary = std::unique_ptr<IRMetalLibBinary, decltype(msc.IRMetalLibBinaryDestroy)>(
         msc.IRMetalLibBinaryCreate(), msc.IRMetalLibBinaryDestroy);
     require(binary && msc.IRObjectGetMetalLibBinary(object.get(), stage, binary.get()), "MSC metallib unavailable");
-    std::vector<uint8_t> bytes(msc.IRMetalLibGetBytecodeSize(binary.get()));
-    require(!bytes.empty() && msc.IRMetalLibGetBytecode(binary.get(), bytes.data()) == bytes.size(), "MSC empty or incomplete metallib");
-    return bytes;
+    if (layout) {
+        auto synthesized = std::unique_ptr<IRMetalLibBinary, decltype(msc.IRMetalLibBinaryDestroy)>(
+            msc.IRMetalLibBinaryCreate(), msc.IRMetalLibBinaryDestroy);
+        require(synthesized && msc.IRMetalLibSynthesizeStageInFunction(compiler.get(), info.get(), layout, synthesized.get()),
+                "MSC could not synthesize the stage-in function");
+        stageIn = bytecode(msc, synthesized.get());
+    }
+    return bytecode(msc, binary.get());
 }
 
 void compile(const Options& options) {
@@ -452,23 +519,14 @@ void compile(const Options& options) {
     check(utils->CreateReflection(&reflectionBuffer, __uuidof(ID3D12ShaderReflection), shader.out()), "CreateReflection");
     Reflection reflection;
     reflectDXC(shader.value, reflection);
-    if (options.stage == "geometry") writeFile(options.reflection, reflection.json(options));
     MSC msc(options.metalirconverter);
-    std::vector<uint8_t> metallib;
-    try {
-        metallib = convert(msc, options, dxil.value, reflection);
-    } catch (const std::runtime_error& error) {
-        if (options.stage != "geometry") throw;
-        std::filesystem::remove(options.metallib);
-        std::cerr << error.what() << "; geometry metallib skipped; DXC reflection retained.\n";
-    }
-    if (!metallib.empty()) writeFile(options.metallib, metallib.data(), metallib.size());
+    IRVersionedInputLayoutDescriptor layout{};
+    if (!options.stageIn.empty()) layout = inputLayout(shader.value);
+    std::vector<uint8_t> stageIn;
+    auto metallib = convert(msc, options, dxil.value, reflection, options.stageIn.empty() ? nullptr : &layout, stageIn);
+    writeFile(options.metallib, metallib.data(), metallib.size());
+    if (!stageIn.empty()) writeFile(options.stageIn, stageIn.data(), stageIn.size());
     writeFile(options.reflection, reflection.json(options));
-    if (options.stage == "geometry") {
-        std::cerr << "MSC geometry execution requires IRRuntimeNewGeometryEmulationPipeline with companion "
-                     "vertex, fragment and stage-in libraries, pipeline reflection and a mesh pipeline descriptor "
-                     "(MSC UserManual: Emulating geometry and tessellation pipelines).\n";
-    }
 }
 
 } // namespace
