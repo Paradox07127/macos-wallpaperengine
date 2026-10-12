@@ -1128,17 +1128,20 @@ public struct WPESceneMaterialInstance: Equatable, Sendable {
     public let combos: [String: Int]
     public let textures: [Int: String]
     public let userTextures: [WPESceneUserTextureBinding]
+    public let constants: [String: WPESceneShaderConstantValue]
 
     public init(
         id: Int? = nil,
         combos: [String: Int] = [:],
         textures: [Int: String] = [:],
-        userTextures: [WPESceneUserTextureBinding] = []
+        userTextures: [WPESceneUserTextureBinding] = [],
+        constants: [String: WPESceneShaderConstantValue] = [:]
     ) {
         self.id = id
         self.combos = combos
         self.textures = textures
         self.userTextures = userTextures
+        self.constants = constants
     }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 @testable import LiveWallpaperProWPE
 import XCTest
 
@@ -67,9 +68,25 @@ final class ParityProgramBindingTests: XCTestCase {
         }
     }
 
+    func testInstanceConstantsTakeTheUserPropertyValue() throws {
+        func speed(_ userValues: [String: WallpaperEngineProjectPropertyValue]) throws -> [Float]? {
+            let binding = try Self.probeBinding(vertex: "", fragment: """
+                                                uniform float g_Speed; // {"material":"speed","default":2}
+                                                """,
+                                                material: ["speed": 5],
+                                                instance: ["speed": ["user": "speed", "value": 1]],
+                                                userValues: userValues)
+            return Self.floats(binding.constants[.fragment]?["g_Speed"])
+        }
+        XCTAssertEqual(try speed(["speed": .number(5)]), [5])
+        XCTAssertEqual(try speed([:]), [1])
+    }
+
     /// One image layer `7` whose material runs `shaders/probe.{vert,frag}`; returns its albedo draw's binding.
     private static func probeBinding(vertex: String, fragment: String, material: [String: Any],
-                                     instance: [String: Any]) throws -> WPEParityProgramBinding {
+                                     instance: [String: Any],
+                                     userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) throws
+        -> WPEParityProgramBinding {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parity-binding-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let object: [String: Any] = ["id": 7, "name": "7", "image": "models/7.json", "size": "400 200",
@@ -91,7 +108,7 @@ final class ParityProgramBindingTests: XCTestCase {
             try data.write(to: url)
         }
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
+                                                        userValues: userValues,
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         let scene = WPEParityProgramScene(document: document,
                                           assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),

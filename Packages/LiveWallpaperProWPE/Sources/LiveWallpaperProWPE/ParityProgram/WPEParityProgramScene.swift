@@ -77,15 +77,10 @@ public struct WPEParityProgramScene: Sendable {
             let albedoSource = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
             var material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
             if let instance = image.materialInstance {
-                material?.merge(combos: instance.combos, textures: instance.textures)
+                // The instance merges over the pass JSON before annotation defaults fill missing keys (r3 Q1 J, Q4).
+                material?.merge(combos: instance.combos, textures: instance.textures, constants: instance.constants)
             }
             let authored = authoredByID[image.id]
-            // The instance merges over the pass JSON before annotation defaults fill missing keys (r3 Q1 J, Q4).
-            if case let .object(entries)? = authored?["instance"]?["constantshadervalues"] {
-                for (key, value) in entries {
-                    material?.constants[key] = WPEParityProgramConstants.components(value)
-                }
-            }
             if let albedoSource, let material {
                 materials[MaterialKey(objectID: image.id, effectID: nil, source: albedoSource)] = material
             }

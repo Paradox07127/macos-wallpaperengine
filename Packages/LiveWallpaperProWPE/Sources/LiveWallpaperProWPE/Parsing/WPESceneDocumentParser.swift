@@ -2460,7 +2460,8 @@ public enum WPESceneDocumentParser {
             id: parseInt(dict["id"]),
             combos: WPEValueParser.comboMap(dict["combos"]),
             textures: parseTextureSlots(dict["textures"]),
-            userTextures: userTextures
+            userTextures: userTextures,
+            constants: WPEValueParser.shaderConstants(dict["constantshadervalues"])
         )
     }
 
