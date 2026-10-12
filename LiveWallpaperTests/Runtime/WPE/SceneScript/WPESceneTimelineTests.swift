@@ -85,6 +85,32 @@ struct WPESceneTimelineTests {
         #expect(shared.timelineAnimations.read(objectID: "1733", property: "alpha", field: "rate") == 0.5)
     }
 
+    @Test("IAnimation exposes isPlaying and its authored fps, frameCount, duration and name (3798688689)")
+    func animationHandleReportsPlaybackAndMetadata() throws {
+        let document = try document()
+        let shared = WPESharedScriptState(layers: WPEMetalSceneRenderer.scriptLayerTable(for: document))
+        shared.timelineAnimations.configure(document: document)
+        _ = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function init(value) {
+                const a = thisLayer.getAnimation('moon-cycle');
+                shared.meta = [a.isPlaying(), a.fps, a.frameCount, a.duration, a.name].join(',');
+                a.pause();
+                shared.paused = a.isPlaying();
+                a.play();
+                shared.resumed = a.isPlaying();
+                return value;
+            }
+            export function update(value) { return value; }
+            """,
+            seed: .zero, canvasSize: SIMD2(3840, 2160),
+            ownLayerName: "Moon", ownObjectID: "1733", shared: shared
+        )
+        #expect(shared.get("meta") as? String == "true,30,2700,90,moon-cycle")
+        #expect(shared.get("paused") as? Bool == false)
+        #expect(shared.get("resumed") as? Bool == true)
+    }
+
     private func linkedDocument(startPaused: Bool) throws -> WPESceneDocument {
         let json = """
         {"camera":{"center":"1920 1080 0","eye":"1920 1080 100","up":"0 1 0"},

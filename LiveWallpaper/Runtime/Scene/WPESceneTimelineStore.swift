@@ -115,8 +115,19 @@ final class WPESceneTimelineStore: @unchecked Sendable {
         switch field {
         case "rate": return clock.rate
         case "frame": return track.animation.frame(at: clock.seconds(at: time))
+        case "playing": return clock.paused ? 0 : 1
+        case "fps": return track.animation.fps
+        case "frameCount": return track.animation.length
+        case "duration": return track.animation.length / track.animation.fps
         default: return 0
         }
+    }
+
+    func authoredName(objectID: String, property: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        guard case let .value(name)? = tracks[Key(objectID: objectID, property: property)]?.animation.name else { return "" }
+        return name
     }
 
     func command(objectID: String, property: String, operation: String, value: Double) {
@@ -166,8 +177,11 @@ func wpeInstallTimelineAnimation(
     let command: @convention(block) (String, String, Double) -> Void = { [weak store] property, operation, value in
         store?.command(objectID: objectID, property: property, operation: operation, value: value)
     }
+    let authoredName: @convention(block) (String) -> String = { [weak store] property in
+        store?.authoredName(objectID: objectID, property: property) ?? ""
+    }
     let factory = context.evaluateScript("""
-    (function(resolve, read, command) {
+    (function(resolve, read, command, authoredName) {
         const handles = Object.create(null);
         return function(name) {
             const key = resolve(typeof name === 'string' ? name : '');
@@ -178,18 +192,23 @@ func wpeInstallTimelineAnimation(
                 pause: function() { command(key, 'pause', 0); },
                 stop: function() { command(key, 'stop', 0); },
                 setFrame: function(frame) { command(key, 'frame', Number(frame)); },
-                getFrame: function() { return read(key, 'frame'); }
+                getFrame: function() { return read(key, 'frame'); },
+                isPlaying: function() { return read(key, 'playing') !== 0; }
             };
             Object.defineProperty(animation, 'rate', {
                 get: function() { return read(key, 'rate'); },
                 set: function(value) { command(key, 'rate', Number(value)); }
             });
+            for (const field of ['fps', 'frameCount', 'duration']) {
+                Object.defineProperty(animation, field, { get: function() { return read(key, field); } });
+            }
+            Object.defineProperty(animation, 'name', { value: authoredName(key) });
             handles[key] = animation;
             return animation;
         };
     })
     """)
-    if let getAnimation = factory?.call(withArguments: [resolve, read, command]) {
+    if let getAnimation = factory?.call(withArguments: [resolve, read, command, authoredName]) {
         handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
     }
 }
