@@ -29,9 +29,11 @@ public struct WPEParityUniformMatrices: Sendable {
     public static let effectPass = Self(model: matrix_identity_float4x4, view: matrix_identity_float4x4,
                                         projection: ortho(halfWidth: 1, halfHeight: 1, depth: 1000))
 
-    /// glm::ortho(-w, w, -h, h, -d, d) with the default [-1, 1] clip depth.
+    /// FUN_14009a630 with l = -w, r = w, b = -h, t = h, n = -d, f = d: z in [-d, d] maps to [0, 1].
     public static func ortho(halfWidth: Float, halfHeight: Float, depth: Float) -> simd_float4x4 {
-        simd_float4x4(diagonal: SIMD4(1 / halfWidth, 1 / halfHeight, -1 / depth, 1))
+        var matrix = simd_float4x4(diagonal: SIMD4(1 / halfWidth, 1 / halfHeight, 1 / (2 * depth), 1))
+        matrix.columns.3.z = 0.5
+        return matrix
     }
 
     public var viewProjection: simd_float4x4 {

@@ -38,11 +38,18 @@ final class ParityUniformMatricesTests: XCTestCase {
 
     func testEffectPassPlainMatricesUseOrtho() {
         let effect = WPEParityUniformMatrices.effectPass
-        let ortho = simd_float4x4(diagonal: SIMD4(1, 1, -0.001, 1))
+        var ortho = simd_float4x4(diagonal: SIMD4(1, 1, 0.0005, 1))
+        ortho.columns.3.z = 0.5
         assertEqual(effect.viewProjection, ortho)
         assertEqual(effect.modelViewProjection, ortho)
         assertEqual(effect.model, matrix_identity_float4x4)
         XCTAssertEqual(effect.values.count, 6)
+    }
+
+    func testEffectOrthoMapsDepthToZeroOne() {
+        let projection = WPEParityUniformMatrices.effectPass.projection
+        XCTAssertEqual((projection * SIMD4<Float>(0, 0, -1000, 1)).z, 0, accuracy: 1e-6)
+        XCTAssertEqual((projection * SIMD4<Float>(0, 0, 1000, 1)).z, 1, accuracy: 1e-6)
     }
 
     func testEffectIntermediateVersusLastPass() {

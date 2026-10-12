@@ -3,8 +3,8 @@ public struct WPEParityClock: Sendable {
     public static let minimumStep: Float = 1e-4
     public static let maximumStep: Float = 0.25
     public static let wrapTime: Float = 432_000
-    /// Assumed value: the binary's snap threshold constant was not resolved.
-    public static let rampSnap: Float = 1e-3
+    /// DAT_140492620.
+    public static let rampSnap: Float = 0.01
 
     public private(set) var frametime: Float = 0
     public private(set) var time: Double = 0
