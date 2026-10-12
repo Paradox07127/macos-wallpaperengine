@@ -467,7 +467,8 @@ actor WPEDisplayRenderActor {
         let document = try await CancellableBackgroundWork.run { try inputs.makeDocument() }
         try await parityDriver.load(document: document, assets: inputs.assets, settings: inputs.settings,
                                     drawableSize: inputs.drawableSize, pixelFormat: inputs.pixelFormat,
-                                    compiler: inputs.compiler)
+                                    compiler: inputs.compiler, soundResolver: inputs.soundResolver,
+                                    audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot))
         applyParityPacing()
         thread?.boostRenderQoSWarmup()
     }
@@ -531,10 +532,12 @@ actor WPEDisplayRenderActor {
     }
 
     func setAudioMuted(_ muted: Bool) {
+        parityDriver?.setAudioMuted(muted)
         renderer?.setAudioMuted(muted)
     }
 
     func setAudioVolume(_ volume: Double) {
+        parityDriver?.setAudioVolume(volume)
         renderer?.setAudioVolume(volume)
     }
 

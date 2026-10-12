@@ -95,6 +95,35 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertFalse(driver.hasPresentedFrame)
     }
 
+    /// Scene 3509243656 has one sound layer; the driver plays it with WPE's rules and stops it on cleanup.
+    func testSoundLayerStartsRuntimeAndCleanupStopsIt() async throws {
+        let (document, assets) = try sceneInputs(sceneID: "3509243656")
+        XCTAssertEqual(document.soundObjects.count, 1)
+        let compiler: WPEParityHelperShaderCompiler
+        switch WPEParityShaderToolchain.makeCompiler() {
+        case let .success(found): compiler = found
+        case let .failure(reason): throw XCTSkip("\(reason)")
+        }
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        driver.setAudioMuted(true)
+        let sceneDirectory = try XCTUnwrap(TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR"))
+            .appending(path: "scene-sources/3509243656")
+        try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
+                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch),
+                              soundResolver: WPEMultiRootResourceResolver(primaryRootURL: sceneDirectory,
+                                                                          dependencyMounts: []))
+        let runtime = try XCTUnwrap(driver.soundRuntime)
+        XCTAssertEqual(runtime.rules, .wpe)
+        let track = try XCTUnwrap(runtime.debugTrackSnapshots().first)
+        XCTAssertEqual(track.playerVolume, 0, "muted before load")
+        XCTAssertGreaterThan(track.scheduledSegmentCount, 0)
+
+        driver.cleanup()
+        XCTAssertNil(driver.soundRuntime)
+        XCTAssertTrue(runtime.debugTrackSnapshots().isEmpty, "cleanup stops and detaches every track")
+    }
+
     private func present(_ driver: WPEParitySceneDriver, layer: CAMetalLayer, label: String) async throws {
         let commandBuffer = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
                                                                        pointer: SIMD2(0.5, 0.5)),
@@ -122,7 +151,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         try XCTUnwrap(driver.renderer).clock
     }
 
-    private func sceneInputs() throws -> (WPESceneDocument, WPEParityProgramAssets) {
+    private func sceneInputs(sceneID: String = "3815666789") throws -> (WPESceneDocument, WPEParityProgramAssets) {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
             throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
         }
@@ -133,7 +162,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
             throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
         }
-        let sceneDirectory = root.appending(path: "scene-sources/3815666789")
+        let sceneDirectory = root.appending(path: "scene-sources/\(sceneID)")
         let document = try WPESceneDocumentParser.parse(
             data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:],
             makeTransformScriptResolver: { _, _ in NoScripts() }

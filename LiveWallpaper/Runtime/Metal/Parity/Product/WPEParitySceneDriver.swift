@@ -67,6 +67,12 @@ final class WPEParitySceneDriver {
     private(set) var loadDiagnostics: SceneLoadDiagnostic?
     /// Draws whose program did not resolve, compile or link.
     private(set) var shaderErrorSummary: (count: Int, entries: [(shader: String, reason: String)]) = (0, [])
+    /// The scene's sound layers under WPE's rules; started by `load`, stopped by `cleanup()`.
+    private(set) var soundRuntime: WPESoundRuntime?
+    /// Kept so mute and volume set before the runtime exists apply once it starts.
+    private var audioMuted = false
+    private var audioVolume = 1.0
+    private var audioPreset: WPEEngineAudioSettings?
     private let device: MTLDevice
     private let presentState = WPEParityPresentState()
     private var paused = false
@@ -109,7 +115,8 @@ final class WPEParitySceneDriver {
     nonisolated(nonsending) func load(
         document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
-        diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache()
+        diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
+        soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil
     ) async throws {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -118,6 +125,9 @@ final class WPEParitySceneDriver {
         renderer = nil
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
+        soundRuntime?.stop()
+        soundRuntime = nil
+        self.audioPreset = audioPreset
         do {
             let plan = try await Self.makePlan(document: document, assets: assets, settings: settings,
                                                width: Int(drawableSize.width), height: Int(drawableSize.height))
@@ -134,6 +144,23 @@ final class WPEParitySceneDriver {
                 fragmentName: WPEMetalRenderExecutor.presentFragment(source: renderer.backbuffer.pixelFormat),
                 colorPixelFormat: pixelFormat
             )
+            if let soundResolver, !document.soundObjects.isEmpty {
+                let runtime = WPESoundRuntime(resolver: soundResolver, rules: .wpe)
+                await Self.prepareSound(runtime, sounds: document.soundObjects,
+                                        randomDelays: WPESoundRuntime.authoredRandomDelays(in: document))
+                guard generation == loadGeneration else {
+                    runtime.stop()
+                    throw CancellationError()
+                }
+                runtime.setMuted(audioMuted)
+                runtime.setMasterVolume(effectiveAudioVolume)
+                soundRuntime = runtime
+                if paused {
+                    runtime.pause()
+                } else {
+                    runtime.play()
+                }
+            }
             let shaderErrors = renderer.skipped.sorted { $0.key < $1.key }.compactMap { index, skip in
                 switch skip {
                 case .program, .noShader, .pipeline:
@@ -166,6 +193,7 @@ final class WPEParitySceneDriver {
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
         let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
         lastTimestamp = timestamp
+        soundRuntime?.advance(by: elapsed)
         let backbuffer = renderer.backbuffer
         let cursor = SIMD2<Float>(pointer * SIMD2(Double(backbuffer.width), Double(backbuffer.height)))
         let input = WPEParityFrameInput(cursor: cursor, buttonDown: buttonDown,
@@ -207,9 +235,26 @@ final class WPEParitySceneDriver {
     /// `.suspended` ramps scene time to a hold; `.quality` ramps it back.
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         paused = profile == .suspended
-        if !paused {
+        if paused {
+            soundRuntime?.pause()
+        } else {
             lastTimestamp = nil
+            soundRuntime?.resume()
         }
+    }
+
+    func setAudioMuted(_ muted: Bool) {
+        audioMuted = muted
+        soundRuntime?.setMuted(muted)
+    }
+
+    func setAudioVolume(_ volume: Double) {
+        audioVolume = volume
+        soundRuntime?.setMasterVolume(effectiveAudioVolume)
+    }
+
+    private var effectiveAudioVolume: Double {
+        WPEEngineAudioSettings.effectiveVolume(master: audioVolume, preset: audioPreset)
     }
 
     /// Drops the renderer and its video players; frames already on the GPU finish but no longer mark readiness.
@@ -221,7 +266,16 @@ final class WPEParitySceneDriver {
         lastTimestamp = nil
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
+        soundRuntime?.stop()
+        soundRuntime = nil
         executor.releaseTransientResources()
+    }
+
+    /// Resolving and opening the sound files can stage them out of a package, so it stays off the render actor.
+    @concurrent
+    private static func prepareSound(_ runtime: WPESoundRuntime, sounds: [WPESceneSoundObject],
+                                     randomDelays: [String: (minTime: Double, maxTime: Double)]) async {
+        runtime.prepare(sounds: sounds, randomDelays: randomDelays)
     }
 
     @concurrent
@@ -253,6 +307,8 @@ struct WPEParitySceneInputs: Sendable {
     let surfaceControl: any WPESurfaceControl
     let drawableSize: CGSize
     let pixelFormat: MTLPixelFormat
+    /// Resolves the scene's sound files, as `WPEMetalSceneRenderer.resourceResolver`; nil plays no sound.
+    var soundResolver: WPEMultiRootResourceResolver?
 
     /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does.
     func makeDocument() throws -> WPESceneDocument {

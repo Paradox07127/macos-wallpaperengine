@@ -36,34 +36,56 @@ struct WPESoundSeededRandomNumberGenerator: RandomNumberGenerator, Equatable, Se
         precondition(upperBound > 0)
         return Int(next() % UInt64(upperBound))
     }
+
+    /// Uniform in [0, 1).
+    mutating func unitInterval() -> Double {
+        Double(next() >> 11) * 0x1p-53
+    }
+}
+
+/// `legacy` is the old renderer's behaviour; `wpe` is WPE 2.8.42's (random pick per play, random-mode delays,
+/// volume² gain), used by parity scenes.
+enum WPESoundPlaybackRules: Equatable, Sendable {
+    case legacy
+    case wpe
 }
 
 struct WPESoundPathScheduler: Equatable, Sendable {
     let mode: WPESoundPlaybackMode
+    let rules: WPESoundPlaybackRules
     private let initialSeed: UInt64
     private var random: WPESoundSeededRandomNumberGenerator
     private var loopCursor = 0
     private var singleDidSchedule = false
 
-    init(playbackMode: String, seed: UInt64) {
+    init(playbackMode: String, seed: UInt64, rules: WPESoundPlaybackRules = .legacy) {
         mode = WPESoundPlaybackMode(authoredValue: playbackMode)
+        self.rules = rules
         initialSeed = seed
         random = WPESoundSeededRandomNumberGenerator(seed: seed)
     }
 
     mutating func candidates(pathCount: Int) -> [Int] {
         guard pathCount > 0 else { return [] }
-        if mode == .single, singleDidSchedule { return [] }
-
-        let startIndex: Int
-        switch mode {
-        case .loop:
-            startIndex = loopCursor % pathCount
-        case .random, .single:
-            // random and single both pick a random start; a fixed seed keeps that choice deterministic.
-            startIndex = random.index(upperBound: pathCount)
+        if mode == .single, singleDidSchedule {
+            return []
         }
-        return (0..<pathCount).map { (startIndex + $0) % pathCount }
+
+        let startIndex: Int = switch (rules, mode) {
+        case (.wpe, _):
+            min(Int(random.unitInterval() * Double(pathCount)), pathCount - 1)
+        case (.legacy, .loop):
+            loopCursor % pathCount
+        case (.legacy, .random), (.legacy, .single):
+            // random and single both pick a random start; a fixed seed keeps that choice deterministic.
+            random.index(upperBound: pathCount)
+        }
+        return (0 ..< pathCount).map { (startIndex + $0) % pathCount }
+    }
+
+    /// WPE random mode's wait after a file ends: mintime + U × (maxtime − mintime).
+    mutating func randomDelay(minTime: Double, maxTime: Double) -> Double {
+        minTime + random.unitInterval() * (maxTime - minTime)
     }
 
     mutating func didSchedule(index: Int, pathCount: Int) {
@@ -97,6 +119,8 @@ struct WPESoundRuntimeDebugTrackSnapshot: Equatable, Sendable {
     let sceneVolume: Float
     /// The gain actually applied on the player node (scene × master, 0 when muted).
     let playerVolume: Float
+    /// Seconds left before a WPE random-mode track plays again; nil when it is not waiting.
+    let pendingDelay: Double?
 }
 
 final class WPESoundRuntime: Sendable {
@@ -119,10 +143,19 @@ final class WPESoundRuntime: Sendable {
         var needsReschedule: Bool
         /// Bumped only on teardown, not per-segment: look-ahead has several in-flight completions.
         var epoch: UInt64
-    }
+        let randomDelay: (minTime: Double, maxTime: Double)
+        /// Seconds left of a WPE random-mode wait; the next file is scheduled only once it runs out.
+        var delayRemaining: Double?
 
-    /// Two queued segments is the minimum for a seamless loop (no completion/queue/lock round trip).
-    private static let scheduleDepth = 2
+        var waitsBetweenPlays: Bool {
+            scheduler.rules == .wpe && scheduler.mode == .random
+        }
+
+        /// Two queued segments is the minimum for a seamless loop (no completion/queue/lock round trip).
+        var scheduleDepth: Int {
+            waitsBetweenPlays ? 1 : 2
+        }
+    }
 
     /// Unchecked because AVAudioEngine/AVAudioPlayerNode/AVAudioFile carry no Sendable
     /// conformance under the shipping 26.6 toolchain. The mechanism is the
@@ -152,24 +185,53 @@ final class WPESoundRuntime: Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
     private let resolver: WPEMultiRootResourceResolver
     private let randomSeed: UInt64
+    let rules: WPESoundPlaybackRules
     private let schedulerFactory: SchedulerFactory
     private let completionQueue = DispatchQueue(label: "com.loomscreen.wpe-sound-completion")
 
     init(
         resolver: WPEMultiRootResourceResolver,
         randomSeed: UInt64 = 0x5750_4553_4F55_4E44,
+        rules: WPESoundPlaybackRules = .legacy,
         schedulerFactory: SchedulerFactory? = nil
     ) {
         self.resolver = resolver
         self.randomSeed = randomSeed
+        self.rules = rules
         self.schedulerFactory = schedulerFactory ?? { playbackMode, seed in
-            WPESoundPathScheduler(playbackMode: playbackMode, seed: seed)
+            WPESoundPathScheduler(playbackMode: playbackMode, seed: seed, rules: rules)
         }
+    }
+
+    /// `mintime`/`maxtime` per sound id, read from the authored objects because the parsed sound object omits them.
+    static func authoredRandomDelays(in document: WPESceneDocument) -> [String: (minTime: Double, maxTime: Double)] {
+        guard case let .array(objects) = document.sourceJSON["objects"] else { return [:] }
+        let authored = objects.filter {
+            if case .object = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        func seconds(_ value: WPESceneJSONValue?) -> Double {
+            switch value {
+            case let .number(number): number
+            case let .object(fields): seconds(fields["value"])
+            default: 0
+            }
+        }
+        var delays: [String: (minTime: Double, maxTime: Double)] = [:]
+        for sound in document.soundObjects {
+            guard let index = document.objectPaintOrder[sound.id], authored.indices.contains(index) else { continue }
+            delays[sound.id] = (seconds(authored[index]["mintime"]), seconds(authored[index]["maxtime"]))
+        }
+        return delays
     }
 
     /// `scheduleFile` streams long assets; it does not allocate a PCM buffer of the whole file.
     @discardableResult
-    func prepare(sounds: [WPESceneSoundObject]) -> Int {
+    func prepare(sounds: [WPESceneSoundObject],
+                 randomDelays: [String: (minTime: Double, maxTime: Double)] = [:]) -> Int {
         let resolvedSounds = sounds.compactMap { sound -> ResolvedSound? in
             var relativePaths: [String] = []
             var urls: [URL] = []
@@ -206,9 +268,9 @@ final class WPESoundRuntime: Sendable {
                 state.nextToken &+= 1
                 let trackSeed = Self.derivedSeed(base: randomSeed, index: soundIndex)
                 let sceneVolume = max(0, min(1, sound.volume))
-                player.volume = Self.effectiveVolume(
+                player.volume = effectiveVolume(
                     sceneVolume: sceneVolume,
-                    masterVolume: state.masterVolume,
+                    appVolume: state.masterVolume,
                     isMuted: state.isMuted
                 )
                 state.tracks.append(Track(
@@ -225,7 +287,9 @@ final class WPESoundRuntime: Sendable {
                     visible: sound.visible,
                     enabled: sound.visible && !sound.startSilent,
                     needsReschedule: true,
-                    epoch: 0
+                    epoch: 0,
+                    randomDelay: randomDelays[sound.id] ?? (minTime: 0, maxTime: 0),
+                    delayRemaining: nil
                 ))
 
                 let index = state.tracks.count - 1
@@ -271,9 +335,9 @@ final class WPESoundRuntime: Sendable {
                 state.tracks[index].enabled = false
                 player.pause()
                 reconcileEngineRunState(state: &state)
-            case .setVolume(let volume):
+            case let .setVolume(volume):
                 state.tracks[index].sceneVolume = Float(min(max(volume, 0), 1))
-                Self.applyAudioState(to: &state)
+                applyAudioState(to: &state)
             }
         }
     }
@@ -299,7 +363,7 @@ final class WPESoundRuntime: Sendable {
         state.withLock { state in
             guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
             state.tracks[index].sceneVolume = Float(min(max(volume, 0), 1))
-            Self.applyAudioState(to: &state)
+            applyAudioState(to: &state)
         }
     }
 
@@ -322,7 +386,7 @@ final class WPESoundRuntime: Sendable {
         state.withLock { state in
             guard state.isMuted != muted else { return }
             state.isMuted = muted
-            Self.applyAudioState(to: &state)
+            applyAudioState(to: &state)
             reconcileEngineRunState(state: &state)
         }
     }
@@ -332,7 +396,29 @@ final class WPESoundRuntime: Sendable {
             let clamped = Float(min(max(volume, 0), 1))
             guard abs(state.masterVolume - clamped) > 0.001 else { return }
             state.masterVolume = clamped
-            Self.applyAudioState(to: &state)
+            applyAudioState(to: &state)
+        }
+    }
+
+    /// Counts WPE random-mode waits down by `seconds` of frame time; a wait only runs while its track is audible.
+    func advance(by seconds: Double) {
+        state.withLock { state in
+            guard !state.isSuspended else { return }
+            var expired = false
+            for index in state.tracks.indices where state.tracks[index].enabled {
+                guard let remaining = state.tracks[index].delayRemaining,
+                      effectiveVolume(sceneVolume: state.tracks[index].sceneVolume,
+                                      appVolume: state.masterVolume, isMuted: state.isMuted) > 0 else { continue }
+                if remaining > seconds {
+                    state.tracks[index].delayRemaining = remaining - seconds
+                } else {
+                    state.tracks[index].delayRemaining = nil
+                    expired = true
+                }
+            }
+            if expired {
+                reconcileEngineRunState(state: &state)
+            }
         }
     }
 
@@ -349,10 +435,20 @@ final class WPESoundRuntime: Sendable {
                     isEnabled: $0.enabled,
                     isVisible: $0.visible,
                     sceneVolume: $0.sceneVolume,
-                    playerVolume: $0.player.volume
+                    playerVolume: $0.player.volume,
+                    pendingDelay: $0.delayRemaining
                 )
             }
         }
+    }
+
+    /// Runs the completion path for the track's oldest queued segment, as if it had finished playing.
+    func debugCompleteHeadSegment(forSoundID id: String) {
+        let key = state.withLock { state in
+            state.tracks.first { $0.id == id }.map { (token: $0.token, epoch: $0.epoch) }
+        }
+        guard let key else { return }
+        handleScheduledFileCompletion(token: key.token, epoch: key.epoch)
     }
 
     func debugEngineIsRunning() -> Bool {
@@ -367,18 +463,23 @@ final class WPESoundRuntime: Sendable {
     private func reconcileEngineRunState(state: inout State) {
         guard !state.tracks.isEmpty else { return }
 
-        for index in state.tracks.indices where state.tracks[index].enabled && state.tracks[index].needsReschedule {
+        for index in state.tracks.indices where state.tracks[index].enabled && state.tracks[index].needsReschedule
+            && state.tracks[index].delayRemaining == nil {
             if !fillSchedule(in: &state, trackIndex: index) {
                 state.tracks[index].enabled = false
             }
         }
         guard state.tracks.contains(where: \.enabled) else {
-            if state.engine.isRunning { state.engine.pause() }
+            if state.engine.isRunning {
+                state.engine.pause()
+            }
             return
         }
         // Mute stops decode/render (unlike WPE's gain-only mute); unmute resumes where it stopped.
         guard !state.isMuted, !state.isSuspended else {
-            if state.engine.isRunning { state.engine.pause() }
+            if state.engine.isRunning {
+                state.engine.pause()
+            }
             return
         }
         if !state.engine.isRunning {
@@ -398,7 +499,7 @@ final class WPESoundRuntime: Sendable {
     @discardableResult
     private func fillSchedule(in state: inout State, trackIndex: Int) -> Bool {
         guard state.tracks.indices.contains(trackIndex) else { return false }
-        while state.tracks[trackIndex].scheduledFiles.count < Self.scheduleDepth {
+        while state.tracks[trackIndex].scheduledFiles.count < state.tracks[trackIndex].scheduleDepth {
             guard scheduleOneSegment(in: &state, trackIndex: trackIndex) else { break }
         }
         let queued = !state.tracks[trackIndex].scheduledFiles.isEmpty
@@ -430,7 +531,7 @@ final class WPESoundRuntime: Sendable {
                 completionCallbackType: callbackType
             ) { [weak self] _ in
                 guard let self else { return }
-                self.completionQueue.async { [weak self] in
+                completionQueue.async { [weak self] in
                     self?.handleScheduledFileCompletion(token: token, epoch: epoch)
                 }
             }
@@ -452,6 +553,13 @@ final class WPESoundRuntime: Sendable {
                 state.tracks[index].scheduledFiles.removeFirst()
             }
             guard state.tracks[index].enabled else { return }
+            if state.tracks[index].waitsBetweenPlays {
+                let delay = state.tracks[index].randomDelay
+                state.tracks[index].delayRemaining = state.tracks[index].scheduler
+                    .randomDelay(minTime: delay.minTime, maxTime: delay.maxTime)
+                state.tracks[index].needsReschedule = true
+                return
+            }
             if fillSchedule(in: &state, trackIndex: index) {
                 if state.engine.isRunning, !state.tracks[index].player.isPlaying {
                     state.tracks[index].player.play()
@@ -467,19 +575,21 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    private static func applyAudioState(to state: inout State) {
+    private func applyAudioState(to state: inout State) {
         for track in state.tracks {
             track.player.volume = effectiveVolume(
                 sceneVolume: track.sceneVolume,
-                masterVolume: state.masterVolume,
+                appVolume: state.masterVolume,
                 isMuted: state.isMuted
             )
         }
     }
 
-    private static func effectiveVolume(sceneVolume: Float, masterVolume: Float, isMuted: Bool) -> Float {
+    /// WPE applies volume² × the app volume; the old renderer's rules stay linear.
+    private func effectiveVolume(sceneVolume: Float, appVolume: Float, isMuted: Bool) -> Float {
         guard !isMuted else { return 0 }
-        return max(0, min(1, sceneVolume * masterVolume))
+        let authored = rules == .wpe ? sceneVolume * sceneVolume : sceneVolume
+        return max(0, min(1, authored * appVolume))
     }
 
     private static func stopAndDetachAll(in state: inout State) {
@@ -499,6 +609,7 @@ final class WPESoundRuntime: Sendable {
         state.tracks[index].scheduledFiles.removeAll(keepingCapacity: false)
         state.tracks[index].scheduler.reset()
         state.tracks[index].needsReschedule = true
+        state.tracks[index].delayRemaining = nil
     }
 
     private static func derivedSeed(base: UInt64, index: Int) -> UInt64 {

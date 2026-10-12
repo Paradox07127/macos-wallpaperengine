@@ -364,7 +364,13 @@ final class AmbientWallpaperSessionBuilder {
                     mailbox: surface.mailbox,
                     surfaceControl: surfaceControl,
                     drawableSize: seededDrawableSize,
-                    pixelFormat: surface.metalLayer.pixelFormat
+                    pixelFormat: surface.metalLayer.pixelFormat,
+                    // The engine root's security scope is held open by the parity assets above.
+                    soundResolver: assets.provider.map {
+                        WPEMultiRootResourceResolver(primaryProvider: $0, dependencyMounts: dependencyMounts,
+                                                     engineAssetsRootURL: engineAssetsRootURL)
+                    } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
+                                                      engineAssetsRootURL: engineAssetsRootURL)
                 ))
                 return session
             case let .failure(reason):
