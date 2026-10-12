@@ -46,11 +46,16 @@ struct ParitySceneLastEffectRoutingTests {
 }
 
 struct ParitySceneFBOConversionTests {
-    @Test func fboFormatMapsToMetalNames() throws {
+    @Test func fboFormatFollowsWPEsTable() throws {
         let expected = [
-            "rgba8888": "rgba8unorm", "RGBA16F": "rgba16float", "rgba_half": "rgba16float",
-            "rgba16161616f": "rgba16float", "r8": "r8unorm", "rg88": "rg8unorm", "r16f": "r16float",
-            "rg1616f": "rg16float", "rgba_backbuffer": "rgba8unorm",
+            "rgba8888": "rgba8unorm", "rgb888": "rgba8unorm", "rgb565": "rgba8unorm", "rgba8888s": "rgba8unorm",
+            "rg88": "rg8unorm", "r8": "r8unorm", "rg1616f": "rg16float", "r16f": "r16float",
+            "rgba1010102": "rgb10a2unorm", "rgba16161616f": "rgba16float", "rgb161616f": "rgba16float",
+            "rgba16161616": "rgba16unorm", "rgb161616": "rgba16unorm", "rgba16161616S": "rgba16snorm",
+            "rgb161616S": "rgba16snorm",
+            // The table is case-sensitive and an unknown string decodes to RGBA8 without an error.
+            "R8": "rgba8unorm", "rgba16161616s": "rgba8unorm", "RGBA16F": "rgba8unorm", "bogus": "rgba8unorm",
+            "rgba_backbuffer": "rgba8unorm", "RGB_Backbuffer": "rgba8unorm",
         ]
         for (authored, metal) in expected {
             let fbos = try D.converted(D.fbo("f", format: authored))
@@ -59,18 +64,23 @@ struct ParitySceneFBOConversionTests {
     }
 
     @Test func backbufferFormatFollowsHDR() throws {
-        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("f", format: "rgba_backbuffer")],
-                                               passes: [D.pass("p", target: "f")])])
+        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("f", format: "RGBA_BACKBUFFER"),
+                                                      D.fbo("g", format: "rgb_backbuffer")],
+            passes: [D.pass("p", target: "f", binds: [1: "g"])])])
         let hdr = try D.convert([layer], general: ["bloom": true, "hdr": true],
                                 settings: WPEParityProgramSettings(hdrPostProcessing: true))
         #expect(hdr.backbufferFormat == "rgba16float")
-        #expect(hdr.objects[0].effects[0].fbos.map(\.format) == ["rgba16float"])
+        #expect(hdr.objects[0].effects[0].fbos.map(\.format) == ["rgba16float", "rgba16float"])
     }
 
-    @Test func unknownFBOFormatThrows() {
-        #expect(throws: WPEParitySceneConversionError.unknownFBOFormat("bogus")) {
-            try D.converted(D.fbo("f", format: "bogus"))
-        }
+    @Test func compressedFBOFormatAllocatesRGBA8AndIsReported() throws {
+        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("f", format: "dxt5"), D.fbo("g", format: "bc7")],
+                                               passes: [D.pass("p", target: "f", binds: [1: "g"])])])
+        let description = try D.convert([layer])
+        #expect(description.objects[0].effects[0].fbos.map(\.format) == ["rgba8unorm", "rgba8unorm"])
+        #expect(WPEParitySceneFrameBuilder.build(description).diagnostics == [
+            .compressedFBOFormat(fbo: "f", format: "dxt5"), .compressedFBOFormat(fbo: "g", format: "bc7"),
+        ])
     }
 
     @Test func fboExtentFollowsFitThenScale() throws {

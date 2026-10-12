@@ -7,7 +7,9 @@ public struct WPEParityPostProcessDraw: Hashable, Sendable {
         case fullScreenQuad
     }
 
+    /// Names the draw; the program comes from `material`.
     public let shader: String
+    public let material: String
     public let reads: [WPEResourceID]
     public let blend: Blend
     public let geometry: Geometry

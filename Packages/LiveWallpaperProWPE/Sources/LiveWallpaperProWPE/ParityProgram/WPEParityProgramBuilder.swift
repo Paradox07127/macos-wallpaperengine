@@ -4,7 +4,7 @@ public enum WPEParityProgramBuilder {
         frame.draws.keys.sorted().map { index in
             let material: WPEParityProgramMaterial? = switch frame.draws[index] {
             case let .scene(draw)?: scene.material(for: draw)
-            case let .post(draw)?: scene.engineMaterial(draw.shader)
+            case let .post(draw)?: scene.engineMaterial(draw)
             case nil: nil
             }
             let description = material.map { description($0, engineFlags: scene.engineFlags, assets: scene.assets) }

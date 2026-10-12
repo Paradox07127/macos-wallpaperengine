@@ -1,8 +1,3 @@
-public enum WPEParitySceneConversionError: Error, Hashable, Sendable {
-    /// An effect FBO `format` names no format the parity frame knows how to allocate.
-    case unknownFBOFormat(String)
-}
-
 /// An effect FBO as its effect file declares it.
 struct WPEParityAuthoredFBO: Sendable {
     let name: String
@@ -93,8 +88,8 @@ struct WPEParitySceneFBOScope {
         }
     }
 
-    func effects(of object: WPEParityAuthoredObject) throws(WPEParitySceneConversionError)
-        -> [WPEParitySceneEffect] {
+    func effects(of object: WPEParityAuthoredObject,
+                 diagnostics: inout [WPEParitySceneDiagnostic]) -> [WPEParitySceneEffect] {
         // The object's own declarations (first one wins) take precedence over the scene's.
         var visible = declarations
         for fbo in object.localFBOs.reversed() {
@@ -117,8 +112,16 @@ struct WPEParitySceneFBOScope {
                 guard let declaration = visible[name], !(declaration.local && declaredLocally.contains(name)) else {
                     continue
                 }
-                try declared.append(declaration.parityFBO(shared: shared.contains(name),
-                                                          backbufferFormat: backbufferFormat))
+                let format = Declaration.metalFormat(declaration.fbo.format, backbufferFormat: backbufferFormat)
+                if format == nil {
+                    let diagnostic = WPEParitySceneDiagnostic.compressedFBOFormat(fbo: name,
+                                                                                  format: declaration.fbo.format)
+                    if !diagnostics.contains(diagnostic) {
+                        diagnostics.append(diagnostic)
+                    }
+                }
+                declared.append(declaration.parityFBO(shared: shared.contains(name),
+                                                      format: format ?? WPEParitySceneResource.colorFormat))
             }
             if effect.enabled {
                 declaredLocally.formUnion(declared.map(\.name).filter { visible[$0]?.local == true })
@@ -131,12 +134,10 @@ struct WPEParitySceneFBOScope {
 }
 
 private extension WPEParitySceneFBOScope.Declaration {
-    func parityFBO(shared: Bool,
-                   backbufferFormat: String) throws(WPEParitySceneConversionError) -> WPEParitySceneFBO {
+    func parityFBO(shared: Bool, format: String) -> WPEParitySceneFBO {
         let size = extent
-        return try WPEParitySceneFBO(name: fbo.name, width: size.width, height: size.height,
-                                     format: Self.metalFormat(fbo.format, backbufferFormat: backbufferFormat),
-                                     shared: shared, swapPartner: local ? fbo.swapPartner : nil)
+        return WPEParitySceneFBO(name: fbo.name, width: size.width, height: size.height, format: format,
+                                 shared: shared, swapPartner: local ? fbo.swapPartner : nil)
     }
 
     /// `fit` over the object extent, else the object extent divided by `scale`.
@@ -151,18 +152,24 @@ private extension WPEParitySceneFBOScope.Declaration {
         return (max(1, Int(Double(width) / divisor)), max(1, Int(Double(height) / divisor)))
     }
 
-    static func metalFormat(_ format: String,
-                            backbufferFormat: String) throws(WPEParitySceneConversionError) -> String {
-        switch format.lowercased() {
-        case "rgba8888": "rgba8unorm"
-        case "rgba16f", "rgba_half", "rgba16161616f": "rgba16float"
-        case "r8", "r8unorm": "r8unorm"
-        case "rg88": "rg8unorm"
-        case "r16f": "r16float"
-        case "rg1616f": "rg16float"
-        // No source found (catsout ignores FBO formats); read as the frame's backbuffer format.
-        case "rgba_backbuffer": backbufferFormat
-        default: throw .unknownFBOFormat(format)
+    /// 1401e7170.c:220-242 and FUN_1401e53a0 (string → engine code), FUN_1400d2a20 (engine code → DXGI); nil for a
+    /// block-compressed format.
+    static func metalFormat(_ format: String, backbufferFormat: String) -> String? {
+        if ["rgba_backbuffer", "rgb_backbuffer"].contains(format.lowercased()) {
+            return backbufferFormat
+        }
+        switch format {
+        case "rg88": return "rg8unorm"
+        case "r8": return "r8unorm"
+        case "rg1616f": return "rg16float"
+        case "r16f": return "r16float"
+        case "rgba1010102": return "rgb10a2unorm"
+        case "rgba16161616f", "rgb161616f": return "rgba16float"
+        case "rgba16161616", "rgb161616": return "rgba16unorm"
+        case "rgba16161616S", "rgb161616S": return "rgba16snorm"
+        case "dxt5", "dxt3", "dxt1", "bc7": return nil
+        // rgba8888, rgb888, rgb565, rgba8888s and unknown strings all decode to R8G8B8A8_UNORM.
+        default: return WPEParitySceneResource.colorFormat
         }
     }
 }

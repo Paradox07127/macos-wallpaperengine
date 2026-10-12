@@ -19,9 +19,15 @@ public enum WPEParityPostProcessBuilder {
                 stream.ldrBloom()
             }
             stream.bindScene()
-            stream.draw(config.hdrEnabled ? "combine_hdr" : "combine",
-                        reads: ["_rt_FullFrameBuffer", config.hdrEnabled ? "_rt_2FrameBuffer" : "_rt_Bloom"],
-                        bloom: true, outputAlpha: config.hdrEnabled ? nil : 1)
+            // Main+0x3150 (14017fa70.c:152-175)
+            if config.hdrEnabled {
+                let upsample = config.displayHDREnabled ? "combine_dhdr_upsample" : "combine_hdr_upsample"
+                stream.draw("combine_hdr", material: "materials/util/\(upsample).json",
+                            reads: ["_rt_FullFrameBuffer", "_rt_2FrameBuffer"], bloom: true)
+            } else {
+                stream.draw("combine", material: "materials/util/combine_ldr.json",
+                            reads: ["_rt_FullFrameBuffer", "_rt_Bloom"], bloom: true, outputAlpha: 1)
+            }
         } else {
             if config.hdrEnabled {
                 stream.snapshot()
@@ -31,6 +37,7 @@ public enum WPEParityPostProcessBuilder {
                 stream.bindScene()
             }
             if config.hdrEnabled {
+                // Main+0x3158; shader passthroughsrgb.
                 stream.draw("combine_srgb", reads: ["_rt_FullFrameBuffer"])
             }
         }
@@ -99,14 +106,17 @@ private struct WPEParityPostProcessStream {
                                               depth: WPETextureView("backbufferDepth")))
     }
 
-    mutating func draw(_ shader: String, reads: [WPEResourceID] = [],
+    /// `material` defaults to `materials/util/<shader>.json`.
+    mutating func draw(_ shader: String, material: String? = nil, reads: [WPEResourceID] = [],
                        blend: WPEParityPostProcessDraw.Blend = .normal, bloom: Bool = false,
                        outputAlpha: Float? = nil) {
         let texels = reads.map { id in
             let resource = resources.first { $0.id == id }!
             return SIMD2<Float>(1 / Float(resource.width), 1 / Float(resource.height))
         }
-        let description = WPEParityPostProcessDraw(shader: shader, reads: reads, blend: blend,
+        let description = WPEParityPostProcessDraw(shader: shader,
+                                                   material: material ?? "materials/util/\(shader).json",
+                                                   reads: reads, blend: blend,
                                                    geometry: .fullScreenQuad,
                                                    bloomParameters: bloom ? config.bloomParameters : [:],
                                                    texelSizes: texels, outputAlpha: outputAlpha)

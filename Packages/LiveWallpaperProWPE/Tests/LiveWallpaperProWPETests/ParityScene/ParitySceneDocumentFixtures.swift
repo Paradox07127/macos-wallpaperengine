@@ -59,8 +59,9 @@ enum ParitySceneDocuments {
         "effects/\(layer.id)_\(effect.id).json"
     }
 
-    /// `objects` go into `scene.json` ahead of the layers.
+    /// `objects` go into `scene.json` ahead of the layers; `files` (path → text) are written last and win.
     static func programScene(_ layers: [Layer], general: [String: Any] = [:], objects: [[String: Any]] = [],
+                             files: [String: String] = [:],
                              settings: WPEParityProgramSettings = WPEParityProgramSettings()) throws
         -> WPEParityProgramScene {
         let root = FileManager.default.temporaryDirectory
@@ -96,6 +97,12 @@ enum ParitySceneDocuments {
             let shader = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
             try write(path, ["passes": [["shader": shader, "blending": "translucent"]]])
         }
+        for (path, text) in files {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080]].merging(general) { _, new in new },
@@ -104,15 +111,16 @@ enum ParitySceneDocuments {
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
                                                         userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
-        return try WPEParityProgramScene(document: document,
-                                         assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
-                                         settings: settings)
+        return WPEParityProgramScene(document: document,
+                                     assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
+                                     settings: settings)
     }
 
     static func convert(_ layers: [Layer], general: [String: Any] = [:], objects: [[String: Any]] = [],
+                        files: [String: String] = [:],
                         settings: WPEParityProgramSettings = WPEParityProgramSettings()) throws
         -> WPEParitySceneDescription {
-        try programScene(layers, general: general, objects: objects, settings: settings).scene
+        try programScene(layers, general: general, objects: objects, files: files, settings: settings).scene
     }
 
     /// The converted FBOs of the single effect that writes `fbo`.

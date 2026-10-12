@@ -18,7 +18,7 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
 
 /// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
 /// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
-/// with MSAA off; no transparent sorting, no global composite flag, no ledsource/puppet bit4.
+/// with MSAA off; no transparent sorting, no puppet bit4.
 public struct WPEParityProgramScene: Sendable {
     struct MaterialKey: Hashable, Sendable {
         let objectID: String
@@ -32,8 +32,7 @@ public struct WPEParityProgramScene: Sendable {
     public let assets: WPEParityProgramAssets
     let materials: [MaterialKey: WPEParityProgramMaterial]
 
-    public init(document: WPESceneDocument, assets: WPEParityProgramAssets,
-                settings: WPEParityProgramSettings) throws(WPEParitySceneConversionError) {
+    public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
         let general = document.sourceJSON["general"]
         let objects = Self.array(document.sourceJSON["objects"])
         var flags = WPEEngineComboFlags()
@@ -41,6 +40,9 @@ public struct WPEParityProgramScene: Sendable {
         if case .object? = general?["orthogonalprojection"], let ortho = general?["orthogonalprojection"] {
             flags.orthographicProjection = Self.flag(ortho["auto"]) || (Self.flag(ortho["width"]) && Self.flag(ortho["height"]))
         }
+        // Main+0x118 bits 23/24 (140186440.c:28-39).
+        flags.fogDistance = Self.flag(general?["fogdistance"])
+        flags.fogHeight = Self.flag(general?["fogheight"])
         let sceneBloom = Self.flag(general?["bloom"])
         // 14010df40.c:299-335, 365, 519-552
         flags.hdr = sceneBloom && Self.flag(general?["hdr"]) && settings.hdrPostProcessing
@@ -90,7 +92,8 @@ public struct WPEParityProgramScene: Sendable {
             }
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
-            let blend: WPEParitySceneBlend = if image.colorBlendMode == 31 {
+            // A model's state comes from its material alone.
+            let blend: WPEParitySceneBlend = if image.colorBlendMode == 31, !isModel {
                 .additive
             } else {
                 material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
@@ -100,23 +103,28 @@ public struct WPEParityProgramScene: Sendable {
                 id: image.id, kind: isModel ? .model : .image, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
                 materialShader: material?.shader ?? "genericimage2", material: albedoSource, blend: blend,
+                materialState: Self.materialState(materialPath.flatMap { assets.json($0)?["passes"]?[0] }),
+                materialFog: material.map { Self.programHasFog($0, assets: assets) } ?? false,
                 colorBlendMode: image.colorBlendMode,
                 passthrough: Self.flag(model?["passthrough"]) || image.config.passthrough,
                 copyBackground: image.copyBackground, fullscreen: fullscreen,
+                ledSource: Self.flag(authored?["ledsource"]),
                 noInterpolation: Self.flag(authored?["nointerpolation"]),
                 clampUVs: Self.number(authored?["clampuvs"]).map { $0 != 0 } ?? true,
                 parentID: image.parentObjectID
             ))
         }
         let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)
+        var diagnostics: [WPEParitySceneDiagnostic] = []
         for index in sceneObjects.indices {
-            sceneObjects[index].effects = try scope.effects(of: authoredObjects[index])
+            sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)
         }
         self.materials = materials
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
-                                          objects: sceneObjects)
+                                          forcesLayerComposite: flags.fogDistance || flags.fogHeight,
+                                          objects: sceneObjects, diagnostics: diagnostics)
         postProcess = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                                  objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
                                                  backbufferWidth: width, backbufferHeight: height,
@@ -132,10 +140,36 @@ public struct WPEParityProgramScene: Sendable {
         return material
     }
 
-    /// An engine draw uses `materials/util/<name>.json`; `combine_hdr` has no such file and names its shader.
-    func engineMaterial(_ name: String) -> WPEParityProgramMaterial {
-        WPEParityProgramMaterial(path: "materials/util/\(name).json", assets: assets)
-            ?? WPEParityProgramMaterial(shader: name)
+    /// A post-process draw's material file, or its own name as the shader when the file is missing.
+    func engineMaterial(_ draw: WPEParityPostProcessDraw) -> WPEParityProgramMaterial {
+        WPEParityProgramMaterial(path: draw.material, assets: assets) ?? WPEParityProgramMaterial(shader: draw.shader)
+    }
+
+    /// 0x14020744c: the material's own combos, shader defaults included, decide whether its composite keeps FOG.
+    private static func programHasFog(_ material: WPEParityProgramMaterial, assets: WPEParityProgramAssets) -> Bool {
+        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
+        let description = WPEParityProgramDescription(material: material, engineFlags: WPEEngineComboFlags(),
+                                                      boundTextures: [:])
+        let defines = WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
+                                               blendingMode: Int32(material.blending.rawValue),
+                                               vertexSource: sources.vertex, fragmentSource: sources.fragment,
+                                               engineFlags: description.engineFlags, boundTextures: [:])
+        return defines.contains { $0.name == "FOG" && $0.value != "0" }
+    }
+
+    /// 140155fc0.c:713-738: only the non-default values of these keys change state.
+    private static func materialState(_ pass: WPESceneJSONValue?) -> WPEParitySceneMaterialState {
+        func value(_ key: String) -> String? {
+            string(pass?[key])?.lowercased()
+        }
+        let alphaWriting: WPEParitySceneMaterialState.AlphaWriting = switch value("alphawriting") {
+        case "enabled": .enabled
+        case "disabled": .disabled
+        default: .inherit
+        }
+        return WPEParitySceneMaterialState(depthTest: value("depthtest") != "disabled",
+                                           depthWrite: value("depthwrite") != "disabled",
+                                           cullsBackFaces: value("cullmode") != "nocull", alphaWriting: alphaWriting)
     }
 
     /// The material of the model's first mesh.

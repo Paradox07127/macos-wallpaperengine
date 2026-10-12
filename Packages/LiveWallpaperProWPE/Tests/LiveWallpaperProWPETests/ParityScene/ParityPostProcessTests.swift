@@ -53,6 +53,22 @@ struct ParityPostProcessTests {
         try verifyCompilation(frame)
     }
 
+    @Test func combineDrawsCarryWPEsUtilMaterials() {
+        func combine(hdr: Bool, bloom: Bool, displayHDR: Bool = false) -> WPEParityPostProcessDraw? {
+            var config = bloom ? bloomConfig() : baseConfig()
+            config.hdrEnabled = hdr
+            config.displayHDREnabled = displayHDR
+            return WPEParityPostProcessBuilder.build(config).draws.first { $0.shader.hasPrefix("combine") }
+        }
+        #expect(combine(hdr: false, bloom: true)?.material == "materials/util/combine_ldr.json")
+        #expect(combine(hdr: true, bloom: true)?.material == "materials/util/combine_hdr_upsample.json")
+        #expect(combine(hdr: true, bloom: true, displayHDR: true)?.material
+            == "materials/util/combine_dhdr_upsample.json")
+        #expect(combine(hdr: true, bloom: false)?.material == "materials/util/combine_srgb.json")
+        #expect(combine(hdr: false, bloom: false) == nil)
+        #expect(WPEParityPostProcessConfig(backbufferWidth: 1, backbufferHeight: 1).displayHDREnabled == false)
+    }
+
     @Test(arguments: [false, true], [false, true])
     func colorCorrectionAndFadeAreIndependent(cc: Bool, fade: Bool) throws {
         var config = baseConfig()

@@ -10,7 +10,7 @@ public enum WPEParitySceneFrameBuilder {
         return WPEParitySceneFrame(operations: emitter.operations,
                                    resources: emitter.resources.values.filter { used.contains($0.id) }
                                        .sorted { $0.id < $1.id },
-                                   draws: emitter.draws, samplers: emitter.samplers)
+                                   draws: emitter.draws, samplers: emitter.samplers, diagnostics: scene.diagnostics)
     }
 }
 
@@ -112,7 +112,7 @@ private struct WPEParitySceneEmitter {
                                  ancestors: [WPEResourceID]) {
         guard object.visible else { return }
         let children = childrenByParent[object.id] ?? []
-        // Open question (R7): WPE's draw path for a `.mdl` object; drawn like an effect-less image layer until then.
+        // FUN_1402222a0: a model draws into the bound target with no composite and no effects.
         if object.kind == .model {
             return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
         }
@@ -216,10 +216,13 @@ private struct WPEParitySceneEmitter {
         let identity = WPEPassIdentity("\(object.id)/passthrough4")
         bind(identity, destination.color, depth: destination.depth)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "effectpassthrough_4",
-                                source: .layerPassthrough(colorBlendMode: object.colorBlendMode),
+                                source: .layerPassthrough(colorBlendMode: object.colorBlendMode,
+                                                          layerFog: object.materialFog),
                                 reads: [composites[current], Resource.fullFrameBuffer], target: destination.color,
-                                blend: object.blend, alphaMax: destination.alphaMax,
-                                writeMask: destination.writeMask, geometry: .layerMesh))
+                                blend: object.colorBlendMode == 31 ? .additive : object.blend,
+                                alphaMax: destination.alphaMax, writeMask: destination.writeMask,
+                                geometry: .layerMesh, depthTest: object.materialState.depthTest,
+                                depthWrite: object.materialState.depthWrite))
     }
 
     /// 140207b50: albedo into the starting composite with ONE/ZERO and RGBA.
@@ -250,10 +253,26 @@ private struct WPEParitySceneEmitter {
             let identity = WPEPassIdentity("\(object.id)/albedo")
             let (shader, source, reads) = albedoSource(object)
             bind(identity, destination.color, depth: destination.depth)
-            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
-                                    target: destination.color, blend: object.blend, alphaMax: destination.alphaMax,
-                                    writeMask: destination.writeMask,
-                                    geometry: object.kind == .model ? .modelMesh : .layerMesh))
+            if object.kind == .model {
+                // 140155fc0.c:713-738: blending other than opaque (0, 3) turns depth writes off.
+                let state = object.materialState
+                let mask: WPEParitySceneWriteMask = switch state.alphaWriting {
+                case .inherit: destination.writeMask
+                case .enabled: .rgba
+                case .disabled: .rgb
+                }
+                draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
+                                        reads: reads, target: destination.color, blend: object.blend,
+                                        alphaMax: destination.alphaMax, writeMask: mask, geometry: .modelMesh,
+                                        depthTest: state.depthTest,
+                                        depthWrite: state.depthWrite && object.blend == .normal,
+                                        cullsBackFaces: state.cullsBackFaces))
+            } else {
+                draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
+                                        reads: reads, target: destination.color, blend: object.blend,
+                                        alphaMax: destination.alphaMax, writeMask: destination.writeMask,
+                                        geometry: .layerMesh))
+            }
         }
         for child in children {
             render(child, into: destination, ancestors: ancestors)
@@ -309,6 +328,7 @@ private struct WPEParitySceneEmitter {
         emit(draw.pass, .draw(WPEDrawOperation(reads: draw.reads.map { WPETextureView($0) },
                                                readsDestination: !opaque,
                                                overwritesTargets: opaque && draw.geometry == .fullscreenQuad,
+                                               depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                                                state: WPEDrawStateKey(draw))))
     }
 

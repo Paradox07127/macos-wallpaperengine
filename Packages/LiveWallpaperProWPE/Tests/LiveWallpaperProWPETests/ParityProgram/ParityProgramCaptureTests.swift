@@ -20,11 +20,14 @@ final class ParityProgramCaptureTests: XCTestCase {
     private static let modelDraws: Set<String> = ["188/albedo", "214/albedo", "218/albedo", "2077/albedo",
                                                   "238/albedo", "436/albedo"]
 
-    /// 436 reuses 238's compile (same key), so no capture holds its own FOG=1 program; 449 lacks the image layer's
-    /// BLENDMODE=0 FOG_COMPUTED=1 (n=47/48).
-    private static let knownUnmatched: [String: Set<String>] = [
-        "3509243656": ["436/albedo", "449/albedo"],
+    /// Draws whose program has the `.dxs` key of an earlier draw's capture but whose combo text order differs: 436
+    /// shares 238's key, and 449's albedo (material combos FOG, LIGHTING) shares the key of n=15/16.
+    private static let knownMatchedByKey: [String: [String: Int]] = [
+        "3509243656": ["436/albedo": 39, "449/albedo": 16],
     ]
+
+    /// Draws that match no capture, byte for byte or by key.
+    private static let knownUnmatched: [String: Set<String>] = [:]
 
     func testFrameZeroProgramsMatchCapturedHLSLAndDXSKeys() throws {
         let fixture = try fixture()
@@ -34,11 +37,22 @@ final class ParityProgramCaptureTests: XCTestCase {
             let results = try fixture.run(scene.id, captureRange: scene.captures)
             print("scene \(scene.id) draw table")
             for result in results {
-                let outcome = result.matched
-                    ? "n=" + [WPEHLSLStage.vertex, .geometry, .fragment].compactMap { result.matches[$0] }
-                    .map(String.init).joined(separator: ",")
-                    : result.problems.joined(separator: " | ")
+                let outcome = if result.matched {
+                    "n=" + [WPEHLSLStage.vertex, .geometry, .fragment].compactMap { result.matches[$0] }
+                        .map(String.init).joined(separator: ",")
+                } else if let key = result.keyMatch {
+                    "key of n=\(key) | " + result.problems.joined(separator: " | ")
+                } else {
+                    result.problems.joined(separator: " | ")
+                }
                 print("  \(scene.id) | \(result.pass.rawValue) | \(result.shader) | \(outcome)")
+            }
+            let byKey = results.filter { !$0.matched && $0.keyMatch != nil }
+            XCTAssertEqual(Dictionary(uniqueKeysWithValues: byKey.map { ($0.pass.rawValue, $0.keyMatch ?? 0) }),
+                           Self.knownMatchedByKey[scene.id] ?? [:], scene.id)
+            if scene.id == "3509243656" {
+                // ledsource puts 449 through its composite, drawn with BLENDMODE 0 and FOG_COMPUTED 1.
+                XCTAssertEqual(results.first { $0.pass == "449/passthrough4" }?.matches[.fragment], 48)
             }
             let matched = results.filter(\.matched)
             for result in matched {
@@ -47,17 +61,20 @@ final class ParityProgramCaptureTests: XCTestCase {
                                "\(scene.id) \(result.pass.rawValue) .dxs key differs from capture n=\(capture)")
                 keysChecked += 1
             }
-            XCTAssertEqual(Set(results.filter { !$0.matched }.map(\.pass.rawValue)),
+            XCTAssertEqual(Set(results.filter { !$0.matched && $0.keyMatch == nil }.map(\.pass.rawValue)),
                            Self.knownUnmatched[scene.id] ?? [], scene.id)
             for result in results where Self.modelDraws.contains(result.pass.rawValue) {
                 XCTAssertEqual(result.shader, "generic4", "\(scene.id) \(result.pass.rawValue)")
             }
+            let keys = Set(byKey.compactMap { $0.keyMatch.flatMap(fixture.dxsKey) })
             let produced = Set(results.flatMap(\.matches.values))
+                .union(scene.captures.filter { fixture.dxsKey($0).map(keys.contains) == true })
             let missing = scene.captures.filter { !produced.contains($0) }
                 .compactMap { fixture.captures[$0] }.map { "n=\($0.n) \($0.name)" }
-            print("scene \(scene.id): matched \(matched.count)/\(results.count) draws; "
-                + "captures no draw produced (\(missing.count)): \(missing.joined(separator: ", "))")
-            summary.append("\(scene.id) \(matched.count)/\(results.count)")
+            print("scene \(scene.id): matched \(matched.count)/\(results.count) draws byte for byte, "
+                + "\(byKey.count) by .dxs key; captures no draw produced (\(missing.count)): "
+                + missing.joined(separator: ", "))
+            summary.append("\(scene.id) \(matched.count)/\(results.count) (+\(byKey.count) by key)")
         }
         print("matched draws per scene: \(summary.joined(separator: "; ")); .dxs keys compared: \(keysChecked)")
     }

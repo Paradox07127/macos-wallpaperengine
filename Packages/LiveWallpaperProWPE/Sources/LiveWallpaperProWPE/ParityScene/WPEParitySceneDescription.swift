@@ -18,6 +18,35 @@ public enum WPEParitySceneWriteMask: Hashable, Sendable {
     case rgb
 }
 
+/// What binding a material pass sets besides blending (140155fc0.c:713-738); an absent key keeps WPE's baseline.
+public struct WPEParitySceneMaterialState: Hashable, Sendable {
+    public enum AlphaWriting: Hashable, Sendable {
+        /// `"default"`: the draw keeps the mask of the target it lands in.
+        case inherit
+        case enabled
+        case disabled
+    }
+
+    public var depthTest: Bool
+    public var depthWrite: Bool
+    /// False for `cullmode` `nocull`.
+    public var cullsBackFaces: Bool
+    public var alphaWriting: AlphaWriting
+
+    public init(depthTest: Bool = true, depthWrite: Bool = true, cullsBackFaces: Bool = true,
+                alphaWriting: AlphaWriting = .inherit) {
+        self.depthTest = depthTest
+        self.depthWrite = depthWrite
+        self.cullsBackFaces = cullsBackFaces
+        self.alphaWriting = alphaWriting
+    }
+}
+
+public enum WPEParitySceneDiagnostic: Hashable, Sendable {
+    /// A block-compressed effect FBO format, which cannot be a render target; the FBO is allocated as `rgba8unorm`.
+    case compressedFBOFormat(fbo: String, format: String)
+}
+
 /// The material JSON pass a draw comes from, and for an effect pass the effect file pass that names it.
 public struct WPEParitySceneMaterialSource: Hashable, Sendable {
     public var materialPath: String
@@ -40,10 +69,15 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
 
     public static let composeLayer = WPEParitySceneMaterialSource(materialPath: "materials/util/composelayer.json")
 
-    /// genericimage4 with the image layer's BLENDMODE added to the pass JSON (FUN_140206ae0).
-    public static func layerPassthrough(colorBlendMode: Int) -> WPEParitySceneMaterialSource {
-        WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json",
-                                     combos: ["BLENDMODE": colorBlendMode])
+    /// genericimage4 with the combos FUN_140206ae0 adds; FOG_COMPUTED (and FOG, which the pass JSON never sets) goes
+    /// when the layer material's own program (`layerFog`) has no FOG ≠ 0. Material flag 0x18 (LIGHTING/REFLECTION=0)
+    /// and puppet combos are not modelled: the document carries neither.
+    public static func layerPassthrough(colorBlendMode: Int, layerFog: Bool) -> WPEParitySceneMaterialSource {
+        var combos = ["BLENDMODE": colorBlendMode == 31 ? 0 : colorBlendMode]
+        if layerFog {
+            combos["FOG_COMPUTED"] = 1
+        }
+        return WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json", combos: combos)
     }
 }
 
@@ -59,14 +93,15 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var msaaSamples: Int
     /// Carried but not applied: the report does not name the transparent-sorting comparator (U5).
     public var transparentSorting: Bool
-    /// Global flag 0x1800000 that sends every layer through its own `_a` composite.
+    /// Global fog flags 0x1800000 (`general.fogdistance` / `fogheight`) send every layer through its own `_a` composite.
     public var forcesLayerComposite: Bool
     public var objects: [WPEParitySceneObject]
+    public var diagnostics: [WPEParitySceneDiagnostic]
 
     public init(width: Int, height: Int, backbufferFormat: String = WPEParitySceneResource.colorFormat,
                 clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
                 msaaSamples: Int = 1, transparentSorting: Bool = false, forcesLayerComposite: Bool = false,
-                objects: [WPEParitySceneObject]) {
+                objects: [WPEParitySceneObject], diagnostics: [WPEParitySceneDiagnostic] = []) {
         self.width = width
         self.height = height
         self.backbufferFormat = backbufferFormat
@@ -76,6 +111,7 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
         self.transparentSorting = transparentSorting
         self.forcesLayerComposite = forcesLayerComposite
         self.objects = objects
+        self.diagnostics = diagnostics
     }
 }
 
@@ -98,6 +134,10 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var material: WPEParitySceneMaterialSource?
     /// Layer material blend used where the layer lands in the scene or its parent composite.
     public var blend: WPEParitySceneBlend
+    /// Depth, cull and alpha-write state of the albedo (or model) material pass.
+    public var materialState: WPEParitySceneMaterialState
+    /// The albedo material's combos, shader defaults included, set FOG ≠ 0.
+    public var materialFog: Bool
     public var colorBlendMode: Int
     public var passthrough: Bool
     public var copyBackground: Bool
@@ -114,6 +154,7 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public init(id: String, kind: Kind = .image, sortKey: Int = 0, visible: Bool = true, width: Int, height: Int,
                 materialShader: String = "genericimage2", material: WPEParitySceneMaterialSource? = nil,
                 blend: WPEParitySceneBlend = .translucent,
+                materialState: WPEParitySceneMaterialState = WPEParitySceneMaterialState(), materialFog: Bool = false,
                 colorBlendMode: Int = 0, passthrough: Bool = false, copyBackground: Bool = true,
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
                 noInterpolation: Bool = false, clampUVs: Bool = true, parentID: String? = nil,
@@ -127,6 +168,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.materialShader = materialShader
         self.material = material
         self.blend = blend
+        self.materialState = materialState
+        self.materialFog = materialFog
         self.colorBlendMode = colorBlendMode
         self.passthrough = passthrough
         self.copyBackground = copyBackground

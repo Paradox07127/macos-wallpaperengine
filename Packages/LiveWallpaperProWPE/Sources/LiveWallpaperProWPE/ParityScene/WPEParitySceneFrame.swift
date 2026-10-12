@@ -21,11 +21,16 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let alphaMax: Bool
     public let writeMask: WPEParitySceneWriteMask
     public let geometry: Geometry
+    /// Set by model draws and the bit4 composite draw only; every other scene draw runs with depth off.
+    public let depthTest: Bool
+    public let depthWrite: Bool
+    public let cullsBackFaces: Bool
 
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
                 shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
-                writeMask: WPEParitySceneWriteMask, geometry: Geometry) {
+                writeMask: WPEParitySceneWriteMask, geometry: Geometry, depthTest: Bool = false,
+                depthWrite: Bool = false, cullsBackFaces: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -38,6 +43,9 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.alphaMax = alphaMax
         self.writeMask = writeMask
         self.geometry = geometry
+        self.depthTest = depthTest
+        self.depthWrite = depthWrite
+        self.cullsBackFaces = cullsBackFaces
     }
 }
 
@@ -70,6 +78,7 @@ public struct WPEParitySceneFrame: Hashable, Sendable {
     public let draws: [WPEPassIdentity: WPEParitySceneDraw]
     /// Sampler a draw binds when it reads one of the layer composites.
     public let samplers: [WPEResourceID: WPEParitySceneSampler]
+    public let diagnostics: [WPEParitySceneDiagnostic]
 }
 
 public enum WPEParitySceneResource {

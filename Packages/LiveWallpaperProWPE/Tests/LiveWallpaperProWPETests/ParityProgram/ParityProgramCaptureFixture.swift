@@ -19,6 +19,9 @@ struct ParityProgramCaptureFixture {
         let matches: [WPEHLSLStage: Int]
         /// Empty when every stage matched.
         let problems: [String]
+        /// Fragment capture whose `.dxs` key equals the program's when the bytes differ: WPE compiles a key once and
+        /// reuses that program, so the capture holds the text of whichever draw compiled it first.
+        let keyMatch: Int?
 
         var matched: Bool {
             program != nil && problems.isEmpty
@@ -69,18 +72,22 @@ struct ParityProgramCaptureFixture {
         return WPEParityProgramBuilder.draws(frame: frame, scene: scene).map { draw in
             guard var description = draw.description else {
                 return DrawResult(pass: draw.pass, shader: "?", program: nil, matches: [:],
-                                  problems: ["no material file"])
+                                  problems: ["no material file"], keyMatch: nil)
             }
             adjust(&description, assets)
             let shader = description.material.shader
             do {
                 let program = try WPEParityProgramResolver.resolve(description, sources: assets)
                 let (matches, problems) = match(program, in: captureRange)
+                let key = program.dxsKey()
+                let keyMatch = problems.isEmpty ? nil : captureRange.first { n in
+                    captures[n]?.target == "ps_5_0" && dxsKey(n) == key
+                }
                 return DrawResult(pass: draw.pass, shader: shader, program: program, matches: matches,
-                                  problems: problems)
+                                  problems: problems, keyMatch: keyMatch)
             } catch {
                 return DrawResult(pass: draw.pass, shader: shader, program: nil, matches: [:],
-                                  problems: ["\(error)"])
+                                  problems: ["\(error)"], keyMatch: nil)
             }
         }
     }
