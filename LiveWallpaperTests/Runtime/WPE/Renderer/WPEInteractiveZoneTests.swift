@@ -27,14 +27,16 @@ struct WPEInteractiveZoneTests {
         }
     }
 
-    private func loadedRenderer(script: String, size: String) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
+    private func loadedRenderer(
+        script: String, size: String, visible: Bool = true
+    ) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
         let fixture = try MetalSceneFixture.solidColorScene()
         let path = fixture.root.appendingPathComponent("scene.json")
         var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         var objects = try #require(scene["objects"] as? [[String: Any]])
         objects[0]["origin"] = "32 32 0"
         objects[0]["size"] = size
-        objects[0]["visible"] = ["value": true, "script": script]
+        objects[0]["visible"] = ["value": visible, "script": script]
         scene["objects"] = objects
         try JSONSerialization.data(withJSONObject: scene).write(to: path)
         let renderer = try WPEMetalSceneRenderer(
@@ -90,6 +92,16 @@ struct WPEInteractiveZoneTests {
         defer { renderer.cleanup(); fixture.cleanup() }
         let pipeline = try #require(renderer.renderPipeline)
         #expect(renderer.interactiveZones(pipeline: pipeline).isEmpty)
+    }
+
+    @Test("A clickable layer yields a zone only while it is visible", arguments: [false, true])
+    func invisibleLayerYieldsNoZone(visible: Bool) async throws {
+        let (renderer, fixture) = try await loadedRenderer(
+            script: "export function cursorClick() {}", size: "16 16", visible: visible
+        )
+        defer { renderer.cleanup(); fixture.cleanup() }
+        let pipeline = try #require(renderer.renderPipeline)
+        #expect(renderer.interactiveZones(pipeline: pipeline).count == (visible ? 1 : 0))
     }
 }
 #endif

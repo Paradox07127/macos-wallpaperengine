@@ -732,7 +732,7 @@ extension WPEMetalSceneRenderer {
     }
 
     /// Drawable-UV bounds (top-left origin) of objects whose scripts take button events, from the same geometry hover hit-tests.
-    /// Rects over 30% of the view are left out: those objects keep the desktop-click path.
+    /// Rects over 30% of the view and objects with no visible layer are left out: those keep the desktop-click path.
     func interactiveZones(
         pipeline: WPEPreparedRenderPipeline,
         attachmentGeometry: [String: WPERenderLayerGeometry] = [:]
@@ -742,6 +742,7 @@ extension WPEMetalSceneRenderer {
         forEachCursorScriptInstance { objectID, instance in
             if !instance.exportedCursorHandlers.isDisjoint(with: buttonEvents) { objectIDs.insert(objectID) }
         }
+        objectIDs.formIntersection(pipeline.layers.lazy.filter(\.graphLayer.visible).map(\.graphLayer.objectID))
         guard !objectIDs.isEmpty else { return [] }
         let geometryByID = cursorHitGeometry(pipeline: pipeline, attachmentGeometry: attachmentGeometry)
         let projectedQuads = projectedComposeHoverQuads(pipeline: pipeline, geometryByID: geometryByID)
