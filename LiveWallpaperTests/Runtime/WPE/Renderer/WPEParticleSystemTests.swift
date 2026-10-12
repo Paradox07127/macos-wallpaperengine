@@ -1762,8 +1762,7 @@ struct WPEParticleSystemTests {
             colorChange: WPEParticleColorChange(
                 startTime: 0, endTime: 1,
                 startColor: SIMD3(1, 1, 1), endColor: SIMD3(1, 0, 0)
-            ),
-            hasColorInitializer: true
+            )
         )
         let system = try #require(WPEParticleSystem(definition: def, device: device))
         let pointer = system.instanceBuffer.contents()
@@ -1831,8 +1830,7 @@ struct WPEParticleSystemTests {
             colorChange: WPEParticleColorChange(
                 startTime: 0, endTime: 1,
                 startColor: SIMD3(0.5, 0.5, 0.5), endColor: SIMD3(0.5, 0.5, 0.5)
-            ),
-            hasColorInitializer: true
+            )
         )
         let system = try #require(WPEParticleSystem(definition: def, device: device))
         let pointer = system.instanceBuffer.contents()
@@ -1843,33 +1841,48 @@ struct WPEParticleSystemTests {
         #expect(abs(written.x - 0.251) < 0.02)
     }
 
-    @Test("colorchange does NOT recolour a particle with no colour initializer (white r8 smoke stays white)")
-    func colorChangeSkippedWithoutColorInitializer() throws {
+    @Test("colorchange recolours a particle with no colour initializer")
+    func colorChangeAppliesWithoutColorInitializer() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let def = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 1,
-            rate: 1000, startDelay: 0,
-            lifetimeMin: 10, lifetimeMax: 10,
-            sizeMin: 1, sizeMax: 1,
-            originOffset: SIMD3(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0,
-            colorChange: WPEParticleColorChange(
-                startTime: 0, endTime: 0.6,
-                startColor: SIMD3(1, 0.749, 0), endColor: SIMD3(1, 0, 0)
-            )
-        )
+        let def = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
+            "operator": [["name": "colorchange", "starttime": 0, "endtime": 1,
+                          "startvalue": "1 0 0", "endvalue": "1 0 0"]],
+        ])
+        try #require(def.colorChange != nil)
         let system = try #require(WPEParticleSystem(definition: def, device: device))
-        let pointer = system.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 1)
         system.tick(now: 0)
-        for step in 1...8 { system.tick(now: Double(step) * 0.1) }
-        let c = pointer[0].color
-        #expect(c.x > 0.9, "red stays ~white")
-        #expect(c.y > 0.9, "green NOT ramped down — stays ~white")
-        #expect(c.z > 0.9, "blue NOT zeroed — stays ~white")
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let c = system.instanceBuffer.contents().advanced(by: system.renderBufferOffset)
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].color
+        #expect(abs(c.x - 1) < 1e-4 && abs(c.y) < 1e-4 && abs(c.z) < 1e-4, "rgb \(c) stayed white")
+    }
+
+    @Test("Particle alpha above 1 reaches the instance buffer unclamped", arguments: ["alpharandom", "override"])
+    func particleAlphaAboveOneIsNotClamped(source: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        var initializers: [[String: Any]] = [["name": "lifetimerandom", "min": 10, "max": 10]]
+        if source == "alpharandom" {
+            initializers.append(["name": "alpharandom", "min": 2, "max": 2])
+        }
+        let def = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": initializers,
+        ])
+        let system = try #require(WPEParticleSystem(definition: def, device: device))
+        if source == "override" {
+            system.instanceAlphaScale = 2
+        }
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let alpha = system.instanceBuffer.contents().advanced(by: system.renderBufferOffset)
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].color.w
+        #expect(abs(alpha - 2) < 1e-4, "\(source): alpha \(alpha)")
     }
 
     @Test("oscillateposition mask transforms into render space with object rotation")

@@ -611,9 +611,6 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     public let velocityMax: SIMD3<Double>
     public let colorMin: SIMD3<Double>
     public let colorMax: SIMD3<Double>
-    /// Tracks explicit `color`/`colorrandom` initialization because `colorchange` must not recolor an unauthored base.
-    /// Instance-level `colorn` remains applicable independently.
-    public let hasColorInitializer: Bool
     /// Explicit `"animationmode": "sequence"` or a non-null `sequencemultiplier`. `animationMode` alone cannot distinguish this — omitted `animationmode` also defaults to `.sequence`.
     public let declaresSequenceAnimation: Bool
     /// True when `flags & 4` enables depth-aware perspective sizing and motion.
@@ -714,7 +711,6 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         animationMode: WPEParticleAnimationMode = .sequence,
         controlPoints: [WPEParticleControlPoint] = [],
         attractors: [WPEParticleControlPointAttractor] = [],
-        hasColorInitializer: Bool = false,
         declaresSequenceAnimation: Bool = false,
         isPerspective: Bool = false,
         sourceJSON: WPESceneJSONValue = .object([:])
@@ -754,7 +750,6 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         self.velocityMax = velocityMax
         self.colorMin = colorMin
         self.colorMax = colorMax
-        self.hasColorInitializer = hasColorInitializer
         self.declaresSequenceAnimation = declaresSequenceAnimation
         self.isPerspective = isPerspective
         self.turbulentVelocityInit = turbulentVelocityInit
@@ -844,7 +839,6 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             animationMode: animationMode,
             controlPoints: controlPoints,
             attractors: attractors,
-            hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
             isPerspective: isPerspective,
             sourceJSON: sourceJSON
@@ -909,7 +903,6 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             animationMode: animationMode,
             controlPoints: controlPoints,
             attractors: attractors,
-            hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
             isPerspective: isPerspective,
             sourceJSON: sourceJSON
@@ -1117,7 +1110,6 @@ public enum WPEParticleDefinitionParser {
         var velocityMax = def.velocityMax
         var colorMin = def.colorMin
         var colorMax = def.colorMax
-        var hasColorInitializer = false
         var turbulentVelocityInit: WPEParticleTurbulentVelocityInit?
         var turbulence: WPEParticleTurbulenceOperator?
         var alphaMin: Double = def.alphaMin
@@ -1157,12 +1149,10 @@ public enum WPEParticleDefinitionParser {
                 case "colorrandom":
                     colorMin = WPEValueParser.vector3(entry["min"]) ?? colorMin
                     colorMax = WPEValueParser.vector3(entry["max"]) ?? colorMax
-                    hasColorInitializer = true
                 case "color":
                     if let v = WPEValueParser.vector3(entry["value"]) {
                         colorMin = v; colorMax = v
                     }
-                    hasColorInitializer = true
                 case "alpharandom":
                     alphaMin = WPEValueParser.double(entry["min"]) ?? 0.05
                     alphaMax = WPEValueParser.double(entry["max"]) ?? 1
@@ -1424,7 +1414,6 @@ public enum WPEParticleDefinitionParser {
             animationMode: animationMode,
             controlPoints: controlPoints,
             attractors: attractors,
-            hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
             isPerspective: isPerspective,
             sourceJSON: sourceJSON

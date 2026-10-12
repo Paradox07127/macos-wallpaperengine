@@ -1981,6 +1981,8 @@ struct WPEParticleSpriteParams {
     if (sprite.tintAndMask.w > 0.5) {
         alpha *= groupOpacityMask.sample(linearSampler, in.maskUV).r;
     }
+    // Particle alpha may exceed 1; saturate after the texture multiply so float targets never get a negative 1-srcAlpha.
+    alpha = saturate(alpha);
     // Straight (non-premultiplied) alpha. The Metal pipeline state's
     // blend factors handle the translucent/additive/normal split set
     // up by `particlePipelineState`.
@@ -2037,7 +2039,7 @@ struct WPEParticleSpriteParams {
     half3 background = backgroundTex.sample(linearSampler, screenUV + offset).rgb;
     half overbright = max(half(sprite.frameRectMode.z), half(0));
     half3 rgb = albedo.rgb * half3(in.color.rgb) * background * overbright;
-    half alpha = albedo.a * half(in.color.a);
+    half alpha = saturate(albedo.a * half(in.color.a));
     return half4(wpe_attachment_output(float4(half4(rgb, alpha))));
 }
 

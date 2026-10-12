@@ -884,7 +884,8 @@ final class WPEParticleSystem {
                 phase: Double(particle.oscAlphaPhase)
             ))
         }
-        alpha = min(max(alpha, 0), 1)
+        // No upper clamp: WPE multiplies alpha > 1 into the texture alpha; the fragment saturates the product.
+        alpha = max(alpha, 0)
         var spriteSize = particle.size
         if let sizeChange = definition.sizeChange {
             spriteSize *= Float(sizeChange.factor(lifetimeFraction: Double(lifetimeFraction)))
@@ -901,7 +902,7 @@ final class WPEParticleSystem {
             spriteSize = min(spriteSize, sceneTransform.sceneHeight)
         }
         var rgb = particle.color
-        if definition.hasColorInitializer, let colorChange = definition.colorChange {
+        if let colorChange = definition.colorChange {
             let c = colorChange.color(lifetimeFraction: Double(lifetimeFraction))
             rgb *= SIMD3<Float>(Float(c.x), Float(c.y), Float(c.z))
         }
@@ -1775,7 +1776,7 @@ final class WPEParticleSystem {
             ),
             rotationZ: sceneTransform.visualRotationZ(localRotationZ: rotationVec.z),
             angularVelocityZ: sceneTransform.visualAngularZ(localAngularZ: angularVec.z),
-            alphaBase: min(max(alpha, 0), 1),
+            alphaBase: max(alpha, 0),
             lifetime: max(0.0001, lifetime),
             age: 0,
             turbulenceSpeed: turbulenceSpeed,

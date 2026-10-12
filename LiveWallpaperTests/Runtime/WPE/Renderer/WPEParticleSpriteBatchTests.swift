@@ -195,6 +195,43 @@ struct WPEParticleSpriteBatchTests {
         #expect(error < 2.0 / 255, "\(name): got \(actual), want \(expected)")
     }
 
+    @MainActor
+    @Test("Particle alpha above 1 scales sprite alpha before the output saturates",
+          arguments: [(2.0, 0.8), (4.0, 1.0)])
+    func particleAlphaAboveOne(particleAlpha: Double, expected: Float) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0,
+                         "distancemin": "0 0 0", "distancemax": "0 0 0"]],
+            "initializer": [["name": "sizerandom", "min": 64, "max": 64],
+                            ["name": "lifetimerandom", "min": 10, "max": 10],
+                            ["name": "alpharandom", "min": particleAlpha, "max": particleAlpha]],
+        ])
+        let system = try #require(WPEParticleSystem(
+            definition: definition, device: device,
+            sceneTransform: .init(sceneSize: SIMD2(41, 29), objectOrigin: SIMD3(20.5, 14.5, 0),
+                                  objectScale: SIMD3(repeating: 1), objectAngleZ: 0),
+            seed: 1
+        ))
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let sprite = try texture(device, color: SIMD4(255, 255, 255, 102))
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: .init(width: 41, height: 29, auto: true), sceneCamera: .defaultCamera
+        )
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let output = try executor.render(
+            pipeline: .init(layers: []), size: size, textures: [:], cameraUniforms: camera,
+            particleSystems: [system], particleTextures: [ObjectIdentifier(system): sprite]
+        )
+        try #require(output.pixelFormat == .rgba8Unorm)
+        let pixels = try bytes(output)
+        let red = Float(pixels[(14 * output.width + 20) * 4]) / 255
+        #expect(abs(red - expected) < 2.0 / 255, "alpha \(particleAlpha): got \(red), want \(expected)")
+    }
+
     @Test("Batch planning respects layer threshold and all projection fields")
     func batchThresholdAndProjection() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
