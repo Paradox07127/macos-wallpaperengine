@@ -35,7 +35,7 @@ struct ParityProgramCaptureFixture {
     ]
 
     /// The capture machine ran postprocessing ultra with MSAA on (the report infers it from HDR and BACKBUFFER_MS).
-    static let captureSettings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
+    static let captureSettings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true, particles: true)
 
     let root: URL
     let assetRoots: [URL]

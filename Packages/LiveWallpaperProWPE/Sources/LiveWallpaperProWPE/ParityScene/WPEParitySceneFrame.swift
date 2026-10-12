@@ -7,6 +7,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case puppetMesh
         /// The meshes of the object's `.mdl` file.
         case modelMesh
+        /// The vertices a particle renderer entry writes this frame.
+        case particles(WPEParityParticleDrawKey)
     }
 
     public let pass: WPEPassIdentity
@@ -28,7 +30,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let geometry: Geometry
     /// The albedo filling the layer's own first composite: composite-size mesh and camera instead of the 2×2 quad.
     public let fillsComposite: Bool
-    /// Set by model draws and the bit4 composite draw only; every other scene draw runs with depth off.
+    /// Set by model, particle and bit4 composite draws only; every other scene draw runs with depth off.
     public let depthTest: Bool
     public let depthWrite: Bool
     public let cullsBackFaces: Bool

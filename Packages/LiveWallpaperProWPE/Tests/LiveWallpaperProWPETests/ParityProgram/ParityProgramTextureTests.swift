@@ -5,19 +5,20 @@ import XCTest
 final class ParityProgramTextureTests: XCTestCase {
     private static func header(format: UInt32, flags: UInt32) -> Data {
         var bytes = Array("TEXV0005\0TEXI0001\0".utf8)
-        for value in [format, flags, 64, 2] {
+        for value in [format, flags, 64, 32, 48, 20] {
             withUnsafeBytes(of: value.littleEndian) { bytes.append(contentsOf: $0) }
         }
         return Data(bytes)
     }
 
-    func testSyntheticHeaderReadsFormatAndFlags() {
+    func testSyntheticHeaderReadsFormatFlagsAndSizes() {
         let header = WPEParityProgramTextureHeader(bytes: Array(Self.header(format: 9, flags: 0x0080_0002)))
-        XCTAssertEqual(header, WPEParityProgramTextureHeader(format: 9, flags: 0x0080_0002))
+        XCTAssertEqual(header, WPEParityProgramTextureHeader(format: 9, flags: 0x0080_0002, textureWidth: 64,
+                                                             textureHeight: 32, imageWidth: 48, imageHeight: 20))
         var wrongMagic = Array(Self.header(format: 9, flags: 0))
         wrongMagic[9] = UInt8(ascii: "X")
         XCTAssertNil(WPEParityProgramTextureHeader(bytes: wrongMagic))
-        XCTAssertNil(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: 9, flags: 0).prefix(25))))
+        XCTAssertNil(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: 9, flags: 0).prefix(41))))
     }
 
     func testRealMaskTextureFlagsEmissiveComponent() throws {
@@ -27,8 +28,9 @@ final class ParityProgramTextureTests: XCTestCase {
         let scene = URL(fileURLWithPath: directory).appendingPathComponent("scene-sources/3509243656")
         let assets = WPEParityProgramAssets(sceneDirectory: scene, assetRoots: [])
         // generic4 g_Texture2 components[3] is EMISSIVE_MAP: bit 0x100000 << 3.
-        XCTAssertEqual(assets.textureHeader(named: "masks/Material__50_mask_fe7471cd"),
-                       WPEParityProgramTextureHeader(format: 0, flags: 0x0080_0002))
+        let mask = assets.textureHeader(named: "masks/Material__50_mask_fe7471cd")
+        XCTAssertEqual(mask?.format, 0)
+        XCTAssertEqual(mask?.flags, 0x0080_0002)
         XCTAssertEqual(assets.textureHeader(named: "masks/材质_mask_d86e683c")?.flags, 2)
         XCTAssertNil(assets.textureHeader(named: "_rt_FullFrameBuffer"))
     }

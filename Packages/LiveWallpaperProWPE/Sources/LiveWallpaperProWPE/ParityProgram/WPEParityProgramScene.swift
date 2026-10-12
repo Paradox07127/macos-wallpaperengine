@@ -8,11 +8,14 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var hdrPostProcessing: Bool
     /// User MSAA x2/x4/x8 that the device supports.
     public var msaa: Bool
+    /// Adds particle objects' draws to the frame; the app renderer cannot encode them yet.
+    public var particles: Bool
 
-    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false) {
+    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false, particles: Bool = false) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
         self.msaa = msaa
+        self.particles = particles
     }
 }
 
@@ -139,6 +142,15 @@ public struct WPEParityProgramScene: Sendable {
         for index in sceneObjects.indices {
             sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)
         }
+        for (index, particle) in document.particleObjects.enumerated() where settings.particles {
+            let draws = Self.particleDraws(objectID: particle.id, path: particle.particleRelativePath, assets: assets,
+                                           diagnostics: &diagnostics)
+            sceneObjects.append(WPEParitySceneObject(
+                id: particle.id, kind: .particle(WPEParitySceneParticle(draws: draws)),
+                sortKey: document.objectPaintOrder[particle.id] ?? index, visible: Self.visible(particle.id, document),
+                width: 0, height: 0, parentID: particle.parentObjectID
+            ))
+        }
         self.materials = materials
         self.layerColors = layerColors
         self.puppetModels = puppetModels
@@ -187,6 +199,9 @@ public struct WPEParityProgramScene: Sendable {
         var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)]
             ?? WPEParityProgramMaterial(path: source.materialPath, pass: source.materialPass, assets: assets)
         material?.merge(combos: source.combos, textures: [:])
+        if let shader = source.shader {
+            material?.shader = shader
+        }
         return material
     }
 
@@ -208,7 +223,7 @@ public struct WPEParityProgramScene: Sendable {
     }
 
     /// 140155fc0.c:713-738: only the non-default values of these keys change state.
-    private static func materialState(_ pass: WPESceneJSONValue?) -> WPEParitySceneMaterialState {
+    static func materialState(_ pass: WPESceneJSONValue?) -> WPEParitySceneMaterialState {
         func value(_ key: String) -> String? {
             string(pass?[key])?.lowercased()
         }
@@ -365,7 +380,7 @@ public struct WPEParityProgramScene: Sendable {
     }
 }
 
-private extension WPEParitySceneBlend {
+extension WPEParitySceneBlend {
     init(_ mode: WPEParityBlendMode) {
         switch mode {
         case .translucent: self = .translucent

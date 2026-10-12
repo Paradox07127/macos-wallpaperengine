@@ -26,6 +26,15 @@ private struct WPEParitySceneDestination {
     var writeMask: WPEParitySceneWriteMask {
         alphaMax ? .rgba : .rgb
     }
+
+    /// A material pass's `alphawriting` overrides the destination's mask.
+    func writeMask(_ state: WPEParitySceneMaterialState) -> WPEParitySceneWriteMask {
+        switch state.alphaWriting {
+        case .inherit: writeMask
+        case .enabled: .rgba
+        case .disabled: .rgb
+        }
+    }
 }
 
 private struct WPEParitySceneEmitter {
@@ -115,6 +124,13 @@ private struct WPEParitySceneEmitter {
                                  ancestors: [WPEResourceID]) {
         guard object.visible else { return }
         let children = childrenByParent[object.id] ?? []
+        if case let .particle(particle) = object.kind {
+            renderParticles(object, particle, into: destination)
+            for child in children {
+                render(child, into: destination, ancestors: ancestors)
+            }
+            return
+        }
         // FUN_1402222a0: a model draws into the bound target with no composite and no effects.
         if object.kind == .model {
             return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
@@ -264,15 +280,11 @@ private struct WPEParitySceneEmitter {
             if object.kind == .model {
                 // 140155fc0.c:713-738: blending other than opaque (0, 3) turns depth writes off.
                 let state = object.materialState
-                let mask: WPEParitySceneWriteMask = switch state.alphaWriting {
-                case .inherit: destination.writeMask
-                case .enabled: .rgba
-                case .disabled: .rgb
-                }
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
                                         reads: reads, target: destination.color, blend: object.blend,
                                         alphaMax: destination.alphaMax,
-                                        compositeOwnerID: destination.compositeOwnerID, writeMask: mask,
+                                        compositeOwnerID: destination.compositeOwnerID,
+                                        writeMask: destination.writeMask(state),
                                         geometry: .modelMesh,
                                         depthTest: state.depthTest,
                                         depthWrite: state.depthWrite && object.blend == .normal,
@@ -290,6 +302,31 @@ private struct WPEParitySceneEmitter {
         }
         for child in children {
             render(child, into: destination, ancestors: ancestors)
+        }
+    }
+
+    /// FUN_1402366f0: each renderer entry draws with its material pass's state; a REFRACT object copies
+    /// `_rt_FullFrameBuffer` once per frame, before its first REFRACT draw (R16 Q3).
+    private mutating func renderParticles(_ object: WPEParitySceneObject, _ particle: WPEParitySceneParticle,
+                                          into destination: WPEParitySceneDestination) {
+        var snapshotTaken = false
+        for entry in particle.draws {
+            let key = entry.key
+            let path = key.node.map { "/\($0)" }.joined() + (key.eventGroup.map { "/e\($0)" } ?? "")
+            let identity = WPEPassIdentity("\(object.id)/particle\(path)/r\(key.renderer)")
+            if entry.readsFullFrameBuffer, !snapshotTaken {
+                snapshot(WPEPassIdentity("\(object.id)/particle/snapshot"))
+                snapshotTaken = true
+            }
+            bind(identity, destination.color, depth: destination.depth)
+            let state = entry.materialState
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: entry.shader, source: entry.source,
+                                    reads: entry.readsFullFrameBuffer ? [Resource.fullFrameBuffer] : [],
+                                    target: destination.color, blend: entry.blend, alphaMax: destination.alphaMax,
+                                    compositeOwnerID: destination.compositeOwnerID,
+                                    writeMask: destination.writeMask(state), geometry: .particles(key),
+                                    depthTest: state.depthTest, depthWrite: state.depthWrite && entry.blend == .normal,
+                                    cullsBackFaces: state.cullsBackFaces))
         }
     }
 

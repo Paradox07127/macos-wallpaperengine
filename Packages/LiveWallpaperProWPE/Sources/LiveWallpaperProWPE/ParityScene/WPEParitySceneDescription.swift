@@ -45,6 +45,9 @@ public struct WPEParitySceneMaterialState: Hashable, Sendable {
 public enum WPEParitySceneDiagnostic: Hashable, Sendable {
     /// A block-compressed effect FBO format, which cannot be a render target; the FBO is allocated as `rgba8unorm`.
     case compressedFBOFormat(fbo: String, format: String)
+    /// A particle child left out of the draw list: its path repeats an ancestor, it nests deeper than 8 levels, or it
+    /// descends from an event child, which `WPEParityParticleDrawKey` cannot address.
+    case particleChildOmitted(objectID: String, path: String)
 }
 
 /// The material JSON pass a draw comes from, and for an effect pass the effect file pass that names it.
@@ -57,14 +60,17 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
     public var effectPass: Int?
     /// Combos the engine adds to the pass JSON for this draw.
     public var combos: [String: Int]
+    /// Shader the engine draws with instead of the pass JSON's, such as a rope-only particle system's.
+    public var shader: String?
 
     public init(materialPath: String, materialPass: Int = 0, effectFile: String? = nil, effectPass: Int? = nil,
-                combos: [String: Int] = [:]) {
+                combos: [String: Int] = [:], shader: String? = nil) {
         self.materialPath = materialPath
         self.materialPass = materialPass
         self.effectFile = effectFile
         self.effectPass = effectPass
         self.combos = combos
+        self.shader = shader
     }
 
     public static let composeLayer = WPEParitySceneMaterialSource(materialPath: "materials/util/composelayer.json")
@@ -148,6 +154,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         case image
         /// A `.mdl` model; its material comes from the model file and it takes no effects.
         case model
+        /// A particle system; it draws only its renderer entries and takes no composite or effects.
+        case particle(WPEParitySceneParticle)
     }
 
     public var id: String
@@ -216,6 +224,60 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     /// Layer bit4 (1401e6f50.c:24-29), without the global 0x1800000 flag.
     public var requiresLayerComposite: Bool {
         ![0, 31].contains(colorBlendMode) || ledSource || puppetForcesComposite
+    }
+}
+
+/// One particle renderer-entry draw: `node` indexes the static children (`WPEParityParticleSystem.children`) from the
+/// root system; with `eventGroup` the draw covers every instance of that node's `eventChildren[eventGroup]`.
+public struct WPEParityParticleDrawKey: Hashable, Sendable {
+    public var objectID: String
+    public var node: [Int]
+    /// Index into the drawn system's `renderers`.
+    public var renderer: Int
+    public var eventGroup: Int?
+
+    public init(objectID: String, node: [Int] = [], renderer: Int, eventGroup: Int? = nil) {
+        self.objectID = objectID
+        self.node = node
+        self.renderer = renderer
+        self.eventGroup = eventGroup
+    }
+}
+
+/// A particle object's draws in WPE order (R16 Q4): a system's entries in JSON order, then its static children depth
+/// first, then one group per event child.
+public struct WPEParitySceneParticle: Hashable, Sendable {
+    public var draws: [WPEParitySceneParticleDraw]
+
+    public init(draws: [WPEParitySceneParticleDraw]) {
+        self.draws = draws
+    }
+}
+
+public struct WPEParitySceneParticleDraw: Hashable, Sendable {
+    public var key: WPEParityParticleDrawKey
+    public var shader: String
+    /// Pass 0 of the system's `material`, with the entry's combos and the rope-only shader override.
+    public var source: WPEParitySceneMaterialSource
+    public var blend: WPEParitySceneBlend
+    public var materialState: WPEParitySceneMaterialState
+    /// REFRACT: the pass samples `_rt_FullFrameBuffer`.
+    public var readsFullFrameBuffer: Bool
+    /// Particle JSON `flags` bit0 and bit2.
+    public var worldSpace: Bool
+    public var perspective: Bool
+
+    public init(key: WPEParityParticleDrawKey, shader: String, source: WPEParitySceneMaterialSource,
+                blend: WPEParitySceneBlend, materialState: WPEParitySceneMaterialState,
+                readsFullFrameBuffer: Bool = false, worldSpace: Bool = false, perspective: Bool = false) {
+        self.key = key
+        self.shader = shader
+        self.source = source
+        self.blend = blend
+        self.materialState = materialState
+        self.readsFullFrameBuffer = readsFullFrameBuffer
+        self.worldSpace = worldSpace
+        self.perspective = perspective
     }
 }
 

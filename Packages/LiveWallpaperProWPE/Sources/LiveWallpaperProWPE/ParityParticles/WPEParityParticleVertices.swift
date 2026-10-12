@@ -1,8 +1,7 @@
 /// GS-path vertex packing, g_RenderVar0 and combos per renderer entry (R16 Q1-Q3).
 public extension WPEParityParticleSystem {
-    /// A system whose only renderers are `rope` draws with genericropeparticle (B/1401c5490.c:10109-10116).
     var shaderOverride: String? {
-        !renderers.isEmpty && renderers.allSatisfy { $0.kind == .rope } ? "genericropeparticle" : nil
+        Self.shaderOverride(renderers: renderers)
     }
 
     /// Bytes are rewritten in place each call and stay valid until the next call for the same buffer.
@@ -35,12 +34,29 @@ public extension WPEParityParticleSystem {
         }
     }
 
-    /// Combo values FUN_1401d2340 writes for this entry (R16 Q1).
     func combos(for renderer: WPEParityParticleRenderer) -> [String: Int] {
+        Self.combos(config: config, material: material, renderer: renderer)
+    }
+}
+
+extension WPEParityParticleSystem {
+    /// A system whose only renderers are `rope` draws with genericropeparticle (B/1401c5490.c:10109-10116).
+    static func shaderOverride(renderers: [WPEParityParticleRenderer]) -> String? {
+        !renderers.isEmpty && renderers.allSatisfy { $0.kind == .rope } ? "genericropeparticle" : nil
+    }
+
+    /// Sprite and spritetrail share one main VB; it is thick when any spritetrail or a spritesheet is present.
+    static func usesThickMainBuffer(config: WPEParityParticleConfig, material: WPEParityParticleMaterial) -> Bool {
+        material.spriteSheet || config.renderers.contains { $0.kind == .spriteTrail }
+    }
+
+    /// Combo values FUN_1401d2340 writes for this entry (R16 Q1).
+    static func combos(config: WPEParityParticleConfig, material: WPEParityParticleMaterial,
+                       renderer: WPEParityParticleRenderer) -> [String: Int] {
         var combos: [String: Int] = [:]
         switch renderer.kind {
         case .sprite:
-            if usesThickMainBuffer {
+            if usesThickMainBuffer(config: config, material: material) {
                 combos["THICKFORMAT"] = 1
             }
         case .spriteTrail:
@@ -77,12 +93,9 @@ public extension WPEParityParticleSystem {
         }
         return combos
     }
-}
 
-extension WPEParityParticleSystem {
-    /// Sprite and spritetrail share one main VB; it is thick when any spritetrail or a spritesheet is present.
     var usesThickMainBuffer: Bool {
-        material.spriteSheet || renderers.contains { $0.kind == .spriteTrail }
+        Self.usesThickMainBuffer(config: config, material: material)
     }
 
     /// POSITION f3 | TEXCOORD0 (rot, size) | [TEXCOORD1 (vel, life)] | COLOR, live slots in slot order.

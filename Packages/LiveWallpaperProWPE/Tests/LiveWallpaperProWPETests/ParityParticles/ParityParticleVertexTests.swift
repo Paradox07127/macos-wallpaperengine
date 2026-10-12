@@ -4,7 +4,8 @@ import XCTest
 final class ParityParticleVertexTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
 
-    private func threeParticles(renderers: String) -> WPEParityParticleSystem {
+    private func threeParticles(renderers: String,
+                                material: WPEParityParticleMaterial = .init()) -> WPEParityParticleSystem {
         var particles = WPEParityParticleSystem(
             json: Support.json("""
             {"maxcount": 3,
@@ -18,7 +19,8 @@ final class ParityParticleVertexTests: XCTestCase {
              "operator": [{"name": "movement"}],
              "renderer": [\(renderers)]}
             """),
-            rng: WPEParityMT19937()
+            rng: WPEParityMT19937(),
+            material: material
         )
         particles.advance(dt: 0.1)
         particles.advance(dt: 0.4)
@@ -114,5 +116,30 @@ final class ParityParticleVertexTests: XCTestCase {
             particles.combos(for: particles.renderers[0]),
             ["TRAILRENDERER": 1, "TRAILSUBDIVISION": 1, "ORIENTATION": 0]
         )
+    }
+
+    func testStaticCombosEqualTheSystemCombosForEveryRendererKind() {
+        let sheet = WPEParityParticleMaterial(spriteSheet: true, spriteSheetNPOT: true, texture0Format: 8)
+        let renderers = [
+            #"{"name": "sprite"}"#, #"{"name": "sprite"}, {"name": "spritetrail"}"#, #"{"name": "rope"}"#,
+            #"{"name": "ropetrail", "segments": 4, "uvscrolling": 1, "fadealpha": 1, "fadesize": 1}"#,
+        ]
+        for json in renderers {
+            for material in [WPEParityParticleMaterial(), sheet] {
+                let particles = threeParticles(renderers: json, material: material)
+                for renderer in particles.renderers {
+                    XCTAssertEqual(
+                        WPEParityParticleSystem.combos(config: particles.config, material: material, renderer: renderer),
+                        particles.combos(for: renderer), json
+                    )
+                }
+                XCTAssertEqual(WPEParityParticleSystem.shaderOverride(renderers: particles.renderers),
+                               particles.shaderOverride, json)
+            }
+        }
+        let sheetSprite = threeParticles(renderers: #"{"name": "sprite"}"#, material: sheet)
+        XCTAssertEqual(sheetSprite.combos(for: sheetSprite.renderers[0]), [
+            "THICKFORMAT": 1, "SPRITESHEET": 1, "SPRITESHEETBLEND": 1, "SPRITESHEETBLENDNPOT": 1, "TEX0FORMAT": 8,
+        ])
     }
 }

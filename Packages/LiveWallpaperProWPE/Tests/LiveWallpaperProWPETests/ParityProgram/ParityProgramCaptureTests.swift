@@ -29,6 +29,12 @@ final class ParityProgramCaptureTests: XCTestCase {
     /// Draws that match no capture, byte for byte or by key.
     private static let knownUnmatched: [String: Set<String>] = [:]
 
+    /// Visible particle draws and the captures their vertex, geometry and fragment stages reproduce.
+    private static let particleMatches: [String: [String: [Int]]] = [
+        "3509243656": ["2097/particle/r0": [29, 30, 31], "2084/particle/r0": [29, 30, 31]],
+        "3660962877": ["560/particle/r0": [111, 112, 113], "747/particle/r0": [125, 126, 127]],
+    ]
+
     func testFrameZeroProgramsMatchCapturedHLSLAndDXSKeys() throws {
         let fixture = try fixture()
         var summary: [String] = []
@@ -53,6 +59,11 @@ final class ParityProgramCaptureTests: XCTestCase {
             if scene.id == "3509243656" {
                 // ledsource puts 449 through its composite, drawn with BLENDMODE 0 and FOG_COMPUTED 1.
                 XCTAssertEqual(results.first { $0.pass == "449/passthrough4" }?.matches[.fragment], 48)
+            }
+            for (pass, captures) in Self.particleMatches[scene.id] ?? [:] {
+                let result = results.first { $0.pass.rawValue == pass }
+                XCTAssertEqual([WPEHLSLStage.vertex, .geometry, .fragment].compactMap { result?.matches[$0] }, captures,
+                               "\(scene.id) \(pass)")
             }
             let matched = results.filter(\.matched)
             for result in matched {

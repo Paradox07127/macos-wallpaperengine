@@ -10,7 +10,7 @@ final class ParityProgramAssetsTests: XCTestCase {
     private static let wallpaper = lookup("2370640409", [
         "scene.json": #"{"objects":[{"id":1}]}"#,
         "materials/layer.json": #"{"passes":[{"shader":"probe"}]}"#,
-        "materials/layer.tex": "TEXV0005\0TEXI0001\0\u{9}\0\0\0\u{2}\0\0\0",
+        "materials/layer.tex": "TEXV0005\0TEXI0001\0\u{9}\0\0\0\u{2}\0\0\0" + String(repeating: "\0", count: 16),
         "shaders/probe.frag": "#include \"common.h\"\nvoid main() {}\n",
         "shaders/shared.h": "// wallpaper shared\n",
     ])

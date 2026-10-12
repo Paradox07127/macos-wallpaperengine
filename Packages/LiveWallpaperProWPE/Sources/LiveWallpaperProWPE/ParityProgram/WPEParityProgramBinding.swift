@@ -93,8 +93,14 @@ public extension WPEParityProgramBuilder {
                                  imported: Set<WPEResourceID>) -> [Int32: WPEParityProgramBinding.TextureSource] {
         var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
         // Slot 0 of a draw outside an effect is its first read: the layer image, the snapshot a compose layer draws
-        // over, or the bit4 composite. A material without textures still reads its layer image.
-        if draw.effectID == nil, let first = draw.reads.first {
+        // over, or the bit4 composite. A material without textures still reads its layer image. A particle reads only
+        // `_rt_FullFrameBuffer`, in the slot its material names.
+        let particle = if case .particles = draw.geometry {
+            true
+        } else {
+            false
+        }
+        if !particle, draw.effectID == nil, let first = draw.reads.first {
             textures[0] = imported.contains(first) ? .imported(first, asset: names[0]) : .resource(first)
         }
         let effect = object?.effects.first { $0.id == draw.effectID }
