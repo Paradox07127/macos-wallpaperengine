@@ -68,4 +68,9 @@ public enum WPEParitySceneResource {
     public static func effectFBO(objectID: String, effectID: String, name: String) -> WPEResourceID {
         WPEResourceID("\(objectID)/\(effectID)/\(name)")
     }
+
+    /// An effect FBO that more than one layer touches keeps its pool name.
+    public static func sharedFBO(_ name: String) -> WPEResourceID {
+        WPEResourceID(name)
+    }
 }

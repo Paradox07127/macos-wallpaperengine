@@ -1,8 +1,9 @@
 /// Emits WPE's RenderScene (140183550) up to the end of the object loop: scene clear, image layers and their effect
 /// chains, and the MSAA resolve. Bloom, mip-mapped/HDR copies, ccsimple, fade and present are not part of it.
 public enum WPEParitySceneFrameBuilder {
-    public static func build(_ scene: WPEParitySceneDescription) -> WPEParitySceneFrame {
-        var emitter = WPEParitySceneEmitter(scene)
+    /// The parity of `frameIndex` picks which FBO of each swap pair the effect writes this frame.
+    public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0) -> WPEParitySceneFrame {
+        var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex)
         emitter.renderScene()
         return WPEParitySceneFrame(operations: emitter.operations,
                                    resources: emitter.resources.values.sorted { $0.id < $1.id },
@@ -31,8 +32,10 @@ private struct WPEParitySceneEmitter {
     var operations: [WPERenderOperation] = []
     var resources: [WPEResourceID: WPELogicalResource] = [:]
     var draws: [WPEPassIdentity: WPEParitySceneDraw] = [:]
+    /// Effect FBO resource → the resource its name is currently bound to; absent means itself.
+    var bindings: [WPEResourceID: WPEResourceID] = [:]
 
-    init(_ scene: WPEParitySceneDescription) {
+    init(_ scene: WPEParitySceneDescription, frameIndex: Int) {
         self.scene = scene
         let ids = Set(scene.objects.map(\.id))
         // 14018aac0.c:42-81 stable sort on obj+0x124.
@@ -62,6 +65,20 @@ private struct WPEParitySceneEmitter {
             register(Resource.multisampled, scene.width, scene.height, format: format, samples: scene.msaaSamples)
             register(Resource.multisampledDepth, scene.width, scene.height, format: Resource.depthFormat,
                      samples: scene.msaaSamples)
+        }
+        // One exchange per frame: odd frames start with every pair swapped. Each side of a pair is written in one
+        // frame and read in the next, so its contents must outlive the frame.
+        for object in scene.objects {
+            for effect in object.effects {
+                for fbo in effect.fbos {
+                    guard let partner = fbo.swapPartner else { continue }
+                    let id = Self.fboID(object.id, effect, fbo.name)
+                    register(id, fbo.width, fbo.height, format: fbo.format, lifetime: .persistent)
+                    if frameIndex % 2 != 0 {
+                        bindings[id] = Self.fboID(object.id, effect, partner)
+                    }
+                }
+            }
         }
     }
 
@@ -120,17 +137,22 @@ private struct WPEParitySceneEmitter {
             render(child, into: childDestination, level: level + 1)
         }
 
+        // Spec conclusion ③ and catsout's `last_output`: only this pass draws into the destination.
+        let finalPass = bit4 ? nil : effects.last?.passes.lastIndex { $0.kind == .draw && $0.target == nil }
         for (effectIndex, effect) in effects.enumerated() {
             for fbo in effect.fbos {
-                register(Resource.effectFBO(objectID: object.id, effectID: effect.id, name: fbo.name),
-                         fbo.width, fbo.height, format: fbo.format)
+                register(Self.fboID(object.id, effect, fbo.name), fbo.width, fbo.height, format: fbo.format)
             }
-            let drawsDestination = !bit4 && effectIndex == effects.count - 1
             let readsFullFrame = effect.passes.contains(where: \.readsFullFrameBuffer)
             for (passIndex, pass) in effect.passes.enumerated() {
                 let identity = WPEPassIdentity("\(object.id)/\(effect.id)/\(passIndex)")
                 func fbo(_ name: String) -> WPEResourceID {
-                    Resource.effectFBO(objectID: object.id, effectID: effect.id, name: name)
+                    bound(Self.fboID(object.id, effect, name))
+                }
+                if case let .copy(source) = pass.kind {
+                    emit(identity, .copy(source: source.map(fbo) ?? composites[current],
+                                         destination: pass.target.map(fbo) ?? composites[current]))
+                    continue
                 }
                 let target: WPEResourceID
                 var depth: WPEResourceID?
@@ -140,8 +162,7 @@ private struct WPEParitySceneEmitter {
                 var geometry = WPEParitySceneDraw.Geometry.fullscreenQuad
                 if let name = pass.target {
                     target = fbo(name)
-                } else if drawsDestination {
-                    // Every target-less pass of the last effect lands in the destination (U7).
+                } else if effectIndex == effects.count - 1, passIndex == finalPass {
                     target = destination.color
                     depth = destination.depth
                     blend = object.blend
@@ -163,6 +184,13 @@ private struct WPEParitySceneEmitter {
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
                 }
+            }
+            for fbo in effect.fbos {
+                guard let partner = fbo.swapPartner, fbo.name < partner else { continue }
+                let first = Self.fboID(object.id, effect, fbo.name)
+                let second = Self.fboID(object.id, effect, partner)
+                let exchanged = (bound(second), bound(first))
+                (bindings[first], bindings[second]) = exchanged
             }
             current ^= 1
         }
@@ -221,6 +249,16 @@ private struct WPEParitySceneEmitter {
         let image = Resource.layerImage(object.id)
         register(image, object.width, object.height, lifetime: .imported)
         return (object.materialShader, [image])
+    }
+
+    private static func fboID(_ objectID: String, _ effect: WPEParitySceneEffect, _ name: String) -> WPEResourceID {
+        effect.fbos.contains { $0.name == name && $0.shared }
+            ? Resource.sharedFBO(name)
+            : Resource.effectFBO(objectID: objectID, effectID: effect.id, name: name)
+    }
+
+    private func bound(_ id: WPEResourceID) -> WPEResourceID {
+        bindings[id] ?? id
     }
 
     private mutating func snapshot(_ identity: WPEPassIdentity) {

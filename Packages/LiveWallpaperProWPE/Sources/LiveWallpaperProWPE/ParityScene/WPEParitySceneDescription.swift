@@ -112,6 +112,12 @@ public struct WPEParitySceneEffect: Hashable, Sendable {
 }
 
 public struct WPEParityScenePass: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case draw
+        /// Effect `copy` command into `target`; a `nil` source (or target) is the composite the next pass samples.
+        case copy(source: String?)
+    }
+
     public var shader: String
     /// Name of an FBO declared by the effect; `nil` writes the ping-pong composite (or the layer's destination).
     public var target: String?
@@ -120,15 +126,17 @@ public struct WPEParityScenePass: Hashable, Sendable {
     public var compose: Bool
     public var readsFullFrameBuffer: Bool
     public var blend: WPEParitySceneBlend
+    public var kind: Kind
 
     public init(shader: String, target: String? = nil, binds: [String] = [], compose: Bool = false,
-                readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal) {
+                readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw) {
         self.shader = shader
         self.target = target
         self.binds = binds
         self.compose = compose
         self.readsFullFrameBuffer = readsFullFrameBuffer
         self.blend = blend
+        self.kind = kind
     }
 }
 
@@ -137,11 +145,18 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     public var width: Int
     public var height: Int
     public var format: String
+    /// Another layer reads or declares it: every effect resolves the name to one scene-wide resource.
+    public var shared: Bool
+    /// The FBO whose binding this one exchanges with after the effect, once per frame; both entries name each other.
+    public var swapPartner: String?
 
-    public init(name: String, width: Int, height: Int, format: String = "rgba8unorm") {
+    public init(name: String, width: Int, height: Int, format: String = "rgba8unorm", shared: Bool = false,
+                swapPartner: String? = nil) {
         self.name = name
         self.width = width
         self.height = height
         self.format = format
+        self.shared = shared
+        self.swapPartner = swapPartner
     }
 }

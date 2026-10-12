@@ -282,7 +282,7 @@ struct ParitySceneCompileTests {
 }
 
 struct ParitySceneDocumentConversionTests {
-    @Test func convertsDocumentAndGraphFields() {
+    @Test func convertsDocumentAndGraphFields() throws {
         let general = WPESceneGeneral(clearColor: SIMD3(0.5, 0.25, 0),
                                       orthogonalProjection: WPESceneOrthogonalProjection(width: 1920, height: 1080,
                                                                                          auto: false),
@@ -332,7 +332,7 @@ struct ParitySceneDocumentConversionTests {
             ],
             sortIndex: 3
         )
-        let description = WPEParitySceneDescription(document: document, graph: WPERenderGraph(layers: [layer]))
+        let description = try WPEParitySceneDescription(document: document, graph: WPERenderGraph(layers: [layer]))
         #expect(description.width == 1920 && description.height == 1080)
         #expect(description.clearColor == SIMD3(0.5, 0.25, 0))
         #expect(!description.clearEnabled)
