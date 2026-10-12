@@ -64,7 +64,7 @@ struct SchemeDetailRowsTests {
         )
         var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
         configuration.sceneMouseInteractionEnabled = false
-        configuration.sceneClickCaptureEnabled = true
+        configuration.sceneClickCaptureEnabled = false
 
         let sections = Rows.make(for: Self.scheme(configuration), locale: Self.locale)
         #expect(Self.keys(sections, .wallpaper) == [.type])
@@ -73,6 +73,17 @@ struct SchemeDetailRowsTests {
         #expect(Self.value(sections, .sceneSettings)?.contains("2") == true)
         #expect(Self.value(sections, .mouseInteraction) == String(localized: "Off", bundle: .appLanguage))
         #expect(Self.keys(sections, .other) == [.clickCapture])
+        #expect(Self.value(sections, .clickCapture) == String(localized: "Off", bundle: .appLanguage))
+    }
+
+    @Test("A scene scheme with Interaction on lists no Interaction row")
+    func sceneInteractionOnIsNotListed() {
+        let descriptor = SceneDescriptor(workshopID: "123", cacheRelativePath: "123", entryFile: "scene.json", capabilityTier: .imageOnly)
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
+        configuration.sceneClickCaptureEnabled = true
+
+        let sections = Rows.make(for: Self.scheme(configuration), locale: Self.locale)
+        #expect(Self.keys(sections, .other)?.contains(.clickCapture) != true, "Interaction on is the default and would be noise on every scene scheme")
     }
 
     @Test("A scheduled scheme with widgets lists its slots, fallback, layers and lock-screen capture")

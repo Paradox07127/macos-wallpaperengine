@@ -22,10 +22,9 @@ struct PlaybackControls: View {
     @Binding var frameRateLimit: FrameRateLimit
     @Binding var syncToLockScreen: Bool
     @Binding var sceneMouseInteractionEnabled: Bool
-    /// Real pointer input; steals desktop clicks while on.
+    /// Hot-zone input: the scene's buttons take their clicks; the rest of the desktop is unaffected.
     @Binding var sceneClickCaptureEnabled: Bool
 
-    @AppStorage("Scene.ClickCapture.Acknowledged", store: .appScoped()) private var clickCaptureAcknowledged = false
     @AppStorage("Web.Interaction.Acknowledged", store: .appScoped()) private var webInteractionAcknowledged = false
     /// The wallpaper type whose Interaction switch waits on first-use confirmation; nil when none does.
     @State private var pendingInteraction: WallpaperType?
@@ -106,23 +105,16 @@ struct PlaybackControls: View {
                 }
             ),
             presenting: pendingInteraction
-        ) { kind in
+        ) { _ in
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
-                if kind == .scene {
-                    clickCaptureAcknowledged = true
-                    setClickCapture(true)
-                } else if let htmlConfig {
+                if let htmlConfig {
                     webInteractionAcknowledged = true
                     htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction).wrappedValue = true
                 }
             }
-        } message: { kind in
-            if kind == .scene {
-                Text("Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
-            } else {
-                Text("Clicks and scrolls go to the web page instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
-            }
+        } message: { _ in
+            Text("Clicks and scrolls go to the web page instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
         }
     }
 
@@ -238,7 +230,7 @@ struct PlaybackControls: View {
                 isOn: sceneClickCaptureEnabled,
                 binding: clickInteractionBinding,
                 label: Text("Interaction"),
-                help: Text("Sends clicks to the scene instead of this display’s desktop.")
+                help: Text("Scene buttons receive clicks. The rest of this display’s desktop works as usual.")
             )
         case .syncToLockScreen:
             lockScreenControl
@@ -506,11 +498,6 @@ struct PlaybackControls: View {
         Binding(
             get: { sceneClickCaptureEnabled },
             set: { newValue in
-                guard sceneClickCaptureEnabled != newValue else { return }
-                if newValue, !clickCaptureAcknowledged {
-                    pendingInteraction = .scene
-                    return
-                }
                 setClickCapture(newValue)
             }
         )

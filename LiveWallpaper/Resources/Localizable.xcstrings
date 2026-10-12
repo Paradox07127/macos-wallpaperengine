@@ -15272,42 +15272,6 @@
         }
       }
     },
-    "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks." : {
-      "comment" : "Scene Interaction enable confirmation. Preserve both desktop-icon and desktop-context-menu loss, per-display scope, and turning off Interaction to restore access.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los clics se envían a la escena y no a los iconos ni al menú contextual del escritorio de esta pantalla. Desactiva Interacción para restaurar los clics en el escritorio."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックはシーンに送られ、このディスプレイのデスクトップアイコンとコンテキストメニューを操作できなくなります。「インタラクション」をオフにすると元に戻ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击将由场景接收，此显示器上的桌面图标和桌面右键菜单将无法使用。关闭“交互”可恢复桌面点击。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點按將由場景接收，此顯示器上的桌面圖示與桌面快捷選單將無法使用。關閉「互動」可恢復桌面點按。"
-          }
-        }
-      }
-    },
     "Clock" : {
       "comment" : "Monitor widget name: Clock instrument.",
       "extractionState" : "manual",
@@ -55672,6 +55636,42 @@
         }
       }
     },
+    "Scene buttons receive clicks. The rest of this display’s desktop works as usual." : {
+      "comment" : "Scene Interaction tooltip. Only the scene's buttons take clicks; the rest of the selected display's desktop keeps working.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene buttons receive clicks. The rest of this display’s desktop works as usual."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los botones de la escena reciben los clics. El resto del escritorio de esta pantalla funciona con normalidad."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーン内のボタンでクリックを受け付けます。このディスプレイのデスクトップのほかの場所は通常どおり使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景中的按钮可接收点击，此显示器桌面的其他位置照常使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景中的按鈕可接收點按，此顯示器桌面的其他位置照常使用。"
+          }
+        }
+      }
+    },
     "Scene contains no renderable passes." : {
       "comment" : "Scene load diagnostic shown in the scene detail error banner.",
       "extractionState" : "manual",
@@ -57077,42 +57077,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將點按與捲動傳送至桌布；桌面圖示與 Dock 將無法接收點按。"
-          }
-        }
-      }
-    },
-    "Sends clicks to the scene instead of this display’s desktop." : {
-      "comment" : "Scene Interaction tooltip. The selected display loses desktop click handling while this is enabled.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sends clicks to the scene instead of this display’s desktop."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Envía los clics a la escena en lugar de al escritorio de esta pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックをこのディスプレイのデスクトップではなくシーンに送ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将点击发送至场景，而非此显示器的桌面。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將點按傳送至場景，而非此顯示器的桌面。"
           }
         }
       }
