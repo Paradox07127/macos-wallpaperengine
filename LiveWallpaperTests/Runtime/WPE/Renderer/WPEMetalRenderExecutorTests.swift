@@ -2733,9 +2733,18 @@ struct WPEMetalRenderExecutorTests {
         #expect(nonBlackBounds(moved) == PixelBounds(minX: 2, minY: 4, maxX: 9, maxY: 11))
     }
 
+    @Test("A genericimage4 puppet mesh ignores the alpha of an authored slot-1 texture")
+    func genericImage4PuppetMeshIgnoresSlotOneAlpha() throws {
+        let output = try renderEffectPuppet(shader: "genericimage4", withEffects: true, transparentSlotOne: true)
+        let pixel = try readPixel(output, x: 8, y: 8)
+        #expect(pixel.r >= 250)
+        #expect(pixel.a >= 250)
+    }
+
     private func renderEffectPuppet(
         shader: String = "genericimage2", overflows: Bool = false,
-        withEffects: Bool = false, masked: Bool = false, animated: Bool = false, time: Double = 0
+        withEffects: Bool = false, masked: Bool = false, animated: Bool = false, time: Double = 0,
+        transparentSlotOne: Bool = false
     ) throws -> MTLTexture {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -2751,7 +2760,9 @@ struct WPEMetalRenderExecutorTests {
             shader: shader,
             source: .image("materials/base.png"),
             target: .layerComposite(name: "_rt_imageLayerComposite_puppet_a"),
-            textures: [0: .image("materials/base.png")],
+            textures: transparentSlotOne
+                ? [0: .image("materials/base.png"), 1: .image("materials/normal.png")]
+                : [0: .image("materials/base.png")],
             binds: [:],
             constants: [:],
             combos: [:],
@@ -2860,6 +2871,11 @@ struct WPEMetalRenderExecutorTests {
         ])
 
         var textures = ["materials/base.png": input]
+        if transparentSlotOne {
+            textures["materials/normal.png"] = try makeRGBAInputTexture(
+                device: device, width: 4, height: 4, bytes: Data(repeating: 0, count: 4 * 4 * 4)
+            )
+        }
         if masked {
             // Native opacity masks use authored pixel coordinates, so match the
             // local card's 8×8 extent rather than scaling a two-pixel mask.
@@ -3857,17 +3873,12 @@ struct WPEMetalRenderExecutorTests {
         #expect(visible.a >= 250)
     }
 
-    @Test("genericimage4 opaque-black mask contributes no color over the opaque scene")
-    func genericImage4AlphaMaskGatesOutput() throws {
+    @Test("genericimage4 slot 1 is the LIGHTING/REFLECTION normal map, never an alpha mask")
+    func genericImage4IgnoresSlotOneAlpha() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let primary = try makeRGBAInputTexture(device: device, bytes: Data([
-            0, 255, 0, 255,
-            0, 255, 0, 255,
-            0, 255, 0, 255,
-            0, 255, 0, 255
-        ]))
-        let mask = try makeRGBAInputTexture(device: device, bytes: Data([
+        let primary = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
+        let normalMap = try makeRGBAInputTexture(device: device, bytes: Data([
             0, 0, 0, 0,
             0, 0, 0, 0,
             0, 0, 0, 0,
@@ -3909,18 +3920,18 @@ struct WPEMetalRenderExecutorTests {
             size: CGSize(width: 2, height: 2),
             textures: [
                 "materials/base.png": primary,
-                "materials/mask.png": mask
+                "materials/mask.png": normalMap,
             ]
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
         #expect(pixel.a >= 250)
-        #expect(pixel.r <= 5)
-        #expect(pixel.b <= 5)
-        #expect(pixel.g <= 5)
+        #expect(pixel.r >= 250)
+        #expect(pixel.g >= 250)
+        #expect(pixel.b >= 250)
     }
 
-    @Test("genericimage4 records distinct texture binding diagnostics")
+    @Test("genericimage4 records its slot-0 binding and no slot-1 mask binding")
     func genericImage4RecordsDistinctTextureBindingDiagnostics() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -3991,73 +4002,7 @@ struct WPEMetalRenderExecutorTests {
                 && $0.contains("texture=base-texture")
                 && $0.contains("fallback=false")
         })
-        #expect(events.contains {
-            $0.contains("pass=img4.0")
-                && $0.contains("slot=1")
-                && $0.contains("reference=image(materials/mask.png)")
-                && $0.contains("texture=mask-texture")
-                && $0.contains("fallback=false")
-        })
-    }
-
-    @Test("genericimage4 records primary fallback texture binding diagnostics")
-    func genericImage4RecordsPrimaryFallbackTextureBindingDiagnostics() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let executor = try WPEMetalRenderExecutor(device: device)
-        let primary = try makeRGBAInputTexture(device: device, bytes: Data([
-            0, 255, 0, 255,
-            0, 255, 0, 255,
-            0, 255, 0, 255,
-            0, 255, 0, 255
-        ]))
-        primary.label = "base-texture"
-        WPESceneDebugArtifacts.shared.setEnabledForTesting(true)
-        defer { WPESceneDebugArtifacts.shared.setEnabledForTesting(nil) }
-        _ = WPESceneDebugArtifacts.shared.drainBindingDiagnosticsForTesting()
-        defer { _ = WPESceneDebugArtifacts.shared.drainBindingDiagnosticsForTesting() }
-
-        let pass = WPERenderPass(
-            id: "img4.1",
-            phase: .material,
-            shader: "genericimage4",
-            source: .image("materials/base.png"),
-            target: .scene,
-            textures: [0: .image("materials/base.png")],
-            binds: [:],
-            constants: [:],
-            combos: [:],
-            blending: "normal",
-            cullMode: "nocull",
-            depthTest: "disabled",
-            depthWrite: "disabled"
-        )
-        let pipeline = WPEPreparedRenderPipeline(layers: [
-            WPEPreparedRenderLayer(
-                graphLayer: graphLayer(pass: pass),
-                passes: [WPEPreparedRenderPass(
-                    pass: pass,
-                    shader: WPEShaderProgram(name: "genericimage4", vertexSource: "", fragmentSource: "", isBuiltin: true),
-                    textureBindings: [0: .image("materials/base.png")],
-                    comboValues: [:],
-                    uniformValues: [:]
-                )]
-            )
-        ])
-
-        _ = try executor.render(
-            pipeline: pipeline,
-            size: CGSize(width: 2, height: 2),
-            textures: ["materials/base.png": primary]
-        )
-
-        let events = WPESceneDebugArtifacts.shared.drainBindingDiagnosticsForTesting()
-        #expect(events.contains {
-            $0.contains("pass=img4.1")
-                && $0.contains("slot=1")
-                && $0.contains("reference=<primary>")
-                && $0.contains("texture=base-texture")
-                && $0.contains("fallback=true")
-        })
+        #expect(!events.contains { $0.contains("pass=img4.0") && $0.contains("slot=1") })
     }
 
     @Test("Copies image layers that have no material passes")

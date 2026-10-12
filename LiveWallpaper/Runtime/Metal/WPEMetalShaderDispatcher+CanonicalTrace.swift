@@ -38,7 +38,7 @@ extension WPEMetalShaderDispatcher {
         case .genericImage2:
             return BuiltinTraceMetadata(fragmentShaderName: "wpe_genericimage2_fragment", textureSlots: [0])
         case .genericImage4:
-            return BuiltinTraceMetadata(fragmentShaderName: "wpe_genericimage4_fragment", textureSlots: [0, 1])
+            return BuiltinTraceMetadata(fragmentShaderName: "wpe_genericimage4_fragment", textureSlots: [0])
         case .genericParticle:
             return BuiltinTraceMetadata(fragmentShaderName: "wpe_genericparticle_fragment", textureSlots: [0])
         case .effectColorBalance, .effectBlur, .effectVignette, .effectWater,
@@ -163,9 +163,6 @@ extension WPEMetalShaderDispatcher {
         case (.compose, 1):
             let second = pass.textureBindings[1] ?? pass.pass.textures[1]
             return (second ?? firstReference, second == nil)
-        case (.genericImage4, 1):
-            let mask = pass.textureBindings[1] ?? pass.pass.textures[1]
-            return (mask, mask == nil)
         case (.effectOpacity, 1), (.effectWaterWaves, 1):
             let mask = WPEEffectDispatchDescriptor.opacityMaskReference(for: pass)
             return (mask, mask == nil)

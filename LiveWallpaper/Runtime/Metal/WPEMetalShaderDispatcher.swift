@@ -125,8 +125,7 @@ struct WPEMetalShaderDispatcher {
         if WPEBuiltinShaderName.isGodraysCombine(pass.shader) { return false }
         switch WPEBuiltinShaderKind(normalizing: pass.shader) {
         case nil, .genericParticle: return true
-        case .genericImage2: return slot == 0
-        case .genericImage4: return slot == 0 || (slot == 1 && (pass.binds[1] ?? pass.textures[1]) != nil)
+        case .genericImage2, .genericImage4: return slot == 0
         default: return false
         }
     }
@@ -550,7 +549,6 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat
     ) throws {
         let primarySlot = 0
-        let maskSlot = 1
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
         try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
@@ -586,47 +584,11 @@ struct WPEMetalShaderDispatcher {
             fallbackToPrimary: false
         )
         encoder.setFragmentTexture(primary, index: primarySlot)
-        let maskRef = pass.textureBindings[maskSlot] ?? pass.pass.textures[maskSlot]
-        let hasMask = maskRef != nil
-        let mask: MTLTexture
-        if let maskRef {
-            let maskAuthored = mediaSubstituted(
-                try WPEMetalShaderInputs.resolve(
-                    reference: maskRef,
-                    textures: textures,
-                    frameState: frameState,
-                    currentTargetID: destination.id
-                ),
-                slot: maskSlot,
-                passID: pass.pass.id
-            )
-            mask = userShortcutIcon(slot: maskSlot, passID: pass.pass.id) ?? maskAuthored
-            WPESceneDebugArtifacts.shared.recordTextureBinding(
-                passID: pass.pass.id,
-                shader: pass.pass.shader,
-                slot: maskSlot,
-                reference: maskRef,
-                texture: mask,
-                fallbackToPrimary: false
-            )
-        } else {
-            mask = primary
-            WPESceneDebugArtifacts.shared.recordTextureBinding(
-                passID: pass.pass.id,
-                shader: pass.pass.shader,
-                slot: maskSlot,
-                reference: nil,
-                texture: mask,
-                fallbackToPrimary: true
-            )
-        }
-        encoder.setFragmentTexture(mask, index: maskSlot)
         var uniforms = executor.genericImageUniforms(
             for: pass,
             layer: layer,
-            hasMask: hasMask,
+            hasMask: false,
             sourceTexture: primary,
-            maskTexture: hasMask ? mask : nil,
             spriteDescriptor: primaryIcon == nil ? executor.textureSamplingDescriptor(for: primaryRef) : .identity
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)

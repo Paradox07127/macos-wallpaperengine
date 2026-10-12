@@ -987,65 +987,11 @@ extension WPEMetalRenderExecutor {
         ))
         encoder.setFragmentTexture(primary, index: 0)
 
-        let hasMask: Bool
-        let maskForUniforms: MTLTexture?
-        #if !LITE_BUILD && DEBUG
-        let maskBindingReference: WPETextureReference?
-        let maskBindingTexture: MTLTexture?
-        let maskBindingName: String?
-        let maskFallbackToPrimary: Bool
-        #endif
-        if shaderKind == .genericImage4 {
-            // A clip-composite binding (slot 8) is consumed by the dedicated clip pass; the
-            // injected slot-1 mask must NOT be applied as a flat static mask to every part here.
-            let maskRef = hasPuppetClipCompositeBinding(pass, layer: layer)
-                ? nil
-                : (pass.textureBindings[1] ?? pass.pass.textures[1])
-            if let maskRef {
-                let mask = try WPEMetalShaderInputs.resolve(
-                    reference: maskRef,
-                    textures: textures,
-                    frameState: frameState,
-                    currentTargetID: destination.id
-                )
-                encoder.setFragmentTexture(mask, index: 1)
-                hasMask = true
-                maskForUniforms = mask
-                #if !LITE_BUILD && DEBUG
-                maskBindingReference = maskRef
-                maskBindingTexture = mask
-                maskBindingName = "g_Texture1"
-                maskFallbackToPrimary = false
-                #endif
-            } else {
-                encoder.setFragmentTexture(primary, index: 1)
-                hasMask = false
-                maskForUniforms = nil
-                #if !LITE_BUILD && DEBUG
-                maskBindingReference = nil
-                maskBindingTexture = primary
-                // hasMask == false: texture1 is bound only to satisfy the Metal signature and is never sampled, so leave it unnamed so the oracle diff does not flag it as an asset divergence.
-                maskBindingName = nil
-                maskFallbackToPrimary = true
-                #endif
-            }
-        } else {
-            hasMask = false
-            maskForUniforms = nil
-            #if !LITE_BUILD && DEBUG
-            maskBindingReference = nil
-            maskBindingTexture = nil
-            maskBindingName = nil
-            maskFallbackToPrimary = false
-            #endif
-        }
-
         var uniforms = genericImageUniforms(
             for: pass,
             layer: layer,
-            hasMask: hasMask,
-            sourceTexture: primary,
-            maskTexture: maskForUniforms
+            hasMask: false,
+            sourceTexture: primary
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
 
@@ -1077,7 +1023,7 @@ extension WPEMetalRenderExecutor {
         )
 
         #if !LITE_BUILD && DEBUG
-        var canonicalTextureBindings = [
+        let canonicalTextureBindings = [
             WPECanonicalTraceRecorder.TextureBindingInput(
                 slot: 0,
                 name: "g_Texture0",
@@ -1086,15 +1032,6 @@ extension WPEMetalRenderExecutor {
                 fallbackToPrimary: false
             )
         ]
-        if let maskBindingTexture {
-            canonicalTextureBindings.append(WPECanonicalTraceRecorder.TextureBindingInput(
-                slot: 1,
-                name: maskBindingName,
-                reference: maskBindingReference,
-                texture: maskBindingTexture,
-                fallbackToPrimary: maskFallbackToPrimary
-            ))
-        }
         WPECanonicalTraceRecorder.shared.recordPuppetPass(
             pass: pass,
             nativeState: .scenePass(

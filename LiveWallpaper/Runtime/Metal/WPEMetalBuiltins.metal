@@ -1217,23 +1217,18 @@ static inline half4 wpe_genericimage2_shade(
     return half4(wpe_attachment_output(float4(wpe_genericimage2_shade(in.uv, texture0, uniforms))));
 }
 
+// WPE genericimage4 slot 1 is the LIGHTING/REFLECTION normal map; alpha comes from texture0 only.
 [[fragment]] half4 wpe_genericimage4_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
-    texture2d<half, access::sample> texture1 [[texture(1)]],
     constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_sprite_frame_uv(
         wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy), uniforms);
-    float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
     float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
-    float maskAlpha = 1.0;
-    if (uniforms.alphaMaskUV.z > 0.5) {
-        maskAlpha = float(texture1.sample(linearSampler, maskUV).a);
-    }
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
-    float alpha = sampled.a * maskAlpha * uniforms.color.a * uniforms.alphaMaskUV.x;
+    float alpha = sampled.a * uniforms.color.a * uniforms.alphaMaskUV.x;
     // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
     return half4(wpe_native_output_is_straight() ? wpe_attachment_output(float4(rgb, alpha)) : wpe_attachment_premultiply(rgb, alpha));
 }
