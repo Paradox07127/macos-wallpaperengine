@@ -173,7 +173,7 @@ final class ParityProgramPuppetTests: XCTestCase {
     }
 
     /// PKGV: a length-prefixed version, the entry table (name, offset, size), then the entry bytes.
-    private static func unpack(_ package: URL, into root: URL) throws {
+    static func unpack(_ package: URL, into root: URL) throws {
         let bytes = try [UInt8](Data(contentsOf: package))
         var offset = 0
         func uint32() -> Int {

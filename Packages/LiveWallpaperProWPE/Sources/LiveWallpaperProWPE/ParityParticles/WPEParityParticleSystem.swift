@@ -15,7 +15,10 @@ public struct WPEParityParticleSystem {
         var color = SIMD3<Float>(repeating: 1)
         var brightness: Float = 1
 
-        init(_ override: WPESceneParticleInstanceOverride? = nil) {
+        init() {}
+
+        /// `json` is the particle file; `hdr` is the scene's HDR bit (ctx+0x118 & 0x2000).
+        init(_ override: WPESceneParticleInstanceOverride?, json: WPESceneJSONValue, hdr: Bool) {
             guard let override else { return }
             // Object update multiplies dt by the instance rate, floored at 0.01 (D/140230650.c:55-64).
             rate = Float(max(override.rate ?? 1, 0.01))
@@ -24,8 +27,13 @@ public struct WPEParityParticleSystem {
             size = Float(max(override.size ?? 1, 0))
             speed = Float(max(override.speed ?? 1, 0))
             alpha = Float(override.alpha ?? 1)
-            color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
-            brightness = Float(max(override.brightness ?? 1, 0))
+            // R22 Q9: colour only without `"hascolor": true`; brightness only in HDR with particle flags bit3 clear.
+            if !WPEParityParticleJSON.flag(json["hascolor"]) {
+                color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
+            }
+            if hdr, Int(WPEParityParticleJSON.number(json["flags"]) ?? 0) & 8 == 0 {
+                brightness = Float(max(override.brightness ?? 1, 0))
+            }
         }
     }
 
@@ -50,7 +58,12 @@ public struct WPEParityParticleSystem {
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
+    /// Baked into births: zero except for an event child, which starts at its event in the parent's space.
     let origin: SIMD3<Float>
+    /// Static-child origins from the object down to this system, which the model matrix carries (R16 Q4).
+    let localTransform: simd_float4x4
+    /// A worldspace root or static child: its model matrix is I, so births go through the object matrix.
+    let emitsInWorld: Bool
     let capacity: Int
 
     public var renderers: [WPEParityParticleRenderer] {
@@ -122,7 +135,8 @@ public struct WPEParityParticleSystem {
     var boidsFrame = 0
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
-    /// `crt` is the scene's CRT `rand()` state, shared like `rng`.
+    /// `crt` is the scene's CRT `rand()` state, shared like `rng`. Brightness overrides need an HDR scene, which
+    /// only `WPEParityParticleScene` knows.
     public init(
         json: WPESceneJSONValue,
         instanceOverride: WPESceneParticleInstanceOverride? = nil,
@@ -130,25 +144,28 @@ public struct WPEParityParticleSystem {
         crt: WPEParityCRTRandom = WPEParityCRTRandom(),
         is3D: Bool = false,
         material: WPEParityParticleMaterial = .init(),
-        origin: SIMD3<Float> = .zero,
         resolveChild: (String) -> WPESceneJSONValue? = { _ in nil }
     ) {
-        self.init(
-            config: WPEParityParticleConfig(json: json, is3D: is3D, resolveChild: resolveChild),
-            instance: Instance(instanceOverride), rng: rng, crt: crt, material: material, origin: origin
-        )
+        var config = WPEParityParticleConfig(json: json, is3D: is3D, resolveChild: resolveChild)
+        config.material = material
+        self.init(config: config, instance: Instance(instanceOverride, json: json, hdr: false), rng: rng, crt: crt)
     }
 
+    /// `context` is what prewarm steps with; an event child (`eventOrigin` set) uses its parent's space.
     init(
         config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
-        material: WPEParityParticleMaterial, origin: SIMD3<Float>
+        eventOrigin: SIMD3<Float>? = nil, localTransform: simd_float4x4 = matrix_identity_float4x4,
+        context: WPEParityParticleFrameContext = .init()
     ) {
         self.config = config
         self.instance = instance
         self.rng = rng
         self.crt = crt
-        self.material = material
-        self.origin = origin
+        material = config.material
+        origin = eventOrigin ?? .zero
+        self.localTransform = localTransform
+        emitsInWorld = eventOrigin == nil && config.flags & 1 != 0
+        frameContext = context
         let capacity = Int((Float(config.maxCount) * instance.count).rounded())
         self.capacity = capacity
         position = Array(repeating: .zero, count: capacity)
@@ -193,8 +210,8 @@ public struct WPEParityParticleSystem {
             if child.trigger == .always {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
-                    config: child.config, instance: Instance(), rng: rng, crt: crt, material: .init(),
-                    origin: origin + child.origin
+                    config: child.config, instance: Instance(), rng: rng, crt: crt,
+                    localTransform: localTransform * Self.translation(child.origin), context: context
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -242,8 +259,8 @@ public struct WPEParityParticleSystem {
         for event in pendingEvents {
             let child = config.children[event.child]
             eventChildren[childGroup[event.child]].append(WPEParityParticleSystem(
-                config: child.config, instance: Instance(), rng: rng, crt: crt, material: .init(),
-                origin: event.position + child.origin
+                config: child.config, instance: Instance(), rng: rng, crt: crt,
+                eventOrigin: event.position + child.origin, localTransform: localTransform, context: frameContext
             ))
         }
         pendingEvents.removeAll(keepingCapacity: true)
@@ -270,6 +287,25 @@ public struct WPEParityParticleSystem {
             }
         }
         return children.allSatisfy(\.isFinished) && eventChildren.allSatisfy(\.isEmpty)
+    }
+
+    /// An invisible object holds no particles (R16 Q5); emitter timers keep their state.
+    mutating func removeAllParticles() {
+        for slot in 0 ..< highWater {
+            lifetime[slot] = 0
+        }
+        liveCount = 0
+        freeHint = 0
+        highWater = 0
+        birthHead = -1
+        birthTail = -1
+        pendingEvents.removeAll(keepingCapacity: true)
+        for index in children.indices {
+            children[index].removeAllParticles()
+        }
+        for group in eventChildren.indices {
+            eventChildren[group].removeAll()
+        }
     }
 
     private mutating func kill(_ slot: Int) {
@@ -349,6 +385,14 @@ public struct WPEParityParticleSystem {
         let launch = emitter.sample(rng: rng)
         position[slot] = origin + emitter.origin + launch.offset
         velocity[slot] = launch.velocity
+        if emitsInWorld {
+            // [I] A top-level worldspace M is I (R22 Q1), so births are placed in the world here.
+            let placement = frameContext.objectMatrix * localTransform
+            let world = placement * SIMD4(position[slot], 1)
+            position[slot] = SIMD3(world.x, world.y, world.z)
+            let moved = placement * SIMD4(velocity[slot], 0)
+            velocity[slot] = SIMD3(moved.x, moved.y, moved.z)
+        }
         rotation[slot] = .zero
         angularVelocity[slot] = .zero
         age[slot] = 0
