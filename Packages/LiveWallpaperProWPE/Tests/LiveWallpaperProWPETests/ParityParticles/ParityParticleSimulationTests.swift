@@ -120,12 +120,16 @@ final class ParityParticleSimulationTests: XCTestCase {
     func testUnknownComponentsAreReported() {
         let particles = system("""
         {"maxcount": 1,
-         "initializer": [{"name": "turbulentvelocityrandom"}],
-         "operator": [{"name": "vortex"}, {"name": "movement"}]}
+         "initializer": [{"name": "remapinitialvalue"}, {"name": "inheritinitialvaluefromevent"}],
+         "operator": [{"name": "remapvalue"}, {"name": "inheritvaluefromevent"}, {"name": "collisionquad"},
+                      {"name": "collisionplane", "collisionbehavior": "slide"}, {"name": "movement"}]}
         """)
-        XCTAssertTrue(particles.diagnostics.contains { $0.contains("turbulentvelocityrandom") })
-        XCTAssertTrue(particles.diagnostics.contains { $0.contains("vortex") })
+        for name in ["remapinitialvalue", "inheritinitialvaluefromevent", "remapvalue", "inheritvaluefromevent",
+                     "collisionquad", "collisionplane (slide)"] {
+            XCTAssertTrue(particles.diagnostics.contains { $0.contains(name) }, name)
+        }
         XCTAssertFalse(particles.diagnostics.contains { $0.contains("movement") })
+        XCTAssertEqual(particles.config.operators.count, 1)
     }
 
     func testEventDeathChildSpawnsAtTheDeathPosition() {
@@ -169,6 +173,23 @@ final class ParityParticleSimulationTests: XCTestCase {
         }
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6
         print(String(format: "particle timing: 1000 sphererandom, 600 frames, %.1f ms", milliseconds))
+        XCTAssertGreaterThan(particles.liveCount, 900)
+    }
+
+    func testTimingThousandParticleSphereSystemWithTurbulence() {
+        var particles = system("""
+        {"maxcount": 1000,
+         "emitter": [{"name": "sphererandom", "rate": 1000, "distancemax": 50, "speedmin": 10, "speedmax": 20}],
+         "initializer": [{"name": "lifetimerandom", "min": 1, "max": 1}],
+         "operator": [{"name": "movement", "gravity": "0 -10 0", "drag": 0.1},
+                      {"name": "alphafade"}, {"name": "sizechange"}, {"name": "turbulence"}]}
+        """)
+        let start = DispatchTime.now().uptimeNanoseconds
+        for frame in 0 ..< 600 {
+            particles.advance(dt: 1.0 / 60, frame: WPEParityParticleFrameContext(time: Float(frame) / 60))
+        }
+        let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6
+        print(String(format: "particle timing: 1000 sphererandom + turbulence, 600 frames, %.1f ms", milliseconds))
         XCTAssertGreaterThan(particles.liveCount, 900)
     }
 }

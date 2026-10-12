@@ -30,13 +30,18 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
 enum WPEParityParticleInitializer: Equatable, Sendable {
     case lifetime(min: Float, max: Float, exponent: Float)
     case size(min: Float, max: Float, exponent: Float)
-    case color(min: SIMD3<Float>, max: SIMD3<Float>)
-    case hsvColor(hue: SIMD2<Float>, saturation: SIMD2<Float>, value: SIMD2<Float>)
-    case colorList([SIMD3<Float>])
+    case color(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
+    case hsvColor(WPEParityParticleHSVRandom)
+    /// Colors as HSV (hue in turns); noise per HSV channel.
+    case colorList(hsv: [SIMD3<Float>], noise: SIMD3<Float>)
     case alpha(min: Float, max: Float)
     case velocity(min: SIMD3<Float>, max: SIMD3<Float>)
-    case rotation(min: SIMD3<Float>, max: SIMD3<Float>)
-    case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>)
+    case rotation(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
+    case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
+    case turbulentVelocity(WPEParityParticleTurbulentVelocity)
+    case positionOffset(WPEParityParticlePositionOffset)
+    case sequenceAround(WPEParityParticleSequenceAround)
+    case sequenceBetween(WPEParityParticleSequenceBetween)
 }
 
 struct WPEParityParticleOperator: Equatable, Sendable {
@@ -58,6 +63,16 @@ struct WPEParityParticleOperator: Equatable, Sendable {
         case oscillateAlpha(WPEParityParticleOscillation)
         case oscillateSize(WPEParityParticleOscillation)
         case capVelocity(maxSpeed: Float)
+        case turbulence(WPEParityParticleTurbulence)
+        case controlPointAttract(WPEParityParticleAttract)
+        case vortex(WPEParityParticleVortex)
+        case vortexRing(WPEParityParticleVortexRing)
+        case boids(WPEParityParticleBoids)
+        case maintainDistance(controlPoint: Int, distance: Float, variableStrength: Float)
+        case maintainDistanceBetween(start: Int, end: Int)
+        case reduceMovement(controlPoint: Int, inner: Float, outer: Float, reductionInner: Float, reductionDelta: Float)
+        case collisionPlane(WPEParityParticleCollision)
+        case collisionSphere(WPEParityParticleCollision)
     }
 
     var kind: Kind
@@ -70,6 +85,8 @@ struct WPEParityParticleChildConfig: Equatable, Sendable {
     var trigger: Trigger
     var origin: SIMD3<Float>
     var probability: Float
+    /// Parsed with WPE's default (D/1401c1430.c:125); R19 has no runtime reader for it yet.
+    var maxCount: Int
     var config: WPEParityParticleConfig
 }
 
@@ -83,15 +100,29 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var operators: [WPEParityParticleOperator] = []
     var renderers: [WPEParityParticleRenderer] = []
     var children: [WPEParityParticleChildConfig] = []
+    /// Always `WPEParityParticleControlPoint.count` entries; unauthored ones sit at offset 0.
+    var controlPoints = Array(repeating: WPEParityParticleControlPoint(), count: WPEParityParticleControlPoint.count)
     var diagnostics: [String] = []
 
-    /// `is3D` picks R18's 3D defaults (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5).
+    /// `is3D` picks the 3D defaults of R18/R19 (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5, …).
     init(json: WPESceneJSONValue, is3D: Bool, resolveChild: (String) -> WPESceneJSONValue?) {
         typealias JSON = WPEParityParticleJSON
         maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
         startTime = JSON.number(json["starttime"]) ?? 0
         flags = Int(JSON.number(json["flags"]) ?? 0)
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
+        for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
+            let entry = WPEParityParticleEntry(value)
+            let id = entry.integer("id", index)
+            guard controlPoints.indices.contains(id) else {
+                diagnostics.append("controlpoint \(id) skipped")
+                continue
+            }
+            controlPoints[id] = WPEParityParticleControlPoint(
+                offset: entry.vector("offset", .zero), flags: entry.integer("flags", 0),
+                parent: entry.controlPoint("parentcontrolpoint")
+            )
+        }
         for entry in JSON.array(json["emitter"]) {
             appendEmitter(entry, is3D: is3D)
         }
@@ -157,40 +188,60 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         ))
     }
 
+    /// Defaults per R19 其余 and 初始化器.
     private mutating func appendInitializer(_ entry: WPESceneJSONValue, is3D: Bool) {
         typealias JSON = WPEParityParticleJSON
         let name = JSON.string(entry["name"])?.lowercased() ?? ""
         let minimum = entry["min"], maximum = entry["max"]
         let exponent = JSON.number(entry["exponent"]) ?? 1
+        let fields = WPEParityParticleEntry(entry)
         let initializer: WPEParityParticleInitializer
         switch name {
         case "lifetimerandom":
-            initializer = .lifetime(min: JSON.number(minimum) ?? 1, max: JSON.number(maximum) ?? 1, exponent: exponent)
+            initializer = .lifetime(min: JSON.number(minimum) ?? 0, max: JSON.number(maximum) ?? 1, exponent: exponent)
         case "sizerandom":
-            initializer = .size(min: JSON.number(minimum) ?? 4, max: JSON.number(maximum) ?? 4, exponent: exponent)
-        case "colorrandom":
-            initializer = .color(min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(repeating: 255))
-        case "hsvcolorrandom":
-            initializer = .hsvColor(
-                hue: SIMD2(JSON.number(entry["huemin"]) ?? 0, JSON.number(entry["huemax"]) ?? 360),
-                saturation: SIMD2(JSON.number(entry["saturationmin"]) ?? 1, JSON.number(entry["saturationmax"]) ?? 1),
-                value: SIMD2(JSON.number(entry["valuemin"]) ?? 1, JSON.number(entry["valuemax"]) ?? 1)
+            initializer = .size(
+                min: JSON.number(minimum) ?? (is3D ? 0.001 : 5), max: JSON.number(maximum) ?? (is3D ? 1 : 50),
+                exponent: exponent
             )
+        case "colorrandom":
+            initializer = .color(
+                min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(repeating: 255), exponent: exponent
+            )
+        case "hsvcolorrandom":
+            initializer = .hsvColor(WPEParityParticleHSVRandom(fields))
         case "colorlist":
             let colors = JSON.array(entry["colors"]).compactMap { JSON.vector($0) }
-            guard !colors.isEmpty else { return }
-            initializer = .colorList(colors)
+            let authored = entry["colors"] == nil ? [SIMD3<Float>(repeating: 1)] : colors
+            initializer = .colorList(
+                hsv: authored.isEmpty ? [SIMD3(0, 1, 1)] : authored.map(WPEParityParticleMath.rgbToHSV),
+                noise: SIMD3(
+                    fields.number("huenoise", 0), fields.number("saturationnoise", 0), fields.number("valuenoise", 0)
+                )
+            )
         case "alpharandom":
             initializer = .alpha(min: JSON.number(minimum) ?? 0.05, max: JSON.number(maximum) ?? 1)
         case "velocityrandom":
             let limit: SIMD3<Float> = is3D ? SIMD3(1, 1, 1) : SIMD3(32, 32, 0)
             initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit)
         case "rotationrandom":
-            initializer = .rotation(min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(0, 0, 2 * .pi))
+            initializer = .rotation(
+                min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(0, 0, 6.283_185_307_17),
+                exponent: exponent
+            )
         case "angularvelocityrandom":
             initializer = .angularVelocity(
-                min: JSON.vector(minimum) ?? SIMD3(0, 0, -5), max: JSON.vector(maximum) ?? SIMD3(0, 0, 5)
+                min: JSON.vector(minimum) ?? SIMD3(0, 0, -5), max: JSON.vector(maximum) ?? SIMD3(0, 0, 5),
+                exponent: exponent
             )
+        case "turbulentvelocityrandom":
+            initializer = .turbulentVelocity(WPEParityParticleTurbulentVelocity(fields, is3D: is3D))
+        case "positionoffsetrandom":
+            initializer = .positionOffset(WPEParityParticlePositionOffset(fields, is3D: is3D))
+        case "mapsequencearoundcontrolpoint":
+            initializer = .sequenceAround(WPEParityParticleSequenceAround(fields))
+        case "mapsequencebetweencontrolpoints":
+            initializer = .sequenceBetween(WPEParityParticleSequenceBetween(fields))
         default:
             diagnostics.append("initializer \(name) skipped")
             return
@@ -201,6 +252,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     private mutating func appendOperator(_ entry: WPESceneJSONValue, is3D: Bool) {
         typealias JSON = WPEParityParticleJSON
         let name = JSON.string(entry["name"])?.lowercased() ?? ""
+        let fields = WPEParityParticleEntry(entry)
         func number(_ key: String, _ fallback: Float) -> Float {
             JSON.number(entry[key]) ?? fallback
         }
@@ -244,6 +296,42 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             kind = .oscillateSize(wave(scale: SIMD2(0.8, 1.2), frequency: SIMD2(1, 10)))
         case "capvelocity":
             kind = .capVelocity(maxSpeed: number("maxspeed", .infinity))
+        case "turbulence":
+            kind = .turbulence(WPEParityParticleTurbulence(fields, is3D: is3D))
+        case "controlpointattract":
+            kind = .controlPointAttract(WPEParityParticleAttract(fields, is3D: is3D))
+        case "vortex":
+            kind = .vortex(WPEParityParticleVortex(fields, is3D: is3D))
+        case "vortex_v2":
+            kind = .vortexRing(WPEParityParticleVortexRing(fields, is3D: is3D))
+        case "boids":
+            kind = .boids(WPEParityParticleBoids(fields, is3D: is3D))
+        case "maintaindistancetocontrolpoint":
+            kind = .maintainDistance(
+                controlPoint: fields.controlPoint("controlpoint"), distance: number("distance", is3D ? 1 : 200),
+                variableStrength: number("variablestrength", 0)
+            )
+        case "maintaindistancebetweencontrolpoints":
+            kind = .maintainDistanceBetween(
+                start: fields.controlPoint("controlpointstart"), end: fields.controlPoint("controlpointend", 1)
+            )
+        case "reducemovementnearcontrolpoint":
+            let reductionInner = number("reductioninner", 100), reductionOuter = number("reductionouter", 0)
+            // Equal reductions store a delta of 1, not 0 (B:8842-8847).
+            kind = .reduceMovement(
+                controlPoint: fields.controlPoint("controlpoint"),
+                inner: number("distanceinner", is3D ? 0.5 : 100), outer: number("distanceouter", is3D ? 1 : 350),
+                reductionInner: reductionInner,
+                reductionDelta: reductionInner == reductionOuter ? 1 : reductionOuter - reductionInner
+            )
+        case "collisionplane", "collisionsphere":
+            let behavior = JSON.string(entry["collisionbehavior"])?.lowercased() ?? "bounce"
+            guard behavior == "bounce" else {
+                diagnostics.append("operator \(name) (\(behavior)) skipped")
+                return
+            }
+            let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
+            kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
         default:
             diagnostics.append("operator \(name) skipped")
             return
@@ -289,8 +377,37 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             trigger: trigger,
             origin: JSON.vector(entry["origin"]) ?? .zero,
             probability: JSON.number(entry["probability"]) ?? 1,
+            maxCount: WPEParityParticleEntry(entry).integer("maxcount", 10),
             config: WPEParityParticleConfig(json: json, is3D: is3D, resolveChild: resolveChild)
         ))
+    }
+}
+
+/// One component object read with per-key fallbacks.
+struct WPEParityParticleEntry {
+    let json: WPESceneJSONValue
+
+    init(_ json: WPESceneJSONValue) {
+        self.json = json
+    }
+
+    func number(_ key: String, _ fallback: Float) -> Float {
+        WPEParityParticleJSON.number(json[key]) ?? fallback
+    }
+
+    func vector(_ key: String, _ fallback: SIMD3<Float>) -> SIMD3<Float> {
+        WPEParityParticleJSON.vector(json[key]) ?? fallback
+    }
+
+    /// Clamped so that authored 1e300 or NaN cannot trap the Int conversion.
+    func integer(_ key: String, _ fallback: Int) -> Int {
+        guard let value = WPEParityParticleJSON.number(json[key]), !value.isNaN else { return fallback }
+        return Int(min(max(value, -1e9), 1e9))
+    }
+
+    /// Control point indices clamp to 0…7.
+    func controlPoint(_ key: String, _ fallback: Int = 0) -> Int {
+        min(max(integer(key, fallback), 0), WPEParityParticleControlPoint.count - 1)
     }
 }
 

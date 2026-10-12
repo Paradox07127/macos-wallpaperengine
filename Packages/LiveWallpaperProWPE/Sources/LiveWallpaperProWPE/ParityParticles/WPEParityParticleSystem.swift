@@ -49,6 +49,7 @@ public struct WPEParityParticleSystem {
     let instance: Instance
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
+    let crt: WPEParityCRTRandom
     let origin: SIMD3<Float>
     let capacity: Int
 
@@ -107,12 +108,26 @@ public struct WPEParityParticleSystem {
     var mainBytes: [UInt8] = []
     var ropeBytes: [UInt8] = []
     var ropeTrailBytes: [UInt8] = []
+    /// The inputs of the frame being stepped; prewarm steps with the defaults.
+    var frameContext = WPEParityParticleFrameContext()
+    /// Control point transforms (translation in column 3) and last frame's translations.
+    var controlPoints = Array(repeating: matrix_identity_float4x4, count: WPEParityParticleControlPoint.count)
+    var previousControlPoints = Array(repeating: SIMD3<Float>.zero, count: WPEParityParticleControlPoint.count)
+    var controlPointsSeeded = false
+    /// Positions at the start of the operator pass: the path segment controlpointattract tests.
+    var previousPosition: [SIMD3<Float>]
+    /// One per initializer; only the mapsequence entries move theirs.
+    var sequenceStates: [WPEParityParticleSequenceState]
+    /// Frame counter boids splits its slot blocks by (ctx+0x144).
+    var boidsFrame = 0
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
+    /// `crt` is the scene's CRT `rand()` state, shared like `rng`.
     public init(
         json: WPESceneJSONValue,
         instanceOverride: WPESceneParticleInstanceOverride? = nil,
         rng: WPEParityMT19937,
+        crt: WPEParityCRTRandom = WPEParityCRTRandom(),
         is3D: Bool = false,
         material: WPEParityParticleMaterial = .init(),
         origin: SIMD3<Float> = .zero,
@@ -120,17 +135,18 @@ public struct WPEParityParticleSystem {
     ) {
         self.init(
             config: WPEParityParticleConfig(json: json, is3D: is3D, resolveChild: resolveChild),
-            instance: Instance(instanceOverride), rng: rng, material: material, origin: origin
+            instance: Instance(instanceOverride), rng: rng, crt: crt, material: material, origin: origin
         )
     }
 
     init(
-        config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937,
+        config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
         material: WPEParityParticleMaterial, origin: SIMD3<Float>
     ) {
         self.config = config
         self.instance = instance
         self.rng = rng
+        self.crt = crt
         self.material = material
         self.origin = origin
         let capacity = Int((Float(config.maxCount) * instance.count).rounded())
@@ -149,6 +165,14 @@ public struct WPEParityParticleSystem {
         lifetime = alpha
         birthU = alpha
         frame = alpha
+        previousPosition = position
+        sequenceStates = config.initializers.map { initializer in
+            switch initializer {
+            case let .sequenceAround(field): WPEParityParticleSequenceState(step: 1 / Float(field.count))
+            case let .sequenceBetween(field): WPEParityParticleSequenceState(step: 1 / Float(field.count - 1))
+            default: WPEParityParticleSequenceState()
+            }
+        }
         birthNext = Array(repeating: -1, count: capacity)
         birthPrevious = birthNext
         emitterStates = config.emitters.map { emitter in
@@ -169,7 +193,8 @@ public struct WPEParityParticleSystem {
             if child.trigger == .always {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
-                    config: child.config, instance: Instance(), rng: rng, material: .init(), origin: origin + child.origin
+                    config: child.config, instance: Instance(), rng: rng, crt: crt, material: .init(),
+                    origin: origin + child.origin
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -180,7 +205,8 @@ public struct WPEParityParticleSystem {
     }
 
     /// One object update: dt × instance rate (D/140230650.c:55-64).
-    public mutating func advance(dt: Float) {
+    public mutating func advance(dt: Float, frame: WPEParityParticleFrameContext = .init()) {
+        frameContext = frame
         step(dt: dt * instance.rate)
     }
 
@@ -196,8 +222,9 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// age/death → emit → operators, then children after the parent (D/140236cd0.c:54-79, D/1402308a0.c:2734-2767).
-    mutating func step(dt: Float) {
+    /// age/death → control points → emit → operators, then children after the parent
+    /// (D/140236cd0.c:54-79, 360; D/1402308a0.c:2734-2767).
+    mutating func step(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
         guard dt > 0 else { return }
         for slot in 0 ..< highWater where lifetime[slot] != 0 {
             age[slot] += dt
@@ -205,25 +232,29 @@ public struct WPEParityParticleSystem {
                 kill(slot)
             }
         }
+        updateControlPoints(parent: parentControlPoints)
         for index in config.emitters.indices {
             emit(index, dt: dt)
         }
         runOperators(dt: dt)
+        boidsFrame &+= 1
         pushTrailHistory(dt: dt)
         for event in pendingEvents {
             let child = config.children[event.child]
             eventChildren[childGroup[event.child]].append(WPEParityParticleSystem(
-                config: child.config, instance: Instance(), rng: rng, material: .init(),
+                config: child.config, instance: Instance(), rng: rng, crt: crt, material: .init(),
                 origin: event.position + child.origin
             ))
         }
         pendingEvents.removeAll(keepingCapacity: true)
         for index in children.indices {
-            children[index].step(dt: dt)
+            children[index].frameContext = frameContext
+            children[index].step(dt: dt, parentControlPoints: controlPoints)
         }
         for group in eventChildren.indices {
             for index in eventChildren[group].indices {
-                eventChildren[group][index].step(dt: dt)
+                eventChildren[group][index].frameContext = frameContext
+                eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
             }
             eventChildren[group].removeAll { $0.isFinished }
         }
@@ -327,8 +358,8 @@ public struct WPEParityParticleSystem {
         initialAlpha[slot] = instance.alpha
         birthU[slot] = u
         frame[slot] = config.randomFrame ? u : 0
-        for initializer in config.initializers {
-            initialize(slot, initializer)
+        for (index, initializer) in config.initializers.enumerated() {
+            initialize(slot, initializer, index: index)
         }
         lifetime[slot] = max(lifetime[slot] * instance.lifetime, 0.001)
         initialSize[slot] *= instance.size
@@ -352,24 +383,28 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// D/14023b340.c:360-825.
-    private mutating func initialize(_ slot: Int, _ initializer: WPEParityParticleInitializer) {
+    /// D/14023b340.c:360-1032.
+    private mutating func initialize(_ slot: Int, _ initializer: WPEParityParticleInitializer, index: Int) {
         switch initializer {
         case let .lifetime(low, high, exponent):
             lifetime[slot] = max(low + pow(rng.unit(), exponent) * (high - low), 0.001)
         case let .size(low, high, exponent):
             initialSize[slot] *= low + pow(rng.unit(), exponent) * (high - low)
-        case let .color(low, high):
-            let r = rng.unit()
+        case let .color(low, high, exponent):
+            let r = shaped(rng.unit(), exponent)
             initialColor[slot] = initialColor[slot] * (low + r * (high - low)) / 255
-        case let .hsvColor(hue, saturation, value):
-            let h = rng.draw(hue.x, hue.y)
-            let s = rng.draw(saturation.x, saturation.y)
-            let v = rng.draw(value.x, value.y)
-            initialColor[slot] *= WPEParityParticleMath.hsvToRGB(hue: h, saturation: s, value: v)
-        case let .colorList(colors):
-            let pick = min(Int(rng.unit() * Float(colors.count)), colors.count - 1)
-            initialColor[slot] = initialColor[slot] * colors[pick] / 255
+        case let .hsvColor(hsv):
+            initializeHSV(hsv, slot: slot)
+        case let .colorList(colors, noise):
+            initializeColorList(colors, noise: noise, slot: slot)
+        case let .turbulentVelocity(field):
+            initializeTurbulentVelocity(field, slot: slot)
+        case let .positionOffset(field):
+            initializePositionOffset(field, slot: slot)
+        case let .sequenceAround(field):
+            initializeSequenceAround(field, index: index, slot: slot)
+        case let .sequenceBetween(field):
+            initializeSequenceBetween(field, index: index, slot: slot)
         case let .alpha(low, high):
             initialAlpha[slot] *= rng.draw(low, high)
         case let .velocity(low, high):
@@ -378,17 +413,22 @@ public struct WPEParityParticleSystem {
             let y = rng.draw(low.y, high.y)
             let x = rng.draw(low.x, high.x)
             velocity[slot] += SIMD3(x, y, z)
-        case let .rotation(low, high):
-            rotation[slot] += draw(low, high)
-        case let .angularVelocity(low, high):
-            angularVelocity[slot] += draw(low, high)
+        case let .rotation(low, high, exponent):
+            rotation[slot] += draw(low, high, exponent)
+        case let .angularVelocity(low, high, exponent):
+            angularVelocity[slot] += draw(low, high, exponent)
         }
     }
 
-    private func draw(_ low: SIMD3<Float>, _ high: SIMD3<Float>) -> SIMD3<Float> {
-        let x = rng.draw(low.x, high.x)
-        let y = rng.draw(low.y, high.y)
-        let z = rng.draw(low.z, high.z)
+    /// powf(U, exp) only when exp ≠ 1 (D/14023b340.c:387-410, 668-695).
+    private func shaped(_ u: Float, _ exponent: Float) -> Float {
+        exponent == 1 ? u : pow(u, exponent)
+    }
+
+    private func draw(_ low: SIMD3<Float>, _ high: SIMD3<Float>, _ exponent: Float) -> SIMD3<Float> {
+        let x = low.x + shaped(rng.unit(), exponent) * (high.x - low.x)
+        let y = low.y + shaped(rng.unit(), exponent) * (high.y - low.y)
+        let z = low.z + shaped(rng.unit(), exponent) * (high.z - low.z)
         return SIMD3(x, y, z)
     }
 
@@ -398,8 +438,13 @@ public struct WPEParityParticleSystem {
             size[slot] = initialSize[slot]
             color[slot] = initialColor[slot]
             alpha[slot] = initialAlpha[slot]
+            previousPosition[slot] = position[slot]
         }
         for entry in config.operators {
+            if case let .boids(field) = entry.kind {
+                applyBoids(field, blend: entry.blend, dt: dt)
+                continue
+            }
             for slot in 0 ..< highWater where lifetime[slot] != 0 {
                 let t = age[slot] / lifetime[slot]
                 apply(entry.kind, slot: slot, t: t, weight: entry.blend?.weight(t: t) ?? 1, dt: dt)
@@ -450,6 +495,32 @@ public struct WPEParityParticleSystem {
             if speed > maxSpeed {
                 velocity[slot] *= blended(maxSpeed / speed)
             }
+        case let .turbulence(field):
+            applyTurbulence(field, slot: slot, weight: weight, dt: dt)
+        case let .controlPointAttract(field):
+            applyAttract(field, slot: slot, weight: weight, dt: dt)
+        case let .vortex(field):
+            applyVortex(field, slot: slot, weight: weight, dt: dt)
+        case let .vortexRing(field):
+            applyVortexRing(field, slot: slot, weight: weight, dt: dt)
+        case .boids:
+            break
+        case let .maintainDistance(controlPoint, distance, variableStrength):
+            applyMaintainDistance(
+                controlPoint: controlPoint, distance: distance, variableStrength: variableStrength,
+                slot: slot, weight: weight, dt: dt
+            )
+        case let .maintainDistanceBetween(start, end):
+            applyMaintainBetween(start: start, end: end, slot: slot, weight: weight)
+        case let .reduceMovement(controlPoint, inner, outer, reductionInner, reductionDelta):
+            applyReduceMovement(
+                controlPoint: controlPoint, inner: inner, outer: outer, reductionInner: reductionInner,
+                reductionDelta: reductionDelta, slot: slot, weight: weight, dt: dt
+            )
+        case let .collisionPlane(field):
+            applyCollisionPlane(field, slot: slot, weight: weight)
+        case let .collisionSphere(field):
+            applyCollisionSphere(field, slot: slot, weight: weight)
         }
     }
 

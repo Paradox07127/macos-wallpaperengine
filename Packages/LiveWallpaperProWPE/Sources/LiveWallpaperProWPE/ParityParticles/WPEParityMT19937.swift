@@ -46,6 +46,20 @@ public final class WPEParityMT19937 {
         draw(1e-5, 1)
     }
 
+    /// MSVC uniform_int_distribution over [low, high]: Lemire multiply-shift with rejection (D/14024f410.c).
+    public func integer(_ low: Int32, _ high: Int32) -> Int32 {
+        let range = UInt32(bitPattern: high &- low) &+ 1
+        guard range != 0 else { return low &+ Int32(bitPattern: next()) }
+        var product = UInt64(next()) * UInt64(range)
+        if UInt32(truncatingIfNeeded: product) < range {
+            let threshold = (0 &- range) % range
+            while UInt32(truncatingIfNeeded: product) < threshold {
+                product = UInt64(next()) * UInt64(range)
+            }
+        }
+        return low &+ Int32(truncatingIfNeeded: product >> 32)
+    }
+
     private func twist() {
         for i in 0 ..< Self.size {
             let bits = (state[i] & 0x8000_0000) | (state[(i + 1) % Self.size] & 0x7FFF_FFFF)
@@ -56,5 +70,20 @@ public final class WPEParityMT19937 {
             state[i] = value
         }
         index = 0
+    }
+}
+
+/// The CRT `rand()` hsvcolorrandom draws from (D/1402c97a0.c), one per scene beside the scene's mt19937.
+public final class WPEParityCRTRandom {
+    private var state: UInt32
+
+    public init(seed: UInt32 = 1) {
+        state = seed
+    }
+
+    /// [0, 32767].
+    public func next() -> Int {
+        state = state &* 214_013 &+ 2_531_011
+        return Int((state >> 16) & 0x7FFF)
     }
 }

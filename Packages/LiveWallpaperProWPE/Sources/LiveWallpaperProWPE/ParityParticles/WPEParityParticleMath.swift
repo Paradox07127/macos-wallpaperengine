@@ -106,6 +106,21 @@ enum WPEParityParticleMath {
         }
         return base + (value - chroma)
     }
+
+    /// Hue in turns [0, 1); grey maps to hue 0, saturation 0.
+    static func rgbToHSV(_ rgb: SIMD3<Float>) -> SIMD3<Float> {
+        let high = rgb.max(), chroma = high - rgb.min()
+        guard chroma > 0 else { return SIMD3(0, 0, high) }
+        var hue: Float = if high == rgb.x {
+            (rgb.y - rgb.z) / chroma
+        } else if high == rgb.y {
+            (rgb.z - rgb.x) / chroma + 2
+        } else {
+            (rgb.x - rgb.y) / chroma + 4
+        }
+        hue /= 6
+        return SIMD3(hue < 0 ? hue + 1 : hue, chroma / high, high)
+    }
 }
 
 extension WPEParityParticleEmitterConfig {
@@ -135,11 +150,13 @@ extension WPEParityParticleEmitterConfig {
         let sinTheta = max(0, 1 - cosTheta * cosTheta).squareRoot()
         let point = radius * SIMD3(cosTheta, sinTheta * sin(phi), sinTheta * cos(phi)) * directions
         let length = simd_length(point)
-        var offset = length > 0 ? point / length * (distanceMin.x + (distanceMax.x - distanceMin.x) * length) : .zero
+        guard length > 0 else { return .zero }
+        // The sign mask forces the unit direction's components before the distance scales it (0x140237ee0-0x140237f18).
+        var unit = point / length
         for axis in 0 ..< 3 where sign[axis] != 0 {
-            offset[axis] = abs(offset[axis]) * (sign[axis] > 0 ? 1 : -1)
+            unit[axis] = abs(unit[axis]) * (sign[axis] > 0 ? 1 : -1)
         }
-        return offset
+        return unit * (distanceMin.x + (distanceMax.x - distanceMin.x) * length)
     }
 
     /// s_i = (2U − 1)·dir_i, offset_i = sign(s_i)·(dmin_i + |s_i|·Δd_i) (D/1402378a0.c:811-1061).
