@@ -23,6 +23,9 @@ struct WPEFrameUniformContext: Sendable {
     /// Resolved from the same uploaded mip as the closed producer's composite.
     var textureReductionScaleByPassID: [String: Double] = [:]
 
+    /// Owning layer's `g_Color4` / `g_UserAlpha` per prepared-pass id; absent = no layer supplies them.
+    var layerColorUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
+
     static let empty = WPEFrameUniformContext(
         runtimeUniformValues: [:],
         cameraUniformValues: [:],
@@ -39,7 +42,9 @@ struct WPEFrameUniformContext: Sendable {
         if name == "g_TextureReductionScale", let reduction = textureReductionScaleByPassID[passID] {
             return .number(reduction)
         }
-        if let value = objectUniformValuesByPassID[passID]?[name] { return value }
+        if let value = objectUniformValuesByPassID[passID]?[name] ?? layerColorUniformValuesByPassID[passID]?[name] {
+            return value
+        }
         if WPEMetalObjectUniforms.cameraComposedUniformNames.contains(name),
            let model = objectUniformValuesByPassID[passID]?["g_ModelMatrix"],
            let viewProjection = drawViewProjectionMatrixByPassID[passID]
@@ -52,6 +57,18 @@ struct WPEFrameUniformContext: Sendable {
             return value
         }
         return cameraUniformValuesByPassID[passID]?[name] ?? frameValue(named: name)
+    }
+
+    /// WPE bakes object brightness into g_Color4 only in HDR scenes, matching the builtin image path.
+    static func layerColorUniformValues(
+        _ geometry: WPERenderLayerGeometry,
+        sceneHDR: Bool
+    ) -> [String: WPESceneShaderConstantValue] {
+        let tint = geometry.color * (sceneHDR ? geometry.brightness : 1)
+        return [
+            "g_Color4": .vector([tint.x, tint.y, tint.z, geometry.alpha]),
+            "g_UserAlpha": .number(geometry.alpha),
+        ]
     }
 
     func value(lowercasedName: String, passID: String) -> WPESceneShaderConstantValue? {
@@ -87,7 +104,7 @@ struct WPEFrameUniformContext: Sendable {
                 angles: SIMD3<Double>(0, 0, 0)
             ).keys)
             + WPEMetalObjectUniforms.cameraComposedUniformNames
-            + ["g_TextureReductionScale"]
+            + ["g_TextureReductionScale", "g_Color4", "g_UserAlpha"]
     }()
 }
 #endif

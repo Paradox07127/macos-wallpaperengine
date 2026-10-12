@@ -864,8 +864,19 @@ extension WPEPreparedRenderPipeline {
                 }
             }
         }
+        let sceneHDR = (runtimeUniformValues["g_SceneHDREnabled"]?.numberValue ?? 0) > 0.5
+        func addingLayerColors(_ layers: [WPEPreparedRenderLayer]) -> WPEFrameUniformContext {
+            var context = frameUniforms
+            for layer in layers {
+                let values = WPEFrameUniformContext.layerColorUniformValues(layer.graphLayer.geometry, sceneHDR: sceneHDR)
+                for pass in layer.passes {
+                    context.layerColorUniformValuesByPassID[pass.id] = values
+                }
+            }
+            return context
+        }
         // Nothing below can change a value. Hand back the load-time pipeline instead of copying the tree every frame.
-        guard needsRebuild else { return (self, frameUniforms) }
+        guard needsRebuild else { return (self, addingLayerColors(layers)) }
         let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
             guard layer.graphLayer.isTimeVarying
                 || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants) else {
@@ -931,7 +942,7 @@ extension WPEPreparedRenderPipeline {
                 }
             )
         }
-        return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)
+        return (WPEPreparedRenderPipeline(layers: preparedLayers), addingLayerColors(preparedLayers))
     }
 
     /// Layer-tint is NOT here: it needs graphLayer.isTimeVarying, which every caller already tests alongside this.

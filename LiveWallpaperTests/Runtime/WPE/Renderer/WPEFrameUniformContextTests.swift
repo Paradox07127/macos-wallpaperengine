@@ -51,6 +51,9 @@ struct WPEFrameUniformContextTests {
     private static func makeLayer(
         objectID: String,
         origin: SIMD3<Double> = SIMD3<Double>(0, 0, 0),
+        alpha: Double = 1,
+        color: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
+        brightness: Double = 1,
         passes: [WPERenderPass]
     ) -> WPERenderLayer {
         WPERenderLayer(
@@ -64,9 +67,9 @@ struct WPEFrameUniformContextTests {
                 angles: SIMD3<Double>(0, 0, 0),
                 alignment: .center,
                 size: CGSize(width: 64, height: 64),
-                alpha: 1,
-                color: SIMD3<Double>(1, 1, 1),
-                brightness: 1
+                alpha: alpha,
+                color: color,
+                brightness: brightness
             ),
             compositeA: "a",
             compositeB: "b",
@@ -374,6 +377,25 @@ struct WPEFrameUniformContextTests {
         #expect(Array(packedAfterCameraChange[0..<4]) == Array(packedA[0..<4]))
         #expect(Array(packedAfterCameraChange[12..<16]) == Array(packedA[12..<16]))
         executor.frameUniformContext = .empty
+    }
+
+    @Test("Author shaders read the owning layer's color and alpha through g_Color4 and g_UserAlpha (3798688689)")
+    func layerColorReachesAuthorShaders() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let (raw, pass) = Self.makePass(id: "tinted.0", uniformValues: [:])
+        let layer = Self.makeLayer(
+            objectID: "T", alpha: 0.5, color: SIMD3<Double>(1, 0.5, 0.25), brightness: 2, passes: [raw]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [pass])])
+        let (prepared, frameUniforms) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: Self.camera)
+        executor.frameUniformContext = frameUniforms
+        defer { executor.frameUniformContext = .empty }
+        let layout = [Self.slot("g_Color4", 0, type: "vec4"), Self.slot("g_UserAlpha", 1)]
+        let packed = try executor.packTranslatedUniforms(for: prepared.layers[0].passes[0], layout: layout)
+        // Brightness stays out of g_Color4 outside HDR scenes.
+        #expect(packed[0] == SIMD4<Float>(1, 0.5, 0.25, 0.5))
+        #expect(packed[1].x == 0.5)
     }
 
     // MARK: - Static-pass structure reuse
