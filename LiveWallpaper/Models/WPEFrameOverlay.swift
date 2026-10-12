@@ -29,7 +29,7 @@ extension WPEPreparedRenderPipeline {
     /// Apply visibility and both tint components in one layer traversal. Keep
     /// the original layer storage until the first effective change, including
     /// when a nonempty script overlay repeats the current presentation.
-    func applyingFrameOverlay(_ overlay: WPEFrameOverlay) -> WPEPreparedRenderPipeline {
+    func applyingFrameOverlay(_ overlay: WPEFrameOverlay, sceneHDR: Bool) -> WPEPreparedRenderPipeline {
         guard !overlay.isEmpty else { return self }
         var changedLayers: [WPEPreparedRenderLayer]?
         for index in layers.indices {
@@ -49,7 +49,7 @@ extension WPEPreparedRenderPipeline {
             let updatedGraph = graph.applyingPresentation(visible: visible, alpha: alpha, color: color)
             let updatedPasses = alpha != nil || color != nil
                 ? Self.passesApplyingLayerTint(
-                    layer.passes, geometry: updatedGraph.geometry,
+                    layer.passes, geometry: updatedGraph.geometry, sceneHDR: sceneHDR,
                     updateColor: color != nil, updateAlpha: alpha != nil
                 )
                 : layer.passes
@@ -69,6 +69,7 @@ extension WPEPreparedRenderPipeline {
     private static func passesApplyingLayerTint(
         _ passes: [WPEPreparedRenderPass],
         geometry: WPERenderLayerGeometry,
+        sceneHDR: Bool,
         updateColor: Bool,
         updateAlpha: Bool
     ) -> [WPEPreparedRenderPass] {
@@ -77,7 +78,7 @@ extension WPEPreparedRenderPipeline {
             let pass = passes[index]
             guard pass.pass.constants["g_Color"] != nil,
                   Self.consumesLayerColor(pass.pass.shader) else { continue }
-            let tint = updateColor ? geometry.color * geometry.brightness : nil
+            let tint = updateColor ? geometry.color * (sceneHDR ? geometry.brightness : 1) : nil
             let alpha = updateAlpha ? geometry.alpha : nil
             let existing = pass.uniformValues["g_Color"] ?? pass.pass.constants["g_Color"]
             // An animated g_Color must stay animated: record the claim and let

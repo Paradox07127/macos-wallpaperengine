@@ -648,25 +648,25 @@ struct WPEMetalRuntimeUniformsTests {
     @Test("Visibility overlay that already matches authored visible reuses the pipeline")
     func matchingVisibilityOverlayReusesPipeline() {
         let pipeline = Self.solidPipeline()
-        #expect(pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": true])) == pipeline)
-        let hidden = pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false]))
+        #expect(pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": true]), sceneHDR: false) == pipeline)
+        let hidden = pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false]), sceneHDR: false)
         #expect(hidden != pipeline)
-        #expect(hidden.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false])) == hidden)
+        #expect(hidden.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false]), sceneHDR: false) == hidden)
     }
 
     @Test("Alpha overlay that already matches authored alpha reuses the pipeline")
     func matchingAlphaOverlayReusesPipeline() {
         let pipeline = Self.solidPipeline()
-        #expect(pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 1])) == pipeline)
-        let faded = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]))
+        #expect(pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 1]), sceneHDR: false) == pipeline)
+        let faded = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: false)
         #expect(faded != pipeline)
-        #expect(faded.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25])) == faded)
+        #expect(faded.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: false) == faded)
     }
 
     @Test("Script color override survives through the per-frame prepare")
     func scriptColorOverrideUpdatesSolidUniform() throws {
         let tinted = Self.solidPipeline()
-            .applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3<Double>(0.2, 0.4, 0.6)]))
+            .applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3<Double>(0.2, 0.4, 0.6)]), sceneHDR: false)
         let values = try #require(Self.preparedSolidValues(tinted))
         #expect(values["g_Color"]?.vectorValue == [0.2, 0.4, 0.6, 1])
     }
@@ -674,7 +674,7 @@ struct WPEMetalRuntimeUniformsTests {
     @Test("Script alpha override writes g_Color.w and survives the prepare")
     func scriptAlphaOverrideUpdatesSolidUniform() throws {
         let faded = Self.solidPipeline()
-            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]))
+            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: false)
         let values = try #require(Self.preparedSolidValues(faded))
         #expect(values["g_Color"]?.vectorValue == [1, 1, 1, 0.25])
     }
@@ -682,7 +682,7 @@ struct WPEMetalRuntimeUniformsTests {
     @Test("Alpha override keeps an authored rgb that differs from the layer tint")
     func alphaOverridePreservesAuthoredColor() throws {
         let faded = Self.solidPipeline(seedColor: [1, 0, 0, 1])
-            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]))
+            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: false)
         let values = try #require(Self.preparedSolidValues(faded))
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 0.25])
     }
@@ -706,7 +706,7 @@ struct WPEMetalRuntimeUniformsTests {
             )
         )
         let faded = Self.solidPipeline(seed: animatedColor)
-            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]))
+            .applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: false)
         let values = try #require(Self.preparedSolidValues(faded))
         let rgba = try #require(values["g_Color"]?.vectorValue)
         #expect(rgba[3] == 0.25)

@@ -332,7 +332,7 @@ extension WPEMetalSceneRenderer {
                 .applyingFrameOverlay(WPEFrameOverlay(
                     visibility: liveLayerVisibilityIncludingText,
                     alpha: liveLayerAlphaIncludingText
-                ))
+                ), sceneHDR: cameraUniforms.sceneHDR)
             if !needsContinuousFrames {
                 do {
                     let frame = try renderCurrentFrame(inputs: makeFrameInputs())

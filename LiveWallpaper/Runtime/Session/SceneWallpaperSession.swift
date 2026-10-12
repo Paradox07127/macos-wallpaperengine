@@ -64,6 +64,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         updateFrame(to: canvas)
         surface.pointerGeometryOverride = .init(viewFrameInScreen: canvas, interactiveFrames: interactiveFrames)
         surface.mailbox.publishGeometry(surface.pointerGeometryOverride!)
+        // updateFrame refreshed against the previous override; panels must follow the new canvas.
+        refreshHotZones()
         renderActor.submitConfig(.surfaceGeometry(CGSize(width: canvas.width * density, height: canvas.height * density)))
     }
 

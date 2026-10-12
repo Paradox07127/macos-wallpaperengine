@@ -365,7 +365,7 @@ extension WPEMetalSceneRenderer {
                 visibility: liveLayerVisibilityIncludingText,
                 alpha: liveLayerAlphaIncludingText,
                 colors: layerColorsExcludingText(transforms.colors)
-            ))
+            ), sceneHDR: cameraUniforms.sceneHDR)
             .applyingLayerTransforms(
                 origins: applyingTextLayerOriginOffsets(
                     transforms.origins,

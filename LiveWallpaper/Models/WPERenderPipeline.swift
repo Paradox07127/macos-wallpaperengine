@@ -865,7 +865,7 @@ extension WPEPreparedRenderPipeline {
                 }
             }
         }
-        let sceneHDR = (runtimeUniformValues["g_SceneHDREnabled"]?.numberValue ?? 0) > 0.5
+        let sceneHDR = camera.sceneHDR
         func addingLayerColors(_ layers: [WPEPreparedRenderLayer]) -> WPEFrameUniformContext {
             var context = frameUniforms
             for layer in layers {
@@ -901,7 +901,7 @@ extension WPEPreparedRenderPipeline {
                     }
                     // The animated tint is a recomputed seed: it goes in before the script merge so scripted constants still override.
                     if overridesLayerColor {
-                        let tint = geometry.color * geometry.brightness
+                        let tint = geometry.color * (sceneHDR ? geometry.brightness : 1)
                         values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
                     // A script claim on animated g_Color lands after resolve, component-wise: the animation still owns what the script did not take.

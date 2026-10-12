@@ -372,7 +372,7 @@ extension WPEMetalSceneRenderer {
                         tint = color.count >= 3
                             ? SIMD3<Float>(Float(color[0]), Float(color[1]), Float(color[2]))
                             : SIMD3<Float>(1, 0, 0)
-                        tintBlendMode = Int32(pass?.combos["BLENDMODE"] ?? 30)
+                        tintBlendMode = Int32(clamping: pass?.combos["BLENDMODE"] ?? 30)
                         tintOpacity = Float(pass?.constants["alpha"]?.numberValue ?? 1)
                         hasTint = true
                     }

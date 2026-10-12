@@ -26,6 +26,26 @@ struct SceneHotZoneRoutingTests {
         #expect(window.level.rawValue == Int(CGWindowLevelForKey(.desktopWindow)) - 1)
     }
 
+    @Test("Moving a span canvas moves the hot-zone panels with it")
+    func spanViewportMoveRelaysOutPanels() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let window = VideoWallpaperWindow(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let session = SceneWallpaperSession(window: window, renderActor: WPEDisplayRenderActor(backing: .renderThread),
+                                            surface: surface)
+        defer { session.cleanup() }
+        let zone = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        session.setClickCaptureEnabled(true)
+        surface.mailbox.publishInteractiveZones([zone])
+        let first = CGRect(x: 1000, y: 2000, width: 400, height: 200)
+        let moved = CGRect(x: 3000, y: 4000, width: 800, height: 400)
+        session.updateSpanViewport(first, density: 1, interactiveFrames: [first])
+        session.updateSpanViewport(moved, density: 1, interactiveFrames: [moved])
+        let expected = TestHostWindowParking.parkedFrame(SceneHotZoneRouter.screenRect(forZone: zone, in: moved))
+        #expect(NSApp.windows.contains { $0 is NSPanel && $0.isVisible && $0.frame == expected },
+                "the panel would stay at the previous canvas and swallow desktop clicks there")
+    }
+
     @Test("A drawable-UV zone maps to the screen rect it covers, flipping to a bottom-left origin", arguments: [
         (CGRect(x: 100, y: 200, width: 400, height: 300), CGRect(x: 0.25, y: 0.1, width: 0.5, height: 0.2),
          CGRect(x: 200, y: 410, width: 200, height: 60)),
