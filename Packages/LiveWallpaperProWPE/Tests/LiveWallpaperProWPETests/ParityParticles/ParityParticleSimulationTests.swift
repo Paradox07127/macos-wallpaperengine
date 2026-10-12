@@ -160,14 +160,15 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(spawned.position[0].x, 1, accuracy: 1e-6)
     }
 
-    func testFinishedEventChildrenAreReusedWithoutChangingTheBatches() {
+    /// 30 births a second, each spawning a three-particle event child that lives 0.3 s.
+    private static func eventSpawningSystem() -> WPEParityParticleSystem {
         let child = """
         {"maxcount": 4, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 3, "distancemax": 5}],
          "initializer": [{"name": "lifetimerandom", "min": 0.3, "max": 0.3},
                          {"name": "velocityrandom", "min": "-20 -20 0", "max": "20 20 0"}],
          "operator": [{"name": "movement"}], "renderer": [{"name": "sprite"}]}
         """
-        var particles = WPEParityParticleSystem(
+        return WPEParityParticleSystem(
             json: ParityParticleTestSupport.json("""
             {"maxcount": 20,
              "emitter": [{"name": "sphererandom", "rate": 30, "distancemax": 10}],
@@ -179,6 +180,54 @@ final class ParityParticleSimulationTests: XCTestCase {
             rng: WPEParityMT19937(seed: 7),
             resolveChild: { $0 == "child.json" ? ParityParticleTestSupport.json(child) : nil }
         )
+    }
+
+    /// Base addresses of every array the system and its children keep between frames.
+    private static func buffers(_ system: WPEParityParticleSystem) -> Set<UInt> {
+        func address(_ array: [some Any]) -> UInt {
+            array.withUnsafeBufferPointer { UInt(bitPattern: $0.baseAddress) }
+        }
+        var addresses: Set<UInt> = [
+            address(system.position), address(system.velocity), address(system.rotation),
+            address(system.angularVelocity), address(system.color), address(system.initialColor),
+            address(system.alpha), address(system.initialAlpha), address(system.size), address(system.initialSize),
+            address(system.age), address(system.lifetime), address(system.birthU), address(system.frame),
+            address(system.previousPosition), address(system.birthNext), address(system.birthPrevious),
+            address(system.trailPoints), address(system.trailCount), address(system.trailHead),
+            address(system.mainBytes), address(system.ropeBytes), address(system.ropeTrailBytes),
+            address(system.pendingEvents), address(system.emitterStates), address(system.sequenceStates),
+            address(system.controlPoints), address(system.previousControlPoints),
+        ]
+        for group in system.eventChildren + system.finishedEventChildren {
+            addresses.insert(address(group))
+            for child in group {
+                addresses.formUnion(buffers(child))
+            }
+        }
+        for child in system.children {
+            addresses.formUnion(buffers(child))
+        }
+        return addresses
+    }
+
+    func testSteadyStateFramesKeepEveryBufferOfTheSystemAndItsEventChildren() {
+        var particles = Self.eventSpawningSystem()
+        var warm: Set<UInt> = []
+        for frame in 1 ... 300 {
+            particles.advance(dt: 1.0 / 60)
+            let count = particles.batches(node: [], renderer: 0, eventGroup: nil).count
+                + particles.batches(node: [], renderer: 0, eventGroup: 0).count
+            if frame == 150 {
+                warm = Self.buffers(particles)
+            } else if frame > 150 {
+                XCTAssertGreaterThan(count, 1, "frame \(frame)")
+                XCTAssertEqual(Self.buffers(particles), warm, "frame \(frame)")
+            }
+        }
+    }
+
+    func testFinishedEventChildrenAreReusedWithoutChangingTheBatches() {
+        var particles = Self.eventSpawningSystem()
         var checksum: UInt64 = 0xCBF2_9CE4_8422_2325
         var warm = 0
         for frame in 1 ... 300 {

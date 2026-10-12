@@ -82,6 +82,42 @@ final class WPEParityParticleSceneTests: XCTestCase {
         let milliseconds = Double(encode.components.attoseconds) / 1e15 + Double(encode.components.seconds) * 1000
         print("scene \(Self.sceneID): encodeFrame CPU mean \(String(format: "%.3f", milliseconds / Double(frames))) ms "
             + "over \(frames) frames")
+        print("scene \(Self.sceneID): particle share of a frame \(particleShare(plan, frames: frames))")
+    }
+
+    /// The scene's particle systems advanced and packed on their own, as `encodeFrame` drives them.
+    private func particleShare(_ plan: WPEParityFramePlan, frames: Int) -> String {
+        var scene = WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
+                                           engineFlags: plan.scene.engineFlags, seed: 1)
+        var ids: [String] = []
+        var keys: [WPEParityParticleDrawKey] = []
+        for object in plan.scene.scene.objects where object.visible {
+            if case let .particle(particle) = object.kind {
+                ids.append(object.id)
+                keys += particle.draws.map(\.key)
+            }
+        }
+        let clock = ContinuousClock()
+        var (advance, pack) = (Duration.zero, Duration.zero)
+        for frame in 1 ... frames {
+            let contexts = Dictionary(uniqueKeysWithValues: ids.map {
+                ($0, WPEParityParticleFrameContext(time: Float(frame) / 60))
+            })
+            var start = clock.now
+            scene.advance(dt: 1.0 / 60, frames: contexts)
+            advance += clock.now - start
+            start = clock.now
+            for key in keys {
+                _ = scene.batches(for: key)
+            }
+            pack += clock.now - start
+        }
+        func mean(_ duration: Duration) -> String {
+            let milliseconds = Double(duration.components.attoseconds) / 1e15
+                + Double(duration.components.seconds) * 1000
+            return String(format: "%.3f", milliseconds / Double(frames))
+        }
+        return "advance \(mean(advance)) ms, batches \(mean(pack)) ms over \(keys.count) keys"
     }
 
     func testTinyParticleArenaDropsBatchesAndKeepsOtherDraws() async throws {

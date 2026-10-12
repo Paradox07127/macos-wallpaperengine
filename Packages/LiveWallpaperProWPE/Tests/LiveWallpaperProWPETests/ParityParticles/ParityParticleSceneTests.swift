@@ -131,6 +131,79 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
+    /// 300 frames of Workshop 3448877775 at seed 1: every draw key's batches hashed, simulation, packing and an
+    /// arena-style copy timed apart.
+    func testWorkshopSceneBatchesKeepTheirChecksum() throws {
+        let install = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let package = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+            "Library/Application Support/Steam/steamapps/workshop/content/431960/3448877775/scene.pkg"
+        )
+        guard FileManager.default.fileExists(atPath: package.path) else {
+            throw XCTSkip("No workshop 3448877775 scene.pkg")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parity-particles-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try ParityProgramPuppetTests.unpack(package, into: root)
+        let document = try WPESceneDocumentParser.parse(
+            data: Data(contentsOf: root.appendingPathComponent("scene.json")), userValues: [:],
+            makeTransformScriptResolver: { _, _ in NoScripts() }
+        )
+        let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [install])
+        var scene = WPEParityParticleScene(document: document, assets: assets, engineFlags: WPEEngineComboFlags(),
+                                           seed: 1)
+        let visible = document.particleObjects.filter(\.visible)
+        let keys = visible.flatMap { particle in
+            var diagnostics: [WPEParitySceneDiagnostic] = []
+            return WPEParityProgramScene.particleDraws(objectID: particle.id, path: particle.particleRelativePath,
+                                                       assets: assets, diagnostics: &diagnostics).map(\.key)
+        }
+        let clock = ContinuousClock()
+        var (simulate, pack, copy) = (Duration.zero, Duration.zero, Duration.zero)
+        var arena = [UInt8](repeating: 0, count: 16 << 20)
+        var checksum: UInt64 = 0xCBF2_9CE4_8422_2325
+        let frames = 300
+        for frame in 1 ... frames {
+            var contexts: [String: WPEParityParticleFrameContext] = [:]
+            for particle in visible {
+                contexts[particle.id] = WPEParityParticleFrameContext(time: Float(frame) / 60)
+            }
+            var start = clock.now
+            scene.advance(dt: 1.0 / 60, frames: contexts)
+            simulate += clock.now - start
+            var offset = 0
+            for key in keys {
+                start = clock.now
+                let batches = scene.batches(for: key)
+                pack += clock.now - start
+                start = clock.now
+                for batch in batches {
+                    offset = offset + batch.bytes.count > arena.count ? 0 : offset
+                    arena.withUnsafeMutableBytes { target in
+                        let tail = UnsafeMutableRawBufferPointer(rebasing: target[offset...])
+                        batch.bytes.withUnsafeBytes { tail.copyMemory(from: $0) }
+                    }
+                    offset += batch.bytes.count
+                }
+                copy += clock.now - start
+                for byte in batches.flatMap(\.bytes) {
+                    checksum = (checksum ^ UInt64(byte)) &* 0x0000_0100_0000_01B3
+                }
+            }
+        }
+        func mean(_ duration: Duration) -> String {
+            let milliseconds = Double(duration.components.attoseconds) / 1e15
+                + Double(duration.components.seconds) * 1000
+            return String(format: "%.3f", milliseconds / Double(frames))
+        }
+        print("scene 3448877775: \(keys.count) draw keys, checksum \(checksum); per frame advance \(mean(simulate)) ms, "
+            + "batches \(mean(pack)) ms, copy \(mean(copy)) ms")
+        // Optimized builds round some float math differently and give another value.
+        #if DEBUG
+        XCTAssertEqual(checksum, 11_516_893_083_052_642_319)
+        #endif
+    }
+
     func testChildNamingItsOwnFileIsSkipped() throws {
         let loop = Self.burst(1, extra: #", "children": [{"name": "particles/fx.json"}]"#)
         let scene = try Self.scene(Self.five, particles: ["particles/fx.json": loop])
