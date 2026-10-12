@@ -8,7 +8,7 @@ public enum WPEParityPostProcessBuilder {
             stream.snapshot()
         }
         if config.mipMappedFrameBufferRequested {
-            stream.resource("_rt_MipMappedFrameBuffer", mips: stream.mipCount, lifetime: .persistent)
+            stream.resource("_rt_MipMappedFrameBuffer", mips: stream.mipCount, lifetime: .pooled)
             stream.append("mipCopy", .copy(source: "backbuffer", destination: "_rt_MipMappedFrameBuffer"))
             stream.append("generateMips", .generateMips("_rt_MipMappedFrameBuffer"))
         }
@@ -58,7 +58,7 @@ private struct WPEParityPostProcessStream {
             WPELogicalResource(id: "backbuffer", width: config.backbufferWidth, height: config.backbufferHeight,
                                format: config.backbufferFormat, lifetime: .output),
             WPELogicalResource(id: "backbufferDepth", width: config.backbufferWidth, height: config.backbufferHeight,
-                               format: "depth32float", lifetime: .persistent),
+                               format: "depth32float", lifetime: .pooled),
         ]
     }
 
@@ -86,7 +86,7 @@ private struct WPEParityPostProcessStream {
     }
 
     mutating func snapshot() {
-        resource("_rt_FullFrameBuffer", lifetime: .persistent)
+        resource("_rt_FullFrameBuffer", lifetime: .pooled)
         append("snapshot", .copy(source: "backbuffer", destination: "_rt_FullFrameBuffer"))
     }
 

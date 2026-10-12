@@ -184,7 +184,7 @@ struct ParitySceneLayerCompositeTests {
             F.sceneBind,
             "draw up [\(F.br0),L/blur/half] translucent rgb mesh",
         ])
-        #expect(frame.resources.first { $0.id == "L/blur/half" }?.lifetime == .persistent)
+        #expect(frame.resources.first { $0.id == "L/blur/half" }?.lifetime == .pooled)
     }
 }
 
@@ -253,16 +253,17 @@ struct ParitySceneCompositionTests {
 }
 
 struct ParitySceneCompileTests {
-    @Test func reportSequenceACompilesWithPersistentPoolTargets() throws {
+    @Test func reportSequenceACompilesWithPooledTargets() throws {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2", readsFullFrameBuffer: true)])])
         let frame = WPEParitySceneFrameBuilder.build(scene)
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         for id in [WPEParitySceneResource.fullFrameBuffer, WPEResourceID(F.br0), WPEResourceID(F.br1)] {
-            #expect(graph.resources[id]?.lifetime == .persistent, "\(id)")
-            #expect(graph.storage[id] == .dedicated, "\(id)")
+            #expect(graph.resources[id]?.lifetime == .pooled, "\(id)")
         }
+        ParityGraphStream.expectPooledStorage(graph)
+        #expect(graph.storage[WPEResourceID(F.br0)] != .dedicated)
+        #expect(graph.storage[WPEResourceID(F.br1)] != .dedicated)
         #expect(graph.storage[WPEParitySceneResource.backbuffer] == .dedicated)
-        #expect(!graph.storage.values.contains(.memoryless))
     }
 
     @Test func otherVariantsCompile() throws {

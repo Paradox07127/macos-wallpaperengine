@@ -254,7 +254,7 @@ private struct WPEParitySceneEmitter {
     /// Every named RT in WPE's pool, including FFB, sc.* and effect FBOs, keeps its contents across frames.
     private mutating func register(_ id: WPEResourceID, _ width: Int, _ height: Int,
                                    format: String = Resource.colorFormat, samples: Int = 1,
-                                   lifetime: WPEResourceLifetime = .persistent) {
+                                   lifetime: WPEResourceLifetime = .pooled) {
         guard resources[id] == nil else { return }
         resources[id] = WPELogicalResource(id: id, width: width, height: height, format: format,
                                            sampleCount: samples, lifetime: lifetime)

@@ -23,8 +23,11 @@ public struct WPEResourceID: Hashable, Comparable, Sendable, ExpressibleByString
 public enum WPEResourceLifetime: Hashable, Sendable {
     /// Contents before the first write of a frame are irrelevant and nothing is carried to the next frame.
     case frameTransient
-    /// Contents survive into the next frame, as every named RT in WPE's pool does.
+    /// Caller-supplied; contents survive into the next frame and may be read outside the graph.
     case persistent
+    /// A named RT in WPE's pool: contents survive between frames of this graph, but nothing outside reads them.
+    /// The compiler treats it as `.frameTransient` when no access in the frame observes its entry contents.
+    case pooled
     /// Owned outside the graph (images, video frames); never pooled or aliased.
     case imported
     /// Presented or handed out after the frame.

@@ -108,7 +108,7 @@ public enum WPEResourceStorage: Hashable, Sendable {
     case memoryless
     /// Frame scratch that may share memory with the other members of `allocationGroups[group]`.
     case aliased(group: Int)
-    /// Persistent or output storage that is never shared.
+    /// Persistent, pooled or output storage that is never shared.
     case dedicated
     case external
 }
@@ -122,7 +122,8 @@ public struct WPECompiledRenderGraph: Hashable, Sendable {
     public let dependencies: [WPEStepDependency]
     /// Inclusive step-index range over which each accessed resource must hold its contents.
     public let lifetimes: [WPEResourceID: ClosedRange<Int>]
-    /// Unaccessed frame-transient resources have no entry.
+    /// Unaccessed frame-transient resources have no entry. A `.pooled` resource that is not `.dedicated` here
+    /// was downgraded to frame-transient: its entry contents are never observed.
     public let storage: [WPEResourceID: WPEResourceStorage]
     /// Members of one group have pairwise disjoint lifetimes.
     public let allocationGroups: [[WPEResourceID]]

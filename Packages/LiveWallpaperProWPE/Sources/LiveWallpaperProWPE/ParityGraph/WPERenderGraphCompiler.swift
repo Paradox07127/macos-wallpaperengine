@@ -24,7 +24,7 @@ public enum WPERenderGraphCompiler {
         let versions = Versioning(normalized)
         var builders = formEncoders(normalized)
         foldResolves(&builders, normalized, versions)
-        let steps = deriveActions(builders, normalized, versions, table)
+        let (steps, downgraded) = deriveActions(builders, normalized, versions, table)
         var stepOf: [Int: Int] = [:]
         for (index, step) in steps.enumerated() {
             for operation in step.operations {
@@ -32,7 +32,7 @@ public enum WPERenderGraphCompiler {
             }
         }
         let lifetimes = lifetimes(steps)
-        let (storage, groups) = allocate(steps, normalized, lifetimes, table)
+        let (storage, groups) = allocate(steps, normalized, lifetimes, table, downgraded)
         return WPECompiledRenderGraph(
             resources: table, operations: operations, accesses: versions.accesses, steps: steps,
             dependencies: dependencies(steps, stepOf), lifetimes: lifetimes, storage: storage, allocationGroups: groups
@@ -294,7 +294,8 @@ private func foldResolves(_ steps: inout [StepBuilder], _ operations: [Normalize
 // MARK: - 5. Attachment actions
 
 private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized], _ versions: Versioning,
-                           _ table: [WPEResourceID: WPELogicalResource]) -> [WPECompiledStep] {
+                           _ table: [WPEResourceID: WPELogicalResource])
+    -> (steps: [WPECompiledStep], downgraded: Set<WPEResourceID>) {
     struct Pending {
         var reads: [WPEResourceVersion]
         var writes: [WPESubresource: WPEResourceVersion]
@@ -342,15 +343,23 @@ private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized]
         }
     }
 
-    return zip(builders, pending).enumerated().map { index, pair in
+    // Every mip is written and no step observes frame-entry contents (sample, load or transfer read).
+    let downgraded = Set(table.values.filter { resource in
+        resource.lifetime == .pooled
+            && (0 ..< resource.mipCount).allSatisfy { versions.final[WPESubresource(resource.id, mip: $0)] != nil }
+            && !readers.keys.contains { $0.subresource.resource == resource.id && $0.revision == 0 }
+    }.map(\.id))
+
+    let steps = zip(builders, pending).enumerated().map { index, pair in
         let (builder, step) = pair
         func action(_ attachment: WPESubresource) -> WPEAttachmentAction {
             let exit = step.exits[attachment]
-            let lifetime = table[attachment.resource]?.lifetime
+            let transient = table[attachment.resource]?.lifetime == .frameTransient
+                || downgraded.contains(attachment.resource)
             let needed = exit.map { exit in
                 readers[exit, default: []].contains { $0 > index }
                     // A subresource never written this frame has no `final` entry; its entry version is final.
-                    || (lifetime != .frameTransient && (versions.final[attachment] ?? exit) == exit)
+                    || (!transient && (versions.final[attachment] ?? exit) == exit)
             } ?? false
             let store: WPEStoreAction = switch (builder.resolves[attachment], needed) {
             case let (destination?, true): .storeAndMultisampleResolve(into: destination)
@@ -368,6 +377,7 @@ private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized]
         return WPECompiledStep(kind: kind, operations: builder.operations.sorted(), reads: step.reads,
                                writes: step.writes.values.sorted { $0.subresource < $1.subresource })
     }
+    return (steps, downgraded)
 }
 
 private func loadAction(_ attachment: WPESubresource, entry: WPEResourceVersion, first: Normalized, clear: Normalized?,
@@ -454,13 +464,14 @@ private func lifetimes(_ steps: [WPECompiledStep]) -> [WPEResourceID: ClosedRang
 }
 
 private func allocate(_ steps: [WPECompiledStep], _ operations: [Normalized],
-                      _ lifetimes: [WPEResourceID: ClosedRange<Int>], _ table: [WPEResourceID: WPELogicalResource])
+                      _ lifetimes: [WPEResourceID: ClosedRange<Int>], _ table: [WPEResourceID: WPELogicalResource],
+                      _ downgraded: Set<WPEResourceID>)
     -> ([WPEResourceID: WPEResourceStorage], [[WPEResourceID]]) {
     var storage: [WPEResourceID: WPEResourceStorage] = [:]
     var scratch: [(id: WPEResourceID, range: ClosedRange<Int>)] = []
     for resource in table.values {
-        switch resource.lifetime {
-        case .persistent, .output:
+        switch downgraded.contains(resource.id) ? .frameTransient : resource.lifetime {
+        case .persistent, .pooled, .output:
             storage[resource.id] = .dedicated
         case .imported:
             storage[resource.id] = .external

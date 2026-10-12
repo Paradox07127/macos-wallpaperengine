@@ -120,7 +120,7 @@ struct ParityPostProcessTests {
         #expect(sequence(frame) == expected + ["present backbuffer"])
         let mip = try #require(frame.resources.first { $0.id == "_rt_MipMappedFrameBuffer" })
         #expect(mip.width == 3840 && mip.height == 2160 && mip.mipCount == 12)
-        #expect(mip.format == config.backbufferFormat && mip.lifetime == .persistent)
+        #expect(mip.format == config.backbufferFormat && mip.lifetime == .pooled)
         try verifyCompilation(frame)
     }
 
@@ -229,9 +229,7 @@ struct ParityPostProcessTests {
 
     private func verifyCompilation(_ frame: WPEParityPostProcessFrame, msaaSamples: Int = 1) throws {
         let graph = try compile(frame, msaaSamples: msaaSamples)
-        for resource in frame.resources where resource.lifetime == .persistent {
-            #expect(graph.storage[resource.id] == .dedicated)
-        }
+        ParityGraphStream.expectPooledStorage(graph)
         for resource in frame.resources where resource.lifetime == .frameTransient
             && resource.id != "backbufferDepth" {
             guard case .aliased = graph.storage[resource.id] else {

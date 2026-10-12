@@ -99,10 +99,10 @@ struct ParityFrameComposerTests {
             scene: ParitySceneFixtures.scene(layers, msaaSamples: post.msaaSampleCount), post: post
         )
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
-        for resource in frame.resources where resource.lifetime == .persistent {
-            #expect(graph.storage[resource.id] == .dedicated, "\(resource.id)")
+        ParityGraphStream.expectPooledStorage(graph)
+        for resource in frame.resources where resource.id.rawValue.hasPrefix("sc.") {
+            #expect(graph.storage[resource.id] != .dedicated, "\(resource.id)")
         }
-        #expect(graph.storage["backbufferDepth"] == .dedicated)
     }
 
     @Test func hdrBackbufferFormatReachesTheSceneTargets() throws {
@@ -136,9 +136,10 @@ struct ParityFrameComposerTests {
         let layout = graph.heapLayout { (size: bytes($0), alignment: 65536) }
         let members = graph.allocationGroups.joined().compactMap { graph.resources[$0] }
         let memberBytes = members.reduce(0) { $0 + bytes($1) }
-        let dedicated = graph.storage.values.count { $0 == .dedicated }
+        let dedicated = graph.storage.filter { $0.value == .dedicated }.compactMap { graph.resources[$0.key] }
         print("[frame-memory] heapBytes=\(layout.size) memberBytes=\(memberBytes) heapMembers=\(members.count) "
-            + "dedicatedResources=\(dedicated)")
+            + "dedicatedResources=\(dedicated.map(\.id.rawValue).sorted()) "
+            + "dedicatedBytes=\(dedicated.reduce(0) { $0 + bytes($1) })")
         #expect(layout.size < memberBytes)
     }
 

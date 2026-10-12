@@ -1,4 +1,5 @@
 import LiveWallpaperProWPE
+import Testing
 
 /// Builders for synthetic D3D11-style operation streams.
 enum ParityGraphStream {
@@ -50,6 +51,22 @@ enum ParityGraphStream {
     static func compile(_ resources: [WPELogicalResource],
                         _ operations: [WPERenderOperation]) throws -> WPECompiledRenderGraph {
         try WPERenderGraphCompiler.compile(resources: resources, operations: operations)
+    }
+
+    /// A pooled resource is dedicated exactly when its frame-entry contents are read or one of its mips is never written.
+    static func expectPooledStorage(_ graph: WPECompiledRenderGraph,
+                                    sourceLocation: SourceLocation = #_sourceLocation) {
+        for resource in graph.resources.values where resource.lifetime == .pooled {
+            let id = resource.id
+            let readsEntry = graph.steps.contains { step in
+                step.reads.contains { $0.subresource.resource == id && $0.revision == 0 }
+            }
+            let covered = (0 ..< resource.mipCount).allSatisfy { mip in
+                graph.accesses.contains { $0.writes.contains { $0.subresource == WPESubresource(id, mip: mip) } }
+            }
+            #expect((graph.storage[id] == .dedicated) == (readsEntry || !covered), "\(id)",
+                    sourceLocation: sourceLocation)
+        }
     }
 
     static func depends(_ graph: WPECompiledRenderGraph, _ consumer: Int, on producer: Int, _ resource: WPEResourceID,
