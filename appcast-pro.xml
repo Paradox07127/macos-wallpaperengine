@@ -7,27 +7,35 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.7</title>
-      <pubDate>Sun, 11 Oct 2026 09:47:48 +0000</pubDate>
-      <sparkle:version>0.8.7</sparkle:version>
-      <sparkle:shortVersionString>0.8.7</sparkle:shortVersionString>
+      <title>Version 0.8.8</title>
+      <pubDate>Mon, 12 Oct 2026 18:36:53 +0000</pubDate>
+      <sparkle:version>0.8.8</sparkle:version>
+      <sparkle:shortVersionString>0.8.8</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Settings › Advanced has a Share anonymous hardware info switch, off by default</li>
+<li>Pro: scenes with Wallpaper Engine user shortcuts get a row for each shortcut in their settings — bind a website, an Apple Shortcut, a file, a folder or an app</li>
+<li>Pro: clicks on the desktop and on desktop icons reach the scene, so its buttons can run their shortcuts while the wallpaper stays click-through</li>
+<li>Pro: shortcut icon slots in a scene show the icon of the bound item</li>
+<li>Pro: more Wallpaper Engine scene scripts work — scripts can show and hide effects and change their settings, and keyframed scale and rotation animate</li>
+</ul>
+<p><strong>Improvements</strong></p>
+<ul>
+<li>Pro: scene Interaction is on by default — only a scene's clickable objects take clicks, the rest of the desktop works as usual</li>
+<li>Pro: with Interaction off, desktop clicks no longer reach the scene</li>
+<li>Pro: the Workshop downloads sheet says what is missing and offers Connect Steam; the subscription check can choose the Steam library folder again</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Paused video wallpapers keep their color adjustments and wide-gamut colors after they sleep in the background</li>
-<li>Choosing a Workshop scene or applying a scheme to a paused display starts it playing, the same as picking from the library</li>
-<li>Wallpaper setups saved for disconnected displays are kept when one of them points to a missing file</li>
-<li>Local web wallpapers whose file names contain % escapes load the right file</li>
-<li>Pro: importing a package that contains a named pipe or other special file no longer hangs</li>
+<li>Pro: scenes whose image shaders use the layer color no longer render black</li>
+<li>Pro: object brightness, particle tint and particle transparency match Wallpaper Engine</li>
+<li>Pro: image layers with a normal map no longer turn partly transparent</li>
+<li>Pro: outline effects and some other shaders compile again</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.7">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.7">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.8">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.8">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.7/Loomscreen-Pro-0.8.7.dmg" type="application/octet-stream" sparkle:edSignature="g0hpNQrwoNhKTzoYAtwMyvIPhbCg+crf2Y7yAHMDm8u+s55VnYYpO4OXfJuQ2zw4LGr0XvI5ik4NDijYRLPvCg==" length="11035699" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.8/Loomscreen-Pro-0.8.8.dmg" type="application/octet-stream" sparkle:edSignature="sX6bY9hG6XeyiP0957P7OuEZmuv3xvlBOItYwT7/HigAMkCuWQw3/gJ/+wq5TZEFPKYY52JP/+mCs2f7kBhZCw==" length="11140287" />
     </item>
   </channel>
 </rss>

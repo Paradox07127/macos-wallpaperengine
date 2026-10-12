@@ -25,8 +25,8 @@ what shipped at that time; current behavior is documented in `docs/`.
   wallpaper stays click-through, so a scene's buttons can run their shortcuts.
 - Pro: shortcut icon slots in a scene show the icon of the bound item.
 - Pro: SceneScript gains `thisScene.getLayerByID`, `getEffect` with effect
-  visibility and material properties, more `IAnimation` properties, `IModelData`,
-  `registerAsset` and `setParent`. Keyframed layer scale and angles animate.
+  visibility and material properties, and more `IAnimation` properties.
+  Keyframed layer scale and angles animate.
 
 ### Changed
 
