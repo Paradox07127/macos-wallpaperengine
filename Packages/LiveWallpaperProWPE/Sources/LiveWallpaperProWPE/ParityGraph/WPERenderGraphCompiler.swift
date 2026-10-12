@@ -347,7 +347,8 @@ private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized]
             let lifetime = table[attachment.resource]?.lifetime
             let needed = exit.map { exit in
                 readers[exit, default: []].contains { $0 > index }
-                    || (lifetime != .frameTransient && versions.final[attachment] == exit)
+                    // A subresource never written this frame has no `final` entry; its entry version is final.
+                    || (lifetime != .frameTransient && (versions.final[attachment] ?? exit) == exit)
             } ?? false
             let store: WPEStoreAction = switch (builder.resolves[attachment], needed) {
             case let (destination?, true): .storeAndMultisampleResolve(into: destination)

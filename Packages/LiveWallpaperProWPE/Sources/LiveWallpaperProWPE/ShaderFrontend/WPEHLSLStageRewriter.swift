@@ -31,7 +31,7 @@ enum WPEHLSLStageRewriter {
 
     static func rewrite(
         _ text: [UInt8],
-        stage: WPEShaderStage,
+        stage: WPEHLSLStage,
         combos: WPEShaderMacros,
         link: inout [WPEHLSLDecl]
     ) throws -> [UInt8] {
@@ -188,7 +188,7 @@ enum WPEHLSLStageRewriter {
     /// The varying list flows VS -> GS -> PS: the VS fills it, a GS reads it as inputs and replaces it with
     /// its `out` declarations, and the PS uses it in place of its own declarations.
     private static func linkVaryings(
-        _ stage: WPEShaderStage,
+        _ stage: WPEHLSLStage,
         _ varyings: [WPEHLSLDecl],
         link: inout [WPEHLSLDecl]
     ) -> [WPEHLSLDecl] {
@@ -239,7 +239,7 @@ enum WPEHLSLStageRewriter {
     }
 
     private static func mainSignature(
-        _ stage: WPEShaderStage,
+        _ stage: WPEHLSLStage,
         _ text: [UInt8],
         extra: [UInt8],
         varyings: [WPEHLSLDecl],
@@ -322,7 +322,7 @@ enum WPEHLSLStageRewriter {
     }
 
     private static func wrapMain(
-        _ stage: WPEShaderStage,
+        _ stage: WPEHLSLStage,
         _ text: [UInt8],
         signature: [UInt8],
         epilogue: [UInt8],
@@ -457,7 +457,7 @@ enum WPEHLSLStageRewriter {
     }
 
     private static func header(
-        _ stage: WPEShaderStage,
+        _ stage: WPEHLSLStage,
         _ text: [UInt8],
         attributes: [Int],
         varyings: [WPEHLSLDecl],

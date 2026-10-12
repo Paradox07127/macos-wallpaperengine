@@ -49,6 +49,19 @@ struct ParityGraphLoadStoreTests {
         #expect(try #require(transient.encoders[0].attachment("P")).store == .dontCare)
     }
 
+    @Test func persistentDepthTestedButNotWrittenKeepsPreviousFrame() throws {
+        let resources = [S.persistent("P"), S.persistent("D", format: "depth32float")]
+        let readOnly = try S.compile(resources, [S.bind("P", depth: "D"),
+                                                 S.draw(overwrites: true, depthTest: true, depthWrite: false)])
+        let depth = try #require(readOnly.encoders[0].attachment("D"))
+        #expect(depth.load == .load)
+        #expect(depth.store == .store)
+
+        let written = try S.compile(resources, [S.bind("P", depth: "D"),
+                                                S.draw(overwrites: true, depthTest: true, depthWrite: true)])
+        #expect(try #require(written.encoders[0].attachment("D")).store == .store)
+    }
+
     @Test func blendReadingDestinationLoadsPreviousContents() throws {
         func compile(_ last: WPERenderOperation) throws -> WPECompiledRenderGraph {
             try S.compile([S.transient("A"), S.transient("C")],

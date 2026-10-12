@@ -316,6 +316,7 @@ std::string signature(const JSONView& raw, const std::string& key) {
         auto type = field.member("elementType"), columns = field.member("columnCount");
         require(!name.empty() && !index.empty() && !type.empty() && !columns.empty(),
                 "MSC signature metadata incomplete: " + key);
+        std::transform(type.begin(), type.end(), type.begin(), [](unsigned char c) { return std::tolower(c); });
         result.push_back("{\"name\":" + name + ",\"index\":" + index
             + ",\"elementType\":" + type + ",\"columns\":" + columns + '}');
     }
@@ -384,9 +385,11 @@ std::vector<uint8_t> convert(MSC& msc, const Options& options, IDxcBlob* dxil, R
         msc.IRShaderReflectionCopyJSONString(info.get()), msc.IRShaderReflectionReleaseString);
     require(bool(raw), "MSC JSON reflection unavailable");
     reflection.msc = raw.get();
-    JSONView json(reflection.msc);
-    reflection.inputs = signature(json, "vertex_inputs");
-    reflection.outputs = signature(json, "vertex_outputs");
+    // MSC nests the stage signatures under "state".
+    const std::string stateText = JSONView(reflection.msc).member("state");
+    JSONView state(stateText);
+    reflection.inputs = signature(state, "vertex_inputs");
+    reflection.outputs = signature(state, "vertex_outputs");
     std::vector<IRResourceLocation> locations(msc.IRShaderReflectionGetResourceCount(info.get()));
     if (!locations.empty()) msc.IRShaderReflectionGetResourceLocations(info.get(), locations.data());
     std::vector<std::string> arguments;

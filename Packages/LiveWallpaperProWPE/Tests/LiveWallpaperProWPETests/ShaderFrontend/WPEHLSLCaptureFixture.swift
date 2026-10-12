@@ -44,7 +44,7 @@ struct WPEHLSLCaptureFixture {
 
         var roots: [String] = []
         var stageFiles: [String: URL] = [:]
-        let order: [WPEShaderStage] = [.vertex, .geometry, .fragment]
+        let order: [WPEHLSLStage] = [.vertex, .geometry, .fragment]
         for stage in order {
             guard let member = members[stage] else { continue }
             if let first = member.roots.first, !roots.contains(first) {
@@ -82,7 +82,7 @@ struct WPEHLSLCaptureFixture {
         return (expected, actual)
     }
 
-    private func stage(_ entry: Entry?) -> WPEShaderStage? {
+    private func stage(_ entry: Entry?) -> WPEHLSLStage? {
         switch entry?.target {
         case "vs_5_0": .vertex
         case "gs_5_0": .geometry
@@ -93,11 +93,11 @@ struct WPEHLSLCaptureFixture {
 
     /// check.py `group`: a PS takes the VS (or VS+GS) right before it; a VS right after its own
     /// VS[,GS],PS group with the same define block is the second compile of that VS.
-    private func group(_ entry: Entry) throws -> (WPEShaderStage, [WPEShaderStage: Entry], Bool) {
+    private func group(_ entry: Entry) throws -> (WPEHLSLStage, [WPEHLSLStage: Entry], Bool) {
         let n = entry.n
         guard let own = stage(entry) else { throw FixtureError.unknownTarget(entry.target) }
         let p1 = byNumber[n - 1], p2 = byNumber[n - 2], p3 = byNumber[n - 3]
-        var members: [WPEShaderStage: Entry] = [own: entry]
+        var members: [WPEHLSLStage: Entry] = [own: entry]
         switch own {
         case .fragment:
             if stage(p1) == .geometry, let p1, let p2 {

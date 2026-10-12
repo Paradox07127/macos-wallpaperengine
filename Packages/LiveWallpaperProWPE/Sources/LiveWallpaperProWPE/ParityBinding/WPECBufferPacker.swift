@@ -20,7 +20,7 @@ public struct WPEFloatMatrix: Sendable {
 
 public indirect enum WPECBufferValue: Sendable {
     case float(Float), int(Int32), uint(UInt32), bool(Bool)
-    case vector([Float]), matrix(WPEFloatMatrix), array([Self])
+    case vector([Float]), intVector([Int32]), uintVector([UInt32]), matrix(WPEFloatMatrix), array([Self])
 }
 
 public struct WPECBufferPacker: Sendable {
@@ -95,6 +95,14 @@ public struct WPECBufferPacker: Sendable {
                 case let .vector(value):
                     words = value.map(\.bitPattern)
                     type = .float
+                    expectedClass = .vector
+                case let .intVector(value):
+                    words = value.map { UInt32(bitPattern: $0) }
+                    type = .int
+                    expectedClass = .vector
+                case let .uintVector(value):
+                    words = value
+                    type = .uint
                     expectedClass = .vector
                 case .matrix, .array: throw WPEParityBindingError.shapeMismatch(name)
                 }
@@ -171,6 +179,22 @@ public extension WPECBufferPacker {
 
     mutating func write(_ values: [SIMD4<Float>], to name: String) throws {
         try write(.array(values.map { .vector([$0.x, $0.y, $0.z, $0.w]) }), to: name)
+    }
+
+    mutating func write<V: SIMD>(_ value: V, to name: String) throws where V.Scalar == Int32 {
+        try write(.intVector(value.indices.map { value[$0] }), to: name)
+    }
+
+    mutating func write<V: SIMD>(_ values: [V], to name: String) throws where V.Scalar == Int32 {
+        try write(.array(values.map { value in .intVector(value.indices.map { value[$0] }) }), to: name)
+    }
+
+    mutating func write<V: SIMD>(_ value: V, to name: String) throws where V.Scalar == UInt32 {
+        try write(.uintVector(value.indices.map { value[$0] }), to: name)
+    }
+
+    mutating func write<V: SIMD>(_ values: [V], to name: String) throws where V.Scalar == UInt32 {
+        try write(.array(values.map { value in .uintVector(value.indices.map { value[$0] }) }), to: name)
     }
 
     mutating func write(_ value: WPEFloatMatrix, to name: String) throws {

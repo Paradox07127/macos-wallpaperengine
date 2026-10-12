@@ -47,6 +47,26 @@ final class ParityBindingPackingTests: XCTestCase {
         XCTAssertNil(layout["missing"])
     }
 
+    func testIntegerVectorsAndArraysPreserveBits() throws {
+        let layout = try layout([
+            variable("i4", size: 16, type: .int, kind: .vector, columns: 4),
+            variable("u2", offset: 16, size: 8, type: .uint, kind: .vector, columns: 2),
+            variable("packed", offset: 32, size: 32, type: .int, kind: .vector, columns: 4, elements: 2),
+        ], size: 64)
+        var packer = WPECBufferPacker(layout: layout)
+        try packer.write(SIMD4<Int32>(-1, 2, Int32.min, 4), to: "i4")
+        try packer.write(SIMD2<UInt32>(UInt32.max, 7), to: "u2")
+        try packer.write([SIMD4<Int32>(1, 2, 3, 4), SIMD4<Int32>(5, 6, 7, 8)], to: "packed")
+        XCTAssertEqual((0 ..< 4).map { word(packer.bytes, $0 * 4) }, [0xFFFF_FFFF, 2, 0x8000_0000, 4])
+        XCTAssertEqual([word(packer.bytes, 16), word(packer.bytes, 20)], [0xFFFF_FFFF, 7])
+        XCTAssertEqual((0 ..< 8).map { word(packer.bytes, 32 + $0 * 4) }, [1, 2, 3, 4, 5, 6, 7, 8])
+        let before = packer.bytes
+        XCTAssertThrowsError(try packer.write(SIMD4<Float>(1, 2, 3, 4), to: "i4"))
+        XCTAssertThrowsError(try packer.write(SIMD4<UInt32>(1, 2, 3, 4), to: "i4"))
+        XCTAssertThrowsError(try packer.write(SIMD4<Int32>(1, 2, 3, 4), to: "u2"))
+        XCTAssertEqual(packer.bytes, before)
+    }
+
     func testVectorsStayWithinRegisters() throws {
         var packer = try WPECBufferPacker(layout: layout([
             variable("two", offset: 8, size: 8, kind: .vector, columns: 2),

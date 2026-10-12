@@ -1,4 +1,4 @@
-public enum WPEShaderStage: Sendable, Hashable, CaseIterable {
+public enum WPEHLSLStage: Sendable, Hashable, CaseIterable {
     case vertex, geometry, fragment
 }
 
@@ -81,7 +81,7 @@ public struct WPEHLSLRewriter: Sendable {
         let loader = WPEShaderLoader(sources: sources)
         var link: [WPEHLSLDecl] = []
         var result = WPEHLSLProgram()
-        let stages: [(WPEShaderStage, String?)] = [
+        let stages: [(WPEHLSLStage, String?)] = [
             (.vertex, program.vertex), (.geometry, program.geometry), (.fragment, program.fragment),
         ]
         for (stage, name) in stages {
