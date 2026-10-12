@@ -82,6 +82,43 @@ struct WPEParityPropertyAnimationTests {
         #expect(animation.direction == -1)
     }
 
+    /// R27: WPE divides by a stored 1/fps for the frame and the fraction; these are its values at dt 1/60, including
+    /// the one-frame jumps at k = 6 and 10 and the last-bit differences from t·fps at k = 5 and 9.
+    @Test func samplingDividesByTheStoredFrameDurationAsWPEDoes() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 1), key(30, 0)]], fps: 30, length: 30), valueType: .float
+        ))
+        var values: [Float] = []
+        for _ in 0 ..< 10 {
+            animation.advance(dt: 1 / 60)
+            try values.append(#require(animation.value).x)
+        }
+        #expect(values == [0.98339605, 0.9667921, 0.9500709, 0.9333497, 0.91653657,
+                           0.8664166, 0.88307, 0.8664166, 0.8499504, 0.7997922])
+    }
+
+    /// R27 (1401a9f60): mirror adds the signed dt to t directly and reflects only at the ends.
+    @Test func mirrorStepsBackByExactlyDtUntilItReachesZero() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(30, 1)]], fps: 30, length: 30,
+                               options: ["mode": "mirror"]), valueType: .float
+        ))
+        let dt: Float = 1 / 60
+        while animation.direction > 0 {
+            animation.advance(dt: dt)
+        }
+        var reversed = 0
+        while animation.direction < 0 {
+            let before = animation.time
+            animation.advance(dt: dt)
+            if animation.direction < 0 {
+                #expect(animation.time == -dt + before)
+                reversed += 1
+            }
+        }
+        #expect(reversed > 50)
+    }
+
     @Test func singleClampsAndRetainsTheSpecifiedEndpointSampling() throws {
         let animation = try #require(WPEParityPropertyAnimation(
             property: property(channels: [[key(0, 0), key(4, 4)]], fps: 4, length: 4,

@@ -42,9 +42,11 @@ public final class WPEParityPropertyAnimation {
     public var value: SIMD4<Float>? {
         guard samples.count == valueType.rawValue else { return nil }
         let time = time
-        let frame = min(length - 1, max(0, Int(time * fps)))
+        // WPE divides by a stored 1/fps for both; t·fps rounds differently near frame boundaries (R27).
+        let frameDuration = 1 / fps
+        let frame = min(length - 1, max(0, Self.truncate(time / frameDuration)))
         let next = min(frame + 1, length)
-        let fraction = fmodf(time, 1 / fps) * fps
+        let fraction = fmodf(time, frameDuration) / frameDuration
         var result = SIMD4<Float>.zero
         for channel in samples.indices {
             result[channel] = samples[channel][frame] * (1 - fraction) + samples[channel][next] * fraction
@@ -186,15 +188,17 @@ public final class WPEParityPropertyAnimation {
                 travelledTime = dt
                 clockTime = fmodf(clockTime + dt, duration)
             case .mirror:
+                // 1401a9f60: the signed dt is added directly; only crossing an end reflects.
                 travelledTime = dt
-                let phase = clockDirection > 0 ? clockTime : 2 * duration - clockTime
-                let wrapped = fmodf(phase + dt, 2 * duration)
-                if wrapped >= duration {
-                    clockTime = 2 * duration - wrapped
+                let next = (clockDirection > 0 ? dt : -dt) + clockTime
+                if clockDirection > 0, next >= duration {
+                    clockTime = duration - fmodf(next, duration)
                     clockDirection = -1
-                } else {
-                    clockTime = wrapped
+                } else if clockDirection < 0, next <= 0 {
+                    clockTime = -fmodf(next, duration)
                     clockDirection = 1
+                } else {
+                    clockTime = next
                 }
             case .single:
                 clockTime = min(clockTime + dt, duration)
@@ -233,6 +237,11 @@ public final class WPEParityPropertyAnimation {
             }
             events[index].fired = fired
         }
+    }
+
+    /// cvttss2si: NaN and values outside Int32 give Int32.min, which the frame clamp turns into 0.
+    private static func truncate(_ value: Float) -> Int {
+        value >= -2_147_483_648 && value < 2_147_483_648 ? Int(value) : Int(Int32.min)
     }
 
     private static func number(_ raw: WPESceneJSONValue?) -> Float? {
