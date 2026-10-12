@@ -977,7 +977,11 @@ enum WPESceneScriptBaseclasses {
     defineGlobal("thisScene", safeScene);
     defineGlobal("thisLayer", createSafeObject("thisLayer"));
     defineGlobal("thisProperty", createSafeObject("thisProperty"));
-    defineGlobal("IModelData", createSafeCallable("IModelData"));
+    // vertexFormat constants; the bridge validates these exact strings.
+    class IModelData {}
+    [["POSITION", "position"], ["NORMAL", "normal"], ["TANGENT_SIGNED", "tangentSigned"], ["UV", "uv"], ["COLOR", "color"]]
+        .forEach(function (entry) { Object.defineProperty(IModelData, entry[0], { value: entry[1], enumerable: true }); });
+    defineGlobal("IModelData", IModelData);
     defineGlobal("getModel", modelAccessor);
     defineGlobal("getModelData", modelAccessor);
     defineGlobal("getLayer", createSafeCallable("getLayer"));

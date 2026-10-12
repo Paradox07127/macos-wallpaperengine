@@ -9,9 +9,19 @@ struct WPECreatedLayerBridgeConfiguration: Sendable {
     let imagePaths: Set<String>
     let orderedLayerNames: [String]
     let allowsSorting: Bool
+    /// Materials the scene's scripts pass to `engine.registerAsset`.
+    let materialPaths: Set<String>
 
     func resolvedImagePath(_ path: String, workshopID: String?) -> String? {
-        let matches = Set(Self.assetCandidates(path, workshopID: workshopID)).intersection(imagePaths)
+        Self.uniqueMatch(path, workshopID: workshopID, in: imagePaths)
+    }
+
+    func resolvedMaterialPath(_ path: String, workshopID: String?) -> String? {
+        Self.uniqueMatch(path, workshopID: workshopID, in: materialPaths)
+    }
+
+    private static func uniqueMatch(_ path: String, workshopID: String?, in admitted: Set<String>) -> String? {
+        let matches = Set(assetCandidates(path, workshopID: workshopID)).intersection(admitted)
         // Namespace/raw ambiguity requires an oracle decision, not a guessed asset.
         return matches.count == 1 ? matches.first : nil
     }
@@ -29,8 +39,9 @@ struct WPECreatedLayerBridgeConfiguration: Sendable {
         return result
     }
 
-    init(imagePaths: Set<String>, orderedLayerNames: [String], allowsSorting: Bool) {
+    init(imagePaths: Set<String>, orderedLayerNames: [String], allowsSorting: Bool, materialPaths: Set<String> = []) {
         self.imagePaths = imagePaths
+        self.materialPaths = materialPaths
         self.orderedLayerNames = orderedLayerNames
         self.allowsSorting = allowsSorting && Set(orderedLayerNames).count == orderedLayerNames.count
             && !orderedLayerNames.contains(where: { $0.isEmpty || $0.hasPrefix("__created_") })

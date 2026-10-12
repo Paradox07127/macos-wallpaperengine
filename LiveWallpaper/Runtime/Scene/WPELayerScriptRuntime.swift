@@ -80,6 +80,10 @@ struct WPECreatedLayerScriptState: Sendable, Equatable {
     var parallaxDepth: SIMD2<Double>?
     var sortIndex: Int?
     var perspective: Bool?
+    /// nil for image layers.
+    var model: WPESceneScriptModelSnapshot?
+    /// Set by `setParent(_, false)`: local transforms stay as assigned and follow this layer.
+    var parentObjectID: String?
 }
 
 /// IEffect writes. `materialProperties` is keyed by the shader's `"material"` alias, not the uniform name.
@@ -1402,6 +1406,8 @@ final class WPELayerScriptInstance {
                 let now = WPEScriptFaultPolicy.monotonicNow()
                 guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return }
                 didThrow = false
+                isInsideUpdate = true
+                defer { isInsideUpdate = false }
                 switch outputMode {
                 case .layerState:
                     // update(value) receives the live current value; its return becomes the new one. The live property is the argument, not the last return — replaying a return pinned the seed, and thisLayer.visible = !value re-inverted every frame.
@@ -1715,11 +1721,14 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate var pendingCreatedDestruction: Set<String> = []
     fileprivate var destroyedCreatedKeys: Set<String> = []
     fileprivate var createdLayerCounter = 0
-    fileprivate let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
+    let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
+    var modelLayers = WPESceneScriptModelLayerState()
+    /// True only while `update()` runs, where `replaceData` must throw.
+    var isInsideUpdate = false
     fileprivate var currentLayerOrder: [String]
     fileprivate var didSortLayers = false
     private var authoredLayerOrderMutationAllowed = false
-    fileprivate var scriptWorkshopID: String?
+    var scriptWorkshopID: String?
     fileprivate var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
     fileprivate var assignedEffects: [String: [String: WPELayerScriptEffectMutation]] = [:]
     /// Keyed "layerKey\u{1}effectID" so repeated getEffect calls return the same object.
@@ -1782,6 +1791,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         var transformVectors: [String: [OwnTransformField: SIMD3<Double>]]
         let createdAngles: [String: SIMD3<Double>]
         let createdHandles: [String: CreatedHandleSnapshot]
+        let modelLayers: WPESceneScriptModelLayerState
     }
 
     private var evaluationJournal: EvaluationJournal?
@@ -1855,7 +1865,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             created: createdLayers, destroyed: destroyedCreatedKeys,
             pendingDestruction: pendingCreatedDestruction, order: currentLayerOrder, didSort: didSortLayers,
             transformVectors: transformVectorSnapshots(), createdAngles: createdAngles,
-            createdHandles: createdHandleSnapshots()
+            createdHandles: createdHandleSnapshots(), modelLayers: modelLayers
         )
         particleBridge.beginEvaluation()
         cameraBridge.beginEvaluation()
@@ -1945,6 +1955,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         assignedSoundVolume = previous.soundVolume
         createdLayers = previous.created
         createdAngles = previous.createdAngles
+        modelLayers.rollBack(to: previous.modelLayers)
         destroyedCreatedKeys = previous.destroyed
         pendingCreatedDestruction = previous.pendingDestruction
         currentLayerOrder = previous.order
@@ -2055,19 +2066,24 @@ class WPELayerScriptBridge: @unchecked Sendable {
                 reportUnsupportedLayerOperation("createLayer is not supported with multi-owner authored-layer ordering")
                 return nil
             }
+            let modelID = createdLayerModelID(spec)
             let requestedImage: String?
             if spec.isString {
                 requestedImage = spec.toString()
             } else if spec.isObject {
-                requestedImage = spec.objectForKeyedSubscript("image")?.isString == true
-                    ? spec.objectForKeyedSubscript("image")?.toString() : nil
+                requestedImage = createdLayerAssetPath(spec) ?? (spec.objectForKeyedSubscript("image")?.isString == true
+                    ? spec.objectForKeyedSubscript("image")?.toString() : nil)
             } else {
                 reportUnsupportedLayerOperation("createLayer requires an image path or image object")
                 return nil
             }
-            if createdLayerBridge != nil, requestedImage == nil {
-                reportUnsupportedLayerOperation("createLayer supports prepared image assets only")
+            if createdLayerBridge != nil, requestedImage == nil, modelID == nil {
+                reportUnsupportedLayerOperation("createLayer supports prepared image assets or model data only")
                 return nil
+            }
+            if let modelID, !admitsModelLayer(modelID) {
+                reportUnsupportedLayerOperation("createLayer model material is outside the registered material subset")
+                return detachedLayerHandle(spec: spec, in: context)
             }
             let resolvedImage: String?
             if let requestedImage, let bridge = createdLayerBridge {
@@ -2094,6 +2110,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
             let handle = makeLayerHandle(key: key, in: context)
             createdLayerCounter += 1
             createdLayers.append((key, handle, configuration))
+            if let modelID {
+                modelLayers.bind(layer: key, to: modelID)
+            }
             currentLayerOrder.append(key)
             if spec.isObject {
                 if let name = spec.objectForKeyedSubscript("name"), name.isString {
@@ -2176,6 +2195,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         scene.setObject(on, forKeyedSubscript: "on" as NSString)
         cameraBridge.install(on: scene, in: context)
         installCameraParallaxAccessors(on: scene, in: context)
+        installModelDataAPI(on: scene, in: context)
         context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
         context.setObject(scene, forKeyedSubscript: "scene" as NSString)
     }
@@ -2222,7 +2242,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
     }
 
-    fileprivate func layerKey(_ value: JSValue) -> String? {
+    func layerKey(_ value: JSValue) -> String? {
         if value.isString {
             guard let key = value.toString() else { return nil }
             if let created = createdLayers.first(where: {
@@ -2286,6 +2306,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate func finishCreatedLayerDestruction() {
         guard !pendingCreatedDestruction.isEmpty else { return }
         createdLayers.removeAll { pendingCreatedDestruction.contains($0.key) }
+        modelLayers.removeLayers(pendingCreatedDestruction)
         pendingCreatedDestruction.removeAll(keepingCapacity: true)
     }
 
@@ -2300,7 +2321,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         return layerHandle(named: key, in: context)
     }
 
-    fileprivate func reportUnsupportedLayerOperation(_ message: String) {
+    func reportUnsupportedLayerOperation(_ message: String) {
         guard !hasLoggedUnsupportedLayerOperation else { return }
         hasLoggedUnsupportedLayerOperation = true
         Logger.warning("[SceneScript] unsupported dynamic layer operation: \(message)", category: .wpeRender)
@@ -2317,7 +2338,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         return handle
     }
 
-    fileprivate func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
+    func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
         if key == Self.ownKey {
             if let ownObjectID, let info = shared?.layers.first(where: { $0.id == ownObjectID }) {
                 return info
@@ -2399,6 +2420,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let parentID = info?.parentID
         let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self else { return nil }
+            if let parentID = modelLayers.layerParents[key], let context, let shared,
+               let parent = shared.layers.first(where: { $0.id == parentID }) {
+                return self.handle(forLayerKey: shared.layerHandleKey(parent), in: context)
+            }
             guard let parentName, let context else { return neutralLayerStubCache }
             // Through handle(forLayerKey:) so a parent that is this entry's own layer comes back as thisLayer.
             let parentKey = parentID.flatMap { id in shared?.layers.first { $0.id == id } }
@@ -2406,6 +2431,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             return self.handle(forLayerKey: parentKey, in: context)
         }
         handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        installParentSetter(on: handle, key: key, isCreated: key.hasPrefix(Self.createdKeyPrefix))
         // Child layers in paint order, matched on the object id — names repeat.
         // Empty array for phantom/childless layers: `for..of null` throws and
         // guarded `if (getLayer(x))` blocks still iterate the minted handle.
@@ -2924,7 +2950,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
                     size: new Vec2(0, 0), text: '', volume: 1,
                     play: none, stop: none, pause: none, getTransformMatrix: none,
                     isPlaying: () => false,
-                    getParent: () => parent,
+                    getParent: () => parent, setParent: none,
                     getChildren: () => [],
                 };
                 for (const method of ['getVideoTexture', 'getAnimationLayer', 'getTextureAnimation', 'getAnimation']) {
@@ -3182,7 +3208,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
             alignment: presentationMutations[key]?.alignment,
             parallaxDepth: presentationMutations[key]?.parallaxDepth,
             sortIndex: didSortLayers ? currentLayerOrder.firstIndex(of: key) : nil,
-            perspective: presentationMutations[key]?.perspective
+            perspective: presentationMutations[key]?.perspective,
+            model: modelLayers.snapshot(forLayer: key, perspective: presentationMutations[key]?.perspective ?? false),
+            parentObjectID: modelLayers.layerParents[key]
         )
     }
 
