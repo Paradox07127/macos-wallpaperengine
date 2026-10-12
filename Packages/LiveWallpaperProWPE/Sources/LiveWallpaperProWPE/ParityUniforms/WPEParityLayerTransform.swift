@@ -63,7 +63,7 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
         self.perspective = perspective
     }
 
-    /// Image layers and groups of a document with their local (not parent-baked) transforms.
+    /// Image layers, groups and particle systems of a document with their local (not parent-baked) transforms.
     public static func layers(document: WPESceneDocument) -> [Self] {
         let ortho = document.general.orthogonalProjection
         let canvas = SIMD2(Float(ortho.width), Float(ortho.height))
@@ -83,6 +83,11 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
             Self(id: group.id, parentID: group.parentObjectID, origin: SIMD3(group.localOrigin),
                  angles: SIMD3(group.localAngles), scale: SIMD3(group.localScale),
                  parallaxDepth: SIMD2(group.parallaxDepth))
+        }
+        layers += document.particleObjects.map { particle in
+            Self(id: particle.id, parentID: particle.parentObjectID, origin: SIMD3(particle.localOrigin),
+                 angles: SIMD3(particle.localAngles), scale: SIMD3(particle.localScale),
+                 parallaxDepth: SIMD2(particle.parallaxDepth))
         }
         return layers
     }

@@ -343,6 +343,7 @@ public enum WPESceneDocumentParser {
                let object = parseParticleObject(
                    entry,
                    transform: transform,
+                   local: localTransform(in: entry, scriptOrigins: scriptResolvedOrigins),
                    effectiveVisible: effectiveVisible,
                    diagnostics: &diagnostics
                ) {
@@ -1498,6 +1499,7 @@ public enum WPESceneDocumentParser {
     private static func parseParticleObject(
         _ dict: [String: Any],
         transform: SceneObjectTransform,
+        local: SceneObjectTransform,
         effectiveVisible: Bool? = nil,
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPESceneParticleObject? {
@@ -1540,7 +1542,10 @@ public enum WPESceneDocumentParser {
             alphaAnimation: alphaValue.animation,
             color: color,
             parallaxDepth: parallaxDepth,
-            instanceOverride: instanceOverride
+            instanceOverride: instanceOverride,
+            localOrigin: local.origin,
+            localScale: local.scale,
+            localAngles: local.angles
         )
     }
 

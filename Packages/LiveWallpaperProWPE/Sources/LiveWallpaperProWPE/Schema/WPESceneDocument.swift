@@ -739,8 +739,15 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
     /// Per-axis camera-parallax depth (Vec2 "x y"). "1 0" horizontal only, "0 1" vertical only. `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
     public let instanceOverride: WPESceneParticleInstanceOverride?
+    /// Own transform relative to `parentObjectID`; `origin`/`scale`/`angles` are parent-resolved.
+    public let localOrigin: SIMD3<Double>
+    public let localScale: SIMD3<Double>
+    public let localAngles: SIMD3<Double>
 
-    public init(id: String, name: String, parentObjectID: String? = nil, particleRelativePath: String, origin: SIMD3<Double>, scale: SIMD3<Double>, angles: SIMD3<Double>, visible: Bool, alpha: Double, alphaAnimation: WPESceneAnimatedValue? = nil, color: SIMD3<Double>, parallaxDepth: SIMD2<Double>, instanceOverride: WPESceneParticleInstanceOverride? = nil) {
+    public init(id: String, name: String, parentObjectID: String? = nil, particleRelativePath: String, origin: SIMD3<Double>, scale: SIMD3<Double>, angles: SIMD3<Double>, visible: Bool, alpha: Double, alphaAnimation: WPESceneAnimatedValue? = nil, color: SIMD3<Double>, parallaxDepth: SIMD2<Double>, instanceOverride: WPESceneParticleInstanceOverride? = nil, localOrigin: SIMD3<Double>? = nil, localScale: SIMD3<Double>? = nil, localAngles: SIMD3<Double>? = nil) {
+        self.localOrigin = localOrigin ?? origin
+        self.localScale = localScale ?? scale
+        self.localAngles = localAngles ?? angles
         self.id = id
         self.name = name
         self.parentObjectID = parentObjectID

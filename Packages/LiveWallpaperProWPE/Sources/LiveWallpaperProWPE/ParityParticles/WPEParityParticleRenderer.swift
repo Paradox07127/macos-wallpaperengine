@@ -1,3 +1,5 @@
+import simd
+
 /// One `renderer` entry; WPE draws each entry once per frame in JSON order (R16 Q3).
 public struct WPEParityParticleRenderer: Equatable, Sendable {
     public enum Kind: Equatable, Sendable { case sprite, spriteTrail, rope, ropeTrail }
@@ -12,6 +14,12 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
     public let subdivision: Int
     /// screen 0, upright 1, fixed 2 (D/1401c22e0.c:159-182).
     public let orientation: Int
+    /// `axis` normalised, (0, 1, 0) when absent or zero (D/1401c22e0.c:185-245).
+    public let axis: SIMD3<Float>
+    /// normalize(axis × (Y × axis)), (0, 0, −1) when axis ∥ Y (D/1401c22e0.c:246-288).
+    public let fixedUp: SIMD3<Float>
+    /// `flags` bit0: orientation axes are taken as world axes instead of being rotated by the model (R22 Q2).
+    public let worldAxes: Bool
     public let uvScrolling: Bool
     public let uvScale: Float
     public let fadeAlpha: Bool
@@ -39,6 +47,12 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
         case "screen": 0
         default: Int(JSON.number(json["orientation"]) ?? 0)
         }
+        let axis = JSON.vector(json["axis"]) ?? .zero
+        self.axis = axis == .zero ? SIMD3(0, 1, 0) : simd_normalize(axis)
+        fixedUp = self.axis.x == 0 && self.axis.z == 0
+            ? SIMD3(0, 0, -1)
+            : simd_normalize(simd_cross(self.axis, simd_cross(SIMD3(0, 1, 0), self.axis)))
+        worldAxes = Int(JSON.number(json["flags"]) ?? 0) & 1 != 0
         uvScrolling = JSON.flag(json["uvscrolling"])
         uvScale = JSON.number(json["uvscale"]) ?? 1
         fadeAlpha = JSON.flag(json["fadealpha"])
