@@ -50,9 +50,8 @@ struct WPEParityFramePlan {
     let width: Int
     let height: Int
 
-    init(document: WPESceneDocument, sceneDirectory: URL, assetRoots: [URL], settings: WPEParityProgramSettings,
+    init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
          width: Int, height: Int) throws {
-        let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory, assetRoots: assetRoots)
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
         var description = scene.scene
         var post = scene.postProcess

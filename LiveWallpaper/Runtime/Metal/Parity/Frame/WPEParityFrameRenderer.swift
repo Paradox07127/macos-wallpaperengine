@@ -51,7 +51,7 @@ final class WPEParityFrameRenderer {
     private let screen: WPEParityUniformScreen
     private let camera: WPEParityCamera
     private let cameraParallax: WPESceneCameraParallaxSettings
-    private var clock = WPEParityClock()
+    private(set) var clock = WPEParityClock()
     private var pointer = WPEParityUniformPointer()
     private var parallax = WPEParityUniformParallax()
     private var audio = WPEParityAudioSpectrum()
@@ -174,10 +174,11 @@ final class WPEParityFrameRenderer {
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
-    func encodeFrame(elapsed: Double,
+    /// `paused` ramps scene time down to a hold, and back up once it is false again.
+    func encodeFrame(elapsed: Double, paused: Bool = false,
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         let sceneTime = clock.time
-        clock.advance(elapsed: elapsed, ratePercent: 100, paused: false)
+        clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused)
         // Scene time, so a paused clock holds the pose.
         for id in puppets.keys {
             puppets[id]?.advance(dt: clock.time - sceneTime)

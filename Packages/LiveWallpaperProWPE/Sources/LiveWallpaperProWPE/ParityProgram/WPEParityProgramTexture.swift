@@ -26,13 +26,10 @@ public struct WPEParityProgramTextureHeader: Sendable, Equatable {
 }
 
 public extension WPEParityProgramAssets {
-    /// `materials/<name>.tex` under the first root that has it; render targets and missing files give nil.
+    /// `materials/<name>.tex` from the first source that has it; render targets and missing files give nil.
     func textureHeader(named name: String) -> WPEParityProgramTextureHeader? {
-        guard let url = url("materials/\(name).tex"), let file = try? FileHandle(forReadingFrom: url) else {
-            return nil
+        data("materials/\(name).tex").flatMap {
+            WPEParityProgramTextureHeader(bytes: Array($0.prefix(WPEParityProgramTextureHeader.byteCount)))
         }
-        defer { try? file.close() }
-        let bytes = (try? file.read(upToCount: WPEParityProgramTextureHeader.byteCount)) ?? nil
-        return bytes.flatMap { WPEParityProgramTextureHeader(bytes: Array($0)) }
     }
 }

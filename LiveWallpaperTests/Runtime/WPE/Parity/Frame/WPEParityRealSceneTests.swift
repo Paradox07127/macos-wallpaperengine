@@ -39,9 +39,10 @@ final class WPEParityRealSceneTests: XCTestCase {
             makeTransformScriptResolver: { _, _ in NoScriptResolver() }
         )
         // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
-        let plan = try WPEParityFramePlan(document: document, sceneDirectory: sceneDirectory,
-                                          assetRoots: [root.appending(path: "wpeassets"), wpeAssets],
-                                          settings: Self.settings, width: Self.width, height: Self.height)
+        let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
+                                            assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: Self.settings,
+                                          width: Self.width, height: Self.height)
 
         let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: cache) }

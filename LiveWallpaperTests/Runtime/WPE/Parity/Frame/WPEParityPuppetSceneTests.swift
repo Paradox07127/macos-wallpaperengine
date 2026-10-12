@@ -58,6 +58,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         print("scene \(Self.sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
             + "\(renderer.skipped.count) skipped")
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
+        XCTAssertEqual(renderer.executedDrawCount, 42)
         XCTAssertEqual(renderer.puppets.keys.sorted(), ["43", "47", "51"])
 
         try await renderFrame(renderer, elapsed: 0, label: "frame 0")
@@ -103,22 +104,24 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
-        let package = steam.appending(path: "workshop/content/431960/\(Self.sceneID)/scene.pkg")
-        let install = steam.appending(path: "common/wallpaper_engine/assets")
-        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        let folder = steam.appending(path: "workshop/content/431960/\(Self.sceneID)", directoryHint: .isDirectory)
+        let package = folder.appending(path: "scene.pkg")
+        let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
+            .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")
         guard FileManager.default.fileExists(atPath: package.path),
-              FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+              FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
             throw XCTSkip("Needs Workshop \(Self.sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
         }
-        // Named after the workshop id, which the video textures read from the scene directory.
-        let sceneDirectory = scratch.appending(path: Self.sceneID, directoryHint: .isDirectory)
-        try Self.unpack(package, into: sceneDirectory)
+        // Read in place from scene.pkg; the folder is named after the workshop id the video textures use.
+        let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
+                                                   projectRoot: folder, dependencyMounts: [],
+                                                   engineAssetsRootURL: engineRoot)
         let document = try WPESceneDocumentParser.parse(
-            data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:],
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
             makeTransformScriptResolver: { _, _ in NoScripts() }
         )
-        return try WPEParityFramePlan(document: document, sceneDirectory: sceneDirectory, assetRoots: [wpeAssets],
-                                      settings: WPEParityProgramSettings(), width: Self.width, height: Self.height)
+        return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
+                                      width: Self.width, height: Self.height)
     }
 
     private func makeRenderer(_ plan: WPEParityFramePlan, compiler: WPEParityHelperShaderCompiler, cache: URL,
@@ -200,30 +203,6 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)
         XCTAssertTrue(CGImageDestinationFinalize(destination))
-    }
-
-    /// PKGV: a length-prefixed version, the entry table (name, offset, size), then the entry bytes.
-    private static func unpack(_ package: URL, into root: URL) throws {
-        let bytes = try [UInt8](Data(contentsOf: package))
-        var offset = 0
-        func uint32() -> Int {
-            defer { offset += 4 }
-            return (0 ..< 4).reduce(0) { $0 | Int(bytes[offset + $1]) << (8 * $1) }
-        }
-        func string() -> String {
-            let count = uint32()
-            defer { offset += count }
-            return String(bytes: bytes[offset ..< offset + count], encoding: .utf8) ?? ""
-        }
-        _ = string()
-        let entries = (0 ..< uint32()).map { _ in (name: string(), offset: uint32(), size: uint32()) }
-        for entry in entries {
-            let url = root.appending(path: entry.name)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            let start = offset + entry.offset
-            try Data(bytes[start ..< start + entry.size]).write(to: url)
-        }
     }
 }
 
