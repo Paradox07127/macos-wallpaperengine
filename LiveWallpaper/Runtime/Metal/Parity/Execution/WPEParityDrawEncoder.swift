@@ -2,7 +2,7 @@
 import LiveWallpaperProWPE
 import Metal
 
-/// One non-indexed draw. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
+/// One draw, indexed with 16-bit indices when `indexBuffer` is set. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
 /// material keys; textures and samplers are shared. Each stage packs only the names its own reflection declares.
 struct WPEParityDraw {
     var pipeline: WPEParityPipeline
@@ -16,6 +16,8 @@ struct WPEParityDraw {
     var primitiveType: MTLPrimitiveType
     var vertexStart = 0
     var vertexCount: Int
+    var indexBuffer: MTLBuffer?
+    var indexCount = 0
 }
 
 struct WPEParityDrawEncoder {
@@ -49,15 +51,28 @@ struct WPEParityDrawEncoder {
 
         encoder.setVertexBuffer(draw.vertexBuffer, offset: draw.vertexBufferOffset,
                                 index: WPEParityMSCRuntime.vertexBufferBindPoint)
-        // IRRuntimeDrawParams is a union of IRRuntimeDrawArgument and the 20-byte indexed variant.
-        let drawParams: [UInt32] = [UInt32(draw.vertexCount), 1, UInt32(draw.vertexStart), 0, 0]
+        // IRRuntimeDrawParams is a union of IRRuntimeDrawArgument and the 20-byte IRRuntimeDrawIndexedArgument.
+        let drawParams: [UInt32] = if draw.indexBuffer != nil {
+            [UInt32(draw.indexCount), 1, 0, 0, 0]
+        } else {
+            [UInt32(draw.vertexCount), 1, UInt32(draw.vertexStart), 0, 0]
+        }
         drawParams.withUnsafeBytes {
             encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: WPEParityMSCRuntime.drawArgumentsBindPoint)
         }
-        withUnsafeBytes(of: WPEParityMSCRuntime.nonIndexedDraw) {
+        // IRMetalIndexToIRIndex: the Metal index type plus one.
+        let indexType = draw.indexBuffer == nil
+            ? WPEParityMSCRuntime.nonIndexedDraw : UInt16(MTLIndexType.uint16.rawValue + 1)
+        withUnsafeBytes(of: indexType) {
             encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: WPEParityMSCRuntime.uniformsBindPoint)
         }
-        encoder.drawPrimitives(type: draw.primitiveType, vertexStart: draw.vertexStart, vertexCount: draw.vertexCount)
+        if let indexBuffer = draw.indexBuffer {
+            encoder.drawIndexedPrimitives(type: draw.primitiveType, indexCount: draw.indexCount, indexType: .uint16,
+                                          indexBuffer: indexBuffer, indexBufferOffset: 0)
+        } else {
+            encoder.drawPrimitives(type: draw.primitiveType, vertexStart: draw.vertexStart,
+                                   vertexCount: draw.vertexCount)
+        }
     }
 
     /// Returns the arena offset of the stage's top-level argument buffer, or `nil` when it has no entries.

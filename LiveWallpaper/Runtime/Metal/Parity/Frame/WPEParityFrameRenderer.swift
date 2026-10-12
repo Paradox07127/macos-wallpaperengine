@@ -48,9 +48,7 @@ final class WPEParityFrameRenderer {
     private let executors: [WPEParityGraphExecutor]
     private let draws: [Int: WPEParityFrameDrawPlan]
     private let screen: WPEParityUniformScreen
-    private let view: simd_float4x4
-    private let eyePosition: SIMD3<Float>
-    private let canvas: SIMD2<Float>
+    private let camera: WPEParityCamera
     private let cameraParallax: WPESceneCameraParallaxSettings
     private var clock = WPEParityClock()
     private var pointer = WPEParityUniformPointer()
@@ -72,6 +70,11 @@ final class WPEParityFrameRenderer {
     /// Per encoded draw and stage, the binding description's constants.
     var constants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] {
         draws.mapValues(\.constants)
+    }
+
+    /// The engine matrices draw `operation` packs for the current frame.
+    func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
+        draws[operation]?.frameUniforms(parallax: parallax.smoothed)
     }
 
     var heapBytes: Int {
@@ -138,10 +141,7 @@ final class WPEParityFrameRenderer {
         self.executors = executors
         self.draws = draws
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
-        view = planner.view
-        eyePosition = planner.eyePosition
-        let ortho = plan.document.general.orthogonalProjection
-        canvas = SIMD2(Float(ortho.width), Float(ortho.height))
+        camera = planner.layers.camera
         cameraParallax = plan.document.general.cameraParallax
     }
 
@@ -153,7 +153,8 @@ final class WPEParityFrameRenderer {
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
             parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
-                             delay: Float(cameraParallax.delay), eye: .zero, ortho: canvas,
+                             delay: Float(cameraParallax.delay), eye: SIMD2(camera.eye.x, camera.eye.y),
+                             ortho: camera.size,
                              frametime: clock.frametime)
         }
         let silence = [Float](repeating: 0, count: 64)
@@ -163,7 +164,8 @@ final class WPEParityFrameRenderer {
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
         let uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
-                                             parallax: parallax, eyePosition: eyePosition, view: view, audio: audio)
+                                             parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
+                                             audio: audio)
         let variant = frameIndex % executors.count
         frameIndex += 1
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 }) { operation, textures in

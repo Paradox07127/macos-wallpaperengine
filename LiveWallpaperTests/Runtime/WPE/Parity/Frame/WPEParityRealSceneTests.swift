@@ -4,6 +4,7 @@ import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import XCTest
 
 /// Renders the two capture scenes whose programs match WPE byte for byte, through the real shader store.
@@ -102,6 +103,10 @@ final class WPEParityRealSceneTests: XCTestCase {
             }
         }
 
+        if sceneID == "3660962877" {
+            try assertObject935(plan: plan, renderer: renderer)
+        }
+
         for frame in 1 ... 3 {
             guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
                 return XCTFail("\(sceneID) frame \(frame) was skipped")
@@ -126,6 +131,38 @@ final class WPEParityRealSceneTests: XCTestCase {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "wpe-parity-\(sceneID).png")
         try writePNG(pixels, width: backbuffer.width, height: backbuffer.height, to: url)
         print("scene \(sceneID): frame 3 written to \(url.path)")
+    }
+
+    /// R8 Q4: object 935's layer-mesh draw packs MVP rows as cbuffer registers. The spec values assume V = I, which
+    /// this scene's camera gives; the package's camera and layer rules give the same matrix.
+    private func assertObject935(plan: WPEParityFramePlan, renderer: WPEParityFrameRenderer) throws {
+        let index = try XCTUnwrap(plan.frames[0].draws.first { _, draw in
+            if case let .scene(scene) = draw {
+                scene.objectID == "935" && scene.geometry == .layerMesh
+            } else {
+                false
+            }
+        }?.key)
+        let draw = try XCTUnwrap(renderer.uniforms(index), "operation \(index) was skipped")
+        guard case let .matrix(packed)? = draw.matrices.values["g_ModelViewProjectionMatrix"] else {
+            return XCTFail("no g_ModelViewProjectionMatrix")
+        }
+        let layers = WPEParityLayerTransformSet(document: plan.document,
+                                                renderTargetSize: SIMD2(Float(Self.width), Float(Self.height)))
+        let expected = layers.draw("935", kind: .layer, parallax: .zero).matrices.modelViewProjection
+        let spec: [[Float]] = [
+            [-1.15e-8, 1.02761e-3, 0, -0.805596], [-5.55231e-3, -6.7e-9, 0, -0.199726],
+            [0, 0, 2.5e-4, 0.5], [0, 0, 0, 1],
+        ]
+        for register in 0 ..< 4 {
+            for component in 0 ..< 4 {
+                let value = packed.columns[register][component]
+                XCTAssertEqual(value, spec[register][component], accuracy: 1e-5, "spec c\(register).\(component)")
+                XCTAssertEqual(value, expected[component][register], accuracy: 1e-5, "package c\(register).\(component)")
+            }
+        }
+        XCTAssertEqual((draw.matrices.projection * SIMD4<Float>(0, 0, -2000, 1)).z, 0, accuracy: 1e-6)
+        XCTAssertEqual((draw.matrices.projection * SIMD4<Float>(0, 0, 2000, 1)).z, 1, accuracy: 1e-6)
     }
 
     private func readBack(_ texture: MTLTexture, device: MTLDevice, queue: MTLCommandQueue) throws -> [UInt8] {

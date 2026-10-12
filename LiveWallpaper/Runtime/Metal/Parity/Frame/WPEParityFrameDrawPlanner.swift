@@ -17,10 +17,13 @@ struct WPEParityFrameDrawPlan {
     let depthStencil: WPEParityDepthStencilState
     let rasterizer: WPEParityRasterizerState
     let vertexBuffer: MTLBuffer
+    let indexBuffer: MTLBuffer
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
     let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
+    /// Set when camera parallax moves the view, so the layer matrices are recomputed every frame.
+    let placement: Placement?
     /// TEXS frames of each sprite-sheet slot, shown in turn for their durations.
     let sprites: [Int: [(frame: WPEParityUniformSpriteFrame, duration: Double)]]
     /// The binding description's constants per stage; the engine uniform set does not carry them.
@@ -28,12 +31,33 @@ struct WPEParityFrameDrawPlan {
     /// Per stage, declared constants that neither the binding nor the engine uniform set supplies, so they stay zero.
     let zeroConstants: [WPEHLSLStage: [String]]
 
+    struct Placement {
+        let layers: WPEParityLayerTransformSet
+        let objectID: String
+        let kind: WPEParityLayerDrawKind
+        let inParentComposite: Bool
+
+        func draw(parallax: SIMD2<Float>) -> WPEParityUniformDraw {
+            layers.draw(objectID, kind: kind, inParentComposite: inParentComposite, parallax: parallax)
+        }
+    }
+
+    /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame.
+    func frameUniforms(parallax: SIMD2<Float>) -> WPEParityUniformDraw {
+        guard let placed = placement?.draw(parallax: parallax) else { return uniforms }
+        var uniforms = uniforms
+        (uniforms.matrices, uniforms.effectPass) = (placed.matrices, placed.effectPass)
+        return uniforms
+    }
+
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
     func makeDraw(frame: WPEParityUniformFrame, variant: Int, textures table: [WPEResourceID: MTLTexture],
                   textureSlots: inout [String: WPECBufferValue]) throws -> WPEParityDraw {
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                 vertexBuffer: vertexBuffer, primitiveType: .triangleStrip, vertexCount: 4)
-        var uniforms = uniforms
+                                 vertexBuffer: vertexBuffer, primitiveType: .triangle, vertexCount: 4)
+        draw.indexBuffer = indexBuffer
+        draw.indexCount = WPEParityLayerQuad.indices.count
+        var uniforms = frameUniforms(parallax: frame.parallax.smoothed)
         for (slot, steps) in sprites where slot < uniforms.textures.count {
             uniforms.textures[slot]?.spriteFrame = Self.sprite(steps, at: frame.clock.time)
         }
@@ -104,11 +128,8 @@ struct WPEParityFrameDrawPlanner {
     private let resources: [WPEResourceID: WPELogicalResource]
     /// Colour and depth target bound at each draw operation.
     private let targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)]
-    private let objects: [String: WPESceneImageObject]
-    private let sizes: [String: SIMD2<Float>]
-    let view: simd_float4x4
-    let projection: simd_float4x4
-    let eyePosition: SIMD3<Float>
+    /// The scene camera and every layer's world matrix.
+    let layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
@@ -133,16 +154,10 @@ struct WPEParityFrameDrawPlanner {
             }
         }
         self.targets = targets
-        objects = Dictionary(plan.document.imageObjects.map { ($0.id, $0) }) { first, _ in first }
-        sizes = Dictionary(plan.scene.scene.objects.map { ($0.id, SIMD2(Float($0.width), Float($0.height))) }) { $1 }
-        // 2D camera: the ortho canvas, y up, centred on the screen.
-        let ortho = plan.document.general.orthogonalProjection
-        let canvas = SIMD2(Float(ortho.width), Float(ortho.height))
-        var view = matrix_identity_float4x4
-        view.columns.3 = SIMD4(-canvas.x / 2, -canvas.y / 2, 0, 1)
-        self.view = view
-        projection = WPEParityUniformMatrices.ortho(halfWidth: canvas.x / 2, halfHeight: canvas.y / 2, depth: 1000)
-        eyePosition = WPEParityUniformParallax.eyePosition2D(eye: .zero, ortho: canvas)
+        // No user alignment crop and no camera path or camera object zoom yet.
+        layers = WPEParityLayerTransformSet(document: plan.document,
+                                            renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
+                                            alignment: .noCrop, cameraZoom: 1)
     }
 
     mutating func makePlan(_ index: Int,
@@ -188,21 +203,29 @@ struct WPEParityFrameDrawPlanner {
             }
         }
 
-        let (objectID, fullscreen) = switch description {
-        case let .scene(draw): (Optional(draw.objectID), draw.geometry == .fullscreenQuad)
-        case .post: (String?.none, true)
+        // Post-process draws have no layer and keep the effect-pass matrices.
+        let placement: WPEParityFrameDrawPlan.Placement? = switch description {
+        case let .scene(draw):
+            WPEParityFrameDrawPlan.Placement(layers: layers, objectID: draw.objectID,
+                                             kind: draw.geometry == .fullscreenQuad ? .effectPass : .layer,
+                                             inParentComposite: draw.inParentComposite)
+        case .post: nil
         }
-        let placement = placement(objectID: objectID, fullscreen: fullscreen)
-        guard let vertexBuffer = Self.quad(half: placement.half, inputs: artifact.vertex.reflection.vertexInputs,
-                                           device: device)
-        else { throw .pipeline("vertex buffer allocation failed") }
-        let uniforms = WPEParityUniformDraw(matrices: placement.matrices, effectPass: placement.effectPass,
+        let quad = placement.map { layers.quad($0.objectID, kind: $0.kind) } ?? .effectPass
+        let indices = WPEParityLayerQuad.indices
+        guard let vertexBuffer = Self.vertexBuffer(quad, inputs: artifact.vertex.reflection.vertexInputs,
+                                                   device: device),
+            let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<UInt16>.stride,
+                                                options: .storageModeShared)
+        else { throw .pipeline("vertex or index buffer allocation failed") }
+        let placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
                                             textures: uniformTextures)
 
         let probe = WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
                                           screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
                                           pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
-                                          eyePosition: eyePosition, view: view)
+                                          eyePosition: layers.camera.eyePosition, view: layers.camera.view)
         let engine = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys)
         var zeroConstants: [WPEHLSLStage: [String]] = [:]
         for (stage, reflection) in [(WPEHLSLStage.vertex, artifact.vertex.reflection),
@@ -218,9 +241,11 @@ struct WPEParityFrameDrawPlanner {
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: false,
                              multisample: false),
             vertexBuffer: vertexBuffer,
+            indexBuffer: indexBuffer,
             textures: textures,
             samplers: samplers,
             uniforms: uniforms,
+            placement: layers.camera.parallaxAmount == nil ? nil : placement,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
             zeroConstants: zeroConstants
@@ -395,49 +420,17 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    /// The one place matrices and quad extent are derived: a layer mesh sits at its object's transform in the
-    /// ortho canvas, a fullscreen quad uses the effect-pass matrices.
-    private func placement(objectID: String?, fullscreen: Bool)
-        -> (matrices: WPEParityUniformMatrices, effectPass: WPEParityUniformEffectPass?, half: SIMD2<Float>) {
-        let object = objectID.flatMap { objects[$0] }
-        let size = objectID.flatMap { sizes[$0] } ?? .zero
-        let layerModel = object.map(Self.model) ?? matrix_identity_float4x4
-        let layer = WPEParityUniformMatrices(model: layerModel, view: view, projection: projection)
-        let effectPass = object.map { _ in
-            WPEParityUniformEffectPass(layerModel: layerModel, layerModelViewProjection: layer.modelViewProjection,
-                                       size: size, isLastPass: !fullscreen)
-        }
-        return (fullscreen ? .effectPass : layer, effectPass, fullscreen ? SIMD2<Float>(1, 1) : size / 2)
-    }
-
-    /// Translation, then rotation Z·Y·X in radians, then scale, all in ortho canvas units.
-    private static func model(_ object: WPESceneImageObject) -> simd_float4x4 {
-        let angles = SIMD3<Float>(object.angles)
-        func rotation(_ angle: Float, _ axis: SIMD3<Float>) -> simd_float4x4 {
-            simd_float4x4(simd_quatf(angle: angle, axis: axis))
-        }
-        var translation = matrix_identity_float4x4
-        translation.columns.3 = SIMD4(SIMD3<Float>(object.origin), 1)
-        let scale = simd_float4x4(diagonal: SIMD4(SIMD3<Float>(object.scale), 1))
-        return translation * rotation(angles.z, [0, 0, 1]) * rotation(angles.y, [0, 1, 0])
-            * rotation(angles.x, [1, 0, 0]) * scale
-    }
-
-    /// Triangle strip TL, BL, TR, BR packed as the vertex reflection lists its inputs; texcoord v = 0 is the top row.
-    private static func quad(half: SIMD2<Float>, inputs: [WPEStageReflection.StageAttribute],
-                             device: MTLDevice) -> MTLBuffer? {
-        let corners: [(position: SIMD2<Float>, uv: SIMD2<Float>)] = [
-            ([-half.x, half.y], [0, 0]), ([-half.x, -half.y], [0, 1]),
-            ([half.x, half.y], [1, 0]), ([half.x, -half.y], [1, 1]),
-        ]
+    /// The quad's vertices packed as the vertex reflection lists its inputs.
+    private static func vertexBuffer(_ quad: WPEParityLayerQuad, inputs: [WPEStageReflection.StageAttribute],
+                                     device: MTLDevice) -> MTLBuffer? {
         var floats: [Float] = []
-        for corner in corners {
+        for vertex in quad.vertices {
             for input in inputs.sorted(by: { $0.index < $1.index }) {
                 let name = input.name.lowercased()
                 let value: [Float] = if name.hasPrefix("position") {
-                    [corner.position.x, corner.position.y, 0, 1]
+                    [vertex.position.x, vertex.position.y, vertex.position.z, 1]
                 } else if name == "texcoord0" {
-                    [corner.uv.x, corner.uv.y, 0, 0]
+                    [vertex.texcoord.x, vertex.texcoord.y, 0, 0]
                 } else if name.hasPrefix("color") {
                     [1, 1, 1, 1]
                 } else {

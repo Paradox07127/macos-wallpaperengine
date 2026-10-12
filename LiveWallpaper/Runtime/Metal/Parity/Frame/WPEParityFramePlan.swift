@@ -46,6 +46,9 @@ struct WPEParityFramePlan {
     /// One table per entry of `frames`, keyed like `programs`.
     let bindings: [[Int: WPEParityProgramBinding]]
     let skipped: [Int: WPEParityFrameSkip]
+    /// Backbuffer size in pixels.
+    let width: Int
+    let height: Int
 
     init(document: WPESceneDocument, sceneDirectory: URL, assetRoots: [URL], settings: WPEParityProgramSettings,
          width: Int, height: Int) throws {
@@ -83,6 +86,8 @@ struct WPEParityFramePlan {
         bindings = frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene) }
         self.programs = programs
         self.skipped = skipped
+        self.width = width
+        self.height = height
     }
 }
 #endif

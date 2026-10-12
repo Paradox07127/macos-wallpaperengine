@@ -251,6 +251,19 @@ struct ParitySceneCompositionTests {
         #expect(frame.draws["C/ce/0"]?.alphaMax == true)
         #expect(frame.draws["C/ce/0"]?.writeMask == .rgba)
     }
+
+    @Test func onlyDrawsIntoTheParentCompositeAreMarked() {
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([
+            F.layer("P", copyBackground: true, effects: [F.effect("pe")]),
+            F.layer("C", parentID: "P"),
+            F.layer("D", parentID: "P", effects: [F.effect("d1"), F.effect("d2")]),
+        ]))
+        #expect(frame.draws["C/albedo"]?.inParentComposite == true)
+        #expect(frame.draws["D/albedo"]?.inParentComposite == false)
+        #expect(frame.draws["D/d1/0"]?.inParentComposite == false)
+        #expect(frame.draws["D/d2/0"]?.inParentComposite == true)
+        #expect(frame.draws["P/pe/0"]?.inParentComposite == false)
+    }
 }
 
 struct ParitySceneCompileTests {

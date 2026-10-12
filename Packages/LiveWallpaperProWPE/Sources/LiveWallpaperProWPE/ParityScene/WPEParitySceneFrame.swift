@@ -19,6 +19,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let blend: WPEParitySceneBlend
     /// Alpha blend op MAX (RD+0xe8) while drawing into a parent composite that did not copy the background.
     public let alphaMax: Bool
+    /// The draw lands in its parent layer's composite rather than the scene, so it uses the composite camera.
+    public let inParentComposite: Bool
     public let writeMask: WPEParitySceneWriteMask
     public let geometry: Geometry
     /// Set by model draws and the bit4 composite draw only; every other scene draw runs with depth off.
@@ -29,8 +31,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
                 shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
-                writeMask: WPEParitySceneWriteMask, geometry: Geometry, depthTest: Bool = false,
-                depthWrite: Bool = false, cullsBackFaces: Bool = false) {
+                inParentComposite: Bool = false, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
+                depthTest: Bool = false, depthWrite: Bool = false, cullsBackFaces: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -41,6 +43,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.target = target
         self.blend = blend
         self.alphaMax = alphaMax
+        self.inParentComposite = inParentComposite
         self.writeMask = writeMask
         self.geometry = geometry
         self.depthTest = depthTest
