@@ -32,6 +32,8 @@ public struct WPEParityClock: Sendable {
             pauseRamp = target
         }
         if paused, pauseRamp <= 0 {
+            // [I] WPE skips the frame and uploads no g_Frametime; a held clock advances nothing.
+            frametime = 0
             return false
         }
         frametime = Self.clampStep(Self.rate(percent: ratePercent) * pauseRamp * step)

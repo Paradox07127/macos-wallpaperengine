@@ -43,6 +43,14 @@ final class ParityUniformClockTests: XCTestCase {
         XCTAssertEqual(clock.frametime, max(1e-4, 0.1 * Float(step)), accuracy: 1e-7)
     }
 
+    func testHeldPauseZeroesFrametime() {
+        var clock = WPEParityClock()
+        while clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: true) {}
+        XCTAssertEqual(clock.frametime, 0)
+        XCTAssertFalse(clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: true))
+        XCTAssertEqual(clock.frametime, 0)
+    }
+
     func testRampSnapsToTargetWithinOneHundredth() {
         var clock = WPEParityClock()
         while clock.advance(elapsed: 0.1, ratePercent: 100, paused: true) {}

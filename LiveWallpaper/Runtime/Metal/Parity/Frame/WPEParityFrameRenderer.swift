@@ -99,14 +99,25 @@ final class WPEParityFrameRenderer {
         var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan)
         var skipped = plan.skipped
         var draws: [Int: WPEParityFrameDrawPlan] = [:]
-        for (index, program) in plan.programs.sorted(by: { $0.key < $1.key }) {
-            do {
-                let artifact = try await shaders.artifact(for: program)
-                draws[index] = try planner.makePlan(index, artifact: artifact)
-            } catch let skip as WPEParityFrameSkip {
-                skipped[index] = skip
+        // The store shares one compile between draws with the same program.
+        let artifacts = await withTaskGroup(of: (Int, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self) { group in
+            for (index, program) in plan.programs {
+                group.addTask {
+                    do {
+                        return try await (index, .success(shaders.artifact(for: program)))
+                    } catch {
+                        return (index, .failure(.noShader("\(program.shader): \(error)")))
+                    }
+                }
+            }
+            return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
+        }
+        // Planned in operation order so the planner's layer images and videos come out the same every build.
+        for (index, artifact) in artifacts.sorted(by: { $0.key < $1.key }) {
+            do throws(WPEParityFrameSkip) {
+                draws[index] = try planner.makePlan(index, artifact: artifact.get())
             } catch {
-                skipped[index] = .noShader("\(program.shader): \(error)")
+                skipped[index] = error
             }
         }
 
