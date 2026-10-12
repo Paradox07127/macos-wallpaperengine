@@ -71,13 +71,41 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
 
     /// genericimage4 with the combos FUN_140206ae0 adds; FOG_COMPUTED (and FOG, which the pass JSON never sets) goes
     /// when the layer material's own program (`layerFog`) has no FOG ≠ 0. Material flag 0x18 (LIGHTING/REFLECTION=0)
-    /// and puppet combos are not modelled: the document carries neither.
-    public static func layerPassthrough(colorBlendMode: Int, layerFog: Bool) -> WPEParitySceneMaterialSource {
+    /// is not modelled: the document does not carry it.
+    public static func layerPassthrough(colorBlendMode: Int, layerFog: Bool,
+                                        puppet: WPEParityScenePuppet? = nil) -> WPEParitySceneMaterialSource {
         var combos = ["BLENDMODE": colorBlendMode == 31 ? 0 : colorBlendMode]
         if layerFog {
             combos["FOG_COMPUTED"] = 1
         }
+        combos.merge(puppet?.skinningCombos ?? [:]) { _, new in new }
         return WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json", combos: combos)
+    }
+}
+
+/// Mesh0 of an image layer's model JSON `"puppet"` (FUN_1401fbae0): positions go straight into the layer MVP.
+public struct WPEParityScenePuppet: Hashable, Sendable {
+    public var vertices: [WPEPuppetVertex]
+    public var indices: [UInt16]
+    /// MDLS bone count; BONECOUNT and the length of `g_Bones`.
+    public var boneCount: Int
+    /// FUN_1402076e0: mesh0's format has bone indices (0x800000) and the model has bones.
+    public var skinned: Bool
+    /// puppet+0x390, the first mesh with flag & 2; `WPEMdlParser` does not expose mesh flags, so always nil.
+    public var blendMeshIndex: Int?
+
+    public init(vertices: [WPEPuppetVertex], indices: [UInt16], boneCount: Int, skinned: Bool,
+                blendMeshIndex: Int? = nil) {
+        self.vertices = vertices
+        self.indices = indices
+        self.boneCount = boneCount
+        self.skinned = skinned
+        self.blendMeshIndex = blendMeshIndex
+    }
+
+    /// FUN_140207710.
+    public var skinningCombos: [String: Int] {
+        skinned ? ["SKINNING": 1, "BONECOUNT": boneCount] : [:]
     }
 }
 
@@ -143,7 +171,9 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var copyBackground: Bool
     public var fullscreen: Bool
     public var ledSource: Bool
+    /// FUN_14020ae00 set bit4 for the layer's puppet.
     public var puppetForcesComposite: Bool
+    public var puppet: WPEParityScenePuppet?
     /// Layer `nointerpolation` or albedo TEXI flag bit0: the layer's composites sample with point filtering.
     public var noInterpolation: Bool
     /// Layer `clampuvs` (WPE default on): the layer's composites clamp instead of wrap.
@@ -157,8 +187,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
                 materialState: WPEParitySceneMaterialState = WPEParitySceneMaterialState(), materialFog: Bool = false,
                 colorBlendMode: Int = 0, passthrough: Bool = false, copyBackground: Bool = true,
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
-                noInterpolation: Bool = false, clampUVs: Bool = true, parentID: String? = nil,
-                effects: [WPEParitySceneEffect] = []) {
+                puppet: WPEParityScenePuppet? = nil, noInterpolation: Bool = false, clampUVs: Bool = true,
+                parentID: String? = nil, effects: [WPEParitySceneEffect] = []) {
         self.id = id
         self.kind = kind
         self.sortKey = sortKey
@@ -176,6 +206,7 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.fullscreen = fullscreen
         self.ledSource = ledSource
         self.puppetForcesComposite = puppetForcesComposite
+        self.puppet = puppet
         self.noInterpolation = noInterpolation
         self.clampUVs = clampUVs
         self.parentID = parentID

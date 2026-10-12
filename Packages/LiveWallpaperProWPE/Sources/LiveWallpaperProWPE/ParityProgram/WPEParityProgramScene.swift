@@ -18,7 +18,7 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
 
 /// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
 /// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
-/// with MSAA off; no transparent sorting, no puppet bit4.
+/// with MSAA off and no transparent sorting.
 public struct WPEParityProgramScene: Sendable {
     struct MaterialKey: Hashable, Sendable {
         let objectID: String
@@ -99,6 +99,13 @@ public struct WPEParityProgramScene: Sendable {
             }
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
+            let puppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
+            // FUN_14020ae00: the albedo's TEXI flags are Texture+0x1c, where bit2 marks a sequence. A bit4 already
+            // set by blend mode, ledsource or fog needs nothing here.
+            let sequence = material?.textures[0].flatMap(assets.textureHeader(named:)).map { $0.flags & 4 != 0 }
+            let puppetForcesComposite = puppet.map {
+                !effects.isEmpty || sequence == true || $0.blendMeshIndex != nil
+            } ?? false
             // A model's state comes from its material alone.
             let blend: WPEParitySceneBlend = if image.colorBlendMode == 31, !isModel {
                 .additive
@@ -114,7 +121,8 @@ public struct WPEParityProgramScene: Sendable {
                 colorBlendMode: image.colorBlendMode,
                 passthrough: Self.flag(model?["passthrough"]) || image.config.passthrough,
                 copyBackground: image.copyBackground, fullscreen: fullscreen,
-                ledSource: Self.flag(authored?["ledsource"]),
+                ledSource: Self.flag(authored?["ledsource"]), puppetForcesComposite: puppetForcesComposite,
+                puppet: puppet,
                 noInterpolation: Self.flag(authored?["nointerpolation"]),
                 clampUVs: Self.number(authored?["clampuvs"]).map { $0 != 0 } ?? true,
                 parentID: image.parentObjectID
@@ -141,7 +149,9 @@ public struct WPEParityProgramScene: Sendable {
     /// The merged pass JSON `draw` uses; an engine (util) material is read from its file with the engine's combos.
     func material(for draw: WPEParitySceneDraw) -> WPEParityProgramMaterial? {
         guard let source = draw.source else { return nil }
-        var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: source)]
+        var stored = source
+        stored.combos = [:]
+        var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)]
             ?? WPEParityProgramMaterial(path: source.materialPath, pass: source.materialPass, assets: assets)
         material?.merge(combos: source.combos, textures: [:])
         return material
@@ -182,6 +192,40 @@ public struct WPEParityProgramScene: Sendable {
     /// The material of the model's first mesh.
     private static func modelMaterialPath(_ path: String, assets: WPEParityProgramAssets) -> String? {
         assets.data(path).flatMap { try? WPEMdlParser.parse(data: $0).meshes.first?.materialPath }
+    }
+
+    /// Mesh0 of a model JSON `"puppet"`; its indices are u16 as WPE draws them (FUN_1401fbae0).
+    private static func puppet(_ path: String, assets: WPEParityProgramAssets) -> WPEParityScenePuppet? {
+        guard let data = assets.data(path), let model = try? WPEMdlParser.parse(data: data),
+              let mesh = model.meshes.first else { return nil }
+        let boneIndices = firstMeshFormat(data).map { $0 & 0x800000 != 0 } ?? false
+        return WPEParityScenePuppet(vertices: mesh.vertices,
+                                    indices: mesh.indices.map { UInt16(truncatingIfNeeded: $0) },
+                                    boneCount: model.bones.count, skinned: boneIndices && !model.bones.isEmpty)
+    }
+
+    /// Mesh0's vertex format, found the way `WPEMdlParser` walks the MDLV header; the parser does not expose it.
+    private static func firstMeshFormat(_ data: Data) -> UInt32? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 21, let version = String(bytes: bytes[4 ..< 8], encoding: .ascii).flatMap(Int.init) else {
+            return nil
+        }
+        func uint32(_ offset: Int) -> UInt32? {
+            guard offset + 4 <= bytes.count else { return nil }
+            return (0 ..< 4).reduce(0) { $0 | UInt32(bytes[offset + $1]) << (8 * $1) }
+        }
+        let features = WPEMdlvFeatures(version: version)
+        guard let headerFormat = uint32(9), let skins = uint32(13) else { return nil }
+        guard features.perMeshFlags else { return headerFormat }
+        var offset = 21
+        for _ in 0 ..< skins {
+            guard let end = bytes[offset...].firstIndex(of: 0) else { return nil }
+            offset = end + 1
+        }
+        // Mesh flag 2 carries one more u32, then the bounds.
+        guard let flag = uint32(offset) else { return nil }
+        offset += (flag == 2 ? 8 : 4) + (features.meshBounds ? 24 : 0)
+        return uint32(offset)
     }
 
     /// The object's own visible flag ANDed with every ancestor's.

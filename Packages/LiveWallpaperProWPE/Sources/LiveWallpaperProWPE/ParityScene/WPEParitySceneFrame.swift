@@ -3,6 +3,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case fullscreenQuad
         /// The layer's own mesh transformed by the layer MVP.
         case layerMesh
+        /// The layer's `WPEParitySceneObject.puppet` mesh transformed by the layer MVP.
+        case puppetMesh
         /// The meshes of the object's `.mdl` file.
         case modelMesh
     }

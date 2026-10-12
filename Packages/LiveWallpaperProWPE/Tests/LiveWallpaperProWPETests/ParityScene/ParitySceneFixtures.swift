@@ -62,6 +62,7 @@ enum ParitySceneFixtures {
         let geometry = switch draw.geometry {
         case .fullscreenQuad: "quad"
         case .layerMesh: "mesh"
+        case .puppetMesh: "puppet"
         case .modelMesh: "model"
         }
         let mask = draw.writeMask == .rgba ? "rgba" : "rgb"

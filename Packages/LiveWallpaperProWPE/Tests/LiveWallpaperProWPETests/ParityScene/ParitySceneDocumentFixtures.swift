@@ -59,9 +59,10 @@ enum ParitySceneDocuments {
         "effects/\(layer.id)_\(effect.id).json"
     }
 
-    /// `objects` go into `scene.json` ahead of the layers; `files` (path → text) are written last and win.
+    /// `objects` go into `scene.json` ahead of the layers; `files` (path → text, or bytes in `binaries`) are written
+    /// last and win.
     static func programScene(_ layers: [Layer], general: [String: Any] = [:], objects: [[String: Any]] = [],
-                             files: [String: String] = [:],
+                             files: [String: String] = [:], binaries: [String: Data] = [:],
                              settings: WPEParityProgramSettings = WPEParityProgramSettings()) throws
         -> WPEParityProgramScene {
         let root = FileManager.default.temporaryDirectory
@@ -97,11 +98,11 @@ enum ParitySceneDocuments {
             let shader = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
             try write(path, ["passes": [["shader": shader, "blending": "translucent"]]])
         }
-        for (path, text) in files {
+        for (path, data) in files.mapValues({ Data($0.utf8) }).merging(binaries, uniquingKeysWith: { _, new in new }) {
             let url = root.appendingPathComponent(path)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
-            try Data(text.utf8).write(to: url)
+            try data.write(to: url)
         }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 0"],

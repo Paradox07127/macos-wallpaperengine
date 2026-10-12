@@ -189,7 +189,7 @@ private struct WPEParitySceneEmitter {
                     alphaMax = destination.alphaMax
                     compositeOwnerID = destination.compositeOwnerID
                     mask = destination.writeMask
-                    geometry = .layerMesh
+                    geometry = object.layerGeometry
                 } else {
                     target = composites[current ^ 1]
                 }
@@ -218,16 +218,17 @@ private struct WPEParitySceneEmitter {
         }
 
         guard bit4 else { return }
-        // 1401e8aa0.c:1078-1115
+        // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
         let identity = WPEPassIdentity("\(object.id)/passthrough4")
         bind(identity, destination.color, depth: destination.depth)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "effectpassthrough_4",
                                 source: .layerPassthrough(colorBlendMode: object.colorBlendMode,
-                                                          layerFog: object.materialFog),
+                                                          layerFog: object.materialFog, puppet: object.puppet),
                                 reads: [composites[current], Resource.fullFrameBuffer], target: destination.color,
                                 blend: object.colorBlendMode == 31 ? .additive : object.blend,
                                 alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
-                                writeMask: destination.writeMask, geometry: .layerMesh, depthTest: object.materialState.depthTest,
+                                writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                depthTest: object.materialState.depthTest,
                                 depthWrite: object.materialState.depthWrite))
     }
 
@@ -277,11 +278,14 @@ private struct WPEParitySceneEmitter {
                                         depthWrite: state.depthWrite && object.blend == .normal,
                                         cullsBackFaces: state.cullsBackFaces))
             } else {
+                // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.
+                var source = source
+                source?.combos.merge(object.puppet?.skinningCombos ?? [:]) { _, new in new }
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
                                         reads: reads, target: destination.color, blend: object.blend,
                                         alphaMax: destination.alphaMax,
                                         compositeOwnerID: destination.compositeOwnerID,
-                                        writeMask: destination.writeMask, geometry: .layerMesh))
+                                        writeMask: destination.writeMask, geometry: object.layerGeometry))
             }
         }
         for child in children {
@@ -353,6 +357,12 @@ private struct WPEParitySceneEmitter {
         guard resources[id] == nil else { return }
         resources[id] = WPELogicalResource(id: id, width: width, height: height, format: format,
                                            sampleCount: samples, lifetime: lifetime)
+    }
+}
+
+private extension WPEParitySceneObject {
+    var layerGeometry: WPEParitySceneDraw.Geometry {
+        puppet == nil ? .layerMesh : .puppetMesh
     }
 }
 
