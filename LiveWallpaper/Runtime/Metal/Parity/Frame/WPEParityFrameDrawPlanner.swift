@@ -25,6 +25,9 @@ struct WPEParityFrameDrawPlan {
     let rasterizer: WPEParityRasterizerState
     let vertexBuffer: MTLBuffer
     let indexBuffer: MTLBuffer
+    let indexCount: Int
+    /// The skinned puppet layer whose animator supplies the vertex stage's `g_Bones`.
+    let puppetID: String?
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
     let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
@@ -58,12 +61,14 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
+    /// `puppets` holds this frame's bone animator of each skinned puppet layer.
     func makeDraw(frame: WPEParityUniformFrame, variant: Int, textures table: [WPEResourceID: MTLTexture],
-                  textureSlots: inout [String: WPECBufferValue]) throws -> WPEParityDraw {
+                  textureSlots: inout [String: WPECBufferValue],
+                  puppets: [String: WPEParityPuppetAnimator]) throws -> WPEParityDraw {
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  vertexBuffer: vertexBuffer, primitiveType: .triangle, vertexCount: 4)
         draw.indexBuffer = indexBuffer
-        draw.indexCount = WPEParityLayerQuad.indices.count
+        draw.indexCount = indexCount
         var uniforms = frameUniforms(parallax: frame.parallax.smoothed)
         var spriteTextures: [String: MTLTexture] = [:]
         for (slot, steps) in sprites where slot < uniforms.textures.count {
@@ -84,6 +89,9 @@ struct WPEParityFrameDrawPlan {
         }
         for stage in [WPEHLSLStage.vertex, .fragment] {
             draw.constants[stage] = engine.merging(constants[stage] ?? [:]) { $1 }
+        }
+        if let animator = puppetID.flatMap({ puppets[$0] }) {
+            draw.constants[.vertex, default: [:]].merge(animator.values) { $1 }
         }
         draw.samplers = samplers
         for (name, source) in textures[variant] {
@@ -229,22 +237,31 @@ struct WPEParityFrameDrawPlanner {
         case .post: nil
         }
         // R10: the composite fill samples only the image part of a padded albedo texture.
-        let fillUVMax = uniformTextures[0].map {
+        let uvMax = uniformTextures[0].map {
             SIMD2(Float($0.imageWidth) / Float($0.textureWidth), Float($0.imageHeight) / Float($0.textureHeight))
         } ?? .one
         let quad = placement.map { placed in
             if case .compositeFill = placed.kind {
-                layers.quad(placed.objectID, kind: placed.kind, uvMax: fillUVMax)
+                layers.quad(placed.objectID, kind: placed.kind, uvMax: uvMax)
             } else {
                 layers.quad(placed.objectID, kind: placed.kind)
             }
         } ?? .effectPass
-        let indices = WPEParityLayerQuad.indices
-        guard let vertexBuffer = Self.vertexBuffer(quad, inputs: artifact.vertex.reflection.vertexInputs,
-                                                   device: device),
-            let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<UInt16>.stride,
-                                                options: .storageModeShared)
-        else { throw .pipeline("vertex or index buffer allocation failed") }
+        let puppet: WPEParityScenePuppet? = if case let .scene(draw) = description, draw.geometry == .puppetMesh {
+            plan.scene.scene.objects.first { $0.id == draw.objectID }?.puppet
+        } else {
+            nil
+        }
+        let inputs = artifact.vertex.reflection.vertexInputs
+        let geometry = if let puppet {
+            // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
+            Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
+        } else {
+            Self.geometry(quad.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
+                          indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
+        }
+        guard let geometry else { throw .pipeline("vertex or index buffer allocation failed") }
+        let puppetID = puppet?.skinned == true ? placement?.objectID : nil
         let placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
                                             textures: uniformTextures)
@@ -253,7 +270,10 @@ struct WPEParityFrameDrawPlanner {
                                           screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
                                           pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
                                           eyePosition: layers.camera.eyePosition, view: layers.camera.view)
-        let engine = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys)
+        var engine = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys)
+        if puppetID != nil {
+            engine.insert("g_Bones")
+        }
         var zeroConstants: [WPEHLSLStage: [String]] = [:]
         for (stage, reflection) in [(WPEHLSLStage.vertex, artifact.vertex.reflection),
                                     (.fragment, artifact.fragment.reflection)] {
@@ -267,8 +287,10 @@ struct WPEParityFrameDrawPlanner {
             depthStencil: .wpe(depthTest: binding.depthTest, depthWrite: binding.depthWrite),
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: false,
                              multisample: false),
-            vertexBuffer: vertexBuffer,
-            indexBuffer: indexBuffer,
+            vertexBuffer: geometry.vertices,
+            indexBuffer: geometry.indices,
+            indexCount: geometry.indexCount,
+            puppetID: puppetID,
             textures: textures,
             samplers: samplers,
             uniforms: uniforms,
@@ -513,29 +535,59 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    /// The quad's vertices packed as the vertex reflection lists its inputs.
-    private static func vertexBuffer(_ quad: WPEParityLayerQuad, inputs: [WPEStageReflection.StageAttribute],
+    struct Vertex {
+        var position: SIMD3<Float>
+        var texcoord: SIMD2<Float>
+        var blendIndices = SIMD4<UInt32>.zero
+        var blendWeights = SIMD4<Float>.zero
+    }
+
+    /// Mesh0 of a puppet layer with its texcoords scaled by `uvMax`.
+    static func puppetGeometry(_ puppet: WPEParityScenePuppet, uvMax: SIMD2<Float>,
+                               inputs: [WPEStageReflection.StageAttribute],
+                               device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        geometry(puppet.vertices.map {
+            Vertex(position: $0.position, texcoord: $0.uv * uvMax,
+                   blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices), blendWeights: $0.skinBlendWeights)
+        }, indices: puppet.indices, inputs: inputs, device: device)
+    }
+
+    private static func geometry(_ vertices: [Vertex], indices: [UInt16], inputs: [WPEStageReflection.StageAttribute],
+                                 device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        guard let vertexBuffer = vertexBuffer(vertices, inputs: inputs, device: device),
+              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<UInt16>.stride,
+                                                  options: .storageModeShared)
+        else { return nil }
+        return (vertexBuffer, indexBuffer, indices.count)
+    }
+
+    /// The vertices packed as the vertex reflection lists its inputs; BLENDINDICES stay integers.
+    private static func vertexBuffer(_ vertices: [Vertex], inputs: [WPEStageReflection.StageAttribute],
                                      device: MTLDevice) -> MTLBuffer? {
-        var floats: [Float] = []
-        for vertex in quad.vertices {
+        var words: [UInt32] = []
+        for vertex in vertices {
             for input in inputs.sorted(by: { $0.index < $1.index }) {
                 let name = input.name.lowercased()
-                let value: [Float] = if name.hasPrefix("position") {
+                let floats: [Float] = if name.hasPrefix("position") {
                     [vertex.position.x, vertex.position.y, vertex.position.z, 1]
                 } else if name == "texcoord0" {
                     [vertex.texcoord.x, vertex.texcoord.y, 0, 0]
+                } else if name.hasPrefix("blendweight") {
+                    (0 ..< 4).map { vertex.blendWeights[$0] }
                 } else if name.hasPrefix("color") {
                     [1, 1, 1, 1]
                 } else {
                     [0, 0, 0, 0]
                 }
-                floats += value.prefix(input.columns)
+                let value = name.hasPrefix("blendindices") ? (0 ..< 4).map { vertex.blendIndices[$0] }
+                    : floats.map(\.bitPattern)
+                words += value.prefix(input.columns)
             }
         }
         // An input-less vertex stage still gets a buffer at the MSC vertex bind point.
-        let length = max(16, floats.count * MemoryLayout<Float>.stride)
+        let length = max(16, words.count * MemoryLayout<UInt32>.stride)
         guard let buffer = device.makeBuffer(length: length, options: .storageModeShared) else { return nil }
-        buffer.contents().copyMemory(from: floats, byteCount: floats.count * MemoryLayout<Float>.stride)
+        buffer.contents().copyMemory(from: words, byteCount: words.count * MemoryLayout<UInt32>.stride)
         return buffer
     }
 }

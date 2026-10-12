@@ -131,11 +131,12 @@ final class WPEParityPipelineFactory {
     }
 
     private static func vertexFormat(_ input: WPEStageReflection.StageAttribute) throws -> MTLVertexFormat {
-        // MSC reports element types capitalised ("Float"); the schema documents lowercase.
+        // MSC reports element types capitalised ("Float"); the schema documents lowercase. wpe-shaderc reports a
+        // uint4 BLENDINDICES input as "uint32".
         let formats: [MTLVertexFormat]? = switch input.elementType.lowercased() {
         case "float": [.float, .float2, .float3, .float4]
         case "int", "sint": [.int, .int2, .int3, .int4]
-        case "uint": [.uint, .uint2, .uint3, .uint4]
+        case "uint", "uint32": [.uint, .uint2, .uint3, .uint4]
         default: nil
         }
         guard let formats, (1 ... 4).contains(input.columns) else {

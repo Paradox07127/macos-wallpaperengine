@@ -57,6 +57,8 @@ final class WPEParityFrameRenderer {
     private var audio = WPEParityAudioSpectrum()
     /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
     private var textureSlots: [String: WPECBufferValue] = [:]
+    /// One bone animator per skinned puppet layer, keyed by object id.
+    private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
     private var frameIndex = 0
 
     var executedDrawCount: Int {
@@ -153,12 +155,22 @@ final class WPEParityFrameRenderer {
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         camera = planner.layers.camera
         cameraParallax = plan.document.general.cameraParallax
+        for object in plan.scene.scene.objects where object.puppet?.skinned == true {
+            guard let model = plan.scene.puppetModels[object.id] else { continue }
+            let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
+            puppets[object.id] = WPEParityPuppetAnimator(model: model, layers: layers)
+        }
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
     func encodeFrame(elapsed: Double,
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
+        let sceneTime = clock.time
         clock.advance(elapsed: elapsed, ratePercent: 100, paused: false)
+        // Scene time, so a paused clock holds the pose.
+        for id in puppets.keys {
+            puppets[id]?.advance(dt: clock.time - sceneTime)
+        }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
@@ -182,7 +194,7 @@ final class WPEParityFrameRenderer {
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
                                                   prepare: videos.encode) { operation, textures in
             try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures,
-                                           textureSlots: &textureSlots)
+                                           textureSlots: &textureSlots, puppets: puppets)
         }
     }
 

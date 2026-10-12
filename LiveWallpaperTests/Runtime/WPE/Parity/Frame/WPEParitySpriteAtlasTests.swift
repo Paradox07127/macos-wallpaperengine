@@ -39,7 +39,7 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
                                           pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
                                           eyePosition: .zero, view: matrix_identity_float4x4)
         var slots: [String: WPECBufferValue] = [:]
-        let draw = try plan.makeDraw(frame: frame, variant: 0, textures: [:], textureSlots: &slots)
+        let draw = try plan.makeDraw(frame: frame, variant: 0, textures: [:], textureSlots: &slots, puppets: [:])
         return try XCTUnwrap(draw.textures["g_Texture0"])
     }
 
@@ -72,6 +72,8 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
             vertexBuffer: buffer,
             indexBuffer: buffer,
+            indexCount: 6,
+            puppetID: nil,
             textures: [["g_Texture0": .image(image.texture)]],
             samplers: [:],
             uniforms: WPEParityUniformDraw(matrices: .effectPass, textures: textures),

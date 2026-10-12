@@ -30,6 +30,8 @@ public struct WPEParityProgramScene: Sendable {
     public let postProcess: WPEParityPostProcessConfig
     public let engineFlags: WPEEngineComboFlags
     public let assets: WPEParityProgramAssets
+    /// The `.mdl` of each layer with a `WPEParityScenePuppet`, keyed by object id; the bone animator needs it.
+    public let puppetModels: [String: WPEPuppetModel]
     let materials: [MaterialKey: WPEParityProgramMaterial]
     /// Image layer `g_Color4` (140207b50.c:81-100): colour × (HDR ? brightness : 1), alpha.
     let layerColors: [String: SIMD4<Float>]
@@ -64,6 +66,7 @@ public struct WPEParityProgramScene: Sendable {
         }
         var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
         var layerColors: [String: SIMD4<Float>] = [:]
+        var puppetModels: [String: WPEPuppetModel] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
         var sceneObjects: [WPEParitySceneObject] = []
         for (index, image) in document.imageObjects.enumerated() {
@@ -99,7 +102,9 @@ public struct WPEParityProgramScene: Sendable {
             }
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
-            let puppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
+            let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
+            let puppet = loadedPuppet?.puppet
+            puppetModels[image.id] = loadedPuppet?.model
             // FUN_14020ae00: the albedo's TEXI flags are Texture+0x1c, where bit2 marks a sequence. A bit4 already
             // set by blend mode, ledsource or fog needs nothing here.
             let sequence = material?.textures[0].flatMap(assets.textureHeader(named:)).map { $0.flags & 4 != 0 }
@@ -135,6 +140,7 @@ public struct WPEParityProgramScene: Sendable {
         }
         self.materials = materials
         self.layerColors = layerColors
+        self.puppetModels = puppetModels
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
@@ -195,13 +201,15 @@ public struct WPEParityProgramScene: Sendable {
     }
 
     /// Mesh0 of a model JSON `"puppet"`; its indices are u16 as WPE draws them (FUN_1401fbae0).
-    private static func puppet(_ path: String, assets: WPEParityProgramAssets) -> WPEParityScenePuppet? {
+    private static func puppet(_ path: String,
+                               assets: WPEParityProgramAssets) -> (puppet: WPEParityScenePuppet, model: WPEPuppetModel)? {
         guard let data = assets.data(path), let model = try? WPEMdlParser.parse(data: data),
               let mesh = model.meshes.first else { return nil }
         let boneIndices = firstMeshFormat(data).map { $0 & 0x800000 != 0 } ?? false
-        return WPEParityScenePuppet(vertices: mesh.vertices,
-                                    indices: mesh.indices.map { UInt16(truncatingIfNeeded: $0) },
-                                    boneCount: model.bones.count, skinned: boneIndices && !model.bones.isEmpty)
+        let puppet = WPEParityScenePuppet(vertices: mesh.vertices,
+                                          indices: mesh.indices.map { UInt16(truncatingIfNeeded: $0) },
+                                          boneCount: model.bones.count, skinned: boneIndices && !model.bones.isEmpty)
+        return (puppet, model)
     }
 
     /// Mesh0's vertex format, found the way `WPEMdlParser` walks the MDLV header; the parser does not expose it.
