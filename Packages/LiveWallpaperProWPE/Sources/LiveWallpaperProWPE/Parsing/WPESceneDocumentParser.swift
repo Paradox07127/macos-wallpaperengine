@@ -446,6 +446,7 @@ public enum WPESceneDocumentParser {
         return WPESceneDocument(
             sourceJSON: sourceJSON,
             resolvedGeneralJSON: WPESceneJSONValue(jsonValue: generalDict),
+            resolvedObjectsJSON: rawObjects.compactMap { WPESceneJSONValue(jsonValue: $0) },
             camera: camera,
             staticCamera: authoredCamera,
             authoredCamera: authoredCameraMetadata,
