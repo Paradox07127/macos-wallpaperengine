@@ -977,6 +977,52 @@ struct WPESceneDocumentParserTests {
         #expect(abs(arrived[0]) < 1, "emitter must reach the origin, got \(arrived[0])")
     }
 
+    @Test("Host and image angles/scale keyframes are parsed with relative seeds (3798688689)")
+    func anglesAndScaleKeyframesAreParsed() throws {
+        let angles: [String: Any] = [
+            "value": "0 0 -1.05242",
+            "animation": [
+                "relative": true,
+                "c0": [["frame": 0, "value": 0]],
+                "c1": [["frame": 0, "value": 0]],
+                "c2": [["frame": 0, "value": 0], ["frame": 2600, "value": 1.05242]],
+                "options": ["fps": 1200, "length": 2600, "mode": "single", "startpaused": true, "name": "信封_root_1_angles"],
+            ],
+        ]
+        let scale: [String: Any] = [
+            "value": "1 1 1",
+            "animation": [
+                "relative": true,
+                "c0": [["frame": 0, "value": -1], ["frame": 2600, "value": 0]],
+                "c1": [["frame": 0, "value": -1], ["frame": 2600, "value": 0]],
+                "c2": [["frame": 0, "value": 0]],
+                "options": ["fps": 1200, "length": 2600, "mode": "single", "startpaused": true, "name": "信封_root_1_scale"],
+            ],
+        ]
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                ["id": "1122", "name": "[122] paper", "angles": angles, "scale": scale],
+                ["id": "7", "type": "image", "image": "models/util/solidlayer.json", "angles": angles, "scale": scale],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
+
+        let host = try #require(document.transformHostObjects.first { $0.id == "1122" })
+        let image = try #require(document.imageObjects.first { $0.id == "7" })
+        #expect(host.localAngles == SIMD3<Double>(0, 0, -1.05242))
+        for (anglesAnimation, scaleAnimation) in [(host.anglesAnimation, host.scaleAnimation), (image.anglesAnimation, image.scaleAnimation)] {
+            let anglesTrack = try #require(anglesAnimation)
+            let scaleTrack = try #require(scaleAnimation)
+            #expect(anglesTrack.relative && scaleTrack.relative)
+            #expect(anglesTrack.animation.name == .value("信封_root_1_angles"))
+            #expect(scaleTrack.originVector(at: 0) == [0, 0, 1])
+            #expect(scaleTrack.originVector(at: 10) == [1, 1, 1])
+            #expect(anglesTrack.originVector(at: 10) == [0, 0, 0])
+        }
+    }
+
     @Test("Image color keyframes are parsed, not collapsed to the static value seed")
     func imageAnimatedColorIsParsed() throws {
         let payload: [String: Any] = [

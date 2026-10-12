@@ -111,6 +111,55 @@ struct WPESceneTimelineTests {
         #expect(shared.get("resumed") as? Bool == true)
     }
 
+    @Test("Host angles and scale animations resolve by authored name and obey play, pause and setFrame (3798688689)")
+    func hostAnglesAndScaleAnimationsAreControllable() throws {
+        let json = """
+        {"camera":{"center":"0 0 0"},
+         "general":{"orthogonalprojection":{"width":1920,"height":1080}},
+         "objects":[
+          {"id":1037,"name":"[037] package_014",
+           "angles":{"value":"0 0 -0.0013","animation":{"relative":true,
+             "c0":[{"frame":0,"value":0}],"c1":[{"frame":0,"value":0}],
+             "c2":[{"frame":0,"value":-0.0125},{"frame":600,"value":0.0125}],
+             "options":{"fps":60,"length":1200,"mode":"loop","name":"loop_kv2_character__1037_angles"}}}},
+          {"id":1122,"name":"[122] paper",
+           "angles":{"value":"0 0 -1.05242","animation":{"relative":true,
+             "c0":[{"frame":0,"value":0}],"c1":[{"frame":0,"value":0}],
+             "c2":[{"frame":0,"value":0},{"frame":2600,"value":1.05242}],
+             "options":{"fps":1200,"length":2600,"mode":"single","startpaused":true,"name":"信封_root_1_angles"}}},
+           "scale":{"value":"1 1 1","animation":{"relative":true,
+             "c0":[{"frame":0,"value":-1},{"frame":2600,"value":0}],
+             "c1":[{"frame":0,"value":-1},{"frame":2600,"value":0}],
+             "c2":[{"frame":0,"value":0}],
+             "options":{"fps":1200,"length":2600,"mode":"single","startpaused":true,"name":"信封_root_1_scale"}}}}]}
+        """
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let shared = WPESharedScriptState(layers: WPEMetalSceneRenderer.scriptLayerTable(for: document))
+        shared.timelineAnimations.configure(document: document)
+        shared.timelineAnimations.publishTime(2)
+        _ = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function init(value) {
+                const loop = thisScene.getLayer('[037] package_014').getAnimation('loop_kv2_character__1037_angles');
+                const angles = thisLayer.getAnimation('信封_root_1_angles');
+                const scale = thisLayer.getAnimation('信封_root_1_scale');
+                shared.initial = [loop.isPlaying(), angles.isPlaying(), scale.isPlaying()].join(',');
+                loop.pause();
+                angles.play();
+                scale.setFrame(1300);
+                shared.after = [loop.isPlaying(), angles.isPlaying(), scale.isPlaying(), scale.getFrame()].join(',');
+                return value;
+            }
+            export function update(value) { return value; }
+            """,
+            seed: .zero, canvasSize: SIMD2(1920, 1080),
+            ownLayerName: "[122] paper", ownObjectID: "1122", shared: shared
+        )
+        #expect(shared.get("initial") as? String == "true,false,false")
+        #expect(shared.get("after") as? String == "false,true,false,1300")
+        #expect(shared.timelineAnimations.seconds(objectID: "1037", property: "angles", at: 5) == 2)
+    }
+
     private func linkedDocument(startPaused: Bool) throws -> WPESceneDocument {
         let json = """
         {"camera":{"center":"1920 1080 0","eye":"1920 1080 100","up":"0 1 0"},

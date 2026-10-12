@@ -191,6 +191,8 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     /// Keyframed `origin` on the same live-transform map as origin scripts (3448877775 meteor host gates its stars).
     var dynamicOriginAnimations: [String: WPESceneAnimatedValue] = [:]
+    var dynamicScaleAnimations: [String: WPESceneAnimatedValue] = [:]
+    var dynamicAnglesAnimations: [String: WPESceneAnimatedValue] = [:]
     var dynamicScaleScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }

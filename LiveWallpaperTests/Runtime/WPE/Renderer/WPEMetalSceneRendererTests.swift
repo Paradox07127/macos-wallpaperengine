@@ -1231,6 +1231,40 @@ struct WPEMetalSceneRendererTests {
         renderer.cleanup()
     }
 
+    @Test("Relative host angles/scale keyframes add to the authored seed and scale the child (3798688689)")
+    func hostAnglesAndScaleAnimationsDriveChild() async throws {
+        let fixture = try MetalSceneFixture.animatedHostTransformScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        #expect(renderer.frameDemand.contains(.animations))
+
+        let start = renderer.authoredTransformAnimations(at: 0.5)
+        #expect(start.scales["host"] == SIMD3<Double>(0, 0, 1), "startpaused scale must hold frame 0 (1 + -1)")
+        let spin = try #require(start.angles["host"]?.z)
+        #expect(spin > 0.75 && spin < 1.25, "loop angles must advance from 0.5 + 0.25, got \(spin)")
+
+        let base = try #require(renderer.lastFramePipeline)
+        func childScale(_ transforms: WPEMetalSceneRenderer.LiveScriptTransforms) -> SIMD3<Double>? {
+            renderer.applyingSceneScriptPresentation(to: base, transforms: transforms)
+                .layers.first { $0.graphLayer.objectID == "child" }?.graphLayer.geometry.scale
+        }
+        #expect(childScale(start)?.x == 0)
+
+        renderer.sceneScriptSharedState?.timelineAnimations.command(objectID: "host", property: "scale", operation: "frame", value: 10)
+        let seeked = renderer.authoredTransformAnimations(at: 1)
+        #expect(seeked.scales["host"] == SIMD3<Double>(0.5, 0.5, 1))
+        let scale = try #require(childScale(seeked))
+        #expect(abs(scale.x - 0.5) < 1e-9 && abs(scale.y - 0.5) < 1e-9, "child must inherit the host scale, got \(scale)")
+    }
+
     @Test("Click capture remains active when Follow Cursor is disabled")
     func clickCaptureRemainsActiveWhenFollowCursorIsDisabled() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2582,6 +2616,53 @@ struct MetalSceneFixture {
             "name": "Host",
             "type": "group",
             "origin": \(hostOrigin)
+          }, {
+            "id": "child",
+            "name": "Child",
+            "type": "image",
+            "image": "models/util/solidlayer.json",
+            "parent": "host",
+            "color": "1 0 0",
+            "alpha": 1,
+            "origin": "0 0 0",
+            "size": "8 8 0"
+          }]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(
+            root: root,
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString,
+                cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json",
+                capabilityTier: .imageOnly
+            ),
+            dependencyRoot: nil
+        )
+    }
+
+    static func animatedHostTransformScene() throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [{
+            "id": "host",
+            "name": "Host",
+            "origin": "32 32 0",
+            "angles": { "value": "0 0 0.5", "animation": { "relative": true,
+              "c0": [{ "frame": 0, "value": 0 }], "c1": [{ "frame": 0, "value": 0 }],
+              "c2": [{ "frame": 0, "value": 0.25 }, { "frame": 10, "value": 0.75 }],
+              "options": { "fps": 10, "length": 10, "mode": "loop", "name": "spin" } } },
+            "scale": { "value": "1 1 1", "animation": { "relative": true,
+              "c0": [{ "frame": 0, "value": -1 }, { "frame": 10, "value": -0.5 }],
+              "c1": [{ "frame": 0, "value": -1 }, { "frame": 10, "value": -0.5 }],
+              "c2": [{ "frame": 0, "value": 0 }],
+              "options": { "fps": 10, "length": 10, "mode": "single", "startpaused": true, "name": "grow" } } }
           }, {
             "id": "child",
             "name": "Child",

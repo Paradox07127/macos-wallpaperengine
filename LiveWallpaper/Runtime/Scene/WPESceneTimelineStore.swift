@@ -41,9 +41,13 @@ final class WPESceneTimelineStore: @unchecked Sendable {
         for image in document.imageObjects {
             tracks[Key(objectID: image.id, property: "alpha")] = image.alphaAnimation
             tracks[Key(objectID: image.id, property: "origin")] = image.originAnimation
+            tracks[Key(objectID: image.id, property: "scale")] = image.scaleAnimation
+            tracks[Key(objectID: image.id, property: "angles")] = image.anglesAnimation
         }
         for host in document.transformHostObjects {
             tracks[Key(objectID: host.id, property: "origin")] = host.originAnimation
+            tracks[Key(objectID: host.id, property: "scale")] = host.scaleAnimation
+            tracks[Key(objectID: host.id, property: "angles")] = host.anglesAnimation
         }
         for key in tracks.keys {
             var root = key

@@ -509,7 +509,8 @@ struct WPEStaticParentHierarchyContext: Equatable, Sendable {
         // Omitted depths parse as (1, 1); they are inert while the scene-wide
         // parallax mechanism is disabled by this context's admission above.
         eligibleAncestorIDs = Set(document.transformHostObjects.filter {
-            $0.originAnimation == nil && $0.originScript == nil && $0.scaleScript == nil && $0.anglesScript == nil
+            $0.originAnimation == nil && $0.scaleAnimation == nil && $0.anglesAnimation == nil
+                && $0.originScript == nil && $0.scaleScript == nil && $0.anglesScript == nil
                 && $0.parallaxDepth.x.isFinite && $0.parallaxDepth.y.isFinite
         }.map(\.id))
     }

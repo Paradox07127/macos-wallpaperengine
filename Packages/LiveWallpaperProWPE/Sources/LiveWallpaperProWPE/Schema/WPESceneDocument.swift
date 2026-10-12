@@ -84,6 +84,9 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
     public let localAngles: SIMD3<Double>
     /// Keyframed `origin`; the `origin` field is only the authored static `value` seed.
     public let originAnimation: WPESceneAnimatedValue?
+    /// Keyframed local `scale` / `angles`; seeds are `localScale` / `localAngles`.
+    public let scaleAnimation: WPESceneAnimatedValue?
+    public let anglesAnimation: WPESceneAnimatedValue?
     public let originScript: WPESceneTransformScript?
     public let scaleScript: WPESceneTransformScript?
     public let anglesScript: WPESceneTransformScript?
@@ -101,6 +104,8 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
         localScale: SIMD3<Double>? = nil,
         localAngles: SIMD3<Double>? = nil,
         originAnimation: WPESceneAnimatedValue? = nil,
+        scaleAnimation: WPESceneAnimatedValue? = nil,
+        anglesAnimation: WPESceneAnimatedValue? = nil,
         originScript: WPESceneTransformScript? = nil,
         scaleScript: WPESceneTransformScript? = nil,
         anglesScript: WPESceneTransformScript? = nil,
@@ -116,6 +121,8 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
         self.localScale = localScale ?? scale
         self.localAngles = localAngles ?? angles
         self.originAnimation = originAnimation
+        self.scaleAnimation = scaleAnimation
+        self.anglesAnimation = anglesAnimation
         self.originScript = originScript
         self.scaleScript = scaleScript
         self.anglesScript = anglesScript
@@ -1203,6 +1210,9 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
     /// Local keyframed origin, sampled before parent transform composition.
     public let originAnimation: WPESceneAnimatedValue?
+    /// Keyframed local `scale` / `angles`; seeds are `localScale` / `localAngles`.
+    public let scaleAnimation: WPESceneAnimatedValue?
+    public let anglesAnimation: WPESceneAnimatedValue?
     /// Dynamic WPE SceneScript attached to this layer's `origin` field. Static
     /// origin scripts are resolved at parse time and leave this nil.
     public let originScript: WPESceneTransformScript?
@@ -1259,6 +1269,8 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         alphaScript: String? = nil,
         alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:],
         originAnimation: WPESceneAnimatedValue? = nil,
+        scaleAnimation: WPESceneAnimatedValue? = nil,
+        anglesAnimation: WPESceneAnimatedValue? = nil,
         originScript: WPESceneTransformScript? = nil,
         scaleScript: WPESceneTransformScript? = nil,
         anglesScript: WPESceneTransformScript? = nil,
@@ -1304,6 +1316,8 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.alphaScript = alphaScript
         self.alphaScriptProperties = alphaScriptProperties
         self.originAnimation = originAnimation
+        self.scaleAnimation = scaleAnimation
+        self.anglesAnimation = anglesAnimation
         self.originScript = originScript
         self.scaleScript = scaleScript
         self.anglesScript = anglesScript

@@ -618,7 +618,8 @@ extension WPEMetalSceneRenderer {
         if hasAnimatedShaderPasses {
             demand.insert(.animatedShaders)
         }
-        if !dynamicOriginAnimations.isEmpty || cameraMotionPlayback?.needsFrames == true || cameraPathPlayback?.needsFrames == true {
+        if !dynamicOriginAnimations.isEmpty || !dynamicScaleAnimations.isEmpty || !dynamicAnglesAnimations.isEmpty
+            || cameraMotionPlayback?.needsFrames == true || cameraPathPlayback?.needsFrames == true {
             demand.insert(.animations)
         }
         if sceneSupportsAudioProcessing {
