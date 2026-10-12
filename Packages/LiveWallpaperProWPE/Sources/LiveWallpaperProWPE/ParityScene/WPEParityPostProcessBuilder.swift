@@ -58,7 +58,7 @@ private struct WPEParityPostProcessStream {
             WPELogicalResource(id: "backbuffer", width: config.backbufferWidth, height: config.backbufferHeight,
                                format: config.backbufferFormat, lifetime: .output),
             WPELogicalResource(id: "backbufferDepth", width: config.backbufferWidth, height: config.backbufferHeight,
-                               format: "depth32float", lifetime: .frameTransient),
+                               format: "depth32float", lifetime: .persistent),
         ]
     }
 

@@ -22,6 +22,8 @@ public enum WPEParitySceneWriteMask: Hashable, Sendable {
 public struct WPEParitySceneDescription: Hashable, Sendable {
     public var width: Int
     public var height: Int
+    /// Backbuffer, `_rt_FullFrameBuffer` and the multisampled scene target; HDR scenes use `rgba16float`.
+    public var backbufferFormat: String
     public var clearColor: SIMD3<Double>
     public var clearEnabled: Bool
     /// 1 renders straight into the backbuffer; more routes through `_rt_FullFrameBufferMultiSampled`.
@@ -32,11 +34,13 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var forcesLayerComposite: Bool
     public var objects: [WPEParitySceneObject]
 
-    public init(width: Int, height: Int, clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
+    public init(width: Int, height: Int, backbufferFormat: String = WPEParitySceneResource.colorFormat,
+                clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
                 msaaSamples: Int = 1, transparentSorting: Bool = false, forcesLayerComposite: Bool = false,
                 objects: [WPEParitySceneObject]) {
         self.width = width
         self.height = height
+        self.backbufferFormat = backbufferFormat
         self.clearColor = clearColor
         self.clearEnabled = clearEnabled
         self.msaaSamples = msaaSamples

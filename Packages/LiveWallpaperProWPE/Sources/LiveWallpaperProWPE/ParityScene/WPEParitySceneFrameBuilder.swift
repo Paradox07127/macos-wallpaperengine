@@ -54,11 +54,12 @@ private struct WPEParitySceneEmitter {
         let multisampled = scene.msaaSamples > 1
         sceneColor = multisampled ? Resource.multisampled : Resource.backbuffer
         sceneDepth = multisampled ? Resource.multisampledDepth : Resource.backbufferDepth
-        register(Resource.backbuffer, scene.width, scene.height, lifetime: .output)
+        let format = scene.backbufferFormat
+        register(Resource.backbuffer, scene.width, scene.height, format: format, lifetime: .output)
         register(Resource.backbufferDepth, scene.width, scene.height, format: Resource.depthFormat)
-        register(Resource.fullFrameBuffer, scene.width, scene.height)
+        register(Resource.fullFrameBuffer, scene.width, scene.height, format: format)
         if multisampled {
-            register(Resource.multisampled, scene.width, scene.height, samples: scene.msaaSamples)
+            register(Resource.multisampled, scene.width, scene.height, format: format, samples: scene.msaaSamples)
             register(Resource.multisampledDepth, scene.width, scene.height, format: Resource.depthFormat,
                      samples: scene.msaaSamples)
         }
