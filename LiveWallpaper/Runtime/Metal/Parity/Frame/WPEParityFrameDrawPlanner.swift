@@ -13,6 +13,13 @@ struct WPEParityFrameDrawPlan {
         case image(MTLTexture)
     }
 
+    /// One TEXS frame: its sampling transform, the sheet image it samples and how long it shows.
+    struct SpriteStep {
+        let frame: WPEParityUniformSpriteFrame
+        let texture: MTLTexture
+        let duration: Double
+    }
+
     let pipeline: WPEParityPipeline
     let depthStencil: WPEParityDepthStencilState
     let rasterizer: WPEParityRasterizerState
@@ -25,7 +32,7 @@ struct WPEParityFrameDrawPlan {
     /// Set when camera parallax moves the view, so the layer matrices are recomputed every frame.
     let placement: Placement?
     /// TEXS frames of each sprite-sheet slot, shown in turn for their durations.
-    let sprites: [Int: [(frame: WPEParityUniformSpriteFrame, duration: Double)]]
+    let sprites: [Int: [SpriteStep]]
     /// The binding description's constants per stage; the engine uniform set does not carry them.
     let constants: [WPEHLSLStage: [String: WPECBufferValue]]
     /// Per stage, declared constants that neither the binding nor the engine uniform set supplies, so they stay zero.
@@ -58,8 +65,11 @@ struct WPEParityFrameDrawPlan {
         draw.indexBuffer = indexBuffer
         draw.indexCount = WPEParityLayerQuad.indices.count
         var uniforms = frameUniforms(parallax: frame.parallax.smoothed)
+        var spriteTextures: [String: MTLTexture] = [:]
         for (slot, steps) in sprites where slot < uniforms.textures.count {
-            uniforms.textures[slot]?.spriteFrame = Self.sprite(steps, at: frame.clock.time)
+            let step = Self.sprite(steps, at: frame.clock.time)
+            uniforms.textures[slot]?.spriteFrame = step?.frame
+            spriteTextures["g_Texture\(slot)"] = step?.texture
         }
         var engine = WPEParityUniformSet.values(frame: frame, draw: uniforms)
         // R6: only a bound sprite frame writes these; any other draw uploads what the slot last held.
@@ -85,22 +95,22 @@ struct WPEParityFrameDrawPlan {
                 draw.textures[name] = texture
             }
         }
+        draw.textures.merge(spriteTextures) { $1 }
         return draw
     }
 
     /// The frame showing at `time`, looping over the whole sequence.
-    private static func sprite(_ steps: [(frame: WPEParityUniformSpriteFrame, duration: Double)],
-                               at time: Double) -> WPEParityUniformSpriteFrame? {
+    private static func sprite(_ steps: [SpriteStep], at time: Double) -> SpriteStep? {
         let total = steps.reduce(0) { $0 + $1.duration }
-        guard total > 0 else { return steps.first?.frame }
+        guard total > 0 else { return steps.first }
         var remaining = time.truncatingRemainder(dividingBy: total)
         for step in steps {
             if remaining < step.duration {
-                return step.frame
+                return step
             }
             remaining -= step.duration
         }
-        return steps.last?.frame
+        return steps.last
     }
 }
 
@@ -112,10 +122,10 @@ struct WPEParityFrameDrawPlanner {
         "r16float": .r16Float, "rg16float": .rg16Float, "depth32float": .depth32Float,
     ]
 
-    private struct Image {
+    struct Image {
         let texture: MTLTexture
         let info: WPETexInfo?
-        var sprites: [(frame: WPEParityUniformSpriteFrame, duration: Double)] = []
+        var sprites: [WPEParityFrameDrawPlan.SpriteStep] = []
     }
 
     /// TEXI flag 0x4: the file carries TEXS sprite frames.
@@ -181,7 +191,7 @@ struct WPEParityFrameDrawPlanner {
         var textures = [[String: WPEParityFrameDrawPlan.TextureSource]](repeating: [:], count: bindings.count)
         var samplers: [String: WPEParitySamplerState] = [:]
         var uniformTextures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
-        var sprites: [Int: [(frame: WPEParityUniformSpriteFrame, duration: Double)]] = [:]
+        var sprites: [Int: [WPEParityFrameDrawPlan.SpriteStep]] = [:]
         let names = Set((artifact.vertex.reflection.resources + artifact.fragment.reflection.resources)
             .filter { $0.kind == .texture }.map(\.name))
         for name in names.sorted() {
@@ -318,21 +328,8 @@ struct WPEParityFrameDrawPlanner {
         guard let data = plan.scene.assets.data("materials/\(name).tex") else {
             throw .texture("materials/\(name).tex not found")
         }
-        let span = WPEMappedByteSpan(data: data)
-        let decoder = WPETexDecoder()
         do {
-            let info = try decoder.probe(span: span).get()
-            let cgImage = try WPERasterImageAlpha.straightImage(decoder.decode(span: span).get())
-            let texture = try MTKTextureLoader(device: device).newTexture(cgImage: cgImage, options: [
-                .SRGB: false,
-                .generateMipmaps: false,
-                .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
-                .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
-            ])
-            var image = Image(texture: texture, info: info)
-            if info.flags & Self.spriteFlag != 0 {
-                image.sprites = try Self.sprites(decoder.extractTexturePayload(span: span).get())
-            }
+            let image = try Self.image(WPEMappedByteSpan(data: data), device: device)
             assetImages[name] = image
             return image
         } catch WPETexDecodeError.unsupportedAnimation {
@@ -340,6 +337,60 @@ struct WPEParityFrameDrawPlanner {
         } catch {
             throw .texture("materials/\(name).tex: \(error)")
         }
+    }
+
+    /// Uploads a .tex's first image and, for a TEXS sprite sheet, every other image its frames sample.
+    static func image(_ span: WPEMappedByteSpan, device: MTLDevice) throws -> Image {
+        let decoder = WPETexDecoder()
+        let info = try decoder.probe(span: span).get()
+        let first = try upload(decoder.decode(span: span).get(), device: device)
+        guard info.flags & spriteFlag != 0 else { return Image(texture: first, info: info) }
+        let payload = try decoder.extractTexturePayload(span: span).get()
+        var images = [0: first]
+        func texture(_ frame: WPETexAnimationFrame) throws -> MTLTexture {
+            if let uploaded = images[frame.imageID] {
+                return uploaded
+            }
+            guard let mip = frame.mipmaps.first else { throw WPETexDecodeError.missingBitmapBlock }
+            let uploaded = try upload(rgbaImage(mip, info: payload.info).makeCGImage(), device: device)
+            images[frame.imageID] = uploaded
+            return uploaded
+        }
+        let sprites = try (payload.animationTrack?.frames ?? []).compactMap { frame in
+            try sprite(frame, info: payload.info).map {
+                try WPEParityFrameDrawPlan.SpriteStep(frame: $0, texture: texture(frame), duration: frame.duration)
+            }
+        }
+        return Image(texture: first, info: info, sprites: sprites)
+    }
+
+    /// A sheet image's top mip decoded to RGBA as `WPETexDecoder.decode` decodes image 0.
+    private static func rgbaImage(_ mip: WPETexTextureMipmap, info: WPETexInfo) throws -> DecodedRGBAImage {
+        let (bytes, width, height, index) = (mip.bytes, mip.width, mip.height, mip.index)
+        switch info.format {
+        case .rgba8888:
+            return try WPETexPixelDecoder.decodeRGBA8888(bytes, width: width, height: height, mipmap: index)
+        case .r8:
+            return try WPETexPixelDecoder.decodeR8(bytes, width: width, height: height, mipmap: index)
+        case .rg88:
+            return try WPETexPixelDecoder.decodeRG88(bytes, width: width, height: height, mipmap: index,
+                                                     alphaChannelPriority: info.isRG88LuminanceAlpha)
+        case let format? where [.dxt1, .dxt3, .dxt5, .bc7].contains(format):
+            return try WPETexMetalTranscoder.transcode(bytes, format: format, width: width, height: height,
+                                                       mipmap: index)
+        default:
+            throw WPETexDecodeError.unsupportedFormat(code: info.textureFormatCode)
+        }
+    }
+
+    /// The decoded RGBA image as an unmipped private texture.
+    private static func upload(_ image: CGImage, device: MTLDevice) throws -> MTLTexture {
+        try MTKTextureLoader(device: device).newTexture(cgImage: WPERasterImageAlpha.straightImage(image), options: [
+            .SRGB: false,
+            .generateMipmaps: false,
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
+        ])
     }
 
     /// Composites use the sampler WPE creates with them; images follow their TEXI flags.
@@ -360,7 +411,7 @@ struct WPEParityFrameDrawPlanner {
     }
 
     private func uniformTexture(_ source: WPEParityFrameDrawPlan.TextureSource) -> WPEParityUniformTexture? {
-        let texture: MTLTexture
+        var texture: MTLTexture
         let info: WPETexInfo?
         switch source {
         case let .resource(id):
@@ -375,38 +426,36 @@ struct WPEParityFrameDrawPlanner {
         case let .image(image):
             (texture, info) = (image, assetImages.values.first { $0.texture === image }?.info)
         }
+        let sprites = sprites(source)
+        // A sprite sheet reports the image its first frame samples.
+        texture = sprites.first?.texture ?? texture
         let imageWidth = info.map(\.imageWidth).flatMap { $0 > 0 ? $0 : nil } ?? texture.width
         let imageHeight = info.map(\.imageHeight).flatMap { $0 > 0 ? $0 : nil } ?? texture.height
         return WPEParityUniformTexture(textureWidth: UInt32(texture.width), textureHeight: UInt32(texture.height),
                                        imageWidth: UInt32(imageWidth), imageHeight: UInt32(imageHeight),
                                        mipMapInfo: Int32(texture.mipmapLevelCount),
-                                       spriteFrame: sprites(source).first?.frame)
+                                       spriteFrame: sprites.first?.frame)
     }
 
-    private func sprites(_ source: WPEParityFrameDrawPlan.TextureSource)
-        -> [(frame: WPEParityUniformSpriteFrame, duration: Double)] {
+    private func sprites(_ source: WPEParityFrameDrawPlan.TextureSource) -> [WPEParityFrameDrawPlan.SpriteStep] {
         switch source {
         case let .resource(id): layerImageAssets[id]?.sprites ?? []
         case let .image(texture): assetImages.values.first { $0.texture === texture }?.sprites ?? []
         }
     }
 
-    /// TEXS frames back in sheet pixels; the decoder divides them by the frame image's mip 0 size.
-    private static func sprites(_ payload: WPETexTexturePayload)
-        -> [(frame: WPEParityUniformSpriteFrame, duration: Double)] {
-        (payload.animationTrack?.frames ?? []).compactMap { frame in
-            guard let sampling = frame.samplingDescriptor else { return nil }
-            let mip = frame.mipmaps.first
-            let size = SIMD2(Float(mip?.width ?? payload.info.width), Float(mip?.height ?? payload.info.height))
-            let (rotation, translation) = (sampling.rotation, sampling.translation)
-            let sprite = WPEParityUniformSpriteFrame(
-                x: translation.x * size.x, y: translation.y * size.y,
-                widthX: rotation.x * size.x, widthY: rotation.y * size.x,
-                heightX: rotation.z * size.y, heightY: rotation.w * size.y,
-                imageWidth: size.x, imageHeight: size.y
-            )
-            return (sprite, frame.duration)
-        }
+    /// A TEXS frame back in sheet pixels; the decoder divides it by the frame image's mip 0 size.
+    private static func sprite(_ frame: WPETexAnimationFrame, info: WPETexInfo) -> WPEParityUniformSpriteFrame? {
+        guard let sampling = frame.samplingDescriptor else { return nil }
+        let mip = frame.mipmaps.first
+        let size = SIMD2(Float(mip?.width ?? info.width), Float(mip?.height ?? info.height))
+        let (rotation, translation) = (sampling.rotation, sampling.translation)
+        return WPEParityUniformSpriteFrame(
+            x: translation.x * size.x, y: translation.y * size.y,
+            widthX: rotation.x * size.x, widthY: rotation.y * size.x,
+            heightX: rotation.z * size.y, heightY: rotation.w * size.y,
+            imageWidth: size.x, imageHeight: size.y
+        )
     }
 
     // MARK: State and geometry
