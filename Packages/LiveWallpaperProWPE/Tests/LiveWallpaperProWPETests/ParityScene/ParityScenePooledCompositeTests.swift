@@ -14,6 +14,12 @@ struct ParityScenePooledCompositeTests {
         #expect(frame.draws["L/albedo"]?.target == WPEResourceID("sc.512.256.\(letters)1"))
     }
 
+    /// 1401ea500.c:113-126 creates min(2, bit4 + n) composites; one effect of one pass needs only the first.
+    @Test func singlePassLayerRegistersOneComposite() {
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [F.effect("e1")])]))
+        #expect(Self.composites(frame) == [F.bc0])
+    }
+
     @Test func nestedLayerCountsAncestorsWithTheSamePrefix() {
         let scene = F.scene([
             F.layer("P", passthrough: true, copyBackground: false, effects: [F.effect("pe")]),
@@ -25,7 +31,7 @@ struct ParityScenePooledCompositeTests {
         #expect(frame.draws["P/pe/0"]?.reads == [WPEResourceID(F.bc0)])
         #expect(frame.draws["C/albedo"]?.target == "sc.512.256.bc01")
         #expect(frame.draws["G/albedo"]?.target == "sc.512.256.bc02")
-        #expect(Self.composites(frame) == [F.bc0, "sc.512.256.bc01", "sc.512.256.bc02", F.bc1])
+        #expect(Self.composites(frame) == [F.bc0, "sc.512.256.bc01", "sc.512.256.bc02"])
     }
 
     @Test func noSuffixWithoutAMatchingAncestorComposite() {

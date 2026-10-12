@@ -5,8 +5,11 @@ public enum WPEParitySceneFrameBuilder {
     public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0) -> WPEParitySceneFrame {
         var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex)
         emitter.renderScene()
+        // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
+        let used = Set(emitter.operations.flatMap(\.kind.resources))
         return WPEParitySceneFrame(operations: emitter.operations,
-                                   resources: emitter.resources.values.sorted { $0.id < $1.id },
+                                   resources: emitter.resources.values.filter { used.contains($0.id) }
+                                       .sorted { $0.id < $1.id },
                                    draws: emitter.draws, samplers: emitter.samplers)
     }
 }
@@ -312,5 +315,17 @@ private struct WPEParitySceneEmitter {
         guard resources[id] == nil else { return }
         resources[id] = WPELogicalResource(id: id, width: width, height: height, format: format,
                                            sampleCount: samples, lifetime: lifetime)
+    }
+}
+
+private extension WPERenderOperation.Kind {
+    var resources: [WPEResourceID] {
+        switch self {
+        case let .setTargets(color, depth): (color + [depth].compactMap(\.self)).map(\.resource)
+        case let .clearColor(view, _), let .clearDepth(view, _): [view.resource]
+        case let .draw(draw): draw.reads.map(\.resource)
+        case let .copy(source, destination), let .resolve(source, destination): [source, destination]
+        case let .generateMips(id): [id]
+        }
     }
 }
