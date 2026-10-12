@@ -74,6 +74,38 @@ struct DisplayDetailHost: View {
     }
 
     var body: some View {
+        content
+            .onChange(of: router.detailDisplayID, initial: true) { _, id in
+                request(id)
+            }
+            .onChange(of: router.pendingFailureID, initial: true) { openPendingFailure() }
+            .onChange(of: router.pendingDetailSection, initial: true) { openPendingSection() }
+            .onChange(of: coordinator?.busy ?? false, initial: true) { _, value in
+                busy = value
+                if !value, let libraryHandoff {
+                    openLibrary(libraryHandoff)
+                }
+            }
+            .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
+            .onChange(of: inspectorWidth) { coordinator?.windowDidResize() }
+            .onChange(of: inspectorVisible) { coordinator?.windowDidResize() }
+            .onChange(of: screenManager.screens.map(\.id)) {
+                if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
+                    overlaySession?.detach()
+                    overlaySession = nil
+                    overlayCopy = nil
+                }
+            }
+            .onDisappear {
+                overlaySession?.detach()
+                closeShownFailure()
+                // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
+                coordinator?.onShow = { _ in }
+                coordinator?.onRelease = {}
+            }
+    }
+
+    private var content: some View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
@@ -93,34 +125,6 @@ struct DisplayDetailHost: View {
             for (display, frame) in frames {
                 coordinator?.heroDidLayout(display: display, frame: frame)
             }
-        }
-        .onChange(of: router.detailDisplayID, initial: true) { _, id in
-            request(id)
-        }
-        .onChange(of: router.pendingFailureID, initial: true) { openPendingFailure() }
-        .onChange(of: router.pendingDetailSection, initial: true) { openPendingSection() }
-        .onChange(of: coordinator?.busy ?? false, initial: true) { _, value in
-            busy = value
-            if !value, let libraryHandoff {
-                openLibrary(libraryHandoff)
-            }
-        }
-        .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
-        .onChange(of: inspectorWidth) { coordinator?.windowDidResize() }
-        .onChange(of: inspectorVisible) { coordinator?.windowDidResize() }
-        .onChange(of: screenManager.screens.map(\.id)) {
-            if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
-                overlaySession?.detach()
-                overlaySession = nil
-                overlayCopy = nil
-            }
-        }
-        .onDisappear {
-            overlaySession?.detach()
-            closeShownFailure()
-            // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
-            coordinator?.onShow = { _ in }
-            coordinator?.onRelease = {}
         }
     }
 
