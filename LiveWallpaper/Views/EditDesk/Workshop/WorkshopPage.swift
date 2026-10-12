@@ -170,7 +170,7 @@ struct WorkshopPage: View {
                 }
                 .sheet(isPresented: page.$isShowingDownloads) {
                     AppLanguageScope(defaults: .appScoped()) {
-                        WorkshopDownloadsSheet()
+                        WorkshopDownloadsSheet(onConnectSteam: page.presentWizard)
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {

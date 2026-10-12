@@ -11,6 +11,8 @@ struct SubscriptionSyncSheet: View {
     @State private var downloads = WorkshopDownloadCoordinator.shared
     @State private var queue = WorkshopDownloadQueue.shared
     @State private var showingSignIn = false
+    /// Why the last folder choice from this sheet was refused; nil after a cancel or a successful bind.
+    @State private var libraryError: String?
     /// Leading edge of a row's title text, so dividers start after the checkbox.
     @State private var titleInset: CGFloat = 0
 
@@ -92,6 +94,15 @@ struct SubscriptionSyncSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if sync.requiresSignIn {
                     Button("Sign In") { showingSignIn = true }
+                }
+                if sync.requiresLibraryAccess {
+                    Button("Choose folder") { Task { await chooseLibraryFolder() } }
+                    if let libraryError {
+                        Text(verbatim: libraryError)
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(DesignTokens.Colors.Status.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -305,6 +316,16 @@ struct SubscriptionSyncSheet: View {
 
     private var primaryDisabled: Bool {
         missing.isEmpty ? sync.phase == .checking : sync.downloadableSelection().isEmpty
+    }
+
+    private func chooseLibraryFolder() async {
+        // A cancelled panel returns before the controller clears its error, so a stale one would read as this choice's.
+        setupController.setupError = nil
+        await setupController.authorizeSteamLibrary(startingAtScannedPath: true)
+        libraryError = setupController.setupError
+        if libraryError == nil {
+            await sync.refresh(using: doctor)
+        }
     }
 
     private func primaryAction() {
