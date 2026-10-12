@@ -1,7 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Locates `wpe-shaderc` and the two libraries it loads: the app bundle first, then (DEBUG only) local builds.
+/// Locates `wpe-shaderc` and the two libraries it loads: the app bundle first, then local builds.
 enum WPEParityShaderToolchain {
     struct Unavailable: Error, CustomStringConvertible {
         let description: String
@@ -18,13 +18,11 @@ enum WPEParityShaderToolchain {
         var locations = [Location(helper: contents.appending(path: "MacOS/wpe-shaderc"),
                                   dxcompiler: contents.appending(path: "Frameworks/libdxcompiler.dylib"),
                                   metalIRConverter: contents.appending(path: "Frameworks/libmetalirconverter.dylib"))]
-        #if DEBUG
         locations.append(Location(
             helper: URL(fileURLWithPath: "/Users/example/Developer/wpe-shaderc-build/wpe-shaderc"),
             dxcompiler: URL(fileURLWithPath: "/Users/example/Developer/DirectXShaderCompiler/build-14.6/lib/libdxcompiler.dylib"),
             metalIRConverter: URL(fileURLWithPath: "/usr/local/lib/libmetalirconverter.dylib")
         ))
-        #endif
         var missing: [String] = []
         for location in locations {
             let absent = [location.helper, location.dxcompiler, location.metalIRConverter]

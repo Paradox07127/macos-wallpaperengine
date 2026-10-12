@@ -129,6 +129,22 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Multithreaded rendering"))
                     .accessibilityHint(Text("Scene wallpapers only. Disable for troubleshooting; changes reload wallpapers."))
             }
+
+            // Developer comparison control; strings stay out of the string catalog.
+            SettingRow(icon: "arrow.triangle.branch", iconColor: .gray, verbatimTitle: "Scene pipeline") {
+                Picker(selection: $parityRendererMode) {
+                    Text(verbatim: "Old renderer").tag(WPEParityRendererFlag.Mode.off)
+                    Text(verbatim: "New pipeline (all scenes)").tag(WPEParityRendererFlag.Mode.all)
+                    Text(verbatim: "Per scene (use the list)").tag(WPEParityRendererFlag.Mode.listed)
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: parityRendererMode) { _, _ in screenManager.reloadAllScreens() }
+                .accessibilityLabel(Text(verbatim: "Scene pipeline"))
+            }
         } header: {
             SettingsSearchSectionHeader("Rendering", anchor: .performanceRendering)
         }
