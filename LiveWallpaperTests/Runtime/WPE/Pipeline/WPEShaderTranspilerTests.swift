@@ -171,6 +171,27 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    @Test("vec2 targets truncate bare resolution operands but not author-helper arguments")
+    func vector2ResolutionTruncationStopsAtHelperArguments() throws {
+        let source = """
+        uniform sampler2D g_Texture0;
+        uniform vec4 g_Texture0Resolution;
+        in vec2 v_TexCoord;
+        vec2 scaled(vec2 uv, vec4 resolution) { return uv * resolution.zw / resolution.xy; }
+        void main() {
+            vec2 strength = (vec2(500.0, 500.0) / g_Texture0Resolution) * 2.0;
+            vec2 uv = scaled(v_TexCoord, g_Texture0Resolution) + strength;
+            gl_FragColor = texture(g_Texture0, uv);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(shaderName: "resolution_args", preprocessedSource: source)
+        #expect(result.mslSource.contains("float2(500.0, 500.0) / g_Texture0Resolution.xy"))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
     @Test("Perspective + dual-wave varyings reconstruct to faithful MSL that compiles")
     func reconstructsPerspectiveAndDualWaveVaryings() throws {
         let source = """

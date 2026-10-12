@@ -398,14 +398,41 @@ extension WPEShaderTranspiler {
                     continue
                 }
                 let rhs = String(result[rhsRange])
-                let narrowed = rhs.replacingOccurrences(
-                    of: #"\b(g_Texture[0-9]+Resolution)\b(?!\s*\.)"#,
-                    with: "$1.xy",
-                    options: .regularExpression
-                )
+                let narrowed = narrowingResolutionOperands(in: rhs)
                 guard narrowed != rhs else { continue }
                 result.replaceSubrange(rhsRange, with: narrowed)
             }
+        }
+        return result
+    }
+
+    /// An argument to any other call is typed by the callee's parameter, not by the assignment target, so it keeps its vec4.
+    private static let resolutionTruncatingCallees: Set<String> = componentWiseBuiltins.union(["float2", "float3", "float4", "sample"])
+
+    private static func narrowingResolutionOperands(in rhs: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\b(g_Texture[0-9]+Resolution)\b(?!\s*\.)"#) else {
+            return rhs
+        }
+        var result = rhs
+        for match in regex.matches(in: rhs, range: NSRange(rhs.startIndex..., in: rhs)).reversed() {
+            guard let range = Range(match.range, in: rhs) else { continue }
+            // nil = grouping parenthesis; otherwise the identifier that opened the call.
+            var callees: [String?] = []
+            var identifier = ""
+            for ch in rhs[..<range.lowerBound] {
+                if isIdentifierCharacter(ch) {
+                    identifier.append(ch)
+                    continue
+                }
+                if ch == "(" {
+                    callees.append(identifier.isEmpty ? nil : identifier)
+                } else if ch == ")" {
+                    _ = callees.popLast()
+                }
+                if !ch.isWhitespace { identifier = "" }
+            }
+            guard callees.allSatisfy({ $0.map(resolutionTruncatingCallees.contains) ?? true }) else { continue }
+            result.replaceSubrange(range, with: "\(rhs[range]).xy")
         }
         return result
     }

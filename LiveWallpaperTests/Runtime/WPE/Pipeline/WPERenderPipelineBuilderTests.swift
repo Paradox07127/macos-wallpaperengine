@@ -3307,6 +3307,82 @@ struct WPERenderPipelineBuilderTests {
         _ = try device.makeLibrary(source: result.mslSource, options: options)
     }
 
+    @Test("Author helper taking a texture-resolution uniform argument compiles at nested call sites")
+    func authorHelperTakingResolutionUniformCompiles() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/outline_like.vert": """
+            uniform mat4 g_ModelViewProjectionMatrix;
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 v_TexCoord;
+            void main() {
+                gl_Position = mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix);
+                v_TexCoord = a_TexCoord;
+            }
+            """,
+            "shaders/effects/outline_like.frag": """
+            uniform sampler2D g_Texture0; // {"material":"framebuffer","hidden":true}
+            uniform sampler2D g_Texture1; // {"material":"sourceart"}
+            uniform sampler2D g_Texture2; // {"material":"noise"}
+            uniform sampler2D g_Texture3; // {"material":"mask1"}
+            uniform sampler2D g_Texture4; // {"material":"mask2"}
+            uniform vec4 g_Texture0Resolution;
+            uniform vec4 g_Texture1Resolution;
+            uniform vec4 g_Texture2Resolution;
+            uniform vec4 g_Texture3Resolution;
+            uniform vec4 g_Texture4Resolution;
+            uniform vec4 u_ArtRect; // {"material":"artrect","default":"1 1 0 0"}
+            uniform vec4 u_Mask1ST; // {"material":"mask1st","default":"1 1 0 0"}
+            uniform vec4 u_Mask2ST; // {"material":"mask2st","default":"1 1 0 0"}
+            uniform float u_Threshold1; // {"material":"threshold1","default":0,"range":[-1,1]}
+            uniform float u_Threshold2; // {"material":"threshold2","default":0,"range":[-1,1]}
+            uniform float u_OffsetX; // {"material":"offsetx","default":0,"range":[-5,5]}
+            uniform float u_OffsetY; // {"material":"offsety","default":0,"range":[-5,5]}
+            uniform float u_IntensityX; // {"material":"intensityx","default":0.007}
+            uniform float u_IntensityY; // {"material":"intensityy","default":0.003}
+            uniform float u_Invert1; // {"material":"invert1","default":1}
+            uniform float u_Invert2; // {"material":"invert2","default":0}
+            varying vec2 v_TexCoord;
+            vec2 glUV(vec2 uv, vec4 resolution) {
+                return clamp(vec2(uv.x,1.0-uv.y)*resolution.zw,vec2(.5,.5),resolution.zw-vec2(.5,.5))/resolution.xy;
+            }
+            void main() {
+                vec2 localUV = v_TexCoord / (g_Texture0Resolution.zw/g_Texture0Resolution.xy);
+                vec2 uv = vec2(localUV.x,1.0-localUV.y);
+                vec2 nUV = frac(uv*vec2(6.0,2.0)+vec2(u_OffsetX,u_OffsetY));
+                vec2 n = texSample2DLod(g_Texture2,glUV(nUV,g_Texture2Resolution),0.0).rg*2.0-vec2(1.0,1.0);
+                vec2 q = uv+n*vec2(u_IntensityX,u_IntensityY);
+                vec4 c = texSample2DLod(g_Texture1,glUV(q*u_ArtRect.xy+u_ArtRect.zw,g_Texture1Resolution),0.0);
+                float a = texSample2DLod(g_Texture3,glUV(frac(q*u_Mask1ST.xy+u_Mask1ST.zw),g_Texture3Resolution),0.0).r;
+                float b = texSample2DLod(g_Texture4,glUV(frac(uv*u_Mask2ST.xy+u_Mask2ST.zw),g_Texture4Resolution),0.0).r;
+                a = mix(a,1.0-a,u_Invert1); b = mix(b,1.0-b,u_Invert2);
+                c.a *= step(u_Threshold1,a)*step(u_Threshold2,b);
+                gl_FragColor = c;
+            }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let graph = WPERenderGraph(layers: [
+            WPERenderLayer(
+                objectID: "1", objectName: "Layer", imagePath: "materials/base.png", materialPath: nil,
+                geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [],
+                passes: [
+                    WPERenderPass(
+                        id: "1.0", phase: .effect(file: "effects/outline/effect.json"),
+                        shader: "effects/outline_like", source: .image("materials/base.png"), target: .scene,
+                        textures: [:], binds: [:], constants: [:], combos: [:], blending: "normal",
+                        cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+                    ),
+                ]
+            ),
+        ])
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        try compileFragment(of: pass)
+    }
+
     @Test("Expands common_fragment.h ConvertSampleR8 used by WPE 2.8 font.frag")
     func expandsCommonFragmentConvertSampleR8() throws {
         let fixture = try makeFixture(files: [
