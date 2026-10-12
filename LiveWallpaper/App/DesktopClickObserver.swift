@@ -18,7 +18,7 @@ final class DesktopClickObserver {
         var dragged = false
     }
 
-    private static let dragThreshold: CGFloat = 4
+    static let dragThreshold: CGFloat = 4
 
     private let targets: @MainActor () -> [DesktopClickTarget]
     private var monitors: [Any] = []

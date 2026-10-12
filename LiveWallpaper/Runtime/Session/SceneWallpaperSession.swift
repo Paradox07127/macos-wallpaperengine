@@ -77,8 +77,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var hasRenderer = true
     private var currentProfile: WallpaperPerformanceProfile = .quality
     private var transitionHold = false
-    /// The "Interaction" toggle as last applied; while on, native click capture owns this screen's clicks.
+    /// The "Interaction" toggle as last applied; while on, hot-zone panels take presses over the scene's clickable layers.
     private var clickCaptureEnabled = false
+    private var hotZoneInputSuspended = false
+    private var hotZoneController: SceneHotZoneController?
+    private var hotZoneRouter = SceneHotZoneRouter()
+    private var hotZoneScreenObserver: NSObjectProtocol?
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
     private var requiresSystemAudioCapture = false
     private var lastLoggedAudioDemandInputs = ""
@@ -152,6 +156,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         self.hibernationDelay = hibernationDelay
         self.userPauseHibernationDelay = userPauseHibernationDelay
         self.wakeRetryDelay = wakeRetryDelay
+        // Called on the render thread.
+        surface.mailbox.setInteractiveZonesObserver { [weak self] _ in
+            Task { @MainActor in self?.refreshHotZones() }
+        }
     }
 
     private var effectivePerformanceProfile: WallpaperPerformanceProfile {
@@ -346,6 +354,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         // The window's contentView IS the renderer's MTKView (set at build time),
         // so resize it here without reaching into the actor for `nsView`.
         window?.contentView?.frame = CGRect(origin: .zero, size: frame.size)
+        refreshHotZones()
     }
 
     func show() {
@@ -379,6 +388,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
         reconcileManualPauseHibernation()
         reconcileSystemAudioCaptureDemand()
+        refreshHotZones()
     }
 
     private func reloadForWake() async {
@@ -493,15 +503,65 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         renderActor.submitConfig(.mouseInteractionEnabled(enabled))
     }
 
+    /// The wallpaper window stays click-through; presses reach the scene through hot-zone panels and desktop clicks.
     func setClickCaptureEnabled(_ enabled: Bool) {
         clickCaptureEnabled = enabled
-        (window as? VideoWallpaperWindow)?.setWallpaperMouseInteractionEnabled(enabled)
         renderActor.submitConfig(.clickCaptureEnabled(enabled))
+        refreshHotZones()
     }
 
-    /// Also waits for the mailbox's own capture gate, which flips later on the render actor and would drop the press.
+    func setHotZoneInputSuspended(_ suspended: Bool) {
+        hotZoneInputSuspended = suspended
+        refreshHotZones()
+    }
+
+    private var hotZonesActive: Bool {
+        clickCaptureEnabled && isPlaying && !hotZoneInputSuspended
+    }
+
+    private func refreshHotZones() {
+        guard hasRenderer, hotZonesActive || hotZoneController != nil else { return }
+        let controller = hotZoneController ?? makeHotZoneController()
+        controller.isEnabled = hotZonesActive
+        let viewFrame = hotZoneViewFrame
+        controller.update(zones: surface.mailbox.interactiveZones.map {
+            SceneHotZoneRouter.screenRect(forZone: $0, in: viewFrame)
+        })
+    }
+
+    /// The same geometry the surface's pointer publisher writes into the mailbox, read fresh on every refresh.
+    private var hotZoneViewFrame: CGRect {
+        (surface.pointerGeometryOverride ?? WPEPointerPublisher.geometry(of: surface.mtkView)).viewFrameInScreen
+    }
+
+    private func makeHotZoneController() -> SceneHotZoneController {
+        let controller = SceneHotZoneController { [weak self] event in
+            guard let self, hotZoneRouter.route(event, to: surface.mailbox, viewFrame: hotZoneViewFrame) else { return }
+            Task { [renderActor] in await renderActor.renderFrame() }
+        }
+        hotZoneController = controller
+        hotZoneScreenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshHotZones() }
+        }
+        return controller
+    }
+
+    private func tearDownHotZones() {
+        hotZoneController?.tearDown()
+        hotZoneController = nil
+        if let hotZoneScreenObserver {
+            NotificationCenter.default.removeObserver(hotZoneScreenObserver)
+        }
+        hotZoneScreenObserver = nil
+        surface.mailbox.setInteractiveZonesObserver(nil)
+        // A press held at close would otherwise leave the mailbox's button down.
+        surface.mailbox.resetButtonEvents()
+    }
+
     var acceptsDesktopClicks: Bool {
-        isPlaying && !clickCaptureEnabled && !surface.mailbox.read().clickCaptureEnabled
+        isPlaying
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
@@ -513,7 +573,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                                     isDown: isDown, isRightDown: false)
         frame.gesture = gesture
         frame.dragged = dragged
-        surface.mailbox.publishDesktopButtonFrame(frame, isInsideView: sample.isInsideView)
+        surface.mailbox.publishDesktopButtonFrame(frame, isInsideView: sample.isInsideView, gatedByClickCapture: false)
         // A static scene's display link may be parked; without this wake the edge waits for the next unrelated frame.
         Task { [renderActor] in await renderActor.renderFrame() }
     }
@@ -549,6 +609,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         requiresSystemAudioCapture = false
         reconcileSystemAudioCaptureDemand()
         hasPresentedFrame = nil
+        tearDownHotZones()
         let displayLinkStopTask = surface.stopDisplayLinkDriver()
         window?.close()
         window = nil

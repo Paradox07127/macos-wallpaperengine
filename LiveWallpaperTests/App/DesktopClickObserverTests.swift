@@ -138,6 +138,16 @@ struct DesktopClickObserverTests {
         #expect(second.edges.map(\.isDown) == [true])
     }
 
+    @Test("A release from a hot-zone press, with no desktop press open, publishes no desktop edge")
+    func hotZoneReleaseIgnored() {
+        let receiver = RecordingReceiver()
+        let observer = makeObserver([(Self.left, receiver)])
+        // The hot-zone press lands in this app's own panel, so only the local release monitor ever sees it.
+        observer.handle(.up, at: CGPoint(x: 10, y: 20), isDesktop: onDesktop)
+
+        #expect(receiver.edges.isEmpty)
+    }
+
     @Test("Only windows at or below the desktop icon level count as the desktop")
     func desktopWindowLevels() {
         let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))

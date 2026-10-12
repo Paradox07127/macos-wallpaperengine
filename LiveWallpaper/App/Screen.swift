@@ -184,6 +184,7 @@ final class Screen: Identifiable, Hashable {
                     if holds {
                         session?.setTransitionHold(false)
                     }
+                    session?.setHotZoneInputSuspended(false)
                     if self?.openingTransition?.isFinished == true {
                         self?.openingTransition = nil
                     }
@@ -193,6 +194,7 @@ final class Screen: Identifiable, Hashable {
                 if holds {
                     session.setTransitionHold(true)
                 }
+                session.setHotZoneInputSuspended(true)
                 openingTransition = opening
                 if opening.start() {
                     return
@@ -201,6 +203,7 @@ final class Screen: Identifiable, Hashable {
                 if holds {
                     session.setTransitionHold(false)
                 }
+                session.setHotZoneInputSuspended(false)
             }
         }
         NSAnimationContext.runAnimationGroup { context in

@@ -187,14 +187,18 @@ struct SceneSpanGroupTests {
         #expect(Self.takeEdges(owner.spanSurface.mailbox).map(\.frame.isDown) == [true, false])
     }
 
-    @Test("A single-screen scene refuses desktop presses while its mailbox still has click capture on")
-    func ownerFollowsMailboxCaptureGate() throws {
+    @Test("A single-screen scene keeps taking desktop presses while Interaction is on")
+    func ownerAcceptsDesktopPressesWithClickCapture() throws {
         let (owner, _) = try Self.makeOwner()
         defer { owner.cleanup() }
-        try #require(owner.acceptsDesktopClicks)
-
+        owner.setClickCaptureEnabled(true)
         owner.spanSurface.mailbox.setClickCaptureEnabled(true)
-        #expect(!owner.acceptsDesktopClicks, "the observer would hand over a press the mailbox then drops")
+        #expect(owner.acceptsDesktopClicks, "Interaction would shut desktop clicks out of the scene")
+
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: true, gesture: 7, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).map(\.frame.gesture) == [7],
+                "the mailbox capture gate would drop the press")
     }
 
     @Test("A member joining a failed shared runtime reloads it instead of inheriting the old error")
