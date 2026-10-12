@@ -2010,6 +2010,15 @@ class WPELayerScriptBridge: @unchecked Sendable {
             return handle(forLayerKey: key, in: context)
         }
         scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
+        let getLayerByID: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
+            guard let self, let context else { return nil }
+            guard value.isString || value.isNumber, let id = value.toString(), let shared,
+                  let info = shared.layers.first(where: { $0.id == id }) else {
+                return JSValue(nullIn: context)
+            }
+            return handle(forLayerKey: shared.layerHandleKey(info), in: context)
+        }
+        scene.setObject(getLayerByID, forKeyedSubscript: "getLayerByID" as NSString)
         wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
             self?.initialLayerConfiguration(value)
         }

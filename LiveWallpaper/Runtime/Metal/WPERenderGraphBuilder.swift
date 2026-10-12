@@ -760,8 +760,15 @@ struct WPERenderGraphBuilder: Sendable {
         let scripts = allScriptSources(in: document)
         guard !scripts.isEmpty else { return [] }
         let combined = scripts.joined(separator: "\n")
+        // getLayerByID callers usually keep IDs as numbers in a data table, so match any whole-number token.
+        let numericTokens: Set<Substring> = combined.contains("getLayerByID")
+            ? Set(combined.split(whereSeparator: { !$0.isNumber })) : []
         var ids = Set<String>()
         for object in document.imageObjects {
+            if numericTokens.contains(Substring(object.id)) {
+                ids.insert(object.id)
+                continue
+            }
             // Own visible-script objects stay even when authored hidden.
             if object.visibleScript != nil {
                 ids.insert(object.id)

@@ -3152,6 +3152,31 @@ struct WPERenderPipelineBuilderTests {
         try compileFragment(of: pass)
     }
 
+    @Test("An undefined name read by `#if` stays undefined for `#ifdef` elsewhere in the source")
+    func undefinedConditionalNameStaysUndefinedForIfdef() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/ifdef_mixed.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/ifdef_mixed.frag": """
+            #ifdef SKINNING_ALPHA
+            float ifdef_live_marker(float x) { return x; }
+            #endif
+            #if MORPHING || SKINNING_ALPHA
+            float if_live_marker(float x) { return x; }
+            #endif
+            void main() { gl_FragColor = vec4(0.5); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/ifdef_mixed"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float ifdef_live_marker(float x)", in: effective) == 0)
+        #expect(occurrences(of: "float if_live_marker(float x)", in: effective) == 0)
+        try compileFragment(of: pass)
+    }
+
     @Test("An unguarded official header and a builtin header both compile when included twice")
     func repeatedUnguardedOfficialAndBuiltinHeadersCompile() throws {
         // Modelled on the official `common_blending.h`, which ships without an include guard.

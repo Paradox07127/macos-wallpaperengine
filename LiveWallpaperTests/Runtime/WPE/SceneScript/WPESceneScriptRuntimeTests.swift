@@ -5395,6 +5395,30 @@ struct WPESceneScriptInitializationOrderingTests {
         #expect(output.others["Bound"]?.visible == true)
     }
 
+    @Test("thisScene.getLayerByID resolves the authored object ID and drives that layer (3798688689)")
+    func getLayerByIDDrivesLayer() throws {
+        let store = WPESharedScriptState(layers: [
+            .init(id: "1", name: "Host", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+            .init(id: "1201", name: "[201] package", size: SIMD2(8, 8), origin: .zero, index: 1, parentName: nil,
+                  initialConfiguration: .object(["visible": .bool(false)])),
+        ])
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             export function init(value) {
+                                                                 const layer = thisScene.getLayerByID(String(1201));
+                                                                 shared.name = layer.name;
+                                                                 shared.missing = thisScene.getLayerByID('9999') === null;
+                                                                 layer.visible = true;
+                                                                 return value;
+                                                             }
+                                                             export function update(value) { return value; }
+                                                             """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Host", ownObjectID: "1",
+                                                             shared: store, governor: WPESceneScriptExecutionGovernor(limit: 4))
+        #expect(store.get("name") as? String == "[201] package")
+        #expect(store.get("missing") as? Bool == true)
+        let output = try #require(instance.takeLayerOutput())
+        #expect(output.others["[201] package"]?.visible == true)
+    }
+
     @Test("thisObject.getChildren returns authored children in paint order (3812566774 slideshow)")
     func getChildrenFeedsSlideshowInit() throws {
         // Workshop 3812566774 (EasyTransitions+): init() does

@@ -960,7 +960,9 @@ private struct WPEShaderSourceLoader: Sendable {
             knownComboNames.insert(key.uppercased())
         }
 
+        // An undefined name already reads as 0 in `#if`; defining it would flip `#ifdef`/`defined()` tests of the same name.
         let existing = Self.collectDefinedMacroNames(in: source)
+            .union(Self.collectExistenceTestedNames(in: source))
             .union(knownComboNames)
             .union(Self.preludeReservedMacros)
             .union(Self.builtinPreprocessorTokens)
@@ -1003,6 +1005,34 @@ private struct WPEShaderSourceLoader: Sendable {
             refs.formUnion(Self.uppercaseIdentifiers(in: expression))
         }
         return refs
+    }
+
+    private static func collectExistenceTestedNames(in source: String) -> Set<String> {
+        var names: Set<String> = []
+        for line in source.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#") else { continue }
+            let directive = trimmed.dropFirst().drop(while: { $0 == " " || $0 == "\t" })
+            let head = directive.prefix(while: { $0.isLetter })
+            let rest = directive.dropFirst(head.count)
+            switch head {
+            case "ifdef", "ifndef":
+                let name = rest.drop(while: { $0 == " " || $0 == "\t" })
+                    .prefix(while: { $0.isLetter || $0.isNumber || $0 == "_" })
+                if !name.isEmpty {
+                    names.insert(String(name))
+                }
+            case "if", "elif":
+                let expression = String(rest)
+                let regex = /defined\s*\(?\s*([A-Za-z_]\w*)/
+                for match in expression.matches(of: regex) {
+                    names.insert(String(match.output.1))
+                }
+            default:
+                continue
+            }
+        }
+        return names
     }
 
     // Identifiers inside `defined(X)` / `defined X` are existence checks, not

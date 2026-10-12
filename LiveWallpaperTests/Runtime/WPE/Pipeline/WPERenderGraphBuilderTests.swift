@@ -2383,6 +2383,46 @@ struct WPERenderGraphBuilderTests {
         #expect(!ids.contains("unrelated"))
     }
 
+    @Test("Script-host getLayerByID keeps hidden layers whose object ID the script names (3798688689)")
+    func scriptHostGetLayerByIDKeepsHiddenLayers() throws {
+        let script = """
+        const config = {"nodes": [{"p": "a/b", "id": 1201}]};
+        config.nodes.forEach(n => thisScene.getLayerByID(String(n.id)));
+        export function init() {}
+        export function update() {}
+        """
+        func band(_ id: String, visible: Bool) -> WPESceneImageObject {
+            WPESceneImageObject(
+                id: id, name: "[\(id)] band",
+                imageRelativePath: "materials/\(id).png", materialRelativePath: nil,
+                origin: SIMD3<Double>(0, 0, 0), scale: SIMD3<Double>(1, 1, 1), angles: SIMD3<Double>(0, 0, 0),
+                visible: visible, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1,
+                blendMode: .normal, alignment: .center, size: nil,
+                effects: [], animationLayers: []
+            )
+        }
+        let document = WPESceneDocument(
+            camera: .defaultCamera,
+            general: .defaultGeneral,
+            imageObjects: [
+                band("1201", visible: false),
+                band("120", visible: false),
+            ],
+            scriptHostObjects: [
+                WPESceneScriptHostObject(id: "host", name: "host", visibleScript: script),
+            ],
+            diagnostics: []
+        )
+
+        let graph = try WPERenderGraphBuilder(
+            cacheRootURL: FileManager.default.temporaryDirectory
+        ).build(document: document)
+        let ids = Set(graph.layers.map(\.objectID))
+
+        #expect(ids.contains("1201"))
+        #expect(!ids.contains("120"))
+    }
+
     @Test("Angles-script property values keep referenced hidden layers (3809609151 click switches)")
     func transformScriptPropertyReferencedHiddenLayersSurvivePruning() throws {
         // The click-to-toggle script lives on `angles` and reads the layer list
