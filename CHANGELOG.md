@@ -13,6 +13,19 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.8] — 2026-10-11
+
+### Added
+
+- Pro: scenes that declare Wallpaper Engine user shortcuts get one row per
+  shortcut in their settings. A row binds a website, an Apple Shortcut with
+  optional input text, a file, a folder, or an app with optional launch
+  arguments. **Test** runs the binding.
+- Pro: clicks on the desktop, desktop icons included, reach the scene while the
+  wallpaper stays click-through, so a scene's buttons can run their shortcuts
+  without the Interaction switch.
+- Pro: shortcut icon slots in a scene show the icon of the bound item.
+
 ## [0.8.7] — 2026-10-11
 
 ### Added
@@ -1318,6 +1331,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.8.8]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.7...loomscreen-v0.8.8
 [0.8.7]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.6...loomscreen-v0.8.7
 [0.8.6]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.5...loomscreen-v0.8.6
 [0.8.5]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.4...loomscreen-v0.8.5
