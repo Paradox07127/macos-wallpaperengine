@@ -84,7 +84,7 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var transformGeneration = 0
     /// Bumped by every visible change.
     public private(set) var visibilityGeneration = 0
-    /// Every image layer effect, in scene order.
+    /// Every image layer effect in scene order, then every text layer effect.
     public let effects: [EffectKey]
     /// The visible bit of each entry of `effects` (effect+0x118 bit0, R24 Q2).
     public private(set) var effectVisibility: [Bool]
@@ -110,12 +110,17 @@ public struct WPEParitySceneState: Sendable {
         }
         let images = Dictionary(document.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         let particles = Dictionary(document.particleObjects.map { ($0.id, $0) }) { first, _ in first }
-        for layer in WPEParityLayerTransform.layers(document: document) {
+        let texts = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
+        for layer in WPEParityLayerTransform.layers(document: document)
+            + WPEParityLayerTransform.textLayers(document: document) {
             var object = Object(origin: layer.origin, scale: layer.scale, angles: layer.angles, alpha: 1, color: .one,
                                 brightness: 1, visible: document.ownVisibilityByID[layer.id] ?? true)
             if let image = images[layer.id] {
                 (object.alpha, object.color, object.brightness) = (Float(image.alpha), SIMD3(image.color),
                                                                    Float(image.brightness))
+            } else if let text = texts[layer.id] {
+                (object.alpha, object.color, object.brightness) = (Float(text.alpha), SIMD3(text.color),
+                                                                   Float(text.brightness))
             } else if let particle = particles[layer.id] {
                 (object.alpha, object.color) = (Float(particle.alpha), SIMD3(particle.color))
             }
@@ -144,9 +149,11 @@ public struct WPEParitySceneState: Sendable {
         var effects: [EffectKey] = []
         var effectVisibility: [Bool] = []
         var effectIndexByKey: [EffectKey: Int] = [:]
-        for image in document.imageObjects {
-            for effect in image.effects {
-                let key = EffectKey(objectID: image.id, effectID: effect.id)
+        let layers = document.imageObjects.map { ($0.id, $0.effects) }
+            + document.textObjects.map { ($0.id, $0.effects) }
+        for (id, layerEffects) in layers {
+            for effect in layerEffects {
+                let key = EffectKey(objectID: id, effectID: effect.id)
                 guard effectIndexByKey[key] == nil else { continue }
                 effectIndexByKey[key] = effects.count
                 effects.append(key)

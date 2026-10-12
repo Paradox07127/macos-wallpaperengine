@@ -1,6 +1,6 @@
 /// One font file at one point size: a mono R8 atlas and a color RGBA8 atlas (scale 1) for BGRA glyphs.
 public struct WPEParityGlyphAtlasInstance: Sendable {
-    public enum Atlas: Equatable, Sendable { case mono, color }
+    public enum Atlas: Hashable, Sendable { case mono, color }
 
     public let key: String
     public var mono = WPEParityGlyphAtlas(format: .r8)

@@ -92,6 +92,16 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
         return layers
     }
 
+    /// Text layers of a document with their local transforms; `sizes` (`WPEParityProgramScene.textSizes`) gives each
+    /// its FBO size, which WPE writes into the layer size (140258900.c:12-38).
+    public static func textLayers(document: WPESceneDocument, sizes: [String: SIMD2<Float>] = [:]) -> [Self] {
+        document.textObjects.map { text in
+            Self(id: text.id, parentID: text.parentObjectID, origin: SIMD3(text.localOrigin ?? text.origin),
+                 angles: SIMD3(text.localAngles ?? text.angles), scale: SIMD3(text.localScale ?? text.scale),
+                 size: sizes[text.id] ?? .zero, parallaxDepth: SIMD2(text.parallaxDepth))
+        }
+    }
+
     /// T(origin)·Rz·Ry·Rx·S(scale) (1401dd630.c:16-36).
     public var local: simd_float4x4 {
         func rotation(_ angle: Float, _ axis: SIMD3<Float>) -> simd_float4x4 {

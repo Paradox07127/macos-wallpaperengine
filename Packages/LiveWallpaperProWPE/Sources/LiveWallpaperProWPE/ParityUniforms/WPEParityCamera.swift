@@ -86,6 +86,14 @@ public struct WPEParityCamera: Sendable, Equatable {
 
     /// Ortho (left, right, bottom, top) after the alignment crop and fliph mirror.
     public var bounds: SIMD4<Float> {
+        let crop = alignmentCrop
+        let left = alignment.flipHorizontal ? size.x - crop.x : crop.x
+        let right = alignment.flipHorizontal ? crop.y : size.x - crop.y
+        return SIMD4(left, right, crop.z, size.y - crop.w)
+    }
+
+    /// Canvas pixels cropped off the left, right, bottom and top.
+    var alignmentCrop: SIMD4<Float> {
         var crop = SIMD4<Float>.zero
         if alignment.mode != 2 {
             let position = alignment.position * 0.01
@@ -99,9 +107,7 @@ public struct WPEParityCamera: Sendable, Equatable {
                 crop.w = position * vertical
             }
         }
-        let left = alignment.flipHorizontal ? size.x - crop.x : crop.x
-        let right = alignment.flipHorizontal ? crop.y : size.x - crop.y
-        return SIMD4(left, right, crop.z, size.y - crop.w)
+        return crop
     }
 
     /// Ortho over `bounds` with depth ±2000, zoomed about the canvas centre (14017fa70.c:227-346).

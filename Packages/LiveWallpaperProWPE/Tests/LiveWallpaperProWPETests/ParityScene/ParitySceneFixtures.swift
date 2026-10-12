@@ -65,6 +65,9 @@ enum ParitySceneFixtures {
         case .puppetMesh: "puppet"
         case .modelMesh: "model"
         case .particles: "particles"
+        case .textBackground: "background"
+        case .textGlyphs(.mono): "glyphs"
+        case .textGlyphs(.color): "glyphs.color"
         }
         let mask = draw.writeMask == .rgba ? "rgba" : "rgb"
         return "draw \(draw.shader) [\(draw.reads.map(\.rawValue).joined(separator: ","))] "

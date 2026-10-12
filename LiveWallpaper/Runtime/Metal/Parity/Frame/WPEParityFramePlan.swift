@@ -5,6 +5,8 @@ import LiveWallpaperProWPE
 /// Why a draw operation of the frame is not encoded.
 enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
     case modelMesh
+    /// Text layer draws, and the effect passes of a text layer, wait for the glyph mesh and atlas upload.
+    case textLayer
     case noMaterial
     case program(String)
     case noShader(String)
@@ -16,6 +18,7 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
     var category: String {
         switch self {
         case .modelMesh: "model mesh"
+        case .textLayer: "text layer not encoded yet"
         case .noMaterial: "no material file"
         case .program: "program unresolved"
         case .noShader: "no compiled shader"
@@ -27,7 +30,7 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .modelMesh, .noMaterial: category
+        case .modelMesh, .textLayer, .noMaterial: category
         case let .program(detail), let .noShader(detail), let .pipeline(detail), let .texture(detail),
              let .videoTexture(detail):
             "\(category): \(detail)"
@@ -199,9 +202,20 @@ struct WPEParityFramePlan {
         -> (programs: [Int: WPEParityProgram], skipped: [Int: WPEParityFrameSkip]) {
         var programs: [Int: WPEParityProgram] = [:]
         var skipped: [Int: WPEParityFrameSkip] = [:]
+        let texts = Set(scene.scene.objects.compactMap { object -> String? in
+            if case .text = object.kind {
+                object.id
+            } else {
+                nil
+            }
+        })
         for (index, draw) in frame.draws {
             if case let .scene(sceneDraw) = draw, sceneDraw.geometry == .modelMesh {
                 skipped[index] = .modelMesh
+                continue
+            }
+            if case let .scene(sceneDraw) = draw, texts.contains(sceneDraw.objectID) {
+                skipped[index] = .textLayer
                 continue
             }
             let key = WPEParityProgramKey(draw)

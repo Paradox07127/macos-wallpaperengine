@@ -32,12 +32,15 @@ public struct WPEParityProgramScene: Sendable {
     public let assets: WPEParityProgramAssets
     /// The `.mdl` of each layer with a `WPEParityScenePuppet`, keyed by object id; the bone animator needs it.
     public let puppetModels: [String: WPEPuppetModel]
+    /// The glyph atlases of the text layers as planning left them, keyed by `WPEParitySceneText.atlasKey`.
+    public let textAtlases: [String: WPEParityGlyphAtlasInstance]
     let materials: [MaterialKey: WPEParityProgramMaterial]
     /// Index of each effect material among its effect's scene `passes` overrides; albedo materials are absent.
     let overridePasses: [MaterialKey: Int]
-    /// Image layer `g_Color4` (140207b50.c:81-100): colour × (HDR ? brightness : 1), alpha.
+    /// Image and text layer `g_Color4` (140207b50.c:81-100, 140258050.c:184-191): colour × (HDR ? brightness : 1),
+    /// alpha.
     let layerColors: [String: SIMD4<Float>]
-    /// The image layers of `scene.objects`, in the same order, as their files declare them.
+    /// The image then text layers leading `scene.objects`, in the same order, as their files declare them.
     private let authoredObjects: [WPEParityAuthoredObject]
 
     public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
@@ -98,17 +101,8 @@ public struct WPEParityProgramScene: Sendable {
             // catsout WPSceneParser.cpp binds a fullscreen layer's FBOs to the screen.
             let objectWidth = fullscreen ? width : image.size.map { Int($0.width.rounded()) } ?? width
             let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
-            var effects: [WPEParityAuthoredEffect] = []
-            for effect in isModel ? [] : image.effects {
-                guard let file = assets.json(effect.fileRelativePath) else { continue }
-                let loaded = Self.effect(effect, file: file, assets: assets)
-                effects.append(loaded.effect)
-                for (source, material, pass) in loaded.materials {
-                    let key = MaterialKey(objectID: image.id, effectID: effect.id, source: source)
-                    materials[key] = material
-                    overridePasses[key] = pass
-                }
-            }
+            let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
+                                       materials: &materials, overridePasses: &overridePasses)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
@@ -142,8 +136,43 @@ public struct WPEParityProgramScene: Sendable {
                 parentID: image.parentObjectID
             ))
         }
-        let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)
+        // Text layers come next so `authoredObjects` still lines up with the leading scene objects.
         var diagnostics: [WPEParitySceneDiagnostic] = []
+        let texts = WPEParityTextObject.textObjects(in: document)
+        var textAtlases: [String: WPEParityGlyphAtlasInstance] = [:]
+        if !texts.isEmpty {
+            let planner = WPEParityTextPlanner(assets: assets)
+            let schemas = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
+            let first = sceneObjects.count
+            for (index, text) in texts.enumerated() {
+                let schema = schemas[text.id]
+                let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
+                                           materials: &materials, overridePasses: &overridePasses)
+                let effectCount = effects.count(where: \.enabled)
+                let (layout, atlasKey) = planner.plan(text, effectCount: effectCount)
+                if text.msdf || text.outline || text.blur || text.dropShadow {
+                    diagnostics.append(.textGlyphEffectsIgnored(objectID: text.id))
+                }
+                let color = text.color * (flags.hdr ? text.brightness : 1)
+                layerColors[text.id] = SIMD4(color, text.alpha)
+                authoredObjects.append(WPEParityAuthoredObject(id: text.id, width: layout.fboSize.x,
+                                                               height: layout.fboSize.y, effects: effects))
+                let sceneText = WPEParitySceneText(object: text, effectCount: effectCount, layout: layout,
+                                                   atlasKey: atlasKey, hdr: flags.hdr,
+                                                   orthographic: flags.orthographicProjection)
+                sceneObjects.append(.text(sceneText, sortKey: document.objectPaintOrder[text.id] ?? index,
+                                          visible: Self.visible(text.id, document), parentID: schema?.parentObjectID))
+            }
+            // A later object's glyphs may have doubled a shared atlas, halving the UVs planned before it.
+            for index in first ..< sceneObjects.count {
+                guard case var .text(text) = sceneObjects[index].kind else { continue }
+                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
+                sceneObjects[index].kind = .text(text)
+            }
+            textAtlases = planner.atlases
+        }
+        self.textAtlases = textAtlases
+        let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)
         for index in sceneObjects.indices {
             sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)
         }
@@ -173,7 +202,7 @@ public struct WPEParityProgramScene: Sendable {
                                                  backbufferFormat: format)
     }
 
-    /// `scene` with each image layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
+    /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
     /// load with that set gives them.
     public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool)
         -> WPEParitySceneDescription {
@@ -191,6 +220,34 @@ public struct WPEParityProgramScene: Sendable {
             description.objects[index].effects = scope.effects(of: authored[index], diagnostics: &diagnostics)
         }
         return description
+    }
+
+    /// Each text layer's FBO size, the size its transform draws the final composite with.
+    public var textSizes: [String: SIMD2<Float>] {
+        var sizes: [String: SIMD2<Float>] = [:]
+        for object in scene.objects {
+            guard case let .text(text) = object.kind else { continue }
+            sizes[object.id] = SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y))
+        }
+        return sizes
+    }
+
+    /// Loads each effect file and records the merged material of every pass under `objectID`.
+    private static func effects(_ effects: [WPESceneImageEffect], objectID: String, assets: WPEParityProgramAssets,
+                                materials: inout [MaterialKey: WPEParityProgramMaterial],
+                                overridePasses: inout [MaterialKey: Int]) -> [WPEParityAuthoredEffect] {
+        var loaded: [WPEParityAuthoredEffect] = []
+        for effect in effects {
+            guard let file = assets.json(effect.fileRelativePath) else { continue }
+            let result = Self.effect(effect, file: file, assets: assets)
+            loaded.append(result.effect)
+            for (source, material, pass) in result.materials {
+                let key = MaterialKey(objectID: objectID, effectID: effect.id, source: source)
+                materials[key] = material
+                overridePasses[key] = pass
+            }
+        }
+        return loaded
     }
 
     /// Only authored keys override WPE's defaults, after user-property resolution (1401730d0.c:35-49).

@@ -8,6 +8,8 @@ public struct WPEParityProgramBinding: Sendable {
         case imported(WPEResourceID, asset: String?)
         /// `materials/<name>.tex`.
         case asset(String)
+        /// A glyph atlas of `WPEParityProgramScene.textAtlases`; its CPU pixels are uploaded whole when dirty.
+        case textAtlas(key: String, atlas: WPEParityGlyphAtlasInstance.Atlas)
     }
 
     /// One stage's uniform annotated with a material key.
@@ -55,10 +57,27 @@ public extension WPEParityProgramBuilder {
                 let object = scene.scene.objects.first { $0.id == draw.objectID }
                 // 1401e8aa0.c:1092-1095: effect, compose and passthrough draws run with colour and alpha 1.
                 let albedo = draw.effectID == nil && draw.source != nil && draw.source == object?.material
-                let layerColor = albedo ? scene.layerColors[draw.objectID] : nil
-                let (constants, names, uniforms) = resolve(material, assets: scene.assets, layerColor: layerColor ?? white)
+                var layerColor = albedo ? scene.layerColors[draw.objectID] : nil
+                var fixedColor = white
+                var atlas: WPEParityProgramBinding.TextureSource?
+                if case let .text(text)? = object?.kind {
+                    // 140258050.c:106-116, 184-191: glyphs take the live layer colour, the background quad its own.
+                    switch draw.geometry {
+                    case let .textGlyphs(list):
+                        layerColor = scene.layerColors[draw.objectID]
+                        atlas = .textAtlas(key: text.atlasKey, atlas: list)
+                    case .textBackground:
+                        fixedColor = text.background
+                    default:
+                        break
+                    }
+                }
+                let (constants, names, uniforms) = resolve(material, assets: scene.assets,
+                                                           layerColor: layerColor ?? fixedColor)
+                var slots = textures(names, draw: draw, object: object, imported: imported)
+                slots[0] = atlas ?? slots[0]
                 bindings[index] = WPEParityProgramBinding(
-                    constants: constants, textures: textures(names, draw: draw, object: object, imported: imported),
+                    constants: constants, textures: slots,
                     cullsBackFaces: material.cullsBackFaces, depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                     layerColorObjectID: layerColor == nil ? nil : draw.objectID,
                     materialPass: scene.passKey(for: draw),

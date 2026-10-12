@@ -9,6 +9,10 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case modelMesh
         /// The vertices a particle renderer entry writes this frame.
         case particles(WPEParityParticleDrawKey)
+        /// A text layer's quad from (0, 0) to its FBO size (+0x2d8), moved by `WPEParityTextMatrices`.
+        case textBackground
+        /// One glyph list of the text layer's mesh. Drawn with `fillsComposite` it lands in the text FBO.
+        case textGlyphs(WPEParityGlyphAtlasInstance.Atlas)
     }
 
     public let pass: WPEPassIdentity
@@ -30,7 +34,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let geometry: Geometry
     /// The albedo filling the layer's own first composite: composite-size mesh and camera instead of the 2×2 quad.
     public let fillsComposite: Bool
-    /// Set by model, particle and bit4 composite draws only; every other scene draw runs with depth off.
+    /// Set by model, particle, bit4 composite and `_depth` text draws only; every other scene draw runs with depth off.
     public let depthTest: Bool
     public let depthWrite: Bool
     public let cullsBackFaces: Bool

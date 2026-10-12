@@ -48,6 +48,8 @@ public enum WPEParitySceneDiagnostic: Hashable, Sendable {
     /// A particle child left out of the draw list: its path repeats an ancestor, it nests deeper than 8 levels, or it
     /// descends from an event child, which `WPEParityParticleDrawKey` cannot address.
     case particleChildOmitted(objectID: String, path: String)
+    /// A text object with msdf, outline, blur or dropshadow on; it is drawn as plain grey glyphs without them.
+    case textGlyphEffectsIgnored(objectID: String)
 }
 
 /// The material JSON pass a draw comes from, and for an effect pass the effect file pass that names it.
@@ -86,6 +88,50 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
         }
         combos.merge(puppet?.skinningCombos ?? [:]) { _, new in new }
         return WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json", combos: combos)
+    }
+
+    /// basefont(_depth) for grey glyphs, basefontrgba(_depth) for colour glyphs (1401b3430.c:145-244).
+    public static func textGlyphs(_ atlas: WPEParityGlyphAtlasInstance.Atlas,
+                                  depth: Bool) -> WPEParitySceneMaterialSource {
+        let name = atlas == .mono ? "basefont" : "basefontrgba"
+        return WPEParitySceneMaterialSource(materialPath: "materials/fonts/\(name)\(depth ? "_depth" : "").json")
+    }
+
+    public static func textBackground(depth: Bool) -> WPEParitySceneMaterialSource {
+        WPEParitySceneMaterialSource(materialPath: "materials/fonts/fontbackground\(depth ? "_depth" : "").json")
+    }
+
+    public static let textClearAlpha = WPEParitySceneMaterialSource(
+        materialPath: "materials/util/composelayer_clearalpha.json"
+    )
+}
+
+/// A text layer's frame inputs: its fields, the layout with atlas UVs, and the values its draws derive from them.
+public struct WPEParitySceneText: Hashable, Sendable {
+    public var object: WPEParityTextObject
+    public var layout: WPEParityTextLayout
+    /// `WPEParityGlyphAtlasInstance.key` of the atlas the quad UVs index.
+    public var atlasKey: String
+    /// p of the translations and the FBO size: min(padding, 512) with effects, bit4 or opaquebackground, else 0.
+    public var padding: SIMD2<Float>
+    /// Background colour × (HDR ? backgroundbrightness : 1) and the layer alpha (140258050.c:106-116).
+    public var background: SIMD4<Float>
+    /// Scene orthographic bit (C+0x118 & 0x400): only then does the anchor move the layer.
+    public var orthographic: Bool
+    /// Perspective scene with depthtest enabled: the `_depth` font materials (140258050.c:119-128).
+    public var depthMaterials: Bool
+
+    public init(object: WPEParityTextObject, effectCount: Int, layout: WPEParityTextLayout, atlasKey: String,
+                hdr: Bool, orthographic: Bool) {
+        self.object = object
+        self.layout = layout
+        self.atlasKey = atlasKey
+        let input = object.layoutInput(effectCount: effectCount)
+        padding = input.appliesPadding ? SIMD2(min(input.padding.x, 512), min(input.padding.y, 512)) : .zero
+        let brightness = hdr ? object.backgroundBrightness : 1
+        background = SIMD4(object.backgroundColor * brightness, object.alpha)
+        self.orthographic = orthographic
+        depthMaterials = !orthographic && object.depthTest == .enabled
     }
 }
 
@@ -156,6 +202,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         case model
         /// A particle system; it draws only its renderer entries and takes no composite or effects.
         case particle(WPEParitySceneParticle)
+        /// A text layer: glyph draws straight into the destination, or into its FBO ahead of its effects.
+        case text(WPEParitySceneText)
     }
 
     public var id: String
@@ -224,6 +272,22 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     /// Layer bit4 (1401e6f50.c:24-29), without the global 0x1800000 flag.
     public var requiresLayerComposite: Bool {
         ![0, 31].contains(colorBlendMode) || ledSource || puppetForcesComposite
+    }
+
+    /// A text layer sized to its FBO. Its glyphs blend translucent, additive for colorBlendMode 31; its bit4
+    /// composite gets FOG_COMPUTED and, with the `_depth` materials, a depth test (140257840.c:28-124).
+    public static func text(_ text: WPEParitySceneText, sortKey: Int = 0, visible: Bool = true,
+                            parentID: String? = nil, effects: [WPEParitySceneEffect] = []) -> Self {
+        let colorBlendMode = text.object.colorBlendMode
+        return WPEParitySceneObject(
+            id: text.object.id, kind: .text(text), sortKey: sortKey, visible: visible,
+            width: text.layout.fboSize.x, height: text.layout.fboSize.y, materialShader: "font",
+            material: .textGlyphs(.mono, depth: text.depthMaterials),
+            blend: colorBlendMode == 31 ? .additive : .translucent,
+            materialState: WPEParitySceneMaterialState(depthTest: text.depthMaterials, depthWrite: false,
+                                                       cullsBackFaces: false),
+            materialFog: true, colorBlendMode: colorBlendMode, parentID: parentID, effects: effects
+        )
     }
 }
 

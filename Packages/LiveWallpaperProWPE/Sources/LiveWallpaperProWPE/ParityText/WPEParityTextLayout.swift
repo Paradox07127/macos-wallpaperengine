@@ -63,7 +63,7 @@ public struct WPEParityTextLayoutInput: Equatable, Sendable {
 }
 
 /// One glyph-quad corner: position in pixels (y up) and atlas UV.
-public struct WPEParityTextVertex: Equatable, Sendable {
+public struct WPEParityTextVertex: Hashable, Sendable {
     public var x: Float
     public var y: Float
     public var z: Float
@@ -80,7 +80,7 @@ public struct WPEParityTextVertex: Equatable, Sendable {
 }
 
 /// Four vertices and six indices per glyph (1401b0410.c:579-638).
-public struct WPEParityTextGlyphMesh: Equatable, Sendable {
+public struct WPEParityTextGlyphMesh: Hashable, Sendable {
     public var vertices: [WPEParityTextVertex] = []
     public var indices: [UInt16] = []
     /// Per quad: the face's index in the font chain << 24 | glyph id. The atlas fills the quad's UVs from it.
@@ -100,7 +100,7 @@ public struct WPEParityTextGlyphMesh: Equatable, Sendable {
 }
 
 /// WPE's text mesh: grey and color glyphs in separate lists plus the fields at mesh +0x90..+0xa8.
-public struct WPEParityTextMesh: Equatable, Sendable {
+public struct WPEParityTextMesh: Hashable, Sendable {
     public var mono = WPEParityTextGlyphMesh()
     public var color = WPEParityTextGlyphMesh()
     public var minX: Float
@@ -112,7 +112,7 @@ public struct WPEParityTextMesh: Equatable, Sendable {
     public var pointSize: Float
 }
 
-public struct WPEParityTextLayout: Equatable, Sendable {
+public struct WPEParityTextLayout: Hashable, Sendable {
     /// Nil when nothing produced a glyph; WPE then has no mesh.
     public var mesh: WPEParityTextMesh?
     /// The layer's +0x2f8/+0x2fc translation (140256f20.c:302-325).

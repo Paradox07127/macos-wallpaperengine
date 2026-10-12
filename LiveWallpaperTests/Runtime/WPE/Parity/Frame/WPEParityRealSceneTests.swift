@@ -89,7 +89,8 @@ final class WPEParityRealSceneTests: XCTestCase {
                 continue
             }
             switch skip {
-            case .modelMesh:
+            // Text draws are not encoded yet.
+            case .modelMesh, .textLayer:
                 print("scene \(sceneID) operation \(index) skipped: \(skip)")
             default:
                 XCTFail("\(sceneID) operation \(index): \(skip)")

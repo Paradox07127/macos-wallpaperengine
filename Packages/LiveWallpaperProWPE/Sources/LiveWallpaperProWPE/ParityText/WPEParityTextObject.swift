@@ -20,7 +20,7 @@ public enum WPEParityTextAnchor: Sendable {
 
 /// A WPE 2.8.42 text layer as its field table (FUN_140258ca0) reads it from a user-resolved scene object.
 /// Origin, scale, angles and parent come from the scene state; only the other base fields the text draw reads are here.
-public struct WPEParityTextObject: Equatable, Sendable {
+public struct WPEParityTextObject: Hashable, Sendable {
     public var id: String
     public var color = SIMD3<Float>(1, 1, 1)
     public var alpha: Float = 1

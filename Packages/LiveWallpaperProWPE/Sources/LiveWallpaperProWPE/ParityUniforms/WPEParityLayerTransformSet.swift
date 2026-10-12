@@ -63,11 +63,14 @@ public struct WPEParityLayerTransformSet: Sendable {
         }
     }
 
+    /// `textSizes` sizes the text layers (`WPEParityProgramScene.textSizes`).
     public init(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,
-                alignment: WPEParityCameraAlignment = .noCrop, cameraZoom: Float = 1) {
+                alignment: WPEParityCameraAlignment = .noCrop, cameraZoom: Float = 1,
+                textSizes: [String: SIMD2<Float>] = [:]) {
         self.init(camera: WPEParityCamera(document: document, renderTargetSize: renderTargetSize,
                                           alignment: alignment, cameraZoom: cameraZoom),
-                  layers: WPEParityLayerTransform.layers(document: document))
+                  layers: WPEParityLayerTransform.layers(document: document)
+                      + WPEParityLayerTransform.textLayers(document: document, sizes: textSizes))
     }
 
     /// W: what children compose with.

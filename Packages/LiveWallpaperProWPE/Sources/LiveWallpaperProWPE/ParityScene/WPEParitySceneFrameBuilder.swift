@@ -146,9 +146,14 @@ private struct WPEParitySceneEmitter {
         let lastPass = (effects.count - 1, (effects.last?.passes.count ?? 0) - 1)
         let n = effects.count + effects.reduce(0) { $0 + $1.passes.count(where: \.compose) }
         let bit4 = object.requiresLayerComposite || scene.forcesLayerComposite
+        let clearsAlpha = if case let .text(text) = object.kind, n > 0, !text.object.opaqueBackground {
+            true
+        } else {
+            false
+        }
 
-        // 1401e8aa0.c:169-176; a copybackground composelayer samples the snapshot too.
-        if bit4 || !children.isEmpty || (object.passthrough && object.copyBackground) {
+        // 1401e8aa0.c:169-176; a copybackground composelayer and a text FBO's clearalpha sample the snapshot too.
+        if bit4 || !children.isEmpty || (object.passthrough && object.copyBackground) || clearsAlpha {
             snapshot(WPEPassIdentity("\(object.id)/snapshot"))
         }
         guard n > 0 || bit4 else {
@@ -257,6 +262,9 @@ private struct WPEParitySceneEmitter {
 
     /// 140207b50: albedo into the starting composite with ONE/ZERO and RGBA.
     private mutating func fillComposite(_ object: WPEParitySceneObject, _ composite: WPEResourceID) {
+        if case let .text(text) = object.kind {
+            return fillTextComposite(object, text, composite)
+        }
         if object.fullscreen {
             // 1401e8aa0.c:720-736
             transfer(WPEPassIdentity("\(object.id)/fullscreen"), into: composite)
@@ -280,7 +288,9 @@ private struct WPEParitySceneEmitter {
                                                  children: [WPEParitySceneObject],
                                                  into destination: WPEParitySceneDestination,
                                                  ancestors: [WPEResourceID]) {
-        if !object.fullscreen, !object.passthrough || object.copyBackground {
+        if case let .text(text) = object.kind {
+            renderTextDirect(object, text, into: destination)
+        } else if !object.fullscreen, !object.passthrough || object.copyBackground {
             let identity = WPEPassIdentity("\(object.id)/albedo")
             let (shader, source, reads) = albedoSource(object)
             bind(identity, destination.color, depth: destination.depth)
@@ -310,6 +320,59 @@ private struct WPEParitySceneEmitter {
         for child in children {
             render(child, into: destination, ancestors: ancestors)
         }
+    }
+
+    /// 140258050: the opaquebackground quad, then each glyph list, straight into the destination. Without a mesh
+    /// nothing draws.
+    private mutating func renderTextDirect(_ object: WPEParitySceneObject, _ text: WPEParitySceneText,
+                                           into destination: WPEParitySceneDestination) {
+        guard let mesh = text.layout.mesh else { return }
+        let depth = text.depthMaterials
+        var passes: [(WPEPassIdentity, String, WPEParitySceneMaterialSource, WPEParitySceneDraw.Geometry)] = []
+        if text.object.opaqueBackground {
+            passes.append((WPEPassIdentity("\(object.id)/background"), "flat", .textBackground(depth: depth),
+                           .textBackground))
+        }
+        for atlas in mesh.drawnLists {
+            passes.append((Self.glyphPass(object, atlas), "font", .textGlyphs(atlas, depth: depth), .textGlyphs(atlas)))
+        }
+        for (identity, shader, source, geometry) in passes {
+            bind(identity, destination.color, depth: destination.depth)
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: [],
+                                    target: destination.color, blend: object.blend, alphaMax: destination.alphaMax,
+                                    compositeOwnerID: destination.compositeOwnerID,
+                                    writeMask: destination.writeMask, geometry: geometry, depthTest: depth))
+        }
+    }
+
+    /// 140257c30 then 140257d70: clearalpha over the snapshot (or an opaque Clear), then the glyph lists translucent.
+    private mutating func fillTextComposite(_ object: WPEParitySceneObject, _ text: WPEParitySceneText,
+                                            _ composite: WPEResourceID) {
+        let opaque = text.object.opaqueBackground
+        let fill = WPEPassIdentity("\(object.id)/\(opaque ? "background" : "clearalpha")")
+        bind(fill, composite, depth: nil)
+        if opaque {
+            let color = SIMD4<Double>(text.background)
+            emit(fill, .clearColor(WPETextureView(composite),
+                                   WPEClearColor(red: color.x, green: color.y, blue: color.z, alpha: color.w)))
+        } else {
+            draw(WPEParitySceneDraw(pass: fill, objectID: object.id, shader: "composelayer", source: .textClearAlpha,
+                                    reads: [Resource.fullFrameBuffer], target: composite, blend: .normal,
+                                    writeMask: .rgba, geometry: .layerMesh))
+        }
+        for atlas in text.layout.mesh?.drawnLists ?? [] {
+            let identity = Self.glyphPass(object, atlas)
+            bind(identity, composite, depth: nil)
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "font",
+                                    source: .textGlyphs(atlas, depth: text.depthMaterials), reads: [],
+                                    target: composite, blend: .translucent, writeMask: .rgba,
+                                    geometry: .textGlyphs(atlas), fillsComposite: true))
+        }
+    }
+
+    private static func glyphPass(_ object: WPEParitySceneObject,
+                                  _ atlas: WPEParityGlyphAtlasInstance.Atlas) -> WPEPassIdentity {
+        WPEPassIdentity("\(object.id)/glyphs\(atlas == .color ? "/color" : "")")
     }
 
     /// FUN_1402366f0: each renderer entry draws with its material pass's state; a REFRACT object copies
@@ -410,6 +473,13 @@ private struct WPEParitySceneEmitter {
 private extension WPEParitySceneObject {
     var layerGeometry: WPEParitySceneDraw.Geometry {
         puppet == nil ? .layerMesh : .puppetMesh
+    }
+}
+
+private extension WPEParityTextMesh {
+    /// WPE creates a mesh only for a list that has glyphs (1401b0410.c:707-729).
+    var drawnLists: [WPEParityGlyphAtlasInstance.Atlas] {
+        (mono.glyphKeys.isEmpty ? [] : [.mono]) + (color.glyphKeys.isEmpty ? [] : [.color])
     }
 }
 

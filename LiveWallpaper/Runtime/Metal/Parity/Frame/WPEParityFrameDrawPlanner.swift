@@ -590,6 +590,8 @@ struct WPEParityFrameDrawPlanner {
             return .resource(id)
         case let .asset(name)?:
             return try .image(assetImage(name).texture)
+        case let .textAtlas(key, _)?:
+            throw .texture("\(shader) slot \(slot) samples text atlas \(key), which is not uploaded")
         }
     }
 
