@@ -33,6 +33,8 @@ public struct WPEParityProgramScene: Sendable {
     /// The `.mdl` of each layer with a `WPEParityScenePuppet`, keyed by object id; the bone animator needs it.
     public let puppetModels: [String: WPEPuppetModel]
     let materials: [MaterialKey: WPEParityProgramMaterial]
+    /// Index of each effect material among its effect's scene `passes` overrides; albedo materials are absent.
+    let overridePasses: [MaterialKey: Int]
     /// Image layer `g_Color4` (140207b50.c:81-100): colour × (HDR ? brightness : 1), alpha.
     let layerColors: [String: SIMD4<Float>]
 
@@ -67,6 +69,7 @@ public struct WPEParityProgramScene: Sendable {
             authoredByID[id] = object
         }
         var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
+        var overridePasses: [MaterialKey: Int] = [:]
         var layerColors: [String: SIMD4<Float>] = [:]
         var puppetModels: [String: WPEPuppetModel] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
@@ -98,8 +101,10 @@ public struct WPEParityProgramScene: Sendable {
                 guard let file = assets.json(effect.fileRelativePath) else { continue }
                 let loaded = Self.effect(effect, file: file, assets: assets)
                 effects.append(loaded.effect)
-                for (source, material) in loaded.materials {
-                    materials[MaterialKey(objectID: image.id, effectID: effect.id, source: source)] = material
+                for (source, material, pass) in loaded.materials {
+                    let key = MaterialKey(objectID: image.id, effectID: effect.id, source: source)
+                    materials[key] = material
+                    overridePasses[key] = pass
                 }
             }
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
@@ -150,6 +155,7 @@ public struct WPEParityProgramScene: Sendable {
             ))
         }
         self.materials = materials
+        self.overridePasses = overridePasses
         self.layerColors = layerColors
         self.puppetModels = puppetModels
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
@@ -197,6 +203,15 @@ public struct WPEParityProgramScene: Sendable {
             material?.shader = shader
         }
         return material
+    }
+
+    /// The scene material pass whose constants `draw` uses; nil for engine materials, which the scene cannot set.
+    func passKey(for draw: WPEParitySceneDraw) -> WPEParityMaterialPassKey? {
+        guard var stored = draw.source else { return nil }
+        stored.combos = [:]
+        let key = MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)
+        guard materials[key] != nil else { return nil }
+        return WPEParityMaterialPassKey(objectID: draw.objectID, effectID: draw.effectID, pass: overridePasses[key] ?? 0)
     }
 
     /// A post-process draw's material file, or its own name as the shader when the file is missing.
@@ -286,7 +301,8 @@ public struct WPEParityProgramScene: Sendable {
     }
 
     private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets)
-        -> (effect: WPEParityAuthoredEffect, materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial)]) {
+        -> (effect: WPEParityAuthoredEffect,
+            materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)]) {
         let filePasses = array(file["passes"])
         var swapPartners: [String: String] = [:]
         for pass in filePasses where string(pass["command"]) == "swap" {
@@ -302,7 +318,7 @@ public struct WPEParityProgramScene: Sendable {
                                              swapPartner: swapPartners[name]))
         }
         var passes: [WPEParityAuthoredPass] = []
-        var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial)] = []
+        var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)] = []
         var materialIndex = 0
         for (passIndex, pass) in filePasses.enumerated() {
             if let command = string(pass["command"]) {
@@ -339,7 +355,7 @@ public struct WPEParityProgramScene: Sendable {
                 textures: material.textures.sorted { $0.key < $1.key }.map(\.value),
                 compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source
             ))
-            materials.append((source, material))
+            materials.append((source, material, materialIndex - 1))
         }
         return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials)
     }
@@ -371,6 +387,18 @@ public struct WPEParityProgramScene: Sendable {
 
     static func flag(_ value: WPESceneJSONValue?) -> Bool {
         (number(value) ?? 0) != 0
+    }
+}
+
+public extension WPEParitySceneState {
+    /// Every material pass the scene can set, seeded with the merged constants its bindings were built from.
+    init(scene: WPEParityProgramScene, document: WPESceneDocument) {
+        var constants: [WPEParityMaterialPassKey: [String: [Double]]] = [:]
+        for (key, material) in scene.materials {
+            constants[WPEParityMaterialPassKey(objectID: key.objectID, effectID: key.effectID,
+                                               pass: scene.overridePasses[key] ?? 0)] = material.constants
+        }
+        self.init(document: document, hdr: scene.engineFlags.hdr, constants: constants)
     }
 }
 

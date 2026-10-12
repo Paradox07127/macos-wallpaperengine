@@ -13,31 +13,54 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
 public struct WPEParityLayerTransformSet: Sendable {
     /// Replaced per frame by the shaken camera; layer worlds do not depend on it.
     public var camera: WPEParityCamera
-    public let layers: [String: WPEParityLayerTransform]
-    private let worlds: [String: simd_float4x4]
+    public private(set) var layers: [String: WPEParityLayerTransform]
+    private var worlds: [String: simd_float4x4]
+    /// Parents before children, each with the parent its world composes with; `refreshWorlds` walks it.
+    private let order: [(id: String, parentID: String?)]
 
     public init(camera: WPEParityCamera, layers: [WPEParityLayerTransform]) {
         self.camera = camera
         let byID = Dictionary(layers.map { ($0.id, $0) }) { first, _ in first }
         self.layers = byID
         var worlds: [String: simd_float4x4] = [:]
+        var order: [(id: String, parentID: String?)] = []
         func world(_ id: String, _ visiting: Set<String>) -> simd_float4x4 {
             if let known = worlds[id] {
                 return known
             }
             guard let layer = byID[id] else { return matrix_identity_float4x4 }
             var parent = matrix_identity_float4x4
-            if let parentID = layer.parentID, byID[parentID] != nil, !visiting.contains(parentID) {
-                parent = world(parentID, visiting.union([id]))
+            var parentID: String?
+            if let candidate = layer.parentID, byID[candidate] != nil, !visiting.contains(candidate) {
+                parent = world(candidate, visiting.union([id]))
+                parentID = candidate
             }
             let result = parent * layer.local
             worlds[id] = result
+            order.append((id, parentID))
             return result
         }
         for id in byID.keys {
             _ = world(id, [])
         }
         self.worlds = worlds
+        self.order = order
+    }
+
+    /// Replaces a layer's own transform; the worlds follow on `refreshWorlds`.
+    public mutating func setTransform(_ id: String, origin: SIMD3<Float>, angles: SIMD3<Float>, scale: SIMD3<Float>) {
+        guard layers[id] != nil else { return }
+        layers[id]?.origin = origin
+        layers[id]?.angles = angles
+        layers[id]?.scale = scale
+    }
+
+    /// Recomputes every world matrix from the current local transforms, parents on the left.
+    public mutating func refreshWorlds() {
+        for (id, parentID) in order {
+            guard let local = layers[id]?.local else { continue }
+            worlds[id] = (parentID.flatMap { worlds[$0] } ?? matrix_identity_float4x4) * local
+        }
     }
 
     public init(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,

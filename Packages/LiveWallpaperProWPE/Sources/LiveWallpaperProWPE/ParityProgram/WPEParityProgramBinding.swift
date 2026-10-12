@@ -10,6 +10,20 @@ public struct WPEParityProgramBinding: Sendable {
         case asset(String)
     }
 
+    /// One stage's uniform annotated with a material key.
+    public struct MaterialConstant: Hashable, Sendable {
+        /// HLSL name.
+        public let name: String
+        public let material: String
+        public let components: Int
+
+        /// WPE reads as many numbers as the uniform has components; missing ones are 0.
+        public func value(_ constant: WPEParitySceneState.Constant) -> WPECBufferValue {
+            let floats = (0 ..< components).map { $0 < constant.count ? constant.value[$0] : 0 }
+            return components == 1 ? .float(floats[0]) : .vector(floats)
+        }
+    }
+
     /// HLSL name → value for each stage the program has, from that stage's own annotations; of the engine `g_*`
     /// values only the layer colour and alpha are included.
     public var constants: [WPEHLSLStage: [String: WPECBufferValue]]
@@ -20,6 +34,12 @@ public struct WPEParityProgramBinding: Sendable {
     /// The material's depth state where the frame applies it (models, bit4 composites); off for every other draw.
     public var depthTest: Bool
     public var depthWrite: Bool
+    /// The object whose live colour and alpha replace the loaded ones each frame; nil for draws that write 1.
+    public var layerColorObjectID: String?
+    /// The scene material pass whose live constants re-pack `constants`; nil for engine materials.
+    public var materialPass: WPEParityMaterialPassKey?
+    /// Per stage, the uniforms `materialPass` constants land in.
+    public var materialConstants: [WPEHLSLStage: [MaterialConstant]] = [:]
 }
 
 public extension WPEParityProgramBuilder {
@@ -35,15 +55,23 @@ public extension WPEParityProgramBuilder {
                 let object = scene.scene.objects.first { $0.id == draw.objectID }
                 // 1401e8aa0.c:1092-1095: effect, compose and passthrough draws run with colour and alpha 1.
                 let albedo = draw.effectID == nil && draw.source != nil && draw.source == object?.material
-                let (constants, names) = resolve(material, assets: scene.assets,
-                                                 layerColor: albedo ? scene.layerColors[draw.objectID] ?? white : white)
+                let layerColor = albedo ? scene.layerColors[draw.objectID] : nil
+                let (constants, names, uniforms) = resolve(material, assets: scene.assets, layerColor: layerColor ?? white)
                 bindings[index] = WPEParityProgramBinding(
                     constants: constants, textures: textures(names, draw: draw, object: object, imported: imported),
-                    cullsBackFaces: material.cullsBackFaces, depthTest: draw.depthTest, depthWrite: draw.depthWrite
+                    cullsBackFaces: material.cullsBackFaces, depthTest: draw.depthTest, depthWrite: draw.depthWrite,
+                    layerColorObjectID: layerColor == nil ? nil : draw.objectID,
+                    materialPass: scene.passKey(for: draw),
+                    materialConstants: uniforms.mapValues { stage in
+                        stage.values.sorted { $0.name < $1.name }.map {
+                            WPEParityProgramBinding.MaterialConstant(name: $0.name, material: $0.material,
+                                                                     components: $0.components)
+                        }
+                    }
                 )
             case let .post(draw):
                 let material = scene.engineMaterial(draw)
-                var (constants, _) = resolve(material, assets: scene.assets, layerColor: white)
+                var (constants, _, _) = resolve(material, assets: scene.assets, layerColor: white)
                 let engine = draw.constants.mapValues { $0.count == 1 ? WPECBufferValue.float($0[0]) : .vector($0) }
                 for stage in constants.keys {
                     constants[stage]?.merge(engine) { $1 }
@@ -61,11 +89,12 @@ public extension WPEParityProgramBuilder {
         return bindings
     }
 
-    /// Material constants over annotation defaults, the layer colour, and the texture name of each slot: bound, or
-    /// the sampler annotation's default.
+    /// Material constants over annotation defaults, the layer colour, the texture name of each slot (bound, or the
+    /// sampler annotation's default) and each stage's material uniforms.
     private static func resolve(_ material: WPEParityProgramMaterial, assets: WPEParityProgramAssets,
                                 layerColor: SIMD4<Float>)
-        -> ([WPEHLSLStage: [String: WPECBufferValue]], [Int32: String]) {
+        -> ([WPEHLSLStage: [String: WPECBufferValue]], [Int32: String],
+            [WPEHLSLStage: [String: WPEParityMaterialUniform]]) {
         let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
         var stages: [WPEHLSLStage: String] = [.vertex: sources.vertex, .fragment: sources.fragment]
         stages[.geometry] = sources.geometry
@@ -75,9 +104,9 @@ public extension WPEParityProgramBuilder {
             "g_Color": .vector([layerColor.x, layerColor.y, layerColor.z]),
             "g_Alpha": .float(layerColor.w),
         ]
-        let constants = stages.mapValues { source in
-            WPEParityProgramConstants.resolve(WPEParityProgramConstants.uniforms(source), values: material.constants)
-                .merging(color) { $1 }
+        let uniforms = stages.mapValues(WPEParityProgramConstants.uniforms)
+        let constants = uniforms.mapValues { uniforms in
+            WPEParityProgramConstants.resolve(uniforms, values: material.constants).merging(color) { $1 }
         }
 
         var names = material.textures
@@ -85,7 +114,7 @@ public extension WPEParityProgramBuilder {
         for (slot, sampler) in annotations.samplers.entries where names[slot] == nil && !sampler.defaultTexture.isEmpty {
             names[slot] = sampler.defaultTexture
         }
-        return (constants, names)
+        return (constants, names, uniforms)
     }
 
     /// Effect FBO names resolve through the pass `binds`, which the frame lists after the composite in `reads`.

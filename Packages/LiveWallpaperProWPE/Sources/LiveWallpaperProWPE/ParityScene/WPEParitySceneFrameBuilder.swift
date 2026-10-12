@@ -10,7 +10,8 @@ public enum WPEParitySceneFrameBuilder {
         return WPEParitySceneFrame(operations: emitter.operations,
                                    resources: emitter.resources.values.filter { used.contains($0.id) }
                                        .sorted { $0.id < $1.id },
-                                   draws: emitter.draws, samplers: emitter.samplers, diagnostics: scene.diagnostics)
+                                   draws: emitter.draws, samplers: emitter.samplers, diagnostics: scene.diagnostics,
+                                   owners: emitter.owners)
     }
 }
 
@@ -51,6 +52,9 @@ private struct WPEParitySceneEmitter {
     var samplers: [WPEResourceID: WPEParitySceneSampler] = [:]
     /// Effect FBO resource → the resource its name is currently bound to; absent means itself.
     var bindings: [WPEResourceID: WPEResourceID] = [:]
+    var owners: [WPEPassIdentity: String] = [:]
+    /// The object being rendered; children nest inside their parent's.
+    private var owner: String?
 
     init(_ scene: WPEParitySceneDescription, frameIndex: Int) {
         self.scene = scene
@@ -123,6 +127,9 @@ private struct WPEParitySceneEmitter {
     private mutating func render(_ object: WPEParitySceneObject, into destination: WPEParitySceneDestination,
                                  ancestors: [WPEResourceID]) {
         guard object.visible else { return }
+        let enclosing = owner
+        owner = object.id
+        defer { owner = enclosing }
         let children = childrenByParent[object.id] ?? []
         if case let .particle(particle) = object.kind {
             renderParticles(object, particle, into: destination)
@@ -385,6 +392,9 @@ private struct WPEParitySceneEmitter {
 
     private mutating func emit(_ identity: WPEPassIdentity, _ kind: WPERenderOperation.Kind) {
         operations.append(WPERenderOperation(pass: identity, kind))
+        if let owner {
+            owners[identity] = owner
+        }
     }
 
     /// Every named RT in WPE's pool, including FFB, sc.* and effect FBOs, keeps its contents across frames.

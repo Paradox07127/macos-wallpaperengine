@@ -19,6 +19,8 @@ public struct WPEParityFrame: Hashable, Sendable {
     public let draws: [Int: WPEParityFrameDraw]
     /// Samplers of the scene's layer composites; see `WPEParitySceneFrame.samplers`.
     public let samplers: [WPEResourceID: WPEParitySceneSampler]
+    /// The object each operation renders, keyed by operation index; scene-wide and post operations are absent.
+    public let owners: [Int: String]
 }
 
 public enum WPEParityFrameComposer {
@@ -52,8 +54,12 @@ public enum WPEParityFrameComposer {
 
         let operations = sceneFrame.operations + postFrame.operations
         var draws: [Int: WPEParityFrameDraw] = [:]
+        var owners: [Int: String] = [:]
         var postDraws = postFrame.draws.makeIterator()
         for (index, operation) in operations.enumerated() {
+            if index < sceneFrame.operations.count {
+                owners[index] = sceneFrame.owners[operation.pass]
+            }
             guard case .draw = operation.kind else { continue }
             if index < sceneFrame.operations.count {
                 draws[index] = sceneFrame.draws[operation.pass].map(WPEParityFrameDraw.scene)
@@ -62,6 +68,6 @@ public enum WPEParityFrameComposer {
             }
         }
         return WPEParityFrame(operations: operations, resources: resources, draws: draws,
-                              samplers: sceneFrame.samplers)
+                              samplers: sceneFrame.samplers, owners: owners)
     }
 }

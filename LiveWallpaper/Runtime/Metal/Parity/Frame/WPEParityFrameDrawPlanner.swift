@@ -51,8 +51,15 @@ struct WPEParityFrameDrawPlan {
     let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
-    /// Set when camera parallax or camerashake moves the view, so the layer matrices are recomputed every frame.
+    /// Where a scene layer draw sits; nil for post-process and particle draws.
     let placement: Placement?
+    /// Camera parallax or camerashake moves the view, so the layer matrices are recomputed every frame.
+    var cameraMoves = false
+    /// The state object whose live g_Color4/g_Color/g_Alpha the draw takes, and the value `constants` holds.
+    var layerColor: (object: Int, loaded: SIMD4<Float>)?
+    /// The state material pass whose constants `materialConstants` re-pack into `constants`.
+    var materialPass: Int?
+    var materialConstants: [WPEHLSLStage: [WPEParityProgramBinding.MaterialConstant]] = [:]
     /// TEXS frames of each sprite-sheet slot, shown in turn for their durations.
     let sprites: [Int: [SpriteStep]]
     /// The binding description's constants per stage; the engine uniform set does not carry them.
@@ -70,8 +77,9 @@ struct WPEParityFrameDrawPlan {
         let kind: WPEParityLayerDrawKind
         let compositeOwnerID: String?
 
-        func draw(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil) -> WPEParityUniformDraw {
-            var layers = layers
+        func draw(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
+                  layers live: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
+            var layers = live ?? layers
             if let camera {
                 layers.camera = camera
             }
@@ -80,23 +88,39 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame; `camera` is the frame's shaken camera.
-    func frameUniforms(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil) -> WPEParityUniformDraw {
-        guard let placed = placement?.draw(parallax: parallax, camera: camera) else { return uniforms }
+    /// `layers` holds the live layer transforms once any moved; nil keeps the planned matrices.
+    func frameUniforms(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
+                       layers: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
+        guard let placement, cameraMoves || layers != nil else { return uniforms }
+        let placed = placement.draw(parallax: parallax, camera: camera, layers: layers)
         var uniforms = uniforms
         (uniforms.matrices, uniforms.effectPass) = (placed.matrices, placed.effectPass)
         return uniforms
     }
 
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
-    /// `puppets` holds this frame's bone animator of each skinned puppet layer. Mesh draws only.
+    /// `puppets` holds this frame's bone animator of each skinned puppet layer. `constants` replaces the planned
+    /// ones; a `layerColor` overrides g_Color4, g_Color and g_Alpha. Mesh draws only.
     func makeDraw(frame: WPEParityUniformFrame, camera: WPEParityCamera? = nil, variant: Int,
                   textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
-                  puppets: [String: WPEParityPuppetAnimator]) throws -> WPEParityDraw {
+                  puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
+                  constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
+                  layerColor: SIMD4<Float>? = nil) throws -> WPEParityDraw {
         guard case let .mesh(vertices, indices, indexCount) = geometry else {
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
-        let state = try drawState(frame: frame, uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera),
-                                  variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets)
+        var state = try drawState(frame: frame,
+                                  uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera,
+                                                          layers: layers),
+                                  variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
+                                  constants: constants ?? self.constants)
+        if let color = layerColor {
+            for stage in state.constants.keys {
+                state.constants[stage]?["g_Color4"] = .vector([color.x, color.y, color.z, color.w])
+                state.constants[stage]?["g_Color"] = .vector([color.x, color.y, color.z])
+                state.constants[stage]?["g_Alpha"] = .float(color.w)
+            }
+        }
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  constants: state.constants, textures: state.textures, samplers: samplers,
                                  vertexBuffer: vertices, primitiveType: .triangle, vertexCount: 4)
@@ -106,15 +130,17 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// One point-list draw per batch of live particles, its vertices copied into `arena`; none without live particles,
-    /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched (R22 Q3).
+    /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched (R22 Q3). `layers` holds the live
+    /// layer transforms once any moved.
     func makeParticleDraws(frame: WPEParityUniformFrame, camera: WPEParityCamera, variant: Int,
                            textures table: [WPEResourceID: MTLTexture], arena: WPEParityFrameArena.Frame,
                            textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
-                           particles: inout WPEParityParticleFrame) throws -> [WPEParityDraw] {
+                           particles: inout WPEParityParticleFrame,
+                           layers live: WPEParityLayerTransformSet? = nil) throws -> [WPEParityDraw] {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
         let batches = particles.scene.batches(for: particle.key)
         guard !batches.isEmpty else { return [] }
-        var layers = particle.layers
+        var layers = live ?? particle.layers
         layers.camera = camera
         var uniforms = uniforms
         uniforms.matrices = WPEParityParticleMatrices.draw(
@@ -138,7 +164,8 @@ struct WPEParityFrameDrawPlan {
             orientation["g_Orientation" + name] = .vector([vector.x, vector.y, vector.z])
         }
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
-                                  textureSlots: &textureSlots, puppets: [:], engineExtras: orientation)
+                                  textureSlots: &textureSlots, puppets: [:], constants: constants,
+                                  engineExtras: orientation)
 
         var draws: [WPEParityDraw] = []
         for batch in batches {
@@ -166,10 +193,12 @@ struct WPEParityFrameDrawPlan {
         return draws
     }
 
-    /// Per-stage constants (engine set, `engineExtras`, then the binding's) and the textures of `variant`.
+    /// Per-stage constants (engine set, `engineExtras`, then the binding's `constants`) and the textures of `variant`.
     private func drawState(frame: WPEParityUniformFrame, uniforms: WPEParityUniformDraw, variant: Int,
                            table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
-                           puppets: [String: WPEParityPuppetAnimator], engineExtras: [String: WPECBufferValue] = [:])
+                           puppets: [String: WPEParityPuppetAnimator],
+                           constants: [WPEHLSLStage: [String: WPECBufferValue]],
+                           engineExtras: [String: WPECBufferValue] = [:])
         throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
         var uniforms = uniforms
         var spriteTextures: [String: MTLTexture] = [:]
@@ -437,7 +466,13 @@ struct WPEParityFrameDrawPlanner {
             textures: textures,
             samplers: samplers,
             uniforms: uniforms,
-            placement: layers.camera.parallaxAmount == nil && layers.camera.shake == nil ? nil : placement,
+            placement: placement,
+            cameraMoves: layers.camera.parallaxAmount != nil || layers.camera.shake != nil,
+            layerColor: binding.layerColorObjectID.flatMap(plan.state.index(of:)).map {
+                (object: $0, loaded: plan.state.layerColor(at: $0))
+            },
+            materialPass: binding.materialPass.flatMap(plan.state.passIndex(of:)),
+            materialConstants: binding.materialConstants,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
             zeroConstants: zeroConstants,

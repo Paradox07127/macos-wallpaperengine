@@ -234,12 +234,41 @@ public struct WPEParityParticleSystem {
     /// clearing its slot arrays in place. Event children have no children of their own.
     private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
                                         context: WPEParityParticleFrameContext) {
-        func clear<Element>(_ array: inout [Element], to value: Element) {
-            array.withUnsafeMutableBufferPointer { $0.update(repeating: value) }
-        }
         self.origin = origin
         self.localTransform = localTransform
         frameContext = context
+        restart()
+        prewarm()
+    }
+
+    /// A hidden object with live particles starts over at time 0: no particles, emitters as built, static children
+    /// reset and event children destroyed (140230650.c:16-67). It is not prewarmed again.
+    mutating func reset() {
+        restart()
+        for index in children.indices {
+            children[index].reset()
+        }
+        for group in eventChildren.indices {
+            finishedEventChildren[group] += eventChildren[group]
+            eventChildren[group].removeAll(keepingCapacity: true)
+        }
+    }
+
+    var hasLiveParticles: Bool {
+        liveCount > 0 || children.contains(where: \.hasLiveParticles) || eventChildren.contains { !$0.isEmpty }
+    }
+
+    /// Live particles of this system and every descendant.
+    var totalLiveCount: Int {
+        children.reduce(liveCount) { $0 + $1.totalLiveCount }
+            + eventChildren.joined().reduce(0) { $0 + $1.totalLiveCount }
+    }
+
+    /// Clears the slot arrays in place and rebuilds the emitter state with the same RNG draws `init` makes.
+    private mutating func restart() {
+        func clear<Element>(_ array: inout [Element], to value: Element) {
+            array.withUnsafeMutableBufferPointer { $0.update(repeating: value) }
+        }
         prewarmStep = 0
         prewarmStepCount = 0
         liveCount = 0
@@ -279,7 +308,6 @@ public struct WPEParityParticleSystem {
         clear(&previousControlPoints, to: .zero)
         controlPointsSeeded = false
         boidsFrame = 0
-        prewarm()
     }
 
     /// One object update: dt × instance rate (D/140230650.c:55-64).
@@ -364,26 +392,6 @@ public struct WPEParityParticleSystem {
             }
         }
         return children.allSatisfy(\.isFinished) && eventChildren.allSatisfy(\.isEmpty)
-    }
-
-    /// An invisible object holds no particles (R16 Q5); emitter timers keep their state.
-    mutating func removeAllParticles() {
-        for slot in 0 ..< highWater {
-            lifetime[slot] = 0
-        }
-        liveCount = 0
-        freeHint = 0
-        highWater = 0
-        birthHead = -1
-        birthTail = -1
-        pendingEvents.removeAll(keepingCapacity: true)
-        for index in children.indices {
-            children[index].removeAllParticles()
-        }
-        for group in eventChildren.indices {
-            finishedEventChildren[group] += eventChildren[group]
-            eventChildren[group].removeAll(keepingCapacity: true)
-        }
     }
 
     private mutating func kill(_ slot: Int) {

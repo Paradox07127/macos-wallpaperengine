@@ -44,12 +44,14 @@ public struct WPEParityParticleScene {
         UInt32(truncatingIfNeeded: Int64(now.timeIntervalSince1970 * 1000))
     }
 
-    /// Steps every object in `objects` order. An object without a context is invisible: it is not stepped and its
-    /// particles are removed (R16 Q5). `worldSpace` is taken from the particle flags.
+    /// Steps every object in `objects` order. An object without a context is hidden: it is not stepped, and while it
+    /// holds live particles it is reset (R24 Q2). `worldSpace` is taken from the particle flags.
     public mutating func advance(dt: Float, frames: [String: WPEParityParticleFrameContext]) {
         for index in objects.indices {
             guard var frame = frames[objects[index].id] else {
-                objects[index].system.removeAllParticles()
+                if objects[index].system.hasLiveParticles {
+                    objects[index].system.reset()
+                }
                 continue
             }
             frame.worldSpace = objects[index].system.config.flags & 1 != 0
@@ -62,6 +64,11 @@ public struct WPEParityParticleScene {
     public mutating func batches(for key: WPEParityParticleDrawKey) -> [WPEParityParticleVertexBatch] {
         guard let index = indexByID[key.objectID] else { return [] }
         return objects[index].system.batches(node: key.node[...], renderer: key.renderer, eventGroup: key.eventGroup)
+    }
+
+    /// Live particles of the object's systems, children included; nil for an unknown object.
+    public func liveCount(_ objectID: String) -> Int? {
+        indexByID[objectID].map { objects[$0].system.totalLiveCount }
     }
 
     /// Static-child translations from the object down to `key.node`, so that M = object world × this (R16 Q4);

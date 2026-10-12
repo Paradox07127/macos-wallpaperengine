@@ -271,9 +271,9 @@ struct WPEParityPropertyAnimationTests {
     private func expectValue(_ animation: WPEParityPropertyAnimation, _ expected: [Float],
                              tolerance: Float = 0.04) throws {
         let value = try #require(animation.value)
-        #expect(value.count == expected.count)
-        for (actual, golden) in zip(value, expected) {
-            #expect(abs(actual - golden) < tolerance)
+        #expect(animation.componentCount == expected.count)
+        for (lane, golden) in expected.enumerated() {
+            #expect(abs(value[lane] - golden) < tolerance)
         }
     }
 

@@ -33,14 +33,23 @@ public final class WPEParityPropertyAnimation {
         root?.lastFrameStamp ?? lastFrameStamp
     }
 
+    /// Components of the property type; `value` fills only these lanes.
+    public var componentCount: Int {
+        valueType.rawValue
+    }
+
     /// The sampled components, or nil when the authored channels cannot override the property.
-    public var value: [Float]? {
+    public var value: SIMD4<Float>? {
         guard samples.count == valueType.rawValue else { return nil }
         let time = time
         let frame = min(length - 1, max(0, Int(time * fps)))
         let next = min(frame + 1, length)
         let fraction = fmodf(time, 1 / fps) * fps
-        return samples.map { $0[frame] * (1 - fraction) + $0[next] * fraction }
+        var result = SIMD4<Float>.zero
+        for channel in samples.indices {
+            result[channel] = samples[channel][frame] * (1 - fraction) + samples[channel][next] * fraction
+        }
+        return result
     }
 
     /// Names fired by the most recent advance, in authored event order.

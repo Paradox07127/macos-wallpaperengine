@@ -38,15 +38,41 @@ enum WPEParityFrameRenderError: Error {
 /// Renders a plan's frames on Metal: one compiled graph per frame variant, renderer-owned dedicated and pooled
 /// targets, executor-owned heap and memoryless transients. A skipped draw stays in the graph and encodes nothing.
 final class WPEParityFrameRenderer {
+    /// One compiled graph per frame variant without the operations of hidden objects (R24 Q2).
+    private struct Graphs {
+        /// Per state object, whether it or an ancestor is hidden.
+        let hidden: [Bool]
+        let executors: [WPEParityGraphExecutor]
+        /// Per executor, graph operation index → plan operation index.
+        let operations: [[Int]]
+    }
+
     let skipped: [Int: WPEParityFrameSkip]
     let drawCount: Int
     let backbuffer: MTLTexture
     /// Render targets the renderer allocates; layer images are not among them.
-    let targets: [WPEResourceID: MTLTexture]
+    private(set) var targets: [WPEResourceID: MTLTexture]
+    /// Object and material state the draws read every frame; animations write it, and so may callers between frames.
+    var state: WPEParitySceneState
+    /// Material constant re-packs after a pass's constants changed, over the renderer's life.
+    private(set) var constantPacks = 0
+    private var animations: WPEParitySceneAnimations
+    private var packedConstants: [Int: (generation: Int, constants: [WPEHLSLStage: [String: WPECBufferValue]])] = [:]
+    private var seenTransforms = 0
+    /// Set once a layer transform left its loaded value: draws then place themselves from `layers` every frame.
+    private var layersMoved = false
+    private var seenVisibility = 0
+    private var graphs: Graphs
+    /// The graphs before the last visibility change, kept so toggling back does not recompile.
+    private var previousGraphs: Graphs?
+    /// Dropped draws of graphs no longer kept.
+    private var retiredDrops = 0
+    private let frames: [WPEParityFrame]
+    private let device: MTLDevice
+    private let drawEncoder: WPEParityDrawEncoder
     private let images: [WPEResourceID: MTLTexture]
     private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
-    private let executors: [WPEParityGraphExecutor]
     private let draws: [Int: WPEParityFrameDrawPlan]
     private let screen: WPEParityUniformScreen
     private let camera: WPEParityCamera
@@ -68,9 +94,9 @@ final class WPEParityFrameRenderer {
     /// False when the caller fixed the particle share.
     private let growsParticleShare: Bool
     static let maxParticleShare = 256 << 20
-    private let layers: WPEParityLayerTransformSet
-    /// Visible particle objects; the others are not stepped (R16 Q5).
-    private let particleObjects: [String]
+    private var layers: WPEParityLayerTransformSet
+    /// Every particle object and its state index; hidden ones are not stepped (R24 Q2).
+    private let particleObjects: [(id: String, index: Int?)]
     /// The draws the last frame encoded, by draw operation, in encode order.
     private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
     private var frameIndex = 0
@@ -81,7 +107,13 @@ final class WPEParityFrameRenderer {
 
     /// Particle batches dropped because a frame's particle draws outgrew their arena share or the arena.
     var droppedParticleBatches: Int {
-        executors.reduce(particles.dropped) { $0 + $1.droppedDraws }
+        let current = graphs.executors.reduce(particles.dropped + retiredDrops) { $0 + $1.droppedDraws }
+        return previousGraphs?.executors.reduce(current) { $0 + $1.droppedDraws } ?? current
+    }
+
+    /// Live particles of a particle object, children included.
+    func particleLiveCount(_ objectID: String) -> Int? {
+        particles.scene.liveCount(objectID)
     }
 
     /// Per encoded draw, declared textures the frame does not have, bound to a transparent texel.
@@ -106,11 +138,12 @@ final class WPEParityFrameRenderer {
 
     /// The engine matrices draw `operation` packs for the current frame.
     func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
-        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: camera.shaken(time: clock.timeUniform))
+        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: camera.shaken(time: clock.timeUniform),
+                                        layers: layersMoved ? layers : nil)
     }
 
     var heapBytes: Int {
-        executors.reduce(0) { $0 + ($1.heap?.size ?? 0) }
+        graphs.executors.reduce(0) { $0 + ($1.heap?.size ?? 0) }
     }
 
     var dedicatedTextureBytes: Int {
@@ -171,23 +204,28 @@ final class WPEParityFrameRenderer {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         let encoder = WPEParityDrawEncoder(factory: factory)
-        var executors: [WPEParityGraphExecutor] = []
         var targets: [WPEResourceID: MTLTexture] = [:]
-        for frame in plan.frames {
-            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
-            let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
-                                                      pixelFormats: WPEParityFrameDrawPlanner.pixelFormats)
-            for id in graph.lifetimes.keys where executor.transientTextures[id] == nil && targets[id] == nil {
-                guard let resource = graph.resources[id], resource.lifetime != .imported else { continue }
-                targets[id] = try Self.makeTarget(resource, device: device)
-            }
-            executors.append(executor)
-        }
+        let graphs = try Self.makeGraphs(frames: plan.frames, state: plan.state, device: device, encoder: encoder,
+                                         arena: arena, targets: &targets)
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
         }
         try Self.clear(Array(targets.values) + videos.textures, queue: queue)
 
+        self.graphs = graphs
+        frames = plan.frames
+        self.device = device
+        drawEncoder = encoder
+        state = plan.state
+        var constantComponents: [WPEParityMaterialPassKey: [String: Int]] = [:]
+        for binding in plan.bindings.joined().map(\.value) {
+            guard let pass = binding.materialPass else { continue }
+            for constant in binding.materialConstants.values.joined() {
+                constantComponents[pass, default: [:]][constant.material] = constant.components
+            }
+        }
+        animations = WPEParitySceneAnimations(document: plan.document, state: plan.state,
+                                              constantComponents: constantComponents)
         self.skipped = skipped
         drawCount = plan.frames[0].operations.count {
             if case .draw = $0.kind {
@@ -201,7 +239,6 @@ final class WPEParityFrameRenderer {
         images = planner.layerImages
         self.videos = videos
         self.queue = queue
-        self.executors = executors
         self.arena = arena
         self.baseArenaBytes = baseArenaBytes
         growsParticleShare = particleArenaBytes == nil
@@ -210,16 +247,16 @@ final class WPEParityFrameRenderer {
         camera = planner.layers.camera
         layers = planner.layers
         cameraParallax = plan.document.general.cameraParallax
-        let particleObjects = plan.scene.scene.objects.compactMap { object in
-            if case .particle = object.kind, object.visible {
-                object.id
+        let particleObjects = plan.scene.scene.objects.compactMap { object -> (id: String, index: Int?)? in
+            if case .particle = object.kind {
+                (object.id, plan.state.index(of: object.id))
             } else {
                 nil
             }
         }
         self.particleObjects = particleObjects
-        let prewarm = Self.particleFrames(particleObjects, layers: planner.layers, camera: planner.layers.camera,
-                                          time: 0, cursor: nil)
+        let prewarm = Self.particleFrames(particleObjects, state: plan.state, layers: planner.layers,
+                                          camera: planner.layers.camera, time: 0, cursor: nil)
         particles = WPEParityParticleFrame(
             scene: WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
                                           engineFlags: plan.scene.engineFlags, seed: particleSeed, frames: prewarm),
@@ -244,6 +281,11 @@ final class WPEParityFrameRenderer {
         particles = previous.particles
         arena.capacity = baseArenaBytes + particles.budget
         frameIndex = previous.frameIndex
+        state = previous.state
+        animations = previous.animations
+        // The next frame takes the transforms and visibility over from the copied state.
+        seenTransforms = previous.layersMoved ? -1 : 0
+        seenVisibility = -1
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
@@ -260,7 +302,8 @@ final class WPEParityFrameRenderer {
         let camera = camera.shaken(time: clock.timeUniform)
         particles.beginFrame()
         particles.scene.advance(dt: clock.frametime, frames: Self.particleFrames(
-            particleObjects, layers: layers, camera: camera, time: clock.timeUniform, cursor: pointer.position
+            particleObjects, state: state, layers: layers, camera: camera, time: clock.timeUniform,
+            cursor: pointer.position
         ))
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
@@ -278,7 +321,13 @@ final class WPEParityFrameRenderer {
         let uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
                                              parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
                                              audio: audio)
-        let variant = frameIndex % executors.count
+        // R24 Q1: animations run after the object update and the camera, and render reads their values.
+        animations.advance(dt: clock.frametime, state: &state)
+        applyTransforms()
+        try selectGraphs()
+        let graphs = graphs
+        let live = layersMoved ? layers : nil
+        let variant = frameIndex % graphs.executors.count
         frameIndex += 1
         let dropped = droppedParticleBatches
         defer {
@@ -289,34 +338,124 @@ final class WPEParityFrameRenderer {
             }
         }
         lastFrameDraws.removeAll(keepingCapacity: true)
-        return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
-                                                  prepare: videos.encode) { operation, textures, arena in
+        return try graphs.executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
+                                                         prepare: videos.encode) { step, textures, arena in
+            let operation = graphs.operations[variant][step]
             guard let plan = draws[operation] else { return [] }
             let provided: [WPEParityDraw]
             if case .particles = plan.geometry {
                 provided = try plan.makeParticleDraws(frame: uniforms, camera: camera, variant: variant,
                                                       textures: textures, arena: arena, textureSlots: &textureSlots,
-                                                      renderVars: &renderVars, particles: &particles)
+                                                      renderVars: &renderVars, particles: &particles, layers: live)
             } else {
                 renderVars.rv0 = plan.renderVarWrites.rv0 ?? renderVars.rv0
                 renderVars.rv1 = plan.renderVarWrites.rv1 ?? renderVars.rv1
+                // A colour equal to the loaded one is already in the planned constants.
+                let color = plan.layerColor.map { state.layerColor(at: $0.object) }
                 provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
-                                              textureSlots: &textureSlots, puppets: puppets)]
+                                              textureSlots: &textureSlots, puppets: puppets, layers: live,
+                                              constants: materialConstants(operation, plan),
+                                              layerColor: color == plan.layerColor?.loaded ? nil : color)]
             }
             lastFrameDraws += provided.map { (operation, $0) }
             return provided
         }
     }
 
+    /// The draw's constants, re-packed from the state only after its material pass changed (R24 Q3).
+    private func materialConstants(_ operation: Int,
+                                   _ plan: WPEParityFrameDrawPlan) -> [WPEHLSLStage: [String: WPECBufferValue]] {
+        guard let pass = plan.materialPass else { return plan.constants }
+        let generation = state.constantGeneration(pass: pass)
+        guard generation != 0 else { return plan.constants }
+        if let packed = packedConstants[operation], packed.generation == generation {
+            return packed.constants
+        }
+        var constants = plan.constants
+        let values = state.constants(pass: pass)
+        for (stage, uniforms) in plan.materialConstants {
+            for uniform in uniforms {
+                guard let value = values[uniform.material] else { continue }
+                constants[stage]?[uniform.name] = uniform.value(value)
+            }
+        }
+        packedConstants[operation] = (generation, constants)
+        constantPacks += 1
+        return constants
+    }
+
+    /// Moves the layer worlds to the state's transforms when any changed.
+    private func applyTransforms() {
+        guard state.transformGeneration != seenTransforms else { return }
+        seenTransforms = state.transformGeneration
+        for (index, id) in state.ids.enumerated() {
+            let object = state.objects[index]
+            layers.setTransform(id, origin: object.origin, angles: object.angles, scale: object.scale)
+        }
+        layers.refreshWorlds()
+        layersMoved = true
+    }
+
+    /// Encodes the frame without the operations of hidden objects; a visibility change recompiles the graphs, except
+    /// when it returns to the previous set.
+    private func selectGraphs() throws {
+        guard state.visibilityGeneration != seenVisibility else { return }
+        seenVisibility = state.visibilityGeneration
+        let hidden = state.objects.indices.map { !state.isVisible(at: $0) }
+        guard hidden != graphs.hidden else { return }
+        if let previous = previousGraphs, previous.hidden == hidden {
+            (graphs, previousGraphs) = (previous, graphs)
+            return
+        }
+        let allocated = Set(targets.keys)
+        let made = try Self.makeGraphs(frames: frames, state: state, device: device, encoder: drawEncoder, arena: arena,
+                                       targets: &targets)
+        let added = targets.filter { !allocated.contains($0.key) }.map(\.value)
+        if !added.isEmpty {
+            try Self.clear(added, queue: queue)
+        }
+        retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
+        (graphs, previousGraphs) = (made, graphs)
+    }
+
+    /// Compiles each frame variant without the operations of objects `state` hides, allocating the targets the graphs
+    /// need that `targets` lacks.
+    private static func makeGraphs(frames: [WPEParityFrame], state: WPEParitySceneState, device: MTLDevice,
+                                   encoder: WPEParityDrawEncoder, arena: WPEParityFrameArena,
+                                   targets: inout [WPEResourceID: MTLTexture]) throws -> Graphs {
+        var executors: [WPEParityGraphExecutor] = []
+        var operations: [[Int]] = []
+        for frame in frames {
+            let kept = frame.operations.indices.filter { index in
+                frame.owners[index].flatMap(state.index(of:)).map(state.isVisible(at:)) ?? true
+            }
+            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources,
+                                                           operations: kept.map { frame.operations[$0] })
+            let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
+                                                      pixelFormats: WPEParityFrameDrawPlanner.pixelFormats)
+            for id in graph.lifetimes.keys where executor.transientTextures[id] == nil && targets[id] == nil {
+                guard let resource = graph.resources[id], resource.lifetime != .imported else { continue }
+                targets[id] = try makeTarget(resource, device: device)
+            }
+            executors.append(executor)
+            operations.append(kept)
+        }
+        return Graphs(hidden: state.objects.indices.map { !state.isVisible(at: $0) }, executors: executors,
+                      operations: operations)
+    }
+
     /// One context per visible particle object: scene time, cursor in [0, 1]² y down, the scene camera's
     /// view-projection and the object's world matrix.
-    private static func particleFrames(_ ids: [String], layers: WPEParityLayerTransformSet, camera: WPEParityCamera,
-                                       time: Float, cursor: SIMD2<Float>?) -> [String: WPEParityParticleFrameContext] {
+    private static func particleFrames(_ objects: [(id: String, index: Int?)], state: WPEParitySceneState,
+                                       layers: WPEParityLayerTransformSet, camera: WPEParityCamera, time: Float,
+                                       cursor: SIMD2<Float>?) -> [String: WPEParityParticleFrameContext] {
         let viewProjection = camera.projection * camera.view
-        return Dictionary(uniqueKeysWithValues: ids.map { id in
-            (id, WPEParityParticleFrameContext(time: time, cursor: cursor, viewProjection: viewProjection,
-                                               objectMatrix: layers.world(id)))
-        })
+        var frames: [String: WPEParityParticleFrameContext] = [:]
+        for (id, index) in objects where index.map(state.isVisible(at:)) ?? true {
+            frames[id] = WPEParityParticleFrameContext(time: time, cursor: cursor, viewProjection: viewProjection,
+                                                       objectMatrix: layers.world(id))
+        }
+        return frames
     }
 
     private static func makeTarget(_ resource: WPELogicalResource, device: MTLDevice) throws -> MTLTexture {

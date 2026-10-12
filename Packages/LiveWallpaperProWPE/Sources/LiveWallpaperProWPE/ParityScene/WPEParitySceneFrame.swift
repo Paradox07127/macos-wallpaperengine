@@ -91,6 +91,8 @@ public struct WPEParitySceneFrame: Hashable, Sendable {
     /// Sampler a draw binds when it reads one of the layer composites.
     public let samplers: [WPEResourceID: WPEParitySceneSampler]
     public let diagnostics: [WPEParitySceneDiagnostic]
+    /// The object each pass renders; scene-wide passes are absent.
+    public let owners: [WPEPassIdentity: String]
 }
 
 public enum WPEParitySceneResource {

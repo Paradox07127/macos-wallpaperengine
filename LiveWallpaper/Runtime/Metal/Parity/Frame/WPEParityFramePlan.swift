@@ -51,12 +51,18 @@ struct WPEParityFramePlan {
     let height: Int
     /// The user alignment the camera crops the canvas with (R8 Q1).
     let alignment: WPEParityCameraAlignment
+    /// Object and material state as loaded, hidden objects included.
+    let state: WPEParitySceneState
 
     init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
          width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop) throws {
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
         var description = scene.scene
         var post = scene.postProcess
+        // WPE loads hidden objects too; the renderer skips their operations while they stay hidden (R24 Q2).
+        for index in description.objects.indices {
+            description.objects[index].visible = true
+        }
         (description.width, description.height) = (width, height)
         (post.backbufferWidth, post.backbufferHeight) = (width, height)
         let even = try WPEParityFrameComposer.compose(scene: description, post: post, frameIndex: 0)
@@ -90,6 +96,7 @@ struct WPEParityFramePlan {
         self.width = width
         self.height = height
         self.alignment = alignment
+        state = WPEParitySceneState(scene: scene, document: document)
     }
 }
 #endif

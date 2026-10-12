@@ -122,8 +122,11 @@ final class WPEParityParticleSceneTests: XCTestCase {
 
     func testTinyParticleArenaDropsBatchesAndKeepsOtherDraws() async throws {
         let (plan, renderer, _) = try await makeRenderer(particleArenaBytes: 256)
-        let others = plan.frames[0].draws.keys.count {
-            renderer.skipped[$0] == nil && renderer.particleRenderer($0) == nil
+        // Objects hidden at load are planned but not encoded.
+        let others = plan.frames[0].draws.keys.count { index in
+            guard renderer.skipped[index] == nil, renderer.particleRenderer(index) == nil else { return false }
+            guard case let .scene(draw)? = plan.frames[0].draws[index] else { return true }
+            return plan.state.isVisible(draw.objectID)
         }
         XCTAssertGreaterThan(others, 0)
         for frame in 1 ... 30 {

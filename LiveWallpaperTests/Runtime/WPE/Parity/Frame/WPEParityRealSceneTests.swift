@@ -80,8 +80,14 @@ final class WPEParityRealSceneTests: XCTestCase {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 
         let reasons = Dictionary(grouping: renderer.skipped.values, by: \.category).mapValues(\.count)
-        // Models are out of scope; every other draw must reach a pipeline.
+        // Models are out of scope; every other draw must reach a pipeline. Objects hidden at load are planned too, and
+        // the capture holds no shaders for their programs.
+        var hiddenSkips = 0
         for (index, skip) in renderer.skipped.sorted(by: { $0.key < $1.key }) {
+            if case let .scene(draw)? = plan.frames[0].draws[index], !plan.state.isVisible(draw.objectID) {
+                hiddenSkips += 1
+                continue
+            }
             switch skip {
             case .modelMesh:
                 print("scene \(sceneID) operation \(index) skipped: \(skip)")
@@ -89,12 +95,17 @@ final class WPEParityRealSceneTests: XCTestCase {
                 XCTFail("\(sceneID) operation \(index): \(skip)")
             }
         }
+        print("scene \(sceneID): \(hiddenSkips) draws of objects hidden at load skipped")
         print("scene \(sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
             + "\(renderer.skipped.count) skipped \(reasons)")
         print("scene \(sceneID): transparent fallback textures \(renderer.fallbackTextures.sorted { $0.key < $1.key })")
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
         if sceneID == "3660962877" {
-            XCTAssertEqual(renderer.executedDrawCount, 7)
+            let visible = renderer.constants.keys.count { index in
+                guard case let .scene(draw)? = plan.frames[0].draws[index] else { return true }
+                return plan.state.isVisible(draw.objectID)
+            }
+            XCTAssertEqual(visible, 7)
         }
 
         // Declared constants outside the binding description and the engine uniform set stay zero.
