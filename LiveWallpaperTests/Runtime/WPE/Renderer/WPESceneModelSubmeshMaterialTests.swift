@@ -222,6 +222,77 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         #expect(sharedAdditive.blendMode == "premultipliedAdditive")
     }
 
+    @Test("HDR emissive overbright needs LIGHTING or REFLECTION on top of a bound emissive map",
+          arguments: ["generic4", "chroma4"], [false, true])
+    func hdrEmissiveOverbrightFollowsLightingCombo(shader: String, lighting: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let quad = WPEPuppetMesh(
+            materialPath: "unused",
+            vertices: [
+                WPEPuppetVertex(position: SIMD3<Float>(-12, -4, 0), uv: SIMD2<Float>(0, 1)),
+                WPEPuppetVertex(position: SIMD3<Float>(12, -4, 0), uv: SIMD2<Float>(1, 1)),
+                WPEPuppetVertex(position: SIMD3<Float>(-12, 4, 0), uv: SIMD2<Float>(0, 0)),
+                WPEPuppetVertex(position: SIMD3<Float>(12, 4, 0), uv: SIMD2<Float>(1, 0)),
+            ], indices: [0, 1, 2, 2, 1, 3], parts: []
+        )
+        let pass = WPERenderPass(
+            id: "model.material", phase: .material, shader: shader, source: .asset("albedo"),
+            target: .scene, textures: [0: .asset("albedo"), 2: .asset("component")], binds: [:],
+            constants: ["emissivecolor": .vector([1, 1, 1]), "emissivebrightness": .number(1.76)],
+            combos: ["LIGHTING": lighting ? 1 : 0, "REFLECTION": 0],
+            blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let geometry = WPERenderLayerGeometry(
+            origin: SIMD3<Double>(12, 4, -1), scale: SIMD3<Double>(1, 1, 1), angles: .zero,
+            alignment: .center, size: CGSize(width: 24, height: 8), alpha: 1,
+            color: SIMD3<Double>(1, 1, 1), brightness: 1
+        )
+        let layer = WPERenderLayer(
+            objectID: "model", objectName: "Emissive model", imagePath: "model.mdl",
+            materialPath: "materials/m0.json", puppetPath: "model.mdl", geometry: geometry,
+            compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: layer, puppetModel: WPEPuppetModel(version: 23, meshes: [quad]),
+                passes: [WPEPreparedRenderPass(
+                    pass: pass, shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
+                    textureBindings: [:], comboValues: [:], uniformValues: [:]
+                )]
+            ),
+        ])
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 24, height: 8, auto: true),
+            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 0, perspectiveObjectIDs: [], sceneHDR: true
+        )
+        let output = try executor.render(
+            pipeline: pipeline, size: size,
+            textures: ["albedo": solid(device: device, [32, 32, 32, 255]), "component": solid(device: device, [0, 0, 0, 255])],
+            cameraUniforms: camera
+        )
+        let red = try readRed(output, x: 12, y: 4)
+        // CombineLighting with emissive light = albedo × 1.76 and no scene lights: saturate(a + 1.76a).
+        let albedo = 32.0 / 255
+        let unboosted = albedo * 2.76
+        let expected = lighting ? unboosted * 1.76 : unboosted
+        #expect(abs(red - expected) <= 2.0 / 255, "\(shader) LIGHTING=\(lighting): red \(red), expected \(expected)")
+    }
+
+    private func readRed(_ output: MTLTexture, x: Int, y: Int) throws -> Double {
+        let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        let region = MTLRegionMake2D(x, y, 1, 1)
+        if output.pixelFormat == .rgba16Float {
+            var texel = [UInt16](repeating: 0, count: 4)
+            texel.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 8, from: region, mipmapLevel: 0) }
+            return Double(Float16(bitPattern: texel[0]))
+        }
+        try #require(output.pixelFormat == .rgba8Unorm, "unexpected scene format \(output.pixelFormat.rawValue)")
+        var texel = [UInt8](repeating: 0, count: 4)
+        texel.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 4, from: region, mipmapLevel: 0) }
+        return Double(texel[0]) / 255
+    }
+
     private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil,
                                  opaquePaddingColor: Bool = false, blending: String = "disabled") throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

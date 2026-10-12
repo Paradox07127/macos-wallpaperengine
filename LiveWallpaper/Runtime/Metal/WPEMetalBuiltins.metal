@@ -1487,7 +1487,10 @@ static float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
     }
     if (u.brightnessFlags.z > 0.5) {
         combined *= u.brightnessFlags.x;
-        combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
+        // generic4.frag: `#if (LIGHTING || REFLECTION) && EMISSIVE_MAP`, nested inside `#if HDR`.
+        if ((u.ambientLighting.w > 0.5 || u.brightnessFlags.w > 0.5) && u.brightnessFlags.y > 0.5) {
+            combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
+        }
     }
     // Opaque native MODEL materials write shaded RGB even when the sampled
     // albedo alpha is zero (including authored texture padding). Translucent
@@ -1580,7 +1583,9 @@ static float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
     }
     if (u.brightnessFlags.z > 0.5) {
         combined *= u.brightnessFlags.x;
-        combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
+        if ((u.ambientLighting.w > 0.5 || u.brightnessFlags.w > 0.5) && u.brightnessFlags.y > 0.5) {
+            combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
+        }
     }
     if (wpe_native_output_is_straight()) {
         return half4(wpe_attachment_output(float4(combined, alpha)));
