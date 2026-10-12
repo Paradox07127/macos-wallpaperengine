@@ -25,14 +25,8 @@ enum WPEParityFrameRenderError: Error {
 }
 
 /// Renders a plan's frames on Metal: one compiled graph per frame variant, renderer-owned dedicated and pooled
-/// targets, executor-owned heap and memoryless transients. Skipped draws are removed from the graph, not replaced.
+/// targets, executor-owned heap and memoryless transients. A skipped draw stays in the graph and encodes nothing.
 final class WPEParityFrameRenderer {
-    private struct Variant {
-        let executor: WPEParityGraphExecutor
-        /// Compiled operation index → plan operation index.
-        let operations: [Int]
-    }
-
     let skipped: [Int: WPEParityFrameSkip]
     let drawCount: Int
     let backbuffer: MTLTexture
@@ -40,7 +34,7 @@ final class WPEParityFrameRenderer {
     let targets: [WPEResourceID: MTLTexture]
     private let images: [WPEResourceID: MTLTexture]
     private let queue: MTLCommandQueue
-    private let variants: [Variant]
+    private let executors: [WPEParityGraphExecutor]
     private let draws: [Int: WPEParityFrameDrawPlan]
     private let screen: WPEParityUniformScreen
     private let view: simd_float4x4
@@ -49,17 +43,16 @@ final class WPEParityFrameRenderer {
     private var frameIndex = 0
 
     var executedDrawCount: Int {
-        variants[0].executor.graph.operations.count {
-            if case .draw = $0.kind {
-                true
-            } else {
-                false
-            }
-        }
+        draws.count
+    }
+
+    /// Per encoded draw, the declared constants that fall back to zero.
+    var zeroConstants: [Int: [String]] {
+        draws.mapValues(\.zeroConstants)
     }
 
     var heapBytes: Int {
-        variants.reduce(0) { $0 + ($1.executor.heap?.size ?? 0) }
+        executors.reduce(0) { $0 + ($1.heap?.size ?? 0) }
     }
 
     var dedicatedTextureBytes: Int {
@@ -83,28 +76,24 @@ final class WPEParityFrameRenderer {
             }
         }
 
-        let first = plan.frames[0]
-        let kept = first.operations.indices.filter { index in
-            guard case .draw = first.operations[index].kind else { return true }
-            return draws[index] != nil
-        }
+        try planner.fillImportedImages()
+
         // Each draw needs at most two argument tables and a few cbuffers, all 256-byte aligned.
         guard let arena = WPEParityFrameArena(device: device, capacity: max(1 << 16, draws.count * 16 * 1024)) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         let encoder = WPEParityDrawEncoder(factory: factory)
-        var variants: [Variant] = []
+        var executors: [WPEParityGraphExecutor] = []
         var targets: [WPEResourceID: MTLTexture] = [:]
         for frame in plan.frames {
-            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources,
-                                                           operations: kept.map { frame.operations[$0] })
+            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
             let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
                                                       pixelFormats: WPEParityFrameDrawPlanner.pixelFormats)
             for id in graph.lifetimes.keys where executor.transientTextures[id] == nil && targets[id] == nil {
                 guard let resource = graph.resources[id], resource.lifetime != .imported else { continue }
                 targets[id] = try Self.makeTarget(resource, device: device)
             }
-            variants.append(Variant(executor: executor, operations: kept))
+            executors.append(executor)
         }
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
@@ -112,7 +101,7 @@ final class WPEParityFrameRenderer {
         try Self.clear(Array(targets.values), queue: queue)
 
         self.skipped = skipped
-        drawCount = first.operations.count {
+        drawCount = plan.frames[0].operations.count {
             if case .draw = $0.kind {
                 true
             } else {
@@ -123,7 +112,7 @@ final class WPEParityFrameRenderer {
         self.targets = targets
         images = planner.layerImages
         self.queue = queue
-        self.variants = variants
+        self.executors = executors
         self.draws = draws
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         view = planner.view
@@ -136,12 +125,10 @@ final class WPEParityFrameRenderer {
         let uniforms = WPEParityUniformFrame(clock: clock, daytime: 0, screen: screen,
                                              pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
                                              eyePosition: eyePosition, view: view)
-        let variant = variants[frameIndex % variants.count]
+        let variant = frameIndex % executors.count
         frameIndex += 1
-        return try variant.executor.encodeFrame(on: queue, textures: targets.merging(images) { $1 }) { operation, textures in
-            let index = variant.operations[operation]
-            guard let draw = draws[index] else { throw WPEParityFrameSkip.pipeline("operation \(index) has no draw") }
-            return try draw.makeDraw(frame: uniforms, textures: textures)
+        return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 }) { operation, textures in
+            try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures)
         }
     }
 

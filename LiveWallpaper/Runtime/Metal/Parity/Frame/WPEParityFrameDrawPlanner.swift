@@ -17,18 +17,22 @@ struct WPEParityFrameDrawPlan {
     let depthStencil: WPEParityDepthStencilState
     let rasterizer: WPEParityRasterizerState
     let vertexBuffer: MTLBuffer
-    let textures: [String: TextureSource]
+    /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
+    let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
-    /// Object and post-process values the engine uniform set does not carry.
+    /// The binding description's constants; the engine uniform set does not carry them.
     let constants: [String: WPECBufferValue]
+    /// Constants a stage declares that neither the binding nor the engine uniform set supplies, so they stay zero.
+    let zeroConstants: [String]
 
-    func makeDraw(frame: WPEParityUniformFrame, textures table: [WPEResourceID: MTLTexture]) throws -> WPEParityDraw {
+    func makeDraw(frame: WPEParityUniformFrame, variant: Int,
+                  textures table: [WPEResourceID: MTLTexture]) throws -> WPEParityDraw {
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  vertexBuffer: vertexBuffer, primitiveType: .triangleStrip, vertexCount: 4)
         draw.constants = WPEParityUniformSet.values(frame: frame, draw: uniforms).merging(constants) { $1 }
         draw.samplers = samplers
-        for (name, source) in textures {
+        for (name, source) in textures[variant] {
             switch source {
             case let .resource(id):
                 guard let texture = table[id] else { throw WPEParityGraphExecutionError.missingTexture(id) }
@@ -41,7 +45,8 @@ struct WPEParityFrameDrawPlan {
     }
 }
 
-/// Resolves frame draws against their compiled programs: pipeline, geometry, textures, samplers and matrices.
+/// Resolves frame draws against their compiled programs and the package's binding descriptions: pipeline,
+/// geometry, textures, samplers and matrices.
 struct WPEParityFrameDrawPlanner {
     static let pixelFormats: [String: MTLPixelFormat] = [
         "rgba8unorm": .rgba8Unorm, "rgba16float": .rgba16Float, "r8unorm": .r8Unorm, "rg8unorm": .rg8Unorm,
@@ -66,7 +71,7 @@ struct WPEParityFrameDrawPlanner {
     let projection: simd_float4x4
     let eyePosition: SIMD3<Float>
     private var assetImages: [String: Image] = [:]
-    /// Imported layer images, filled as albedo draws are planned.
+    /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageInfo: [WPEResourceID: WPETexInfo] = [:]
 
@@ -103,11 +108,12 @@ struct WPEParityFrameDrawPlanner {
 
     mutating func makePlan(_ index: Int,
                            artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan {
-        guard let description = frame.draws[index], let material = plan.materials[index],
-              case let .draw(operation) = frame.operations[index].kind,
-              let target = targets[index], let color = resources[target.color],
+        let shader = plan.programs[index]?.shader ?? "operation \(index)"
+        guard let description = frame.draws[index], let target = targets[index], let color = resources[target.color],
               let colorFormat = Self.pixelFormats[color.format]
-        else { throw .pipeline("operation \(index) has no draw, material or known target format") }
+        else { throw .pipeline("operation \(index) has no draw or known target format") }
+        let bindings = plan.bindings.compactMap { $0[index] }
+        guard let binding = bindings.first, bindings.count == plan.frames.count else { throw .noMaterial }
         let depthFormat = target.depth.flatMap { resources[$0] }.flatMap { Self.pixelFormats[$0.format] } ?? .invalid
         let pipeline: WPEParityPipeline
         do {
@@ -115,110 +121,95 @@ struct WPEParityFrameDrawPlanner {
                                                 colorPixelFormat: colorFormat, depthStencilPixelFormat: depthFormat,
                                                 sampleCount: color.sampleCount)
         } catch {
-            throw .pipeline("\(material.shader): \(error)")
+            throw .pipeline("\(shader): \(error)")
         }
 
-        var reads: [WPEResourceID] = []
-        var objectID: String?
-        var fullscreen = true
-        switch description {
-        case let .scene(draw):
-            (reads, objectID, fullscreen) = (draw.reads, draw.objectID, draw.geometry == .fullscreenQuad)
-            if draw.effectID == nil, let image = reads.first, resources[image]?.lifetime == .imported {
-                try loadLayerImage(image, name: material.textures[0])
-            }
-        case let .post(draw):
-            reads = draw.reads
-        }
-
-        var textures: [String: WPEParityFrameDrawPlan.TextureSource] = [:]
+        var textures = [[String: WPEParityFrameDrawPlan.TextureSource]](repeating: [:], count: bindings.count)
         var samplers: [String: WPEParitySamplerState] = [:]
         var uniformTextures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
         let names = Set((artifact.vertex.reflection.resources + artifact.fragment.reflection.resources)
             .filter { $0.kind == .texture }.map(\.name))
         for name in names.sorted() {
-            guard name.hasPrefix("g_Texture"), let slot = Int(name.dropFirst("g_Texture".count)) else {
-                throw .texture("\(material.shader) declares \(name)")
+            guard name.hasPrefix("g_Texture"), let slot = Int32(name.dropFirst("g_Texture".count)) else {
+                throw .texture("\(shader) declares \(name)")
             }
-            let source = try textureSource(slot, description: description, material: material, reads: reads)
-            textures[name] = source
+            for (variant, binding) in bindings.enumerated() {
+                guard case let .draw(operation) = plan.frames[variant].operations[index].kind else {
+                    throw .pipeline("operation \(index) is not a draw in frame variant \(variant)")
+                }
+                textures[variant][name] = try textureSource(binding.textures[slot], slot: slot, shader: shader,
+                                                            reads: operation.reads.map(\.resource))
+            }
+            guard let source = textures[0][name] else { continue }
             samplers[name + "SamplerState"] = sampler(source)
             if slot < uniformTextures.count {
-                uniformTextures[slot] = uniformTexture(source)
+                uniformTextures[Int(slot)] = uniformTexture(source)
             }
         }
 
-        let object = objectID.flatMap { objects[$0] }
-        let size = objectID.flatMap { sizes[$0] } ?? .zero
-        let layerModel = object.map(Self.model) ?? matrix_identity_float4x4
-        let layer = WPEParityUniformMatrices(model: layerModel, view: view, projection: projection)
-        let effectPass = object.map { _ in
-            WPEParityUniformEffectPass(layerModel: layerModel, layerModelViewProjection: layer.modelViewProjection,
-                                       size: size, isLastPass: !fullscreen)
+        let (objectID, fullscreen) = switch description {
+        case let .scene(draw): (Optional(draw.objectID), draw.geometry == .fullscreenQuad)
+        case .post: (String?.none, true)
         }
-        let half = fullscreen ? SIMD2<Float>(1, 1) : size / 2
-        guard let vertexBuffer = Self.quad(half: half, inputs: artifact.vertex.reflection.vertexInputs, device: device)
+        let placement = placement(objectID: objectID, fullscreen: fullscreen)
+        guard let vertexBuffer = Self.quad(half: placement.half, inputs: artifact.vertex.reflection.vertexInputs,
+                                           device: device)
         else { throw .pipeline("vertex buffer allocation failed") }
+        let uniforms = WPEParityUniformDraw(matrices: placement.matrices, effectPass: placement.effectPass,
+                                            textures: uniformTextures)
+
+        let declared = Set((artifact.vertex.reflection.cbuffers + artifact.fragment.reflection.cbuffers)
+            .flatMap(\.variables).map(\.name))
+        let probe = WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
+                                          screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
+                                          pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
+                                          eyePosition: eyePosition, view: view)
+        let supplied = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys).union(binding.constants.keys)
 
         return WPEParityFrameDrawPlan(
             pipeline: pipeline,
-            depthStencil: .wpe(depthTest: operation.depthTest, depthWrite: operation.depthWrite),
-            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
+            depthStencil: .wpe(depthTest: binding.depthTest, depthWrite: binding.depthWrite),
+            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: false,
+                             multisample: false),
             vertexBuffer: vertexBuffer,
             textures: textures,
             samplers: samplers,
-            uniforms: WPEParityUniformDraw(matrices: fullscreen ? .effectPass : layer, effectPass: effectPass,
-                                           textures: uniformTextures),
-            constants: Self.constants(description, object: object)
+            uniforms: uniforms,
+            constants: binding.constants,
+            zeroConstants: declared.subtracting(supplied).sorted()
         )
+    }
+
+    /// Gives every imported resource without an image, such as a skipped draw's layer, a transparent texel.
+    mutating func fillImportedImages() throws(WPEParityFrameSkip) {
+        for resource in plan.frames.flatMap(\.resources) where resource.lifetime == .imported {
+            try loadLayerImage(resource.id, name: nil)
+        }
     }
 
     // MARK: Textures
 
     private mutating func textureSource(
-        _ slot: Int, description: WPEParityFrameDraw, material: WPEParityProgramMaterial, reads: [WPEResourceID]
+        _ source: WPEParityProgramBinding.TextureSource?, slot: Int32, shader: String, reads: [WPEResourceID]
     ) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan.TextureSource {
-        let fullFrame = WPEParitySceneResource.fullFrameBuffer
-        guard case let .scene(draw) = description else {
-            guard slot < reads.count else { throw .texture("\(material.shader) samples slot \(slot) of \(reads)") }
-            return .resource(reads[slot])
+        switch source {
+        case nil:
+            throw .texture("\(shader) slot \(slot) is unbound")
+        case let .resource(id)?:
+            // The graph orders only the reads the frame declares.
+            guard reads.contains(id) else { throw .texture("\(shader) slot \(slot) samples \(id) outside \(reads)") }
+            return .resource(id)
+        case let .imported(id, asset)?:
+            try loadLayerImage(id, name: asset)
+            return .resource(id)
+        case let .asset(name)?:
+            return try .image(assetImage(name).texture)
         }
-        let name = material.textures[Int32(slot)] ?? defaultTexture(slot, shader: material.shader)
-        // Slot 0 of an albedo-style draw is its first read: the layer image, the snapshot or the composite.
-        if let first = reads.first, name == "previous" || (slot == 0 && (draw.effectID == nil || name == nil)) {
-            return .resource(first)
-        }
-        guard let name, !name.isEmpty else { throw .texture("\(material.shader) slot \(slot) is unbound") }
-        if name == fullFrame.rawValue, reads.contains(fullFrame) {
-            return .resource(fullFrame)
-        }
-        if plan.fboNames.contains(name) {
-            var binds: [String] = []
-            for bound in material.textures.sorted(by: { $0.key < $1.key }).map(\.value)
-                where plan.fboNames.contains(bound) && !binds.contains(bound) {
-                binds.append(bound)
-            }
-            guard let position = binds.firstIndex(of: name), position + 1 < reads.count else {
-                throw .texture("\(material.shader) FBO \(name) is not among the reads \(reads)")
-            }
-            return .resource(reads[position + 1])
-        }
-        return try .image(assetImage(name).texture)
-    }
-
-    private func defaultTexture(_ slot: Int, shader: String) -> String? {
-        func source(_ suffix: String) -> String {
-            plan.scene.assets.shaderSource(named: "shaders/\(shader).\(suffix)")
-                .flatMap { String(bytes: $0, encoding: .isoLatin1) } ?? ""
-        }
-        let annotations = WPEShaderAnnotationCombos(vertexSource: source("vert"), fragmentSource: source("frag"))
-        return annotations.samplers[Int32(slot)].map(\.defaultTexture)
     }
 
     private mutating func loadLayerImage(_ id: WPEResourceID, name: String?) throws(WPEParityFrameSkip) {
         guard layerImages[id] == nil else { return }
         guard let name else {
-            // A material without textures (solid layers) still reads its layer image in the frame.
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1,
                                                                       mipmapped: false)
             descriptor.usage = .shaderRead
@@ -327,21 +318,19 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    private static func constants(_ description: WPEParityFrameDraw,
-                                  object: WPESceneImageObject?) -> [String: WPECBufferValue] {
-        if case let .post(draw) = description {
-            return draw.bloomParameters.mapValues { .vector([$0.x, $0.y, $0.z, $0.w]) }
+    /// The one place matrices and quad extent are derived: a layer mesh sits at its object's transform in the
+    /// ortho canvas, a fullscreen quad uses the effect-pass matrices.
+    private func placement(objectID: String?, fullscreen: Bool)
+        -> (matrices: WPEParityUniformMatrices, effectPass: WPEParityUniformEffectPass?, half: SIMD2<Float>) {
+        let object = objectID.flatMap { objects[$0] }
+        let size = objectID.flatMap { sizes[$0] } ?? .zero
+        let layerModel = object.map(Self.model) ?? matrix_identity_float4x4
+        let layer = WPEParityUniformMatrices(model: layerModel, view: view, projection: projection)
+        let effectPass = object.map { _ in
+            WPEParityUniformEffectPass(layerModel: layerModel, layerModelViewProjection: layer.modelViewProjection,
+                                       size: size, isLastPass: !fullscreen)
         }
-        guard let object else { return [:] }
-        let color = SIMD3<Float>(object.color)
-        let alpha = Float(object.alpha)
-        return [
-            "g_Color4": .vector([color.x, color.y, color.z, alpha]),
-            "g_Color": .vector([color.x, color.y, color.z]),
-            "g_Alpha": .float(alpha),
-            "g_UserAlpha": .float(alpha),
-            "g_Brightness": .float(Float(object.brightness)),
-        ]
+        return (fullscreen ? .effectPass : layer, effectPass, fullscreen ? SIMD2<Float>(1, 1) : size / 2)
     }
 
     /// Translation, then rotation Z·Y·X in radians, then scale, all in ortho canvas units.

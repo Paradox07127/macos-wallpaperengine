@@ -9,14 +9,21 @@ public struct WPEParityProgramMaterial: Sendable, Equatable {
     public var combos: [String: Int32]
     /// Texture slot → texture, FBO or `previous` name; only bound slots are present.
     public var textures: [Int32: String]
+    /// Merged `constantshadervalues`: material key (the uniform annotation's `material`) → components.
+    public var constants: [String: [Double]]
+    /// `cullmode` other than `nocull`.
+    public var cullsBackFaces: Bool
 
     public init(shader: String, path: String? = nil, blending: WPEParityBlendMode = .normal,
-                combos: [String: Int32] = [:], textures: [Int32: String] = [:]) {
+                combos: [String: Int32] = [:], textures: [Int32: String] = [:], constants: [String: [Double]] = [:],
+                cullsBackFaces: Bool = true) {
         self.shader = shader
         self.path = path
         self.blending = blending
         self.combos = combos
         self.textures = textures
+        self.constants = constants
+        self.cullsBackFaces = cullsBackFaces
     }
 }
 

@@ -158,6 +158,28 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try assertPixels(readBack(harness, out2), equal: expected)
     }
 
+    func testSkippedDrawEncodesNothingButItsPassStillClears() throws {
+        let harness = try makeHarness()
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [resource("I", .imported), resource("P", .persistent)],
+            operations: [bind("P"), clear("P", .init(red: 0, green: 1, blue: 0, alpha: 1)), draw(sampling: "I")]
+        )
+        let target = try makeTexture(harness)
+        let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                  arena: harness.arena, pixelFormats: Self.formats)
+        var asked: [Int] = []
+        guard case let .committed(commandBuffer) = try executor.encodeFrame(
+            on: harness.queue, textures: ["I": makeInput(harness), "P": target], draw: { operation, _ in
+                asked.append(operation)
+                return nil
+            }
+        ) else { return XCTFail("frame was skipped") }
+        commandBuffer.waitUntilCompleted()
+        XCTAssertNil(commandBuffer.error)
+        XCTAssertEqual(asked, [2])
+        try assertEvery(readBack(harness, target), equals: [0, 255, 0, 255])
+    }
+
     func testFrameIsSkippedWhileEveryArenaSlotIsInFlight() throws {
         let harness = try makeHarness()
         let graph = try WPERenderGraphCompiler.compile(

@@ -31,6 +31,8 @@ public struct WPEParityProgramScene: Sendable {
     public let engineFlags: WPEEngineComboFlags
     public let assets: WPEParityProgramAssets
     let materials: [MaterialKey: WPEParityProgramMaterial]
+    /// Image layer `g_Color4` (140207b50.c:81-100): colour × (HDR ? brightness : 1), alpha.
+    let layerColors: [String: SIMD4<Float>]
 
     public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
         let general = document.sourceJSON["general"]
@@ -61,9 +63,12 @@ public struct WPEParityProgramScene: Sendable {
             authoredByID[id] = object
         }
         var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
+        var layerColors: [String: SIMD4<Float>] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
         var sceneObjects: [WPEParitySceneObject] = []
         for (index, image) in document.imageObjects.enumerated() {
+            let color = SIMD3<Float>(image.color) * (flags.hdr ? Float(image.brightness) : 1)
+            layerColors[image.id] = SIMD4(color.x, color.y, color.z, Float(image.alpha))
             let isModel = image.imageRelativePath.lowercased().hasSuffix(".mdl")
             let model = isModel ? nil : assets.json(image.imageRelativePath)
             let materialPath = isModel
@@ -120,6 +125,7 @@ public struct WPEParityProgramScene: Sendable {
             sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)
         }
         self.materials = materials
+        self.layerColors = layerColors
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
@@ -224,7 +230,7 @@ public struct WPEParityProgramScene: Sendable {
             // Scene overrides line up with the effect's material passes.
             if materialIndex < effect.passOverrides.count {
                 let override = effect.passOverrides[materialIndex]
-                material.merge(combos: override.combos, textures: override.textures)
+                material.merge(combos: override.combos, textures: override.textures, constants: override.constants)
             }
             materialIndex += 1
             for case let .object(bind) in array(pass["bind"]) {
@@ -308,8 +314,15 @@ extension WPEParityProgramMaterial {
                 textures[Int32(slot)] = name
             }
         }
+        var constants: [String: [Double]] = [:]
+        if case let .object(entries)? = pass["constantshadervalues"] {
+            for (key, value) in entries {
+                constants[key] = WPEParityProgramConstants.components(value)
+            }
+        }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
-                  combos: combos, textures: textures)
+                  combos: combos, textures: textures, constants: constants,
+                  cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull")
     }
 
     static func blendMode(_ raw: String?) -> WPEParityBlendMode {
@@ -322,12 +335,16 @@ extension WPEParityProgramMaterial {
     }
 
     /// Scene instance or effect-pass override; null texture slots keep the base.
-    mutating func merge(combos: [String: Int], textures: [Int: String]) {
+    mutating func merge(combos: [String: Int], textures: [Int: String],
+                        constants: [String: WPESceneShaderConstantValue] = [:]) {
         for (key, value) in combos {
             self.combos[key] = Int32(truncatingIfNeeded: value)
         }
         for (slot, name) in textures {
             self.textures[Int32(slot)] = name
+        }
+        for (key, value) in constants {
+            self.constants[key] = WPEParityProgramConstants.components(value)
         }
     }
 }

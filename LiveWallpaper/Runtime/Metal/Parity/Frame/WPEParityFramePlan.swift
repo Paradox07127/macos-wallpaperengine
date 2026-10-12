@@ -43,10 +43,9 @@ struct WPEParityFramePlan {
     let frames: [WPEParityFrame]
     /// Keyed by draw operation index; a draw without a program is in `skipped`.
     let programs: [Int: WPEParityProgram]
-    let materials: [Int: WPEParityProgramMaterial]
+    /// One table per entry of `frames`, keyed like `programs`.
+    let bindings: [[Int: WPEParityProgramBinding]]
     let skipped: [Int: WPEParityFrameSkip]
-    /// Every effect FBO name the scene declares; a material texture with one of these names samples an FBO.
-    let fboNames: Set<String>
 
     init(document: WPESceneDocument, sceneDirectory: URL, assetRoots: [URL], settings: WPEParityProgramSettings,
          width: Int, height: Int) throws {
@@ -60,7 +59,6 @@ struct WPEParityFramePlan {
         let odd = try WPEParityFrameComposer.compose(scene: description, post: post, frameIndex: 1)
 
         var programs: [Int: WPEParityProgram] = [:]
-        var materials: [Int: WPEParityProgramMaterial] = [:]
         var skipped: [Int: WPEParityFrameSkip] = [:]
         for draw in WPEParityProgramBuilder.draws(frame: even, scene: scene) {
             let index = draw.operationIndex
@@ -72,7 +70,6 @@ struct WPEParityFramePlan {
                 skipped[index] = .noMaterial
                 continue
             }
-            materials[index] = description.material
             do {
                 programs[index] = try WPEParityProgramResolver.resolve(description, sources: assets)
             } catch {
@@ -80,23 +77,12 @@ struct WPEParityFramePlan {
             }
         }
 
-        var fboNames: Set<String> = []
-        for effect in document.imageObjects.flatMap(\.effects) {
-            guard case let .array(fbos)? = assets.json(effect.fileRelativePath)?["fbos"] else { continue }
-            for fbo in fbos {
-                if case let .string(name)? = fbo["name"] {
-                    fboNames.insert(name)
-                }
-            }
-        }
-
         self.document = document
         self.scene = scene
         frames = even == odd ? [even] : [even, odd]
+        bindings = frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene) }
         self.programs = programs
-        self.materials = materials
         self.skipped = skipped
-        self.fboNames = fboNames
     }
 }
 #endif

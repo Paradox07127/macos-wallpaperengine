@@ -70,6 +70,20 @@ final class WPEParityRealSceneTests: XCTestCase {
             + "\(renderer.skipped.count) skipped \(reasons)")
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
 
+        // Declared constants outside the binding description and the engine uniform set stay zero.
+        var zero: [String: [String]] = [:]
+        for (index, names) in renderer.zeroConstants.sorted(by: { $0.key < $1.key }) {
+            let shader = plan.programs[index]?.shader ?? "?"
+            XCTAssertEqual(names.filter { !$0.hasPrefix("g_") }, [], "\(sceneID) operation \(index) \(shader)")
+            if shader == "effects/foliagesway" {
+                XCTAssertEqual(names, [], "\(sceneID) operation \(index) foliagesway")
+            }
+            for name in names where !(zero[shader]?.contains(name) ?? false) {
+                zero[shader, default: []].append(name)
+            }
+        }
+        print("scene \(sceneID): constants falling back to zero by shader \(zero.sorted { $0.key < $1.key })")
+
         for frame in 1 ... 3 {
             guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
                 return XCTFail("\(sceneID) frame \(frame) was skipped")
