@@ -230,7 +230,7 @@ struct PlaybackControls: View {
                 isOn: sceneClickCaptureEnabled,
                 binding: clickInteractionBinding,
                 label: Text("Interaction"),
-                help: Text("Scene buttons receive clicks. The rest of this display’s desktop works as usual.")
+                help: Text("Scene buttons receive clicks and the rest of this display’s desktop works as usual. When off, the scene receives no clicks.")
             )
         case .syncToLockScreen:
             lockScreenControl

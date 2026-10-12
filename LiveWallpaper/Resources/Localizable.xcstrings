@@ -55636,38 +55636,38 @@
         }
       }
     },
-    "Scene buttons receive clicks. The rest of this display’s desktop works as usual." : {
-      "comment" : "Scene Interaction tooltip. Only the scene's buttons take clicks; the rest of the selected display's desktop keeps working.",
+    "Scene buttons receive clicks and the rest of this display’s desktop works as usual. When off, the scene receives no clicks." : {
+      "comment" : "Scene Interaction tooltip. On: only the scene's buttons take clicks and the rest of the selected display's desktop keeps working. Off: the scene takes no clicks at all.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scene buttons receive clicks. The rest of this display’s desktop works as usual."
+            "value" : "Scene buttons receive clicks and the rest of this display’s desktop works as usual. When off, the scene receives no clicks."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los botones de la escena reciben los clics. El resto del escritorio de esta pantalla funciona con normalidad."
+            "value" : "Los botones de la escena reciben los clics y el resto del escritorio de esta pantalla funciona con normalidad. Si se desactiva, la escena no recibe ningún clic."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーン内のボタンでクリックを受け付けます。このディスプレイのデスクトップのほかの場所は通常どおり使えます。"
+            "value" : "シーン内のボタンがクリックを受け付け、このディスプレイのデスクトップのほかの場所は通常どおり使えます。オフにすると、シーンはクリックを一切受け付けません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "场景中的按钮可接收点击，此显示器桌面的其他位置照常使用。"
+            "value" : "场景中的按钮接收点击，此显示器桌面的其他位置照常使用。关闭后，场景不再接收任何点击。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "場景中的按鈕可接收點按，此顯示器桌面的其他位置照常使用。"
+            "value" : "場景中的按鈕接收點按，此顯示器桌面的其他位置照常使用。關閉後，場景不再接收任何點按。"
           }
         }
       }

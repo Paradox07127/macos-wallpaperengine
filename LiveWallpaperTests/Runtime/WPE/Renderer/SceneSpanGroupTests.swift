@@ -91,7 +91,8 @@ struct SceneSpanGroupTests {
         defer { member.cleanup() }
         member.updateFrame(to: CGRect(x: 100, y: 0, width: 100, height: 100))
         try #require(group.canvasFrame == CGRect(x: 0, y: 0, width: 200, height: 200))
-        #expect(member.acceptsDesktopClicks)
+        member.setClickCaptureEnabled(true)
+        #expect(member.acceptsDesktopClicks, "Interaction would shut desktop clicks out of the member display")
 
         member.publishDesktopButton(location: CGPoint(x: 150, y: 75), pressLocation: CGPoint(x: 125, y: 50),
                                     isDown: true, gesture: 9, dragged: false)
@@ -102,9 +103,51 @@ struct SceneSpanGroupTests {
         #expect(edges.map(\.frame.gesture) == [9])
         #expect(edges.map(\.fromDesktop) == [true])
         #expect(edges.map(\.isInsideView) == [true])
+    }
+
+    @Test("A member with Interaction off takes no desktop presses; turning it on lets them in")
+    func memberInteractionOffRefusesDesktopPresses() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+        #expect(!member.acceptsDesktopClicks, "Interaction off would still let desktop clicks into the scene")
+
+        member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
+                                    isDown: true, gesture: 12, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).isEmpty, "the press would reach the scene with Interaction off")
 
         member.setClickCaptureEnabled(true)
-        #expect(member.acceptsDesktopClicks, "Interaction would shut desktop clicks out of the member display")
+        #expect(member.acceptsDesktopClicks)
+    }
+
+    @Test("A single-screen scene with Interaction off takes no desktop presses; turning it on lets them in")
+    func ownerInteractionOffRefusesDesktopPresses() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        #expect(!owner.acceptsDesktopClicks, "Interaction off would still let desktop clicks into the scene")
+
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: true, gesture: 13, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).isEmpty, "the press would reach the scene with Interaction off")
+
+        owner.setClickCaptureEnabled(true)
+        #expect(owner.acceptsDesktopClicks)
+    }
+
+    @Test("Turning Interaction off mid-press still delivers that press's release")
+    func ownerReleaseAfterInteractionOff() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        owner.setClickCaptureEnabled(true)
+
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: true, gesture: 14, dragged: false)
+        owner.setClickCaptureEnabled(false)
+        owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),
+                                   isDown: false, gesture: 14, dragged: false)
+        #expect(Self.takeEdges(owner.spanSurface.mailbox).map(\.frame.isDown) == [true, false],
+                "a dropped release leaves the mailbox pressed and eats the next press")
     }
 
     @Test("Only playing members with Interaction on and no opening in progress clip the owner's hot zones")
@@ -211,6 +254,7 @@ struct SceneSpanGroupTests {
         defer { owner.cleanup() }
         let member = try Self.makeStandInMember(owner: owner)
         defer { member.cleanup() }
+        member.setClickCaptureEnabled(true)
         let mailbox = owner.spanSurface.mailbox
         // Stands in for the group-wide capture turned on by a member on another display.
         mailbox.setClickCaptureEnabled(true)
@@ -227,6 +271,7 @@ struct SceneSpanGroupTests {
         defer { owner.cleanup() }
         let member = try Self.makeStandInMember(owner: owner)
         defer { member.cleanup() }
+        member.setClickCaptureEnabled(true)
 
         member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
                                     isDown: true, gesture: 4, dragged: false)
@@ -244,6 +289,7 @@ struct SceneSpanGroupTests {
         defer { owner.cleanup() }
         let member = try Self.makeStandInMember(owner: owner)
         defer { member.cleanup() }
+        member.setClickCaptureEnabled(true)
 
         member.publishDesktopButton(location: CGPoint(x: 150, y: 50), pressLocation: CGPoint(x: 150, y: 50),
                                     isDown: true, gesture: 5, dragged: false)
@@ -259,6 +305,7 @@ struct SceneSpanGroupTests {
     func ownerReleaseAfterPause() throws {
         let (owner, _) = try Self.makeOwner()
         defer { owner.cleanup() }
+        owner.setClickCaptureEnabled(true)
         try #require(owner.acceptsDesktopClicks)
 
         owner.publishDesktopButton(location: CGPoint(x: 10, y: 10), pressLocation: CGPoint(x: 10, y: 10),

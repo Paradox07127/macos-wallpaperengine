@@ -363,7 +363,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     var acceptsDesktopClicks: Bool {
-        isPlaying
+        isPlaying && clickEnabled
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {

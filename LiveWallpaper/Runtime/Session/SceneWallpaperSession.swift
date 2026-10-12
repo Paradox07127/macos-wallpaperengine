@@ -574,7 +574,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     var acceptsDesktopClicks: Bool {
-        isPlaying
+        isPlaying && clickCaptureEnabled
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
