@@ -9,10 +9,11 @@ public struct WPEParityUniformFrame: Sendable {
     public var parallax: WPEParityUniformParallax
     public var eyePosition: SIMD3<Float>
     public var view: simd_float4x4
+    public var audio: WPEParityAudioSpectrum
 
     public init(clock: WPEParityClock, daytime: Float, screen: WPEParityUniformScreen,
                 pointer: WPEParityUniformPointer, parallax: WPEParityUniformParallax, eyePosition: SIMD3<Float>,
-                view: simd_float4x4) {
+                view: simd_float4x4, audio: WPEParityAudioSpectrum = WPEParityAudioSpectrum()) {
         self.clock = clock
         self.daytime = daytime
         self.screen = screen
@@ -20,6 +21,7 @@ public struct WPEParityUniformFrame: Sendable {
         self.parallax = parallax
         self.eyePosition = eyePosition
         self.view = view
+        self.audio = audio
     }
 }
 
@@ -64,6 +66,7 @@ public enum WPEParityUniformSet {
             "g_ViewRight": vector(view.right),
             "g_ViewUp": vector(view.up),
         ]
+        values.merge(frame.audio.uniforms()) { $1 }
         values.merge(draw.matrices.values) { $1 }
         if let effectPass = draw.effectPass {
             values.merge(effectPass.values) { $1 }

@@ -43,7 +43,7 @@ public enum WPEParityProgramResolver {
     public static func resolve(_ description: WPEParityProgramDescription,
                                sources: any WPEShaderSourceProviding) throws -> WPEParityProgram {
         let shader = description.material.shader
-        let (names, vertex, fragment) = expandedSources(shader: shader, sources: sources)
+        let (names, vertex, _, fragment) = expandedSources(shader: shader, sources: sources)
         func defines(_ textures: [Int32: WPEBoundComboTexture]) -> [WPEShaderDefine] {
             WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
                                      blendingMode: Int32(description.material.blending.rawValue),
@@ -59,7 +59,7 @@ public enum WPEParityProgramResolver {
     }
 
     static func expandedSources(shader: String, sources: any WPEShaderSourceProviding)
-        -> (names: WPEHLSLProgramSources, vertex: String, fragment: String) {
+        -> (names: WPEHLSLProgramSources, vertex: String, geometry: String?, fragment: String) {
         let names = WPEHLSLProgramSources(
             vertex: "shaders/\(shader).vert",
             geometry: sources.shaderSource(named: "shaders/\(shader).geom") == nil ? nil : "shaders/\(shader).geom",
@@ -70,6 +70,6 @@ public enum WPEParityProgramResolver {
             var included = Set<[UInt8]>()
             return Latin1.string(loader.load(name.flatMap(sources.shaderSource(named:)), included: &included))
         }
-        return (names, expanded(names.vertex), expanded(names.fragment))
+        return (names, expanded(names.vertex), names.geometry.map(expanded), expanded(names.fragment))
     }
 }

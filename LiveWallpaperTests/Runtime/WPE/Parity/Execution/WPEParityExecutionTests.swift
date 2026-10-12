@@ -224,11 +224,12 @@ final class WPEParityExecutionTests: XCTestCase {
         let identity = WPEFloatMatrix(columns: (0 ..< 4).map { column in
             SIMD4<Float>((0 ..< 4).map { $0 == column ? 1 : 0 })
         })
-        draw.constants = [
+        let constants: [String: WPECBufferValue] = [
             "g_ModelViewProjectionMatrix": .matrix(identity),
             "g_Color": .vector([color.x, color.y, color.z]),
             "g_Alpha": .float(alpha),
         ]
+        draw.constants = [.vertex: constants, .fragment: constants]
         return draw
     }
 

@@ -10,8 +10,9 @@ public struct WPEParityProgramBinding: Sendable {
         case asset(String)
     }
 
-    /// HLSL name → value; of the engine `g_*` values only the layer colour and alpha are included.
-    public var constants: [String: WPECBufferValue]
+    /// HLSL name → value for each stage the program has, from that stage's own annotations; of the engine `g_*`
+    /// values only the layer colour and alpha are included.
+    public var constants: [WPEHLSLStage: [String: WPECBufferValue]]
     /// Bound slots, and unbound slots whose sampler annotation names a default texture.
     public var textures: [Int32: TextureSource]
     /// Material `cullmode`.
@@ -43,7 +44,10 @@ public extension WPEParityProgramBuilder {
             case let .post(draw):
                 let material = scene.engineMaterial(draw)
                 var (constants, _) = resolve(material, assets: scene.assets, layerColor: white)
-                constants.merge(draw.bloomParameters.mapValues { .vector([$0.x, $0.y, $0.z, $0.w]) }) { $1 }
+                let bloom = draw.bloomParameters.mapValues { WPECBufferValue.vector([$0.x, $0.y, $0.z, $0.w]) }
+                for stage in constants.keys {
+                    constants[stage]?.merge(bloom) { $1 }
+                }
                 var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
                 for (slot, read) in draw.reads.enumerated() {
                     textures[Int32(slot)] = .resource(read)
@@ -60,14 +64,21 @@ public extension WPEParityProgramBuilder {
     /// Material constants over annotation defaults, the layer colour, and the texture name of each slot: bound, or
     /// the sampler annotation's default.
     private static func resolve(_ material: WPEParityProgramMaterial, assets: WPEParityProgramAssets,
-                                layerColor: SIMD4<Float>) -> ([String: WPECBufferValue], [Int32: String]) {
+                                layerColor: SIMD4<Float>)
+        -> ([WPEHLSLStage: [String: WPECBufferValue]], [Int32: String]) {
         let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
-        let uniforms = WPEParityProgramConstants.uniforms(vertex: sources.vertex, fragment: sources.fragment)
-        var constants = WPEParityProgramConstants.resolve(uniforms, values: material.constants)
+        var stages: [WPEHLSLStage: String] = [.vertex: sources.vertex, .fragment: sources.fragment]
+        stages[.geometry] = sources.geometry
         // Engine codes 0x00–0x02.
-        constants["g_Color4"] = .vector([layerColor.x, layerColor.y, layerColor.z, layerColor.w])
-        constants["g_Color"] = .vector([layerColor.x, layerColor.y, layerColor.z])
-        constants["g_Alpha"] = .float(layerColor.w)
+        let color: [String: WPECBufferValue] = [
+            "g_Color4": .vector([layerColor.x, layerColor.y, layerColor.z, layerColor.w]),
+            "g_Color": .vector([layerColor.x, layerColor.y, layerColor.z]),
+            "g_Alpha": .float(layerColor.w),
+        ]
+        let constants = stages.mapValues { source in
+            WPEParityProgramConstants.resolve(WPEParityProgramConstants.uniforms(source), values: material.constants)
+                .merging(color) { $1 }
+        }
 
         var names = material.textures
         let annotations = WPEShaderAnnotationCombos(vertexSource: sources.vertex, fragmentSource: sources.fragment)

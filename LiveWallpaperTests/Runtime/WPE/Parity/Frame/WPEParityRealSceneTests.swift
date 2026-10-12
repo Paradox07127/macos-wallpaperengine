@@ -72,17 +72,35 @@ final class WPEParityRealSceneTests: XCTestCase {
 
         // Declared constants outside the binding description and the engine uniform set stay zero.
         var zero: [String: [String]] = [:]
-        for (index, names) in renderer.zeroConstants.sorted(by: { $0.key < $1.key }) {
+        for (index, stages) in renderer.zeroConstants.sorted(by: { $0.key < $1.key }) {
             let shader = plan.programs[index]?.shader ?? "?"
-            XCTAssertEqual(names.filter { !$0.hasPrefix("g_") }, [], "\(sceneID) operation \(index) \(shader)")
-            if shader == "effects/foliagesway" {
-                XCTAssertEqual(names, [], "\(sceneID) operation \(index) foliagesway")
-            }
-            for name in names where !(zero[shader]?.contains(name) ?? false) {
-                zero[shader, default: []].append(name)
+            for (stage, names) in stages {
+                XCTAssertEqual(names.filter { !$0.hasPrefix("g_") }, [], "\(sceneID) operation \(index) \(shader) \(stage)")
+                if shader == "effects/foliagesway" {
+                    XCTAssertEqual(names, [], "\(sceneID) operation \(index) foliagesway \(stage)")
+                }
+                for name in names where !(zero["\(shader) \(stage)"]?.contains(name) ?? false) {
+                    zero["\(shader) \(stage)", default: []].append(name)
+                }
             }
         }
-        print("scene \(sceneID): constants falling back to zero by shader \(zero.sorted { $0.key < $1.key })")
+        print("scene \(sceneID): constants falling back to zero by shader and stage \(zero.sorted { $0.key < $1.key })")
+        if sceneID == "3815666789" {
+            // foliagesway's vertex stage reads `speed` (default 1), its fragment stage `speeduv` (scene 5).
+            let foliage = renderer.constants.filter { plan.programs[$0.key]?.shader == "effects/foliagesway" }
+            XCTAssertFalse(foliage.isEmpty)
+            func float(_ value: WPECBufferValue?) -> Float? {
+                if case let .float(number)? = value {
+                    number
+                } else {
+                    nil
+                }
+            }
+            for (index, stages) in foliage {
+                XCTAssertEqual(float(stages[.vertex]?["g_Speed"]), 1, "operation \(index) vertex")
+                XCTAssertEqual(float(stages[.fragment]?["g_Speed"]), 5, "operation \(index) fragment")
+            }
+        }
 
         for frame in 1 ... 3 {
             guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {

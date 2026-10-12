@@ -21,16 +21,36 @@ struct WPEParityFrameDrawPlan {
     let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
-    /// The binding description's constants; the engine uniform set does not carry them.
-    let constants: [String: WPECBufferValue]
-    /// Constants a stage declares that neither the binding nor the engine uniform set supplies, so they stay zero.
-    let zeroConstants: [String]
+    /// TEXS frames of each sprite-sheet slot, shown in turn for their durations.
+    let sprites: [Int: [(frame: WPEParityUniformSpriteFrame, duration: Double)]]
+    /// The binding description's constants per stage; the engine uniform set does not carry them.
+    let constants: [WPEHLSLStage: [String: WPECBufferValue]]
+    /// Per stage, declared constants that neither the binding nor the engine uniform set supplies, so they stay zero.
+    let zeroConstants: [WPEHLSLStage: [String]]
 
-    func makeDraw(frame: WPEParityUniformFrame, variant: Int,
-                  textures table: [WPEResourceID: MTLTexture]) throws -> WPEParityDraw {
+    /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
+    func makeDraw(frame: WPEParityUniformFrame, variant: Int, textures table: [WPEResourceID: MTLTexture],
+                  textureSlots: inout [String: WPECBufferValue]) throws -> WPEParityDraw {
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  vertexBuffer: vertexBuffer, primitiveType: .triangleStrip, vertexCount: 4)
-        draw.constants = WPEParityUniformSet.values(frame: frame, draw: uniforms).merging(constants) { $1 }
+        var uniforms = uniforms
+        for (slot, steps) in sprites where slot < uniforms.textures.count {
+            uniforms.textures[slot]?.spriteFrame = Self.sprite(steps, at: frame.clock.time)
+        }
+        var engine = WPEParityUniformSet.values(frame: frame, draw: uniforms)
+        // R6: only a bound sprite frame writes these; any other draw uploads what the slot last held.
+        for slot in 0 ..< WPEParityUniformTextures.slotCount {
+            for name in ["g_Texture\(slot)Rotation", "g_Texture\(slot)Translation"] {
+                if let value = engine[name] {
+                    textureSlots[name] = value
+                } else {
+                    engine[name] = textureSlots[name]
+                }
+            }
+        }
+        for stage in [WPEHLSLStage.vertex, .fragment] {
+            draw.constants[stage] = engine.merging(constants[stage] ?? [:]) { $1 }
+        }
         draw.samplers = samplers
         for (name, source) in textures[variant] {
             switch source {
@@ -42,6 +62,21 @@ struct WPEParityFrameDrawPlan {
             }
         }
         return draw
+    }
+
+    /// The frame showing at `time`, looping over the whole sequence.
+    private static func sprite(_ steps: [(frame: WPEParityUniformSpriteFrame, duration: Double)],
+                               at time: Double) -> WPEParityUniformSpriteFrame? {
+        let total = steps.reduce(0) { $0 + $1.duration }
+        guard total > 0 else { return steps.first?.frame }
+        var remaining = time.truncatingRemainder(dividingBy: total)
+        for step in steps {
+            if remaining < step.duration {
+                return step.frame
+            }
+            remaining -= step.duration
+        }
+        return steps.last?.frame
     }
 }
 
@@ -56,7 +91,11 @@ struct WPEParityFrameDrawPlanner {
     private struct Image {
         let texture: MTLTexture
         let info: WPETexInfo?
+        var sprites: [(frame: WPEParityUniformSpriteFrame, duration: Double)] = []
     }
+
+    /// TEXI flag 0x4: the file carries TEXS sprite frames.
+    private static let spriteFlag: UInt32 = 0x4
 
     let device: MTLDevice
     let factory: WPEParityPipelineFactory
@@ -73,7 +112,7 @@ struct WPEParityFrameDrawPlanner {
     private var assetImages: [String: Image] = [:]
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
-    private var layerImageInfo: [WPEResourceID: WPETexInfo] = [:]
+    private var layerImageAssets: [WPEResourceID: Image] = [:]
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
@@ -127,6 +166,7 @@ struct WPEParityFrameDrawPlanner {
         var textures = [[String: WPEParityFrameDrawPlan.TextureSource]](repeating: [:], count: bindings.count)
         var samplers: [String: WPEParitySamplerState] = [:]
         var uniformTextures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
+        var sprites: [Int: [(frame: WPEParityUniformSpriteFrame, duration: Double)]] = [:]
         let names = Set((artifact.vertex.reflection.resources + artifact.fragment.reflection.resources)
             .filter { $0.kind == .texture }.map(\.name))
         for name in names.sorted() {
@@ -144,6 +184,7 @@ struct WPEParityFrameDrawPlanner {
             samplers[name + "SamplerState"] = sampler(source)
             if slot < uniformTextures.count {
                 uniformTextures[Int(slot)] = uniformTexture(source)
+                sprites[Int(slot)] = self.sprites(source)
             }
         }
 
@@ -158,13 +199,18 @@ struct WPEParityFrameDrawPlanner {
         let uniforms = WPEParityUniformDraw(matrices: placement.matrices, effectPass: placement.effectPass,
                                             textures: uniformTextures)
 
-        let declared = Set((artifact.vertex.reflection.cbuffers + artifact.fragment.reflection.cbuffers)
-            .flatMap(\.variables).map(\.name))
         let probe = WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
                                           screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
                                           pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
                                           eyePosition: eyePosition, view: view)
-        let supplied = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys).union(binding.constants.keys)
+        let engine = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys)
+        var zeroConstants: [WPEHLSLStage: [String]] = [:]
+        for (stage, reflection) in [(WPEHLSLStage.vertex, artifact.vertex.reflection),
+                                    (.fragment, artifact.fragment.reflection)] {
+            let declared = Set(reflection.cbuffers.flatMap(\.variables).map(\.name))
+            let supplied = engine.union(binding.constants[stage]?.keys.map(\.self) ?? [])
+            zeroConstants[stage] = declared.subtracting(supplied).sorted()
+        }
 
         return WPEParityFrameDrawPlan(
             pipeline: pipeline,
@@ -175,8 +221,9 @@ struct WPEParityFrameDrawPlanner {
             textures: textures,
             samplers: samplers,
             uniforms: uniforms,
+            sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
-            zeroConstants: declared.subtracting(supplied).sorted()
+            zeroConstants: zeroConstants
         )
     }
 
@@ -223,7 +270,7 @@ struct WPEParityFrameDrawPlanner {
         }
         let image = try assetImage(name)
         layerImages[id] = image.texture
-        layerImageInfo[id] = image.info
+        layerImageAssets[id] = image
     }
 
     private mutating func assetImage(_ name: String) throws(WPEParityFrameSkip) -> Image {
@@ -244,7 +291,10 @@ struct WPEParityFrameDrawPlanner {
                 .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
                 .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
             ])
-            let image = Image(texture: texture, info: info)
+            var image = Image(texture: texture, info: info)
+            if info.flags & Self.spriteFlag != 0 {
+                image.sprites = try Self.sprites(decoder.extractTexturePayload(span: span).get())
+            }
             assetImages[name] = image
             return image
         } catch WPETexDecodeError.unsupportedAnimation {
@@ -263,7 +313,7 @@ struct WPEParityFrameDrawPlanner {
                 return .wpe(filter: composite.filter == .point ? .point : .linear,
                             address: composite.address == .clamp ? .clamp : .wrap)
             }
-            info = layerImageInfo[id]
+            info = layerImageAssets[id]?.info
         case let .image(texture):
             info = assetImages.values.first { $0.texture === texture }?.info
         }
@@ -277,7 +327,7 @@ struct WPEParityFrameDrawPlanner {
         switch source {
         case let .resource(id):
             if let image = layerImages[id] {
-                (texture, info) = (image, layerImageInfo[id])
+                (texture, info) = (image, layerImageAssets[id]?.info)
             } else {
                 guard let resource = resources[id] else { return nil }
                 let (width, height) = (UInt32(resource.width), UInt32(resource.height))
@@ -291,7 +341,34 @@ struct WPEParityFrameDrawPlanner {
         let imageHeight = info.map(\.imageHeight).flatMap { $0 > 0 ? $0 : nil } ?? texture.height
         return WPEParityUniformTexture(textureWidth: UInt32(texture.width), textureHeight: UInt32(texture.height),
                                        imageWidth: UInt32(imageWidth), imageHeight: UInt32(imageHeight),
-                                       mipMapInfo: Int32(texture.mipmapLevelCount))
+                                       mipMapInfo: Int32(texture.mipmapLevelCount),
+                                       spriteFrame: sprites(source).first?.frame)
+    }
+
+    private func sprites(_ source: WPEParityFrameDrawPlan.TextureSource)
+        -> [(frame: WPEParityUniformSpriteFrame, duration: Double)] {
+        switch source {
+        case let .resource(id): layerImageAssets[id]?.sprites ?? []
+        case let .image(texture): assetImages.values.first { $0.texture === texture }?.sprites ?? []
+        }
+    }
+
+    /// TEXS frames back in sheet pixels; the decoder divides them by the frame image's mip 0 size.
+    private static func sprites(_ payload: WPETexTexturePayload)
+        -> [(frame: WPEParityUniformSpriteFrame, duration: Double)] {
+        (payload.animationTrack?.frames ?? []).compactMap { frame in
+            guard let sampling = frame.samplingDescriptor else { return nil }
+            let mip = frame.mipmaps.first
+            let size = SIMD2(Float(mip?.width ?? payload.info.width), Float(mip?.height ?? payload.info.height))
+            let (rotation, translation) = (sampling.rotation, sampling.translation)
+            let sprite = WPEParityUniformSpriteFrame(
+                x: translation.x * size.x, y: translation.y * size.y,
+                widthX: rotation.x * size.x, widthY: rotation.y * size.x,
+                heightX: rotation.z * size.y, heightY: rotation.w * size.y,
+                imageWidth: size.x, imageHeight: size.y
+            )
+            return (sprite, frame.duration)
+        }
     }
 
     // MARK: State and geometry

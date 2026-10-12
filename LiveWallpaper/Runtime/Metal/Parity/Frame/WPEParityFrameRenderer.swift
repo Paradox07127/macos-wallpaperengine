@@ -17,6 +17,17 @@ struct WPEParityFrameShaderSource: Sendable {
     }
 }
 
+/// Host state the engine uniforms read each frame.
+struct WPEParityFrameInput {
+    /// Client-area pixels, y down.
+    var cursor: SIMD2<Float> = .zero
+    var buttonDown = false
+    /// 64 linear bins per channel; nil is silence.
+    var audio: (left: [Float], right: [Float])?
+    /// Local time for g_Daytime.
+    var date = Date()
+}
+
 enum WPEParityFrameRenderError: Error {
     case missingBackbuffer
     case arenaUnavailable
@@ -39,16 +50,28 @@ final class WPEParityFrameRenderer {
     private let screen: WPEParityUniformScreen
     private let view: simd_float4x4
     private let eyePosition: SIMD3<Float>
+    private let canvas: SIMD2<Float>
+    private let cameraParallax: WPESceneCameraParallaxSettings
     private var clock = WPEParityClock()
+    private var pointer = WPEParityUniformPointer()
+    private var parallax = WPEParityUniformParallax()
+    private var audio = WPEParityAudioSpectrum()
+    /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
+    private var textureSlots: [String: WPECBufferValue] = [:]
     private var frameIndex = 0
 
     var executedDrawCount: Int {
         draws.count
     }
 
-    /// Per encoded draw, the declared constants that fall back to zero.
-    var zeroConstants: [Int: [String]] {
+    /// Per encoded draw and stage, the declared constants that fall back to zero.
+    var zeroConstants: [Int: [WPEHLSLStage: [String]]] {
         draws.mapValues(\.zeroConstants)
+    }
+
+    /// Per encoded draw and stage, the binding description's constants.
+    var constants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] {
+        draws.mapValues(\.constants)
     }
 
     var heapBytes: Int {
@@ -117,18 +140,35 @@ final class WPEParityFrameRenderer {
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         view = planner.view
         eyePosition = planner.eyePosition
+        let ortho = plan.document.general.orthogonalProjection
+        canvas = SIMD2(Float(ortho.width), Float(ortho.height))
+        cameraParallax = plan.document.general.cameraParallax
     }
 
-    /// Advances the clock by `elapsed` seconds and commits one frame.
-    func encodeFrame(elapsed: Double) throws -> WPEParityGraphExecutor.Submission {
+    /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
+    func encodeFrame(elapsed: Double,
+                     input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         clock.advance(elapsed: elapsed, ratePercent: 100, paused: false)
-        let uniforms = WPEParityUniformFrame(clock: clock, daytime: 0, screen: screen,
-                                             pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
-                                             eyePosition: eyePosition, view: view)
+        pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
+        // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
+        if cameraParallax.enabled {
+            parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
+                             delay: Float(cameraParallax.delay), eye: .zero, ortho: canvas,
+                             frametime: clock.frametime)
+        }
+        let silence = [Float](repeating: 0, count: 64)
+        audio.advance(left: input.audio?.left ?? silence, right: input.audio?.right ?? silence,
+                      dt: clock.frametime, silence: input.audio == nil)
+        let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
+        let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
+                                             second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
+        let uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
+                                             parallax: parallax, eyePosition: eyePosition, view: view, audio: audio)
         let variant = frameIndex % executors.count
         frameIndex += 1
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 }) { operation, textures in
-            try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures)
+            try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures,
+                                           textureSlots: &textureSlots)
         }
     }
 

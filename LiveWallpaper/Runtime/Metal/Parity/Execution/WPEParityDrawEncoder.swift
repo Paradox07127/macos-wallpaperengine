@@ -2,13 +2,13 @@
 import LiveWallpaperProWPE
 import Metal
 
-/// One non-indexed draw. Constants, textures and samplers are keyed by HLSL name and shared by
-/// both stages; each stage packs only the names its own reflection declares.
+/// One non-indexed draw. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
+/// material keys; textures and samplers are shared. Each stage packs only the names its own reflection declares.
 struct WPEParityDraw {
     var pipeline: WPEParityPipeline
     var depthStencil: WPEParityDepthStencilState
     var rasterizer: WPEParityRasterizerState
-    var constants: [String: WPECBufferValue] = [:]
+    var constants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
     var textures: [String: MTLTexture] = [:]
     var samplers: [String: WPEParitySamplerState] = [:]
     var vertexBuffer: MTLBuffer
@@ -33,11 +33,12 @@ struct WPEParityDrawEncoder {
         encoder.setDepthClipMode(raster.depthClipMode)
 
         var textureStages: [ObjectIdentifier: (MTLTexture, MTLRenderStages)] = [:]
-        if let offset = try encodeArguments(draw.pipeline.vertex, stages: .vertex, draw: draw, frame: frame,
-                                            textureStages: &textureStages) {
+        if let offset = try encodeArguments(draw.pipeline.vertex, stages: .vertex, constants: draw.constants[.vertex],
+                                            draw: draw, frame: frame, textureStages: &textureStages) {
             encoder.setVertexBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
         }
-        if let offset = try encodeArguments(draw.pipeline.fragment, stages: .fragment, draw: draw, frame: frame,
+        if let offset = try encodeArguments(draw.pipeline.fragment, stages: .fragment,
+                                            constants: draw.constants[.fragment], draw: draw, frame: frame,
                                             textureStages: &textureStages) {
             encoder.setFragmentBuffer(frame.buffer, offset: offset, index: WPEParityMSCRuntime.argumentBufferBindPoint)
         }
@@ -63,6 +64,7 @@ struct WPEParityDrawEncoder {
     private func encodeArguments(
         _ stage: WPEParityPipeline.Stage,
         stages: MTLRenderStages,
+        constants: [String: WPECBufferValue]?,
         draw: WPEParityDraw,
         frame: WPEParityFrameArena.Frame,
         textureStages: inout [ObjectIdentifier: (MTLTexture, MTLRenderStages)]
@@ -76,7 +78,7 @@ struct WPEParityDrawEncoder {
                                                  space: layout.reflection.space) else { continue }
             var packer = WPECBufferPacker(layout: layout)
             for variable in layout.reflection.variables {
-                if let value = draw.constants[variable.name] {
+                if let value = constants?[variable.name] {
                     try packer.write(value, to: variable.name)
                 }
             }
