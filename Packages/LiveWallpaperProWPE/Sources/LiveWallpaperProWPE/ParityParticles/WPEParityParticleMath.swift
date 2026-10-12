@@ -26,6 +26,16 @@ struct WPEParityParticleBlend: Equatable, Sendable {
 }
 
 enum WPEParityParticleMath {
+    /// Separate sinf/cosf calls, as WPE makes. Inlined, -O fuses a sin/cos pair of one angle into
+    /// __sincosf_stret, which rounds ~1.3% of inputs differently, so Debug and Release particles diverge.
+    @inline(never) static func sin(_ x: Float) -> Float {
+        sinf(x)
+    }
+
+    @inline(never) static func cos(_ x: Float) -> Float {
+        cosf(x)
+    }
+
     /// NaN (a zero-width ramp hit exactly at its start) maps to 0, as SSE maxss(x, 0) does.
     static func saturate(_ value: Float) -> Float {
         value > 0 ? min(value, 1) : 0
@@ -148,7 +158,7 @@ extension WPEParityParticleEmitterConfig {
         let cosTheta = coneFloor + (1 - coneFloor) * rng.unit()
         let radius = cbrt(rng.unitAboveZero())
         let sinTheta = max(0, 1 - cosTheta * cosTheta).squareRoot()
-        let point = radius * SIMD3(cosTheta, sinTheta * sin(phi), sinTheta * cos(phi)) * directions
+        let point = radius * SIMD3(cosTheta, sinTheta * WPEParityParticleMath.sin(phi), sinTheta * WPEParityParticleMath.cos(phi)) * directions
         let length = simd_length(point)
         guard length > 0 else { return .zero }
         // The sign mask forces the unit direction's components before the distance scales it (0x140237ee0-0x140237f18).

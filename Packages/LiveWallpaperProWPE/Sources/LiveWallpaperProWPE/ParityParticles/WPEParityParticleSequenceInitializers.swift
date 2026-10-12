@@ -174,7 +174,9 @@ extension WPEParityParticleSystem {
         let phase = rng.unit()
         let t = (phase * (field.phaseMax - field.phaseMin) + field.phaseMin + frameContext.time) * field.timeScale
         let theta = WPEParityParticleNoise.simplex1(t) * .pi * field.scale + field.offset
-        let direction = simd_quatf(angle: theta, axis: simd_normalize(field.right)).act(field.forward)
+        let direction = simd_quatf(real: WPEParityParticleMath.cos(theta / 2),
+                                   imag: WPEParityParticleMath.sin(theta / 2) * simd_normalize(field.right))
+            .act(field.forward)
         let speed = field.speedMin + rng.unit() * (field.speedMax - field.speedMin)
         velocity[slot] += direction * speed
     }
@@ -211,8 +213,9 @@ extension WPEParityParticleSystem {
         let offset = position[slot] - center
         let height = simd_dot(offset, axis)
         let radius = simd_length(offset - height * axis)
-        let radial = cos(theta) * cosineAxis + sin(theta) * sineAxis
-        let tangent = -sin(theta) * cosineAxis + cos(theta) * sineAxis
+        let cosine = WPEParityParticleMath.cos(theta), sine = WPEParityParticleMath.sin(theta)
+        let radial = cosine * cosineAxis + sine * sineAxis
+        let tangent = -sine * cosineAxis + cosine * sineAxis
         let delta = field.speedMax - field.speedMin
         let axial = field.speedMin.z + rng.unit() * delta.z
         let along = field.speedMin.x + rng.unit() * delta.x

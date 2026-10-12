@@ -198,10 +198,7 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         print("scene 3448877775: \(keys.count) draw keys, checksum \(checksum); per frame advance \(mean(simulate)) ms, "
             + "batches \(mean(pack)) ms, copy \(mean(copy)) ms")
-        // Optimized builds round some float math differently and give another value.
-        #if DEBUG
         XCTAssertEqual(checksum, 11_516_893_083_052_642_319)
-        #endif
     }
 
     func testChildNamingItsOwnFileIsSkipped() throws {
