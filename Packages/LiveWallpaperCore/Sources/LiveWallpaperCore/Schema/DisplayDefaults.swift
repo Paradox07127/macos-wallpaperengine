@@ -79,7 +79,10 @@ public struct DisplayPlaybackDefaults: Codable, Equatable, Sendable {
     }
 
     public static func natural(for wallpaperType: WallpaperType) -> DisplayPlaybackDefaults {
-        DisplayPlaybackDefaults(frameRateLimit: FrameRateLimit.naturalDefault(for: wallpaperType))
+        DisplayPlaybackDefaults(
+            frameRateLimit: FrameRateLimit.naturalDefault(for: wallpaperType),
+            interactiveInputEnabled: wallpaperType == .scene
+        )
     }
 
     public static func clampedPlaybackSpeed(_ value: Double) -> Double {
@@ -110,6 +113,8 @@ public struct DisplayDefaults: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case video, html, scene
+        /// Encoding-only marker: without it, decoding turns scene interaction on once.
+        case sceneInteractionDefaultMigrated
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,6 +122,17 @@ public struct DisplayDefaults: Codable, Equatable, Sendable {
         video = try c.decodeIfPresent(DisplayPlaybackDefaults.self, forKey: .video) ?? .natural(for: .video)
         html = try c.decodeIfPresent(DisplayPlaybackDefaults.self, forKey: .html) ?? .natural(for: .html)
         scene = try c.decodeIfPresent(DisplayPlaybackDefaults.self, forKey: .scene) ?? .natural(for: .scene)
+        if try c.decodeIfPresent(Bool.self, forKey: .sceneInteractionDefaultMigrated) != true {
+            scene.interactiveInputEnabled = true
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(video, forKey: .video)
+        try c.encode(html, forKey: .html)
+        try c.encode(scene, forKey: .scene)
+        try c.encode(true, forKey: .sceneInteractionDefaultMigrated)
     }
 
     public func playbackDefaults(for wallpaperType: WallpaperType) -> DisplayPlaybackDefaults {

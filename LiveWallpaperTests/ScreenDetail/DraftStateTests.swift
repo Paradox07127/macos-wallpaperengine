@@ -29,7 +29,7 @@ struct DraftStateTests {
             particleDensity: 1.0,
             selectedFrameRateLimit: .matchDisplay,
             sceneMouseInteractionEnabled: true,
-            sceneClickCaptureEnabled: false,
+            sceneClickCaptureEnabled: true,
             hasPreviewSource: false
         )
 

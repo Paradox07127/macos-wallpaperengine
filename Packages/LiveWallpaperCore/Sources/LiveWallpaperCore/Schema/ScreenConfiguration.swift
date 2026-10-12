@@ -44,8 +44,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var videoColorSpace: VideoColorSpace = .auto
     /// Scene cursor-follow (parallax / pointer shaders). Default on.
     public var sceneMouseInteractionEnabled: Bool = true
-    /// Scene click capture (steals desktop clicks).
-    public var sceneClickCaptureEnabled: Bool = false
+    /// Scene hot-zone input over the scene's clickable objects.
+    public var sceneClickCaptureEnabled: Bool = true
     public var wpeOrigin: WPEOrigin?
 
     /// EDID fingerprint fallback when `screenID` churns.
@@ -84,7 +84,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case videoVolume
         case videoColorSpace
         case sceneMouseInteractionEnabled
-        case sceneClickCaptureEnabled
+        // Key differs from the property on purpose: values under the old key are never read, so they decode as on.
+        case sceneClickCaptureEnabled = "sceneHotZoneInputEnabled"
         case wpeOrigin
         case displayFingerprint
     }
@@ -246,7 +247,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         )
         videoColorSpace = (try? c.decodeIfPresent(VideoColorSpace.self, forKey: .videoColorSpace)) ?? .auto
         sceneMouseInteractionEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneMouseInteractionEnabled) ?? true
-        sceneClickCaptureEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneClickCaptureEnabled) ?? false
+        sceneClickCaptureEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneClickCaptureEnabled) ?? true
 
         automationFailures = try c.decodeIfPresent([String: WallpaperAutomationFailure].self, forKey: .automationFailures) ?? [:]
         wallpaperMode = try c.decodeIfPresent(WallpaperMode.self, forKey: .wallpaperMode) ?? .playlist

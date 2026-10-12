@@ -52,24 +52,27 @@ struct ScreenConfigurationCompatTests {
         #expect(legacy.sceneMouseInteractionEnabled == true)
     }
 
-    @Test("sceneClickCaptureEnabled round-trips and defaults to false on legacy blobs")
-    func sceneClickCaptureRoundTripAndLegacyDefault() throws {
+    @Test("sceneClickCaptureEnabled round-trips off and decodes legacy blobs as on")
+    func sceneClickCaptureRoundTripAndLegacyBlobsTurnOn() throws {
         var config = ScreenConfiguration(
             screenID: 12_345,
             wallpaper: .video(bookmarkData: Data([0xAA, 0xBB])),
             savedVideoBookmarkData: Data([0xAA, 0xBB])
         )
-        config.sceneClickCaptureEnabled = true
+        config.sceneClickCaptureEnabled = false
 
         let encoded = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: encoded)
-        #expect(decoded.sceneClickCaptureEnabled == true)
+        #expect(decoded.sceneClickCaptureEnabled == false)
 
         var dict = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        dict.removeValue(forKey: "sceneClickCaptureEnabled")
-        let stripped = try JSONSerialization.data(withJSONObject: dict, options: .sortedKeys)
-        let legacy = try JSONDecoder().decode(ScreenConfiguration.self, from: stripped)
-        #expect(legacy.sceneClickCaptureEnabled == false)
+        dict.removeValue(forKey: "sceneHotZoneInputEnabled")
+        let missing = try JSONSerialization.data(withJSONObject: dict, options: .sortedKeys)
+        #expect(try JSONDecoder().decode(ScreenConfiguration.self, from: missing).sceneClickCaptureEnabled == true)
+
+        dict["sceneClickCaptureEnabled"] = false
+        let legacy = try JSONSerialization.data(withJSONObject: dict, options: .sortedKeys)
+        #expect(try JSONDecoder().decode(ScreenConfiguration.self, from: legacy).sceneClickCaptureEnabled == true)
     }
 
     @Test("Decoding a legacy ScreenConfiguration without videoVolume defaults to full volume")

@@ -128,4 +128,39 @@ struct DisplayDefaultsTests {
         #expect(!configuration.storedPlaybackDiffers(from: defaults))
     }
 
+    @Test("Fresh defaults turn scene interaction on and leave HTML interaction off")
+    func freshDefaultsSceneInteractionOn() {
+        let defaults = DisplayDefaults()
+
+        #expect(defaults.scene.interactiveInputEnabled == true)
+        #expect(defaults.html.interactiveInputEnabled == false)
+    }
+
+    @Test("Legacy blobs without the migration marker decode scene interaction as on")
+    func legacyBlobTurnsSceneInteractionOn() throws {
+        let legacy = Data("""
+        {
+          "video": {"interactiveInputEnabled": false},
+          "html": {"interactiveInputEnabled": false},
+          "scene": {"interactiveInputEnabled": false}
+        }
+        """.utf8)
+
+        let decoded = try JSONDecoder().decode(DisplayDefaults.self, from: legacy)
+
+        #expect(decoded.scene.interactiveInputEnabled == true)
+        #expect(decoded.html.interactiveInputEnabled == false)
+        #expect(decoded.video.interactiveInputEnabled == false)
+    }
+
+    @Test("Scene interaction turned off after migration survives a round-trip")
+    func sceneInteractionOffSurvivesRoundTrip() throws {
+        var defaults = DisplayDefaults()
+        defaults.scene.interactiveInputEnabled = false
+
+        let encoded = try JSONEncoder().encode(defaults)
+        let decoded = try JSONDecoder().decode(DisplayDefaults.self, from: encoded)
+
+        #expect(decoded == defaults)
+    }
 }
