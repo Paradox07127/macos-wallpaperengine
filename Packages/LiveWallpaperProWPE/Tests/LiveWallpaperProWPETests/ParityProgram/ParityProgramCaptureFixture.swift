@@ -58,7 +58,8 @@ struct ParityProgramCaptureFixture {
     }
 
     func run(_ sceneID: String, captureRange: ClosedRange<Int>,
-             adjust: (inout WPEEngineComboFlags) -> Void = { _ in }) throws -> [DrawResult] {
+             adjust: (inout WPEParityProgramDescription, WPEParityProgramAssets) -> Void = { _, _ in }) throws
+        -> [DrawResult] {
         let assets = WPEParityProgramAssets(
             sceneDirectory: root.appendingPathComponent("scene-sources/\(sceneID)"), assetRoots: assetRoots
         )
@@ -70,7 +71,7 @@ struct ParityProgramCaptureFixture {
                 return DrawResult(pass: draw.pass, shader: "?", program: nil, matches: [:],
                                   problems: ["no material file"])
             }
-            adjust(&description.engineFlags)
+            adjust(&description, assets)
             let shader = description.material.shader
             do {
                 let program = try WPEParityProgramResolver.resolve(description, sources: assets)

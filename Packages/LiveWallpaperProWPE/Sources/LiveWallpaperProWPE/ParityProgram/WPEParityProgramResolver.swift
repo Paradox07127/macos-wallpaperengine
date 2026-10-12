@@ -43,17 +43,7 @@ public enum WPEParityProgramResolver {
     public static func resolve(_ description: WPEParityProgramDescription,
                                sources: any WPEShaderSourceProviding) throws -> WPEParityProgram {
         let shader = description.material.shader
-        let names = WPEHLSLProgramSources(
-            vertex: "shaders/\(shader).vert",
-            geometry: sources.shaderSource(named: "shaders/\(shader).geom") == nil ? nil : "shaders/\(shader).geom",
-            fragment: "shaders/\(shader).frag"
-        )
-        let loader = WPEShaderLoader(sources: sources)
-        func expanded(_ name: String?) -> String {
-            var included = Set<[UInt8]>()
-            return Latin1.string(loader.load(name.flatMap(sources.shaderSource(named:)), included: &included))
-        }
-        let vertex = expanded(names.vertex), fragment = expanded(names.fragment)
+        let (names, vertex, fragment) = expandedSources(shader: shader, sources: sources)
         func defines(_ textures: [Int32: WPEBoundComboTexture]) -> [WPEShaderDefine] {
             WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
                                      blendingMode: Int32(description.material.blending.rawValue),
@@ -66,5 +56,20 @@ public enum WPEParityProgramResolver {
         let hlsl = try WPEHLSLRewriter(sources: sources).rewrite(names, defines: all, geometryShadersEnabled: true)
         return WPEParityProgram(shader: shader, combos: combos, textureCombos: Array(all.dropFirst(combos.count)),
                                 hlsl: hlsl)
+    }
+
+    static func expandedSources(shader: String, sources: any WPEShaderSourceProviding)
+        -> (names: WPEHLSLProgramSources, vertex: String, fragment: String) {
+        let names = WPEHLSLProgramSources(
+            vertex: "shaders/\(shader).vert",
+            geometry: sources.shaderSource(named: "shaders/\(shader).geom") == nil ? nil : "shaders/\(shader).geom",
+            fragment: "shaders/\(shader).frag"
+        )
+        let loader = WPEShaderLoader(sources: sources)
+        func expanded(_ name: String?) -> String {
+            var included = Set<[UInt8]>()
+            return Latin1.string(loader.load(name.flatMap(sources.shaderSource(named:)), included: &included))
+        }
+        return (names, expanded(names.vertex), expanded(names.fragment))
     }
 }

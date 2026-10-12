@@ -20,10 +20,10 @@ final class ParityProgramCaptureTests: XCTestCase {
     private static let modelDraws: Set<String> = ["188/albedo", "214/albedo", "218/albedo", "2077/albedo",
                                                   "238/albedo", "436/albedo"]
 
-    /// Models lack TEX4FORMAT (g_Texture4 default) and mask EMISSIVE_MAP, and 436 reuses 238's compile (same key);
-    /// 449 lacks the image layer's BLENDMODE=0 FOG_COMPUTED=1 (n=47/48).
+    /// 436 reuses 238's compile (same key), so no capture holds its own FOG=1 program; 449 lacks the image layer's
+    /// BLENDMODE=0 FOG_COMPUTED=1 (n=47/48).
     private static let knownUnmatched: [String: Set<String>] = [
-        "3509243656": modelDraws.union(["449/albedo"]),
+        "3509243656": ["436/albedo", "449/albedo"],
     ]
 
     func testFrameZeroProgramsMatchCapturedHLSLAndDXSKeys() throws {
@@ -68,10 +68,33 @@ final class ParityProgramCaptureTests: XCTestCase {
         var withoutHDR = 0
         for scene in ParityProgramCaptureFixture.scenes {
             baseline += try fixture.run(scene.id, captureRange: scene.captures).count(where: \.matched)
-            withoutHDR += try fixture.run(scene.id, captureRange: scene.captures) { $0.hdr = false }
-                .count(where: \.matched)
+            withoutHDR += try fixture.run(scene.id, captureRange: scene.captures) { description, _ in
+                description.engineFlags.hdr = false
+            }.count(where: \.matched)
         }
         print("negative control: matched draws \(baseline) with engine flags, \(withoutHDR) with HDR dropped")
         XCTAssertLessThan(withoutHDR, baseline)
+    }
+
+    /// TEXnFORMAT for samplers without `"formatcombo": true` too; any extra define breaks a match, so writing them
+    /// through the pass JSON stands in for the resolver's E segment.
+    func testIgnoringFormatComboLosesMatches() throws {
+        let fixture = try fixture()
+        var baseline = 0
+        var everySampler = 0
+        for scene in ParityProgramCaptureFixture.scenes {
+            baseline += try fixture.run(scene.id, captureRange: scene.captures).count(where: \.matched)
+            everySampler += try fixture.run(scene.id, captureRange: scene.captures) { description, assets in
+                let sources = WPEParityProgramResolver.expandedSources(shader: description.material.shader,
+                                                                       sources: assets)
+                let samplers = WPEShaderAnnotationCombos(vertexSource: sources.vertex,
+                                                         fragmentSource: sources.fragment).samplers
+                for (slot, format) in description.engineFlags.textureFormats where samplers[slot]?.formatCombo != true {
+                    description.material.combos["TEX\(slot)FORMAT"] = format
+                }
+            }.count(where: \.matched)
+        }
+        print("negative control: matched draws \(baseline) with formatcombo, \(everySampler) ignoring it")
+        XCTAssertLessThan(everySampler, baseline)
     }
 }

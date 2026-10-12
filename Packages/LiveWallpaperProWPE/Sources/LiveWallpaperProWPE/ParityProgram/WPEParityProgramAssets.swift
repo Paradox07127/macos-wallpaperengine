@@ -10,15 +10,19 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
         roots = [sceneDirectory] + assetRoots
     }
 
-    public func data(_ path: String) -> Data? {
+    public func url(_ path: String) -> URL? {
         for root in roots {
             var isDirectory: ObjCBool = false
             let url = root.appendingPathComponent(path)
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue {
-                return try? Data(contentsOf: url)
+                return url
             }
         }
         return nil
+    }
+
+    public func data(_ path: String) -> Data? {
+        url(path).flatMap { try? Data(contentsOf: $0) }
     }
 
     public func json(_ path: String) -> WPESceneJSONValue? {
