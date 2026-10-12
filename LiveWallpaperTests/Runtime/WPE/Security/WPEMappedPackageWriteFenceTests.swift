@@ -200,6 +200,8 @@ struct WPEMappedPackageWriteFenceTests {
             "FileHandle(forWritingTo": 1,
         ],
         "LiveWallpaper/Infrastructure/Assets/WPEVideoTextureDiskCache.swift": [".write(to": 1],
+        // Atomic write of the bindings JSON in the app's configuration directory, never a mapped scene file.
+        "LiveWallpaper/Infrastructure/UserShortcuts/UserShortcutBindingStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Services/WallpaperExportService.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
