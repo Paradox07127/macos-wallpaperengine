@@ -64,7 +64,12 @@ private struct WPEParitySceneFBOScope {
         }
     }
 
+    /// A fullscreen layer covers the scene: catsout WPSceneParser.cpp binds its FBOs to the screen
+    /// (`.bind = { .enable = true, .screen = true, .scale = 1.0 / wpfbo.scale }`).
     func extent(of layer: WPERenderLayer) -> (width: Int, height: Int) {
+        if layer.utilityModelKind == .fullScreenLayer {
+            return (sceneWidth, sceneHeight)
+        }
         let size = layer.compositeSourceExtent?.compositeSize ?? layer.geometry.size
         return (size.map { Int($0.width.rounded()) } ?? sceneWidth, size.map { Int($0.height.rounded()) } ?? sceneHeight)
     }
@@ -126,13 +131,17 @@ extension WPEParitySceneObject {
         let material = layer.passes.first { $0.phase == .material }
         let colorBlendMode = image?.colorBlendMode ?? 0
         let materialBlend = material.map { $0.authoredJSON.materialPass?["blending"]?.parityString ?? $0.blending }
+        // The chain ends with the layer's own scene object; the albedo TEXI flags are not in the graph.
+        let authored = layer.authoredJSON.sceneObjects.last
         try self.init(id: layer.objectID, sortKey: layer.sortIndex, visible: layer.visible, width: width,
                       height: height, materialShader: material?.shader ?? "genericimage2",
                       blend: colorBlendMode == 31
                           ? .additive : WPEParitySceneBlend(material: materialBlend ?? "translucent"),
                       colorBlendMode: colorBlendMode, passthrough: image?.config.passthrough ?? false,
                       copyBackground: image?.copyBackground ?? true,
-                      fullscreen: layer.utilityModelKind == .fullScreenLayer, parentID: layer.parentObjectID,
+                      fullscreen: layer.utilityModelKind == .fullScreenLayer,
+                      noInterpolation: authored?["nointerpolation"] == .bool(true),
+                      clampUVs: authored?["clampuvs"] != .bool(false), parentID: layer.parentObjectID,
                       effects: Self.effects(layer, image: image, scope: scope))
     }
 
@@ -151,6 +160,9 @@ extension WPEParitySceneObject {
         let visible = scope.declarations(visibleFrom: layer)
         let fbos = visible.mapValues(\.fbo)
         let localNames = layer.localFBOs.map(\.name)
+        // The graph keeps a layer's FBOs per layer, so the first enabled effect using a local name declares it and
+        // later effects read that one.
+        var declaredLocally: Set<String> = []
         var effects: [WPEParitySceneEffect] = []
         for stableID in order {
             guard let passes = grouped[stableID], let identity = passes.first?.authoredJSON.effectIdentity else {
@@ -167,8 +179,13 @@ extension WPEParitySceneObject {
             }
             var declared: [WPEParitySceneFBO] = []
             for name in ordered {
-                guard let declaration = visible[name] else { continue }
+                guard let declaration = visible[name], !(declaration.local && declaredLocally.contains(name)) else {
+                    continue
+                }
                 try declared.append(declaration.parityFBO(shared: scope.shared.contains(name)))
+            }
+            if enabled {
+                declaredLocally.formUnion(declared.map(\.name).filter { visible[$0]?.local == true })
             }
             effects.append(WPEParitySceneEffect(id: identity.authoredEffectID, enabled: enabled, passes: converted,
                                                 fbos: declared))

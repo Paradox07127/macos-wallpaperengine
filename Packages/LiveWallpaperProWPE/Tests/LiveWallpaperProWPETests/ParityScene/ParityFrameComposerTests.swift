@@ -9,7 +9,7 @@ struct ParityFrameComposerTests {
         post.colorCorrectionEnabled = true
         post.fadeActive = true
         let frame = try WPEParityFrameComposer.compose(scene: ParitySceneFixtures.scene([ParitySceneFixtures.layer()]),
-                                                       post: post)
+                                                       post: post, frameIndex: 0)
         #expect(lines(frame) == [
             "bind backbuffer|backbufferDepth",
             "clear backbuffer 0.1,0.2,0.3,1.0",
@@ -62,19 +62,20 @@ struct ParityFrameComposerTests {
         #expect(throws: WPEParityFrameCompositionError.backbufferMismatch(scene: "1920x1080 rgba8unorm",
                                                                           post: "1280x720 rgba8unorm")) {
             try WPEParityFrameComposer.compose(
-                scene: scene, post: WPEParityPostProcessConfig(backbufferWidth: 1280, backbufferHeight: 720)
+                scene: scene, post: WPEParityPostProcessConfig(backbufferWidth: 1280, backbufferHeight: 720),
+                frameIndex: 0
             )
         }
         #expect(throws: WPEParityFrameCompositionError.backbufferMismatch(scene: "1920x1080 rgba8unorm",
                                                                           post: "1920x1080 rgba16float")) {
             try WPEParityFrameComposer.compose(scene: scene, post: WPEParityPostProcessConfig(
                 backbufferWidth: 1920, backbufferHeight: 1080, backbufferFormat: "rgba16float"
-            ))
+            ), frameIndex: 0)
         }
         #expect(throws: WPEParityFrameCompositionError.sampleCountMismatch(scene: 1, post: 4)) {
             try WPEParityFrameComposer.compose(scene: scene, post: WPEParityPostProcessConfig(
                 msaaSampleCount: 4, backbufferWidth: 1920, backbufferHeight: 1080
-            ))
+            ), frameIndex: 0)
         }
     }
 
@@ -96,7 +97,7 @@ struct ParityFrameComposerTests {
             ParitySceneFixtures.layer("B", colorBlendMode: 2),
         ]
         let frame = try WPEParityFrameComposer.compose(
-            scene: ParitySceneFixtures.scene(layers, msaaSamples: post.msaaSampleCount), post: post
+            scene: ParitySceneFixtures.scene(layers, msaaSamples: post.msaaSampleCount), post: post, frameIndex: 0
         )
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         ParityGraphStream.expectPooledStorage(graph)
@@ -112,7 +113,7 @@ struct ParityFrameComposerTests {
         post.hdrEnabled = true
         post.msaaSampleCount = 4
         post.backbufferFormat = "rgba16float"
-        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post)
+        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post, frameIndex: 0)
         let formats = Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0.format) })
         #expect(formats["backbuffer"] == "rgba16float")
         #expect(formats["_rt_FullFrameBuffer"] == "rgba16float")
@@ -131,7 +132,7 @@ struct ParityFrameComposerTests {
         let post = WPEParityPostProcessConfig(sceneBloomEnabled: true, userBloomEnabled: true,
                                               objectTableNonEmpty: true, colorCorrectionEnabled: true,
                                               backbufferWidth: width, backbufferHeight: height)
-        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post)
+        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post, frameIndex: 0)
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         let layout = graph.heapLayout { (size: bytes($0), alignment: 65536) }
         let members = graph.allocationGroups.joined().compactMap { graph.resources[$0] }

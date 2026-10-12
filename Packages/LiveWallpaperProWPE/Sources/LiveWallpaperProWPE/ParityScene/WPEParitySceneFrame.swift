@@ -35,12 +35,35 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     }
 }
 
+/// Sampler WPE creates with a layer composite (FUN_140099980).
+public struct WPEParitySceneSampler: Hashable, Sendable {
+    public enum Filter: Hashable, Sendable {
+        case linear
+        case point
+    }
+
+    public enum Address: Hashable, Sendable {
+        case clamp
+        case wrap
+    }
+
+    public let filter: Filter
+    public let address: Address
+
+    public init(filter: Filter, address: Address) {
+        self.filter = filter
+        self.address = address
+    }
+}
+
 public struct WPEParitySceneFrame: Hashable, Sendable {
     public let operations: [WPERenderOperation]
     /// Sorted by id.
     public let resources: [WPELogicalResource]
     /// Keyed by the `pass` of the draw operation they describe.
     public let draws: [WPEPassIdentity: WPEParitySceneDraw]
+    /// Sampler a draw binds when it reads one of the layer composites.
+    public let samplers: [WPEResourceID: WPEParitySceneSampler]
 }
 
 public enum WPEParitySceneResource {
@@ -52,9 +75,15 @@ public enum WPEParitySceneResource {
     public static let colorFormat = "rgba8unorm"
     public static let depthFormat = "depth32float"
 
-    /// `<b|n><r|c>` meanings are unknown (U1); every pooled target uses `br`.
-    public static func pooledComposite(width: Int, height: Int, index: Int) -> WPEResourceID {
-        WPEResourceID("sc.\(width).\(height).br\(index)")
+    /// 1401ea500.c:137-446: `sc.<w>.<h>.<n|b><c|r><index>`, then the number of `ancestors` (the composites the
+    /// enclosing layers draw their children into) whose name starts with that, when above 0.
+    public static func pooledComposite(width: Int, height: Int, sampler: WPEParitySceneSampler, index: Int,
+                                       ancestors: [WPEResourceID] = []) -> WPEResourceID {
+        let filter = sampler.filter == .point ? "n" : "b"
+        let address = sampler.address == .clamp ? "c" : "r"
+        let name = "sc.\(width).\(height).\(filter)\(address)\(index)"
+        let count = ancestors.count { $0.rawValue.hasPrefix(name) }
+        return WPEResourceID(count > 0 ? "\(name)\(count)" : name)
     }
 
     public static func layerCompositeA(_ objectID: String) -> WPEResourceID {

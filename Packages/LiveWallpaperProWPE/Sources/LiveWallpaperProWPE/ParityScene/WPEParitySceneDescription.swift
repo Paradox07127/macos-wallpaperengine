@@ -66,6 +66,10 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var fullscreen: Bool
     public var ledSource: Bool
     public var puppetForcesComposite: Bool
+    /// Layer `nointerpolation` or albedo TEXI flag bit0: the layer's composites sample with point filtering.
+    public var noInterpolation: Bool
+    /// Layer `clampuvs` (WPE default on): the layer's composites clamp instead of wrap.
+    public var clampUVs: Bool
     public var parentID: String?
     public var effects: [WPEParitySceneEffect]
 
@@ -73,7 +77,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
                 materialShader: String = "genericimage2", blend: WPEParitySceneBlend = .translucent,
                 colorBlendMode: Int = 0, passthrough: Bool = false, copyBackground: Bool = true,
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
-                parentID: String? = nil, effects: [WPEParitySceneEffect] = []) {
+                noInterpolation: Bool = false, clampUVs: Bool = true, parentID: String? = nil,
+                effects: [WPEParitySceneEffect] = []) {
         self.id = id
         self.sortKey = sortKey
         self.visible = visible
@@ -87,6 +92,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.fullscreen = fullscreen
         self.ledSource = ledSource
         self.puppetForcesComposite = puppetForcesComposite
+        self.noInterpolation = noInterpolation
+        self.clampUVs = clampUVs
         self.parentID = parentID
         self.effects = effects
     }

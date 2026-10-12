@@ -36,7 +36,7 @@ final class WPEParityFrameEndToEndTests: XCTestCase {
         )
         let post = WPEParityPostProcessConfig(msaaSampleCount: msaaSamples, colorCorrectionEnabled: true,
                                               backbufferWidth: Self.side, backbufferHeight: Self.side)
-        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post)
+        let frame = try WPEParityFrameComposer.compose(scene: scene, post: post, frameIndex: 0)
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         let executor = try WPEParityGraphExecutor(
             graph: graph, device: device, drawEncoder: WPEParityDrawEncoder(factory: factory),

@@ -4,8 +4,9 @@ import LiveWallpaperProWPE
 enum ParitySceneFixtures {
     static let sceneWidth = 1920
     static let sceneHeight = 1080
-    static let br0 = "sc.512.256.br0"
-    static let br1 = "sc.512.256.br1"
+    /// Linear filtering and clamped UVs, the defaults of a layer.
+    static let bc0 = "sc.512.256.bc0"
+    static let bc1 = "sc.512.256.bc1"
     static let sceneBind = "bind backbuffer|backbufferDepth"
     static let sceneClear = ["clear backbuffer 0.1,0.2,0.3,1.0", "clearDepth backbufferDepth 0.0"]
 

@@ -8,13 +8,13 @@ struct ParitySceneFrameStructureTests {
     @Test func reportSequenceAWithFullFrameRead() {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2", readsFullFrameBuffer: true)])])
         #expect(F.lines(scene) == [F.sceneBind] + F.sceneClear + [
-            "bind \(F.br1)",
+            "bind \(F.bc1)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind \(F.br0)",
-            "draw e1 [\(F.br1)] normal rgba quad",
+            "bind \(F.bc0)",
+            "draw e1 [\(F.bc1)] normal rgba quad",
             F.sceneBind,
             "copy backbuffer->_rt_FullFrameBuffer",
-            "draw e2 [\(F.br0),_rt_FullFrameBuffer] translucent rgb mesh",
+            "draw e2 [\(F.bc0),_rt_FullFrameBuffer] translucent rgb mesh",
         ])
     }
 
@@ -22,7 +22,7 @@ struct ParitySceneFrameStructureTests {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2")])])
         let lines = F.lines(scene)
         #expect(!lines.contains("copy backbuffer->_rt_FullFrameBuffer"))
-        #expect(lines.last == "draw e2 [\(F.br0)] translucent rgb mesh")
+        #expect(lines.last == "draw e2 [\(F.bc0)] translucent rgb mesh")
     }
 
     @Test func clearDisabledEmitsNoClear() {
@@ -41,11 +41,11 @@ struct ParitySceneFrameStructureTests {
             "bind \(ms)|\(ms)Depth",
             "clear \(ms) 0.1,0.2,0.3,1.0",
             "clearDepth \(ms)Depth 0.0",
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
             "bind \(ms)|\(ms)Depth",
             "resolve \(ms)->_rt_FullFrameBuffer",
-            "draw e1 [\(F.br0),_rt_FullFrameBuffer] translucent rgb mesh",
+            "draw e1 [\(F.bc0),_rt_FullFrameBuffer] translucent rgb mesh",
             "resolve \(ms)->backbuffer",
         ])
         let single = F.lines(F.scene(objects))
@@ -87,10 +87,10 @@ struct ParitySceneLayerCompositeTests {
             "copy backbuffer->_rt_FullFrameBuffer",
             "bind \(a)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind \(F.br1)",
+            "bind \(F.bc1)",
             "draw e1 [\(a)] normal rgba quad",
             "bind \(a)",
-            "draw e2 [\(F.br1)] normal rgba quad",
+            "draw e2 [\(F.bc1)] normal rgba quad",
             F.sceneBind,
             "draw effectpassthrough_4 [\(a),_rt_FullFrameBuffer] translucent rgb mesh",
         ])
@@ -104,7 +104,7 @@ struct ParitySceneLayerCompositeTests {
         }
         let additive = WPEParitySceneObject(id: "L", width: 512, height: 256, blend: .additive, colorBlendMode: 31,
                                             effects: [F.effect("e1")])
-        #expect(F.lines(F.scene([additive])).last == "draw e1 [\(F.br0)] additive rgb mesh")
+        #expect(F.lines(F.scene([additive])).last == "draw e1 [\(F.bc0)] additive rgb mesh")
     }
 
     @Test func ledSourceAndGlobalFlagForceBit4() {
@@ -122,12 +122,12 @@ struct ParitySceneLayerCompositeTests {
         for count in 1 ... 4 {
             let effects = (1 ... count).map { F.effect("e\($0)") }
             let normal = F.albedoTarget(F.scene([F.layer(effects: effects)]))
-            #expect(normal == WPEResourceID(count % 2 == 1 ? F.br0 : F.br1), "N=\(count)")
+            #expect(normal == WPEResourceID(count % 2 == 1 ? F.bc0 : F.bc1), "N=\(count)")
             let bit4 = F.albedoTarget(F.scene([F.layer(colorBlendMode: 5, effects: effects)]))
-            #expect(bit4 == (count % 2 == 0 ? a : WPEResourceID(F.br1)), "bit4 N=\(count)")
+            #expect(bit4 == (count % 2 == 0 ? a : WPEResourceID(F.bc1)), "bit4 N=\(count)")
             // The last effect of a plain layer always samples composites[0].
             let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: effects)]))
-            #expect(frame.draws[WPEPassIdentity("L/e\(count)/0")]?.reads == [WPEResourceID(F.br0)])
+            #expect(frame.draws[WPEPassIdentity("L/e\(count)/0")]?.reads == [WPEResourceID(F.bc0)])
         }
     }
 
@@ -140,24 +140,24 @@ struct ParitySceneLayerCompositeTests {
         }
         let lines = F.lines(scene(compose: true))
         #expect(Array(lines.dropFirst(3)) == [
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind \(F.br1)",
-            "draw p0 [\(F.br0)] normal rgba quad",
-            "bind \(F.br0)",
-            "draw p1 [\(F.br1)] normal rgba quad",
+            "bind \(F.bc1)",
+            "draw p0 [\(F.bc0)] normal rgba quad",
+            "bind \(F.bc0)",
+            "draw p1 [\(F.bc1)] normal rgba quad",
             F.sceneBind,
-            "draw e2 [\(F.br0)] translucent rgb mesh",
+            "draw e2 [\(F.bc0)] translucent rgb mesh",
         ])
         #expect(Array(F.lines(scene(compose: false)).dropFirst(3)) == [
-            "bind \(F.br1)",
+            "bind \(F.bc1)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind \(F.br0)",
-            "draw p0 [\(F.br1)] normal rgba quad",
-            "bind \(F.br0)",
-            "draw p1 [\(F.br1)] normal rgba quad",
+            "bind \(F.bc0)",
+            "draw p0 [\(F.bc1)] normal rgba quad",
+            "bind \(F.bc0)",
+            "draw p1 [\(F.bc1)] normal rgba quad",
             F.sceneBind,
-            "draw e2 [\(F.br0)] translucent rgb mesh",
+            "draw e2 [\(F.bc0)] translucent rgb mesh",
         ])
     }
 
@@ -166,8 +166,8 @@ struct ParitySceneLayerCompositeTests {
         let without = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2")])])
         #expect(F.lines(withDisabled) == F.lines(without))
         let enabled = F.scene([F.layer(effects: [F.effect("e1"), F.effect("x"), F.effect("e2")])])
-        #expect(F.albedoTarget(enabled) == WPEResourceID(F.br0))
-        #expect(F.albedoTarget(without) == WPEResourceID(F.br1))
+        #expect(F.albedoTarget(enabled) == WPEResourceID(F.bc0))
+        #expect(F.albedoTarget(without) == WPEResourceID(F.bc1))
     }
 
     @Test func effectFBOTargetsDoNotFlip() {
@@ -177,12 +177,12 @@ struct ParitySceneLayerCompositeTests {
         ], fbos: [WPEParitySceneFBO(name: "half", width: 256, height: 128)])
         let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [blur])]))
         #expect(Array(F.lines(frame).dropFirst(3)) == [
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
             "bind L/blur/half",
-            "draw down [\(F.br0)] normal rgba quad",
+            "draw down [\(F.bc0)] normal rgba quad",
             F.sceneBind,
-            "draw up [\(F.br0),L/blur/half] translucent rgb mesh",
+            "draw up [\(F.bc0),L/blur/half] translucent rgb mesh",
         ])
         #expect(frame.resources.first { $0.id == "L/blur/half" }?.lifetime == .pooled)
     }
@@ -193,20 +193,20 @@ struct ParitySceneCompositionTests {
         let lines = F.lines(F.scene([F.layer(passthrough: true, copyBackground: true, effects: [F.effect("e1")])]))
         #expect(Array(lines.dropFirst(3)) == [
             "copy backbuffer->_rt_FullFrameBuffer",
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw composelayer [_rt_FullFrameBuffer] normal rgba quad",
             F.sceneBind,
-            "draw e1 [\(F.br0)] translucent rgb mesh",
+            "draw e1 [\(F.bc0)] translucent rgb mesh",
         ])
     }
 
     @Test func passthroughWithoutCopyBackgroundClearsComposite() {
         let lines = F.lines(F.scene([F.layer(passthrough: true, copyBackground: false, effects: [F.effect("e1")])]))
         #expect(Array(lines.dropFirst(3)) == [
-            "bind \(F.br0)",
-            "clear \(F.br0) 0.0,0.0,0.0,0.0",
+            "bind \(F.bc0)",
+            "clear \(F.bc0) 0.0,0.0,0.0,0.0",
             F.sceneBind,
-            "draw e1 [\(F.br0)] translucent rgb mesh",
+            "draw e1 [\(F.bc0)] translucent rgb mesh",
         ])
     }
 
@@ -220,21 +220,21 @@ struct ParitySceneCompositionTests {
         }
         #expect(Array(F.lines(scene(copyBackground: false)).dropFirst(3)) == [
             "copy backbuffer->_rt_FullFrameBuffer",
-            "bind \(F.br0)",
-            "clear \(F.br0) 0.0,0.0,0.0,0.0",
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
+            "clear \(F.bc0) 0.0,0.0,0.0,0.0",
+            "bind \(F.bc0)",
             "draw genericimage2 [C/image] translucent+max rgba mesh",
             F.sceneBind,
-            "draw pe [\(F.br0)] translucent rgb mesh",
+            "draw pe [\(F.bc0)] translucent rgb mesh",
         ])
         #expect(Array(F.lines(scene(copyBackground: true)).dropFirst(3)) == [
             "copy backbuffer->_rt_FullFrameBuffer",
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw composelayer [_rt_FullFrameBuffer] normal rgba quad",
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw genericimage2 [C/image] translucent rgb mesh",
             F.sceneBind,
-            "draw pe [\(F.br0)] translucent rgb mesh",
+            "draw pe [\(F.bc0)] translucent rgb mesh",
         ])
     }
 
@@ -244,9 +244,10 @@ struct ParitySceneCompositionTests {
             F.layer("C", parentID: "P", effects: [F.effect("ce")]),
         ])
         let frame = WPEParitySceneFrameBuilder.build(scene)
-        #expect(frame.draws["C/albedo"]?.target == "sc.512.256.br2")
-        #expect(frame.draws["C/ce/0"]?.reads == ["sc.512.256.br2"])
-        #expect(frame.draws["C/ce/0"]?.target == WPEResourceID(F.br0))
+        // P draws its child into bc0, so C's bc0 takes the ancestor count as a suffix.
+        #expect(frame.draws["C/albedo"]?.target == "sc.512.256.bc01")
+        #expect(frame.draws["C/ce/0"]?.reads == ["sc.512.256.bc01"])
+        #expect(frame.draws["C/ce/0"]?.target == WPEResourceID(F.bc0))
         #expect(frame.draws["C/ce/0"]?.alphaMax == true)
         #expect(frame.draws["C/ce/0"]?.writeMask == .rgba)
     }
@@ -257,12 +258,12 @@ struct ParitySceneCompileTests {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2", readsFullFrameBuffer: true)])])
         let frame = WPEParitySceneFrameBuilder.build(scene)
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
-        for id in [WPEParitySceneResource.fullFrameBuffer, WPEResourceID(F.br0), WPEResourceID(F.br1)] {
+        for id in [WPEParitySceneResource.fullFrameBuffer, WPEResourceID(F.bc0), WPEResourceID(F.bc1)] {
             #expect(graph.resources[id]?.lifetime == .pooled, "\(id)")
         }
         ParityGraphStream.expectPooledStorage(graph)
-        #expect(graph.storage[WPEResourceID(F.br0)] != .dedicated)
-        #expect(graph.storage[WPEResourceID(F.br1)] != .dedicated)
+        #expect(graph.storage[WPEResourceID(F.bc0)] != .dedicated)
+        #expect(graph.storage[WPEResourceID(F.bc1)] != .dedicated)
         #expect(graph.storage[WPEParitySceneResource.backbuffer] == .dedicated)
     }
 

@@ -17,11 +17,14 @@ public struct WPEParityFrame: Hashable, Sendable {
     public let resources: [WPELogicalResource]
     /// Keyed by the index of the draw operation in `operations`.
     public let draws: [Int: WPEParityFrameDraw]
+    /// Samplers of the scene's layer composites; see `WPEParitySceneFrame.samplers`.
+    public let samplers: [WPEResourceID: WPEParitySceneSampler]
 }
 
 public enum WPEParityFrameComposer {
-    public static func compose(scene: WPEParitySceneDescription,
-                               post: WPEParityPostProcessConfig) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
+    /// `frameIndex` picks the side of each effect FBO swap pair, as in `WPEParitySceneFrameBuilder.build`.
+    public static func compose(scene: WPEParitySceneDescription, post: WPEParityPostProcessConfig,
+                               frameIndex: Int) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
         guard scene.msaaSamples == post.msaaSampleCount else {
             throw .sampleCountMismatch(scene: scene.msaaSamples, post: post.msaaSampleCount)
         }
@@ -30,7 +33,8 @@ public enum WPEParityFrameComposer {
         guard sceneBackbuffer == postBackbuffer else {
             throw .backbufferMismatch(scene: sceneBackbuffer, post: postBackbuffer)
         }
-        return try merge(WPEParitySceneFrameBuilder.build(scene), WPEParityPostProcessBuilder.build(post))
+        return try merge(WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex),
+                         WPEParityPostProcessBuilder.build(post))
     }
 
     static func merge(_ sceneFrame: WPEParitySceneFrame,
@@ -57,6 +61,7 @@ public enum WPEParityFrameComposer {
                 draws[index] = postDraws.next().map(WPEParityFrameDraw.post)
             }
         }
-        return WPEParityFrame(operations: operations, resources: resources, draws: draws)
+        return WPEParityFrame(operations: operations, resources: resources, draws: draws,
+                              samplers: sceneFrame.samplers)
     }
 }

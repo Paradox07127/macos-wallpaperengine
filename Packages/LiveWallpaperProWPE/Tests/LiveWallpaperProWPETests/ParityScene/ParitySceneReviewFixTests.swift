@@ -20,10 +20,13 @@ private enum Graph {
                              depthWrite: "disabled")
     }
 
-    static func layer(_ id: String = "7", width: Double = 400, height: Double = 200, fbos: [WPERenderFBO] = [],
+    static func layer(_ id: String = "7", width: Double = 400, height: Double = 200, imagePath: String? = nil,
+                      sceneObject: [String: WPESceneJSONValue] = [:], fbos: [WPERenderFBO] = [],
                       passes: [WPERenderPass]) -> WPERenderLayer {
         let size = CGSize(width: width, height: height)
-        return WPERenderLayer(objectID: id, objectName: id, imagePath: "models/\(id).json", materialPath: nil,
+        return WPERenderLayer(objectID: id, objectName: id, imagePath: imagePath ?? "models/\(id).json",
+                              materialPath: nil,
+                              authoredJSON: WPERenderLayerAuthoredJSON(sceneObjects: [.object(sceneObject)]),
                               geometry: WPERenderLayerGeometry(origin: .zero, scale: .one, angles: .zero,
                                                                alignment: .center, size: size, alpha: 1,
                                                                color: .one, brightness: 1),
@@ -55,12 +58,12 @@ struct ParitySceneLastEffectRoutingTests {
         ])
         let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [last])]))
         #expect(Array(F.lines(frame).dropFirst(3)) == [
-            "bind \(F.br1)",
+            "bind \(F.bc1)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind \(F.br0)",
-            "draw p0 [\(F.br1)] normal rgba quad",
+            "bind \(F.bc0)",
+            "draw p0 [\(F.bc1)] normal rgba quad",
             F.sceneBind,
-            "draw p1 [\(F.br0)] translucent rgb mesh",
+            "draw p1 [\(F.bc0)] translucent rgb mesh",
         ])
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         #expect(Self.compositeReadsBeforeWrite(frame) == [])
@@ -149,11 +152,11 @@ struct ParitySceneEffectCommandTests {
         ], fbos: [WPEParitySceneFBO(name: "history", width: 512, height: 256)])
         let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [effect])]))
         #expect(Array(F.lines(frame).dropFirst(3)) == [
-            "bind \(F.br0)",
+            "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "copy \(F.br0)->L/e/history",
+            "copy \(F.bc0)->L/e/history",
             F.sceneBind,
-            "draw trail [\(F.br0),L/e/history] translucent rgb mesh",
+            "draw trail [\(F.bc0),L/e/history] translucent rgb mesh",
         ])
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
     }
@@ -180,8 +183,8 @@ struct ParitySceneEffectCommandTests {
         for (frameIndex, pair) in expected.enumerated() {
             let frame = WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex)
             #expect(frame.draws["L/e/0"]?.target == pair[0], "frame \(frameIndex)")
-            #expect(frame.draws["L/e/0"]?.reads == [WPEResourceID(F.br0), pair[1]], "frame \(frameIndex)")
-            #expect(frame.draws["L/e/1"]?.reads == [WPEResourceID(F.br0), pair[0]], "frame \(frameIndex)")
+            #expect(frame.draws["L/e/0"]?.reads == [WPEResourceID(F.bc0), pair[1]], "frame \(frameIndex)")
+            #expect(frame.draws["L/e/1"]?.reads == [WPEResourceID(F.bc0), pair[0]], "frame \(frameIndex)")
             let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
             for id in pair {
                 #expect(graph.resources[id]?.lifetime == .persistent, "\(id) frame \(frameIndex)")
@@ -208,5 +211,38 @@ struct ParitySceneCrossLayerFBOTests {
         #expect(frame.draws["8/1/0"]?.reads.contains(WPEParitySceneResource.sharedFBO("glow")) == true)
         #expect(frame.resources.count(where: { $0.id.rawValue.hasSuffix("glow") }) == 1)
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+    }
+
+    @Test func readOfAnFBOWrittenByAnEarlierEffectOfTheLayerResolvesToItsResource() throws {
+        let layer = Graph.layer(fbos: [WPERenderFBO(name: "half", scale: 2, format: "rgba8888")], passes: [
+            Graph.pass("write", target: .fbo(name: "half")),
+            Graph.pass("read", effect: "2", textures: [1: .fbo("half")]),
+        ])
+        let frame = try WPEParitySceneFrameBuilder.build(Graph.convert([layer]))
+        #expect(frame.draws["7/1/0"]?.target == "7/1/half")
+        #expect(frame.draws["7/2/0"]?.reads.last == "7/1/half")
+        #expect(frame.resources.count(where: { $0.id.rawValue.hasSuffix("half") }) == 1)
+        _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+    }
+}
+
+struct ParitySceneLayerFieldConversionTests {
+    @Test func samplerFieldsComeFromTheLayerJSON() throws {
+        let pass = Graph.pass("p")
+        let defaults = try Graph.convert([Graph.layer(passes: [pass])]).objects[0]
+        #expect(!defaults.noInterpolation && defaults.clampUVs)
+        let authored = Graph.layer(sceneObject: ["nointerpolation": .bool(true), "clampuvs": .bool(false)],
+                                   passes: [pass])
+        let object = try Graph.convert([authored]).objects[0]
+        #expect(object.noInterpolation && !object.clampUVs)
+    }
+
+    @Test func fullscreenLayerSizesItsFBOsFromTheScene() throws {
+        // catsout WPSceneParser.cpp binds a fullscreen layer's FBO to the screen at 1 / scale.
+        let layer = Graph.layer(imagePath: "models/util/fullscreenlayer.json",
+                                fbos: [WPERenderFBO(name: "half", scale: 2, format: "rgba8888")],
+                                passes: [Graph.pass("p", target: .fbo(name: "half"))])
+        let fbos = try Graph.convert([layer]).objects[0].effects[0].fbos
+        #expect(fbos.map { [$0.width, $0.height] } == [[960, 540]])
     }
 }
