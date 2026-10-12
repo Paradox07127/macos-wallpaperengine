@@ -1,7 +1,9 @@
 #if !LITE_BUILD && DEBUG
 import CoreGraphics
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -195,6 +197,94 @@ struct WPEAuthoredVertexExecutorTests {
         _ = try #require(renderer.executor.authoredPrewarmRequest(for: pass, execution: .authoredObjectQuad))
         renderer.cleanup()
         #expect(renderer.executor.authoredRequestKeyByIdentity.isEmpty)
+    }
+
+    private static func writeRegisteredMaterialScene(at root: URL, material: String, writesAtlas: Bool) throws {
+        for directory in ["materials/particles", "shaders"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
+        }
+        let script = "'use strict';\\nconst m = typeof engine.registerAsset === 'function' && engine.registerAsset('\(material)', true);"
+            + "\\nexport function update(value) { value.x = shared.offset || value.x; return value; }"
+        try Data("""
+        {"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64,"auto":true}},
+         "objects":[{"id":"solid","name":"Solid","type":"image","image":"models/util/solidlayer.json","color":"1 0 0","alpha":1,
+                     "origin":{"value":"32 32 0","script":"\(script)"}}]}
+        """.utf8).write(to: root.appendingPathComponent("scene.json"))
+        try Data(#"{"passes":[{"shader":"we2d_trail_color","textures":["materials/atlas.png"],"blending":"additive","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]}"#.utf8)
+            .write(to: root.appendingPathComponent(material))
+        try Data("""
+        uniform mat4 g_ModelMatrix;
+        uniform mat4 g_ViewProjectionMatrix;
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        attribute vec4 a_Color;
+        varying vec2 v_TexCoord;
+        varying vec4 v_Color;
+        void main(){ gl_Position=mul(mul(vec4(a_Position,1.0),g_ModelMatrix),g_ViewProjectionMatrix); v_TexCoord=a_TexCoord; v_Color=a_Color; }
+        """.utf8).write(to: root.appendingPathComponent("shaders/we2d_trail_color.vert"))
+        try Data("""
+        uniform sampler2D g_Texture0;
+        varying vec2 v_TexCoord;
+        varying vec4 v_Color;
+        void main(){ gl_FragColor=vec4(v_Color.rgb,texSample2D(g_Texture0,v_TexCoord).a*v_Color.a); }
+        """.utf8).write(to: root.appendingPathComponent("shaders/we2d_trail_color.frag"))
+        guard writesAtlas else { return }
+        let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0, green: 1, blue: 0, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        let png = try #require(CGImageDestinationCreateWithURL(root.appendingPathComponent("materials/atlas.png") as CFURL,
+                                                               "public.png" as CFString, 1, nil))
+        let image = try #require(context.makeImage())
+        CGImageDestinationAddImage(png, image, nil)
+        #expect(CGImageDestinationFinalize(png))
+    }
+
+    @MainActor
+    @Test("Scene load prepares registerAsset material templates: mesh stage, pipeline and texture")
+    func registeredMaterialTemplatesArePreparedAtLoad() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("WPEMeshTemplate-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let material = "materials/particles/trail_additive_color.json"
+        try Self.writeRegisteredMaterialScene(at: root, material: material, writesAtlas: true)
+
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = SceneDescriptor(workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
+                                         entryFile: "scene.json", capabilityTier: .imageOnly)
+        let renderer = try WPEMetalSceneRenderer(descriptor: descriptor, cacheRootURL: root, dependencyMounts: [],
+                                                 frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+
+        let template = try #require(renderer.registeredMaterialTemplatesByPath[material])
+        #expect(renderer.registeredMaterialTemplatesByPath.count == 1)
+        let texture = try #require(template.textureBindings[0].flatMap(renderer.externalTexturePath(for:)))
+        #expect(renderer.loadedTextures[texture] != nil)
+        let identity = try #require(WPEMetalRenderExecutor.authoredShaderRequestIdentity(for: template, execution: .authoredMesh))
+        let key = try #require(renderer.executor.authoredRequestKeyByIdentity[identity])
+        let result = try #require(renderer.executor.translatedShaderCache[key])
+        #expect(result.vertexStage?.execution == .authoredMesh)
+        let color = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: .scene, declaredFBOs: [],
+                                                                      sceneColorFormat: WPEMetalRenderExecutor.outputPixelFormat, hdr: false)
+        let depth = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: renderer.executor.depthCache.needsAttachment(for: template))
+        #expect(renderer.executor.hasPrewarmedAuthoredPipeline(for: result, pass: template, targetID: .scene,
+                                                               colorPixelFormat: color, depthPixelFormat: depth))
+    }
+
+    @MainActor
+    @Test("A registerAsset material whose texture is missing does not fail the scene load")
+    func registeredMaterialWithMissingTextureStillLoadsScene() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("WPEMeshTemplate-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let material = "materials/particles/trail_additive_color.json"
+        try Self.writeRegisteredMaterialScene(at: root, material: material, writesAtlas: false)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = SceneDescriptor(workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
+                                         entryFile: "scene.json", capabilityTier: .imageOnly)
+        let renderer = try WPEMetalSceneRenderer(descriptor: descriptor, cacheRootURL: root, dependencyMounts: [],
+                                                 frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        #expect(renderer.registeredMaterialTemplatesByPath[material] != nil)
     }
 
     @Test(arguments: [(false, true, false), (true, true, false), (true, false, false),

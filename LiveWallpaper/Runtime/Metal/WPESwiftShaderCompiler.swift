@@ -25,9 +25,8 @@ struct WPESwiftShaderCompiler: Sendable {
         if let payload = translationCache.lookup(cacheKey) {
             do {
                 let vertex = payload.vertexTranslation()
-                let expectedVertex = request.vertexExecution == .authoredObjectQuad ? "wpe_authored_object_quad_vertex" : "wpe_authored_fullscreen_vertex"
                 guard (vertex != nil) == (request.vertexExecution != .synthesized),
-                      vertex == nil || payload.vertexFunctionName == expectedVertex else {
+                      vertex == nil || payload.vertexFunctionName == request.vertexExecution.authoredVertexFunctionName else {
                     throw WPEShaderCompilerError.translationFailed("cached stage execution ABI mismatch")
                 }
                 return try assemble(
@@ -42,7 +41,7 @@ struct WPESwiftShaderCompiler: Sendable {
                     processedFragment: request.processedFragmentSource,
                     recordFailure: recordFailure,
                     alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots, premultipliedOutput: request.premultipliedOutput),
-                    vertexTranslation: vertex
+                    vertexTranslation: vertex, vertexExecution: request.vertexExecution
                 )
             } catch {
                 translationCache.remove(cacheKey)
@@ -50,7 +49,8 @@ struct WPESwiftShaderCompiler: Sendable {
         }
 
         if request.vertexExecution != .synthesized {
-            let link = try WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource)
+            let link = try WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource,
+                                              execution: request.vertexExecution)
             let vertex = try WPEShaderTranspiler.translateAuthoredVertex(
                 shaderName: request.shaderName, preprocessedSource: request.processedVertexSource,
                 link: link, comboValues: request.comboValues, premultipliedInputSlots: request.premultipliedInputSlots, execution: request.vertexExecution
@@ -61,13 +61,14 @@ struct WPESwiftShaderCompiler: Sendable {
                 premultipliedOutput: request.premultipliedOutput, stageLink: link
             )
             let result = try assemble(
-                mslSource: fragment.mslSource, vertexFunctionName: request.vertexExecution == .authoredObjectQuad ? "wpe_authored_object_quad_vertex" : "wpe_authored_fullscreen_vertex",
+                mslSource: fragment.mslSource, vertexFunctionName: request.vertexExecution.authoredVertexFunctionName,
                 fragmentFunctionName: "wpe_translated_fragment", uniformLayout: fragment.uniformLayout,
                 samplerNames: fragment.samplers, textureSlotCount: fragment.textureSlotCount,
                 shaderName: request.shaderName, processedVertex: request.processedVertexSource,
                 processedFragment: request.processedFragmentSource, recordFailure: recordFailure,
                 alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots,
-                                     premultipliedOutput: request.premultipliedOutput), vertexTranslation: vertex
+                                     premultipliedOutput: request.premultipliedOutput), vertexTranslation: vertex,
+                vertexExecution: request.vertexExecution
             )
             if let payload = WPEShaderTranslationCache.Payload.from(result) {
                 translationCache.store(payload, for: cacheKey)
@@ -149,7 +150,8 @@ struct WPESwiftShaderCompiler: Sendable {
         processedFragment: String,
         recordFailure: Bool,
         alphaContract: WPEShaderAlphaContract,
-        vertexTranslation: WPEShaderTranslationResult? = nil
+        vertexTranslation: WPEShaderTranslationResult? = nil,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) throws -> WPEShaderCompileResult {
         let library: MTLLibrary
         do {
@@ -183,7 +185,7 @@ struct WPESwiftShaderCompiler: Sendable {
                                                   uniformLayout: vertexTranslation.uniformLayout,
                                                   samplerNames: vertexTranslation.samplers,
                                                   textureSlotCount: vertexTranslation.textureSlotCount,
-                                                  execution: vertexFunctionName == "wpe_authored_object_quad_vertex" ? .authoredObjectQuad : .authoredFullscreen)
+                                                  execution: vertexExecution)
         } else {
             vertexStage = nil
         }

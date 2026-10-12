@@ -250,6 +250,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var liveLayerPresentation: [String: WPELayerScriptPresentationMutation] = [:]
     /// Hidden template layers are retained only when a script references them.
     var createdLayerTemplatesByImagePath: [String: WPEPreparedRenderLayer] = [:]
+    /// `engine.registerAsset` material path → scene-target pass, shaders warmed as `.authoredMesh`; never drawn by the pipeline.
+    var registeredMaterialTemplatesByPath: [String: WPEPreparedRenderPass] = [:]
     var introPhaseSource: WPEVideoTextureSource?
     var loopPhaseSource: WPEVideoTextureSource?
     var introLoopOffset: TimeInterval?

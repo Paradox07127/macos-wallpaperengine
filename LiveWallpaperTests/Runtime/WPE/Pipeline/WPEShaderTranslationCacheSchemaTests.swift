@@ -37,10 +37,10 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 47
+    static let expectedSchemaVersion = 48
     /// Comma-separated declaration ownership invalidates previous translations.
     /// The image-puppet fallback only changes model loading; shader translations stay compatible.
-    static let expectedFingerprint = "dd7eaf5b06ca33af22c14896ea26351e1ea0464990b2f1213609e58fa8f34e2a"
+    static let expectedFingerprint = "bcab6788d47c97abd62df596e966abff5abd07eca074cc9e50a168f9a827ff30"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {
@@ -71,7 +71,7 @@ struct WPEShaderTranslationCacheSchemaTests {
         #expect(WPEShaderTranslationCache.defaultRootURL != production)
     }
 
-    @Test("Older cache payloads cannot bypass a fresh translation or poison warm replay", arguments: [14, 41, 42, 43, 44, 45, 46])
+    @Test("Older cache payloads cannot bypass a fresh translation or poison warm replay", arguments: [14, 41, 42, 43, 44, 45, 46, 47])
     func priorSchemaPayloadRecompilesThenReplaysWarm(oldSchema: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
