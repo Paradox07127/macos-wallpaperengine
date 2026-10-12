@@ -32,7 +32,7 @@ struct WPEParityFrameDrawPlan {
     let textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
-    /// Set when camera parallax moves the view, so the layer matrices are recomputed every frame.
+    /// Set when camera parallax or camerashake moves the view, so the layer matrices are recomputed every frame.
     let placement: Placement?
     /// TEXS frames of each sprite-sheet slot, shown in turn for their durations.
     let sprites: [Int: [SpriteStep]]
@@ -47,14 +47,18 @@ struct WPEParityFrameDrawPlan {
         let kind: WPEParityLayerDrawKind
         let compositeOwnerID: String?
 
-        func draw(parallax: SIMD2<Float>) -> WPEParityUniformDraw {
-            layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
+        func draw(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil) -> WPEParityUniformDraw {
+            var layers = layers
+            if let camera {
+                layers.camera = camera
+            }
+            return layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
         }
     }
 
-    /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame.
-    func frameUniforms(parallax: SIMD2<Float>) -> WPEParityUniformDraw {
-        guard let placed = placement?.draw(parallax: parallax) else { return uniforms }
+    /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame; `camera` is the frame's shaken camera.
+    func frameUniforms(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil) -> WPEParityUniformDraw {
+        guard let placed = placement?.draw(parallax: parallax, camera: camera) else { return uniforms }
         var uniforms = uniforms
         (uniforms.matrices, uniforms.effectPass) = (placed.matrices, placed.effectPass)
         return uniforms
@@ -62,14 +66,14 @@ struct WPEParityFrameDrawPlan {
 
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
     /// `puppets` holds this frame's bone animator of each skinned puppet layer.
-    func makeDraw(frame: WPEParityUniformFrame, variant: Int, textures table: [WPEResourceID: MTLTexture],
-                  textureSlots: inout [String: WPECBufferValue],
+    func makeDraw(frame: WPEParityUniformFrame, camera: WPEParityCamera? = nil, variant: Int,
+                  textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                   puppets: [String: WPEParityPuppetAnimator]) throws -> WPEParityDraw {
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  vertexBuffer: vertexBuffer, primitiveType: .triangle, vertexCount: 4)
         draw.indexBuffer = indexBuffer
         draw.indexCount = indexCount
-        var uniforms = frameUniforms(parallax: frame.parallax.smoothed)
+        var uniforms = frameUniforms(parallax: frame.parallax.smoothed, camera: camera)
         var spriteTextures: [String: MTLTexture] = [:]
         for (slot, steps) in sprites where slot < uniforms.textures.count {
             let step = Self.sprite(steps, at: frame.clock.time)
@@ -294,7 +298,7 @@ struct WPEParityFrameDrawPlanner {
             textures: textures,
             samplers: samplers,
             uniforms: uniforms,
-            placement: layers.camera.parallaxAmount == nil ? nil : placement,
+            placement: layers.camera.parallaxAmount == nil && layers.camera.shake == nil ? nil : placement,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
             zeroConstants: zeroConstants

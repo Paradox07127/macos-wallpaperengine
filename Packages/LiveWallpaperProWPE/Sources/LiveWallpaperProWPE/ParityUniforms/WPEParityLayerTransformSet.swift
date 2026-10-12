@@ -11,7 +11,8 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
 
 /// The camera and every layer's world matrix, answering per draw with the matrices `WPEParityUniformSet` packs.
 public struct WPEParityLayerTransformSet: Sendable {
-    public let camera: WPEParityCamera
+    /// Replaced per frame by the shaken camera; layer worlds do not depend on it.
+    public var camera: WPEParityCamera
     public let layers: [String: WPEParityLayerTransform]
     private let worlds: [String: simd_float4x4]
 

@@ -32,10 +32,11 @@ public struct WPEParityCamera: Sendable, Equatable {
     public var parallaxAmount: Float?
     /// `perspectiveoverridefov` in degrees.
     public var perspectiveFOV: Float
+    public var shake: WPEParityCameraShake?
 
     public init(eye: SIMD3<Float>, center: SIMD3<Float>, up: SIMD3<Float>, size: SIMD2<Float>,
                 renderTargetSize: SIMD2<Float>, zoom: Float = 1, alignment: WPEParityCameraAlignment = .noCrop,
-                parallaxAmount: Float? = nil, perspectiveFOV: Float = 50) {
+                parallaxAmount: Float? = nil, perspectiveFOV: Float = 50, shake: WPEParityCameraShake? = nil) {
         self.eye = eye
         self.center = center
         self.up = up
@@ -45,6 +46,7 @@ public struct WPEParityCamera: Sendable, Equatable {
         self.alignment = alignment
         self.parallaxAmount = parallaxAmount
         self.perspectiveFOV = perspectiveFOV
+        self.shake = shake
     }
 
     /// `cameraZoom` is the camera path or camera object zoom for the frame.
@@ -59,7 +61,16 @@ public struct WPEParityCamera: Sendable, Equatable {
                   up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled ? Float(parallax.amount) : nil,
-                  perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue))
+                  perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
+                  shake: WPEParityCameraShake(general: general))
+    }
+
+    /// The camera at g_Time `time`; the shake comes before parallax and lookAt (1401891a0.c:288-363).
+    public func shaken(time: Float) -> WPEParityCamera {
+        guard let shake else { return self }
+        var camera = self
+        (camera.eye, camera.center) = shake.shaken(eye: eye, center: center, time: time, orthoHeight: size.y)
+        return camera
     }
 
     /// `"auto": true` sizes the canvas from the first image layer and centres that layer (14018b2c0.c:22-33).

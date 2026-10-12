@@ -19,44 +19,42 @@ final class WPEParityRealSceneTests: XCTestCase {
     }
 
     func testScene3660962877RendersThreeFrames() async throws {
-        try await render("3660962877")
+        // Its camerashake is bound to a user property; object 935's captured MVP has V = I, so the capture ran without it.
+        try await render("3660962877") { $0["camerashake"] = false }
     }
 
-    private func render(_ sceneID: String) async throws {
-        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
-            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
+    /// R17 C: with camerashake on, the shake moves every layer's view, so object 935's MVP changes with scene time.
+    /// Parallax is off so only the shake can move the view.
+    func testCameraShakeMovesLayerMatrices() async throws {
+        func mvpChange(shake: Bool) async throws -> Float {
+            let (plan, renderer, _, _) = try await makeRenderer("3660962877") { general in
+                general["camerashake"] = shake
+                general["cameraparallax"] = false
+            }
+            let index = try XCTUnwrap(plan.frames[0].draws.first { _, draw in
+                if case let .scene(scene) = draw {
+                    scene.objectID == "935" && scene.geometry == .layerMesh
+                } else {
+                    false
+                }
+            }?.key)
+            let before = try XCTUnwrap(renderer.uniforms(index)).matrices.modelViewProjection
+            guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 0.5) else {
+                throw XCTSkip("frame skipped")
+            }
+            await commandBuffer.completed()
+            let after = try XCTUnwrap(renderer.uniforms(index)).matrices.modelViewProjection
+            return simd_length(after.columns.3 - before.columns.3)
         }
-        // The sandboxed test host's home is its container; the WPE install lives in the account's real home.
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
-        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
-            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
-        }
-        let sceneDirectory = root.appending(path: "scene-sources/\(sceneID)")
-        let document = try WPESceneDocumentParser.parse(
-            data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
-        )
-        // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
-        let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
-                                            assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
-        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: Self.settings,
-                                          width: Self.width, height: Self.height)
+        let shaken = try await mvpChange(shake: true)
+        let still = try await mvpChange(shake: false)
+        print("object 935 MVP translation change over 0.5 s: shake \(shaken), no shake \(still)")
+        XCTAssertGreaterThan(shaken, 1e-4)
+        XCTAssertEqual(still, 0, accuracy: 1e-7)
+    }
 
-        let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: cache) }
-        let store = try WPEParityShaderStore(
-            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values),
-            diskCache: WPEParityShaderDiskCache(cachesURL: cache)
-        )
-        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
-        let queue = try XCTUnwrap(device.makeCommandQueue())
-        let renderer = try await WPEParityFrameRenderer(
-            plan: plan, device: device, queue: queue,
-            shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: "hlsl-capture-2026-10-12",
-                                                bindingABIVersion: 1)
-        )
+    private func render(_ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }) async throws {
+        let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 
         let reasons = Dictionary(grouping: renderer.skipped.values, by: \.category).mapValues(\.count)
         // Models are out of scope; every other draw must reach a pipeline.
@@ -131,6 +129,52 @@ final class WPEParityRealSceneTests: XCTestCase {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "wpe-parity-\(sceneID).png")
         try writePNG(pixels, width: backbuffer.width, height: backbuffer.height, to: url)
         print("scene \(sceneID): frame 3 written to \(url.path)")
+    }
+
+    private func makeRenderer(
+        _ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }
+    ) async throws -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice, MTLCommandQueue) {
+        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
+            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
+        }
+        // The sandboxed test host's home is its container; the WPE install lives in the account's real home.
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
+        }
+        let sceneDirectory = root.appending(path: "scene-sources/\(sceneID)")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: sceneDirectory.appending(path: "scene.json"))
+        ) as? [String: Any])
+        var general = json["general"] as? [String: Any] ?? [:]
+        editGeneral(&general)
+        json["general"] = general
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+        // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
+        let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
+                                            assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: Self.settings,
+                                          width: Self.width, height: Self.height)
+
+        let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let store = try WPEParityShaderStore(
+            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values),
+            diskCache: WPEParityShaderDiskCache(cachesURL: cache)
+        )
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await WPEParityFrameRenderer(
+            plan: plan, device: device, queue: queue,
+            shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: "hlsl-capture-2026-10-12",
+                                                bindingABIVersion: 1)
+        )
+        return (plan, renderer, device, queue)
     }
 
     private func renderFrame(_ renderer: WPEParityFrameRenderer, label: String) async throws {

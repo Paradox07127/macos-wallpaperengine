@@ -77,7 +77,7 @@ final class WPEParityFrameRenderer {
 
     /// The engine matrices draw `operation` packs for the current frame.
     func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
-        draws[operation]?.frameUniforms(parallax: parallax.smoothed)
+        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: camera.shaken(time: clock.timeUniform))
     }
 
     var heapBytes: Int {
@@ -184,6 +184,7 @@ final class WPEParityFrameRenderer {
             puppets[id]?.advance(dt: clock.time - sceneTime)
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
+        let camera = camera.shaken(time: clock.timeUniform)
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
             parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
@@ -205,7 +206,7 @@ final class WPEParityFrameRenderer {
         defer { videos.finishFrame() }
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
                                                   prepare: videos.encode) { operation, textures in
-            try draws[operation]?.makeDraw(frame: uniforms, variant: variant, textures: textures,
+            try draws[operation]?.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
                                            textureSlots: &textureSlots, puppets: puppets)
         }
     }
