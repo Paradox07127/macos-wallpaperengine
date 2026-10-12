@@ -36,7 +36,7 @@ struct WPEParityAuthoredPass: Sendable {
 
 struct WPEParityAuthoredEffect: Sendable {
     let id: String
-    let enabled: Bool
+    var enabled: Bool
     let fbos: [WPEParityAuthoredFBO]
     let passes: [WPEParityAuthoredPass]
 }
@@ -46,7 +46,7 @@ struct WPEParityAuthoredObject: Sendable {
     /// Extent the object's FBOs are sized from.
     let width: Int
     let height: Int
-    let effects: [WPEParityAuthoredEffect]
+    var effects: [WPEParityAuthoredEffect]
 
     var localFBOs: [WPEParityAuthoredFBO] {
         effects.flatMap(\.fbos)

@@ -14,7 +14,7 @@ public struct WPEParityMaterialPassKey: Hashable, Sendable {
     }
 }
 
-/// The live fields WPE keeps per object and per material pass (R24 Q2, Q3, Q6). Animations, user properties and
+/// The live fields WPE keeps per object, per image layer effect and per material pass (R24 Q2, Q3, Q6). Animations, user properties and
 /// scripts write them; the renderer reads them every frame. Writes that change nothing leave the dirty state alone.
 public struct WPEParitySceneState: Sendable {
     public enum Property: String, Sendable, CaseIterable {
@@ -61,6 +61,16 @@ public struct WPEParitySceneState: Sendable {
         }
     }
 
+    public struct EffectKey: Hashable, Sendable {
+        public var objectID: String
+        public var effectID: String
+
+        public init(objectID: String, effectID: String) {
+            self.objectID = objectID
+            self.effectID = effectID
+        }
+    }
+
     private struct Pass: Sendable {
         var constants: [String: Constant]
         var generation = 0
@@ -74,10 +84,17 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var transformGeneration = 0
     /// Bumped by every visible change.
     public private(set) var visibilityGeneration = 0
+    /// Every image layer effect, in scene order.
+    public let effects: [EffectKey]
+    /// The visible bit of each entry of `effects` (effect+0x118 bit0, R24 Q2).
+    public private(set) var effectVisibility: [Bool]
+    /// Bumped by every effect visible change.
+    public private(set) var effectVisibilityGeneration = 0
     private let indexByID: [String: Int]
     private let parents: [Int?]
     private var passes: [Pass]
     private let passIndexByKey: [WPEParityMaterialPassKey: Int]
+    private let effectIndexByKey: [EffectKey: Int]
 
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
     /// object the parent chain names holds only its visible bit. `constants` seeds each material pass.
@@ -124,6 +141,37 @@ public struct WPEParitySceneState: Sendable {
         }
         self.passes = passes
         self.passIndexByKey = passIndexByKey
+        var effects: [EffectKey] = []
+        var effectVisibility: [Bool] = []
+        var effectIndexByKey: [EffectKey: Int] = [:]
+        for image in document.imageObjects {
+            for effect in image.effects {
+                let key = EffectKey(objectID: image.id, effectID: effect.id)
+                guard effectIndexByKey[key] == nil else { continue }
+                effectIndexByKey[key] = effects.count
+                effects.append(key)
+                effectVisibility.append(effect.visible)
+            }
+        }
+        self.effects = effects
+        self.effectVisibility = effectVisibility
+        self.effectIndexByKey = effectIndexByKey
+    }
+
+    /// Nil for an effect the scene does not have.
+    public func isEffectVisible(_ effectID: String, of objectID: String) -> Bool? {
+        effectIndexByKey[EffectKey(objectID: objectID, effectID: effectID)].map { effectVisibility[$0] }
+    }
+
+    /// False for an effect the scene does not have.
+    @discardableResult
+    public mutating func setEffect(_ effectID: String, of objectID: String, visible: Bool) -> Bool {
+        guard let index = effectIndexByKey[EffectKey(objectID: objectID, effectID: effectID)] else { return false }
+        if effectVisibility[index] != visible {
+            effectVisibility[index] = visible
+            effectVisibilityGeneration += 1
+        }
+        return true
     }
 
     public func index(of id: String) -> Int? {

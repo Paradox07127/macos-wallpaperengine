@@ -37,6 +37,8 @@ public struct WPEParityProgramScene: Sendable {
     let overridePasses: [MaterialKey: Int]
     /// Image layer `g_Color4` (140207b50.c:81-100): colour × (HDR ? brightness : 1), alpha.
     let layerColors: [String: SIMD4<Float>]
+    /// The image layers of `scene.objects`, in the same order, as their files declare them.
+    private let authoredObjects: [WPEParityAuthoredObject]
 
     public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
         let general = document.sourceJSON["general"]
@@ -158,6 +160,7 @@ public struct WPEParityProgramScene: Sendable {
         self.overridePasses = overridePasses
         self.layerColors = layerColors
         self.puppetModels = puppetModels
+        self.authoredObjects = authoredObjects
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
@@ -170,8 +173,28 @@ public struct WPEParityProgramScene: Sendable {
                                                  backbufferFormat: format)
     }
 
+    /// `scene` with each image layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
+    /// load with that set gives them.
+    public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool)
+        -> WPEParitySceneDescription {
+        var authored = authoredObjects
+        for object in authored.indices {
+            for effect in authored[object].effects.indices {
+                authored[object].effects[effect].enabled = visible(authored[object].id,
+                                                                   authored[object].effects[effect].id)
+            }
+        }
+        let scope = WPEParitySceneFBOScope(authored, backbufferFormat: scene.backbufferFormat)
+        var description = scene
+        var diagnostics: [WPEParitySceneDiagnostic] = []
+        for index in authored.indices {
+            description.objects[index].effects = scope.effects(of: authored[index], diagnostics: &diagnostics)
+        }
+        return description
+    }
+
     /// Only authored keys override WPE's defaults, after user-property resolution (1401730d0.c:35-49).
-    private static func bloomSettings(_ general: WPESceneJSONValue) -> WPEParityBloomSettings {
+    static func bloomSettings(_ general: WPESceneJSONValue) -> WPEParityBloomSettings {
         var settings = WPEParityBloomSettings()
         func value(_ key: String) -> Float? {
             number(general[key]).map(Float.init)

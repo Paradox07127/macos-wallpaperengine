@@ -274,13 +274,23 @@ struct WPEParityFrameDrawPlanner {
     /// TEXI flag 0x20: the first mip is a video stream (1400ec220.c:851).
     private static let videoFlag: UInt32 = 0x20
 
+    private struct PipelineKey: Hashable {
+        let program: WPEHLSLProgram
+        let blend: WPEParityBlendState
+        let color: MTLPixelFormat
+        let depth: MTLPixelFormat
+        let samples: Int
+    }
+
     let device: MTLDevice
     let factory: WPEParityPipelineFactory
     let plan: WPEParityFramePlan
-    private let frame: WPEParityFrame
-    private let resources: [WPEResourceID: WPELogicalResource]
+    /// The layout `makePlan` plans draws of.
+    private(set) var layout: WPEParityFrameLayout
+    private var frame: WPEParityFrame
+    private var resources: [WPEResourceID: WPELogicalResource]
     /// Colour and depth target bound at each draw operation.
-    private let targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)]
+    private var targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)]
     /// The scene camera and every layer's world matrix.
     let layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
@@ -290,13 +300,76 @@ struct WPEParityFrameDrawPlanner {
     private var transparent: MTLTexture?
     /// Video .tex files the planned draws sample, filled as draws are planned.
     private(set) var videos: [WPEParityVideoTextures.Stream] = []
+    private var pipelines: [PipelineKey: WPEParityPipeline] = [:]
+    /// Pipeline states built, over the planner's life; draws with the same program and state share one.
+    private(set) var pipelineCreations = 0
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
         self.factory = factory
         self.plan = plan
+        layout = plan.layout
         frame = plan.frames[0]
-        resources = Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
+        resources = Self.resources(frame)
+        targets = Self.targets(frame)
+        // No camera path or camera object zoom yet.
+        layers = WPEParityLayerTransformSet(document: plan.document,
+                                            renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
+                                            alignment: plan.alignment, cameraZoom: 1)
+    }
+
+    /// Plans later draws from `layout`; loaded images and built pipelines carry over.
+    mutating func use(_ layout: WPEParityFrameLayout) {
+        self.layout = layout
+        frame = layout.frames[0]
+        resources = Self.resources(frame)
+        targets = Self.targets(frame)
+    }
+
+    /// Builds the pipeline draw `index` of `frame` needs, so a later plan of the same draw finds it.
+    mutating func prewarmPipeline(_ frame: WPEParityFrame, _ index: Int, program: WPEParityProgram,
+                                  artifact: WPEParityShaderArtifact) {
+        guard let description = frame.draws[index], let target = Self.targets(frame)[index] else { return }
+        _ = try? pipeline(description, target: target, resources: Self.resources(frame), program: program,
+                          artifact: artifact)
+    }
+
+    private mutating func pipeline(_ description: WPEParityFrameDraw,
+                                   target: (color: WPEResourceID, depth: WPEResourceID?),
+                                   resources: [WPEResourceID: WPELogicalResource], program: WPEParityProgram?,
+                                   artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityPipeline {
+        let shader = program?.shader ?? "operation"
+        guard let color = resources[target.color], let colorFormat = Self.pixelFormats[color.format] else {
+            throw .pipeline("\(shader): unknown target format")
+        }
+        let depthFormat = target.depth.flatMap { resources[$0] }.flatMap { Self.pixelFormats[$0.format] } ?? .invalid
+        let blend = Self.blend(description)
+        let key = program.map {
+            PipelineKey(program: $0.hlsl, blend: blend, color: colorFormat, depth: depthFormat,
+                        samples: color.sampleCount)
+        }
+        if let key, let cached = pipelines[key] {
+            return cached
+        }
+        do {
+            let pipeline = try factory.makePipeline(artifact: artifact, blend: blend, colorPixelFormat: colorFormat,
+                                                    depthStencilPixelFormat: depthFormat,
+                                                    sampleCount: color.sampleCount)
+            pipelineCreations += 1
+            if let key {
+                pipelines[key] = pipeline
+            }
+            return pipeline
+        } catch {
+            throw .pipeline("\(shader): \(error)")
+        }
+    }
+
+    private static func resources(_ frame: WPEParityFrame) -> [WPEResourceID: WPELogicalResource] {
+        Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
+    }
+
+    private static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID, depth: WPEResourceID?)] {
         var targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)] = [:]
         var bound: (color: WPEResourceID, depth: WPEResourceID?)?
         for (index, operation) in frame.operations.enumerated() {
@@ -309,30 +382,19 @@ struct WPEParityFrameDrawPlanner {
                 break
             }
         }
-        self.targets = targets
-        // No camera path or camera object zoom yet.
-        layers = WPEParityLayerTransformSet(document: plan.document,
-                                            renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
-                                            alignment: plan.alignment, cameraZoom: 1)
+        return targets
     }
 
     mutating func makePlan(_ index: Int,
                            artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan {
-        let shader = plan.programs[index]?.shader ?? "operation \(index)"
+        let shader = layout.programs[index]?.shader ?? "operation \(index)"
         guard let description = frame.draws[index], let target = targets[index], let color = resources[target.color],
-              let colorFormat = Self.pixelFormats[color.format]
+              Self.pixelFormats[color.format] != nil
         else { throw .pipeline("operation \(index) has no draw or known target format") }
-        let bindings = plan.bindings.compactMap { $0[index] }
-        guard let binding = bindings.first, bindings.count == plan.frames.count else { throw .noMaterial }
-        let depthFormat = target.depth.flatMap { resources[$0] }.flatMap { Self.pixelFormats[$0.format] } ?? .invalid
-        let pipeline: WPEParityPipeline
-        do {
-            pipeline = try factory.makePipeline(artifact: artifact, blend: Self.blend(description),
-                                                colorPixelFormat: colorFormat, depthStencilPixelFormat: depthFormat,
-                                                sampleCount: color.sampleCount)
-        } catch {
-            throw .pipeline("\(shader): \(error)")
-        }
+        let bindings = layout.bindings.compactMap { $0[index] }
+        guard let binding = bindings.first, bindings.count == layout.frames.count else { throw .noMaterial }
+        let pipeline = try pipeline(description, target: target, resources: resources, program: layout.programs[index],
+                                    artifact: artifact)
 
         let particleKey: WPEParityParticleDrawKey? = if case let .scene(draw) = description,
                                                         case let .particles(key) = draw.geometry {
@@ -355,7 +417,7 @@ struct WPEParityFrameDrawPlanner {
                 throw .texture("\(shader) declares \(name)")
             }
             for (variant, binding) in bindings.enumerated() {
-                guard case let .draw(operation) = plan.frames[variant].operations[index].kind else {
+                guard case let .draw(operation) = layout.frames[variant].operations[index].kind else {
                     throw .pipeline("operation \(index) is not a draw in frame variant \(variant)")
                 }
                 do throws(WPEParityFrameSkip) {
@@ -506,7 +568,7 @@ struct WPEParityFrameDrawPlanner {
 
     /// Gives every imported resource without an image, such as a skipped draw's layer, a transparent texel.
     mutating func fillImportedImages() throws(WPEParityFrameSkip) {
-        for resource in plan.frames.flatMap(\.resources) where resource.lifetime == .imported {
+        for resource in layout.frames.flatMap(\.resources) where resource.lifetime == .imported {
             try loadLayerImage(resource.id, name: nil)
         }
     }

@@ -38,17 +38,31 @@ enum WPEParityFrameRenderError: Error {
 /// Renders a plan's frames on Metal: one compiled graph per frame variant, renderer-owned dedicated and pooled
 /// targets, executor-owned heap and memoryless transients. A skipped draw stays in the graph and encodes nothing.
 final class WPEParityFrameRenderer {
-    /// One compiled graph per frame variant without the operations of hidden objects (R24 Q2).
+    /// The frames of one set of shown effects and the plans of their draws (R24 Q2 "effect").
+    private struct Layout {
+        /// The state's effect visible bits the frames were composed with.
+        let effects: [Bool]
+        let frames: [WPEParityFrame]
+        let draws: [Int: WPEParityFrameDrawPlan]
+        let skipped: [Int: WPEParityFrameSkip]
+    }
+
+    /// A draw named by its pass and the draws of that pass before it, which holds across effect sets.
+    private struct DrawName: Hashable {
+        let pass: WPEPassIdentity
+        let occurrence: Int
+    }
+
+    /// One compiled graph per frame variant of a layout without the operations of hidden objects (R24 Q2).
     private struct Graphs {
+        let layout: Layout
         /// Per state object, whether it or an ancestor is hidden.
         let hidden: [Bool]
         let executors: [WPEParityGraphExecutor]
-        /// Per executor, graph operation index → plan operation index.
+        /// Per executor, graph operation index → layout operation index.
         let operations: [[Int]]
     }
 
-    let skipped: [Int: WPEParityFrameSkip]
-    let drawCount: Int
     let backbuffer: MTLTexture
     /// Render targets the renderer allocates; layer images are not among them.
     private(set) var targets: [WPEResourceID: MTLTexture]
@@ -62,18 +76,25 @@ final class WPEParityFrameRenderer {
     /// Set once a layer transform left its loaded value: draws then place themselves from `layers` every frame.
     private var layersMoved = false
     private var seenVisibility = 0
+    private var seenEffects = 0
     private var graphs: Graphs
     /// The graphs before the last visibility change, kept so toggling back does not recompile.
     private var previousGraphs: Graphs?
     /// Dropped draws of graphs no longer kept.
     private var retiredDrops = 0
-    private let frames: [WPEParityFrame]
+    private let plan: WPEParityFramePlan
+    /// Draws of later effect sets plan here, reusing its images and pipelines.
+    private var planner: WPEParityFrameDrawPlanner
+    /// Every program the plan can draw with, compiled at load.
+    private let artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
+    private var bloom: WPEParityBloomSettings
+    /// Post-process draw constants for `bloom`, by draw operation, where they differ from the planned ones.
+    private var postConstants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] = [:]
     private let device: MTLDevice
     private let drawEncoder: WPEParityDrawEncoder
     private let images: [WPEResourceID: MTLTexture]
     private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
-    private let draws: [Int: WPEParityFrameDrawPlan]
     private let screen: WPEParityUniformScreen
     private let camera: WPEParityCamera
     /// Only delay and mouse influence change after load; enabling or the amount is baked into the camera.
@@ -101,6 +122,34 @@ final class WPEParityFrameRenderer {
     /// The draws the last frame encoded, by draw operation, in encode order.
     private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
     private var frameIndex = 0
+
+    /// The frames of the effects the state shows; draw operation indices refer to them.
+    var frames: [WPEParityFrame] {
+        graphs.layout.frames
+    }
+
+    var skipped: [Int: WPEParityFrameSkip] {
+        graphs.layout.skipped
+    }
+
+    var drawCount: Int {
+        frames[0].operations.count {
+            if case .draw = $0.kind {
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /// Pipeline states built over the renderer's life; an effect toggle builds none.
+    var pipelineCreations: Int {
+        planner.pipelineCreations
+    }
+
+    private var draws: [Int: WPEParityFrameDrawPlan] {
+        graphs.layout.draws
+    }
 
     var executedDrawCount: Int {
         draws.count
@@ -165,29 +214,31 @@ final class WPEParityFrameRenderer {
          workshopID: String? = nil) async throws {
         let factory = WPEParityPipelineFactory(device: device)
         var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan)
-        var skipped = plan.skipped
-        var draws: [Int: WPEParityFrameDrawPlan] = [:]
-        // The store shares one compile between draws with the same program.
-        let artifacts = await withTaskGroup(of: (Int, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self) { group in
-            for (index, program) in plan.programs {
+        // Disabled effects' programs too, so a toggle compiles nothing (R24 Q3).
+        let artifacts = await withTaskGroup(
+            of: (WPEHLSLProgram, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self
+        ) { group in
+            for program in plan.loadPrograms {
                 group.addTask {
                     do {
-                        return try await (index, .success(shaders.artifact(for: program)))
+                        return try await (program.hlsl, .success(shaders.artifact(for: program)))
                     } catch {
-                        return (index, .failure(.noShader("\(program.shader): \(error)")))
+                        return (program.hlsl, .failure(.noShader("\(program.shader): \(error)")))
                     }
                 }
             }
             return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
         }
-        // Planned in operation order so the planner's layer images and videos come out the same every build.
-        for (index, artifact) in artifacts.sorted(by: { $0.key < $1.key }) {
-            do throws(WPEParityFrameSkip) {
-                draws[index] = try planner.makePlan(index, artifact: artifact.get())
-            } catch {
-                skipped[index] = error
+        let layout = Self.makeLayout(plan.layout, effects: plan.state.effectVisibility, artifacts: artifacts,
+                                     planner: &planner, reusing: nil)
+        let probes = try plan.probeFrames()
+        for probe in probes {
+            for (index, program) in probe.programs {
+                guard case let .success(artifact)? = artifacts[program.hlsl] else { continue }
+                planner.prewarmPipeline(probe.frame, index, program: program, artifact: artifact)
             }
         }
+        let draws = layout.draws
 
         try planner.fillImportedImages()
         let videos = try await WPEParityVideoTextures(streams: planner.videos,
@@ -200,13 +251,15 @@ final class WPEParityFrameRenderer {
             guard case let .particles(particle) = draw.geometry else { return total }
             return total + WPEParityFrameArena.aligned(particle.maxBytes) + particle.argumentBytes
         }
-        let baseArenaBytes = max(1 << 16, draws.count * 16 * 1024)
+        // Sized for the effect set with the most draws.
+        let drawCount = probes.reduce(draws.count) { max($0, $1.frame.draws.count) }
+        let baseArenaBytes = max(1 << 16, drawCount * 16 * 1024)
         guard let arena = WPEParityFrameArena(device: device, capacity: baseArenaBytes + particleBytes) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         let encoder = WPEParityDrawEncoder(factory: factory)
         var targets: [WPEResourceID: MTLTexture] = [:]
-        let graphs = try Self.makeGraphs(frames: plan.frames, state: plan.state, device: device, encoder: encoder,
+        let graphs = try Self.makeGraphs(layout: layout, state: plan.state, device: device, encoder: encoder,
                                          arena: arena, targets: &targets)
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
@@ -214,7 +267,10 @@ final class WPEParityFrameRenderer {
         try Self.clear(Array(targets.values) + videos.textures, queue: queue)
 
         self.graphs = graphs
-        frames = plan.frames
+        self.plan = plan
+        self.planner = planner
+        self.artifacts = artifacts
+        bloom = plan.post.bloomSettings
         self.device = device
         drawEncoder = encoder
         state = plan.state
@@ -227,14 +283,6 @@ final class WPEParityFrameRenderer {
         }
         animations = WPEParitySceneAnimations(document: plan.document, state: plan.state,
                                               constantComponents: constantComponents)
-        self.skipped = skipped
-        drawCount = plan.frames[0].operations.count {
-            if case .draw = $0.kind {
-                true
-            } else {
-                false
-            }
-        }
         self.backbuffer = backbuffer
         self.targets = targets
         images = planner.layerImages
@@ -243,7 +291,6 @@ final class WPEParityFrameRenderer {
         self.arena = arena
         self.baseArenaBytes = baseArenaBytes
         growsParticleShare = particleArenaBytes == nil
-        self.draws = draws
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         camera = planner.layers.camera
         layers = planner.layers
@@ -285,15 +332,22 @@ final class WPEParityFrameRenderer {
         state = previous.state
         animations = previous.animations
         cameraParallax = previous.cameraParallax
-        // The next frame takes the transforms and visibility over from the copied state.
+        // The next frame takes the transforms, visibility and effects over from the copied state.
         seenTransforms = previous.layersMoved ? -1 : 0
         seenVisibility = -1
+        seenEffects = -1
+        bloom = previous.bloom
+        repackBloom()
     }
 
     /// Writes a user-property change between frames; the next frame reads it like any state write.
     func applyUserProperties(_ update: WPEParityUserPropertyUpdate) {
         update.apply(to: &state)
         cameraParallax = update.cameraParallax
+        if update.bloom != bloom {
+            bloom = update.bloom
+            repackBloom()
+        }
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
@@ -334,6 +388,7 @@ final class WPEParityFrameRenderer {
         applyTransforms()
         try selectGraphs()
         let graphs = graphs
+        let draws = graphs.layout.draws
         let live = layersMoved ? layers : nil
         let variant = frameIndex % graphs.executors.count
         frameIndex += 1
@@ -362,7 +417,7 @@ final class WPEParityFrameRenderer {
                 let color = plan.layerColor.map { state.layerColor(at: $0.object) }
                 provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
                                               textureSlots: &textureSlots, puppets: puppets, layers: live,
-                                              constants: materialConstants(operation, plan),
+                                              constants: postConstants[operation] ?? materialConstants(operation, plan),
                                               layerColor: color == plan.layerColor?.loaded ? nil : color)]
             }
             lastFrameDraws += provided.map { (operation, $0) }
@@ -404,20 +459,37 @@ final class WPEParityFrameRenderer {
         layersMoved = true
     }
 
-    /// Encodes the frame without the operations of hidden objects; a visibility change recompiles the graphs, except
-    /// when it returns to the previous set.
+    /// Encodes the frame with the effects the state shows and without the operations of hidden objects. A change
+    /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
+    /// previous set.
     private func selectGraphs() throws {
-        guard state.visibilityGeneration != seenVisibility else { return }
+        guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects else {
+            return
+        }
         seenVisibility = state.visibilityGeneration
+        seenEffects = state.effectVisibilityGeneration
         let hidden = state.objects.indices.map { !state.isVisible(at: $0) }
-        guard hidden != graphs.hidden else { return }
-        if let previous = previousGraphs, previous.hidden == hidden {
+        let effects = state.effectVisibility
+        guard hidden != graphs.hidden || effects != graphs.layout.effects else { return }
+        // Packs are keyed by operation, and a new layout renumbers them.
+        if effects != graphs.layout.effects {
+            packedConstants.removeAll()
+        }
+        defer { repackBloom() }
+        if let previous = previousGraphs, previous.hidden == hidden, previous.layout.effects == effects {
             (graphs, previousGraphs) = (previous, graphs)
             return
         }
+        var layout = graphs.layout
+        if let previous = previousGraphs?.layout, previous.effects == effects {
+            layout = previous
+        } else if effects != layout.effects {
+            layout = try Self.makeLayout(plan.layout(effects: state), effects: effects, artifacts: artifacts,
+                                         planner: &planner, reusing: layout)
+        }
         let allocated = Set(targets.keys)
-        let made = try Self.makeGraphs(frames: frames, state: state, device: device, encoder: drawEncoder, arena: arena,
-                                       targets: &targets)
+        let made = try Self.makeGraphs(layout: layout, state: state, device: device, encoder: drawEncoder,
+                                       arena: arena, targets: &targets)
         let added = targets.filter { !allocated.contains($0.key) }.map(\.value)
         if !added.isEmpty {
             try Self.clear(added, queue: queue)
@@ -426,14 +498,80 @@ final class WPEParityFrameRenderer {
         (graphs, previousGraphs) = (made, graphs)
     }
 
-    /// Compiles each frame variant without the operations of objects `state` hides, allocating the targets the graphs
-    /// need that `targets` lacks.
-    private static func makeGraphs(frames: [WPEParityFrame], state: WPEParitySceneState, device: MTLDevice,
+    /// Post-process constants for `bloom` where they differ from the planned ones; WPE refreshes them on the next
+    /// frame (R24 Q5).
+    private func repackBloom() {
+        postConstants.removeAll()
+        guard bloom != plan.post.bloomSettings else { return }
+        var config = plan.post
+        config.bloomSettings = bloom
+        let layout = graphs.layout
+        let operations = layout.frames[0].draws.compactMap { index, draw -> Int? in
+            if case .post = draw {
+                index
+            } else {
+                nil
+            }
+        }.sorted()
+        let rebuilt = WPEParityPostProcessBuilder.build(config).draws
+        guard operations.count == rebuilt.count else { return }
+        for (operation, draw) in zip(operations, rebuilt) {
+            guard case let .post(planned)? = layout.frames[0].draws[operation], planned.constants != draw.constants,
+                  let constants = layout.draws[operation]?.constants else { continue }
+            let values = draw.constants.mapValues { $0.count == 1 ? WPECBufferValue.float($0[0]) : .vector($0) }
+            postConstants[operation] = constants.mapValues { $0.merging(values) { $1 } }
+        }
+    }
+
+    /// Plans `planned`'s draws in operation order, so the planner's layer images and videos come out the same every
+    /// build; a draw `previous` has unchanged keeps its plan.
+    private static func makeLayout(_ planned: WPEParityFrameLayout, effects: [Bool],
+                                   artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>],
+                                   planner: inout WPEParityFrameDrawPlanner, reusing previous: Layout?) -> Layout {
+        planner.use(planned)
+        let names = drawNames(planned.frames[0])
+        var earlier: [DrawName: Int] = [:]
+        for (index, name) in previous.map({ drawNames($0.frames[0]) }) ?? [:] {
+            earlier[name] = index
+        }
+        var draws: [Int: WPEParityFrameDrawPlan] = [:]
+        var skipped = planned.skipped
+        for (index, program) in planned.programs.sorted(by: { $0.key < $1.key }) {
+            if let previous, previous.frames.count == planned.frames.count,
+               let match = names[index].flatMap({ earlier[$0] }), let plan = previous.draws[match],
+               planned.frames.indices.allSatisfy({ planned.frames[$0].draws[index] == previous.frames[$0].draws[match] }) {
+                draws[index] = plan
+                continue
+            }
+            let artifact = artifacts[program.hlsl] ?? .failure(.noShader("\(program.shader): not compiled at load"))
+            do throws(WPEParityFrameSkip) {
+                draws[index] = try planner.makePlan(index, artifact: artifact.get())
+            } catch {
+                skipped[index] = error
+            }
+        }
+        return Layout(effects: effects, frames: planned.frames, draws: draws, skipped: skipped)
+    }
+
+    private static func drawNames(_ frame: WPEParityFrame) -> [Int: DrawName] {
+        var counts: [WPEPassIdentity: Int] = [:]
+        var names: [Int: DrawName] = [:]
+        for index in frame.draws.keys.sorted() {
+            let pass = frame.operations[index].pass
+            names[index] = DrawName(pass: pass, occurrence: counts[pass, default: 0])
+            counts[pass, default: 0] += 1
+        }
+        return names
+    }
+
+    /// Compiles each frame variant of `layout` without the operations of objects `state` hides, allocating the
+    /// targets the graphs need that `targets` lacks.
+    private static func makeGraphs(layout: Layout, state: WPEParitySceneState, device: MTLDevice,
                                    encoder: WPEParityDrawEncoder, arena: WPEParityFrameArena,
                                    targets: inout [WPEResourceID: MTLTexture]) throws -> Graphs {
         var executors: [WPEParityGraphExecutor] = []
         var operations: [[Int]] = []
-        for frame in frames {
+        for frame in layout.frames {
             let kept = frame.operations.indices.filter { index in
                 frame.owners[index].flatMap(state.index(of:)).map(state.isVisible(at:)) ?? true
             }
@@ -448,8 +586,8 @@ final class WPEParityFrameRenderer {
             executors.append(executor)
             operations.append(kept)
         }
-        return Graphs(hidden: state.objects.indices.map { !state.isVisible(at: $0) }, executors: executors,
-                      operations: operations)
+        return Graphs(layout: layout, hidden: state.objects.indices.map { !state.isVisible(at: $0) },
+                      executors: executors, operations: operations)
     }
 
     /// One context per visible particle object: scene time, cursor in [0, 1]² y down, the scene camera's

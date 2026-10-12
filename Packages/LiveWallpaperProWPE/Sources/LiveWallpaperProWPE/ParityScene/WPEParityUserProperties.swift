@@ -1,11 +1,16 @@
 /// User-property bindings of a parity scene and the live writes a change makes (R24 Q5 step 1). SceneScript
 /// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
 public enum WPEParityUserProperties {
-    private static let liveGeneralFields: Set = ["cameraparallaxdelay", "cameraparallaxmouseinfluence"]
+    /// The bloom constants WPE refreshes on the next frame (R24 Q5); the bloom switch, `hdr` and the HDR pyramid depth
+    /// change the post-process chain and reload.
+    private static let liveGeneralFields: Set = [
+        "cameraparallaxdelay", "cameraparallaxmouseinfluence", "bloomstrength", "bloomthreshold", "bloomtint",
+        "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter",
+    ]
 
     /// Every user property the scene JSON binds, with each target it reaches. Object fields of image layers, groups
-    /// and particles, material constants of image layers and the per-frame parallax terms are `.incremental`;
-    /// anything else is `.reload`.
+    /// and particles, effect visibility and material constants of image layers, the per-frame parallax terms and the
+    /// bloom constants are `.incremental`; anything else is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
@@ -38,9 +43,12 @@ public enum WPEParityUserProperties {
             if field.count == 3, field[0] == "instance", field[1] == "constantshadervalues" {
                 return (.shaderUniform(objectID: id, effectID: nil, passID: nil, name: field[2]), .uniform, true)
             }
-            if field.count == 6, field[0] == "effects", field[2] == "passes", field[4] == "constantshadervalues",
-               let effect = Int(field[1]), let pass = Int(field[3]) {
-                let effectID = objects[index]["effects"]?[effect].flatMap(WPEParitySceneAnimations.id) ?? field[1]
+            guard field.count > 2, field[0] == "effects", let effect = Int(field[1]) else { return reload }
+            let effectID = objects[index]["effects"]?[effect].flatMap(WPEParitySceneAnimations.id) ?? field[1]
+            if field.count == 3, field[2] == "visible" {
+                return (.imageEffect(objectID: id, effectID: effectID), .visible, true)
+            }
+            if field.count == 6, field[2] == "passes", field[4] == "constantshadervalues", let pass = Int(field[3]) {
                 return (.shaderUniform(objectID: id, effectID: effectID, passID: pass, name: field[5]), .uniform, true)
             }
             return reload
@@ -83,7 +91,8 @@ public enum WPEParityUserProperties {
 }
 
 /// The state writes that take a running parity scene from one parse of its JSON to a parse with changed user values:
-/// every object field and material constant whose parsed value differs, and the camera parallax terms read per frame.
+/// every object field, effect visible bit and material constant whose parsed value differs, and the camera parallax
+/// terms and bloom constants read per frame.
 public struct WPEParityUserPropertyUpdate: Sendable {
     public struct ObjectWrite: Sendable, Equatable {
         public let id: String
@@ -97,16 +106,25 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         public let constant: WPEParitySceneState.Constant
     }
 
+    public struct EffectWrite: Sendable, Equatable {
+        public let effect: WPEParitySceneState.EffectKey
+        public let visible: Bool
+    }
+
     public private(set) var objects: [ObjectWrite] = []
+    public private(set) var effects: [EffectWrite] = []
     public private(set) var constants: [ConstantWrite] = []
     public let cameraParallax: WPESceneCameraParallaxSettings
+    /// The new parse's bloom values, which the post-process draws read on the next frame.
+    public let bloom: WPEParityBloomSettings
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
         cameraParallax = new.general.cameraParallax
+        bloom = WPEParityProgramScene.bloomSettings(new.resolvedGeneralJSON)
         let before = WPEParitySceneState(document: old, hdr: false)
         let after = WPEParitySceneState(document: new, hdr: false)
-        guard before.ids == after.ids else { return nil }
+        guard before.ids == after.ids, before.effects == after.effects else { return nil }
         for id in after.ids {
             for property in WPEParitySceneState.Property.allCases {
                 guard let value = after.value(property, of: id), value != before.value(property, of: id) else {
@@ -114,6 +132,10 @@ public struct WPEParityUserPropertyUpdate: Sendable {
                 }
                 objects.append(ObjectWrite(id: id, property: property, value: value))
             }
+        }
+        for (index, effect) in after.effects.enumerated()
+            where after.effectVisibility[index] != before.effectVisibility[index] {
+            effects.append(EffectWrite(effect: effect, visible: after.effectVisibility[index]))
         }
         let previous = Dictionary(old.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         for image in new.imageObjects {
@@ -135,6 +157,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public func apply(to state: inout WPEParitySceneState) {
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)
+        }
+        for write in effects {
+            state.setEffect(write.effect.effectID, of: write.effect.objectID, visible: write.visible)
         }
         for write in constants {
             state.setConstant(write.name, of: write.pass, to: write.constant)

@@ -2,15 +2,19 @@ public enum WPEParityProgramBuilder {
     /// One entry per draw operation, in frame order.
     public static func draws(frame: WPEParityFrame, scene: WPEParityProgramScene) -> [WPEParityProgramDraw] {
         frame.draws.keys.sorted().map { index in
-            let material: WPEParityProgramMaterial? = switch frame.draws[index] {
-            case let .scene(draw)?: scene.material(for: draw)
-            case let .post(draw)?: scene.engineMaterial(draw)
-            case nil: nil
-            }
-            let description = material.map { description($0, engineFlags: scene.engineFlags, assets: scene.assets) }
-            return WPEParityProgramDraw(operationIndex: index, pass: frame.operations[index].pass,
-                                        description: description)
+            WPEParityProgramDraw(operationIndex: index, pass: frame.operations[index].pass,
+                                 description: frame.draws[index].flatMap { description(of: $0, scene: scene) })
         }
+    }
+
+    /// Nil for a scene draw without a material file.
+    public static func description(of draw: WPEParityFrameDraw,
+                                   scene: WPEParityProgramScene) -> WPEParityProgramDescription? {
+        let material: WPEParityProgramMaterial? = switch draw {
+        case let .scene(draw): scene.material(for: draw)
+        case let .post(draw): scene.engineMaterial(draw)
+        }
+        return material.map { description($0, engineFlags: scene.engineFlags, assets: scene.assets) }
     }
 
     /// Each sampler loads its bound texture, or its annotation default when unbound (1401a5c40.c:659-750); both
