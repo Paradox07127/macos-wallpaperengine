@@ -2428,18 +2428,6 @@ struct WPEParticleSystemTests {
             fromConstants: ["ui_editor_properties_overbright": -3]) == 0)
     }
 
-    @Test("object brightness multiplies material overbright into the particle uniform")
-    func objectBrightnessMultipliesOverbright() {
-        #expect(abs(WPEMetalSceneRenderer.particleOverbright(
-            material: nil, objectBrightness: 2.0) - 2.0) < 0.0001)
-        #expect(abs(WPEMetalSceneRenderer.particleOverbright(
-            material: 1.5, objectBrightness: 2.0) - 3.0) < 0.0001)
-        #expect(WPEMetalSceneRenderer.particleOverbright(
-            material: nil, objectBrightness: 1.0) == 1.0)
-        #expect(WPEMetalSceneRenderer.particleOverbright(
-            material: 1.0, objectBrightness: -2.0) == 0)
-    }
-
     private func stillParticleDefinition(
         maxCount: Int = 4,
         rate: Double = 1000,

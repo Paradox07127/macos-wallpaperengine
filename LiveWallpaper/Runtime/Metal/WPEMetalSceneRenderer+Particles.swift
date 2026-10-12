@@ -59,14 +59,6 @@ extension WPEMetalSceneRenderer {
         return max(0, Float(truncating: number))
     }
 
-    /// Material overbright × host `brightness`, clamped ≥ 0 so a negative authored brightness cannot invert colours.
-    nonisolated static func particleOverbright(
-        material: Float?,
-        objectBrightness: Double
-    ) -> Float {
-        max(0, (material ?? 1.0) * Float(objectBrightness))
-    }
-
     // MARK: - Sprite sheets
 
     /// `<path>.tex-json` sidecar. Nil/malformed → the caller treats the texture as a single-frame sprite.
@@ -653,10 +645,8 @@ extension WPEMetalSceneRenderer {
         system.instanceColorBrightnessScale = Float(object.instanceOverride?.brightness ?? 1)
         system.scriptParticleObjectID = object.id
         system.sortIndex = sortIndex
-        system.overbright = Self.particleOverbright(
-            material: material?.overbright,
-            objectBrightness: object.brightness
-        )
+        // WPE ignores the particle object's `brightness` in SDR and HDR scenes alike; only the material overbright reaches g_Overbright.
+        system.overbright = material?.overbright ?? 1
         system.isNestedChildSystem = isNestedChild
         if object.instanceOverride?.alphaScript != nil {
             system.instanceAlphaScriptObjectID = object.id

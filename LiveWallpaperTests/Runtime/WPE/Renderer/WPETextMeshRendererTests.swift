@@ -129,6 +129,31 @@ struct WPETextMeshRendererTests {
         #expect(abs(Double(maxX) - (left + cellMax)) < 0.5, "block end \(maxX) is not centred on the origin by ink width")
     }
 
+    @Test("Object brightness tints text only in HDR scenes")
+    func brightnessAppliesOnlyInHDRScenes() throws {
+        let renderer = try makeRenderer()
+        let placement = WPETextMeshPlacement(
+            originTopLeft: SIMD2<Double>(960, 540),
+            scale: SIMD2<Double>(1, 1),
+            rotation: 0
+        )
+        // 3769466775 Clock: pink colour with brightness 2.39 stays pink on Windows (hdr=false).
+        let object = WPESceneTextObject(
+            id: "t1", name: "t1", text: "12:34",
+            fontRelativePath: nil, pointSize: 24,
+            color: SIMD3<Double>(0.93333, 0.70196, 0.82745), brightness: 2.39, alpha: 1,
+            origin: SIMD3<Double>(960, 540, 0), scale: SIMD3<Double>(1, 1, 1),
+            visible: true,
+            horizontalAlignment: "center", verticalAlignment: "center",
+            maxWidth: nil,
+            parallaxDepth: SIMD2<Double>(0, 0)
+        )
+        let sdr = try #require(renderer.payload(for: object, placement: placement, sceneHDR: false))
+        #expect(sdr.color == SIMD4<Float>(0.93333, 0.70196, 0.82745, 1))
+        let hdr = try #require(renderer.payload(for: object, placement: placement, sceneHDR: true))
+        #expect(hdr.color == SIMD4<Float>(Float(0.93333) * 2.39, Float(0.70196) * 2.39, Float(0.82745) * 2.39, 1))
+    }
+
     @Test("Suspension reclaim drops atlas pages and rebuilds current text")
     func releaseCachedResourcesRebuildsAtlas() throws {
         let renderer = try makeRenderer()

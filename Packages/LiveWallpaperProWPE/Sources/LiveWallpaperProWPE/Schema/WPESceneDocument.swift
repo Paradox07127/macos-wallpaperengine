@@ -528,7 +528,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     public let fontRelativePath: String?
     public let pointSize: Double
     public let color: SIMD3<Double>
-    /// Object-level `brightness` colour multiplier; 1 = unchanged. Multiplied into the text colour by both draw paths.
+    /// Object-level `brightness` colour multiplier; 1 = unchanged. Multiplied into the text colour only in HDR scenes.
     public let brightness: Double
     public let alpha: Double
     public let alphaAnimation: WPESceneAnimatedValue?
@@ -736,13 +736,11 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
     public let alpha: Double
     public let alphaAnimation: WPESceneAnimatedValue?
     public let color: SIMD3<Double>
-    /// Object-level `brightness` colour multiplier; 1 = unchanged. Folded into the particle overbright uniform.
-    public let brightness: Double
     /// Per-axis camera-parallax depth (Vec2 "x y"). "1 0" horizontal only, "0 1" vertical only. `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
     public let instanceOverride: WPESceneParticleInstanceOverride?
 
-    public init(id: String, name: String, parentObjectID: String? = nil, particleRelativePath: String, origin: SIMD3<Double>, scale: SIMD3<Double>, angles: SIMD3<Double>, visible: Bool, alpha: Double, alphaAnimation: WPESceneAnimatedValue? = nil, color: SIMD3<Double>, brightness: Double = 1, parallaxDepth: SIMD2<Double>, instanceOverride: WPESceneParticleInstanceOverride? = nil) {
+    public init(id: String, name: String, parentObjectID: String? = nil, particleRelativePath: String, origin: SIMD3<Double>, scale: SIMD3<Double>, angles: SIMD3<Double>, visible: Bool, alpha: Double, alphaAnimation: WPESceneAnimatedValue? = nil, color: SIMD3<Double>, parallaxDepth: SIMD2<Double>, instanceOverride: WPESceneParticleInstanceOverride? = nil) {
         self.id = id
         self.name = name
         self.parentObjectID = parentObjectID
@@ -754,7 +752,6 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
         self.alpha = alpha
         self.alphaAnimation = alphaAnimation
         self.color = color
-        self.brightness = brightness
         self.parallaxDepth = parallaxDepth
         self.instanceOverride = instanceOverride
     }

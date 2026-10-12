@@ -1523,7 +1523,6 @@ public enum WPESceneDocumentParser {
         let visible = effectiveVisible ?? (parseBool(dict["visible"]) ?? true)
         let alphaValue = parseAnimatedScalar(dict["alpha"], fallback: 1)
         let color = parseVector3(dict["color"]) ?? SIMD3<Double>(1, 1, 1)
-        let brightness = parseDouble(dict["brightness"]) ?? 1.0
         let parallaxDepth = parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"])
         let instanceOverride = parseParticleInstanceOverride(
             dict["instanceoverride"] ?? dict["instanceOverride"]
@@ -1540,7 +1539,6 @@ public enum WPESceneDocumentParser {
             alpha: alphaValue.value,
             alphaAnimation: alphaValue.animation,
             color: color,
-            brightness: brightness,
             parallaxDepth: parallaxDepth,
             instanceOverride: instanceOverride
         )

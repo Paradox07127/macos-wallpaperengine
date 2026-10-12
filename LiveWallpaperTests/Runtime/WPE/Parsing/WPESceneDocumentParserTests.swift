@@ -2441,38 +2441,6 @@ struct WPESceneDocumentParserTests {
         #expect(abs(color.z - 192) < 0.001)
     }
 
-    @Test("Particle object parses generic brightness (default 1)")
-    func particleObjectParsesBrightness() throws {
-        let json = """
-        {
-          "camera": { "center": "0 0 0" },
-          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
-          "objects": [
-            {
-              "id": 46,
-              "name": "Embers",
-              "type": "particle",
-              "particle": "particles/presets/wildfire.json",
-              "brightness": 2.0
-            },
-            {
-              "id": 47,
-              "name": "Dust",
-              "type": "particle",
-              "particle": "particles/presets/dust.json"
-            }
-          ]
-        }
-        """
-
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
-        #expect(document.particleObjects.count == 2)
-        let embers = try #require(document.particleObjects.first { $0.id == "46" })
-        #expect(embers.brightness == 2.0)
-        let dust = try #require(document.particleObjects.first { $0.id == "47" })
-        #expect(dust.brightness == 1.0)
-    }
-
     @Test("Text object parses generic brightness (wildfire sample) and preserves it through withLiveText")
     func textObjectParsesBrightness() throws {
         let json = """

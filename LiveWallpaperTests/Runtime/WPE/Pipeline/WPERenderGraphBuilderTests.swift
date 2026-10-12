@@ -2508,8 +2508,8 @@ struct WPERenderGraphBuilderTests {
         #expect(graph.layers.map(\.objectID) == ["A", "B"])
     }
 
-    @Test("Builds built-in solid layer model without requiring packaged model JSON")
-    func buildsBuiltinSolidLayerModel() throws {
+    @Test("Builds built-in solid layer model without requiring packaged model JSON", arguments: [false, true])
+    func buildsBuiltinSolidLayerModel(hdrBloom: Bool) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -2517,7 +2517,8 @@ struct WPERenderGraphBuilderTests {
 
         let scenePayload: [String: Any] = [
             "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+                        "hdr": hdrBloom, "bloom": hdrBloom],
             "objects": [[
                 "id": 384,
                 "name": "Solid",
@@ -2539,7 +2540,9 @@ struct WPERenderGraphBuilderTests {
         #expect(layer.materialPath == "models/util/solidlayer.json")
         #expect(pass.shader == "solidlayer")
         #expect(pass.target == .scene)
-        #expect(pass.constants["g_Color"]?.vectorValue == [0.8, 0.4, 0.2, 0.5])
+        // Windows probes 9000210/9000211: g_Color carries object brightness only in HDR+bloom scenes.
+        let expected: [Double] = hdrBloom ? [0.8, 0.4, 0.2, 0.5] : [1, 0.5, 0.25, 0.5]
+        #expect(pass.constants["g_Color"]?.vectorValue == expected)
     }
 
     @Test("Moves the first pass blend mode onto the final scene pass")

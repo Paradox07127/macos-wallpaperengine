@@ -2075,6 +2075,38 @@ struct WPEMetalSceneRendererTests {
         #expect(renderer.sceneSupportsAudioProcessing == false)
     }
 
+    @Test("Object brightness does not scale particle overbright", arguments: [false, true])
+    func particleOverbrightIgnoresObjectBrightness(hdrBloom: Bool) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let sceneURL = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL)) as? [String: Any])
+        var general = try #require(scene["general"] as? [String: Any])
+        general["hdr"] = hdrBloom
+        general["bloom"] = hdrBloom
+        scene["general"] = general
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        let particleIndex = try #require(objects.firstIndex { $0["id"] as? String == "pfx" })
+        objects[particleIndex]["brightness"] = 4
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: sceneURL)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+
+        try await renderer.load()
+
+        // Windows probes 9000212/9000213: g_Overbright and pixels ignore object brightness in SDR and HDR.
+        let system = try #require(renderer.particleSystems.first)
+        #expect(system.overbright == 1)
+    }
+
     @Test("Fragment g_AudioSpectrum without an AUDIOPROCESSING combo requires capture")
     func audioCapturePredicateFragmentMentionNoCombo() {
         let pipeline = Self.audioPredicatePipeline(

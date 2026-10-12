@@ -59,9 +59,11 @@ final class WPETextMeshRenderer {
 
     func payload(
         for object: WPESceneTextObject,
-        placement: WPETextMeshPlacement
+        placement: WPETextMeshPlacement,
+        sceneHDR: Bool = false
     ) -> WPETextMeshPayload? {
-        let brightness = Float(max(object.brightness, 0))
+        // Same rule as image layers: WPE bakes object brightness into g_Color4 only in HDR scenes.
+        let brightness = sceneHDR ? Float(max(object.brightness, 0)) : 1
         // Glyph and image layers use the same authored channel-number arithmetic.
         let tint = WPEMetalShaderInputs.layerTint(object.color)
         let color = SIMD4<Float>(

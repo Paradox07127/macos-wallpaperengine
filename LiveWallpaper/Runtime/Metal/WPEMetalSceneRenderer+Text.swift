@@ -113,7 +113,7 @@ extension WPEMetalSceneRenderer {
             }
             payloads[plan.object.id] = WPETextRenderPayload(
                 mode: plan.mode,
-                mesh: placement.flatMap { textMeshRenderer.payload(for: liveObject, placement: $0) },
+                mesh: placement.flatMap { textMeshRenderer.payload(for: liveObject, placement: $0, sceneHDR: cameraUniforms.sceneHDR) },
                 backgroundColor: offscreenBackground(for: plan.object, mode: plan.mode),
                 copiesSceneBackground: plan.copiesSceneBackground
             )

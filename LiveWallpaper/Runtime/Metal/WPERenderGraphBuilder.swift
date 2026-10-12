@@ -115,6 +115,7 @@ struct WPERenderGraphBuilder: Sendable {
             .map { object in
                 try buildLayer(
                     object: object,
+                    sceneHDR: document.general.usesHDRRendering,
                     finalUntargetedPassToScene: visibleLayerIDs.contains(object.id),
                     preserveFinalCompositeForScene: layerIDsRequiredAsComposite.contains(object.id)
                         || WPETextLayerSynthesis.isOffscreenPath(object.imageRelativePath),
@@ -1031,6 +1032,7 @@ struct WPERenderGraphBuilder: Sendable {
 
     private func buildLayer(
         object: WPESceneImageObject,
+        sceneHDR: Bool,
         finalUntargetedPassToScene: Bool,
         preserveFinalCompositeForScene: Bool,
         sortIndex: Int,
@@ -1052,7 +1054,7 @@ struct WPERenderGraphBuilder: Sendable {
         )
 
         if let materialPath {
-            let loadedMaterial = try builtinMaterial(path: materialPath, object: object) ?? loadMaterial(path: materialPath)
+            let loadedMaterial = try builtinMaterial(path: materialPath, object: object, sceneHDR: sceneHDR) ?? loadMaterial(path: materialPath)
             let material = Self.materialRespectingCopyBackground(loadedMaterial, object: object)
             let materialOverride = object.materialInstance.map {
                 WPESceneEffectPassOverride(
@@ -1563,7 +1565,7 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    private func builtinMaterial(path: String, object: WPESceneImageObject) throws -> WPEMaterialAsset? {
+    private func builtinMaterial(path: String, object: WPESceneImageObject, sceneHDR: Bool) throws -> WPEMaterialAsset? {
         if let textTarget = Self.builtinTextTargetMaterial(path: path) {
             return textTarget
         }
@@ -1571,7 +1573,8 @@ struct WPERenderGraphBuilder: Sendable {
             return nil
         }
 
-        let color = object.color * object.brightness
+        // Same rule as image layers: WPE bakes object brightness into the solid g_Color only in HDR scenes.
+        let color = object.color * (sceneHDR ? object.brightness : 1)
         return WPEMaterialAsset(
             path: path,
             passes: [
