@@ -13,7 +13,7 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
-## [0.8.8] — 2026-10-11
+## [0.8.8] — 2026-10-12
 
 ### Added
 
@@ -22,9 +22,30 @@ what shipped at that time; current behavior is documented in `docs/`.
   optional input text, a file, a folder, or an app with optional launch
   arguments. **Test** runs the binding.
 - Pro: clicks on the desktop, desktop icons included, reach the scene while the
-  wallpaper stays click-through, so a scene's buttons can run their shortcuts
-  without the Interaction switch.
+  wallpaper stays click-through, so a scene's buttons can run their shortcuts.
 - Pro: shortcut icon slots in a scene show the icon of the bound item.
+- Pro: SceneScript gains `thisScene.getLayerByID`, `getEffect` with effect
+  visibility and material properties, more `IAnimation` properties, `IModelData`,
+  `registerAsset` and `setParent`. Keyframed layer scale and angles animate.
+
+### Changed
+
+- Pro: scene Interaction is on by default, and existing setups turn it on once.
+  Only a scene's clickable objects take clicks; the rest of the desktop works as
+  usual, so turning Interaction on no longer asks for confirmation.
+- Pro: with Interaction off, desktop clicks no longer reach the scene.
+- Pro: the Workshop downloads sheet says what blocks downloads and offers
+  **Connect Steam**. A subscription check that lacks Steam library access
+  offers **Choose folder**.
+
+### Fixed
+
+- Pro: scenes whose image shaders use the layer color no longer render black.
+- Pro: object brightness, particle tint blending, particle alpha above 1 and
+  color change without a color initializer match Wallpaper Engine.
+- Pro: image layers no longer treat their normal map as an alpha mask, and
+  emissive overbright only applies with lighting or reflection.
+- Pro: outline effects and shaders that test undefined combos compile again.
 
 ## [0.8.7] — 2026-10-11
 
