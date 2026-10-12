@@ -20,12 +20,29 @@ struct WPEParityFrameDrawPlan {
         let duration: Double
     }
 
+    enum Geometry {
+        case mesh(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)
+        /// Point lists the particle systems write each frame, one draw per batch.
+        case particles(Particles)
+    }
+
+    struct Particles {
+        let key: WPEParityParticleDrawKey
+        let layers: WPEParityLayerTransformSet
+        let worldSpace: Bool
+        let perspective: Bool
+        let compositeOwnerID: String?
+        let renderer: WPEParityParticleRenderer
+        /// Set for SPRITESHEET draws with TEXS frames (R22 Q4).
+        let renderVar1: SIMD4<Float>?
+        /// Arena bytes of the largest batch a root or static child can write; nil for an event group.
+        let maxBytes: Int?
+    }
+
     let pipeline: WPEParityPipeline
     let depthStencil: WPEParityDepthStencilState
     let rasterizer: WPEParityRasterizerState
-    let vertexBuffer: MTLBuffer
-    let indexBuffer: MTLBuffer
-    let indexCount: Int
+    let geometry: Geometry
     /// The skinned puppet layer whose animator supplies the vertex stage's `g_Bones`.
     let puppetID: String?
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
@@ -40,6 +57,10 @@ struct WPEParityFrameDrawPlan {
     let constants: [WPEHLSLStage: [String: WPECBufferValue]]
     /// Per stage, declared constants that neither the binding nor the engine uniform set supplies, so they stay zero.
     let zeroConstants: [WPEHLSLStage: [String]]
+    /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read (R22 Q3).
+    let renderVarWrites: (rv0: SIMD4<Float>?, rv1: SIMD4<Float>?)
+    /// Declared textures the frame does not have, bound to a transparent texel.
+    let fallbackTextures: [String]
 
     struct Placement {
         let layers: WPEParityLayerTransformSet
@@ -65,15 +86,87 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
-    /// `puppets` holds this frame's bone animator of each skinned puppet layer.
+    /// `puppets` holds this frame's bone animator of each skinned puppet layer. Mesh draws only.
     func makeDraw(frame: WPEParityUniformFrame, camera: WPEParityCamera? = nil, variant: Int,
                   textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                   puppets: [String: WPEParityPuppetAnimator]) throws -> WPEParityDraw {
+        guard case let .mesh(vertices, indices, indexCount) = geometry else {
+            throw WPEParityExecutionError.geometryDrawUnsupported
+        }
+        let state = try drawState(frame: frame, uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera),
+                                  variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets)
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                 vertexBuffer: vertexBuffer, primitiveType: .triangle, vertexCount: 4)
-        draw.indexBuffer = indexBuffer
+                                 constants: state.constants, textures: state.textures, samplers: samplers,
+                                 vertexBuffer: vertices, primitiveType: .triangle, vertexCount: 4)
+        draw.indexBuffer = indices
         draw.indexCount = indexCount
-        var uniforms = frameUniforms(parallax: frame.parallax.smoothed, camera: camera)
+        return draw
+    }
+
+    /// One point-list draw per batch of live particles, its vertices copied into `arena`; none without live particles,
+    /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched (R22 Q3).
+    func makeParticleDraws(frame: WPEParityUniformFrame, camera: WPEParityCamera, variant: Int,
+                           textures table: [WPEResourceID: MTLTexture], arena: WPEParityFrameArena.Frame,
+                           textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
+                           particles: inout WPEParityParticleFrame) throws -> [WPEParityDraw] {
+        guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
+        let batches = particles.scene.batches(for: particle.key)
+        guard !batches.isEmpty else { return [] }
+        var layers = particle.layers
+        layers.camera = camera
+        var uniforms = uniforms
+        uniforms.matrices = WPEParityParticleMatrices.draw(
+            layers, objectID: particle.key.objectID,
+            childLocal: particles.scene.childLocal(for: particle.key) ?? matrix_identity_float4x4,
+            worldSpace: particle.worldSpace, perspective: particle.perspective,
+            compositeOwnerID: particle.compositeOwnerID, parallax: frame.parallax.smoothed
+        )
+        let model = uniforms.matrices.model
+        func xyz(_ column: SIMD4<Float>) -> SIMD3<Float> {
+            SIMD3(column.x, column.y, column.z)
+        }
+        // R22 Q2: the frame's scene camera V, never the perspective or composite push.
+        let vectors = WPEParityParticleOrientation.vectors(
+            renderer: particle.renderer,
+            modelRotation: simd_float3x3(xyz(model.columns.0), xyz(model.columns.1), xyz(model.columns.2)),
+            sceneView: camera.view
+        )
+        var orientation: [String: WPECBufferValue] = [:]
+        for (name, vector) in [("Forward", vectors.forward), ("Right", vectors.right), ("Up", vectors.up)] {
+            orientation["g_Orientation" + name] = .vector([vector.x, vector.y, vector.z])
+        }
+        let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
+                                  textureSlots: &textureSlots, puppets: [:], engineExtras: orientation)
+
+        var draws: [WPEParityDraw] = []
+        for batch in batches {
+            guard let allocation = particles.upload(batch, to: arena) else { continue }
+            // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
+            if let renderVar1 = particle.renderVar1 {
+                renderVars.setRV1(renderVar1)
+            }
+            renderVars.apply(batch.renderVar0)
+            let (rv0, rv1) = (renderVars.rv0, renderVars.rv1)
+            let values: [String: WPECBufferValue] = [
+                "g_RenderVar0": .vector([rv0.x, rv0.y, rv0.z, rv0.w]),
+                "g_RenderVar1": .vector([rv1.x, rv1.y, rv1.z, rv1.w]),
+            ]
+            var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
+                                     constants: state.constants.mapValues { $0.merging(values) { $1 } },
+                                     textures: state.textures, samplers: samplers, vertexBuffer: allocation.buffer,
+                                     primitiveType: .point, vertexCount: batch.count)
+            draw.vertexBufferOffset = allocation.offset
+            draws.append(draw)
+        }
+        return draws
+    }
+
+    /// Per-stage constants (engine set, `engineExtras`, then the binding's) and the textures of `variant`.
+    private func drawState(frame: WPEParityUniformFrame, uniforms: WPEParityUniformDraw, variant: Int,
+                           table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
+                           puppets: [String: WPEParityPuppetAnimator], engineExtras: [String: WPECBufferValue] = [:])
+        throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
+        var uniforms = uniforms
         var spriteTextures: [String: MTLTexture] = [:]
         for (slot, steps) in sprites where slot < uniforms.textures.count {
             let step = Self.sprite(steps, at: frame.clock.time)
@@ -91,24 +184,26 @@ struct WPEParityFrameDrawPlan {
                 }
             }
         }
-        for stage in [WPEHLSLStage.vertex, .fragment] {
-            draw.constants[stage] = engine.merging(constants[stage] ?? [:]) { $1 }
+        engine.merge(engineExtras) { $1 }
+        var stageConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
+        for stage in pipeline.geometry == nil ? [WPEHLSLStage.vertex, .fragment] : [.vertex, .geometry, .fragment] {
+            stageConstants[stage] = engine.merging(constants[stage] ?? [:]) { $1 }
         }
         if let animator = puppetID.flatMap({ puppets[$0] }) {
-            draw.constants[.vertex, default: [:]].merge(animator.values) { $1 }
+            stageConstants[.vertex, default: [:]].merge(animator.values) { $1 }
         }
-        draw.samplers = samplers
+        var boundTextures: [String: MTLTexture] = [:]
         for (name, source) in textures[variant] {
             switch source {
             case let .resource(id):
                 guard let texture = table[id] else { throw WPEParityGraphExecutionError.missingTexture(id) }
-                draw.textures[name] = texture
+                boundTextures[name] = texture
             case let .image(texture):
-                draw.textures[name] = texture
+                boundTextures[name] = texture
             }
         }
-        draw.textures.merge(spriteTextures) { $1 }
-        return draw
+        boundTextures.merge(spriteTextures) { $1 }
+        return (stageConstants, boundTextures)
     }
 
     /// The frame showing at `time`, looping over the whole sequence.
@@ -158,6 +253,7 @@ struct WPEParityFrameDrawPlanner {
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
+    private var transparent: MTLTexture?
     /// Video .tex files the planned draws sample, filled as draws are planned.
     private(set) var videos: [WPEParityVideoTextures.Stream] = []
 
@@ -204,12 +300,22 @@ struct WPEParityFrameDrawPlanner {
             throw .pipeline("\(shader): \(error)")
         }
 
+        let particleKey: WPEParityParticleDrawKey? = if case let .scene(draw) = description,
+                                                        case let .particles(key) = draw.geometry {
+            key
+        } else {
+            nil
+        }
         var textures = [[String: WPEParityFrameDrawPlan.TextureSource]](repeating: [:], count: bindings.count)
         var samplers: [String: WPEParitySamplerState] = [:]
         var uniformTextures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
         var sprites: [Int: [WPEParityFrameDrawPlan.SpriteStep]] = [:]
-        let names = Set((artifact.vertex.reflection.resources + artifact.fragment.reflection.resources)
-            .filter { $0.kind == .texture }.map(\.name))
+        var fallbackTextures: [String] = []
+        let reflections = [(WPEHLSLStage.vertex, artifact.vertex), (.geometry, artifact.geometry),
+                           (.fragment, artifact.fragment)].compactMap { stage, artifact in
+            artifact.map { (stage, $0.reflection) }
+        }
+        let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
         for name in names.sorted() {
             guard name.hasPrefix("g_Texture"), let slot = Int32(name.dropFirst("g_Texture".count)) else {
                 throw .texture("\(shader) declares \(name)")
@@ -218,8 +324,15 @@ struct WPEParityFrameDrawPlanner {
                 guard case let .draw(operation) = plan.frames[variant].operations[index].kind else {
                     throw .pipeline("operation \(index) is not a draw in frame variant \(variant)")
                 }
-                textures[variant][name] = try textureSource(binding.textures[slot], slot: slot, shader: shader,
-                                                            reads: operation.reads.map(\.resource))
+                do throws(WPEParityFrameSkip) {
+                    textures[variant][name] = try textureSource(binding.textures[slot], slot: slot, shader: shader,
+                                                                reads: operation.reads.map(\.resource))
+                } catch .texture(_) where particleKey != nil {
+                    textures[variant][name] = try .image(transparentTexture())
+                    if variant == 0 {
+                        fallbackTextures.append(name)
+                    }
+                }
             }
             guard let source = textures[0][name] else { continue }
             samplers[name + "SamplerState"] = sampler(source)
@@ -229,8 +342,9 @@ struct WPEParityFrameDrawPlanner {
             }
         }
 
-        // Post-process draws have no layer and keep the effect-pass matrices.
+        // Post-process draws have no layer and keep the effect-pass matrices; particle draws place themselves per frame.
         let placement: WPEParityFrameDrawPlan.Placement? = switch description {
+        case .scene where particleKey != nil: nil
         case let .scene(draw):
             WPEParityFrameDrawPlan.Placement(
                 layers: layers, objectID: draw.objectID,
@@ -256,17 +370,31 @@ struct WPEParityFrameDrawPlanner {
         } else {
             nil
         }
-        let inputs = artifact.vertex.reflection.vertexInputs
-        let geometry = if let puppet {
-            // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
-            Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
-        } else {
-            Self.geometry(quad.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
-                          indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
-        }
-        guard let geometry else { throw .pipeline("vertex or index buffer allocation failed") }
         let puppetID = puppet?.skinned == true ? placement?.objectID : nil
-        let placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        let geometry: WPEParityFrameDrawPlan.Geometry
+        var placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        if let particleKey, case let .scene(draw) = description {
+            let particles = try particleGeometry(particleKey, compositeOwnerID: draw.compositeOwnerID,
+                                                 pipeline: pipeline, shader: shader, texture0: uniformTextures[0],
+                                                 frameCount: sprites[0]?.count ?? 0)
+            geometry = .particles(particles)
+            placed.matrices = WPEParityParticleMatrices.draw(
+                layers, objectID: particleKey.objectID, childLocal: matrix_identity_float4x4,
+                worldSpace: particles.worldSpace, perspective: particles.perspective,
+                compositeOwnerID: particles.compositeOwnerID, parallax: .zero
+            )
+        } else {
+            let inputs = artifact.vertex.reflection.vertexInputs
+            let buffers = if let puppet {
+                // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
+                Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
+            } else {
+                Self.geometry(quad.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
+                              indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
+            }
+            guard let buffers else { throw .pipeline("vertex or index buffer allocation failed") }
+            geometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount)
+        }
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
                                             textures: uniformTextures)
 
@@ -278,12 +406,20 @@ struct WPEParityFrameDrawPlanner {
         if puppetID != nil {
             engine.insert("g_Bones")
         }
+        if particleKey != nil {
+            engine.formUnion(["g_OrientationForward", "g_OrientationRight", "g_OrientationUp", "g_RenderVar0",
+                              "g_RenderVar1"])
+        }
         var zeroConstants: [WPEHLSLStage: [String]] = [:]
-        for (stage, reflection) in [(WPEHLSLStage.vertex, artifact.vertex.reflection),
-                                    (.fragment, artifact.fragment.reflection)] {
+        for (stage, reflection) in reflections {
             let declared = Set(reflection.cbuffers.flatMap(\.variables).map(\.name))
             let supplied = engine.union(binding.constants[stage]?.keys.map(\.self) ?? [])
             zeroConstants[stage] = declared.subtracting(supplied).sorted()
+        }
+        func renderVar(_ name: String) -> SIMD4<Float>? {
+            let value = WPEHLSLStage.allCases.lazy.compactMap { binding.constants[$0]?[name] }.first
+            guard case let .vector(components)? = value else { return nil }
+            return SIMD4((components + [0, 0, 0, 0]).prefix(4))
         }
 
         return WPEParityFrameDrawPlan(
@@ -291,9 +427,7 @@ struct WPEParityFrameDrawPlanner {
             depthStencil: .wpe(depthTest: binding.depthTest, depthWrite: binding.depthWrite),
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: false,
                              multisample: false),
-            vertexBuffer: geometry.vertices,
-            indexBuffer: geometry.indices,
-            indexCount: geometry.indexCount,
+            geometry: geometry,
             puppetID: puppetID,
             textures: textures,
             samplers: samplers,
@@ -301,7 +435,32 @@ struct WPEParityFrameDrawPlanner {
             placement: layers.camera.parallaxAmount == nil && layers.camera.shake == nil ? nil : placement,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
-            zeroConstants: zeroConstants
+            zeroConstants: zeroConstants,
+            renderVarWrites: particleKey == nil ? (renderVar("g_RenderVar0"), renderVar("g_RenderVar1")) : (nil, nil),
+            fallbackTextures: fallbackTextures
+        )
+    }
+
+    /// The scene's particle draw for `key` with the renderer entry and slot count its own JSON gives.
+    private func particleGeometry(_ key: WPEParityParticleDrawKey, compositeOwnerID: String?,
+                                  pipeline: WPEParityPipeline, shader: String, texture0: WPEParityUniformTexture?,
+                                  frameCount: Int) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan.Particles {
+        let entry = plan.scene.scene.objects.lazy.compactMap { object -> WPEParitySceneParticleDraw? in
+            guard object.id == key.objectID, case let .particle(particle) = object.kind else { return nil }
+            return particle.draws.first { $0.key == key }
+        }.first
+        guard let entry, let emulation = pipeline.geometry,
+              let system = WPEParityParticleProbe.system(for: key, document: plan.document, assets: plan.scene.assets),
+              system.renderers.indices.contains(key.renderer)
+        else { throw .pipeline("\(shader): no geometry stage or particle renderer for \(key)") }
+        let renderer = system.renderers[key.renderer]
+        let vertices = system.position.count * (renderer.kind == .ropeTrail ? renderer.segments : 1)
+        let renderVar1 = entry.source.combos["SPRITESHEET", default: 0] != 0
+            ? texture0.flatMap { WPEParityRenderVarState.spriteSheetRV1(texture: $0, frameCount: frameCount) } : nil
+        return WPEParityFrameDrawPlan.Particles(
+            key: key, layers: layers, worldSpace: entry.worldSpace, perspective: entry.perspective,
+            compositeOwnerID: compositeOwnerID, renderer: renderer, renderVar1: renderVar1,
+            maxBytes: key.eventGroup == nil ? vertices * emulation.vertexStride : nil
         )
     }
 
@@ -335,20 +494,26 @@ struct WPEParityFrameDrawPlanner {
     private mutating func loadLayerImage(_ id: WPEResourceID, name: String?) throws(WPEParityFrameSkip) {
         guard layerImages[id] == nil else { return }
         guard let name else {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1,
-                                                                      mipmapped: false)
-            descriptor.usage = .shaderRead
-            guard let texture = device.makeTexture(descriptor: descriptor) else {
-                throw .texture("placeholder for \(id)")
-            }
-            texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 0, count: 4),
-                            bytesPerRow: 4)
-            layerImages[id] = texture
+            layerImages[id] = try transparentTexture()
             return
         }
         let image = try assetImage(name)
         layerImages[id] = image.texture
         layerImageAssets[id] = image
+    }
+
+    private mutating func transparentTexture() throws(WPEParityFrameSkip) -> MTLTexture {
+        if let transparent {
+            return transparent
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1,
+                                                                  mipmapped: false)
+        descriptor.usage = .shaderRead
+        guard let texture = device.makeTexture(descriptor: descriptor) else { throw .texture("transparent texel") }
+        texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 0, count: 4),
+                        bytesPerRow: 4)
+        transparent = texture
+        return texture
     }
 
     private mutating func assetImage(_ name: String) throws(WPEParityFrameSkip) -> Image {

@@ -53,11 +53,11 @@ final class WPEParityFrameEndToEndTests: XCTestCase {
         let backbuffer = try XCTUnwrap(textures["backbuffer"])
 
         for frameNumber in 1 ... 2 {
-            let submission = try executor.encodeFrame(on: queue, textures: textures) { operation, bound in
+            let submission = try executor.encodeFrame(on: queue, textures: textures) { operation, bound, _ in
                 let description = try XCTUnwrap(frame.draws[operation], "no description for operation \(operation)")
                 let binding = try XCTUnwrap(bindings[operation])
-                return try self.makeDraw(description, binding: binding, program: program, factory: factory,
-                                         textures: bound)
+                return try [self.makeDraw(description, binding: binding, program: program, factory: factory,
+                                          textures: bound)]
             }
             guard case let .committed(commandBuffer) = submission else { return XCTFail("frame was skipped") }
             commandBuffer.waitUntilCompleted()

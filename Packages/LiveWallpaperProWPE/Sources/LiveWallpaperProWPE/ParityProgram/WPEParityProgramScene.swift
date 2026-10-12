@@ -8,14 +8,11 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var hdrPostProcessing: Bool
     /// User MSAA x2/x4/x8 that the device supports.
     public var msaa: Bool
-    /// Adds particle objects' draws to the frame; the app renderer cannot encode them yet.
-    public var particles: Bool
 
-    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false, particles: Bool = false) {
+    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
         self.msaa = msaa
-        self.particles = particles
     }
 }
 
@@ -142,7 +139,7 @@ public struct WPEParityProgramScene: Sendable {
         for index in sceneObjects.indices {
             sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)
         }
-        for (index, particle) in document.particleObjects.enumerated() where settings.particles {
+        for (index, particle) in document.particleObjects.enumerated() {
             let draws = Self.particleDraws(objectID: particle.id, path: particle.particleRelativePath, assets: assets,
                                            diagnostics: &diagnostics)
             sceneObjects.append(WPEParitySceneObject(

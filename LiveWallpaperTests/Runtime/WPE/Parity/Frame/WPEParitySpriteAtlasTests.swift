@@ -70,9 +70,7 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
             pipeline: pipeline,
             depthStencil: .wpe(depthTest: false, depthWrite: false),
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
-            vertexBuffer: buffer,
-            indexBuffer: buffer,
-            indexCount: 6,
+            geometry: .mesh(vertices: buffer, indices: buffer, indexCount: 6),
             puppetID: nil,
             textures: [["g_Texture0": .image(image.texture)]],
             samplers: [:],
@@ -80,7 +78,9 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
             placement: nil,
             sprites: [0: image.sprites],
             constants: [:],
-            zeroConstants: [:]
+            zeroConstants: [:],
+            renderVarWrites: (nil, nil),
+            fallbackTextures: []
         )
     }
 

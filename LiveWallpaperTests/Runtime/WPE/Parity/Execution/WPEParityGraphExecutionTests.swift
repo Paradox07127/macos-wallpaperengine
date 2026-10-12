@@ -169,9 +169,9 @@ final class WPEParityGraphExecutionTests: XCTestCase {
                                                   arena: harness.arena, pixelFormats: Self.formats)
         var asked: [Int] = []
         guard case let .committed(commandBuffer) = try executor.encodeFrame(
-            on: harness.queue, textures: ["I": makeInput(harness), "P": target], draw: { operation, _ in
+            on: harness.queue, textures: ["I": makeInput(harness), "P": target], draw: { operation, _, _ in
                 asked.append(operation)
-                return nil
+                return []
             }
         ) else { return XCTFail("frame was skipped") }
         commandBuffer.waitUntilCompleted()
@@ -193,7 +193,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         for commandBuffer in held {
             XCTAssertNotNil(harness.arena.beginFrame(for: commandBuffer))
         }
-        let skipped = try executor.encodeFrame(on: harness.queue, textures: ["P": target]) { _, _ in
+        let skipped = try executor.encodeFrame(on: harness.queue, textures: ["P": target]) { _, _, _ in
             throw WPEParityExecutionError.arenaExhausted
         }
         guard case .skipped = skipped else { return XCTFail("frame was committed without an arena slot") }
@@ -202,7 +202,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         let control = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
                                                  arena: freeArena, pixelFormats: Self.formats)
         guard case let .committed(commandBuffer) = try control.encodeFrame(on: harness.queue, textures: ["P": target],
-                                                                           draw: { _, _ in
+                                                                           draw: { _, _, _ in
                                                                                throw WPEParityExecutionError.arenaExhausted
                                                                            })
         else { return XCTFail("frame with a free slot was skipped") }
@@ -242,8 +242,8 @@ final class WPEParityGraphExecutionTests: XCTestCase {
                          draws: [Int: WPEParityDraw]) throws -> WPEParityGraphExecutor {
         let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
                                                   arena: harness.arena, pixelFormats: Self.formats)
-        let submission = try executor.encodeFrame(on: harness.queue, textures: external) { operation, _ in
-            try XCTUnwrap(draws[operation], "no draw for operation \(operation)")
+        let submission = try executor.encodeFrame(on: harness.queue, textures: external) { operation, _, _ in
+            try [XCTUnwrap(draws[operation], "no draw for operation \(operation)")]
         }
         guard case let .committed(commandBuffer) = submission else {
             XCTFail("frame was skipped")

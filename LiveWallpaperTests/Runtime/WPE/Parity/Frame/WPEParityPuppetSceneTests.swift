@@ -58,7 +58,8 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         print("scene \(Self.sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
             + "\(renderer.skipped.count) skipped")
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
-        XCTAssertEqual(renderer.executedDrawCount, 42)
+        XCTAssertEqual(renderer.executedDrawCount, 55)
+        XCTAssertEqual(plan.frames[0].draws.keys.count { renderer.particleRenderer($0) != nil }, 13)
         XCTAssertEqual(renderer.puppets.keys.sorted(), ["43", "47", "51"])
 
         try await renderFrame(renderer, elapsed: 0, label: "frame 0")

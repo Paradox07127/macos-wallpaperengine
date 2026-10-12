@@ -127,9 +127,7 @@ final class WPEParityPuppetDrawTests: XCTestCase {
             pipeline: pipeline,
             depthStencil: .wpe(depthTest: false, depthWrite: false),
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
-            vertexBuffer: geometry.vertices,
-            indexBuffer: geometry.indices,
-            indexCount: geometry.indexCount,
+            geometry: .mesh(vertices: geometry.vertices, indices: geometry.indices, indexCount: geometry.indexCount),
             puppetID: puppetID,
             textures: [[:]],
             samplers: [:],
@@ -137,7 +135,9 @@ final class WPEParityPuppetDrawTests: XCTestCase {
             placement: nil,
             sprites: [:],
             constants: [:],
-            zeroConstants: [:]
+            zeroConstants: [:],
+            renderVarWrites: (nil, nil),
+            fallbackTextures: []
         )
     }
 

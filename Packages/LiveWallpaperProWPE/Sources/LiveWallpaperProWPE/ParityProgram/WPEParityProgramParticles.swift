@@ -20,11 +20,11 @@ extension WPEParityProgramScene {
         let config = WPEParityParticleConfig(json: json, is3D: false) { _ in nil }
         if let path = string(json["material"]), let material = WPEParityProgramMaterial(path: path, assets: assets) {
             let texture = WPEParityParticleMaterial(texture0: material.textures[0].flatMap(assets.textureHeader(named:)))
-            let shader = WPEParityParticleSystem.shaderOverride(renderers: config.renderers)
             let state = materialState(assets.json(path)?["passes"]?[0])
             for (index, renderer) in config.renderers.enumerated() {
                 var key = node
                 key.renderer = index
+                let shader = WPEParityParticleSystem.shaderOverride(renderer: renderer)
                 let combos = WPEParityParticleSystem.combos(config: config, material: texture, renderer: renderer)
                 draws.append(WPEParitySceneParticleDraw(
                     key: key, shader: shader ?? material.shader,

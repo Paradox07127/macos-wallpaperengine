@@ -23,6 +23,29 @@ final class WPEParityRealSceneTests: XCTestCase {
         try await render("3660962877") { $0["camerashake"] = false }
     }
 
+    /// Object 560's rope (genericropeparticle) and 747's spritetrail draw live particles, and the frame moves.
+    func testScene3660962877DrawsParticles() async throws {
+        let (plan, renderer, device, queue) = try await makeRenderer("3660962877") { $0["camerashake"] = false }
+        let particleDraws = plan.frames[0].draws.keys.filter { renderer.particleRenderer($0) != nil }
+        XCTAssertEqual(particleDraws.compactMap { renderer.particleRenderer($0)?.kind }.sorted { "\($0)" < "\($1)" },
+                       [.rope, .spriteTrail])
+        try await renderFrame(renderer, label: "scene 3660962877 frame 1")
+        let first = try readBack(renderer.backbuffer, device: device, queue: queue)
+        var vertices: [Int: Int] = [:]
+        for frame in 2 ... 30 {
+            try await renderFrame(renderer, label: "scene 3660962877 frame \(frame)")
+            for (operation, draw) in renderer.lastFrameDraws where renderer.particleRenderer(operation) != nil {
+                vertices[operation] = max(vertices[operation] ?? 0, draw.vertexCount)
+            }
+        }
+        print("scene 3660962877: most particle vertices per draw over 30 frames \(vertices.sorted { $0.key < $1.key })")
+        for operation in particleDraws {
+            XCTAssertGreaterThan(vertices[operation] ?? 0, 0, "operation \(operation)")
+        }
+        let last = try readBack(renderer.backbuffer, device: device, queue: queue)
+        XCTAssertNotEqual(first, last, "the frame did not change over 30 frames")
+    }
+
     /// R17 C: with camerashake on, the shake moves every layer's view, so object 935's MVP changes with scene time.
     /// Parallax is off so only the shake can move the view.
     func testCameraShakeMovesLayerMatrices() async throws {
@@ -68,7 +91,11 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
         print("scene \(sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
             + "\(renderer.skipped.count) skipped \(reasons)")
+        print("scene \(sceneID): transparent fallback textures \(renderer.fallbackTextures.sorted { $0.key < $1.key })")
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
+        if sceneID == "3660962877" {
+            XCTAssertEqual(renderer.executedDrawCount, 7)
+        }
 
         // Declared constants outside the binding description and the engine uniform set stay zero.
         var zero: [String: [String]] = [:]
@@ -163,8 +190,10 @@ final class WPEParityRealSceneTests: XCTestCase {
 
         let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: cache) }
+        let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
         let store = try WPEParityShaderStore(
-            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values),
+            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values,
+                                                     geometryCompiler: geometryCompiler),
             diskCache: WPEParityShaderDiskCache(cachesURL: cache)
         )
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
@@ -172,7 +201,8 @@ final class WPEParityRealSceneTests: XCTestCase {
         let renderer = try await WPEParityFrameRenderer(
             plan: plan, device: device, queue: queue,
             shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: "hlsl-capture-2026-10-12",
-                                                bindingABIVersion: 1)
+                                                bindingABIVersion: 1),
+            particleSeed: 1
         )
         return (plan, renderer, device, queue)
     }

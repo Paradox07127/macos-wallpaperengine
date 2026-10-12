@@ -141,6 +141,19 @@ struct ParitySceneParticleTests {
             #expect(Self.draws(scene, "5").map(\.key) == [WPEParityParticleDrawKey(objectID: "5", renderer: 0)])
         }
     }
+
+    @Test func ropeAndRopeTrailEntriesDrawWithTheRopeShaderNextToASprite() throws {
+        let files: [String: Any] = [
+            "particles/mixed.json": ["material": "materials/particle.json",
+                                     "renderer": [["name": "sprite"], ["name": "ropetrail"], ["name": "rope"]]],
+            "materials/particle.json": ["passes": [["shader": "genericparticle"]]],
+        ]
+        try ParticleSceneFiles.withScene([["id": 5, "name": "mixed", "particle": "particles/mixed.json"]],
+                                         files: files) { scene in
+            #expect(Self.draws(scene, "5").map(\.shader) == ["genericparticle", "genericropeparticle",
+                                                             "genericropeparticle"])
+        }
+    }
 }
 
 /// A wallpaper directory that lives until `body` returns, so draws can still read their materials and shaders.
@@ -164,7 +177,7 @@ private enum ParticleSceneFiles {
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         try body(WPEParityProgramScene(document: document,
                                        assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
-                                       settings: WPEParityProgramSettings(particles: true)))
+                                       settings: WPEParityProgramSettings()))
     }
 }
 

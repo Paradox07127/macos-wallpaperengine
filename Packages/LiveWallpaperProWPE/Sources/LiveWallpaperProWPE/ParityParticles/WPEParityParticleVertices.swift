@@ -45,6 +45,12 @@ extension WPEParityParticleSystem {
         !renderers.isEmpty && renderers.allSatisfy { $0.kind == .rope } ? "genericropeparticle" : nil
     }
 
+    /// Rope and ropetrail entries build their own material on genericropeparticle (D/1401d2340.c:608, :774); the
+    /// other entries keep the material's shader.
+    static func shaderOverride(renderer: WPEParityParticleRenderer) -> String? {
+        renderer.kind == .rope || renderer.kind == .ropeTrail ? "genericropeparticle" : nil
+    }
+
     /// Sprite and spritetrail share one main VB; it is thick when any spritetrail or a spritesheet is present.
     static func usesThickMainBuffer(config: WPEParityParticleConfig, material: WPEParityParticleMaterial) -> Bool {
         material.spriteSheet || config.renderers.contains { $0.kind == .spriteTrail }

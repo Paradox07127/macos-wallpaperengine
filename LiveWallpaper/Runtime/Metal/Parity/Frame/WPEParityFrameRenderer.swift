@@ -57,12 +57,35 @@ final class WPEParityFrameRenderer {
     private var audio = WPEParityAudioSpectrum()
     /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
     private var textureSlots: [String: WPECBufferValue] = [:]
+    /// g_RenderVar0/1 as the last draw left them, in frame draw order and across frames (R22 Q3).
+    private var renderVars = WPEParityRenderVarState()
     /// One bone animator per skinned puppet layer, keyed by object id.
     private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
+    private var particles: WPEParityParticleFrame
+    private let layers: WPEParityLayerTransformSet
+    /// Visible particle objects; the others are not stepped (R16 Q5).
+    private let particleObjects: [String]
+    /// The draws the last frame encoded, by draw operation, in encode order.
+    private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
     private var frameIndex = 0
 
     var executedDrawCount: Int {
         draws.count
+    }
+
+    /// Particle batches dropped because a frame's particle vertices outgrew their arena share.
+    var droppedParticleBatches: Int {
+        particles.dropped
+    }
+
+    /// Per encoded draw, declared textures the frame does not have, bound to a transparent texel.
+    var fallbackTextures: [Int: [String]] {
+        draws.mapValues(\.fallbackTextures).filter { !$0.value.isEmpty }
+    }
+
+    func particleRenderer(_ operation: Int) -> WPEParityParticleRenderer? {
+        guard case let .particles(particle)? = draws[operation]?.geometry else { return nil }
+        return particle.renderer
     }
 
     /// Per encoded draw and stage, the declared constants that fall back to zero.
@@ -93,8 +116,10 @@ final class WPEParityFrameRenderer {
         videos.textures
     }
 
-    init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue,
-         shaders: WPEParityFrameShaderSource) async throws {
+    /// `particleArenaBytes` caps each frame's particle vertices; by default it fits every root and static-child
+    /// system at full capacity.
+    init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
+         particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil) async throws {
         let factory = WPEParityPipelineFactory(device: device)
         var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan)
         var skipped = plan.skipped
@@ -126,8 +151,14 @@ final class WPEParityFrameRenderer {
                                                       workshopID: plan.scene.assets.roots[0].lastPathComponent,
                                                       device: device, queue: queue)
 
-        // Each draw needs at most two argument tables and a few cbuffers, all 256-byte aligned.
-        guard let arena = WPEParityFrameArena(device: device, capacity: max(1 << 16, draws.count * 16 * 1024)) else {
+        // Each draw needs at most a few argument tables and cbuffers, all 256-byte aligned. Event groups are unbounded,
+        // so only root and static-child batches count towards the particle share.
+        let particleBytes = particleArenaBytes ?? draws.values.reduce(0) { total, draw in
+            guard case let .particles(particle) = draw.geometry, let bytes = particle.maxBytes else { return total }
+            return total + WPEParityParticleFrame.aligned(bytes)
+        }
+        guard let arena = WPEParityFrameArena(device: device,
+                                              capacity: max(1 << 16, draws.count * 16 * 1024) + particleBytes) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         let encoder = WPEParityDrawEncoder(factory: factory)
@@ -165,7 +196,23 @@ final class WPEParityFrameRenderer {
         self.draws = draws
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         camera = planner.layers.camera
+        layers = planner.layers
         cameraParallax = plan.document.general.cameraParallax
+        let particleObjects = plan.scene.scene.objects.compactMap { object in
+            if case .particle = object.kind, object.visible {
+                object.id
+            } else {
+                nil
+            }
+        }
+        self.particleObjects = particleObjects
+        let prewarm = Self.particleFrames(particleObjects, layers: planner.layers, camera: planner.layers.camera,
+                                          time: 0, cursor: nil)
+        particles = WPEParityParticleFrame(
+            scene: WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
+                                          engineFlags: plan.scene.engineFlags, seed: particleSeed, frames: prewarm),
+            budget: particleBytes
+        )
         for object in plan.scene.scene.objects where object.puppet?.skinned == true {
             guard let model = plan.scene.puppetModels[object.id] else { continue }
             let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
@@ -185,6 +232,10 @@ final class WPEParityFrameRenderer {
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
         let camera = camera.shaken(time: clock.timeUniform)
+        particles.beginFrame()
+        particles.scene.advance(dt: clock.frametime, frames: Self.particleFrames(
+            particleObjects, layers: layers, camera: camera, time: clock.timeUniform, cursor: pointer.position
+        ))
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
             parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
@@ -204,11 +255,35 @@ final class WPEParityFrameRenderer {
         let variant = frameIndex % executors.count
         frameIndex += 1
         defer { videos.finishFrame() }
+        lastFrameDraws.removeAll(keepingCapacity: true)
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
-                                                  prepare: videos.encode) { operation, textures in
-            try draws[operation]?.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
-                                           textureSlots: &textureSlots, puppets: puppets)
+                                                  prepare: videos.encode) { operation, textures, arena in
+            guard let plan = draws[operation] else { return [] }
+            let provided: [WPEParityDraw]
+            if case .particles = plan.geometry {
+                provided = try plan.makeParticleDraws(frame: uniforms, camera: camera, variant: variant,
+                                                      textures: textures, arena: arena, textureSlots: &textureSlots,
+                                                      renderVars: &renderVars, particles: &particles)
+            } else {
+                renderVars.rv0 = plan.renderVarWrites.rv0 ?? renderVars.rv0
+                renderVars.rv1 = plan.renderVarWrites.rv1 ?? renderVars.rv1
+                provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
+                                              textureSlots: &textureSlots, puppets: puppets)]
+            }
+            lastFrameDraws += provided.map { (operation, $0) }
+            return provided
         }
+    }
+
+    /// One context per visible particle object: scene time, cursor in [0, 1]² y down, the scene camera's
+    /// view-projection and the object's world matrix.
+    private static func particleFrames(_ ids: [String], layers: WPEParityLayerTransformSet, camera: WPEParityCamera,
+                                       time: Float, cursor: SIMD2<Float>?) -> [String: WPEParityParticleFrameContext] {
+        let viewProjection = camera.projection * camera.view
+        return Dictionary(uniqueKeysWithValues: ids.map { id in
+            (id, WPEParityParticleFrameContext(time: time, cursor: cursor, viewProjection: viewProjection,
+                                               objectMatrix: layers.world(id)))
+        })
     }
 
     private static func makeTarget(_ resource: WPELogicalResource, device: MTLDevice) throws -> MTLTexture {

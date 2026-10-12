@@ -21,8 +21,10 @@ final class WPEParityGraphExecutor {
         case skipped
     }
 
-    /// Nil skips the draw; its render pass still runs its load and store actions.
-    typealias DrawProvider = (_ operation: Int, _ textures: [WPEResourceID: MTLTexture]) throws -> WPEParityDraw?
+    /// The draws one draw operation encodes, in order; with none its render pass still runs its load and store actions.
+    /// `arena` is the frame's slot, for per-draw data the provider uploads itself.
+    typealias DrawProvider = (_ operation: Int, _ textures: [WPEResourceID: MTLTexture],
+                              _ arena: WPEParityFrameArena.Frame) throws -> [WPEParityDraw]
 
     let graph: WPECompiledRenderGraph
     let heap: MTLHeap?
@@ -251,10 +253,10 @@ final class WPEParityGraphExecutor {
             encoder.waitForFence(waitFence, before: .vertex)
         }
         for operation in step.operations {
-            guard case .draw = graph.operations[operation].kind, let provided = try draw(operation, textures) else {
-                continue
+            guard case .draw = graph.operations[operation].kind else { continue }
+            for provided in try draw(operation, textures, frame) {
+                try drawEncoder.encode(provided, frame: frame, on: encoder)
             }
-            try drawEncoder.encode(provided, frame: frame, on: encoder)
         }
         if let fence {
             encoder.updateFence(fence, after: .fragment)
