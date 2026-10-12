@@ -13,6 +13,7 @@ struct WPEParticleDrawUniforms {
         return sprite.grid == other.sprite.grid
             && sprite.frameRectMode == other.sprite.frameRectMode
             && sprite.tintAndMask == other.sprite.tintAndMask
+            && sprite.tintBlend == other.sprite.tintBlend
             && a.sceneSize == b.sceneSize && a.padding == b.padding
             && a.trail == b.trail && a.modelShape == b.modelShape
             && a.eyeAndSizeScale == b.eyeAndSizeScale

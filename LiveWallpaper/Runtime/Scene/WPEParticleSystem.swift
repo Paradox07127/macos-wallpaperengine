@@ -323,6 +323,9 @@ final class WPEParticleSystem {
     var isNestedChildSystem: Bool = false
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
+    /// WPE `common_blending.h` BLENDMODE that applies `groupTint`; the default Multiply with white tint is the identity.
+    var groupTintBlendMode: Int32 = 2
+    var groupTintOpacity: Float = 1
     var pointerCentered: SIMD2<Float>?
     var scriptParticleObjectID: String?
     /// 1 when the object has no such script — and it keeps its last ticked value if the script later fails.
@@ -470,6 +473,8 @@ final class WPEParticleSystem {
         instance.isNestedChildSystem = isNestedChildSystem
         instance.groupOpacityMask = groupOpacityMask
         instance.groupTint = groupTint
+        instance.groupTintBlendMode = groupTintBlendMode
+        instance.groupTintOpacity = groupTintOpacity
         instance.scriptParticleObjectID = scriptParticleObjectID
         instance.instanceAlphaScriptObjectID = instanceAlphaScriptObjectID
         instance.instanceValues = instanceValues

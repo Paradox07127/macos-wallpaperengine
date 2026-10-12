@@ -1763,9 +1763,9 @@ struct WPEParticleSpriteParams {
     float4 grid;              // x=cols, y=rows, z=frameCount, w=isAlphaMask
     float4 frameRectMode;     // x=use explicit rects, y=rect count, z=overbright color scale, w=refractAmount
     // Compose-group effect baked from a particle's parent composelayer:
-    // .xyz = tint colour multiplier (1,1,1 = no tint), .w = 1 when an opacity
-    // mask is bound at texture(1) (0 = no mask).
+    // .xyz = tint colour, .w = 1 when an opacity mask is bound at texture(1) (0 = no mask).
     float4 tintAndMask;
+    float4 tintBlend;         // x=WPE BLENDMODE applying the tint, y=tint opacity; Multiply + white = no tint
 };
 
 [[vertex]] WPEParticleVertexOut wpe_particle_vertex(
@@ -1977,7 +1977,7 @@ struct WPEParticleSpriteParams {
     // a colour tint (recolours the sprite) and an opacity mask that spatially
     // confines the whole system to the authored region (matrix rain → upper
     // centre). Sampled in full-frame screen UV so it tracks the mask texture.
-    rgb *= half3(sprite.tintAndMask.rgb);
+    rgb = half3(wpe_ApplyBlending(int(sprite.tintBlend.x), float3(rgb), sprite.tintAndMask.rgb, sprite.tintBlend.y));
     if (sprite.tintAndMask.w > 0.5) {
         alpha *= groupOpacityMask.sample(linearSampler, in.maskUV).r;
     }

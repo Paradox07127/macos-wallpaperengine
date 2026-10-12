@@ -352,8 +352,11 @@ extension WPEMetalSceneRenderer {
         objectParentByID: [String: String],
         imageObjectsByID: [String: WPESceneImageObject],
         on actor: isolated WPEDisplayRenderActor
-    ) async -> (mask: MTLTexture?, tint: SIMD3<Float>)? {
+    ) async -> (mask: MTLTexture?, tint: SIMD3<Float>, tintBlendMode: Int32, tintOpacity: Float)? {
         var tint = SIMD3<Float>(1, 1, 1)
+        var tintBlendMode: Int32 = 2
+        var tintOpacity: Float = 1
+        var hasTint = false
         var maskPath: String?
         var current = objectParentByID[object.id]
         var seen: Set<String> = []
@@ -363,9 +366,15 @@ extension WPEMetalSceneRenderer {
                 for effect in ancestor.effects where effect.visible {
                     let file = effect.fileRelativePath.lowercased()
                     let pass = effect.passOverrides.first
-                    if file.contains("/tint/"),
-                       let color = pass?.constants["color"]?.vectorValue, color.count >= 3 {
-                        tint = SIMD3<Float>(Float(color[0]), Float(color[1]), Float(color[2]))
+                    if file.contains("/tint/") {
+                        // tint.frag defaults: color "1 0 0", BLENDMODE 30 (Tint), alpha 1.
+                        let color = pass?.constants["color"]?.vectorValue ?? []
+                        tint = color.count >= 3
+                            ? SIMD3<Float>(Float(color[0]), Float(color[1]), Float(color[2]))
+                            : SIMD3<Float>(1, 0, 0)
+                        tintBlendMode = Int32(pass?.combos["BLENDMODE"] ?? 30)
+                        tintOpacity = Float(pass?.constants["alpha"]?.numberValue ?? 1)
+                        hasTint = true
                     }
                     if file.contains("/opacity/"),
                        let mask = pass?.textures[1] {
@@ -375,7 +384,7 @@ extension WPEMetalSceneRenderer {
             }
             current = objectParentByID[id]
         }
-        guard maskPath != nil || tint != SIMD3<Float>(1, 1, 1) else { return nil }
+        guard maskPath != nil || hasTint else { return nil }
         var maskTexture: MTLTexture?
         if let maskPath,
            let payload = try? await makeTextureResource(
@@ -383,7 +392,7 @@ extension WPEMetalSceneRenderer {
            case .staticTexture(let t) = payload {
             maskTexture = t
         }
-        return (maskTexture, tint)
+        return (maskTexture, tint, tintBlendMode, tintOpacity)
     }
 
     /// Dedup per ancestry chain so same-path siblings with different `origin` (matrix-rain columns) each instantiate.
@@ -395,7 +404,7 @@ extension WPEMetalSceneRenderer {
         parentSystem: WPEParticleSystem?,
         object: WPESceneParticleObject,
         sortIndex: Int,
-        groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>)? = nil,
+        groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>, tintBlendMode: Int32, tintOpacity: Float)? = nil,
         childReference: WPEParticleChildReference? = nil,
         budget: inout ParticleExpansionBudget,
         on actor: isolated WPEDisplayRenderActor
@@ -514,7 +523,7 @@ extension WPEMetalSceneRenderer {
         sortIndex: Int = 0,
         isNestedChild: Bool = false,
         childTransform: WPEParticleChildTransform = .identity,
-        groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>)? = nil,
+        groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>, tintBlendMode: Int32, tintOpacity: Float)? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async -> WPEParticleSystem? {
         let material = definition.materialRelativePath
@@ -654,6 +663,8 @@ extension WPEMetalSceneRenderer {
         if let groupEffect {
             system.groupOpacityMask = groupEffect.mask
             system.groupTint = groupEffect.tint
+            system.groupTintBlendMode = groupEffect.tintBlendMode
+            system.groupTintOpacity = groupEffect.tintOpacity
         }
         // REFRACT needs the normal map; load fail → flat sprite. Frame 0 of a dynamic source is the whole atlas (TEXS sub-rects). Demanding `.staticTexture` would drop refraction.
         if material?.isRefract == true, let normalPath = material?.normalTexturePath {

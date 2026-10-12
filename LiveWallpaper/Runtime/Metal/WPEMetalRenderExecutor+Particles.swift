@@ -279,6 +279,7 @@ extension WPEMetalRenderExecutor {
             system.groupTint.x, system.groupTint.y, system.groupTint.z,
             !isRefract && system.groupOpacityMask != nil ? 1 : 0
         )
+        sprite.tintBlend = SIMD4<Float>(Float(system.groupTintBlendMode), system.groupTintOpacity, 0, 0)
 
         return .init(projection: projection, sprite: sprite)
     }
@@ -289,6 +290,8 @@ extension WPEMetalRenderExecutor {
         var grid: SIMD4<Float>
         var frameRectMode: SIMD4<Float>
         var tintAndMask: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 0)
+        /// (BLENDMODE, tint opacity, 0, 0); the default Multiply over white `tintAndMask` leaves colour unchanged.
+        var tintBlend: SIMD4<Float> = SIMD4<Float>(2, 1, 0, 0)
     }
 
 }

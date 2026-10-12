@@ -128,6 +128,73 @@ struct WPEParticleSpriteBatchTests {
         }
     }
 
+    @MainActor
+    @Test("Compose-group tint follows the tint effect BLENDMODE",
+          arguments: ["none", "additive", "tintWhite", "tintHalf"])
+    func groupTintBlendMode(name: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0,
+                         "distancemin": "0 0 0", "distancemax": "0 0 0"]],
+            "initializer": [["name": "sizerandom", "min": 64, "max": 64],
+                            ["name": "lifetimerandom", "min": 10, "max": 10],
+                            ["name": "rotationrandom", "min": "0 0 0", "max": "0 0 0"]],
+        ])
+        let system = try #require(WPEParticleSystem(
+            definition: definition, device: device,
+            sceneTransform: .init(sceneSize: SIMD2(41, 29), objectOrigin: SIMD3(20.5, 14.5, 0),
+                                  objectScale: SIMD3(repeating: 1), objectAngleZ: 0),
+            seed: 1
+        ))
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let instance = system.instanceBuffer.contents().advanced(by: system.renderBufferOffset)
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)
+        instance[0].color = SIMD4(1, 1, 1, 1)
+        let spriteColor: SIMD4<UInt8>
+        let expected: SIMD3<Float>
+        switch name {
+        case "additive":
+            spriteColor = SIMD4(0, 255, 0, 255)
+            system.groupTint = SIMD3(0.584, 0.922, 1)
+            system.groupTintBlendMode = 31
+            expected = SIMD3(0.584, 1, 1)
+        case "tintWhite":
+            spriteColor = SIMD4(51, 153, 102, 255)
+            system.groupTintBlendMode = 30
+            expected = SIMD3(repeating: 0.6)
+        case "tintHalf":
+            spriteColor = SIMD4(51, 153, 102, 255)
+            system.groupTint = SIMD3(0.5, 1, 0.25)
+            system.groupTintBlendMode = 30
+            system.groupTintOpacity = 0.5
+            expected = SIMD3(0.25, 0.6, 0.275)
+        default:
+            spriteColor = SIMD4(51, 153, 102, 255)
+            expected = SIMD3(0.2, 0.6, 0.4)
+        }
+        let sprite = try texture(device, color: spriteColor)
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: .init(width: 41, height: 29, auto: true), sceneCamera: .defaultCamera
+        )
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let output = try executor.render(
+            pipeline: .init(layers: []), size: size, textures: [:], cameraUniforms: camera,
+            particleSystems: [system], particleTextures: [ObjectIdentifier(system): sprite]
+        )
+        try #require(output.pixelFormat == .rgba8Unorm)
+        let pixels = try bytes(output)
+        let center = (14 * output.width + 20) * 4
+        let actual = SIMD3(Float(pixels[center]), Float(pixels[center + 1]), Float(pixels[center + 2])) / 255
+        if name == "none" {
+            #expect(Array(pixels[center ..< center + 3]) == [51, 153, 102])
+        }
+        let error = max(abs(actual.x - expected.x), abs(actual.y - expected.y), abs(actual.z - expected.z))
+        #expect(error < 2.0 / 255, "\(name): got \(actual), want \(expected)")
+    }
+
     @Test("Batch planning respects layer threshold and all projection fields")
     func batchThresholdAndProjection() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
