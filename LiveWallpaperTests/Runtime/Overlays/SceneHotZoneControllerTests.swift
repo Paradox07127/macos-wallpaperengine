@@ -65,6 +65,7 @@ struct SceneHotZoneControllerTests {
         #expect(panel.canBecomeMain == false)
         #expect(panel.styleMask.contains(.nonactivatingPanel))
         #expect(panel.sharingType == WallpaperCapturePolicy.windowSharingType)
+        #expect(panel.animationBehavior == .none)
     }
 
     @Test func pressedPanelHoldsItsFrameUntilRelease() throws {

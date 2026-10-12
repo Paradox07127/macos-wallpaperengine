@@ -28,7 +28,7 @@ struct WPEInteractiveZoneTests {
     }
 
     private func loadedRenderer(
-        script: String, size: String, visible: Bool = true
+        script: String, size: String, visible: Bool = true, alpha: Any = 1
     ) async throws -> (WPEMetalSceneRenderer, MetalSceneFixture) {
         let fixture = try MetalSceneFixture.solidColorScene()
         let path = fixture.root.appendingPathComponent("scene.json")
@@ -37,6 +37,7 @@ struct WPEInteractiveZoneTests {
         objects[0]["origin"] = "32 32 0"
         objects[0]["size"] = size
         objects[0]["visible"] = ["value": visible, "script": script]
+        objects[0]["alpha"] = alpha
         scene["objects"] = objects
         try JSONSerialization.data(withJSONObject: scene).write(to: path)
         let renderer = try WPEMetalSceneRenderer(
@@ -102,6 +103,25 @@ struct WPEInteractiveZoneTests {
         defer { renderer.cleanup(); fixture.cleanup() }
         let pipeline = try #require(renderer.renderPipeline)
         #expect(renderer.interactiveZones(pipeline: pipeline).count == (visible ? 1 : 0))
+    }
+
+    /// `keyframe` nil = static alpha `base`; otherwise `base` carries an animation holding `keyframe`.
+    @Test("A clickable layer yields a zone only while its effective alpha is above zero", arguments: [
+        (0, nil, 0), (0.5, nil, 1), (0, 0, 0), (0, 0.5, 1),
+    ] as [(Double, Double?, Int)])
+    func transparentLayerYieldsNoZone(base: Double, keyframe: Double?, expected: Int) async throws {
+        let alpha: Any = keyframe.map { value in
+            ["value": base, "animation": [
+                "c0": [["frame": 0, "value": value], ["frame": 30, "value": value]],
+                "options": ["fps": 30, "length": 30, "mode": "loop"],
+            ]] as [String: Any]
+        } ?? base
+        let (renderer, fixture) = try await loadedRenderer(
+            script: "export function cursorClick() {}", size: "16 16", alpha: alpha
+        )
+        defer { renderer.cleanup(); fixture.cleanup() }
+        let pipeline = try #require(renderer.renderPipeline)
+        #expect(renderer.interactiveZones(pipeline: pipeline).count == expected)
     }
 }
 #endif

@@ -168,6 +168,8 @@ private final class SceneHotZonePanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         isReleasedWhenClosed = false
         isExcludedFromWindowsMenu = true
+        // The default orderOut fade would leave a removed zone's panel lingering on screen.
+        animationBehavior = .none
         sharingType = WallpaperCapturePolicy.windowSharingType
     }
 
