@@ -49,6 +49,8 @@ struct WPESceneScriptTransformMutationJournal: Equatable {
 /// handlers. Implementations buffer the frame's burst and return a batch job
 /// for the renderer-owned ordered drain (nil when nothing is pending).
 protocol WPECursorEventScriptInstance: AnyObject {
+    /// Handlers the script exported at setup; read on the render actor.
+    var exportedCursorHandlers: Set<WPELayerScriptCursorEvent> { get }
     func enqueueCursorEvents(
         _ events: [WPELayerScriptCursorInvocation],
         allowSubmission: Bool
@@ -92,6 +94,7 @@ extension WPEMetalSceneRenderer {
         scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) {
         cancelCursorInputRouting()
+        mailbox.publishInteractiveZones([])
         layerTransformMutationJournal.removeAll()
         liveLayerPresentation = [:]
         layerScriptInstances = [:]
@@ -695,27 +698,7 @@ extension WPEMetalSceneRenderer {
             || !dynamicParallaxDepthScriptInstances.isEmpty
             || !effectVisibilityScriptInstances.isEmpty || !effectConstantScriptInstances.isEmpty
         else { return }
-        var geometryByID: [String: WPERenderLayerGeometry] = [:]
-        for layer in pipeline.layers {
-            let objectID = layer.graphLayer.objectID
-            if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil
-                || textVisibleScriptInstances[objectID] != nil
-                || textAlphaScriptInstances[objectID] != nil
-                || dynamicOriginScriptInstances[objectID] != nil
-                || dynamicScaleScriptInstances[objectID] != nil
-                || dynamicAnglesScriptInstances[objectID] != nil
-                || dynamicColorScriptInstances[objectID] != nil
-                || dynamicParallaxDepthScriptInstances[objectID] != nil {
-                geometryByID[objectID] = attachmentGeometry[objectID] ?? layer.graphLayer.geometry
-            }
-        }
-        // Effect-constant/visibility scripts key by pass, not object — resolve the host object.
-        for instance in [WPEDynamicTransformScriptInstance](effectConstantScriptInstances.values)
-            + effectVisibilityScriptInstances.values {
-            guard let id = instance.ownObjectID, geometryByID[id] == nil,
-                  let layer = pipeline.layers.first(where: { $0.graphLayer.objectID == id }) else { continue }
-            geometryByID[id] = attachmentGeometry[id] ?? layer.graphLayer.geometry
-        }
+        let geometryByID = cursorHitGeometry(pipeline: pipeline, attachmentGeometry: attachmentGeometry)
         let projectedQuads = projectedComposeHoverQuads(pipeline: pipeline, geometryByID: geometryByID)
         let width = Double(max(sceneRenderSize.width, 1))
         let height = Double(max(sceneRenderSize.height, 1))
@@ -746,6 +729,76 @@ extension WPEMetalSceneRenderer {
             deliver(instance, events, pointerFrame)
         }
 
+    }
+
+    /// Drawable-UV bounds (top-left origin) of objects whose scripts take button events, from the same geometry hover hit-tests.
+    /// Rects over 30% of the view are left out: those objects keep the desktop-click path.
+    func interactiveZones(
+        pipeline: WPEPreparedRenderPipeline,
+        attachmentGeometry: [String: WPERenderLayerGeometry] = [:]
+    ) -> [CGRect] {
+        let buttonEvents: Set<WPELayerScriptCursorEvent> = [.down, .up, .click, .rightDown, .rightUp]
+        var objectIDs: Set<String> = []
+        forEachCursorScriptInstance { objectID, instance in
+            if !instance.exportedCursorHandlers.isDisjoint(with: buttonEvents) { objectIDs.insert(objectID) }
+        }
+        guard !objectIDs.isEmpty else { return [] }
+        let geometryByID = cursorHitGeometry(pipeline: pipeline, attachmentGeometry: attachmentGeometry)
+        let projectedQuads = projectedComposeHoverQuads(pipeline: pipeline, geometryByID: geometryByID)
+        let sceneSize = SIMD2<Double>(Double(max(sceneRenderSize.width, 1)), Double(max(sceneRenderSize.height, 1)))
+        let present = presentUniforms()
+        let view = CGRect(x: 0, y: 0, width: 1, height: 1)
+        var zones: [CGRect] = []
+        for objectID in objectIDs {
+            guard let geometry = geometryByID[objectID] else { continue }
+            let sceneBounds: (min: SIMD2<Double>, max: SIMD2<Double>)
+            if let quad = projectedQuads[objectID] {
+                // Clip (x, y, w) y-up → top-left scene UV, as the quad's draw-back homography maps it.
+                let uvs = quad.clipCorners.map { SIMD2<Double>((1 + $0.x / $0.z) / 2, (1 - $0.y / $0.z) / 2) }
+                sceneBounds = (uvs.dropFirst().reduce(uvs[0]) { pointwiseMin($0, $1) },
+                               uvs.dropFirst().reduce(uvs[0]) { pointwiseMax($0, $1) })
+            } else if let rect = hoverHitRect(geometry: geometry) {
+                sceneBounds = ((rect.center - rect.half) / sceneSize, (rect.center + rect.half) / sceneSize)
+            } else {
+                continue
+            }
+            let a = present.drawablePointer(fromScenePointer: sceneBounds.min)
+            let b = present.drawablePointer(fromScenePointer: sceneBounds.max)
+            let zone = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+                .intersection(view)
+            let area = zone.isNull ? 0 : zone.width * zone.height
+            guard area > 0, area <= 0.30 else { continue }
+            zones.append(zone)
+        }
+        return zones.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }
+    }
+
+    private func cursorHitGeometry(
+        pipeline: WPEPreparedRenderPipeline,
+        attachmentGeometry: [String: WPERenderLayerGeometry]
+    ) -> [String: WPERenderLayerGeometry] {
+        var geometryByID: [String: WPERenderLayerGeometry] = [:]
+        for layer in pipeline.layers {
+            let objectID = layer.graphLayer.objectID
+            if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil
+                || textVisibleScriptInstances[objectID] != nil
+                || textAlphaScriptInstances[objectID] != nil
+                || dynamicOriginScriptInstances[objectID] != nil
+                || dynamicScaleScriptInstances[objectID] != nil
+                || dynamicAnglesScriptInstances[objectID] != nil
+                || dynamicColorScriptInstances[objectID] != nil
+                || dynamicParallaxDepthScriptInstances[objectID] != nil {
+                geometryByID[objectID] = attachmentGeometry[objectID] ?? layer.graphLayer.geometry
+            }
+        }
+        // Effect-constant/visibility scripts key by pass, not object — resolve the host object.
+        for instance in [WPEDynamicTransformScriptInstance](effectConstantScriptInstances.values)
+            + effectVisibilityScriptInstances.values {
+            guard let id = instance.ownObjectID, geometryByID[id] == nil,
+                  let layer = pipeline.layers.first(where: { $0.graphLayer.objectID == id }) else { continue }
+            geometryByID[id] = attachmentGeometry[id] ?? layer.graphLayer.geometry
+        }
+        return geometryByID
     }
 
     /// Perspective composelayers hit-test against their projected trapezoid instead of the folded rect.

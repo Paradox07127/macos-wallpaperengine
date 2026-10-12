@@ -246,6 +246,18 @@ struct WPEPresentUniforms {
         guard (0 ... 1).contains(scene.x), (0 ... 1).contains(scene.y) else { return nil }
         return scene
     }
+
+    /// Exact inverse of `scenePointer(fromDrawablePointer:)` with no range guard: scene points the present crops away land outside [0,1].
+    func drawablePointer(fromScenePointer scene: SIMD2<Double>) -> SIMD2<Double> {
+        var pointer = SIMD2<Double>(0, 0)
+        for axis in 0 ..< 2 {
+            let ndc = Double(ndcScale[axis])
+            let offset = Double(ndcOffset[axis]) * (axis == 0 ? 1 : -1)
+            let quad = (scene[axis] - Double(uvOffset[axis])) / Double(uvScale[axis])
+            pointer[axis] = quad * ndc + (1 - ndc + offset) / 2
+        }
+        return pointer
+    }
 }
 
 // Per-effect uniform structs. Field order MUST match the matching MSL struct

@@ -140,6 +140,10 @@ enum WPELayerScriptCursorEvent: Sendable, Equatable, CaseIterable {
         }
     }
 
+    static func exported(in context: JSContext) -> Set<Self> {
+        Set(allCases.filter { wpeExportsFunction(named: $0.handlerName, in: context) })
+    }
+
     /// DOM MouseEvent convention: 0 = left, 2 = right. Scripts gate handlers on
     /// `event.button !== 0` (workshop 3809609151); an absent field reads as
     /// `undefined` and fails that check, so it must always be present.
@@ -331,6 +335,7 @@ final class WPELayerScriptInstance {
     private var hasUpdateFunction: Bool
     let handlesUserProperties: Bool
     private(set) var mediaHandlers: WPESceneMediaHandlerSet
+    private(set) var exportedCursorHandlers: Set<WPELayerScriptCursorEvent>
     private let tickBudget: TimeInterval
     private var isPoisoned = false
     /// Lifecycle is one-way; only the first teardown path may invoke the authored destroy() handler.
@@ -411,10 +416,11 @@ final class WPELayerScriptInstance {
                 throw WPESceneScriptError.contextUnavailable
             case .setupFailed:
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, handlesUserProperties, media, output):
+            case let .ready(hasUpdate, handlesUserProperties, media, cursor, output):
                 self.hasUpdateFunction = hasUpdate
                 self.handlesUserProperties = handlesUserProperties
                 self.mediaHandlers = media
+                exportedCursorHandlers = cursor
                 self.initialOutput = output
             }
         }
@@ -440,9 +446,10 @@ final class WPELayerScriptInstance {
             case .setupFailed:
                 isPoisoned = true
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, _, media, output):
+            case let .ready(hasUpdate, _, media, cursor, output):
                 hasUpdateFunction = hasUpdate
                 mediaHandlers = media
+                exportedCursorHandlers = cursor
                 initialOutput = Self.mergedOutputs(pending: initialOutput, newer: output)
             }
         }
@@ -821,6 +828,7 @@ final class WPELayerScriptInstance {
                 hasUpdate: Bool,
                 handlesUserProperties: Bool,
                 media: WPESceneMediaHandlerSet,
+                cursor: Set<WPELayerScriptCursorEvent>,
                 output: WPELayerScriptOutput
             )
             case contextUnavailable
@@ -936,7 +944,8 @@ final class WPELayerScriptInstance {
             return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline) {
                 let evaluation = self.evaluateLayerEntry { self.initializeOnQueue() }
                 guard let metadata = evaluation.result else { return self.context == nil ? .contextUnavailable : .setupFailed }
-                return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
+                return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2,
+                              cursor: metadata.3, output: evaluation.output)
             }
         }
 
@@ -1213,7 +1222,7 @@ final class WPELayerScriptInstance {
             scriptProperties: [String: WPESceneScriptPropertyValue],
             initialize: Bool
         ) -> SetupOutcome {
-            let evaluation = evaluateLayerEntry { () -> (Bool, Bool, WPESceneMediaHandlerSet)? in
+            let evaluation = evaluateLayerEntry { () -> (Bool, Bool, WPESceneMediaHandlerSet, Set<WPELayerScriptCursorEvent>)? in
                 guard let context = JSContext(virtualMachine: virtualMachine) else { return nil }
                 self.context = context
                 let timerScheduler = WPESceneScriptTimerScheduler()
@@ -1277,13 +1286,15 @@ final class WPELayerScriptInstance {
                 if initialize {
                     return initializeOnQueue()
                 }
-                return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
+                return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context),
+                        WPELayerScriptCursorEvent.exported(in: context))
             }
             guard let metadata = evaluation.result else { return context == nil ? .contextUnavailable : .setupFailed }
-            return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
+            return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2,
+                          cursor: metadata.3, output: evaluation.output)
         }
 
-        private func initializeOnQueue() -> (Bool, Bool, WPESceneMediaHandlerSet)? {
+        private func initializeOnQueue() -> (Bool, Bool, WPESceneMediaHandlerSet, Set<WPELayerScriptCursorEvent>)? {
             guard let context else { return nil }
             let userPropertiesValue = context.objectForKeyedSubscript("applyUserProperties")
             let handlesUserProperties = userPropertiesValue != nil
@@ -1319,7 +1330,8 @@ final class WPELayerScriptInstance {
                     assignedText[Self.ownKey] = nil
                 }
             }
-            return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
+            return (updateFunction != nil, handlesUserProperties, WPESceneMediaHandlerSet(in: context),
+                    WPELayerScriptCursorEvent.exported(in: context))
         }
 
         /// Keyed by handler name, so a throwing media handler backs off alone

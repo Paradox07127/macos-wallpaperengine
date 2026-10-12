@@ -1,9 +1,10 @@
 #if !LITE_BUILD
 import AppKit
 import CoreGraphics
-import Testing
-import simd
 @testable import LiveWallpaper
+import os
+import simd
+import Testing
 
 @Suite("WPE pointer mailbox")
 struct WPEPointerMailboxTests {
@@ -226,6 +227,45 @@ struct WPEPointerMailboxTests {
         let edges = mailbox.takeButtonEvents(through: reading.buttonCursor).edges
         #expect(edges.map(\.frame) == [desktopFrame(true)])
         #expect(edges.map(\.fromDesktop) == [false])
+    }
+
+    @Test("Interactive zones republish only on a change beyond tolerance, and the observer sees each change once")
+    func interactiveZonesPublishOnChange() {
+        let mailbox = WPEPointerMailbox()
+        let received = OSAllocatedUnfairLock(initialState: [[CGRect]]())
+        let zone = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.25)
+        mailbox.publishInteractiveZones([zone])
+        mailbox.setInteractiveZonesObserver { zones in received.withLock { $0.append(zones) } }
+        #expect(received.withLock { $0 } == [[zone]], "Setting an observer would not replay the current set")
+        let version = mailbox.interactiveZonesVersion
+        mailbox.publishInteractiveZones([zone.offsetBy(dx: 0.0004, dy: 0)])
+        #expect(mailbox.interactiveZonesVersion == version)
+        #expect(received.withLock { $0.count } == 1)
+        let moved = zone.offsetBy(dx: 0.01, dy: 0)
+        mailbox.publishInteractiveZones([moved])
+        #expect(mailbox.interactiveZonesVersion == version + 1)
+        #expect(mailbox.interactiveZones == [moved])
+        #expect(received.withLock { $0 } == [[zone], [moved]])
+        mailbox.resetButtonEvents()
+        #expect(mailbox.interactiveZones == [moved], "A button reset would clear renderer-owned zones")
+    }
+
+    @Test("A position-only publish moves the pointer without button edges")
+    func pointerPositionOnly() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.publishGeometry(.init(viewFrameInScreen: Self.frame))
+        mailbox.setClickCaptureEnabled(true)
+        mailbox.publishPointerFrame(desktopFrame(true))
+        let pressed = mailbox.read()
+        _ = mailbox.takeButtonEvents(through: pressed.buttonCursor)
+        mailbox.publishPointerPosition(screenLocation: CGPoint(x: 500, y: 500))
+        let reading = mailbox.read()
+        var expected = desktopFrame(true)
+        expected.position = SIMD2(0.5, 0.5)
+        #expect(reading.pointerFrame == expected)
+        #expect(mailbox.takeButtonEvents(through: reading.buttonCursor).edges.isEmpty)
+        mailbox.publishPointerPosition(screenLocation: CGPoint(x: 0, y: 0))
+        #expect(mailbox.read().pointerFrame == expected, "An outside location would move the pointer")
     }
 }
 

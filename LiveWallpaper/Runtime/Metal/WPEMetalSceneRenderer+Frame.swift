@@ -209,6 +209,9 @@ extension WPEMetalSceneRenderer {
             pipeline: framePipeline, pointerFrame: finalCursorFrame,
             attachmentGeometry: cursorAttachmentGeometry, deliver: deliver
         )
+        mailbox.publishInteractiveZones(
+            interactiveZones(pipeline: framePipeline, attachmentGeometry: cursorAttachmentGeometry)
+        )
         // Explicit oracle/manual inputs keep their existing snapshot-only behavior.
         // Mailbox edges own button delivery when a snapshot cursor is present.
         if buttonBatch == nil {

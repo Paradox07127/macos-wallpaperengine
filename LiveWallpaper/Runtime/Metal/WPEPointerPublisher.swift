@@ -119,6 +119,7 @@ final class WPEPointerPublisher {
                 screenLocation,
                 timestampNanos: Self.nanos(from: time)
             )
+            mailbox.publishPointerPosition(screenLocation: screenLocation)
         }
         let entered = inside && !lastSampleWasInside
         lastSampleWasInside = inside

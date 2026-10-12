@@ -3317,6 +3317,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private let cursorInbox = WPELayerScriptCursorInbox()
     /// Cursor handlers the module exports; other events are never queued.
     private var cursorHandlers: Set<WPELayerScriptCursorEvent> = []
+    var exportedCursorHandlers: Set<WPELayerScriptCursorEvent> {
+        cursorHandlers
+    }
+
     /// The arity WPE authored for the bound property. Vec3 is the transform
     /// default; shader constants are usually scalars.
     private let valueShape: WPEScriptValueShape
@@ -4107,7 +4111,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         private static func cursorHandlers(in context: JSContext) -> Set<WPELayerScriptCursorEvent> {
-            Set(WPELayerScriptCursorEvent.allCases.filter { wpeExportsFunction(named: $0.handlerName, in: context) })
+            WPELayerScriptCursorEvent.exported(in: context)
         }
 
         private func initializeOnQueue() -> SetupOutcome {

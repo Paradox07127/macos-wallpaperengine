@@ -865,6 +865,7 @@ extension WPEMetalSceneRenderer {
         completedPresentGeneration = nil
         failedPresentGeneration = nil
         pendingPresentRetryCount = 0
+        mailbox.publishInteractiveZones([])
         surfaceControl.detach()
         outputTexture = nil
         outputFrameProduction = nil

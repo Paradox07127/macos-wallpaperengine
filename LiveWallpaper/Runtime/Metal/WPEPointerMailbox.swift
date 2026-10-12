@@ -54,7 +54,13 @@ final class WPEPointerMailbox: Sendable {
         var edges: [ButtonEdge] = []
         var cancelled = false
         var suppressed = false
+        /// Drawable UV (top-left origin, same space as `pointerSample` positions); only the renderer writes it.
+        var interactiveZones: [CGRect] = []
+        var interactiveZonesVersion: UInt64 = 0
+        var interactiveZonesObserver: (@Sendable ([CGRect]) -> Void)?
     }
+
+    private static let zoneTolerance: CGFloat = 0.0005
 
     private let buttonCapacity = 256
 
@@ -80,8 +86,46 @@ final class WPEPointerMailbox: Sendable {
         }
     }
 
+    /// Moves the pointer only: buttons, gesture and click position stay as the last button frame left them.
+    func publishPointerPosition(screenLocation: CGPoint) {
+        lock.withLock { state in
+            let sample = Self.pointerSample(forScreenLocation: screenLocation, geometry: state.geometry)
+            guard sample.isInsideView else { return }
+            state.pointerFrame.position = sample.position
+        }
+    }
+
     func publishGeometry(_ geometry: Geometry) {
         lock.withLock { $0.geometry = geometry }
+    }
+
+    /// The observer runs on the caller's thread, outside the lock.
+    func publishInteractiveZones(_ zones: [CGRect]) {
+        let observer = lock.withLock { state -> (@Sendable ([CGRect]) -> Void)? in
+            guard !Self.zonesMatch(state.interactiveZones, zones) else { return nil }
+            state.interactiveZones = zones
+            state.interactiveZonesVersion &+= 1
+            return state.interactiveZonesObserver
+        }
+        observer?(zones)
+    }
+
+    /// Replays a non-empty current set immediately, outside the lock and on the caller's thread.
+    func setInteractiveZonesObserver(_ observer: (@Sendable ([CGRect]) -> Void)?) {
+        let current = lock.withLock { state in
+            state.interactiveZonesObserver = observer
+            return state.interactiveZones
+        }
+        if let observer, !current.isEmpty {
+            observer(current)
+        }
+    }
+
+    private static func zonesMatch(_ lhs: [CGRect], _ rhs: [CGRect]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { a, b in
+            abs(a.minX - b.minX) <= zoneTolerance && abs(a.minY - b.minY) <= zoneTolerance
+                && abs(a.maxX - b.maxX) <= zoneTolerance && abs(a.maxY - b.maxY) <= zoneTolerance
+        }
     }
 
     func publishPointerFrame(_ frame: WPEPointerFrame, isInsideView: Bool = true) {
@@ -197,6 +241,14 @@ final class WPEPointerMailbox: Sendable {
                 buttonsSuppressed: state.suppressed
             )
         }
+    }
+
+    var interactiveZones: [CGRect] {
+        lock.withLock { $0.interactiveZones }
+    }
+
+    var interactiveZonesVersion: UInt64 {
+        lock.withLock { $0.interactiveZonesVersion }
     }
 
     func sample(screenLocation: CGPoint) -> WPEMetalPointerSample {
