@@ -42,6 +42,7 @@ actor WPEDisplayRenderActor {
     /// Set instead of `renderer` for scenes listed by `WPEParityRendererFlag`; both are never set at once.
     private var parityDriver: WPEParitySceneDriver?
     private var parityInputs: WPEParitySceneInputs?
+    private var parityReplanning = false
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
@@ -172,7 +173,10 @@ actor WPEDisplayRenderActor {
     /// The driver is built here because it is not Sendable and must live on this actor.
     func adoptParity(_ inputs: WPEParitySceneInputs) throws {
         scenePropertyRendererGeneration &+= 1
-        parityDriver = try WPEParitySceneDriver(device: inputs.device)
+        let driver = try WPEParitySceneDriver(device: inputs.device)
+        driver.updateSurfaceGeometry(drawableSize: inputs.drawableSize)
+        driver.setPresentFitMode(inputs.presentFitMode)
+        parityDriver = driver
         parityInputs = inputs
         startConfigConsumer()
     }
@@ -204,8 +208,13 @@ actor WPEDisplayRenderActor {
         if let parityDriver, let parityInputs {
             let acquisitionStart = parityDriver.drawableAcquisitionSeconds
             let start = CACurrentMediaTime()
+            let pointer = parityDriver.pointerInput(parityInputs.mailbox.read())
+            // As the old renderer: the shared system-audio capture, not the scene's own sounds.
+            let audio = SystemAudioCaptureManager.isCapturing
+                ? SystemAudioCaptureManager.broker.snapshot(clampedTo01: false) : nil
             parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer, timestamp: start,
-                                               pointer: parityInputs.mailbox.read().pointerSample.position)
+                                               pointer: pointer.position, buttonDown: pointer.buttonDown,
+                                               audio: audio)
             thread?.noteFrameDuration(CACurrentMediaTime() - start,
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             return
@@ -324,10 +333,35 @@ actor WPEDisplayRenderActor {
     var usesParityDriverForTesting: Bool {
         parityDriver != nil
     }
+
+    var parityPointerForTesting: WPEParityUniformPointer? {
+        parityDriver?.renderer?.pointer
+    }
+
+    var parityFitModeForTesting: WPEPresentFitMode? {
+        parityDriver?.fitMode
+    }
     #endif
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
+        if let parityDriver {
+            parityDriver.updateSurfaceGeometry(drawableSize: drawableSize)
+            replanParityIfNeeded()
+            return
+        }
         renderer?.updateSurfaceGeometry(drawableSize: drawableSize)
+    }
+
+    /// The re-plan builds off the frame path; frames keep the current plan until it is swapped in.
+    private func replanParityIfNeeded() {
+        guard let parityDriver, parityDriver.needsReplan, !parityReplanning else { return }
+        parityReplanning = true
+        Task { await self.replanParity() }
+    }
+
+    private func replanParity() async {
+        defer { parityReplanning = false }
+        while let parityDriver, parityDriver.needsReplan, await parityDriver.replan() {}
     }
 
     func performStaticReload(
@@ -466,19 +500,27 @@ actor WPEDisplayRenderActor {
         guard let parityDriver, let inputs = parityInputs else { return }
         let document = try await CancellableBackgroundWork.run { try inputs.makeDocument() }
         try await parityDriver.load(document: document, assets: inputs.assets, settings: inputs.settings,
-                                    drawableSize: inputs.drawableSize, pixelFormat: inputs.pixelFormat,
+                                    drawableSize: parityDriver.drawableSize, pixelFormat: inputs.pixelFormat,
                                     compiler: inputs.compiler, soundResolver: inputs.soundResolver,
-                                    audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot))
+                                    audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
+                                    workshopID: inputs.descriptor.workshopID)
         applyParityPacing()
+        // A resize or fit change that arrived while loading.
+        replanParityIfNeeded()
         thread?.boostRenderQoSWarmup()
     }
 
-    /// The display link starts paused; the parity scene runs it while loaded and not suspended.
+    /// The display link starts paused; the parity scene runs it while loaded and not suspended. The frame-rate
+    /// ceiling and pointer monitoring follow the old renderer: neither applies while suspended.
     private func applyParityPacing() {
         guard let parityDriver, let parityInputs else { return }
         let running = parityDriver.didLoad && !parityDriver.isPaused
-        parityInputs.surfaceControl.applyPacing(WPERenderPacingUpdate(isPaused: !running,
-                                                                      enableSetNeedsDisplay: !running))
+        let pointerDemand = parityDriver.mouseInteractionEnabled || parityInputs.mailbox.read().clickCaptureEnabled
+        parityInputs.surfaceControl.applyPacing(WPERenderPacingUpdate(
+            isPaused: !running, enableSetNeedsDisplay: !running,
+            preferredFramesPerSecond: parityDriver.isPaused ? nil : parityDriver.effectiveFPS,
+            pointerEventsEnabled: !parityDriver.isPaused && pointerDemand
+        ))
     }
 
     func hibernate() async -> Bool {
@@ -521,6 +563,11 @@ actor WPEDisplayRenderActor {
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
+        if let parityDriver {
+            parityDriver.setFrameRateCeiling(framesPerSecond)
+            applyParityPacing()
+            return
+        }
         if spanPresenter != nil {
             setLinkPreferredFPS(framesPerSecond)
         }
@@ -528,6 +575,11 @@ actor WPEDisplayRenderActor {
     }
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {
+        if let parityDriver {
+            parityDriver.setAdaptiveFrameRateThrottle(active)
+            applyParityPacing()
+            return
+        }
         renderer?.setAdaptiveFrameRateThrottle(active)
     }
 
@@ -548,18 +600,38 @@ actor WPEDisplayRenderActor {
     #endif
 
     func requiresSystemAudioCapture() -> Bool {
-        renderer?.sceneSupportsAudioProcessing ?? false
+        if let parityDriver {
+            return parityDriver.requiresSystemAudioCapture
+        }
+        return renderer?.sceneSupportsAudioProcessing ?? false
     }
 
     func setMouseInteractionEnabled(_ enabled: Bool) {
+        if let parityDriver {
+            parityDriver.setMouseInteractionEnabled(enabled)
+            applyParityPacing()
+            return
+        }
         renderer?.setMouseInteractionEnabled(enabled)
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
+        if let parityInputs {
+            // The mailbox first, as the old renderer: its epoch cancels pending presses at once.
+            parityInputs.mailbox.setClickCaptureEnabled(enabled)
+            parityInputs.surfaceControl.setClickCaptureEnabled(enabled)
+            applyParityPacing()
+            return
+        }
         renderer?.setClickCaptureEnabled(enabled)
     }
 
     func setPresentFitMode(_ mode: WPEPresentFitMode) {
+        if let parityDriver {
+            parityDriver.setPresentFitMode(mode)
+            replanParityIfNeeded()
+            return
+        }
         renderer?.setPresentFitMode(mode)
     }
 

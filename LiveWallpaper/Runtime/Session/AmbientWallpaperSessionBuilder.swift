@@ -370,7 +370,8 @@ final class AmbientWallpaperSessionBuilder {
                         WPEMultiRootResourceResolver(primaryProvider: $0, dependencyMounts: dependencyMounts,
                                                      engineAssetsRootURL: engineAssetsRootURL)
                     } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
-                                                      engineAssetsRootURL: engineAssetsRootURL)
+                                                      engineAssetsRootURL: engineAssetsRootURL),
+                    presentFitMode: WPEPresentFitMode(fitMode)
                 ))
                 return session
             case let .failure(reason):

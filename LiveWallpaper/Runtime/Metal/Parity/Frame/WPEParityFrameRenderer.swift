@@ -52,7 +52,7 @@ final class WPEParityFrameRenderer {
     private let camera: WPEParityCamera
     private let cameraParallax: WPESceneCameraParallaxSettings
     private(set) var clock = WPEParityClock()
-    private var pointer = WPEParityUniformPointer()
+    private(set) var pointer = WPEParityUniformPointer()
     private var parallax = WPEParityUniformParallax()
     private var audio = WPEParityAudioSpectrum()
     /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
@@ -124,9 +124,11 @@ final class WPEParityFrameRenderer {
 
     /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
     /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
-    /// particle batches, up to `maxParticleShare`.
+    /// particle batches, up to `maxParticleShare`. `workshopID` keys the video disk cache; nil uses the scene
+    /// directory's name.
     init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
-         particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil) async throws {
+         particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
+         workshopID: String? = nil) async throws {
         let factory = WPEParityPipelineFactory(device: device)
         var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan)
         var skipped = plan.skipped
@@ -155,7 +157,8 @@ final class WPEParityFrameRenderer {
 
         try planner.fillImportedImages()
         let videos = try await WPEParityVideoTextures(streams: planner.videos,
-                                                      workshopID: plan.scene.assets.roots[0].lastPathComponent,
+                                                      workshopID: workshopID
+                                                          ?? plan.scene.assets.roots[0].lastPathComponent,
                                                       device: device, queue: queue)
 
         // Each draw needs at most a few argument tables and cbuffers, all 256-byte aligned.
@@ -227,6 +230,20 @@ final class WPEParityFrameRenderer {
             let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
             puppets[object.id] = WPEParityPuppetAnimator(model: model, layers: layers)
         }
+    }
+
+    /// Picks up `previous`'s scene where it stopped, for the same document planned at another size.
+    func continueScene(from previous: WPEParityFrameRenderer) {
+        clock = previous.clock
+        pointer = previous.pointer
+        parallax = previous.parallax
+        audio = previous.audio
+        textureSlots = previous.textureSlots
+        renderVars = previous.renderVars
+        puppets = previous.puppets
+        particles = previous.particles
+        arena.capacity = baseArenaBytes + particles.budget
+        frameIndex = previous.frameIndex
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.

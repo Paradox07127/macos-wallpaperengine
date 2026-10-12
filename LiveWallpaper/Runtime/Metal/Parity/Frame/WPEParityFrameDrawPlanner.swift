@@ -281,10 +281,10 @@ struct WPEParityFrameDrawPlanner {
             }
         }
         self.targets = targets
-        // No user alignment crop and no camera path or camera object zoom yet.
+        // No camera path or camera object zoom yet.
         layers = WPEParityLayerTransformSet(document: plan.document,
                                             renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
-                                            alignment: .noCrop, cameraZoom: 1)
+                                            alignment: plan.alignment, cameraZoom: 1)
     }
 
     mutating func makePlan(_ index: Int,

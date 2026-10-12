@@ -59,9 +59,36 @@ final class WPEParityPresentState: Sendable {
 /// Runs one scene on the parity renderer and presents its backbuffer to a layer. Confined to the render actor
 /// that owns it, like `WPEMetalSceneRenderer`; only `WPEParityPresentState` is touched from other threads.
 final class WPEParitySceneDriver {
+    /// The backbuffer a fit mode renders and how the present maps it onto the drawable.
+    struct RenderTarget: Equatable {
+        let width: Int
+        let height: Int
+        let alignment: WPEParityCameraAlignment
+        let presentFit: WPEPresentFitMode
+    }
+
+    /// What `load` planned from, so a new size or fit mode re-plans without reloading.
+    private struct PlanSource {
+        let document: WPESceneDocument
+        let assets: WPEParityProgramAssets
+        let settings: WPEParityProgramSettings
+        let shaders: WPEParityFrameShaderSource
+        let workshopID: String?
+        let sceneSize: SIMD2<Float>
+    }
+
     let executor: WPEMetalRenderExecutor
     private(set) var renderer: WPEParityFrameRenderer?
     private(set) var didLoad = false
+    private(set) var drawableSize = CGSize.zero
+    private(set) var fitMode = WPEPresentFitMode.cover
+    private(set) var mouseInteractionEnabled = true
+    private var userPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
+    private var adaptiveThrottleActive = false
+    /// The scene flag or a program reading `g_AudioSpectrum*`, as `WPEMetalSceneRenderer.sceneSupportsAudioProcessing`.
+    private(set) var requiresSystemAudioCapture = false
+    private var planSource: PlanSource?
+    private var plannedTarget: RenderTarget?
     /// Bumped on load and cleanup, so presents of an older load never count as ready.
     private(set) var loadGeneration = 0
     private(set) var loadDiagnostics: SceneLoadDiagnostic?
@@ -104,6 +131,18 @@ final class WPEParitySceneDriver {
         paused
     }
 
+    /// As `WPEMetalSceneRenderer.effectiveFPS`.
+    var effectiveFPS: Int {
+        guard adaptiveThrottleActive else { return userPreferredFPS }
+        return min(userPreferredFPS, max(WPEMetalSceneRenderer.adaptiveThrottleFloorFPS, userPreferredFPS / 2))
+    }
+
+    /// The loaded plan no longer matches the drawable size or fit mode.
+    var needsReplan: Bool {
+        guard didLoad, let planSource else { return false }
+        return plannedTarget != currentTarget(sceneSize: planSource.sceneSize)
+    }
+
     init(device: MTLDevice) throws {
         self.device = device
         executor = try WPEMetalRenderExecutor(device: device)
@@ -116,26 +155,33 @@ final class WPEParitySceneDriver {
         document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
         diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
-        soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil
+        soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
+        workshopID: String? = nil
     ) async throws {
         loadGeneration &+= 1
         let generation = loadGeneration
         presentState.reset(generation: generation)
         didLoad = false
         renderer = nil
+        planSource = nil
+        plannedTarget = nil
+        requiresSystemAudioCapture = false
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
         soundRuntime?.stop()
         soundRuntime = nil
         self.audioPreset = audioPreset
+        updateSurfaceGeometry(drawableSize: drawableSize)
         do {
-            let plan = try await Self.makePlan(document: document, assets: assets, settings: settings,
-                                               width: Int(drawableSize.width), height: Int(drawableSize.height))
+            let sceneSize = WPEParityCamera(document: document, renderTargetSize: SIMD2(1, 1)).size
+            let target = currentTarget(sceneSize: sceneSize)
+            let plan = try await Self.makePlan(document: document, assets: assets, settings: settings, target: target)
             let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache)
+            let shaders = WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
+                                                     bindingABIVersion: 1)
             let renderer = try await WPEParityFrameRenderer(
-                plan: plan, device: device, queue: executor.textureSourceCommandQueue,
-                shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
-                                                    bindingABIVersion: 1)
+                plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
+                workshopID: workshopID
             )
             guard generation == loadGeneration else { throw CancellationError() }
             // Built here so the first present does not compile its pipeline on the frame path.
@@ -169,6 +215,10 @@ final class WPEParitySceneDriver {
                 }
             }
             shaderErrorSummary = (shaderErrors.count, shaderErrors)
+            requiresSystemAudioCapture = Self.readsAudio(plan)
+            planSource = PlanSource(document: document, assets: assets, settings: settings, shaders: shaders,
+                                    workshopID: workshopID, sceneSize: sceneSize)
+            plannedTarget = target
             self.renderer = renderer
             lastTimestamp = nil
             didLoad = true
@@ -181,14 +231,59 @@ final class WPEParitySceneDriver {
         }
     }
 
-    /// Renders one frame and presents it stretched into `layer`'s next drawable. `timestamp` is the display link's;
-    /// `pointer` is drawable UV with a top-left origin. Returns the committed present command buffer, or nil when
-    /// nothing was presented.
+    /// Builds a renderer for the current drawable size and fit mode and swaps it in between two frames. The scene
+    /// clock, engine inputs, puppets and particles carry over and sound keeps playing; video playback restarts.
+    /// False when the build failed or a load or cleanup superseded it.
+    @discardableResult
+    nonisolated(nonsending) func replan() async -> Bool {
+        guard didLoad, let planSource, let previous = renderer else { return false }
+        let target = currentTarget(sceneSize: planSource.sceneSize)
+        guard target != plannedTarget else { return true }
+        let generation = loadGeneration
+        do {
+            let plan = try await Self.makePlan(document: planSource.document, assets: planSource.assets,
+                                               settings: planSource.settings, target: target)
+            let renderer = try await WPEParityFrameRenderer(
+                plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
+                workshopID: planSource.workshopID
+            )
+            guard generation == loadGeneration, self.renderer === previous else { return false }
+            renderer.continueScene(from: previous)
+            self.renderer = renderer
+            plannedTarget = target
+            return true
+        } catch {
+            if generation == loadGeneration {
+                Logger.warning("Parity scene re-plan at \(target.width)x\(target.height) failed: \(error)",
+                               category: .wpeRender)
+            }
+            return false
+        }
+    }
+
+    /// The old renderer's gates (`sampleFrameContext`): the cursor follows only with mouse interaction on and over
+    /// the picture, else it rests at the centre; the left button counts only with click capture on. The position is
+    /// backbuffer UV with a top-left origin.
+    func pointerInput(_ reading: WPEPointerMailbox.Reading) -> (position: SIMD2<Double>, buttonDown: Bool) {
+        let centre = SIMD2<Double>(0.5, 0.5)
+        guard let renderer, let plannedTarget, reading.pointerSample.isInsideView,
+              let inScene = WPEPresentUniforms.make(
+                  fitMode: plannedTarget.presentFit, sourceWidth: renderer.backbuffer.width,
+                  sourceHeight: renderer.backbuffer.height, targetWidth: Int(drawableSize.width),
+                  targetHeight: Int(drawableSize.height)
+              ).scenePointer(fromDrawablePointer: reading.pointerSample.position) else { return (centre, false) }
+        let buttonDown = reading.clickCaptureEnabled && !reading.buttonsSuppressed && reading.pointerFrame.isDown
+        return (mouseInteractionEnabled ? inScene : centre, buttonDown)
+    }
+
+    /// Renders one frame and presents it into `layer`'s next drawable as the fit mode's target asks. `timestamp` is
+    /// the display link's; `pointer` is backbuffer UV with a top-left origin. Returns the committed present command
+    /// buffer, or nil when nothing was presented.
     @discardableResult
     func renderAndPresentFrame(layer: CAMetalLayer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                                buttonDown: Bool = false, audio: AudioSpectrumFrame? = nil,
                                date: Date = Date()) -> MTLCommandBuffer? {
-        guard didLoad, let renderer else { return nil }
+        guard didLoad, let renderer, let plannedTarget else { return nil }
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
         let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
         lastTimestamp = timestamp
@@ -216,7 +311,7 @@ final class WPEParitySceneDriver {
         }
         do {
             let presented = try executor.encodePresent(
-                texture: backbuffer, layer: layer, fitMode: .stretch,
+                texture: backbuffer, layer: layer, fitMode: plannedTarget.presentFit,
                 presentCompletion: { _, present, release in
                     release()
                     state.record(generation: generation, succeeded: present.status == .completed)
@@ -256,12 +351,71 @@ final class WPEParitySceneDriver {
         WPEEngineAudioSettings.effectiveVolume(master: audioVolume, preset: audioPreset)
     }
 
+    /// A sizeless report means "not laid out yet", as in `WPEMetalSceneRenderer.updateSurfaceGeometry`.
+    func updateSurfaceGeometry(drawableSize: CGSize) {
+        guard drawableSize.width > 0, drawableSize.height > 0 else { return }
+        self.drawableSize = drawableSize
+    }
+
+    func setPresentFitMode(_ mode: WPEPresentFitMode) {
+        fitMode = mode
+    }
+
+    func setMouseInteractionEnabled(_ enabled: Bool) {
+        mouseInteractionEnabled = enabled
+    }
+
+    func setFrameRateCeiling(_ framesPerSecond: Int) {
+        userPreferredFPS = max(1, framesPerSecond)
+    }
+
+    func setAdaptiveFrameRateThrottle(_ active: Bool) {
+        adaptiveThrottleActive = active
+    }
+
+    /// WPE has no letterbox (R8 Q1): cover is its default alignment, which crops the canvas to the target aspect about
+    /// its centre, and stretch is mode 2, which never crops. Contain renders the largest fit of the scene's aspect and
+    /// center the scene's ortho size; the present boxes or crops them, as the old renderer does.
+    static func renderTarget(fitMode: WPEPresentFitMode, drawableSize: CGSize,
+                             sceneSize: SIMD2<Float>) -> RenderTarget {
+        let drawable = SIMD2(Double(drawableSize.width), Double(drawableSize.height))
+        let scene = SIMD2(Double(sceneSize.x), Double(sceneSize.y))
+        func target(_ size: SIMD2<Double>, _ alignment: WPEParityCameraAlignment,
+                    _ presentFit: WPEPresentFitMode) -> RenderTarget {
+            RenderTarget(width: max(1, Int(size.x.rounded())), height: max(1, Int(size.y.rounded())),
+                         alignment: alignment, presentFit: presentFit)
+        }
+        let fit = min(drawable.x / scene.x, drawable.y / scene.y)
+        return switch fitMode {
+        case .cover: target(drawable, WPEParityCameraAlignment(mode: 0), .stretch)
+        case .stretch: target(drawable, .noCrop, .stretch)
+        case .contain: target(scene * fit, .noCrop, .contain)
+        case .center: target(scene, .noCrop, .center)
+        }
+    }
+
+    private func currentTarget(sceneSize: SIMD2<Float>) -> RenderTarget {
+        Self.renderTarget(fitMode: fitMode, drawableSize: drawableSize, sceneSize: sceneSize)
+    }
+
+    /// WPE's HLSL carries only the declarations its combos leave live, so a mention is a read.
+    static func readsAudio(_ plan: WPEParityFramePlan) -> Bool {
+        plan.document.general.supportsAudioProcessing || plan.programs.values.contains { program in
+            [program.hlsl.vertex, program.hlsl.geometry, program.hlsl.fragment].contains { stage in
+                stage.flatMap { String(bytes: $0, encoding: .utf8) }?.contains("g_AudioSpectrum") == true
+            }
+        }
+    }
+
     /// Drops the renderer and its video players; frames already on the GPU finish but no longer mark readiness.
     func cleanup() {
         didLoad = false
         loadGeneration &+= 1
         presentState.reset(generation: loadGeneration)
         renderer = nil
+        planSource = nil
+        plannedTarget = nil
+        requiresSystemAudioCapture = false
         lastTimestamp = nil
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
@@ -278,9 +432,10 @@ final class WPEParitySceneDriver {
 
     @concurrent
     private static func makePlan(document: WPESceneDocument, assets: WPEParityProgramAssets,
-                                 settings: WPEParityProgramSettings, width: Int,
-                                 height: Int) async throws -> sending WPEParityFramePlan {
-        try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: width, height: height)
+                                 settings: WPEParityProgramSettings,
+                                 target: RenderTarget) async throws -> sending WPEParityFramePlan {
+        try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: target.width,
+                               height: target.height, alignment: target.alignment)
     }
 
     private func logFrameFailure(_ error: Error) {
@@ -307,6 +462,7 @@ struct WPEParitySceneInputs: Sendable {
     let pixelFormat: MTLPixelFormat
     /// Resolves the scene's sound files, as `WPEMetalSceneRenderer.resourceResolver`; nil plays no sound.
     var soundResolver: WPEMultiRootResourceResolver?
+    var presentFitMode = WPEPresentFitMode.cover
 
     /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does.
     func makeDocument() throws -> WPESceneDocument {

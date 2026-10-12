@@ -49,9 +49,11 @@ struct WPEParityFramePlan {
     /// Backbuffer size in pixels.
     let width: Int
     let height: Int
+    /// The user alignment the camera crops the canvas with (R8 Q1).
+    let alignment: WPEParityCameraAlignment
 
     init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
-         width: Int, height: Int) throws {
+         width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop) throws {
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
         var description = scene.scene
         var post = scene.postProcess
@@ -87,6 +89,7 @@ struct WPEParityFramePlan {
         self.skipped = skipped
         self.width = width
         self.height = height
+        self.alignment = alignment
     }
 }
 #endif
