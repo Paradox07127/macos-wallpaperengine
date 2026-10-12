@@ -130,4 +130,36 @@ public struct WPECompiledRenderGraph: Hashable, Sendable {
     public var encoders: [WPEEncoderGroup] {
         steps.compactMap(\.encoder)
     }
+
+    /// Places the allocation groups back to back in one heap; each group is as large and as
+    /// aligned as its most demanding member, which `requirement` reports (Metal: `heapTextureSizeAndAlign`).
+    public func heapLayout(
+        _ requirement: (WPELogicalResource) throws -> (size: Int, alignment: Int)
+    ) rethrows -> WPEHeapLayout {
+        var offsets: [WPEResourceID: Int] = [:]
+        var cursor = 0
+        for group in allocationGroups {
+            var size = 0
+            var alignment = 1
+            for id in group {
+                guard let resource = resources[id] else { continue }
+                let member = try requirement(resource)
+                size = max(size, member.size)
+                alignment = max(alignment, member.alignment)
+            }
+            let offset = (cursor + alignment - 1) / alignment * alignment
+            for id in group {
+                offsets[id] = offset
+            }
+            cursor = offset + size
+        }
+        return WPEHeapLayout(offsets: offsets, size: cursor)
+    }
+}
+
+/// Placement of the `.aliased` resources in one shared heap; every other storage class is allocated on its own.
+public struct WPEHeapLayout: Hashable, Sendable {
+    /// Members of one allocation group share an offset.
+    public let offsets: [WPEResourceID: Int]
+    public let size: Int
 }

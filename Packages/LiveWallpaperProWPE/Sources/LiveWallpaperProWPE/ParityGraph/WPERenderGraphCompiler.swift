@@ -32,7 +32,7 @@ public enum WPERenderGraphCompiler {
             }
         }
         let lifetimes = lifetimes(steps)
-        let (storage, groups) = allocate(steps, lifetimes, table)
+        let (storage, groups) = allocate(steps, normalized, lifetimes, table)
         return WPECompiledRenderGraph(
             resources: table, operations: operations, accesses: versions.accesses, steps: steps,
             dependencies: dependencies(steps, stepOf), lifetimes: lifetimes, storage: storage, allocationGroups: groups
@@ -376,10 +376,27 @@ private func loadAction(_ attachment: WPESubresource, entry: WPEResourceVersion,
     if entry.revision == 0, table[attachment.resource]?.lifetime == .frameTransient {
         return .dontCare
     }
-    if isColor, case let .draw(_, _, _, draw) = first, draw.overwritesTargets, !draw.readsDestination {
-        return .dontCare
+    return isColor && overwritesBeforeReading(first) ? .dontCare : .load
+}
+
+private func overwritesBeforeReading(_ operation: Normalized) -> Bool {
+    if case let .draw(_, _, _, draw) = operation {
+        draw.overwritesTargets && !draw.readsDestination
+    } else {
+        false
     }
-    return .load
+}
+
+/// Every texel of `attachment` is defined by its encoder before anything observes it.
+private func coveredOnEntry(_ attachment: WPEAttachmentAction, in step: WPECompiledStep,
+                            _ operations: [Normalized]) -> Bool {
+    if case .clear = attachment.load {
+        return true
+    }
+    guard step.encoder?.colorAttachments.contains(attachment) == true,
+          let first = step.operations.first(where: { operations[$0].touched.contains(attachment.subresource) })
+    else { return false }
+    return overwritesBeforeReading(operations[first])
 }
 
 // MARK: - Dependencies
@@ -434,8 +451,8 @@ private func lifetimes(_ steps: [WPECompiledStep]) -> [WPEResourceID: ClosedRang
     return result
 }
 
-private func allocate(_ steps: [WPECompiledStep], _ lifetimes: [WPEResourceID: ClosedRange<Int>],
-                      _ table: [WPEResourceID: WPELogicalResource])
+private func allocate(_ steps: [WPECompiledStep], _ operations: [Normalized],
+                      _ lifetimes: [WPEResourceID: ClosedRange<Int>], _ table: [WPEResourceID: WPELogicalResource])
     -> ([WPEResourceID: WPEResourceStorage], [[WPEResourceID]]) {
     var storage: [WPEResourceID: WPEResourceStorage] = [:]
     var scratch: [(id: WPEResourceID, range: ClosedRange<Int>)] = []
@@ -447,8 +464,10 @@ private func allocate(_ steps: [WPECompiledStep], _ lifetimes: [WPEResourceID: C
             storage[resource.id] = .external
         case .frameTransient:
             guard let range = lifetimes[resource.id] else { continue }
-            let attachment = steps[range.lowerBound].encoder?.attachment(resource.id)
-            if range.count == 1, resource.mipCount == 1, let attachment, attachment.load != .load,
+            // A single step also rules out a depth buffer shared by several encoders.
+            let step = steps[range.lowerBound]
+            if range.count == 1, resource.mipCount == 1, let attachment = step.encoder?.attachment(resource.id),
+               coveredOnEntry(attachment, in: step, operations),
                attachment.store == .dontCare || attachment.store.isResolveOnly {
                 storage[resource.id] = .memoryless
             } else {
