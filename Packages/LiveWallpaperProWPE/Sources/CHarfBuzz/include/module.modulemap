@@ -1,0 +1,6 @@
+module CHarfBuzz {
+    header "../src/hb.h"
+    header "../src/hb-ot.h"
+    header "../src/hb-ft.h"
+    export *
+}

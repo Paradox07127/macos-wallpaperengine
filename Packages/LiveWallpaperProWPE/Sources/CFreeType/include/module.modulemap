@@ -1,0 +1,5 @@
+module CFreeType {
+    header "ft2build.h"
+    header "CFreeTypeShim.h"
+    export *
+}
