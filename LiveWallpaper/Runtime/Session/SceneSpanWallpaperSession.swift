@@ -140,6 +140,7 @@ final class SceneSpanWallpaperGroup {
         owner.audioController?.setAudioVolume(audioLeader?.volume ?? 0)
         owner.setMouseInteractionEnabled(active.contains(where: \.mouseEnabled))
         owner.setClickCaptureEnabled(active.contains(where: \.clickEnabled))
+        owner.setHotZoneClipFrames(active.filter { $0.clickEnabled && !$0.hotZoneInputSuspended }.map(\.displayFrame))
         owner.setHibernationEligible(!sessions.isEmpty && sessions.allSatisfy(\.hibernationEligible))
         owner.setCriticalMemoryPressureActive(sessions.contains(where: \.criticalPressure))
         owner.updateSpanViewport(canvasFrame, density: density,
@@ -155,9 +156,10 @@ final class SceneSpanWallpaperGroup {
             SIMD2((Double(display.minX - canvas.minX) + local.x * Double(display.width)) / Double(canvas.width),
                   (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
         }
-        owner.spanSurface.mailbox.publishPointerFrame(.init(position: global(frame.position), clickPosition: global(frame.clickPosition),
-                                                            isDown: frame.isDown, isRightDown: frame.isRightDown,
-                                                            gesture: frame.gesture))
+        var canvasFrame = WPEPointerFrame(position: global(frame.position), clickPosition: global(frame.clickPosition),
+                                          isDown: frame.isDown, isRightDown: frame.isRightDown, gesture: frame.gesture)
+        canvasFrame.dragged = frame.dragged
+        owner.spanSurface.mailbox.publishPointerFrame(canvasFrame)
         Task { await owner.spanRenderActor.renderFrame() }
     }
 
@@ -202,6 +204,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     private(set) var volume: Double
     private(set) var mouseEnabled: Bool
     private(set) var clickEnabled = false
+    private(set) var hotZoneInputSuspended = false
     private(set) var hibernationEligible = false
     private(set) var criticalPressure = false
     var onRuntimeErrorChange: (@MainActor () -> Void)?
@@ -355,8 +358,12 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         clickEnabled = enabled; reconcile()
     }
 
+    func setHotZoneInputSuspended(_ suspended: Bool) {
+        hotZoneInputSuspended = suspended; group.reconcile()
+    }
+
     var acceptsDesktopClicks: Bool {
-        isPlaying && !clickEnabled
+        isPlaying
     }
 
     func publishDesktopButton(location: CGPoint, pressLocation: CGPoint, isDown: Bool, gesture: UInt64, dragged: Bool) {
@@ -372,8 +379,8 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         guard !stopped else { return }
         actor.submitConfig(.performanceProfile(isPlaying ? .quality : .suspended))
         actor.submitConfig(.frameRateCeiling(min(60, frameRateCeiling)))
-        surface.mtkView.clickCaptureEnabled = clickEnabled && isPlaying
-        window?.setWallpaperMouseInteractionEnabled(clickEnabled && isPlaying)
+        // Member windows stay click-through; presses reach the owner through its hot-zone panels and desktop clicks.
+        surface.mtkView.clickCaptureEnabled = false
         group.reconcile()
     }
 

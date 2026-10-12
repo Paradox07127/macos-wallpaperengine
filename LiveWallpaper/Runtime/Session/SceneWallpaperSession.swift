@@ -80,6 +80,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// The "Interaction" toggle as last applied; while on, hot-zone panels take presses over the scene's clickable layers.
     private var clickCaptureEnabled = false
     private var hotZoneInputSuspended = false
+    /// nil = panels unclipped; otherwise screen rects panels are confined to (a span's interactive members).
+    private(set) var hotZoneClipFrames: [CGRect]?
     private var hotZoneController: SceneHotZoneController?
     private var hotZoneRouter = SceneHotZoneRouter()
     private var hotZoneScreenObserver: NSObjectProtocol?
@@ -515,6 +517,18 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         refreshHotZones()
     }
 
+    func setHotZoneClipFrames(_ frames: [CGRect]?) {
+        guard frames != hotZoneClipFrames else { return }
+        hotZoneClipFrames = frames
+        refreshHotZones()
+    }
+
+    /// One panel rect per non-empty zone/clip intersection, so a zone straddling two clips splits in two.
+    nonisolated static func clippedHotZoneRects(_ zones: [CGRect], to clips: [CGRect]?) -> [CGRect] {
+        guard let clips else { return zones }
+        return zones.flatMap { zone in clips.map(zone.intersection).filter { !$0.isEmpty } }
+    }
+
     private var hotZonesActive: Bool {
         clickCaptureEnabled && isPlaying && !hotZoneInputSuspended
     }
@@ -524,9 +538,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let controller = hotZoneController ?? makeHotZoneController()
         controller.isEnabled = hotZonesActive
         let viewFrame = hotZoneViewFrame
-        controller.update(zones: surface.mailbox.interactiveZones.map {
-            SceneHotZoneRouter.screenRect(forZone: $0, in: viewFrame)
-        })
+        let zones = surface.mailbox.interactiveZones.map { SceneHotZoneRouter.screenRect(forZone: $0, in: viewFrame) }
+        controller.update(zones: Self.clippedHotZoneRects(zones, to: hotZoneClipFrames))
     }
 
     /// The same geometry the surface's pointer publisher writes into the mailbox, read fresh on every refresh.

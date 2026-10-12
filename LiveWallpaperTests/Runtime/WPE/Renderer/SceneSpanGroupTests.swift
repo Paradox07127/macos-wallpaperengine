@@ -79,7 +79,7 @@ struct SceneSpanGroupTests {
         #expect(emptied == 1)
     }
 
-    @Test("A desktop press on a member display reaches the owner's mailbox in canvas UV; Interaction on refuses it")
+    @Test("A desktop press on a member display reaches the owner's mailbox in canvas UV; Interaction on still takes it")
     func desktopPressMapsToCanvasUV() throws {
         let (owner, _) = try Self.makeOwner()
         defer { owner.cleanup() }
@@ -104,7 +104,90 @@ struct SceneSpanGroupTests {
         #expect(edges.map(\.isInsideView) == [true])
 
         member.setClickCaptureEnabled(true)
-        #expect(!member.acceptsDesktopClicks)
+        #expect(member.acceptsDesktopClicks, "Interaction would shut desktop clicks out of the member display")
+    }
+
+    @Test("Only playing members with Interaction on and no opening in progress clip the owner's hot zones")
+    func clipFramesFollowInteractiveMembers() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+        #expect(owner.hotZoneClipFrames == [])
+
+        member.setClickCaptureEnabled(true)
+        #expect(owner.hotZoneClipFrames == [CGRect(x: 100, y: 0, width: 100, height: 100)],
+                "the stand-in display outside every member would get panels")
+
+        member.setHotZoneInputSuspended(true)
+        #expect(owner.hotZoneClipFrames == [], "a member mid-opening would take presses")
+        member.setHotZoneInputSuspended(false)
+        member.pause()
+        #expect(owner.hotZoneClipFrames == [])
+    }
+
+    @Test("Each Interaction member's display joins the owner's clip set", .enabled(if: NSScreen.screens.count >= 2))
+    func clipFramesCoverEachInteractiveMember() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let screens = NSScreen.screens.prefix(2).map(Screen.init(nsScreen:))
+        let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
+                                            density: 1, displayFrames: [:])
+        let first = try group.makeMember(for: screens[0], configuration: Self.configuration(for: screens[0]))
+        defer { first.cleanup() }
+        let second = try group.makeMember(for: screens[1], configuration: Self.configuration(for: screens[1]))
+        defer { second.cleanup() }
+
+        second.setClickCaptureEnabled(true)
+        #expect(owner.hotZoneClipFrames == [second.displayFrame])
+        first.setClickCaptureEnabled(true)
+        let both = [first, second].sorted { $0.screenID < $1.screenID }.map(\.displayFrame)
+        #expect(owner.hotZoneClipFrames == both)
+        first.setHotZoneInputSuspended(true)
+        #expect(owner.hotZoneClipFrames == [second.displayFrame])
+    }
+
+    @Test("A member's wallpaper window stays click-through below the icons with Interaction on")
+    func memberWindowStaysPassive() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+
+        member.setClickCaptureEnabled(true)
+        let window = try #require(member.wallpaperWindow)
+        #expect(window.ignoresMouseEvents, "the member window would sit over the desktop icons and eat their clicks")
+        #expect(window.level.rawValue == Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+    }
+
+    @Test("A member view press keeps its dragged flag in the owner's mailbox")
+    func publishClickKeepsDragged() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+        member.setClickCaptureEnabled(true)
+        let mailbox = owner.spanSurface.mailbox
+        mailbox.setClickCaptureEnabled(true)
+
+        var frame = WPEPointerFrame(position: SIMD2(0.5, 0.5), clickPosition: SIMD2(0.5, 0.5), isDown: true, isRightDown: false)
+        frame.gesture = 11
+        member.group.publishClick(frame, from: member)
+        frame.isDown = false
+        frame.dragged = true
+        member.group.publishClick(frame, from: member)
+        #expect(Self.takeEdges(mailbox).map(\.frame.dragged) == [false, true], "a dragged release would synthesise a click")
+    }
+
+    @Test("A zone straddling two clip rects splits into one panel per rect; nil leaves it whole")
+    func clippedHotZoneRectsSplitAcrossClips() {
+        let zone = CGRect(x: 80, y: 10, width: 40, height: 20)
+        let clips = [CGRect(x: 0, y: 0, width: 100, height: 100), CGRect(x: 100, y: 0, width: 100, height: 100)]
+        #expect(SceneWallpaperSession.clippedHotZoneRects([zone], to: clips)
+            == [CGRect(x: 80, y: 10, width: 20, height: 20), CGRect(x: 100, y: 10, width: 20, height: 20)])
+        #expect(SceneWallpaperSession.clippedHotZoneRects([zone], to: [clips[1]]) == [CGRect(x: 100, y: 10, width: 20, height: 20)])
+        #expect(SceneWallpaperSession.clippedHotZoneRects([zone], to: nil) == [zone])
+        #expect(SceneWallpaperSession.clippedHotZoneRects([zone], to: []).isEmpty)
     }
 
     /// Canvas (0,0,200,200): a non-member stand-in display (0,0,100,200) plus the member at (100,0,100,100).
