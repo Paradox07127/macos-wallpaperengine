@@ -1,8 +1,8 @@
-import CoreGraphics
 import LiveWallpaperProWPE
 import Testing
 
 private typealias F = ParitySceneFixtures
+private typealias D = ParitySceneDocuments
 
 struct ParitySceneFrameStructureTests {
     @Test func reportSequenceAWithFullFrameRead() {
@@ -283,72 +283,77 @@ struct ParitySceneCompileTests {
 }
 
 struct ParitySceneDocumentConversionTests {
-    @Test func convertsDocumentAndGraphFields() throws {
-        let general = WPESceneGeneral(clearColor: SIMD3(0.5, 0.25, 0),
-                                      orthogonalProjection: WPESceneOrthogonalProjection(width: 1920, height: 1080,
-                                                                                         auto: false),
-                                      clearEnabled: WPESceneAuthoredField(seed: false))
-        let image = WPESceneImageObject(id: "7", name: "layer", imageRelativePath: "models/a.json",
-                                        materialRelativePath: nil, config: WPESceneImageConfig(passthrough: true),
-                                        copyBackground: false, origin: .zero, scale: .one, angles: .zero,
-                                        visible: true, alpha: 1, color: .one, brightness: 1, blendMode: .normal,
-                                        colorBlendMode: 5, alignment: .center, size: CGSize(width: 400, height: 200),
-                                        effects: [
-                                            WPESceneImageEffect(id: "1", name: "a", fileRelativePath: "a.json",
-                                                                visible: true, passOverrides: []),
-                                            WPESceneImageEffect(id: "2", name: "b", fileRelativePath: "b.json",
-                                                                visible: false, passOverrides: []),
-                                        ],
-                                        animationLayers: [])
-        let document = WPESceneDocument(camera: .defaultCamera, general: general, imageObjects: [image],
-                                        diagnostics: [])
-        func pass(_ shader: String, phase: WPERenderPassPhase, effect: String? = nil, index: Int = 0,
-                  target: WPERenderTarget = .layerComposite(name: "x"), textures: [Int: WPETextureReference] = [:],
-                  effectPass: WPESceneJSONValue? = nil) -> WPERenderPass {
-            let identity = effect.map {
-                WPERenderEffectPassIdentity(objectID: "7", authoredEffectID: $0, authoredEffectPath: "\($0).json",
-                                            effectPassIndex: index, authoredOverrideID: nil)
-            }
-            return WPERenderPass(id: "\(shader)", phase: phase, shader: shader, source: .previous, target: target,
-                                 textures: textures, binds: [:], constants: [:], combos: [:],
-                                 authoredJSON: WPERenderPassAuthoredJSON(effectPass: effectPass,
-                                                                         effectIdentity: identity),
-                                 blending: "translucent", cullMode: "nocull", depthTest: "disabled",
-                                 depthWrite: "disabled")
-        }
-        let layer = WPERenderLayer(
-            objectID: "7", objectName: "layer", imagePath: "models/a.json", materialPath: nil,
-            geometry: WPERenderLayerGeometry(origin: .zero, scale: .one, angles: .zero, alignment: .center,
-                                             size: CGSize(width: 400, height: 200), alpha: 1, color: .one,
-                                             brightness: 1),
-            compositeA: "a", compositeB: "b",
-            localFBOs: [WPERenderFBO(name: "half", scale: 2, format: "rgba8888")],
-            passes: [
-                pass("genericimage2", phase: .material),
-                pass("down", phase: .effect(file: "a.json"), effect: "1", target: .fbo(name: "half"),
-                     effectPass: .object(["compose": .bool(true)])),
-                pass("up", phase: .effect(file: "a.json"), effect: "1", index: 1,
-                     textures: [1: .fbo("half"), 2: .fbo(WPESceneAliasName.fullFrameBuffer)]),
-                pass("hidden", phase: .effect(file: "b.json"), effect: "2"),
-            ],
-            sortIndex: 3
-        )
-        let description = try WPEParitySceneDescription(document: document, graph: WPERenderGraph(layers: [layer]))
+    @Test func convertsDocumentFields() throws {
+        let image = D.layer(json: ["config": ["passthrough": true], "copybackground": false, "colorBlendMode": 5],
+                            effects: [
+                                D.effect("1", fbos: [D.fbo("half", scale: 2)], passes: [
+                                    D.pass("down", target: "half", extra: ["compose": true]),
+                                    D.pass("up", binds: [1: "half", 2: WPESceneAliasName.fullFrameBuffer]),
+                                ]),
+                                D.effect("2", visible: false, passes: [D.pass("hidden")]),
+                            ])
+        let groups: [[String: Any]] = (1 ... 3).map { ["id": $0, "name": "group \($0)"] }
+        let description = try D.convert([image], general: ["clearcolor": "0.5 0.25 0", "clearenabled": false],
+                                        objects: groups)
         #expect(description.width == 1920 && description.height == 1080)
         #expect(description.clearColor == SIMD3(0.5, 0.25, 0))
         #expect(!description.clearEnabled)
         #expect(description.msaaSamples == 1)
         let object = description.objects[0]
+        #expect(object.kind == .image)
         #expect(object.sortKey == 3 && object.width == 400 && object.height == 200)
         #expect(object.colorBlendMode == 5 && object.requiresLayerComposite)
         #expect(object.passthrough && !object.copyBackground)
         #expect(object.blend == .translucent)
+        #expect(object.material == WPEParitySceneMaterialSource(materialPath: "materials/genericimage2.json"))
         #expect(object.effects.map(\.id) == ["1", "2"])
         #expect(object.effects.map(\.enabled) == [true, false])
+        func source(_ shader: String, _ pass: Int) -> WPEParitySceneMaterialSource {
+            WPEParitySceneMaterialSource(materialPath: "materials/\(shader).json", effectFile: "effects/7_1.json",
+                                         effectPass: pass)
+        }
         #expect(object.effects[0].passes == [
-            WPEParityScenePass(shader: "down", target: "half", compose: true, blend: .translucent),
-            WPEParityScenePass(shader: "up", binds: ["half"], readsFullFrameBuffer: true, blend: .translucent),
+            WPEParityScenePass(shader: "down", target: "half", compose: true, blend: .translucent,
+                               source: source("down", 0)),
+            WPEParityScenePass(shader: "up", binds: ["half"], readsFullFrameBuffer: true, blend: .translucent,
+                               source: source("up", 1)),
         ])
         #expect(object.effects[0].fbos == [WPEParitySceneFBO(name: "half", width: 200, height: 100)])
+    }
+
+    @Test func drawsNameTheMaterialPassTheyComeFrom() throws {
+        let layer = D.layer(json: ["colorBlendMode": 5], effects: [D.effect(passes: [D.pass("p")])])
+        let passthrough = D.layer("8", json: ["config": ["passthrough": true]],
+                                  effects: [D.effect(passes: [D.pass("q")])])
+        let frame = try WPEParitySceneFrameBuilder.build(D.convert([layer, passthrough]))
+        #expect(frame.draws["7/albedo"]?.source
+            == WPEParitySceneMaterialSource(materialPath: "materials/genericimage2.json"))
+        #expect(frame.draws["7/1/0"]?.source
+            == WPEParitySceneMaterialSource(materialPath: "materials/p.json", effectFile: "effects/7_1.json",
+                                            effectPass: 0))
+        #expect(frame.draws["7/passthrough4"]?.source
+            == WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json",
+                                            combos: ["BLENDMODE": 5]))
+        #expect(frame.draws["8/albedo"]?.source
+            == WPEParitySceneMaterialSource(materialPath: "materials/util/composelayer.json"))
+    }
+
+    @Test func modelObjectHasItsOwnKindAndNoEffects() throws {
+        let model = D.layer("9", image: "models/m.mdl", effects: [D.effect(passes: [D.pass("p")])])
+        let object = try D.convert([model]).objects[0]
+        #expect(object.kind == .model)
+        #expect(object.effects.isEmpty)
+    }
+
+    @Test func modelDrawsStraightIntoTheDestination() {
+        let source = WPEParitySceneMaterialSource(materialPath: "materials/models/m.json")
+        let model = WPEParitySceneObject(id: "M", kind: .model, width: 512, height: 256, materialShader: "generic4",
+                                         material: source, colorBlendMode: 5,
+                                         effects: [F.effect("e1")])
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([model]))
+        #expect(F.lines(frame) == [F.sceneBind] + F.sceneClear + [
+            F.sceneBind, "draw generic4 [M/image] translucent rgb model",
+        ])
+        #expect(frame.draws["M/albedo"]?.source == source)
     }
 }

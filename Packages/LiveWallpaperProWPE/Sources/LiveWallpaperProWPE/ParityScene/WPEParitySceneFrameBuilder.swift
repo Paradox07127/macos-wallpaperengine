@@ -112,6 +112,10 @@ private struct WPEParitySceneEmitter {
                                  ancestors: [WPEResourceID]) {
         guard object.visible else { return }
         let children = childrenByParent[object.id] ?? []
+        // Open question (R7): WPE's draw path for a `.mdl` object; drawn like an effect-less image layer until then.
+        if object.kind == .model {
+            return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
+        }
         let effects = object.effects.filter(\.enabled)
         let lastPass = (effects.count - 1, (effects.last?.passes.count ?? 0) - 1)
         let n = effects.count + effects.reduce(0) { $0 + $1.passes.count(where: \.compose) }
@@ -190,8 +194,9 @@ private struct WPEParitySceneEmitter {
                 let reads = [composites[current]] + pass.binds.map(fbo)
                     + (pass.readsFullFrameBuffer ? [Resource.fullFrameBuffer] : [])
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id,
-                                        passIndex: passIndex, shader: pass.shader, reads: reads, target: target,
-                                        blend: blend, alphaMax: alphaMax, writeMask: mask, geometry: geometry))
+                                        passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
+                                        target: target, blend: blend, alphaMax: alphaMax, writeMask: mask,
+                                        geometry: geometry))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
                 }
@@ -211,6 +216,7 @@ private struct WPEParitySceneEmitter {
         let identity = WPEPassIdentity("\(object.id)/passthrough4")
         bind(identity, destination.color, depth: destination.depth)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "effectpassthrough_4",
+                                source: .layerPassthrough(colorBlendMode: object.colorBlendMode),
                                 reads: [composites[current], Resource.fullFrameBuffer], target: destination.color,
                                 blend: object.blend, alphaMax: destination.alphaMax,
                                 writeMask: destination.writeMask, geometry: .layerMesh))
@@ -229,9 +235,9 @@ private struct WPEParitySceneEmitter {
             emit(identity, .clearColor(WPETextureView(composite), WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)))
             return
         }
-        let (shader, reads) = albedoSource(object)
-        draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, reads: reads, target: composite,
-                                blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad))
+        let (shader, source, reads) = albedoSource(object)
+        draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
+                                target: composite, blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad))
     }
 
     /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and its children
@@ -242,11 +248,12 @@ private struct WPEParitySceneEmitter {
                                                  ancestors: [WPEResourceID]) {
         if !object.fullscreen, !object.passthrough || object.copyBackground {
             let identity = WPEPassIdentity("\(object.id)/albedo")
-            let (shader, reads) = albedoSource(object)
+            let (shader, source, reads) = albedoSource(object)
             bind(identity, destination.color, depth: destination.depth)
-            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, reads: reads,
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
                                     target: destination.color, blend: object.blend, alphaMax: destination.alphaMax,
-                                    writeMask: destination.writeMask, geometry: .layerMesh))
+                                    writeMask: destination.writeMask,
+                                    geometry: object.kind == .model ? .modelMesh : .layerMesh))
         }
         for child in children {
             render(child, into: destination, ancestors: ancestors)
@@ -254,13 +261,14 @@ private struct WPEParitySceneEmitter {
     }
 
     /// A passthrough layer that copies the background draws composelayer (mesh+0x2e8) over the snapshot.
-    private mutating func albedoSource(_ object: WPEParitySceneObject) -> (String, [WPEResourceID]) {
+    private mutating func albedoSource(_ object: WPEParitySceneObject)
+        -> (String, WPEParitySceneMaterialSource?, [WPEResourceID]) {
         if object.passthrough {
-            return ("composelayer", [Resource.fullFrameBuffer])
+            return ("composelayer", .composeLayer, [Resource.fullFrameBuffer])
         }
         let image = Resource.layerImage(object.id)
         register(image, object.width, object.height, lifetime: .imported)
-        return (object.materialShader, [image])
+        return (object.materialShader, object.material, [image])
     }
 
     /// A name `effect` does not declare resolves to the first enabled effect of the layer that does.

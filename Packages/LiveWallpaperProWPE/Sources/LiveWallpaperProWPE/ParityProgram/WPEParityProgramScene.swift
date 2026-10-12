@@ -16,25 +16,26 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     }
 }
 
-/// A scene document turned into the parity frame inputs, keeping each pass's material so frame draws can be traced
-/// back to the JSON their combos come from. The frame is composed with MSAA off.
+/// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
+/// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
+/// with MSAA off; no transparent sorting, no global composite flag, no ledsource/puppet bit4.
 public struct WPEParityProgramScene: Sendable {
+    struct MaterialKey: Hashable, Sendable {
+        let objectID: String
+        let effectID: String?
+        let source: WPEParitySceneMaterialSource
+    }
+
     public let scene: WPEParitySceneDescription
     public let postProcess: WPEParityPostProcessConfig
     public let engineFlags: WPEEngineComboFlags
     public let assets: WPEParityProgramAssets
-    let albedo: [String: WPEParityProgramMaterial]
-    let colorBlendModes: [String: Int]
-    /// `<object>/<effect>` → material of each converted pass, nil for a copy command.
-    let effectPasses: [String: [WPEParityProgramMaterial?]]
+    let materials: [MaterialKey: WPEParityProgramMaterial]
 
-    public init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings) {
+    public init(document: WPESceneDocument, assets: WPEParityProgramAssets,
+                settings: WPEParityProgramSettings) throws(WPEParitySceneConversionError) {
         let general = document.sourceJSON["general"]
-        let objects: [WPESceneJSONValue] = if case let .array(values)? = document.sourceJSON["objects"] {
-            values
-        } else {
-            []
-        }
+        let objects = Self.array(document.sourceJSON["objects"])
         var flags = WPEEngineComboFlags()
         // 140186c90.c:356-393
         if case .object? = general?["orthogonalprojection"], let ortho = general?["orthogonalprojection"] {
@@ -50,47 +51,68 @@ public struct WPEParityProgramScene: Sendable {
         let width = Int(document.general.orthogonalProjection.width.rounded())
         let height = Int(document.general.orthogonalProjection.height.rounded())
         let format = flags.hdr ? "rgba16float" : WPEParitySceneResource.colorFormat
-        var albedo: [String: WPEParityProgramMaterial] = [:]
-        var colorBlendModes: [String: Int] = [:]
-        var effectPasses: [String: [WPEParityProgramMaterial?]] = [:]
+        var authoredByID: [String: WPESceneJSONValue] = [:]
+        for object in objects {
+            guard let id = Self.string(object["id"]) ?? Self.number(object["id"]).map({ String(Int($0)) }) else {
+                continue
+            }
+            authoredByID[id] = object
+        }
+        var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
+        var authoredObjects: [WPEParityAuthoredObject] = []
         var sceneObjects: [WPEParitySceneObject] = []
         for (index, image) in document.imageObjects.enumerated() {
-            let model = assets.json(image.imageRelativePath)
-            let materialPath = Self.string(model?["material"]) ?? image.materialRelativePath
+            let isModel = image.imageRelativePath.lowercased().hasSuffix(".mdl")
+            let model = isModel ? nil : assets.json(image.imageRelativePath)
+            let materialPath = isModel
+                ? Self.modelMaterialPath(image.imageRelativePath, assets: assets)
+                : Self.string(model?["material"]) ?? image.materialRelativePath
+            let albedoSource = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
             var material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
             if let instance = image.materialInstance {
                 material?.merge(combos: instance.combos, textures: instance.textures)
             }
-            albedo[image.id] = material
-            colorBlendModes[image.id] = image.colorBlendMode
-            let objectWidth = image.size.map { Int($0.width.rounded()) } ?? width
-            let objectHeight = image.size.map { Int($0.height.rounded()) } ?? height
-            var effects: [WPEParitySceneEffect] = []
-            for effect in image.effects {
-                guard let file = assets.json(effect.fileRelativePath) else { continue }
-                let converted = Self.effect(effect, file: file, assets: assets, width: objectWidth,
-                                            height: objectHeight, backbufferFormat: format)
-                effects.append(converted.effect)
-                effectPasses["\(image.id)/\(effect.id)"] = converted.materials
+            if let albedoSource, let material {
+                materials[MaterialKey(objectID: image.id, effectID: nil, source: albedoSource)] = material
             }
+            let fullscreen = Self.flag(model?["fullscreen"])
+            // catsout WPSceneParser.cpp binds a fullscreen layer's FBOs to the screen.
+            let objectWidth = fullscreen ? width : image.size.map { Int($0.width.rounded()) } ?? width
+            let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
+            var effects: [WPEParityAuthoredEffect] = []
+            for effect in isModel ? [] : image.effects {
+                guard let file = assets.json(effect.fileRelativePath) else { continue }
+                let loaded = Self.effect(effect, file: file, assets: assets)
+                effects.append(loaded.effect)
+                for (source, material) in loaded.materials {
+                    materials[MaterialKey(objectID: image.id, effectID: effect.id, source: source)] = material
+                }
+            }
+            authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
+                                                           effects: effects))
             let blend: WPEParitySceneBlend = if image.colorBlendMode == 31 {
                 .additive
             } else {
                 material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
             }
+            let authored = authoredByID[image.id]
             sceneObjects.append(WPEParitySceneObject(
-                id: image.id, sortKey: document.objectPaintOrder[image.id] ?? index,
+                id: image.id, kind: isModel ? .model : .image, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
-                materialShader: material?.shader ?? "genericimage2", blend: blend,
+                materialShader: material?.shader ?? "genericimage2", material: albedoSource, blend: blend,
                 colorBlendMode: image.colorBlendMode,
                 passthrough: Self.flag(model?["passthrough"]) || image.config.passthrough,
-                copyBackground: image.copyBackground, fullscreen: Self.flag(model?["fullscreen"]),
-                parentID: image.parentObjectID, effects: effects
+                copyBackground: image.copyBackground, fullscreen: fullscreen,
+                noInterpolation: Self.flag(authored?["nointerpolation"]),
+                clampUVs: Self.number(authored?["clampuvs"]).map { $0 != 0 } ?? true,
+                parentID: image.parentObjectID
             ))
         }
-        self.albedo = albedo
-        self.colorBlendModes = colorBlendModes
-        self.effectPasses = effectPasses
+        let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)
+        for index in sceneObjects.indices {
+            sceneObjects[index].effects = try scope.effects(of: authoredObjects[index])
+        }
+        self.materials = materials
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
@@ -101,10 +123,24 @@ public struct WPEParityProgramScene: Sendable {
                                                  backbufferFormat: format)
     }
 
+    /// The merged pass JSON `draw` uses; an engine (util) material is read from its file with the engine's combos.
+    func material(for draw: WPEParitySceneDraw) -> WPEParityProgramMaterial? {
+        guard let source = draw.source else { return nil }
+        var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: source)]
+            ?? WPEParityProgramMaterial(path: source.materialPath, pass: source.materialPass, assets: assets)
+        material?.merge(combos: source.combos, textures: [:])
+        return material
+    }
+
     /// An engine draw uses `materials/util/<name>.json`; `combine_hdr` has no such file and names its shader.
     func engineMaterial(_ name: String) -> WPEParityProgramMaterial {
         WPEParityProgramMaterial(path: "materials/util/\(name).json", assets: assets)
             ?? WPEParityProgramMaterial(shader: name)
+    }
+
+    /// The material of the model's first mesh.
+    private static func modelMaterialPath(_ path: String, assets: WPEParityProgramAssets) -> String? {
+        assets.data(path).flatMap { try? WPEMdlParser.parse(data: $0).meshes.first?.materialPath }
     }
 
     /// The object's own visible flag ANDed with every ancestor's.
@@ -120,29 +156,33 @@ public struct WPEParityProgramScene: Sendable {
         return true
     }
 
-    private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets,
-                               width: Int, height: Int, backbufferFormat: String)
-        -> (effect: WPEParitySceneEffect, materials: [WPEParityProgramMaterial?]) {
-        var fbos: [WPEParitySceneFBO] = []
+    private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets)
+        -> (effect: WPEParityAuthoredEffect, materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial)]) {
+        let filePasses = array(file["passes"])
+        var swapPartners: [String: String] = [:]
+        for pass in filePasses where string(pass["command"]) == "swap" {
+            guard let first = string(pass["source"]), let second = string(pass["target"]) else { continue }
+            swapPartners[first] = second
+            swapPartners[second] = first
+        }
+        var fbos: [WPEParityAuthoredFBO] = []
         for case let .object(fbo) in array(file["fbos"]) {
             guard let name = string(fbo["name"]) else { continue }
-            let scale = max(1, Int(number(fbo["scale"]) ?? 1))
-            let format = string(fbo["format"]).map { $0 == "rgba_backbuffer" ? backbufferFormat : $0 }
-            fbos.append(WPEParitySceneFBO(name: name, width: max(1, width / scale), height: max(1, height / scale),
-                                          format: format.flatMap(metalFormat) ?? WPEParitySceneResource.colorFormat))
+            fbos.append(WPEParityAuthoredFBO(name: name, scale: number(fbo["scale"]) ?? 1, fit: number(fbo["fit"]),
+                                             format: string(fbo["format"]) ?? "rgba8888",
+                                             swapPartner: swapPartners[name]))
         }
-        let declared = Set(fbos.map(\.name))
-        var passes: [WPEParityScenePass] = []
-        var materials: [WPEParityProgramMaterial?] = []
+        var passes: [WPEParityAuthoredPass] = []
+        var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial)] = []
         var materialIndex = 0
-        for pass in array(file["passes"]) {
+        for (passIndex, pass) in filePasses.enumerated() {
             if let command = string(pass["command"]) {
-                guard command == "copy", let target = string(pass["target"]), declared.contains(target) else { continue }
-                let source = string(pass["source"])
-                guard source == "previous" || source.map(declared.contains) == true else { continue }
-                passes.append(WPEParityScenePass(shader: "commands/copy", target: target,
-                                                 kind: .copy(source: source == "previous" ? nil : source)))
-                materials.append(nil)
+                // A swap is carried by the FBOs' swap partners.
+                guard command == "copy" else { continue }
+                let source = string(pass["source"]).flatMap { $0 == "previous" ? nil : $0 }
+                passes.append(WPEParityAuthoredPass(kind: .copy(source: source), shader: "commands/copy",
+                                                    target: string(pass["target"]), textures: [], compose: false,
+                                                    blend: .normal, source: nil))
                 continue
             }
             guard let path = string(pass["material"]),
@@ -153,38 +193,26 @@ public struct WPEParityProgramScene: Sendable {
                 material.merge(combos: override.combos, textures: override.textures)
             }
             materialIndex += 1
-            var binds: [String] = []
             for case let .object(bind) in array(pass["bind"]) {
                 guard let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
                 material.textures[Int32(index)] = name
-                if declared.contains(name), name != string(pass["target"]), !binds.contains(name) {
-                    binds.append(name)
-                }
             }
             if material.textures[0] == nil {
                 material.textures[0] = "previous"
             }
-            let target = string(pass["target"]).flatMap { declared.contains($0) ? $0 : nil }
-            passes.append(WPEParityScenePass(
-                shader: material.shader, target: target, binds: binds, compose: pass["compose"] == .bool(true),
-                readsFullFrameBuffer: material.textures.values.contains(WPESceneAliasName.fullFrameBuffer),
-                blend: WPEParitySceneBlend(material.blending)
+            if let blending = string(pass["blending"]) {
+                material.blending = WPEParityProgramMaterial.blendMode(blending)
+            }
+            let source = WPEParitySceneMaterialSource(materialPath: path, effectFile: effect.fileRelativePath,
+                                                      effectPass: passIndex)
+            passes.append(WPEParityAuthoredPass(
+                kind: .draw, shader: material.shader, target: string(pass["target"]),
+                textures: material.textures.sorted { $0.key < $1.key }.map(\.value),
+                compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source
             ))
-            materials.append(material)
+            materials.append((source, material))
         }
-        return (WPEParitySceneEffect(id: effect.id, enabled: effect.visible, passes: passes, fbos: fbos), materials)
-    }
-
-    private static func metalFormat(_ format: String) -> String? {
-        switch format.lowercased() {
-        case "rgba8888", "rgba8unorm": "rgba8unorm"
-        case "rgba16f", "rgba_half", "rgba16161616f", "rgba16float": "rgba16float"
-        case "r8", "r8unorm": "r8unorm"
-        case "rg88": "rg8unorm"
-        case "r16f": "r16float"
-        case "rg1616f": "rg16float"
-        default: nil
-        }
+        return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials)
     }
 
     static func array(_ value: WPESceneJSONValue?) -> [WPESceneJSONValue] {
@@ -228,10 +256,10 @@ private extension WPEParitySceneBlend {
 }
 
 extension WPEParityProgramMaterial {
-    /// `passes[0]` of a material file.
-    init?(path: String, assets: WPEParityProgramAssets) {
+    /// `passes[pass]` of a material file.
+    init?(path: String, pass index: Int = 0, assets: WPEParityProgramAssets) {
         typealias Scene = WPEParityProgramScene
-        guard let pass = assets.json(path)?["passes"]?[0], let shader = Scene.string(pass["shader"]) else {
+        guard let pass = assets.json(path)?["passes"]?[index], let shader = Scene.string(pass["shader"]) else {
             return nil
         }
         var combos: [String: Int32] = [:]
@@ -246,13 +274,17 @@ extension WPEParityProgramMaterial {
                 textures[Int32(slot)] = name
             }
         }
-        let blending: WPEParityBlendMode = switch Scene.string(pass["blending"])?.lowercased() {
+        self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
+                  combos: combos, textures: textures)
+    }
+
+    static func blendMode(_ raw: String?) -> WPEParityBlendMode {
+        switch raw?.lowercased() {
         case "translucent": .translucent
         case "additive": .additive
         case "alphatocoverage": .alphaToCoverage
         default: .normal
         }
-        self.init(shader: shader, path: path, blending: blending, combos: combos, textures: textures)
     }
 
     /// Scene instance or effect-pass override; null texture slots keep the base.

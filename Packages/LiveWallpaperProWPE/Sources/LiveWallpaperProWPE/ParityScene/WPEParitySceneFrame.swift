@@ -3,6 +3,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case fullscreenQuad
         /// The layer's own mesh transformed by the layer MVP.
         case layerMesh
+        /// The meshes of the object's `.mdl` file.
+        case modelMesh
     }
 
     public let pass: WPEPassIdentity
@@ -10,6 +12,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let effectID: String?
     public let passIndex: Int?
     public let shader: String
+    /// Nil when the scene description did not say which material the draw uses.
+    public let source: WPEParitySceneMaterialSource?
     public let reads: [WPEResourceID]
     public let target: WPEResourceID
     public let blend: WPEParitySceneBlend
@@ -19,13 +23,15 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let geometry: Geometry
 
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
-                shader: String, reads: [WPEResourceID], target: WPEResourceID, blend: WPEParitySceneBlend,
-                alphaMax: Bool = false, writeMask: WPEParitySceneWriteMask, geometry: Geometry) {
+                shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
+                target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
+                writeMask: WPEParitySceneWriteMask, geometry: Geometry) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
         self.passIndex = passIndex
         self.shader = shader
+        self.source = source
         self.reads = reads
         self.target = target
         self.blend = blend

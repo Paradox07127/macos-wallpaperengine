@@ -18,6 +18,35 @@ public enum WPEParitySceneWriteMask: Hashable, Sendable {
     case rgb
 }
 
+/// The material JSON pass a draw comes from, and for an effect pass the effect file pass that names it.
+public struct WPEParitySceneMaterialSource: Hashable, Sendable {
+    public var materialPath: String
+    /// Index into the material's `passes`.
+    public var materialPass: Int
+    public var effectFile: String?
+    /// Index into the effect file's `passes`, commands included.
+    public var effectPass: Int?
+    /// Combos the engine adds to the pass JSON for this draw.
+    public var combos: [String: Int]
+
+    public init(materialPath: String, materialPass: Int = 0, effectFile: String? = nil, effectPass: Int? = nil,
+                combos: [String: Int] = [:]) {
+        self.materialPath = materialPath
+        self.materialPass = materialPass
+        self.effectFile = effectFile
+        self.effectPass = effectPass
+        self.combos = combos
+    }
+
+    public static let composeLayer = WPEParitySceneMaterialSource(materialPath: "materials/util/composelayer.json")
+
+    /// genericimage4 with the image layer's BLENDMODE added to the pass JSON (FUN_140206ae0).
+    public static func layerPassthrough(colorBlendMode: Int) -> WPEParitySceneMaterialSource {
+        WPEParitySceneMaterialSource(materialPath: "materials/util/effectpassthrough_4.json",
+                                     combos: ["BLENDMODE": colorBlendMode])
+    }
+}
+
 /// What one frame of the WPE scene loop needs to know; everything else (uniforms, meshes) stays with the caller.
 public struct WPEParitySceneDescription: Hashable, Sendable {
     public var width: Int
@@ -51,13 +80,22 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
 }
 
 public struct WPEParitySceneObject: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case image
+        /// A `.mdl` model; its material comes from the model file and it takes no effects.
+        case model
+    }
+
     public var id: String
+    public var kind: Kind
     /// obj+0x124; ties keep input order.
     public var sortKey: Int
     public var visible: Bool
     public var width: Int
     public var height: Int
     public var materialShader: String
+    /// Material pass of the albedo (or model) draw.
+    public var material: WPEParitySceneMaterialSource?
     /// Layer material blend used where the layer lands in the scene or its parent composite.
     public var blend: WPEParitySceneBlend
     public var colorBlendMode: Int
@@ -73,18 +111,21 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var parentID: String?
     public var effects: [WPEParitySceneEffect]
 
-    public init(id: String, sortKey: Int = 0, visible: Bool = true, width: Int, height: Int,
-                materialShader: String = "genericimage2", blend: WPEParitySceneBlend = .translucent,
+    public init(id: String, kind: Kind = .image, sortKey: Int = 0, visible: Bool = true, width: Int, height: Int,
+                materialShader: String = "genericimage2", material: WPEParitySceneMaterialSource? = nil,
+                blend: WPEParitySceneBlend = .translucent,
                 colorBlendMode: Int = 0, passthrough: Bool = false, copyBackground: Bool = true,
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
                 noInterpolation: Bool = false, clampUVs: Bool = true, parentID: String? = nil,
                 effects: [WPEParitySceneEffect] = []) {
         self.id = id
+        self.kind = kind
         self.sortKey = sortKey
         self.visible = visible
         self.width = width
         self.height = height
         self.materialShader = materialShader
+        self.material = material
         self.blend = blend
         self.colorBlendMode = colorBlendMode
         self.passthrough = passthrough
@@ -134,9 +175,12 @@ public struct WPEParityScenePass: Hashable, Sendable {
     public var readsFullFrameBuffer: Bool
     public var blend: WPEParitySceneBlend
     public var kind: Kind
+    /// Nil for a command.
+    public var source: WPEParitySceneMaterialSource?
 
     public init(shader: String, target: String? = nil, binds: [String] = [], compose: Bool = false,
-                readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw) {
+                readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw,
+                source: WPEParitySceneMaterialSource? = nil) {
         self.shader = shader
         self.target = target
         self.binds = binds
@@ -144,6 +188,7 @@ public struct WPEParityScenePass: Hashable, Sendable {
         self.readsFullFrameBuffer = readsFullFrameBuffer
         self.blend = blend
         self.kind = kind
+        self.source = source
     }
 }
 

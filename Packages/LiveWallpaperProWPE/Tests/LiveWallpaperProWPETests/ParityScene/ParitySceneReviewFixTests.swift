@@ -1,55 +1,8 @@
-import CoreGraphics
 import LiveWallpaperProWPE
 import Testing
 
 private typealias F = ParitySceneFixtures
-
-/// Minimal render-graph layers for the document conversion.
-private enum Graph {
-    static func pass(_ shader: String, object: String = "7", effect: String = "1", index: Int = 0,
-                     phase: WPERenderPassPhase = .effect(file: "1.json"),
-                     target: WPERenderTarget = .layerComposite(name: "x"),
-                     textures: [Int: WPETextureReference] = [:]) -> WPERenderPass {
-        let identity = WPERenderEffectPassIdentity(objectID: object, authoredEffectID: effect,
-                                                   authoredEffectPath: "\(effect).json", effectPassIndex: index,
-                                                   authoredOverrideID: nil)
-        return WPERenderPass(id: "\(object).\(index)", phase: phase, shader: shader, source: .previous, target: target,
-                             textures: textures, binds: [:], constants: [:], combos: [:],
-                             authoredJSON: WPERenderPassAuthoredJSON(effectIdentity: identity),
-                             blending: "translucent", cullMode: "nocull", depthTest: "disabled",
-                             depthWrite: "disabled")
-    }
-
-    static func layer(_ id: String = "7", width: Double = 400, height: Double = 200, imagePath: String? = nil,
-                      sceneObject: [String: WPESceneJSONValue] = [:], fbos: [WPERenderFBO] = [],
-                      passes: [WPERenderPass]) -> WPERenderLayer {
-        let size = CGSize(width: width, height: height)
-        return WPERenderLayer(objectID: id, objectName: id, imagePath: imagePath ?? "models/\(id).json",
-                              materialPath: nil,
-                              authoredJSON: WPERenderLayerAuthoredJSON(sceneObjects: [.object(sceneObject)]),
-                              geometry: WPERenderLayerGeometry(origin: .zero, scale: .one, angles: .zero,
-                                                               alignment: .center, size: size, alpha: 1,
-                                                               color: .one, brightness: 1),
-                              compositeA: "a", compositeB: "b", localFBOs: fbos, passes: passes)
-    }
-
-    static func convert(_ layers: [WPERenderLayer]) throws -> WPEParitySceneDescription {
-        let general = WPESceneGeneral(clearColor: .zero,
-                                      orthogonalProjection: WPESceneOrthogonalProjection(width: 1920, height: 1080,
-                                                                                         auto: false),
-                                      clearEnabled: WPESceneAuthoredField(seed: true))
-        let document = WPESceneDocument(camera: .defaultCamera, general: general, imageObjects: [], diagnostics: [])
-        return try WPEParitySceneDescription(document: document, graph: WPERenderGraph(layers: layers))
-    }
-
-    /// The converted FBOs of the single effect that writes `fbo`.
-    static func converted(_ fbo: WPERenderFBO, width: Double = 400, height: Double = 200) throws
-        -> [WPEParitySceneFBO] {
-        let layer = layer(width: width, height: height, fbos: [fbo],
-                          passes: [pass("p", target: .fbo(name: fbo.name))])
-        return try convert([layer]).objects[0].effects[0].fbos
-    }
-}
+private typealias D = ParitySceneDocuments
 
 struct ParitySceneLastEffectRoutingTests {
     @Test func onlyTheFinalPassOfTheLastEffectDrawsIntoTheDestination() throws {
@@ -97,24 +50,32 @@ struct ParitySceneFBOConversionTests {
         let expected = [
             "rgba8888": "rgba8unorm", "RGBA16F": "rgba16float", "rgba_half": "rgba16float",
             "rgba16161616f": "rgba16float", "r8": "r8unorm", "rg88": "rg8unorm", "r16f": "r16float",
-            "rg1616f": "rg16float",
+            "rg1616f": "rg16float", "rgba_backbuffer": "rgba8unorm",
         ]
         for (authored, metal) in expected {
-            let fbos = try Graph.converted(WPERenderFBO(name: "f", scale: 1, format: authored))
+            let fbos = try D.converted(D.fbo("f", format: authored))
             #expect(fbos.map(\.format) == [metal], "\(authored)")
         }
     }
 
+    @Test func backbufferFormatFollowsHDR() throws {
+        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("f", format: "rgba_backbuffer")],
+                                               passes: [D.pass("p", target: "f")])])
+        let hdr = try D.convert([layer], general: ["bloom": true, "hdr": true],
+                                settings: WPEParityProgramSettings(hdrPostProcessing: true))
+        #expect(hdr.backbufferFormat == "rgba16float")
+        #expect(hdr.objects[0].effects[0].fbos.map(\.format) == ["rgba16float"])
+    }
+
     @Test func unknownFBOFormatThrows() {
         #expect(throws: WPEParitySceneConversionError.unknownFBOFormat("bogus")) {
-            try Graph.converted(WPERenderFBO(name: "f", scale: 1, format: "bogus"))
+            try D.converted(D.fbo("f", format: "bogus"))
         }
     }
 
-    @Test func fboExtentFollowsPixelSizeThenFitThenScale() throws {
-        func extent(scale: Double, fit: Double? = nil, pixelSize: CGSize? = nil) throws -> [Int] {
-            let fbo = WPERenderFBO(name: "f", scale: scale, fit: fit, format: "rgba8888", pixelSize: pixelSize)
-            return try Graph.converted(fbo).flatMap { [$0.width, $0.height] }
+    @Test func fboExtentFollowsFitThenScale() throws {
+        func extent(scale: Double, fit: Double? = nil) throws -> [Int] {
+            try D.converted(D.fbo("f", scale: scale, fit: fit)).flatMap { [$0.width, $0.height] }
         }
         #expect(try extent(scale: 2) == [200, 100])
         // catsout truncates the divided extent and parses `scale` as an integer.
@@ -125,22 +86,21 @@ struct ParitySceneFBOConversionTests {
         // Longest edge = fit, aspect kept, both edges rounded; `scale` no longer applies.
         #expect(try extent(scale: 2, fit: 64) == [64, 32])
         #expect(try extent(scale: 1, fit: 75) == [75, 38])
-        // An explicit pixel size replaces the layer extent and is divided by `scale`; `fit` does not apply.
-        #expect(try extent(scale: 2, fit: 64, pixelSize: CGSize(width: 300, height: 150)) == [150, 75])
     }
 }
 
 struct ParitySceneEffectCommandTests {
     @Test func copyCommandIsConvertedInPassOrder() throws {
-        let layer = Graph.layer(fbos: [WPERenderFBO(name: "history", scale: 1, format: "rgba8888")], passes: [
-            Graph.pass("commands/copy", phase: .command(file: "1.json"), target: .fbo(name: "history"),
-                       textures: [0: .previous]),
-            Graph.pass("trail", index: 1, textures: [1: .fbo("history")]),
-        ])
-        let effect = try Graph.convert([layer]).objects[0].effects[0]
+        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("history")], passes: [
+            D.command("copy", source: "previous", target: "history"),
+            D.pass("trail", binds: [1: "history"]),
+        ])])
+        let effect = try D.convert([layer]).objects[0].effects[0]
         #expect(effect.passes == [
             WPEParityScenePass(shader: "commands/copy", target: "history", kind: .copy(source: nil)),
-            WPEParityScenePass(shader: "trail", binds: ["history"], blend: .translucent),
+            WPEParityScenePass(shader: "trail", binds: ["history"], blend: .translucent,
+                               source: WPEParitySceneMaterialSource(materialPath: "materials/trail.json",
+                                                                    effectFile: "effects/7_1.json", effectPass: 1)),
         ])
         #expect(effect.fbos.map(\.name) == ["history"])
     }
@@ -162,11 +122,11 @@ struct ParitySceneEffectCommandTests {
     }
 
     @Test func swapPartnerIsConverted() throws {
-        let layer = Graph.layer(fbos: [
-            WPERenderFBO(name: "a", scale: 1, format: "rgba8888", swapPartner: "b"),
-            WPERenderFBO(name: "b", scale: 1, format: "rgba8888", swapPartner: "a"),
-        ], passes: [Graph.pass("step", target: .fbo(name: "a"), textures: [1: .fbo("b")])])
-        let fbos = try Graph.convert([layer]).objects[0].effects[0].fbos
+        let layer = D.layer(effects: [D.effect(fbos: [D.fbo("a"), D.fbo("b")], passes: [
+            D.pass("step", target: "a", binds: [1: "b"]),
+            D.command("swap", source: "a", target: "b"),
+        ])])
+        let fbos = try D.convert([layer]).objects[0].effects[0].fbos
         #expect(fbos.map(\.swapPartner) == ["b", "a"])
     }
 
@@ -196,11 +156,11 @@ struct ParitySceneEffectCommandTests {
 
 struct ParitySceneCrossLayerFBOTests {
     @Test func readOfAnotherLayersFBOResolvesToOneSharedResource() throws {
-        let writer = Graph.layer("7", width: 800, height: 400,
-                                 fbos: [WPERenderFBO(name: "glow", scale: 2, format: "rgba8888")],
-                                 passes: [Graph.pass("emit", target: .fbo(name: "glow"))])
-        let reader = Graph.layer("8", passes: [Graph.pass("use", object: "8", textures: [1: .fbo("glow")])])
-        let description = try Graph.convert([writer, reader])
+        let writer = D.layer("7", width: 800, height: 400,
+                             effects: [D.effect(fbos: [D.fbo("glow", scale: 2)],
+                                                passes: [D.pass("emit", target: "glow")])])
+        let reader = D.layer("8", effects: [D.effect(passes: [D.pass("use", binds: [1: "glow"])])])
+        let description = try D.convert([writer, reader])
         let shared = WPEParitySceneFBO(name: "glow", width: 400, height: 200, shared: true)
         #expect(description.objects[0].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].fbos == [shared])
@@ -214,11 +174,11 @@ struct ParitySceneCrossLayerFBOTests {
     }
 
     @Test func readOfAnFBOWrittenByAnEarlierEffectOfTheLayerResolvesToItsResource() throws {
-        let layer = Graph.layer(fbos: [WPERenderFBO(name: "half", scale: 2, format: "rgba8888")], passes: [
-            Graph.pass("write", target: .fbo(name: "half")),
-            Graph.pass("read", effect: "2", textures: [1: .fbo("half")]),
+        let layer = D.layer(effects: [
+            D.effect("1", fbos: [D.fbo("half", scale: 2)], passes: [D.pass("write", target: "half")]),
+            D.effect("2", passes: [D.pass("read", binds: [1: "half"])]),
         ])
-        let frame = try WPEParitySceneFrameBuilder.build(Graph.convert([layer]))
+        let frame = try WPEParitySceneFrameBuilder.build(D.convert([layer]))
         #expect(frame.draws["7/1/0"]?.target == "7/1/half")
         #expect(frame.draws["7/2/0"]?.reads.last == "7/1/half")
         #expect(frame.resources.count(where: { $0.id.rawValue.hasSuffix("half") }) == 1)
@@ -228,21 +188,21 @@ struct ParitySceneCrossLayerFBOTests {
 
 struct ParitySceneLayerFieldConversionTests {
     @Test func samplerFieldsComeFromTheLayerJSON() throws {
-        let pass = Graph.pass("p")
-        let defaults = try Graph.convert([Graph.layer(passes: [pass])]).objects[0]
+        let effect = D.effect(passes: [D.pass("p")])
+        let defaults = try D.convert([D.layer(effects: [effect])]).objects[0]
         #expect(!defaults.noInterpolation && defaults.clampUVs)
-        let authored = Graph.layer(sceneObject: ["nointerpolation": .bool(true), "clampuvs": .bool(false)],
-                                   passes: [pass])
-        let object = try Graph.convert([authored]).objects[0]
+        let authored = D.layer(json: ["nointerpolation": true, "clampuvs": false], effects: [effect])
+        let object = try D.convert([authored]).objects[0]
         #expect(object.noInterpolation && !object.clampUVs)
     }
 
     @Test func fullscreenLayerSizesItsFBOsFromTheScene() throws {
         // catsout WPSceneParser.cpp binds a fullscreen layer's FBO to the screen at 1 / scale.
-        let layer = Graph.layer(imagePath: "models/util/fullscreenlayer.json",
-                                fbos: [WPERenderFBO(name: "half", scale: 2, format: "rgba8888")],
-                                passes: [Graph.pass("p", target: .fbo(name: "half"))])
-        let fbos = try Graph.convert([layer]).objects[0].effects[0].fbos
+        var layer = D.layer(image: "models/util/fullscreenlayer.json",
+                            effects: [D.effect(fbos: [D.fbo("half", scale: 2)],
+                                               passes: [D.pass("p", target: "half")])])
+        layer.model = ["material": "materials/passthrough.json", "fullscreen": true, "passthrough": true]
+        let fbos = try D.convert([layer]).objects[0].effects[0].fbos
         #expect(fbos.map { [$0.width, $0.height] } == [[960, 540]])
     }
 }

@@ -16,12 +16,14 @@ final class ParityProgramCaptureTests: XCTestCase {
         return try ParityProgramCaptureFixture(root: URL(fileURLWithPath: directory), wpeAssets: assets)
     }
 
-    /// Draws whose program is known not to match: the .mdl model objects (the frame treats them as image layers and
-    /// their material lives in the .mdl) and layer 449, whose material sets FOG=1 and gets BLENDMODE=0 and
-    /// FOG_COMPUTED=1 from the image layer in WPE (n=47/48).
+    /// `.mdl` model draws, which take the generic4 material inside the model file.
+    private static let modelDraws: Set<String> = ["188/albedo", "214/albedo", "218/albedo", "2077/albedo",
+                                                  "238/albedo", "436/albedo"]
+
+    /// Models lack TEX4FORMAT (g_Texture4 default) and mask EMISSIVE_MAP, and 436 reuses 238's compile (same key);
+    /// 449 lacks the image layer's BLENDMODE=0 FOG_COMPUTED=1 (n=47/48).
     private static let knownUnmatched: [String: Set<String>] = [
-        "3509243656": ["188/albedo", "214/albedo", "218/albedo", "2077/albedo", "238/albedo", "436/albedo",
-                       "449/albedo"],
+        "3509243656": modelDraws.union(["449/albedo"]),
     ]
 
     func testFrameZeroProgramsMatchCapturedHLSLAndDXSKeys() throws {
@@ -47,6 +49,9 @@ final class ParityProgramCaptureTests: XCTestCase {
             }
             XCTAssertEqual(Set(results.filter { !$0.matched }.map(\.pass.rawValue)),
                            Self.knownUnmatched[scene.id] ?? [], scene.id)
+            for result in results where Self.modelDraws.contains(result.pass.rawValue) {
+                XCTAssertEqual(result.shader, "generic4", "\(scene.id) \(result.pass.rawValue)")
+            }
             let produced = Set(results.flatMap(\.matches.values))
             let missing = scene.captures.filter { !produced.contains($0) }
                 .compactMap { fixture.captures[$0] }.map { "n=\($0.n) \($0.name)" }

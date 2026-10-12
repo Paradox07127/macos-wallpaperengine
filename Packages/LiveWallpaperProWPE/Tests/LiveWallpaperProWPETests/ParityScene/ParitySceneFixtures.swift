@@ -59,7 +59,11 @@ enum ParitySceneFixtures {
 
     private static func describe(_ draw: WPEParitySceneDraw?) -> String {
         guard let draw else { return "draw <missing description>" }
-        let geometry = draw.geometry == .layerMesh ? "mesh" : "quad"
+        let geometry = switch draw.geometry {
+        case .fullscreenQuad: "quad"
+        case .layerMesh: "mesh"
+        case .modelMesh: "model"
+        }
         let mask = draw.writeMask == .rgba ? "rgba" : "rgb"
         return "draw \(draw.shader) [\(draw.reads.map(\.rawValue).joined(separator: ","))] "
             + "\(draw.blend.rawValue)\(draw.alphaMax ? "+max" : "") \(mask) \(geometry)"
