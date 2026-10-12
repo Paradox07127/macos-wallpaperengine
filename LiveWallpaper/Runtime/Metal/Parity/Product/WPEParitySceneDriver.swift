@@ -146,8 +146,7 @@ final class WPEParitySceneDriver {
             )
             if let soundResolver, !document.soundObjects.isEmpty {
                 let runtime = WPESoundRuntime(resolver: soundResolver, rules: .wpe)
-                await Self.prepareSound(runtime, sounds: document.soundObjects,
-                                        randomDelays: WPESoundRuntime.authoredRandomDelays(in: document))
+                await Self.prepareSound(runtime, sounds: document.soundObjects)
                 guard generation == loadGeneration else {
                     runtime.stop()
                     throw CancellationError()
@@ -273,9 +272,8 @@ final class WPEParitySceneDriver {
 
     /// Resolving and opening the sound files can stage them out of a package, so it stays off the render actor.
     @concurrent
-    private static func prepareSound(_ runtime: WPESoundRuntime, sounds: [WPESceneSoundObject],
-                                     randomDelays: [String: (minTime: Double, maxTime: Double)]) async {
-        runtime.prepare(sounds: sounds, randomDelays: randomDelays)
+    private static func prepareSound(_ runtime: WPESoundRuntime, sounds: [WPESceneSoundObject]) async {
+        runtime.prepare(sounds: sounds)
     }
 
     @concurrent

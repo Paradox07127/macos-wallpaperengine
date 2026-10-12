@@ -1191,7 +1191,9 @@ public enum WPESceneDocumentParser {
             startSilent: startSilent,
             visible: effectiveVisible ?? visibleField.resolvedValue,
             volumeField: volumeField,
-            visibleField: visibleField
+            visibleField: visibleField,
+            minTime: parseDouble(dict["mintime"]) ?? 0,
+            maxTime: parseDouble(dict["maxtime"]) ?? 0
         )
     }
 

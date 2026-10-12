@@ -61,8 +61,7 @@ struct WPESoundWPERulesTests {
         let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
         defer { runtime.stop() }
         runtime.setMuted(true)
-        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random")],
-                                randomDelays: ["s": (minTime: 2, maxTime: 5)]) == 1)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 2, maxTime: 5)]) == 1)
         var snapshot = try #require(runtime.debugTrackSnapshots().first)
         #expect(snapshot.scheduledSegmentCount == 1, "the first play has no delay")
         #expect(snapshot.pendingDelay == nil)
@@ -105,8 +104,7 @@ struct WPESoundWPERulesTests {
         let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
         defer { runtime.stop() }
         runtime.setMuted(true)
-        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random")],
-                                randomDelays: ["s": (minTime: 1, maxTime: 1)]) == 1)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
         runtime.debugCompleteHeadSegment(forSoundID: "s")
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 1)
 
@@ -126,35 +124,87 @@ struct WPESoundWPERulesTests {
         #expect(snapshot.scheduledSegmentCount == 1)
     }
 
-    @Test("mintime and maxtime are read from the authored sound objects")
-    func authoredRandomDelays() throws {
+    @Test("A random track waits for the user-resolved mintime/maxtime, not the authored default")
+    func randomWaitUsesUserResolvedBounds() throws {
         let json = #"""
         {
             "camera": {"center":"0 0 0"},
             "general": {"orthogonalprojection":{"width":100,"height":100,"auto":true}},
             "objects": [
-                {"id": 7, "name": "Plain", "type": "sound", "sound": ["a.wav"], "playbackmode": "random",
-                 "mintime": 3, "maxtime": 7},
-                {"id": 8, "name": "Bound", "type": "sound", "sound": ["b.wav"], "playbackmode": "random",
-                 "mintime": {"user": "lo", "value": 1.5}, "maxtime": 2.5},
-                {"id": 9, "name": "Unset", "type": "sound", "sound": ["c.wav"]}
+                {"id": 7, "name": "Bound", "type": "sound", "sound": ["a.wav"], "playbackmode": "random",
+                 "mintime": {"user": "delay", "value": 1}, "maxtime": {"user": "delay", "value": 1}}
             ]
         }
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
-        let delays = WPESoundRuntime.authoredRandomDelays(in: document)
-        #expect(delays["7"]?.minTime == 3)
-        #expect(delays["7"]?.maxTime == 7)
-        #expect(delays["8"]?.minTime == 1.5)
-        #expect(delays["8"]?.maxTime == 2.5)
-        #expect(delays["9"]?.minTime == 0)
-        #expect(delays["9"]?.maxTime == 0)
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: ["delay": .number(4)])
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: document.soundObjects) == 1)
+        runtime.debugCompleteHeadSegment(forSoundID: "7")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 4)
     }
 
-    private static func sound(paths: [String], mode: String, volume: Double = 1,
-                              startSilent: Bool = false) -> WPESceneSoundObject {
-        WPESceneSoundObject(id: "s", name: "S", soundRelativePaths: paths, volume: volume, playbackMode: mode,
-                            startSilent: startSilent)
+    @Test("Master volume 0 pauses WPE playback and a later volume resumes it")
+    func zeroAppVolumePausesPlayback() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+
+        runtime.setMasterVolume(0)
+        #expect(!runtime.debugEngineIsRunning())
+        runtime.setMasterVolume(0.5)
+        #expect(runtime.debugEngineIsRunning())
+        #expect(try #require(runtime.debugTrackSnapshots().first).isEnabled)
+    }
+
+    @Test("A track paused by script stays paused when the master volume returns")
+    func scriptPausedTrackStaysPausedAfterVolumeReturns() throws {
+        let root = try Self.makeRoot(files: ["a.wav", "b.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        #expect(runtime.prepare(sounds: [
+            Self.sound(id: "a", paths: ["a.wav"], mode: "loop"),
+            Self.sound(id: "b", paths: ["b.wav"], mode: "loop"),
+        ]) == 2)
+        guard runtime.play() else { return }
+        runtime.applyScriptCommand(.pause, layer: "b")
+
+        runtime.setMasterVolume(0)
+        #expect(!runtime.debugEngineIsRunning())
+        runtime.setMasterVolume(0.5)
+        #expect(runtime.debugEngineIsRunning())
+        let tracks = Dictionary(uniqueKeysWithValues: runtime.debugTrackSnapshots().map { ($0.id, $0) })
+        #expect(tracks["a"]?.isEnabled == true)
+        #expect(tracks["b"]?.isEnabled == false)
+    }
+
+    @Test("The old renderer keeps the engine running at master volume 0")
+    func legacyZeroAppVolumeKeepsRunning() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
+        defer { runtime.stop() }
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
+        guard runtime.play() else { return }
+
+        runtime.setMasterVolume(0)
+        #expect(runtime.debugEngineIsRunning())
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0)
+    }
+
+    private static func sound(id: String = "s", paths: [String], mode: String, volume: Double = 1,
+                              startSilent: Bool = false, minTime: Double = 0,
+                              maxTime: Double = 0) -> WPESceneSoundObject {
+        WPESceneSoundObject(id: id, name: id, soundRelativePaths: paths, volume: volume, playbackMode: mode,
+                            startSilent: startSilent, minTime: minTime, maxTime: maxTime)
     }
 
     private static func resolver(_ root: URL) -> WPEMultiRootResourceResolver {

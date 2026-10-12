@@ -287,6 +287,9 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
     public let visible: Bool
     public let volumeField: WPESceneAuthoredField<Double>
     public let visibleField: WPESceneAuthoredField<Bool>
+    /// Random-mode wait bounds in seconds, after user-property resolution.
+    public let minTime: Double
+    public let maxTime: Double
 
     public init(
         id: String,
@@ -297,7 +300,9 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
         startSilent: Bool,
         visible: Bool = true,
         volumeField: WPESceneAuthoredField<Double>? = nil,
-        visibleField: WPESceneAuthoredField<Bool>? = nil
+        visibleField: WPESceneAuthoredField<Bool>? = nil,
+        minTime: Double = 0,
+        maxTime: Double = 0
     ) {
         self.id = id
         self.name = name
@@ -308,6 +313,8 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
         self.visible = visible
         self.volumeField = volumeField ?? .init(seed: volume, resolvedValue: volume)
         self.visibleField = visibleField ?? .init(seed: visible, resolvedValue: visible)
+        self.minTime = minTime
+        self.maxTime = maxTime
     }
 }
 

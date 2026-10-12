@@ -180,6 +180,7 @@ final class WPESoundRuntime: Sendable {
         let playbackMode: String
         let startSilent: Bool
         let visible: Bool
+        let randomDelay: (minTime: Double, maxTime: Double)
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -203,35 +204,9 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// `mintime`/`maxtime` per sound id, read from the authored objects because the parsed sound object omits them.
-    static func authoredRandomDelays(in document: WPESceneDocument) -> [String: (minTime: Double, maxTime: Double)] {
-        guard case let .array(objects) = document.sourceJSON["objects"] else { return [:] }
-        let authored = objects.filter {
-            if case .object = $0 {
-                true
-            } else {
-                false
-            }
-        }
-        func seconds(_ value: WPESceneJSONValue?) -> Double {
-            switch value {
-            case let .number(number): number
-            case let .object(fields): seconds(fields["value"])
-            default: 0
-            }
-        }
-        var delays: [String: (minTime: Double, maxTime: Double)] = [:]
-        for sound in document.soundObjects {
-            guard let index = document.objectPaintOrder[sound.id], authored.indices.contains(index) else { continue }
-            delays[sound.id] = (seconds(authored[index]["mintime"]), seconds(authored[index]["maxtime"]))
-        }
-        return delays
-    }
-
     /// `scheduleFile` streams long assets; it does not allocate a PCM buffer of the whole file.
     @discardableResult
-    func prepare(sounds: [WPESceneSoundObject],
-                 randomDelays: [String: (minTime: Double, maxTime: Double)] = [:]) -> Int {
+    func prepare(sounds: [WPESceneSoundObject]) -> Int {
         let resolvedSounds = sounds.compactMap { sound -> ResolvedSound? in
             var relativePaths: [String] = []
             var urls: [URL] = []
@@ -249,7 +224,8 @@ final class WPESoundRuntime: Sendable {
                 volume: Float(sound.volume),
                 playbackMode: sound.playbackMode,
                 startSilent: sound.startSilent,
-                visible: sound.visible
+                visible: sound.visible,
+                randomDelay: (minTime: sound.minTime, maxTime: sound.maxTime)
             )
         }
 
@@ -288,7 +264,7 @@ final class WPESoundRuntime: Sendable {
                     enabled: sound.visible && !sound.startSilent,
                     needsReschedule: true,
                     epoch: 0,
-                    randomDelay: randomDelays[sound.id] ?? (minTime: 0, maxTime: 0),
+                    randomDelay: sound.randomDelay,
                     delayRemaining: nil
                 ))
 
@@ -395,8 +371,12 @@ final class WPESoundRuntime: Sendable {
         state.withLock { state in
             let clamped = Float(min(max(volume, 0), 1))
             guard abs(state.masterVolume - clamped) > 0.001 else { return }
+            let crossesZero = (state.masterVolume > 0) != (clamped > 0)
             state.masterVolume = clamped
             applyAudioState(to: &state)
+            if rules == .wpe, crossesZero {
+                reconcileEngineRunState(state: &state)
+            }
         }
     }
 
@@ -476,7 +456,8 @@ final class WPESoundRuntime: Sendable {
             return
         }
         // Mute stops decode/render (unlike WPE's gain-only mute); unmute resumes where it stopped.
-        guard !state.isMuted, !state.isSuspended else {
+        // WPE also pauses its streams while the global gain is 0.
+        guard !state.isMuted, !state.isSuspended, rules == .legacy || state.masterVolume > 0 else {
             if state.engine.isRunning {
                 state.engine.pause()
             }
