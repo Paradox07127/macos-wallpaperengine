@@ -49,6 +49,16 @@ public struct WPEParitySceneState: Sendable {
             self.value = value
             self.count = count
         }
+
+        /// The first four components of a JSON constant; nil when it has none.
+        public init?(components: [Double]) {
+            guard !components.isEmpty else { return nil }
+            var value = SIMD4<Float>.zero
+            for lane in 0 ..< min(4, components.count) {
+                value[lane] = Float(components[lane])
+            }
+            self.init(value: value, count: min(4, components.count))
+        }
     }
 
     private struct Pass: Sendable {
@@ -110,7 +120,7 @@ public struct WPEParitySceneState: Sendable {
                 < ($1.key.objectID, $1.key.effectID ?? "", $1.key.pass)
         }) {
             passIndexByKey[key] = passes.count
-            passes.append(Pass(constants: values.compactMapValues(Self.constant)))
+            passes.append(Pass(constants: values.compactMapValues(Constant.init(components:))))
         }
         self.passes = passes
         self.passIndexByKey = passIndexByKey
@@ -227,14 +237,5 @@ public struct WPEParitySceneState: Sendable {
     /// Bumped by every change of the pass's constants; 0 while they hold their loaded values.
     public func constantGeneration(pass index: Int) -> Int {
         passes[index].generation
-    }
-
-    private static func constant(_ components: [Double]) -> Constant? {
-        guard !components.isEmpty else { return nil }
-        var value = SIMD4<Float>.zero
-        for lane in 0 ..< min(4, components.count) {
-            value[lane] = Float(components[lane])
-        }
-        return Constant(value: value, count: min(4, components.count))
     }
 }

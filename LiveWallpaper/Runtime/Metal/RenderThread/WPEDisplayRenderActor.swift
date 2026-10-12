@@ -341,6 +341,10 @@ actor WPEDisplayRenderActor {
     var parityFitModeForTesting: WPEPresentFitMode? {
         parityDriver?.fitMode
     }
+
+    var parityDriverForTesting: WPEParitySceneDriver? {
+        parityDriver
+    }
     #endif
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
@@ -636,14 +640,30 @@ actor WPEDisplayRenderActor {
     }
 
     func scenePropertyBindings() -> [String: [WPEScenePropertyBinding]] {
-        renderer?.scenePropertyBindings ?? [:]
+        if let parityDriver {
+            return parityDriver.userPropertyBindings
+        }
+        return renderer?.scenePropertyBindings ?? [:]
     }
 
     func prepareScenePropertyPatch(
         _ patch: WPEScenePropertyPatch,
         authority: ScenePropertyMutationAuthority,
         expectedIntent token: ScenePropertyMutationToken
-    ) -> PreparedScenePropertyPatch? {
+    ) async -> PreparedScenePropertyPatch? {
+        if let parityDriver, let parityInputs {
+            // The scene is re-parsed with the new values off the render thread, so frames keep running meanwhile.
+            let generation = scenePropertyRendererGeneration
+            guard authority.isCurrent(token), parityDriver.canApplyUserPropertiesLive(patch),
+                  let document = try? await CancellableBackgroundWork.run({
+                      try parityInputs.makeDocument(changing: patch)
+                  }),
+                  generation == scenePropertyRendererGeneration, authority.isCurrent(token),
+                  parityDriver.prepareUserProperties(patch, document: document) else {
+                return nil
+            }
+            return PreparedScenePropertyPatch(patch: patch, rendererGeneration: generation)
+        }
         guard authority.isCurrent(token),
               renderer?.canApplyScenePropertyPatch(patch) == true else {
             return nil
@@ -660,6 +680,12 @@ actor WPEDisplayRenderActor {
     ) -> Bool {
         guard prepared.rendererGeneration == scenePropertyRendererGeneration else {
             return false
+        }
+        if let parityDriver {
+            guard parityDriver.commitUserProperties(prepared.patch) else { return false }
+            // A later reload parses with the committed values.
+            parityInputs?.descriptor = updatedDescriptor
+            return true
         }
         guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
             return false

@@ -76,7 +76,8 @@ final class WPEParityFrameRenderer {
     private let draws: [Int: WPEParityFrameDrawPlan]
     private let screen: WPEParityUniformScreen
     private let camera: WPEParityCamera
-    private let cameraParallax: WPESceneCameraParallaxSettings
+    /// Only delay and mouse influence change after load; enabling or the amount is baked into the camera.
+    private var cameraParallax: WPESceneCameraParallaxSettings
     private(set) var clock = WPEParityClock()
     private(set) var pointer = WPEParityUniformPointer()
     private var parallax = WPEParityUniformParallax()
@@ -283,9 +284,16 @@ final class WPEParityFrameRenderer {
         frameIndex = previous.frameIndex
         state = previous.state
         animations = previous.animations
+        cameraParallax = previous.cameraParallax
         // The next frame takes the transforms and visibility over from the copied state.
         seenTransforms = previous.layersMoved ? -1 : 0
         seenVisibility = -1
+    }
+
+    /// Writes a user-property change between frames; the next frame reads it like any state write.
+    func applyUserProperties(_ update: WPEParityUserPropertyUpdate) {
+        update.apply(to: &state)
+        cameraParallax = update.cameraParallax
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.

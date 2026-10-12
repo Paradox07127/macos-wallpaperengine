@@ -91,7 +91,7 @@ public struct WPEParitySceneAnimations {
         }
     }
 
-    private static func id(_ object: WPESceneJSONValue) -> String? {
+    static func id(_ object: WPESceneJSONValue) -> String? {
         if let id = WPEParityProgramScene.string(object["id"]), !id.isEmpty {
             return id
         }

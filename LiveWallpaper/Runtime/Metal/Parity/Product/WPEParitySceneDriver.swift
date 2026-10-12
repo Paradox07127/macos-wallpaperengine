@@ -89,6 +89,10 @@ final class WPEParitySceneDriver {
     private(set) var requiresSystemAudioCapture = false
     private var planSource: PlanSource?
     private var plannedTarget: RenderTarget?
+    /// The loaded scene's user-property bindings; `.incremental` ones apply without a reload.
+    private(set) var userPropertyBindings: [String: [WPEScenePropertyBinding]] = [:]
+    /// A change `prepareUserProperties` accepted, parsed with its new values, waiting for its commit.
+    private var pendingUserProperties: (patch: WPEScenePropertyPatch, document: WPESceneDocument)?
     /// Bumped on load and cleanup, so presents of an older load never count as ready.
     private(set) var loadGeneration = 0
     private(set) var loadDiagnostics: SceneLoadDiagnostic?
@@ -165,6 +169,8 @@ final class WPEParitySceneDriver {
         renderer = nil
         planSource = nil
         plannedTarget = nil
+        userPropertyBindings = [:]
+        pendingUserProperties = nil
         requiresSystemAudioCapture = false
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
@@ -219,6 +225,7 @@ final class WPEParitySceneDriver {
             planSource = PlanSource(document: document, assets: assets, settings: settings, shaders: shaders,
                                     workshopID: workshopID, sceneSize: sceneSize)
             plannedTarget = target
+            userPropertyBindings = WPEParityUserProperties.bindings(document: document)
             self.renderer = renderer
             lastTimestamp = nil
             didLoad = true
@@ -259,6 +266,38 @@ final class WPEParitySceneDriver {
             }
             return false
         }
+    }
+
+    /// Every changed property is bound, and only to targets the renderer updates live.
+    func canApplyUserPropertiesLive(_ patch: WPEScenePropertyPatch) -> Bool {
+        didLoad && patch.changedKeys.allSatisfy { key in
+            let bindings = userPropertyBindings[key] ?? []
+            return !bindings.isEmpty && bindings.allSatisfy { $0.action == .incremental }
+        }
+    }
+
+    /// Accepts `patch` when `document`, the scene parsed with its new values, differs from the loaded one only in
+    /// live state; the commit applies it.
+    func prepareUserProperties(_ patch: WPEScenePropertyPatch, document: WPESceneDocument) -> Bool {
+        guard canApplyUserPropertiesLive(patch), let planSource,
+              WPEParityUserPropertyUpdate(from: planSource.document, to: document) != nil else { return false }
+        pendingUserProperties = (patch, document)
+        return true
+    }
+
+    /// Writes the prepared change into the running scene before its next frame; later re-plans build from the new
+    /// parse. False when `patch` is not the one prepared last.
+    func commitUserProperties(_ patch: WPEScenePropertyPatch) -> Bool {
+        guard let pending = pendingUserProperties, pending.patch == patch, let renderer, let planSource,
+              let update = WPEParityUserPropertyUpdate(from: planSource.document, to: pending.document) else {
+            return false
+        }
+        pendingUserProperties = nil
+        renderer.applyUserProperties(update)
+        self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
+                                     settings: planSource.settings, shaders: planSource.shaders,
+                                     workshopID: planSource.workshopID, sceneSize: planSource.sceneSize)
+        return true
     }
 
     /// The old renderer's gates (`sampleFrameContext`): the cursor follows only with mouse interaction on and over
@@ -415,6 +454,8 @@ final class WPEParitySceneDriver {
         renderer = nil
         planSource = nil
         plannedTarget = nil
+        userPropertyBindings = [:]
+        pendingUserProperties = nil
         requiresSystemAudioCapture = false
         lastTimestamp = nil
         loadDiagnostics = nil
@@ -447,7 +488,7 @@ final class WPEParitySceneDriver {
 
 /// Everything the render actor needs to build, load and drive a parity scene on a session's surface.
 struct WPEParitySceneInputs: Sendable {
-    let descriptor: SceneDescriptor
+    var descriptor: SceneDescriptor
     let entryResolver: SceneResourceResolver
     /// Holds project.json, as `WPEMetalSceneRenderer.projectManifestRootURL`.
     let projectRoot: URL
@@ -464,11 +505,15 @@ struct WPEParitySceneInputs: Sendable {
     var soundResolver: WPEMultiRootResourceResolver?
     var presentFitMode = WPEPresentFitMode.cover
 
-    /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does.
-    func makeDocument() throws -> WPESceneDocument {
+    /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does; `patch` replaces
+    /// the values of its changed keys.
+    func makeDocument(changing patch: WPEScenePropertyPatch? = nil) throws -> WPESceneDocument {
         let data = try entryResolver.data(relativePath: descriptor.entryFile)
-        let userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
+        var userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
                                                                                    cacheRootURL: projectRoot)
+        for key in patch?.changedKeys ?? [] {
+            userValues[key] = patch?.newValues[key]
+        }
         let repaired = (try? WallpaperEngineProjectPropertySchema.read(from: projectRoot, includeSchemeColor: true))
             .map { WPESceneParallaxBindingInference.applying(to: data, schema: $0) } ?? data
         return try WPESceneDocumentParser.parse(data: repaired, userValues: userValues)
