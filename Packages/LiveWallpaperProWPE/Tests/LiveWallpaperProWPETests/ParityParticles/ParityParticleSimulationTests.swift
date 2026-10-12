@@ -1,4 +1,5 @@
 @testable import LiveWallpaperProWPE
+import simd
 import XCTest
 
 final class ParityParticleSimulationTests: XCTestCase {
@@ -157,6 +158,64 @@ final class ParityParticleSimulationTests: XCTestCase {
         let spawned = particles.eventChildren[0][0]
         XCTAssertEqual(spawned.liveCount, 4)
         XCTAssertEqual(spawned.position[0].x, 1, accuracy: 1e-6)
+    }
+
+    func testFinishedEventChildrenAreReusedWithoutChangingTheBatches() {
+        let child = """
+        {"maxcount": 4, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 3, "distancemax": 5}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.3, "max": 0.3},
+                         {"name": "velocityrandom", "min": "-20 -20 0", "max": "20 20 0"}],
+         "operator": [{"name": "movement"}], "renderer": [{"name": "sprite"}]}
+        """
+        var particles = WPEParityParticleSystem(
+            json: ParityParticleTestSupport.json("""
+            {"maxcount": 20,
+             "emitter": [{"name": "sphererandom", "rate": 30, "distancemax": 10}],
+             "initializer": [{"name": "lifetimerandom", "min": 0.5, "max": 0.5},
+                             {"name": "velocityrandom", "min": "-5 -5 0", "max": "5 5 0"}],
+             "operator": [{"name": "movement"}], "renderer": [{"name": "sprite"}],
+             "children": [{"name": "child.json", "type": "eventspawn"}]}
+            """),
+            rng: WPEParityMT19937(seed: 7),
+            resolveChild: { $0 == "child.json" ? ParityParticleTestSupport.json(child) : nil }
+        )
+        var checksum: UInt64 = 0xCBF2_9CE4_8422_2325
+        var warm = 0
+        for frame in 1 ... 300 {
+            particles.advance(dt: 1.0 / 60)
+            let batches = particles.batches(node: [], renderer: 0, eventGroup: nil)
+                + particles.batches(node: [], renderer: 0, eventGroup: 0)
+            for byte in batches.flatMap(\.bytes) {
+                checksum = (checksum ^ UInt64(byte)) &* 0x0000_0100_0000_01B3
+            }
+            if frame == 150 {
+                warm = particles.eventChildConstructions
+            }
+        }
+        print("event child reuse: \(particles.eventChildConstructions) constructions, checksum \(checksum)")
+        XCTAssertGreaterThan(warm, 0)
+        XCTAssertEqual(particles.eventChildConstructions, warm)
+        // Recorded from the build that constructed a new system per event.
+        XCTAssertEqual(checksum, 7_387_180_156_559_087_736)
+    }
+
+    func testCapVelocityDefaultsTo100In2DAnd1In3D() {
+        for (is3D, cap) in [(false, Float(100)), (true, Float(1))] {
+            var particles = WPEParityParticleSystem(
+                json: ParityParticleTestSupport.json("""
+                {"maxcount": 1,
+                 "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0,
+                              "speedmin": 0, "speedmax": 0}],
+                 "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                                 {"name": "velocityrandom", "min": "200 0 0", "max": "200 0 0"}],
+                 "operator": [{"name": "capvelocity"}]}
+                """),
+                rng: WPEParityMT19937(),
+                is3D: is3D
+            )
+            particles.advance(dt: 0.1)
+            XCTAssertEqual(simd_length(particles.velocity[0]), cap, accuracy: cap * 1e-5, "is3D \(is3D)")
+        }
     }
 
     func testTimingThousandParticleSphereSystem() {

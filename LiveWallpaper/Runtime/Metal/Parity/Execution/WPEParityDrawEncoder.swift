@@ -19,10 +19,28 @@ struct WPEParityDraw {
     var vertexCount: Int
     var indexBuffer: MTLBuffer?
     var indexCount = 0
+    /// The executor skips and counts this draw when the frame arena cannot hold its arguments, instead of failing
+    /// the frame.
+    var dropsWhenArenaIsFull = false
 }
 
 struct WPEParityDrawEncoder {
     let factory: WPEParityPipelineFactory
+
+    /// Arena bytes `encode` takes for `pipeline`'s cbuffers and top-level argument buffers, each 256-byte aligned.
+    static func argumentBytes(_ pipeline: WPEParityPipeline) -> Int {
+        let stages = [pipeline.vertex, pipeline.geometry?.geometry, pipeline.fragment].compactMap(\.self)
+        return stages.reduce(0) { total, stage in
+            let plan = stage.bindingPlan
+            guard plan.totalSize > 0 else { return total }
+            let cbuffers = stage.cbuffers.filter {
+                plan.cbufferOffset(register: $0.reflection.register, space: $0.reflection.space) != nil
+            }
+            return cbuffers.reduce(total + WPEParityFrameArena.aligned(plan.totalSize)) {
+                $0 + WPEParityFrameArena.aligned($1.size)
+            }
+        }
+    }
 
     func encode(_ draw: WPEParityDraw, frame: WPEParityFrameArena.Frame,
                 on encoder: MTLRenderCommandEncoder) throws {

@@ -35,8 +35,10 @@ struct WPEParityFrameDrawPlan {
         let renderer: WPEParityParticleRenderer
         /// Set for SPRITESHEET draws with TEXS frames (R22 Q4).
         let renderVar1: SIMD4<Float>?
-        /// Arena bytes of the largest batch a root or static child can write; nil for an event group.
-        let maxBytes: Int?
+        /// Arena bytes of the largest batch one system, or one instance of an event group, can write.
+        let maxBytes: Int
+        /// Arena bytes each of this draw's batches takes for cbuffers and argument tables.
+        let argumentBytes: Int
     }
 
     let pipeline: WPEParityPipeline
@@ -140,7 +142,9 @@ struct WPEParityFrameDrawPlan {
 
         var draws: [WPEParityDraw] = []
         for batch in batches {
-            guard let allocation = particles.upload(batch, to: arena) else { continue }
+            guard let allocation = particles.upload(batch, argumentBytes: particle.argumentBytes, to: arena) else {
+                continue
+            }
             // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
             if let renderVar1 = particle.renderVar1 {
                 renderVars.setRV1(renderVar1)
@@ -156,6 +160,7 @@ struct WPEParityFrameDrawPlan {
                                      textures: state.textures, samplers: samplers, vertexBuffer: allocation.buffer,
                                      primitiveType: .point, vertexCount: batch.count)
             draw.vertexBufferOffset = allocation.offset
+            draw.dropsWhenArenaIsFull = true
             draws.append(draw)
         }
         return draws
@@ -460,7 +465,7 @@ struct WPEParityFrameDrawPlanner {
         return WPEParityFrameDrawPlan.Particles(
             key: key, layers: layers, worldSpace: entry.worldSpace, perspective: entry.perspective,
             compositeOwnerID: compositeOwnerID, renderer: renderer, renderVar1: renderVar1,
-            maxBytes: key.eventGroup == nil ? vertices * emulation.vertexStride : nil
+            maxBytes: vertices * emulation.vertexStride, argumentBytes: WPEParityDrawEncoder.argumentBytes(pipeline)
         )
     }
 

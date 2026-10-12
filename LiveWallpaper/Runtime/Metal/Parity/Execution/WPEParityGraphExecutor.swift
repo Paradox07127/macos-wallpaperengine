@@ -37,6 +37,8 @@ final class WPEParityGraphExecutor {
     /// Orders heap use across frames, which per-encoder fences inside one command buffer do not cover.
     private let heapEvent: MTLEvent?
     private var frameCount: UInt64 = 0
+    /// Draws marked `dropsWhenArenaIsFull` that were skipped for want of arena space, over the executor's life.
+    private(set) var droppedDraws = 0
 
     init(graph: WPECompiledRenderGraph, device: MTLDevice, drawEncoder: WPEParityDrawEncoder,
          arena: WPEParityFrameArena, pixelFormats: [String: MTLPixelFormat]) throws {
@@ -255,7 +257,11 @@ final class WPEParityGraphExecutor {
         for operation in step.operations {
             guard case .draw = graph.operations[operation].kind else { continue }
             for provided in try draw(operation, textures, frame) {
-                try drawEncoder.encode(provided, frame: frame, on: encoder)
+                do {
+                    try drawEncoder.encode(provided, frame: frame, on: encoder)
+                } catch WPEParityExecutionError.arenaExhausted where provided.dropsWhenArenaIsFull {
+                    droppedDraws += 1
+                }
             }
         }
         if let fence {

@@ -2,12 +2,13 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// The scene's particle systems and each frame's share of the arena for their vertices.
+/// The scene's particle systems and each frame's share of the arena for their draws.
 struct WPEParityParticleFrame {
     var scene: WPEParityParticleScene
-    /// Arena bytes particle vertices may take in one frame; the rest of the arena stays with cbuffers and tables.
-    let budget: Int
-    /// Batches dropped because a frame's particle vertices outgrew `budget`, over the renderer's life.
+    /// Arena bytes particle vertices and their draws' cbuffers and tables may take in one frame; the rest of the
+    /// arena stays with the other draws.
+    var budget: Int
+    /// Batches dropped because a frame's particle draws outgrew `budget`, over the renderer's life.
     private(set) var dropped = 0
     private var used = 0
     private var overflowed = false
@@ -22,10 +23,11 @@ struct WPEParityParticleFrame {
         overflowed = false
     }
 
-    /// Copies `batch` into the frame's arena; once one batch does not fit, every later batch of the frame is dropped.
-    mutating func upload(_ batch: WPEParityParticleVertexBatch,
+    /// Copies `batch` into the frame's arena and reserves the `argumentBytes` its draw encodes next; once one batch
+    /// does not fit, every later batch of the frame is dropped.
+    mutating func upload(_ batch: WPEParityParticleVertexBatch, argumentBytes: Int,
                          to arena: WPEParityFrameArena.Frame) -> WPEParityFrameArena.Allocation? {
-        let length = Self.aligned(batch.bytes.count)
+        let length = WPEParityFrameArena.aligned(batch.bytes.count) + argumentBytes
         guard !overflowed, used + length <= budget, let allocation = arena.allocate(length: batch.bytes.count) else {
             overflowed = true
             dropped += 1
@@ -34,11 +36,6 @@ struct WPEParityParticleFrame {
         used += length
         batch.bytes.withUnsafeBytes { allocation.contents.copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
         return allocation
-    }
-
-    static func aligned(_ length: Int) -> Int {
-        let alignment = WPEParityFrameArena.alignment
-        return (length + alignment - 1) / alignment * alignment
     }
 }
 

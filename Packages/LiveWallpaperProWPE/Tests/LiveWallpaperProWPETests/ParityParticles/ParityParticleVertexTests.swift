@@ -73,6 +73,25 @@ final class ParityParticleVertexTests: XCTestCase {
         XCTAssertEqual(particles.combos(for: particles.renderers[1]), ["THICKFORMAT": 1, "TRAILRENDERER": 1])
     }
 
+    func testSequenceMultiplierScalesTheThickBufferPhase() {
+        var particles = WPEParityParticleSystem(
+            json: Support.json("""
+            {"maxcount": 1, "sequencemultiplier": 2,
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 1, "max": 1}],
+             "renderer": [{"name": "spritetrail"}]}
+            """),
+            rng: WPEParityMT19937()
+        )
+        particles.advance(dt: 0.1)
+        particles.advance(dt: 0.5)
+        XCTAssertEqual(particles.age[0], 0.5)
+        let batch = particles.vertices(for: particles.renderers[0])
+        XCTAssertEqual(batch.stride, 60)
+        // POSITION f3, TEXCOORD0 f4, then TEXCOORD1 (velocity, phase).
+        XCTAssertEqual(Support.float(batch.bytes, at: 40), 1)
+    }
+
     func testRopeWritesOneSegmentPerNeighbourPairInBirthOrder() {
         var particles = threeParticles(renderers: #"{"name": "rope"}"#)
         let batch = particles.vertices(for: particles.renderers[0])

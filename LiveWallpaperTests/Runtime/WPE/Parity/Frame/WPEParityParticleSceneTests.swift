@@ -103,6 +103,56 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertGreaterThan(renderer.droppedParticleBatches, 0)
     }
 
+    func testEventInstancesBeyondTheShareAreDroppedWithoutLosingOtherDraws() async throws {
+        // Fits every instance's vertices (about 1500 × 256 bytes) but not their argument tables and cbuffers.
+        let (plan, renderer, _) = try await makeRenderer(particleArenaBytes: 1 << 20, eventChildFixture: true)
+        let others = plan.frames[0].draws.keys.count {
+            renderer.skipped[$0] == nil && renderer.particleRenderer($0) == nil
+        }
+        XCTAssertGreaterThan(others, 0)
+        var particleDraws = 0
+        for frame in 1 ... 120 {
+            guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+                return XCTFail("frame \(frame) was skipped")
+            }
+            await commandBuffer.completed()
+            XCTAssertNil(commandBuffer.error, "frame \(frame)")
+            let encoded = renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) == nil }
+            XCTAssertEqual(encoded, others, "frame \(frame)")
+            particleDraws += renderer.lastFrameDraws.count - encoded
+        }
+        print("event-child fixture: \(renderer.drawCount) planned draws, \(particleDraws) particle draws, "
+            + "\(renderer.droppedParticleBatches) dropped with a 1 MiB share")
+        XCTAssertGreaterThan(particleDraws, 0)
+        XCTAssertGreaterThan(renderer.droppedParticleBatches, 0)
+    }
+
+    func testParticleShareGrowsUntilEventOnlyRenderersStopDropping() async throws {
+        let (_, renderer, _) = try await makeRenderer(eventChildFixture: true)
+        var early = 0
+        var last = 0
+        var droppedAtFrame120 = 0
+        for frame in 1 ... 180 {
+            guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+                return XCTFail("frame \(frame) was skipped")
+            }
+            await commandBuffer.completed()
+            XCTAssertNil(commandBuffer.error, "frame \(frame)")
+            last = renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) != nil }
+            if frame <= 10 {
+                early += last
+            }
+            if frame == 120 {
+                droppedAtFrame120 = renderer.droppedParticleBatches
+            }
+        }
+        print("event-child fixture: \(early) instance draws in frames 1-10, \(last) in frame 180, "
+            + "\(renderer.droppedParticleBatches) dropped")
+        XCTAssertGreaterThan(early, 0)
+        XCTAssertGreaterThan(last, 60)
+        XCTAssertEqual(renderer.droppedParticleBatches, droppedAtFrame120)
+    }
+
     private static func vector(_ value: WPECBufferValue?) -> [Float]? {
         if case let .vector(components)? = value {
             components
@@ -111,10 +161,10 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
     }
 
-    private func makeRenderer(particleArenaBytes: Int? = nil) async throws
+    private func makeRenderer(particleArenaBytes: Int? = nil, eventChildFixture: Bool = false) async throws
         -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice) {
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
-        let plan = try makePlan()
+        let plan = try makePlan(eventChildFixture: eventChildFixture)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         // Shared between the tests of this class, so only the first compiles cold.
         let cache = FileManager.default.temporaryDirectory.appending(path: "parity-particles-\(Self.sceneID)-cache",
@@ -129,7 +179,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         return (plan, renderer, device)
     }
 
-    private func makePlan() throws -> WPEParityFramePlan {
+    private func makePlan(eventChildFixture: Bool) throws -> WPEParityFramePlan {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
@@ -141,15 +191,52 @@ final class WPEParityParticleSceneTests: XCTestCase {
               FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
             throw XCTSkip("Needs Workshop \(Self.sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
         }
-        let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
+        var assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
+        if eventChildFixture {
+            let files = try Self.eventChildFiles(sceneJSON: XCTUnwrap(assets.data("scene.json")))
+            assets = WPEParityProgramAssets(sources: [.lookup(folder) { files[$0] }] + assets.sources)
+        }
         let document = try WPESceneDocumentParser.parse(
             data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
             makeTransformScriptResolver: { _, _ in NoScripts() }
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                       width: Self.width, height: Self.height)
+    }
+
+    /// The scene's railing layer (1266) and one particle object whose only renderer sits in an eventdeath child:
+    /// the parent's 0.05 s particles die 1000 times a second, so about 1500 one-particle instances live at once.
+    private static func eventChildFiles(sceneJSON: Data) throws -> [String: Data] {
+        var scene = try XCTUnwrap(JSONSerialization.jsonObject(with: sceneJSON) as? [String: Any])
+        let objects = try XCTUnwrap(scene["objects"] as? [[String: Any]])
+        let railing = try XCTUnwrap(objects.first { $0["id"] as? Int == 1266 })
+        var particle = try XCTUnwrap(objects.first { $0["id"] as? Int == 1775 })
+        particle["id"] = 9001
+        particle["particle"] = "particles/w35/parent.json"
+        particle["instanceoverride"] = nil
+        particle["visible"] = true
+        scene["objects"] = [railing, particle]
+        let material = "materials/workshop/2829005144/presets/fireworks_halo.json"
+        let parent = """
+        {"maxcount": 64, "material": "\(material)",
+         "emitter": [{"name": "sphererandom", "rate": 1000, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
+         "children": [{"name": "particles/w35/child.json", "type": "eventdeath"}]}
+        """
+        let child = """
+        {"maxcount": 1, "material": "\(material)",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 1.5, "max": 1.5},
+                         {"name": "sizerandom", "min": 20, "max": 20}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        return try [
+            "scene.json": JSONSerialization.data(withJSONObject: scene),
+            "particles/w35/parent.json": Data(parent.utf8),
+            "particles/w35/child.json": Data(child.utf8),
+        ]
     }
 }
 

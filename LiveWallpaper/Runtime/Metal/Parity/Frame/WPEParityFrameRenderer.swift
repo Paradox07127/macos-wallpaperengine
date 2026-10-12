@@ -62,6 +62,12 @@ final class WPEParityFrameRenderer {
     /// One bone animator per skinned puppet layer, keyed by object id.
     private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
     private var particles: WPEParityParticleFrame
+    private let arena: WPEParityFrameArena
+    /// Arena bytes outside the particle share, for the other draws' cbuffers and tables.
+    private let baseArenaBytes: Int
+    /// False when the caller fixed the particle share.
+    private let growsParticleShare: Bool
+    static let maxParticleShare = 256 << 20
     private let layers: WPEParityLayerTransformSet
     /// Visible particle objects; the others are not stepped (R16 Q5).
     private let particleObjects: [String]
@@ -73,9 +79,9 @@ final class WPEParityFrameRenderer {
         draws.count
     }
 
-    /// Particle batches dropped because a frame's particle vertices outgrew their arena share.
+    /// Particle batches dropped because a frame's particle draws outgrew their arena share or the arena.
     var droppedParticleBatches: Int {
-        particles.dropped
+        executors.reduce(particles.dropped) { $0 + $1.droppedDraws }
     }
 
     /// Per encoded draw, declared textures the frame does not have, bound to a transparent texel.
@@ -116,8 +122,9 @@ final class WPEParityFrameRenderer {
         videos.textures
     }
 
-    /// `particleArenaBytes` caps each frame's particle vertices; by default it fits every root and static-child
-    /// system at full capacity.
+    /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
+    /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
+    /// particle batches, up to `maxParticleShare`.
     init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
          particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil) async throws {
         let factory = WPEParityPipelineFactory(device: device)
@@ -151,14 +158,13 @@ final class WPEParityFrameRenderer {
                                                       workshopID: plan.scene.assets.roots[0].lastPathComponent,
                                                       device: device, queue: queue)
 
-        // Each draw needs at most a few argument tables and cbuffers, all 256-byte aligned. Event groups are unbounded,
-        // so only root and static-child batches count towards the particle share.
+        // Each draw needs at most a few argument tables and cbuffers, all 256-byte aligned.
         let particleBytes = particleArenaBytes ?? draws.values.reduce(0) { total, draw in
-            guard case let .particles(particle) = draw.geometry, let bytes = particle.maxBytes else { return total }
-            return total + WPEParityParticleFrame.aligned(bytes)
+            guard case let .particles(particle) = draw.geometry else { return total }
+            return total + WPEParityFrameArena.aligned(particle.maxBytes) + particle.argumentBytes
         }
-        guard let arena = WPEParityFrameArena(device: device,
-                                              capacity: max(1 << 16, draws.count * 16 * 1024) + particleBytes) else {
+        let baseArenaBytes = max(1 << 16, draws.count * 16 * 1024)
+        guard let arena = WPEParityFrameArena(device: device, capacity: baseArenaBytes + particleBytes) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         let encoder = WPEParityDrawEncoder(factory: factory)
@@ -193,6 +199,9 @@ final class WPEParityFrameRenderer {
         self.videos = videos
         self.queue = queue
         self.executors = executors
+        self.arena = arena
+        self.baseArenaBytes = baseArenaBytes
+        growsParticleShare = particleArenaBytes == nil
         self.draws = draws
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         camera = planner.layers.camera
@@ -254,7 +263,14 @@ final class WPEParityFrameRenderer {
                                              audio: audio)
         let variant = frameIndex % executors.count
         frameIndex += 1
-        defer { videos.finishFrame() }
+        let dropped = droppedParticleBatches
+        defer {
+            videos.finishFrame()
+            if growsParticleShare, droppedParticleBatches > dropped, particles.budget < Self.maxParticleShare {
+                particles.budget = min(particles.budget * 2, Self.maxParticleShare)
+                arena.capacity = baseArenaBytes + particles.budget
+            }
+        }
         lastFrameDraws.removeAll(keepingCapacity: true)
         return try executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
                                                   prepare: videos.encode) { operation, textures, arena in

@@ -59,9 +59,9 @@ public struct WPEParityParticleSystem {
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
     /// Baked into births: zero except for an event child, which starts at its event in the parent's space.
-    let origin: SIMD3<Float>
+    private(set) var origin: SIMD3<Float>
     /// Static-child origins from the object down to this system, which the model matrix carries (R16 Q4).
-    let localTransform: simd_float4x4
+    private(set) var localTransform: simd_float4x4
     /// A worldspace root or static child: its model matrix is I, so births go through the object matrix.
     let emitsInWorld: Bool
     let capacity: Int
@@ -100,6 +100,8 @@ public struct WPEParityParticleSystem {
     public internal(set) var children: [WPEParityParticleSystem] = []
     /// One group per eventspawn / eventdeath child in JSON order; each event adds an instance at the parent particle.
     public internal(set) var eventChildren: [[WPEParityParticleSystem]] = []
+    /// Per event group, finished instances the next events reset instead of allocating new slot arrays.
+    var finishedEventChildren: [[WPEParityParticleSystem]] = []
 
     var emitterStates: [EmitterState]
     var childGroup: [Int] = []
@@ -133,6 +135,8 @@ public struct WPEParityParticleSystem {
     var sequenceStates: [WPEParityParticleSequenceState]
     /// Frame counter boids splits its slot blocks by (ctx+0x144).
     var boidsFrame = 0
+    /// Event-child systems this system has constructed, for tests.
+    var eventChildConstructions = 0
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
     /// `crt` is the scene's CRT `rand()` state, shared like `rng`. Brightness overrides need an HDR scene, which
@@ -183,21 +187,10 @@ public struct WPEParityParticleSystem {
         birthU = alpha
         frame = alpha
         previousPosition = position
-        sequenceStates = config.initializers.map { initializer in
-            switch initializer {
-            case let .sequenceAround(field): WPEParityParticleSequenceState(step: 1 / Float(field.count))
-            case let .sequenceBetween(field): WPEParityParticleSequenceState(step: 1 / Float(field.count - 1))
-            default: WPEParityParticleSequenceState()
-            }
-        }
+        sequenceStates = config.initializers.map(Self.sequenceState)
         birthNext = Array(repeating: -1, count: capacity)
         birthPrevious = birthNext
-        emitterStates = config.emitters.map { emitter in
-            EmitterState(
-                delayLeft: emitter.delay, durationLeft: emitter.duration, burstPending: emitter.instantaneous > 0,
-                periodLeft: emitter.periodic ? rng.draw(emitter.periodicDurationMin, emitter.periodicDurationMax) : 0
-            )
-        }
+        emitterStates = config.emitters.map { Self.emitterState($0, rng: rng) }
         if let trail = config.renderers.first(where: { $0.kind == .ropeTrail }) {
             trailSegments = trail.segments
             trailInterval = trail.length / Float(trail.segments)
@@ -216,8 +209,76 @@ public struct WPEParityParticleSystem {
             } else {
                 childGroup.append(eventChildren.count)
                 eventChildren.append([])
+                finishedEventChildren.append([])
             }
         }
+        prewarm()
+    }
+
+    private static func sequenceState(_ initializer: WPEParityParticleInitializer) -> WPEParityParticleSequenceState {
+        switch initializer {
+        case let .sequenceAround(field): WPEParityParticleSequenceState(step: 1 / Float(field.count))
+        case let .sequenceBetween(field): WPEParityParticleSequenceState(step: 1 / Float(field.count - 1))
+        default: WPEParityParticleSequenceState()
+        }
+    }
+
+    private static func emitterState(_ emitter: WPEParityParticleEmitterConfig, rng: WPEParityMT19937) -> EmitterState {
+        EmitterState(
+            delayLeft: emitter.delay, durationLeft: emitter.duration, burstPending: emitter.instantaneous > 0,
+            periodLeft: emitter.periodic ? rng.draw(emitter.periodicDurationMin, emitter.periodicDurationMax) : 0
+        )
+    }
+
+    /// Turns a finished event child into the system `init` would build for a new event, with the same RNG draws,
+    /// clearing its slot arrays in place. Event children have no children of their own.
+    private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
+                                        context: WPEParityParticleFrameContext) {
+        func clear<Element>(_ array: inout [Element], to value: Element) {
+            array.withUnsafeMutableBufferPointer { $0.update(repeating: value) }
+        }
+        self.origin = origin
+        self.localTransform = localTransform
+        frameContext = context
+        prewarmStep = 0
+        prewarmStepCount = 0
+        liveCount = 0
+        clear(&position, to: .zero)
+        clear(&velocity, to: .zero)
+        clear(&rotation, to: .zero)
+        clear(&angularVelocity, to: .zero)
+        clear(&color, to: .zero)
+        clear(&initialColor, to: .zero)
+        clear(&previousPosition, to: .zero)
+        clear(&alpha, to: 0)
+        clear(&initialAlpha, to: 0)
+        clear(&size, to: 0)
+        clear(&initialSize, to: 0)
+        clear(&age, to: 0)
+        clear(&lifetime, to: 0)
+        clear(&birthU, to: 0)
+        clear(&frame, to: 0)
+        clear(&birthNext, to: -1)
+        clear(&birthPrevious, to: -1)
+        birthHead = -1
+        birthTail = -1
+        freeHint = 0
+        highWater = 0
+        pendingEvents.removeAll(keepingCapacity: true)
+        for index in sequenceStates.indices {
+            sequenceStates[index] = Self.sequenceState(config.initializers[index])
+        }
+        for index in emitterStates.indices {
+            emitterStates[index] = Self.emitterState(config.emitters[index], rng: rng)
+        }
+        trailTimer = trailInterval
+        clear(&trailPoints, to: .zero)
+        clear(&trailCount, to: 0)
+        clear(&trailHead, to: 0)
+        clear(&controlPoints, to: matrix_identity_float4x4)
+        clear(&previousControlPoints, to: .zero)
+        controlPointsSeeded = false
+        boidsFrame = 0
         prewarm()
     }
 
@@ -258,10 +319,19 @@ public struct WPEParityParticleSystem {
         pushTrailHistory(dt: dt)
         for event in pendingEvents {
             let child = config.children[event.child]
-            eventChildren[childGroup[event.child]].append(WPEParityParticleSystem(
-                config: child.config, instance: Instance(), rng: rng, crt: crt,
-                eventOrigin: event.position + child.origin, localTransform: localTransform, context: frameContext
-            ))
+            let group = childGroup[event.child]
+            let origin = event.position + child.origin
+            if let last = finishedEventChildren[group].indices.last {
+                finishedEventChildren[group][last].reuseForEvent(origin: origin, localTransform: localTransform,
+                                                                 context: frameContext)
+                eventChildren[group].append(finishedEventChildren[group].removeLast())
+            } else {
+                eventChildConstructions += 1
+                eventChildren[group].append(WPEParityParticleSystem(
+                    config: child.config, instance: Instance(), rng: rng, crt: crt,
+                    eventOrigin: origin, localTransform: localTransform, context: frameContext
+                ))
+            }
         }
         pendingEvents.removeAll(keepingCapacity: true)
         for index in children.indices {
@@ -273,7 +343,14 @@ public struct WPEParityParticleSystem {
                 eventChildren[group][index].frameContext = frameContext
                 eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
             }
-            eventChildren[group].removeAll { $0.isFinished }
+            var index = 0
+            while index < eventChildren[group].count {
+                if eventChildren[group][index].isFinished {
+                    finishedEventChildren[group].append(eventChildren[group].remove(at: index))
+                } else {
+                    index += 1
+                }
+            }
         }
     }
 
@@ -304,7 +381,8 @@ public struct WPEParityParticleSystem {
             children[index].removeAllParticles()
         }
         for group in eventChildren.indices {
-            eventChildren[group].removeAll()
+            finishedEventChildren[group] += eventChildren[group]
+            eventChildren[group].removeAll(keepingCapacity: true)
         }
     }
 

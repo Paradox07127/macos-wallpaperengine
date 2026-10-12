@@ -116,7 +116,9 @@ extension WPEParityParticleSystem {
                 writer.put(position[slot])
                 writer.put(rotation[slot], size[slot])
                 if thick {
-                    writer.put(velocity[slot], config.randomFrame ? frame[slot] : age[slot] / lifetime[slot])
+                    let phase = config.randomFrame
+                        ? frame[slot] : age[slot] / lifetime[slot] * config.sequenceMultiplier
+                    writer.put(velocity[slot], phase)
                 }
                 writer.put(color[slot] * instance.brightness, alpha[slot])
             }

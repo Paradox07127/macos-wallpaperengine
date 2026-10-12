@@ -95,6 +95,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var startTime: Float
     var flags: Int
     var randomFrame: Bool
+    /// Scales the sprite-sheet phase age/lifetime (R22 Q10).
+    var sequenceMultiplier: Float
     var emitters: [WPEParityParticleEmitterConfig] = []
     var initializers: [WPEParityParticleInitializer] = []
     var operators: [WPEParityParticleOperator] = []
@@ -122,6 +124,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         startTime = JSON.number(json["starttime"]) ?? 0
         flags = Int(JSON.number(json["flags"]) ?? 0)
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
+        sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
             let entry = WPEParityParticleEntry(value)
             let id = entry.integer("id", index)
@@ -307,7 +310,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         case "oscillatesize":
             kind = .oscillateSize(wave(scale: SIMD2(0.8, 1.2), frequency: SIMD2(1, 10)))
         case "capvelocity":
-            kind = .capVelocity(maxSpeed: number("maxspeed", .infinity))
+            kind = .capVelocity(maxSpeed: number("maxspeed", is3D ? 1 : 100))
         case "turbulence":
             kind = .turbulence(WPEParityParticleTurbulence(fields, is3D: is3D))
         case "controlpointattract":
