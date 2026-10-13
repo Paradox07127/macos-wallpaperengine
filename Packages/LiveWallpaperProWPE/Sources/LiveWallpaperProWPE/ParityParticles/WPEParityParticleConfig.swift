@@ -84,7 +84,7 @@ struct WPEParityParticleOperator: Equatable, Sendable {
 }
 
 struct WPEParityParticleChildConfig: Equatable, Sendable {
-    enum Trigger: Equatable, Sendable { case always, spawn, death }
+    enum Trigger: Equatable, Sendable { case always, follow, spawn, death }
 
     var trigger: Trigger
     var origin: SIMD3<Float>
@@ -500,7 +500,16 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         case .staticSystem: trigger = .always
         case .spawn: trigger = .spawn
         case .death: trigger = .death
-        case .follow, .unsupported:
+        case .follow:
+            // Only the explicit native event kind enters N2. The legacy flags-only default chain remains unproved.
+            guard JSON.string(entry["type"])?.lowercased() == "eventfollow" else {
+                unsupportedChildren.append(.init(path: context.path + [.eventGroup(children.filter { $0.trigger != .always }.count)],
+                                                 asset: path, field: "type",
+                                                 reason: "flags-only eventfollow default remains unsupported by N2"))
+                return
+            }
+            trigger = .follow
+        case .unsupported:
             let reason = "child \(path) (\(JSON.string(entry["type"]) ?? "eventfollow")) skipped"
             diagnostics.append(reason)
             if context.underEventAncestor {
@@ -513,7 +522,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         let childPath = context.path + [trigger == .always ? .staticChild(index) : .eventGroup(index)]
         if context.underEventAncestor, trigger != .always {
             unsupportedChildren.append(.init(path: childPath, asset: path, field: "type",
-                                             reason: "N1 permits only static descendants of an event instance"))
+                                             reason: "N1/N2 permit only static descendants of an event instance"))
             return
         }
         // Depth/cycle remain the existing product policy; native permits depth 0...10.
@@ -525,7 +534,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         guard let json = resolveChild(path) else {
             diagnostics.append("child \(path) unresolved")
-            if context.underEventAncestor {
+            if context.underEventAncestor || trigger == .follow {
                 unsupportedChildren.append(.init(path: childPath, asset: path, field: "name", reason: "unresolved child asset"))
             }
             return
@@ -558,7 +567,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         let child = WPEParityParticleConfig(json: json, context: next, is3D: is3D, resolveChild: resolveChild,
                                             resolveMaterial: resolveMaterial)
-        if context.underEventAncestor, !child.nestedEligibilityIssues.isEmpty {
+        if context.underEventAncestor || trigger == .follow, !child.nestedEligibilityIssues.isEmpty {
             // Reject this ineligible edge. Already-pruned descendants do not disqualify a healthy ancestor.
             unsupportedChildren += child.nestedEligibilityIssues.map {
                 .init(path: childPath, asset: path, field: $0.field, reason: "\($0.asset) \($0.path): \($0.reason)")

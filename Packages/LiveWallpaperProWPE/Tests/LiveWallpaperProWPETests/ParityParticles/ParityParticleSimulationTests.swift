@@ -568,6 +568,233 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(parent.eventChildren[0][0].children[0].age[0], 0.06, accuracy: 1e-6)
     }
 
+    /// Nonzero boxes take six words per birth. The moving placement fixture uses zero offsets and their
+    /// three-word direction fallback, plus three words for its velocity initializer: twelve parent words.
+    private func followParent(_ entries: String, assets: [String: String], count: Int = 1,
+                              rate: Float = 0, lifetime: Float = 0.15, moving: Bool = false) -> WPEParityParticleSystem {
+        WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+        {"maxcount": \(count),
+         "emitter": [{"name": "boxrandom", "rate": \(rate), "instantaneous": \(rate == 0 ? count : 0),
+                      "distancemin": "\(moving ? "0 0 0" : "1 1 1")", "distancemax": "\(moving ? "0 0 0" : "1 1 1")",
+                      "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": \(lifetime), "max": \(lifetime)}
+                         \(moving ? #", {"name": "velocityrandom", "min": "100 0 0", "max": "100 0 0"}"# : "")],
+         "operator": [\(moving ? #"{"name": "movement"}"# : "")], "children": [\(entries)]}
+        """), rng: WPEParityMT19937(seed: 7), resolveChild: { assets[$0].map(ParityParticleTestSupport.json) })
+    }
+
+    private func followChild(lifetime: Float = 10, startTime: Float = 0, extra: String = "") -> String {
+        """
+        {"maxcount": 1, "starttime": \(startTime),
+         "emitter": [{"name": "boxrandom", "rate": 0, "instantaneous": 1,
+                      "distancemin": "1 1 1", "distancemax": "1 1 1", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": \(lifetime), "max": \(lifetime)}]\(extra)}
+        """
+    }
+
+    func testFollowRefreshesAfterParentOperatorsAndDetachesBeforeTheRawSlotIsReborn() {
+        let leaf = """
+        {"maxcount": 4,
+         "emitter": [{"name": "boxrandom", "rate": 10, "duration": 1, "origin": "2 0 0",
+                      "distancemin": "0 0 0", "distancemax": "0 0 0", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.8, "max": 0.8},
+                         {"name": "remapinitialvalue", "input": "distancetocontrolpoint", "output": "size",
+                          "operation": "remap", "inputrangemax": 4, "outputrangemax": 4}]}
+        """
+        let follow = """
+        {"maxcount": 4,
+         "emitter": [{"name": "boxrandom", "rate": 10, "duration": 1,
+                      "distancemin": "0 0 0", "distancemax": "0 0 0", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.8, "max": 0.8},
+                         {"name": "inheritinitialvaluefromevent", "input": "setcolor"}],
+         "operator": [{"name": "inheritvaluefromevent", "input": "setcolor"}],
+         "children": [{"name": "leaf", "origin": "5 0 0"}]}
+        """
+        var parent = followParent(#"{"name": "follow", "type": "eventfollow", "origin": "3 0 0", "maxcount": 2}"#,
+                                  assets: ["follow": follow, "leaf": leaf], rate: 10, moving: true)
+        parent.instance.color = SIMD3(1, 0, 0)
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.position[0].x, 10)
+        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 13)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 18)
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 23)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 28)
+        parent.instance.color = SIMD3(0, 0, 1)
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 23)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 28)
+        XCTAssertEqual(parent.eventChildren[0][1].localTransform.columns.3.x, 13)
+        XCTAssertEqual(parent.eventChildren[0][1].children[0].localTransform.columns.3.x, 18)
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.liveCount, 1)
+        XCTAssertEqual(parent.capacity, 1, "follow references do not pin the physical slot")
+        XCTAssertEqual(parent.position[0].x, 20)
+        XCTAssertEqual(parent.eventChildren[0].count, 2)
+        let old = parent.eventChildren[0][0], new = parent.eventChildren[0][1]
+        XCTAssertEqual(old.parentSlot, -1)
+        XCTAssertNil(old.parentSample, "old follow must never inherit from the new particle in the same slot")
+        XCTAssertEqual(old.localTransform.columns.3.x, 23)
+        XCTAssertEqual(old.children[0].localTransform.columns.3.x, 28)
+        XCTAssertEqual(new.parentSlot, 0)
+        XCTAssertEqual(new.localTransform.columns.3.x, 23)
+        XCTAssertEqual(new.children[0].localTransform.columns.3.x, 28)
+        XCTAssertEqual(old.color[0], SIMD3(1, 0, 0))
+        XCTAssertEqual(new.color[0], SIMD3(0, 0, 1))
+        for system in [old, old.children[0]] {
+            XCTAssertEqual(system.liveCount, 2, "detach stops new births without killing the existing particles")
+            XCTAssertTrue(system.emitterStates[0].disabled)
+            XCTAssertGreaterThan(system.emitterStates[0].durationLeft, 0, "positive duration must not clear stop")
+            XCTAssertEqual(system.age[0], 0.3, accuracy: 1e-6)
+            XCTAssertEqual(system.simulationTime, 0.4, accuracy: 1e-6, "the complete parent dt continues after detach")
+        }
+        XCTAssertEqual(old.children[0].position[0].x, 2)
+        XCTAssertEqual(old.children[0].initialSize[0], 2, "ordinary CP distance uses local SoA, not follow placement")
+        XCTAssertEqual(parent.followReferences, [0: 1])
+        // Zero-offset boxes take u + xyz + fallback xyz + speed + lifetime = nine words; parent velocity adds 3.
+        // Frames: parent12 + probability1 + follow9 + leaf9; follow9 + leaf9; repeat both = 98.
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 98 {
+            _ = expected.next()
+        }
+        XCTAssertEqual(parent.rng.next(), expected.next(), "relocation/detach/stop add no MT draws")
+    }
+
+    func testFollowReferenceMapPreservesTheNativeMultiGroupDeathResidue() {
+        let entries = #"{"name": "a", "type": "eventfollow"}, {"name": "b", "type": "eventfollow"}"#
+        var parent = followParent(entries, assets: ["a": followChild(lifetime: 0.15), "b": followChild(lifetime: 0.15)],
+                                  lifetime: 0.05)
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.followReferences, [0: 2])
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildren.map { $0.first?.parentSlot }, [-1, -1])
+        XCTAssertEqual(parent.followReferences, [0: 1], "one parent death decrements once then detaches all groups")
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.finishedEventChildren.map(\.count), [1, 1])
+        XCTAssertEqual(parent.followReferences, [0: 1], "detached finishes do not release the residual count")
+        parent.reset()
+        XCTAssertTrue(parent.followReferences.isEmpty)
+        XCTAssertEqual(parent.finishedEventChildren.map(\.count), [1, 1], "hidden clears refs but preserves finished pools")
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 20 {
+            _ = expected.next()
+        } // parent6 + two probabilities + two child births6.
+        XCTAssertEqual(parent.rng.next(), expected.next())
+
+        var early = followParent(entries, assets: ["a": followChild(lifetime: 0.05), "b": followChild(lifetime: 0.5)])
+        early.advance(dt: 0.1)
+        early.advance(dt: 0.1)
+        XCTAssertGreaterThan(early.lifetime[0], 0)
+        XCTAssertEqual(early.finishedEventChildren.map(\.count), [1, 0])
+        XCTAssertEqual(early.followReferences, [0: 1], "attached finish releases immediately before the next group")
+        early.advance(dt: 0.1)
+        XCTAssertTrue(early.followReferences.isEmpty)
+        XCTAssertEqual(early.eventChildren[1][0].parentSlot, -1)
+    }
+
+    func testFollowAndSpawnUseOneGroupOrderedBirthPhaseAndEmptyInstancesStillConsumeCap() {
+        let child = followChild(startTime: 0.05)
+        var parent = followParent("""
+                                  {"name": "a", "type": "eventfollow", "maxcount": 2},
+                                  {"name": "b", "type": "eventspawn", "maxcount": 1},
+                                  {"name": "c", "type": "eventfollow", "probability": 0},
+                                  {"name": "empty", "type": "eventfollow", "maxcount": 1}
+                                  """, assets: ["a": child, "b": child, "c": child, "empty": #"{"maxcount": 0, "renderer": []}"#],
+                                  count: 3, lifetime: 10)
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 18 {
+            _ = expected.next()
+        } // Every parent birth precedes any group probability/prewarm.
+        var firstGroupU: [Float] = []
+        for _ in 0 ..< 2 {
+            _ = expected.unit()
+            firstGroupU.append(expected.unit())
+            for _ in 0 ..< 5 {
+                _ = expected.next()
+            }
+        }
+        _ = expected.unit()
+        let spawnU = expected.unit()
+        for _ in 0 ..< 5 {
+            _ = expected.next()
+        }
+        for _ in 0 ..< 4 {
+            _ = expected.next()
+        } // Three failed C probabilities, one empty instance probability.
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildren.map(\.count), [2, 1, 0, 0])
+        XCTAssertEqual(parent.finishedEventChildren.map(\.count), [0, 0, 0, 1])
+        XCTAssertEqual(parent.eventChildren[0].map { $0.birthU[0] }, firstGroupU)
+        XCTAssertEqual(parent.eventChildren[1][0].birthU[0], spawnU)
+        XCTAssertEqual(parent.followReferences, [0: 1, 1: 1], "empty follow registers after append then releases at normal finish")
+        XCTAssertEqual(parent.rng.next(), expected.next(), "empty follow is not pruned early inside the birth loop")
+    }
+
+    func testFollowFinishedLIFOReuseResetsStaticEmissionWithoutConstructorPrewarmAndHiddenDestroysActive() {
+        let leaf = followChild(lifetime: 0.18, startTime: 0.09)
+        let child = followChild(lifetime: 0.15, startTime: 0.05,
+                                extra: #", "children": [{"name": "leaf", "origin": "5 0 0"}]"#)
+        var parent = followParent(#"{"name": "follow", "type": "eventfollow", "maxcount": 2}"#,
+                                  assets: ["follow": child, "leaf": leaf], count: 2, rate: 20)
+        func positionAddress(_ child: WPEParityParticleSystem) -> UInt {
+            child.position.withUnsafeBufferPointer { UInt(bitPattern: $0.baseAddress) }
+        }
+        parent.advance(dt: 0.1)
+        let originalBuffers = parent.eventChildren[0].map(positionAddress)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].age[0], 0.15, accuracy: 1e-6)
+        parent.advance(dt: 0.1)
+        XCTAssertTrue(parent.eventChildren[0].isEmpty)
+        XCTAssertTrue(parent.followReferences.isEmpty)
+        XCTAssertEqual(parent.finishedEventChildren[0].map(\.parentSlot), [0, 1])
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildConstructions, 2)
+        XCTAssertEqual(parent.eventChildren[0].map(positionAddress), Array(originalBuffers.reversed()))
+        XCTAssertEqual(parent.eventChildren[0].map(\.parentSlot), [0, 1])
+        XCTAssertEqual(parent.followReferences, [0: 1, 1: 1])
+        for child in parent.eventChildren[0] {
+            XCTAssertEqual(child.prewarmStepCount, 1)
+            XCTAssertEqual(child.children[0].prewarmStepCount, 0)
+            XCTAssertEqual(child.children[0].age[0], 0, "finished reuse enables static emission but never constructor-prewarms it")
+        }
+        parent.reset()
+        XCTAssertTrue(parent.eventChildren[0].isEmpty)
+        XCTAssertTrue(parent.followReferences.isEmpty)
+        XCTAssertTrue(parent.finishedEventChildren[0].isEmpty, "hidden active instances cannot become reusable finished instances")
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildConstructions, 4)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].age[0], 0.15, accuracy: 1e-6)
+        // Each wave: parent12 + two (probability1 + own6 + leaf6) = 38. Reuse reorders but adds no draws.
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 114 {
+            _ = expected.next()
+        }
+        XCTAssertEqual(parent.rng.next(), expected.next())
+    }
+
+    func testEachDeathDetachesFollowEvenWhenTheDeathGroupsHaveNoRemainingCapacity() {
+        var parent = followParent("""
+        {"name": "follow", "type": "eventfollow", "maxcount": 2},
+        {"name": "death", "type": "eventdeath", "maxcount": 1}
+        """, assets: ["follow": followChild(), "death": followChild(startTime: 0.05)], count: 2, lifetime: 0.05)
+        parent.advance(dt: 0.1)
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 26 {
+            _ = expected.next()
+        } // Parent12, follow probabilities2, follow normal births12.
+        _ = expected.unit()
+        let deathU = expected.unit()
+        for _ in 0 ..< 5 {
+            _ = expected.next()
+        }
+        parent.advance(dt: 0.1)
+        XCTAssertEqual(parent.eventChildren.map(\.count), [2, 1])
+        XCTAssertEqual(parent.eventChildren[0].map(\.parentSlot), [-1, -1])
+        XCTAssertTrue(parent.followReferences.isEmpty, "the second death marker must run despite remaining==0")
+        XCTAssertEqual(parent.eventChildren[1][0].birthU[0], deathU)
+        XCTAssertEqual(parent.eventChildren[1][0].age[0], 0.1, accuracy: 1e-6, "death prewarm precedes a complete normal child step")
+        XCTAssertEqual(parent.rng.next(), expected.next())
+    }
+
     func testCapVelocityDefaultsTo100In2DAnd1In3D() {
         for (is3D, cap) in [(false, Float(100)), (true, Float(1))] {
             var particles = WPEParityParticleSystem(

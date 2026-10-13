@@ -188,20 +188,21 @@ struct ParitySceneParticleTests {
                 .init(objectID: "5", path: [.staticChild(0)], renderer: 0),
                 .init(objectID: "5", path: [.staticChild(0), .eventGroup(0)], renderer: 0),
                 .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
-                .init(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
+                .init(objectID: "5", path: [.eventGroup(1)], renderer: 0),
+                .init(objectID: "5", path: [.eventGroup(1), .staticChild(0)], renderer: 0),
             ])
             #expect(keys.map(\.passIdentity) == ["5/particle/r0", "5/particle/0/r0", "5/particle/0/e0/r0",
-                                                 "5/particle/e0/r0", "5/particle/e0/0/r0"])
+                                                 "5/particle/e0/r0", "5/particle/e1/r0", "5/particle/e1/0/r0"])
             let materials = WPEParityParticleScene.materialProbes(document: document, assets: program.assets,
                                                                   engineFlags: program.engineFlags)
-            #expect(materials.map(\.objectID) == ["5", "5", "5", "5", "5"])
+            #expect(materials.map(\.objectID) == ["5", "5", "5", "5", "5", "5"])
             #expect(materials.map(\.path) == keys.map(\.path))
             let probes = keys.compactMap {
                 WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets)
             }
-            #expect(probes.count == 5)
-            #expect(probes.map(\.slotCount) == [6, 2, 5, 4, 5])
-            #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .spriteTrail, .sprite])
+            #expect(probes.count == 6)
+            #expect(probes.map(\.slotCount) == [6, 2, 5, 2, 4, 5])
+            #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .sprite, .spriteTrail, .sprite])
             let scene = WPEParityParticleScene(document: document, assets: program.assets,
                                                engineFlags: program.engineFlags, seed: 7)
             let root = try #require(scene.objects.first?.system)
@@ -210,11 +211,18 @@ struct ParitySceneParticleTests {
             let child = try #require(root.children.first)
             #expect(child.capacity == 2)
             #expect(child.eventChildren.count == 1)
-            #expect(root.eventChildren.count == 1)
-            #expect(root.config.children.filter { $0.trigger != .always }.first?.config.maxCount == 4)
-            #expect(program.scene.diagnostics.isEmpty)
+            #expect(root.eventChildren.count == 2)
+            #expect(root.config.children.filter { $0.trigger != .always }.map(\.trigger) == [.follow, .death])
+            #expect(root.config.children.filter { $0.trigger != .always }.map(\.config.maxCount) == [2, 4])
+            #expect(program.scene.diagnostics.contains { diagnostic in
+                if case let .particleChildUnsupported(id, path, asset, field, _) = diagnostic {
+                    return id == "5" && path == [.eventGroup(0), .eventGroup(0)]
+                        && asset == "particles/leaf.json" && field == "type"
+                }
+                return false
+            })
             #expect(WPEParityParticleScene.prototype(
-                for: .init(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
+                for: .init(objectID: "5", path: [.eventGroup(1), .staticChild(0)], renderer: 0),
                 document: document, assets: program.assets
             )?.slotCount == 5)
             #expect(WPEParityParticleScene.prototype(

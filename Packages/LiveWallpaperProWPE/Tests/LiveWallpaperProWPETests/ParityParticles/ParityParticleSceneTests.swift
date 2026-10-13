@@ -739,6 +739,113 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(finished.finishedEventChildren[0].count, 1)
     }
 
+    func testLocalFollowHotSnapshotAndZeroCountPreserveOldLiveWhileTheRawSlotIsReused() throws {
+        let parent = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "boxrandom", "rate": 10,
+                      "distancemin": "0 0 0", "distancemax": "0 0 0", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.15, "max": 0.15},
+                         {"name": "velocityrandom", "min": "100 0 0", "max": "100 0 0"}],
+         "operator": [{"name": "movement"}],
+         "children": [{"name": "follow", "type": "eventfollow", "origin": "3 0 0", "maxcount": 2}]}
+        """
+        let follow = Self.burst(1, lifetime: 0.25, extra: """
+        , "operator": [{"name": "inheritvaluefromevent", "input": "setcolor"}],
+          "children": [{"name": "leaf", "origin": "5 0 0"}]
+        """)
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "follow": follow,
+                                                          "leaf": Self.burst(1, lifetime: 0.25, origin: "2 0 0")])
+        var state = try Self.state()
+        state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(1, 0, 0, 0)), invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)), invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.eventChildren[0].count, 2)
+        let old = root.eventChildren[0][0], new = root.eventChildren[0][1]
+        XCTAssertEqual(old.parentSlot, -1)
+        XCTAssertNil(old.parentSample)
+        XCTAssertEqual(old.localTransform.columns.3.x, 23)
+        XCTAssertEqual(old.children[0].localTransform.columns.3.x, 28)
+        XCTAssertEqual(new.localTransform.columns.3.x, 13)
+        XCTAssertEqual(new.children[0].localTransform.columns.3.x, 18)
+        for child in [old, old.children[0]] {
+            XCTAssertEqual(child.initialColor[0], SIMD3(1, 0, 0))
+            XCTAssertEqual(child.color[0], SIMD3(1, 0, 0), "detached live cannot inherit the reborn blue raw slot")
+        }
+        for child in [new, new.children[0]] {
+            XCTAssertEqual(child.initialColor[0], SIMD3(0, 0, 1), "fresh follow/static births see the existing hot snapshot")
+        }
+        state.setScriptField("instance.count", of: "5", to: .vector(.zero), invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        let applied = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(applied.capacity, 1)
+        XCTAssertEqual(applied.eventChildren[0].map(\.liveCount), [1, 1], "hot count zero does not kill live follow slots")
+        XCTAssertEqual(applied.eventChildren[0].map(\.capacity), [1, 1])
+        for _ in 0 ..< 3 {
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+        }
+        let finished = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(finished.eventChildConstructions, 2)
+        XCTAssertTrue(finished.eventChildren[0].isEmpty)
+        XCTAssertEqual(finished.finishedEventChildren[0].count, 2)
+        XCTAssertTrue(finished.followReferences.isEmpty)
+        XCTAssertTrue(scene.drawBatches(for: "5").isEmpty)
+    }
+
+    func testN2RejectsAnUnprovedFollowEdgeWithFieldReasonsWithoutPruningHealthySiblings() throws {
+        let plain = Self.burst(1)
+        let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
+        let cases: [(ancestor: String, child: String, edge: String, field: String)] = [
+            (#", "flags": 1"#, plain, #""type": "eventfollow""#, "flags"),
+            (#", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#, plain, #""type": "eventfollow""#, "operator"),
+            (#", "controlpoint": [{"flags": 4}]"#, plain, #""type": "eventfollow""#, "controlpoint"),
+            ("", plain.replacingOccurrences(of: #""maxcount": 1"#, with: #""maxcount": 1, "flags": 1"#),
+             #""type": "eventfollow""#, "flags"),
+            ("", periodic, #""type": "eventfollow""#, "emitter"),
+            ("", Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), #""type": "eventfollow""#, "controlpoint"),
+            ("", plain, #""type": "eventfollow", "angles": "0 0 1""#, "angles"),
+            ("", plain, #""type": "eventfollow", "scale": "2 1 1""#, "scale"),
+            ("", plain, #""type": "eventfollow", "flags": 2"#, "child.flags"),
+            ("", plain, #""flags": 2"#, "type"),
+        ]
+        for (ancestor, bad, edge, field) in cases {
+            let parent = Self.burst(1, extra: ancestor + """
+            , "children": [{"name": "legacy"}, {"name": "bad", \(edge)}, {"name": "good", "type": "eventspawn"}]
+            """)
+            let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
+                                                              "bad": bad, "good": plain])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.config.children.map(\.trigger), [.always, .spawn], field)
+            XCTAssertEqual(root.children.count, 1)
+            XCTAssertEqual(root.eventChildren.count, 1)
+            XCTAssertTrue(root.config.unsupportedChildren.contains {
+                $0.path == [.eventGroup(0)] && $0.asset == "bad" && $0.field.contains(field) && !$0.reason.isEmpty
+            }, field)
+        }
+        // Existing static TRS is retained; only its new follow edge is ineligible because of that ancestor.
+        let parent = Self.burst(1, extra: #", "children": [{"name": "ancestor", "angles": "0 0 1"}, {"name": "good"}]"#)
+        let ancestor = Self.burst(1, extra: #", "children": [{"name": "bad", "type": "eventfollow"}, {"name": "good"}]"#)
+        let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "ancestor": ancestor,
+                                                          "bad": plain, "good": plain])
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.children.count, 2)
+        XCTAssertEqual(root.children[0].children.count, 1)
+        XCTAssertTrue(root.children[0].eventChildren.isEmpty)
+        XCTAssertTrue(root.children[0].config.unsupportedChildren.contains { $0.field == "angles" })
+        let periodicParent = Self.burst(1, extra: #", "children": [{"name": "bad", "type": "eventfollow"}, {"name": "good"}]"#)
+            .replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
+        let periodicScene = try Self.scene(Self.five, particles: ["particles/fx.json": periodicParent,
+                                                                  "bad": plain, "good": plain])
+        let periodicRoot = try XCTUnwrap(Self.root(periodicScene))
+        XCTAssertEqual(periodicRoot.children.count, 1)
+        XCTAssertTrue(periodicRoot.eventChildren.isEmpty)
+        XCTAssertTrue(periodicRoot.config.unsupportedChildren.contains { $0.field == "emitter[0].flags" })
+    }
+
     func testOverrideColorNeedsNoHasColorAndBrightnessNeedsHDR() throws {
         let override: [String: Any] = ["color": "255 0 0", "brightness": 2, "alpha": 0.5]
         let objects: [[String: Any]] = [

@@ -281,6 +281,56 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(42, 32))[0], 0)
     }
 
+    func testLocalFollowMovesItsStaticLeafThenFreezesItWhenTheParentSlotIsReused() async throws {
+        var parent = Self.burstParticle(renderer: [])
+        parent["emitter"] = [
+            ["name": "sphererandom", "origin": "-10 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0],
+            ["name": "sphererandom", "origin": "10 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0, "delay": 0.25],
+        ]
+        parent["initializer"] = [["name": "lifetimerandom", "min": 0.1, "max": 0.1],
+                                 ["name": "velocityrandom", "min": "10 0 0", "max": "10 0 0"]]
+        parent["operator"] = [["name": "movement"]]
+        parent["children"] = [["name": "particles/follow.json", "type": "eventfollow", "origin": "3 0 0", "maxcount": 2]]
+        var follow = Self.burstParticle(renderer: [])
+        follow["children"] = [["name": "particles/leaf.json", "origin": "5 0 0"]]
+        var leaf = Self.burstParticle(renderer: [["name": "sprite"]])
+        leaf["emitter"] = [["name": "sphererandom", "origin": "2 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0]]
+        leaf["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                               ["name": "sizerandom", "min": 3, "max": 3]]
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": parent,
+                                                             "particles/follow.json": follow, "particles/leaf.json": leaf], budget: 1 << 20)
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        // Binary dt is exact. Births are f1/f5; age > .1 kills the first parent at f3. Follow refreshes after
+        // movement, then retains the f2 placement when detached. The second parent reuses that same raw slot.
+        let expectedModels: [[Float]] = [[30.625], [31.25], [31.25], [31.25], [31.25, 50.625], [31.25, 51.25]]
+        for (frame, models) in expectedModels.enumerated() {
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.0625) else { return XCTFail("skipped") }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            XCTAssertEqual(renderer.droppedParticleBatches, 0)
+            let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+            XCTAssertEqual(draws.count, models.count, "frame \(frame + 1)")
+            guard draws.count == models.count else { return }
+            for (entry, expected) in zip(draws, models) {
+                let birthX = entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset, as: Float.self)
+                XCTAssertEqual(birthX, 2, accuracy: 0.0001)
+                guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+                    return XCTFail("missing model matrix")
+                }
+                XCTAssertEqual(model.columns[0][3], expected, accuracy: 0.0001)
+            }
+            // Authored size3 packs size1.5, leaving these pixel centers strictly inside/outside the quad.
+            // The old leaf survives at x33 after detach; the new leaf moves from x52 to x53 independently.
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(frame == 0 ? 32 : 33, 32))[0], 255)
+            if frame == 0 || frame == 4 {
+                XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(frame == 0 ? 33 : 53, 32))[0], 0)
+            }
+            if frame >= 4 {
+                XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(frame == 4 ? 52 : 53, 32))[0], 255)
+            }
+        }
+    }
+
     func testNestedStaticEntriesBlendInCompleteEventInstanceOrderWithIndependentColors() async throws {
         var parent = Self.burstParticle(renderer: [])
         parent["maxcount"] = 2

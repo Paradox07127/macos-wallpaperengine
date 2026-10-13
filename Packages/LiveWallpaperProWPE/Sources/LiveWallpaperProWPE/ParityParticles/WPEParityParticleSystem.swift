@@ -49,7 +49,8 @@ public struct WPEParityParticleSystem {
     }
 
     struct PendingEvent {
-        var child: Int
+        /// A nil child is the parent-death detach marker, before that slot's death children/prewarm.
+        var child: Int?
         var position: SIMD3<Float>
         var slot: Int
     }
@@ -101,7 +102,7 @@ public struct WPEParityParticleSystem {
 
     /// `static` children in JSON order.
     public internal(set) var children: [WPEParityParticleSystem] = []
-    /// One group per eventspawn / eventdeath child in JSON order; each event adds an instance at the parent particle.
+    /// One group per follow/spawn/death child in JSON order; each event adds an instance at the parent particle.
     public internal(set) var eventChildren: [[WPEParityParticleSystem]] = []
     /// Per event group, finished instances the next events reset instead of allocating new slot arrays.
     var finishedEventChildren: [[WPEParityParticleSystem]] = []
@@ -153,6 +154,9 @@ public struct WPEParityParticleSystem {
     /// The parent slot of an event child (inst+0x478) and what the parent holds there now.
     var parentSlot = -1
     var parentSample: WPEParityParticleParentSample?
+    /// Native +0x438: parent-owned raw-slot counts. Parent death releases once, then detaches all matches;
+    /// multiple follow groups can therefore leave a count with no attached instance (236cd0:121–202).
+    private(set) var followReferences: [Int: Int32] = [:]
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
     /// `crt` is the scene's CRT `rand()` state, shared like `rng`. Brightness overrides need an HDR scene, which
@@ -325,6 +329,7 @@ public struct WPEParityParticleSystem {
             // 22fd90 destroys active event instances; they are not finished and cannot enter the reuse pool.
             eventChildren[group].removeAll(keepingCapacity: true)
         }
+        followReferences.removeAll(keepingCapacity: true)
     }
 
     var hasLiveParticles: Bool {
@@ -503,16 +508,26 @@ public struct WPEParityParticleSystem {
             children[index].objectTime = objectTime
             children[index].step(dt: dt, parentControlPoints: controlPoints)
         }
-        for group in eventChildren.indices {
-            for index in eventChildren[group].indices {
-                eventChildren[group][index].parentSample = parentSample(slot: eventChildren[group][index].parentSlot)
+        for (childIndex, child) in config.children.enumerated() where child.trigger != .always {
+            let group = childGroup[childIndex]
+            var index = 0
+            while index < eventChildren[group].count {
+                let slot = eventChildren[group][index].parentSlot
+                let sample = parentSample(slot: slot)
+                if child.trigger == .follow, sample != nil {
+                    // 2308a0:2763–2767: follow relocation is after the parent's operators, before child update.
+                    eventChildren[group][index].localTransform = localTransform
+                        * Self.translation(position[slot]) * Self.translation(child.origin)
+                    eventChildren[group][index].rebaseStaticChildren(context: frameContext, ownerTime: objectTime)
+                }
+                eventChildren[group][index].parentSample = sample
                 eventChildren[group][index].frameContext = frameContext
                 eventChildren[group][index].objectTime = objectTime
                 eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
-            }
-            var index = 0
-            while index < eventChildren[group].count {
                 if eventChildren[group][index].isFinished {
+                    if child.trigger == .follow, slot != -1 {
+                        releaseFollowReference(parentSlot: slot)
+                    }
                     finishedEventChildren[group].append(eventChildren[group].remove(at: index))
                 } else {
                     index += 1
@@ -560,13 +575,17 @@ public struct WPEParityParticleSystem {
                 parentSlot = event.slot
                 skipParent = remaining == 0
             }
+            guard let childIndex = event.child else {
+                detachFollowInstances(parentSlot: event.slot)
+                continue
+            }
             guard !skipParent else { continue }
-            let child = config.children[event.child]
+            let child = config.children[childIndex]
             if rng.unit() <= child.probability {
                 // The old slot still holds its final values; each child's prewarm consumes RNG before emit.
                 spawnEvent(event)
                 remaining &-= 1
-                skipParent = eventChildren[childGroup[event.child]].count
+                skipParent = eventChildren[childGroup[childIndex]].count
                     == Int(UInt32(truncatingIfNeeded: child.maxCount))
             }
         }
@@ -574,10 +593,10 @@ public struct WPEParityParticleSystem {
     }
 
     /// Spawn/follow native order is group first, then this emitter pass's births, after all emitters and before
-    /// parent operators (1402378a0:1800–1967). Follow is still excluded by Config pending its lifecycle/IR handoff.
+    /// parent operators (1402378a0:1800–1967). Successful follow instances register only after prewarm/append.
     private mutating func processSpawnEvents() {
         guard !pendingEvents.isEmpty else { return }
-        for (index, child) in config.children.enumerated() where child.trigger == .spawn {
+        for (index, child) in config.children.enumerated() where child.trigger == .spawn || child.trigger == .follow {
             let group = childGroup[index]
             let limit = Int(UInt32(truncatingIfNeeded: child.maxCount))
             guard eventChildren[group].count != limit else { continue }
@@ -594,8 +613,9 @@ public struct WPEParityParticleSystem {
     }
 
     private mutating func spawnEvent(_ event: PendingEvent) {
-        let child = config.children[event.child]
-        let group = childGroup[event.child]
+        guard let childIndex = event.child else { return }
+        let child = config.children[childIndex]
+        let group = childGroup[childIndex]
         // 22a360 local/local: T(parent raw position) * child base. Keep local positions local even when
         // initializers/operators read CP or position; the batch model is their only event placement.
         let local = child.config.localSpaceChain
@@ -618,6 +638,44 @@ public struct WPEParityParticleSystem {
                 parentSlot: event.slot, parentSample: sample, ownerTime: objectTime,
                 scriptInstance: hasScriptInstanceChanges ? instance : nil
             ))
+        }
+        if child.trigger == .follow {
+            followReferences[event.slot] = (followReferences[event.slot] ?? 0) &+ 1
+        }
+    }
+
+    private mutating func releaseFollowReference(parentSlot: Int) {
+        guard let count = followReferences[parentSlot] else { return }
+        let remaining = count &- 1
+        if remaining == 0 {
+            followReferences.removeValue(forKey: parentSlot)
+        } else {
+            followReferences[parentSlot] = remaining
+        }
+    }
+
+    private mutating func detachFollowInstances(parentSlot: Int) {
+        // Native gates the entire detach scan on finding the map entry, and decrements once per dead slot,
+        // not once per matching instance. Detached finishes never release again (2308a0:2774–2780).
+        guard followReferences[parentSlot] != nil else { return }
+        releaseFollowReference(parentSlot: parentSlot)
+        for (childIndex, child) in config.children.enumerated() where child.trigger == .follow {
+            let group = childGroup[childIndex]
+            for index in eventChildren[group].indices where eventChildren[group][index].parentSlot == parentSlot {
+                eventChildren[group][index].parentSlot = -1
+                eventChildren[group][index].parentSample = nil
+                eventChildren[group][index].stopEmissionThroughStaticChildren()
+            }
+        }
+    }
+
+    /// 22f640 stops only emission through the static tree. Live SoA, CP/history and the last placement survive.
+    private mutating func stopEmissionThroughStaticChildren() {
+        for index in emitterStates.indices {
+            emitterStates[index].disabled = true
+        }
+        for index in children.indices {
+            children[index].stopEmissionThroughStaticChildren()
         }
     }
 
@@ -653,6 +711,9 @@ public struct WPEParityParticleSystem {
             birthTail = previous
         }
         // Finish the death list before processing children; their probability draws and prewarm belong before emit.
+        if followReferences[slot] != nil {
+            pendingEvents.append(PendingEvent(child: nil, position: position[slot], slot: slot))
+        }
         for (index, child) in config.children.enumerated() where child.trigger == .death {
             pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
@@ -684,7 +745,10 @@ public struct WPEParityParticleSystem {
             state.delayLeft -= dt
         } else if state.durationLeft > 0 {
             state.durationLeft -= dt
-            state.disabled = state.durationLeft <= 0
+            if state.durationLeft <= 0 {
+                // Native only ORs the disabled sign bit: a follow detach must not revive while duration is positive.
+                state.disabled = true
+            }
         }
         if emitter.periodic, state.delayLeft <= 0 {
             state.periodLeft -= dt
@@ -750,7 +814,7 @@ public struct WPEParityParticleSystem {
         if trailSegments > 0 {
             trailCount[slot] = 0
         }
-        for (index, child) in config.children.enumerated() where child.trigger == .spawn {
+        for (index, child) in config.children.enumerated() where child.trigger == .spawn || child.trigger == .follow {
             pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
     }
