@@ -183,7 +183,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     func testMaintainDistanceFollowsThePointAndPullsToTheDistance() {
         var system = particles()
         system.controlPoints[0] = System.translation(SIMD3(1, 0, 0))
-        system.previousControlPoints[0] = .zero
+        system.previousControlPoints[0] = matrix_identity_float4x4
         place(&system, 0, at: SIMD3(0, 3, 0))
         system.applyMaintainDistance(controlPoint: 0, distance: 2, variableStrength: 0, slot: 0, weight: 1, dt: 0.1)
         // q = (1,3,0), e = (0,3,0): q + (2/3 − 1)·e.
@@ -195,8 +195,8 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
 
     func testMaintainDistanceBetweenCarriesThePlaceAlongTheSegment() {
         var system = particles()
-        system.previousControlPoints[0] = .zero
-        system.previousControlPoints[1] = SIMD3(2, 0, 0)
+        system.previousControlPoints[0] = matrix_identity_float4x4
+        system.previousControlPoints[1] = System.translation(SIMD3(2, 0, 0))
         system.controlPoints[0] = System.translation(SIMD3(0, 1, 0))
         system.controlPoints[1] = System.translation(SIMD3(0, 1, 4))
         place(&system, 0, at: SIMD3(1, 0.5, 0))
@@ -244,7 +244,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         system.advance(dt: 0.01, frame: WPEParityParticleFrameContext(cursor: SIMD2(0.75, 0.25), objectMatrix: object))
         // NDC (0.5, 0.5) back through the inverse object matrix.
         assertEqual(system.controlPointTranslation(0), SIMD3(-9.5, 0.5, 0))
-        assertEqual(system.previousControlPoints[0], .zero)
+        assertEqual(system.previousControlPointTranslation(0), SIMD3(-9.5, 0.5, 0))
         assertEqual(system.controlPointTranslation(1), SIMD3(1, 2, 3))
         assertEqual(system.controlPointTranslation(2), SIMD3(-9, 2, 3))
 
@@ -252,13 +252,59 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
             cursor: SIMD2(0.75, 0.25), objectMatrix: object, worldSpace: true
         ))
         assertEqual(system.controlPointTranslation(0), SIMD3(0.5, 0.5, 0))
-        assertEqual(system.previousControlPoints[0], SIMD3(-9.5, 0.5, 0))
+        assertEqual(system.previousControlPointTranslation(0), SIMD3(0.5, 0.5, 0))
         assertEqual(system.controlPointTranslation(1), SIMD3(11, 2, 3))
         assertEqual(system.controlPointTranslation(2), SIMD3(1, 2, 3))
 
         system.advance(dt: 0.01)
         // No cursor: the point stays where it was.
         assertEqual(system.controlPointTranslation(0), SIMD3(0.5, 0.5, 0))
+    }
+
+    func testCursorUsesTheWorldPlaneBeforeRotatedObjectConversionAndAttract() {
+        let projection = WPEParityCamera.ortho(left: 0, right: 100, bottom: 0, top: 100, near: -2000, far: 2000)
+        let unprojected = projection.inverse * SIMD4<Float>(0.5, 0.5, 0, 1)
+        XCTAssertEqual(unprojected.z, -2000, accuracy: Float(2000).ulp * 4,
+                       "The test must expose the real ortho near plane within Float inverse rounding")
+        let object = simd_float4x4(columns: (
+            SIMD4(1, 0, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, -1, 0, 0), SIMD4(10, 20, 30, 1)
+        ))
+        var system = particles(extra: #", "controlpoint": [{"id": 0, "flags": 1}]"#)
+        system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.75, 0.25), viewProjection: projection,
+                                              objectMatrix: object, worldSpace: true))
+        assertEqual(system.controlPointTranslation(0), SIMD3(75, 75, 0))
+        let attract = WPEParityParticleAttract(entry(#"{"scale": 10, "threshold": 4, "flags": 0}"#), is3D: true)
+        place(&system, 0, at: SIMD3(77, 75, 0))
+        system.applyAttract(attract, slot: 0, weight: 1, dt: 0.1)
+        assertEqual(system.velocity[0], SIMD3(-0.5, 0, 0))
+        system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.75, 0.25), viewProjection: projection,
+                                              objectMatrix: object))
+        // inverse(M) * (75,75,0,1), with a 90° X rotation and nonzero object depth.
+        assertEqual(system.controlPointTranslation(0), SIMD3(65, -30, -55))
+    }
+
+    func testControlPointHistoryKeepsTheFullPreviousTransformUntilOperatorsFinish() {
+        var system = System(json: Support.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "origin": "0 3 0", "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 100, "max": 100}],
+         "operator": [{"name": "maintaindistancetocontrolpoint", "distance": 2}]}
+        """), rng: WPEParityMT19937())
+        system.advance(dt: 0.001)
+        place(&system, 0, at: SIMD3(0, 3, 0))
+        let first = simd_float4x4(columns: (
+            SIMD4(1, 0, 0, 0), SIMD4(0, 2, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(1, 0, 0, 1)
+        ))
+        system.advance(dt: 0.1, frame: .init(objectMatrix: first, worldSpace: true))
+        // Carry by the CP delta first, then measure distance in the current scaled CP basis.
+        assertEqual(system.position[0], SIMD3(1, 4, 0))
+        XCTAssertTrue(simd_almost_equal_elements(system.previousControlPoints[0], first, 1e-6))
+        let second = simd_float4x4(columns: (
+            SIMD4(2, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(2, 0, 0, 1)
+        ))
+        system.advance(dt: 0.1, frame: .init(objectMatrix: second, worldSpace: true))
+        assertEqual(system.position[0], SIMD3(2, 2, 0))
+        XCTAssertTrue(simd_almost_equal_elements(system.previousControlPoints[0], second, 1e-6))
     }
 
     func testChildControlPointFlagFourCopiesTheParentsPoint() {

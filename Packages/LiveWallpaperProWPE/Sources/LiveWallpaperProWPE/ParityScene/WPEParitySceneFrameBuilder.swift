@@ -280,7 +280,7 @@ private struct WPEParitySceneEmitter {
                                               compositeOwnerID: destination.compositeOwnerID,
                                               writeMask: destination.writeMask, geometry: object.layerGeometry,
                                               depthTest: object.materialState.depthTest,
-                                              depthWrite: object.materialState.depthWrite),
+                                              depthWrite: object.materialState.depthWrite, colorRole: .compositePublish),
                    depth: destination.depth)
     }
 
@@ -303,7 +303,7 @@ private struct WPEParitySceneEmitter {
         let (shader, source, reads) = albedoSource(object)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
                                 target: composite, blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad,
-                                fillsComposite: true))
+                                fillsComposite: true, colorRole: object.passthrough ? .none : .compositeFill))
     }
 
     /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and its children
@@ -324,7 +324,8 @@ private struct WPEParitySceneEmitter {
                                                   reads: reads, target: destination.color, blend: object.blend,
                                                   alphaMax: destination.alphaMax,
                                                   compositeOwnerID: destination.compositeOwnerID,
-                                                  writeMask: destination.writeMask, geometry: object.layerGeometry),
+                                                  writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                                  colorRole: object.passthrough ? .none : .albedo),
                        depth: destination.depth)
         }
         for child in children {
@@ -391,13 +392,14 @@ private struct WPEParitySceneEmitter {
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "clippingmaskimage4", source: source,
                                 reads: [image], target: target, blend: .translucent,
                                 compositeOwnerID: compositeOwnerID, writeMask: .rgb,
-                                geometry: .puppetSegment(mask.segment)))
+                                geometry: .puppetSegment(mask.segment), colorRole: .mask,
+                                clipMaskInverted: group.flags & 2 != 0))
         guard merged else { return }
         let merge = WPEPassIdentity("\(identity.rawValue)/merge")
         bind(merge, Resource.fullAlphaMask, depth: nil)
         draw(WPEParitySceneDraw(pass: merge, objectID: object.id, shader: "minimalalpha", source: .flatTexture,
                                 reads: [target], target: Resource.fullAlphaMask, blend: .translucent, writeMask: .rgb,
-                                geometry: .fullscreenQuad, multipliesDestination: true))
+                                geometry: .fullscreenQuad, multipliesDestination: true, colorRole: .mask))
     }
 
     /// FUN_1402222a0: each sub-mesh in file order binds its own material, draws into the bound target and unbinds;
@@ -692,7 +694,8 @@ private extension WPEParitySceneDraw {
                            shader: shader ?? self.shader, source: source ?? self.source, reads: reads ?? self.reads,
                            target: target, blend: blend ?? self.blend, alphaMax: alphaMax,
                            compositeOwnerID: compositeOwnerID, writeMask: writeMask, geometry: .puppetSegment(index),
-                           depthTest: depthTest, depthWrite: depthWrite, cullsBackFaces: cullsBackFaces)
+                           depthTest: depthTest, depthWrite: depthWrite, cullsBackFaces: cullsBackFaces,
+                           colorRole: colorRole, clipMaskInverted: clipMaskInverted)
     }
 }
 

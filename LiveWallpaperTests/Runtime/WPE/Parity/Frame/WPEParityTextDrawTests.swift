@@ -98,6 +98,71 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(uncovered, 0)
     }
 
+    /// Exercise the frame's camera and light consumers, including ancestor hiding and fallback to the authored
+    /// root. Camera motion must move the actual glyph pixels; moving lights must keep the live ambient write.
+    func testFrameConsumesLiveCameraAndLightsWithoutReloading() async throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+        var general = try XCTUnwrap(json["general"] as? [String: Any])
+        general["lightconfig"] = ["point": 1]
+        json["general"] = general
+        var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+        objects += [
+            ["id": 100, "origin": "10 20 0"],
+            ["id": 101, "camera": "camera", "origin": "0 0 0"],
+            ["id": 102, "camera": "camera", "parent": 100, "origin": "70 -20 0", "visible": false],
+            ["id": 103, "light": "lpoint", "parent": 100, "origin": "1 2 3", "color": "0.25 0.5 1",
+             "intensity": 2, "radius": 9],
+        ]
+        json["objects"] = objects
+        let fixture = try await makeSyntheticRenderer(effect: false, scene: JSONSerialization.data(withJSONObject: json))
+        let renderer = fixture.renderer
+        XCTAssertEqual(renderer.skipped, [:])
+        func constants() throws -> [String: WPECBufferValue] {
+            try XCTUnwrap(renderer.lastFrameDraws.first?.draw.constants[.fragment])
+        }
+        func vector(_ name: String) throws -> [Float] {
+            let value = try constants()[name]
+            if case let .vector(components)? = value {
+                return components
+            }
+            if case let .array(elements)? = value, elements.count == 1,
+               case let .vector(components) = elements[0] {
+                return components
+            }
+            XCTFail("missing or malformed \(name)")
+            return []
+        }
+        func centroid() throws -> Double {
+            let pixels = try readBack(renderer.backbuffer, fixture)
+            var (total, count) = (0, 0)
+            for index in stride(from: 0, to: pixels.count, by: 4) where pixels[index] > 0 {
+                total += (index / 4) % Self.width
+                count += 1
+            }
+            XCTAssertGreaterThan(count, 0)
+            return Double(total) / Double(max(count, 1))
+        }
+        try await encode(renderer, label: "root-equivalent object camera")
+        let original = try centroid()
+        XCTAssertEqual(try vector("g_LPoint_Origin"), [11, 22, 3, 2])
+        renderer.state.set(.visible, of: "102", to: SIMD4(1, 0, 0, 0))
+        renderer.state.set(.color, of: "103", to: SIMD4(0.5, 0.25, 0.125, 0))
+        renderer.state.setScriptField("ambientcolor", of: "", to: .vector(SIMD4(0.1, 0.2, 0.3, 0)), invalidating: .lighting)
+        try await encode(renderer, label: "last-visible camera and live light color")
+        XCTAssertEqual(try centroid(), original - 80, accuracy: 0.05)
+        XCTAssertEqual(try vector("g_LPoint_Color"), [1, 0.5, 0.25, 9])
+        renderer.state.set(.origin, of: "103", to: SIMD4(4, 5, 6, 0))
+        try await encode(renderer, label: "moving light keeps ambient")
+        XCTAssertEqual(try vector("g_LPoint_Origin"), [14, 25, 6, 2])
+        XCTAssertEqual(try vector("g_LightAmbientColor"), [0.1, 0.2, 0.3])
+        renderer.state.set(.visible, of: "100", to: .zero)
+        renderer.state.set(.visible, of: "101", to: .zero)
+        try await encode(renderer, label: "hidden camera ancestors restore authored root")
+        XCTAssertEqual(try centroid(), original, accuracy: 0.05)
+        XCTAssertNil(try constants()["g_LPoint_Origin"], "a hidden light must not leave the previous frame's array")
+        XCTAssertEqual(try vector("g_LightAmbientColor"), [0.1, 0.2, 0.3])
+    }
+
     func testTextWithAnEffectRendersThroughItsFBO() async throws {
         let fixture = try await makeSyntheticRenderer(effect: true)
         let (plan, renderer) = (fixture.plan, fixture.renderer)
@@ -395,9 +460,9 @@ final class WPEParityTextDrawTests: XCTestCase {
                                          makeTransformScriptResolver: { _, _ in TextNoScripts() })
     }
 
-    private func makeSyntheticRenderer(effect: Bool) async throws -> Fixture {
+    private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil) async throws -> Fixture {
         let wpeAssets = try wpeAssets()
-        let document = try Self.parse(Self.syntheticScene(effect: effect))
+        let document = try Self.parse(scene ?? Self.syntheticScene(effect: effect))
         // The tint effect keeps its material and shaders in its own folder.
         let assets = WPEParityProgramAssets(sceneDirectory: scratch,
                                             assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")])

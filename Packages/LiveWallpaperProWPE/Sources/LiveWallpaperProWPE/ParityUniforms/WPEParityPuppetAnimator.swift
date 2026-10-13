@@ -17,10 +17,14 @@ public struct WPEParityPuppetAnimator: Sendable {
     }
 
     public struct Layer: Sendable {
+        public let id: Int
+        /// Index in the authored scene layer table; retained even when another layer names a missing animation.
+        public let sceneIndex: Int
         public let animation: WPEPuppetAnimation
         public let mode: Mode
-        public let rate: Float
-        public let blend: Float
+        public fileprivate(set) var enabled: Bool
+        public fileprivate(set) var rate: Float
+        public fileprivate(set) var blend: Float
         public let additive: Bool
         public let blendOut: Bool
         public let blendTime: Float
@@ -109,14 +113,16 @@ public struct WPEParityPuppetAnimator: Sendable {
     private let inverseBindWorld: [simd_float4x4]
     private var poses: [Pose?] = []
 
-    /// Invisible layers and layers naming an animation the model lacks are dropped (FUN_1401fdf90 skips +0xD0 bit0 = 0).
+    /// Disabled layers remain addressable; FUN_1401fdf90 skips their update/evaluation, not their identity.
+    /// A layer naming an animation absent from the model still has no evaluable animation.
     public init(model: WPEPuppetModel, layers sceneLayers: [WPESceneAnimationLayer]) {
-        layers = sceneLayers.compactMap { scene in
-            guard scene.visible, let animation = model.animations.first(where: { $0.id == scene.animation }) else {
+        layers = sceneLayers.enumerated().compactMap { index, scene in
+            guard let animation = model.animations.first(where: { $0.id == scene.animation }) else {
                 return nil
             }
             let frameDuration = 1 / animation.fps
-            var layer = Layer(animation: animation, mode: Mode(animation.mode), rate: Float(scene.rate),
+            var layer = Layer(id: scene.id, sceneIndex: index, animation: animation, mode: Mode(animation.mode),
+                              enabled: scene.visible, rate: Float(scene.rate),
                               blend: Float(scene.blend), additive: scene.additive, blendOut: scene.blendOut,
                               blendTime: Float(scene.blendTime), frameDuration: frameDuration,
                               duration: Float(animation.frameCount) * frameDuration, blendIn: scene.blendIn)
@@ -136,11 +142,31 @@ public struct WPEParityPuppetAnimator: Sendable {
     }
 
     public mutating func advance(dt: Double) {
-        for index in layers.indices {
+        for index in layers.indices where layers[index].enabled {
             layers[index].step(Float(dt) * layers[index].rate)
             layers[index].updateWeight()
         }
         evaluate()
+    }
+
+    /// The host animation API updates the retained authored layer, then consumers observe the new palette at the
+    /// normal evaluation boundary. Disabled layers keep their playback cursor instead of being re-created.
+    @discardableResult
+    public mutating func updateLayer(at sceneIndex: Int, enabled: Bool? = nil,
+                                     rate: Float? = nil, blend: Float? = nil) -> Bool {
+        guard let index = layers.firstIndex(where: { $0.sceneIndex == sceneIndex }) else { return false }
+        if let enabled {
+            layers[index].enabled = enabled
+        }
+        if let rate {
+            layers[index].rate = rate
+        }
+        if let blend {
+            layers[index].blend = blend
+        }
+        layers[index].updateWeight()
+        evaluate()
+        return true
     }
 
     /// 3 float4 per bone for `float4x3 g_Bones[BONECOUNT]`: math rows 0, 1, 2 with translation in .w.
@@ -183,7 +209,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         for bone in poses.indices {
             poses[bone] = nil
         }
-        for layer in layers {
+        for layer in layers where layer.enabled {
             let frame = Self.frame(time: layer.time, frameDuration: layer.frameDuration,
                                    frameCount: layer.animation.frameCount)
             for channel in layer.animation.channels where poses.indices.contains(channel.boneIndex) {

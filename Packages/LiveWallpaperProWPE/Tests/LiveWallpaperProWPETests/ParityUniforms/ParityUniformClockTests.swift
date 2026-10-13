@@ -78,14 +78,16 @@ final class ParityUniformClockTests: XCTestCase {
         XCTAssertEqual(previous, 432_000)
     }
 
-    func testDoubleAccumulationKeepsSubMillisecondPrecision() {
+    func testTimeAccumulatesInNativeFloat32Precision() {
         var clock = WPEParityClock()
-        let steps = 1_000_000
-        for _ in 0 ..< steps {
-            clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: false)
+        for _ in 0 ..< 10 {
+            clock.advance(elapsed: 0.1, ratePercent: 100, paused: false)
         }
-        let expected = Double(steps) * Double(Float(1.0 / 60))
-        XCTAssertEqual(clock.time, expected, accuracy: 1e-4)
+        // 14017fa70's float add rounds each step: ten additions of binary32 0.1 produce 0x3f800001.
+        // Keeping Double storage at the API boundary must not change the native accumulation precision.
+        XCTAssertEqual(clock.timeUniform.bitPattern, 0x3F80_0001)
+        XCTAssertEqual(clock.time, Double(Float(bitPattern: 0x3F80_0001)))
+        XCTAssertNotEqual(clock.time, 10 * Double(Float(0.1)))
     }
 
     func testDaytimeIncludesMilliseconds() {

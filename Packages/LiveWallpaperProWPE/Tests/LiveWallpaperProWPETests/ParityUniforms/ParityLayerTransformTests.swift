@@ -3,6 +3,27 @@ import simd
 import XCTest
 
 final class ParityLayerTransformTests: XCTestCase {
+    func testTextPerspectiveAndLiveCoordinateFieldsShareLayerMatrices() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100}},
+         "objects":[{"id":1,"text":"sample","origin":"100 50 0","perspective":{"value":true},
+                     "parallaxDepth":"0.25 0.5"}]}
+        """)
+        var layers = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100),
+                                                textSizes: ["1": SIMD2(40, 20)])
+        XCTAssertEqual(layers.layers["1"]?.perspective, true)
+        XCTAssertEqual(layers.projection("1"), layers.camera.perspectiveProjection)
+        var state = WPEParitySceneState(document: document, hdr: false)
+        XCTAssertFalse(layers.applyFields(state: state))
+        state.setScriptField("perspective", of: "1", to: .vector(.zero), invalidating: .none)
+        state.setScriptField("parallaxDepth", of: "1", to: .vector(SIMD4(0.5, 0.75, 0, 0)), invalidating: .none)
+        XCTAssertTrue(layers.applyFields(state: state))
+        XCTAssertEqual(layers.layers["1"]?.parallaxDepth, SIMD2(0.5, 0.75))
+        XCTAssertEqual(layers.projection("1"), layers.camera.projection)
+        XCTAssertFalse(layers.applyFields(state: state), "unchanged state does not invalidate draw placement")
+    }
+
     private let canvas = SIMD2<Float>(3840, 2160)
 
     private func assertEqual(_ lhs: simd_float4x4, _ rhs: simd_float4x4, accuracy: Float = 1e-4,

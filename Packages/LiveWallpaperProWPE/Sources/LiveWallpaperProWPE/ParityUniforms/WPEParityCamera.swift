@@ -78,11 +78,13 @@ public struct WPEParityCamera: Sendable, Equatable {
         let parallax = general.cameraParallax
         let resolved = document.resolvedGeneralJSON
         func value(_ key: String, _ fallback: Float) -> Float {
-            WPEParityProgramScene.number(resolved[key]).map(Float.init) ?? fallback
+            let raw = resolved[key]
+            return WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? fallback
         }
         let defaults = WPEParityScenePerspective()
         let perspective = general.usesPerspectiveProjection
-            ? WPEParityScenePerspective(fov: value("fov", defaults.fov), near: value("nearz", defaults.near),
+            ? WPEParityScenePerspective(fov: document.cameraMotion == nil ? value("fov", defaults.fov) : Float(document.camera.fov),
+                                        near: value("nearz", defaults.near),
                                         far: value("farz", defaults.far))
             : nil
         // The V parallax push needs an orthographic scene (14018aac0.c:87).
@@ -92,6 +94,77 @@ public struct WPEParityCamera: Sendable, Equatable {
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
                   perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
                   shake: WPEParityCameraShake(general: general), scenePerspective: perspective)
+    }
+
+    /// The authored root camera, before any camera object takes control. A hidden camera object must not leave
+    /// its parse-time pose behind when playback falls back to the root camera or its paths.
+    public static func root(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,
+                            alignment: WPEParityCameraAlignment = .noCrop) -> Self {
+        var camera = Self(document: document, renderTargetSize: renderTargetSize, alignment: alignment)
+        camera.eye = SIMD3(document.staticCamera.eye)
+        camera.center = SIMD3(document.staticCamera.center)
+        camera.up = SIMD3(document.staticCamera.up)
+        if camera.scenePerspective != nil {
+            let raw = document.resolvedGeneralJSON["fov"]
+            camera.scenePerspective?.fov = WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? 50
+        }
+        return camera
+    }
+
+    /// 1401891a0.c:57-67: the last camera whose own bit and all ancestors are visible wins. Selection uses the
+    /// resolved authored order, independently of whether the object has a script binding.
+    public static func activeObjectID(document: WPESceneDocument, state: WPEParitySceneState) -> String? {
+        for object in document.resolvedObjectsJSON.reversed() {
+            guard case .string? = object["camera"], let id = WPEParitySceneAnimations.id(object),
+                  state.isVisible(id) else { continue }
+            return id
+        }
+        return nil
+    }
+
+    /// 1401891a0.c:85-132: use W (without layer alignment), not the object's local origin/angles. Camera FOV
+    /// controls a genuinely perspective scene; the layer's perspectiveoverridefov remains a separate setting.
+    /// The caller advances root paths only when no object is active, then applies shake to the selected pose.
+    public func applyingObject(world: simd_float4x4, fov: Float?, zoom: Float, generalZoom: Float) -> Self {
+        var camera = self
+        let eye = SIMD3(world.columns.3.x, world.columns.3.y, world.columns.3.z)
+        camera.eye = eye
+        camera.center = eye - SIMD3(world.columns.2.x, world.columns.2.y, world.columns.2.z)
+        camera.up = SIMD3(world.columns.1.x, world.columns.1.y, world.columns.1.z)
+        camera.zoom = generalZoom * zoom
+        if let fov, camera.scenePerspective != nil {
+            camera.scenePerspective?.fov = fov
+        }
+        return camera
+    }
+
+    /// Resolves the selected object's typed script fields over its authored seeds, then native constructor
+    /// defaults (H08: fov 50 / zoom 1). Keeps internal JSON identity/scalar helpers inside the package.
+    public func applyingObject(world: simd_float4x4, objectID: String, document: WPESceneDocument,
+                               state: WPEParitySceneState, generalZoom: Float) -> Self {
+        let object = document.resolvedObjectsJSON.first { WPEParitySceneAnimations.id($0) == objectID }
+        func scalar(_ name: String, fallback: Float) -> Float {
+            if case let .vector(value)? = state.scriptField(name, of: objectID) {
+                return value.x
+            }
+            let raw = object?[name]
+            return WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? fallback
+        }
+        return applyingObject(world: world, fov: scalar("fov", fallback: 50),
+                              zoom: scalar("zoom", fallback: 1), generalZoom: generalZoom)
+    }
+
+    /// SceneScript cursorWorldPosition (14018e070 mode 0 / 14019df90): viewport depth .5 becomes clip depth 0.
+    /// The native caller drops Z only in an orthographic scene; a perspective scene keeps the unprojected Z.
+    /// `normalizedPointer` uses the client convention, y down.
+    public func cursorWorld(normalizedPointer: SIMD2<Float>) -> SIMD3<Float> {
+        let clip = SIMD4<Float>(normalizedPointer.x * 2 - 1, 1 - normalizedPointer.y * 2, 0, 1)
+        let homogeneous = (projection * view).inverse * clip
+        var world = SIMD3(homogeneous.x, homogeneous.y, homogeneous.z) / homogeneous.w
+        if scenePerspective == nil {
+            world.z = 0
+        }
+        return world
     }
 
     /// The camera on a path pose, which comes before the shake (1401891a0.c:253-255); the projection zooms by

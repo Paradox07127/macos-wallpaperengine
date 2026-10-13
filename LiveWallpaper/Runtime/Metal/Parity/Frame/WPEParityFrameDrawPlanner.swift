@@ -68,6 +68,8 @@ struct WPEParityFrameDrawPlan {
     let zeroConstants: [WPEHLSLStage: [String]]
     /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read (R22 Q3).
     let renderVarWrites: (rv0: SIMD4<Float>?, rv1: SIMD4<Float>?)
+    /// Native clip masks replace only RV0.x; the other lanes stay in the scene-wide store.
+    var clipMaskInverted: Bool?
     /// Declared textures the frame does not have, bound to a transparent texel.
     let fallbackTextures: [String]
 
@@ -140,7 +142,7 @@ struct WPEParityFrameDrawPlan {
                   textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                   puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
-                  layerColor: SIMD4<Float>? = nil) throws -> WPEParityDraw {
+                  layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil) throws -> WPEParityDraw {
         guard case let .mesh(vertices, indices, indexCount) = geometry else {
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
@@ -149,6 +151,12 @@ struct WPEParityFrameDrawPlan {
                                                           layers: layers),
                                   variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
                                   constants: constants ?? self.constants)
+        if let renderVar0 {
+            let value = WPECBufferValue.vector([renderVar0.x, renderVar0.y, renderVar0.z, renderVar0.w])
+            for stage in state.constants.keys {
+                state.constants[stage]?["g_RenderVar0"] = value
+            }
+        }
         if let color = layerColor {
             for stage in state.constants.keys {
                 state.constants[stage]?["g_Color4"] = .vector([color.x, color.y, color.z, color.w])
@@ -162,6 +170,14 @@ struct WPEParityFrameDrawPlan {
         draw.indexBuffer = indices
         draw.indexCount = indexCount
         return draw
+    }
+
+    func applyRenderVarWrites(to state: inout WPEParityRenderVarState) {
+        state.rv0 = renderVarWrites.rv0 ?? state.rv0
+        state.rv1 = renderVarWrites.rv1 ?? state.rv1
+        if let clipMaskInverted {
+            state.rv0.x = clipMaskInverted ? 1 : 0
+        }
     }
 
     /// One point-list draw per batch of live particles, its vertices copied into `arena`; none without live particles,
@@ -601,12 +617,12 @@ struct WPEParityFrameDrawPlanner {
         } else {
             let inputs = artifact.vertex.reflection.vertexInputs
             let buffers = if let modelMesh {
-                Self.modelGeometry(modelMesh, inputs: inputs, device: device)
+                try Self.modelGeometry(modelMesh, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, draw.geometry == .modelMesh {
                 throw .pipeline("\(shader): \(draw.pass) has no model mesh")
             } else if let puppet {
                 // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
-                Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: uvMax, inputs: inputs, device: device)
+                try Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: uvMax, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
                 Self.geometry(mesh.vertices, indices: mesh.indices, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, draw.geometry == .shapeQuad, let object = sceneObject,
@@ -620,6 +636,12 @@ struct WPEParityFrameDrawPlanner {
             }
             guard let buffers else { throw .pipeline("vertex or index buffer allocation failed") }
             geometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount)
+        }
+        let clipMaskInverted: Bool? = if case let .scene(draw) = description,
+                                         draw.colorRole == .mask, draw.shader == "clippingmaskimage4" {
+            draw.clipMaskInverted
+        } else {
+            nil
         }
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
                                             textures: uniformTextures, lights: lights)
@@ -669,6 +691,7 @@ struct WPEParityFrameDrawPlanner {
             constants: binding.constants,
             zeroConstants: zeroConstants,
             renderVarWrites: particleKey == nil ? (renderVar("g_RenderVar0"), renderVar("g_RenderVar1")) : (nil, nil),
+            clipMaskInverted: clipMaskInverted,
             fallbackTextures: fallbackTextures
         )
     }
@@ -975,11 +998,16 @@ struct WPEParityFrameDrawPlanner {
         var normal = SIMD3<Float>(0, 0, 1)
     }
 
-    /// One model sub-mesh as the MDLV format table lays it out, indexed with R16 like every MDL mesh WPE builds
-    /// (14020ae00.c:77).
+    /// One model sub-mesh using the preserved MDLV stream. The current parser supplies R16 indices;
+    /// the separate native model index-type contract still needs verification.
     static func modelGeometry(_ mesh: WPEPuppetMesh, inputs: [WPEStageReflection.StageAttribute],
-                              device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
-        geometry(mesh.vertices.map {
+                              device: MTLDevice) throws(WPEParityFrameSkip)
+        -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        if let stream = mesh.vertexStream {
+            return try rawGeometry(stream, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs,
+                                   uvMax: .one, device: device)
+        }
+        return geometry(mesh.vertices.map {
             Vertex(position: $0.position, texcoord: $0.uv, blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices),
                    blendWeights: $0.skinBlendWeights, normal: $0.normal)
         }, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs, device: device)
@@ -988,12 +1016,89 @@ struct WPEParityFrameDrawPlanner {
     /// Mesh0 of a puppet layer, or one of its clip segments, with its texcoords scaled by `uvMax`.
     static func puppetGeometry(_ puppet: WPEParityScenePuppet, segment: Int? = nil, uvMax: SIMD2<Float>,
                                inputs: [WPEStageReflection.StageAttribute],
-                               device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
-        geometry(puppet.vertices.map {
+                               device: MTLDevice) throws(WPEParityFrameSkip)
+        -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        let indices = segment.map { Array(puppet.clipIndices[puppet.clipSegments[$0]]) } ?? puppet.indices
+        if let stream = puppet.vertexStream {
+            return try rawGeometry(stream, indices: indices, inputs: inputs, uvMax: uvMax, device: device)
+        }
+        return geometry(puppet.vertices.map {
             Vertex(position: $0.position, texcoord: $0.uv * uvMax,
                    blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices), blendWeights: $0.skinBlendWeights)
-        }, indices: segment.map { Array(puppet.clipIndices[puppet.clipSegments[$0]]) } ?? puppet.indices,
-        inputs: inputs, device: device)
+        }, indices: indices, inputs: inputs, device: device)
+    }
+
+    /// Maps the immutable native stream to MSC's tightly packed stage inputs once at draw planning. Native
+    /// input-layout types feed registers as raw 32-bit words, including uint BLENDINDICES and float NaN payloads.
+    /// D3D11 missing format components are zero except W=1 in the source element's interpretation.
+    static func rawVertexWords(_ stream: WPEPuppetVertexStream, inputs: [WPEStageReflection.StageAttribute],
+                               uvMax: SIMD2<Float> = .one) throws(WPEParityFrameSkip) -> [UInt32] {
+        guard !stream.layout.hasSyntheticPosition else {
+            throw .pipeline("MDLV vertex format is missing authored POSITION0")
+        }
+        guard stream.layout.stride > 0, stream.data.count % stream.layout.stride == 0,
+              stream.layout.unsupportedFlags == 0 else {
+            throw .pipeline("unsupported or malformed MDLV vertex format 0x\(String(stream.layout.format, radix: 16))")
+        }
+        struct Input {
+            let attribute: WPEPuppetVertexAttribute
+            let columns: Int
+        }
+        var resolved: [Input] = []
+        for input in inputs.sorted(by: { $0.index < $1.index }) {
+            guard (1 ... 4).contains(input.columns),
+                  ["float", "int", "sint", "uint", "uint32"].contains(input.elementType.lowercased()) else {
+                throw .pipeline("unsupported vertex input \(input.name):\(input.elementType)[\(input.columns)]")
+            }
+            let name = input.name.uppercased()
+            let semantic = String(name.reversed().drop(while: { $0.isNumber }).reversed())
+            let suffix = name.dropFirst(semantic.count)
+            let index = suffix.isEmpty ? 0 : Int(suffix) ?? -1
+            let attributes = stream.layout.attributes(semantic: semantic, index: index)
+            guard attributes.count == 1, let attribute = attributes.first else {
+                throw .pipeline("MDLV input \(input.name) has \(attributes.count) native elements")
+            }
+            resolved.append(Input(attribute: attribute, columns: input.columns))
+        }
+        let wordsPerVertex = resolved.reduce(0) { $0 + $1.columns }
+        var words: [UInt32] = []
+        words.reserveCapacity(stream.vertexCount * wordsPerVertex)
+        stream.data.withUnsafeBytes { bytes in
+            for vertex in 0 ..< stream.vertexCount {
+                for input in resolved {
+                    let attribute = input.attribute
+                    for lane in 0 ..< input.columns {
+                        var word: UInt32 = lane == 3
+                            ? (attribute.componentType == .float32 ? Float(1).bitPattern : 1) : 0
+                        if lane < attribute.componentCount {
+                            let offset = vertex * stream.layout.stride + attribute.byteOffset + lane * 4
+                            word = UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+                            // Only the puppet's first UV pair is adjusted for its albedo image; UV.zw/UV1+ survive.
+                            if attribute.semantic == "TEXCOORD", attribute.semanticIndex == 0, lane < 2,
+                               attribute.componentType == .float32, uvMax[lane] != 1 {
+                                word = (Float(bitPattern: word) * uvMax[lane]).bitPattern
+                            }
+                        }
+                        words.append(word)
+                    }
+                }
+            }
+        }
+        return words
+    }
+
+    private static func rawGeometry(_ stream: WPEPuppetVertexStream, indices: [UInt16],
+                                    inputs: [WPEStageReflection.StageAttribute], uvMax: SIMD2<Float>,
+                                    device: MTLDevice) throws(WPEParityFrameSkip)
+        -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        let words = try rawVertexWords(stream, inputs: inputs, uvMax: uvMax)
+        guard let vertices = device.makeBuffer(length: max(16, words.count * 4), options: .storageModeShared),
+              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * 2,
+                                                  options: .storageModeShared) else { return nil }
+        if !words.isEmpty {
+            vertices.contents().copyMemory(from: words, byteCount: words.count * 4)
+        }
+        return (vertices, indexBuffer, indices.count)
     }
 
     /// One glyph list of a text layer, or its background quad from (0, 0) to the FBO size with the glyph quads'

@@ -163,6 +163,157 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(spawned.position[0].x, 1, accuracy: 1e-6)
     }
 
+    func testDeathPrewarmInheritsTheOldSlotAndDrawsBeforeTheRebornParent() throws {
+        let child = ParityParticleTestSupport.json("""
+        {"maxcount": 1, "starttime": 0.05,
+         "emitter": [{"name": "boxrandom", "rate": 0, "instantaneous": 1,
+                      "distancemin": "1 1 1", "distancemax": "1 1 1", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                         {"name": "inheritinitialvaluefromevent", "input": "setcolor"},
+                         {"name": "inheritinitialvaluefromevent", "input": "setvelocity"},
+                         {"name": "remapinitialvalue", "operation": "remap", "input": "layertime", "output": "size"},
+                         {"name": "remapinitialvalue", "operation": "remap", "input": "particlesystemtime", "output": "opacity"}]}
+        """)
+        let rng = WPEParityMT19937(seed: 7)
+        var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "boxrandom", "rate": 10, "distancemin": "1 1 1",
+                      "distancemax": "1 1 1", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
+         "children": [{"name": "child.json", "type": "eventdeath", "probability": 1}]}
+        """), rng: rng, resolveChild: { _ in child })
+        particles.advance(dt: 0.1)
+        particles.color[0] = SIMD3(1, 0, 0)
+        particles.initialColor[0] = SIMD3(1, 0, 0)
+        particles.velocity[0] = SIMD3(10, 0, 0)
+
+        // Independent finite draw schedule: each box birth takes u, three offset values, speed and lifetime.
+        // Frame one parent: 6 words; death probability: 1; child prewarm birth: 6; reborn parent: 6.
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 6 {
+            _ = expected.next()
+        }
+        _ = expected.unit()
+        let childU = expected.unit()
+        for _ in 0 ..< 5 {
+            _ = expected.next()
+        }
+        let parentU = expected.unit()
+        for _ in 0 ..< 5 {
+            _ = expected.next()
+        }
+        particles.advance(dt: 0.1)
+        let spawned = try XCTUnwrap(particles.eventChildren[0].first)
+        XCTAssertEqual(spawned.prewarmStepCount, 1)
+        XCTAssertEqual(spawned.initialColor[0], SIMD3(1, 0, 0), "Birth must read the dying slot before emit reuses it")
+        XCTAssertEqual(spawned.velocity[0], SIMD3(10, 0, 0))
+        XCTAssertEqual(particles.initialColor[0], SIMD3(repeating: 1))
+        XCTAssertEqual(particles.velocity[0], .zero)
+        XCTAssertEqual(spawned.birthU[0], childU)
+        XCTAssertEqual(particles.birthU[0], parentU)
+        XCTAssertEqual(rng.next(), expected.next(), "The next object must see the same shared MT continuation")
+        XCTAssertEqual(spawned.initialSize[0], 0.2, accuracy: 1e-6, "Event prewarm reads the current owner layer time")
+        XCTAssertEqual(spawned.initialAlpha[0], 0, "Construction prewarm does not advance system elapsed")
+        XCTAssertEqual(spawned.simulationTime, 0.1, accuracy: 1e-6)
+        XCTAssertEqual(spawned.objectTime, 0.2, accuracy: 1e-6)
+        XCTAssertEqual(particles.liveCount, 1)
+        XCTAssertEqual(particles.lifetime.count, 1)
+    }
+
+    private func boxEvents(_ entries: String, count: Int = 1, continuous: Bool = false,
+                           childLifetime: Float = 10, prewarm: Bool = true) -> WPEParityParticleSystem {
+        let child = ParityParticleTestSupport.json("""
+        {"maxcount": 1, "starttime": \(prewarm ? 0.05 : 0),
+         "emitter": [{"name": "boxrandom", "rate": 0, "instantaneous": 1,
+                      "distancemin": "1 1 1", "distancemax": "1 1 1", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": \(childLifetime), "max": \(childLifetime)}]}
+        """)
+        return WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+        {"maxcount": \(count),
+         "emitter": [{"name": "boxrandom", "rate": \(continuous ? 10 : 0), "instantaneous": \(continuous ? 0 : count),
+                      "distancemin": "1 1 1", "distancemax": "1 1 1", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
+         "children": [\(entries)]}
+        """), rng: WPEParityMT19937(seed: 7), resolveChild: { _ in child })
+    }
+
+    func testDeathZeroRemainingSkipsProbabilityAndFullSingleGroupStopsFurtherEvents() {
+        var zero = boxEvents(#"{"name": "a", "type": "eventdeath", "maxcount": 0}"#)
+        zero.advance(dt: 0.1)
+        zero.advance(dt: 0.1)
+        XCTAssertTrue(zero.eventChildren[0].isEmpty)
+        let zeroExpected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 6 {
+            _ = zeroExpected.next()
+        }
+        XCTAssertEqual(zero.rng.next(), zeroExpected.next(), "No remaining room means no probability draw")
+
+        var full = boxEvents(#"{"name": "a", "type": "eventdeath", "maxcount": 1}"#, continuous: true)
+        for _ in 0 ..< 3 {
+            full.advance(dt: 0.1)
+        }
+        XCTAssertEqual(full.eventChildren[0].count, 1)
+        // Three parent births, one probability and one child prewarm birth: 3*6 + 1 + 6 = 25.
+        let fullExpected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 25 {
+            _ = fullExpected.next()
+        }
+        XCTAssertEqual(full.rng.next(), fullExpected.next())
+    }
+
+    func testTwoDeathCapsFollowTheNativeEqualityBranchInsteadOfConventionalClamping() {
+        var particles = boxEvents("""
+        {"name": "a", "type": "eventdeath", "maxcount": 1, "probability": 1},
+        {"name": "b", "type": "eventdeath", "maxcount": 1, "probability": 1}
+        """, count: 2)
+        particles.advance(dt: 0.1)
+        particles.advance(dt: 0.1)
+        // Dead parent 0: A reaches 1 and skips B. Dead parent 1: A reaches 2 (!=1), then B reaches 1.
+        XCTAssertEqual(particles.eventChildren.map(\.count), [2, 1])
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 12 {
+            _ = expected.next()
+        }
+        var childU: [Float] = []
+        for _ in 0 ..< 3 {
+            _ = expected.unit()
+            childU.append(expected.unit())
+            for _ in 0 ..< 5 {
+                _ = expected.next()
+            }
+        }
+        XCTAssertEqual(particles.eventChildren[0].map { $0.birthU[0] }, Array(childU.prefix(2)))
+        XCTAssertEqual(particles.eventChildren[1][0].birthU[0], childU[2])
+        XCTAssertEqual(particles.rng.next(), expected.next())
+    }
+
+    func testSpawnGroupsApplyProbabilityAndStopAtTheDefaultTenBeforeParentOperators() {
+        var particles = boxEvents("""
+        {"name": "a", "type": "eventspawn", "maxcount": 0},
+        {"name": "b", "type": "eventspawn", "probability": 0},
+        {"name": "c", "type": "eventspawn"}
+        """, count: 12)
+        particles.advance(dt: 0.1)
+        XCTAssertEqual(particles.eventChildren.map(\.count), [0, 0, 10])
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 72 {
+            _ = expected.next()
+        } // All 12 parent births precede all child groups.
+        for _ in 0 ..< 12 {
+            _ = expected.next()
+        } // Group A draws none; group B takes 12 rejected probabilities.
+        var childU: [Float] = []
+        for _ in 0 ..< 10 {
+            _ = expected.unit()
+            childU.append(expected.unit())
+            for _ in 0 ..< 5 {
+                _ = expected.next()
+            }
+        }
+        XCTAssertEqual(particles.eventChildren[2].map { $0.birthU[0] }, childU)
+        XCTAssertEqual(particles.rng.next(), expected.next())
+    }
+
     /// 30 births a second, each spawning a three-particle event child that lives 0.3 s.
     private static func eventSpawningSystem() -> WPEParityParticleSystem {
         let child = """
@@ -229,26 +380,34 @@ final class ParityParticleSimulationTests: XCTestCase {
         }
     }
 
-    func testFinishedEventChildrenAreReusedWithoutChangingTheBatches() {
-        var particles = Self.eventSpawningSystem()
-        var checksum: UInt64 = 0xCBF2_9CE4_8422_2325
-        var warm = 0
-        for frame in 1 ... 300 {
-            particles.advance(dt: 1.0 / 60)
-            let batches = particles.batches(node: [], renderer: 0, eventGroup: nil)
-                + particles.batches(node: [], renderer: 0, eventGroup: 0)
-            for byte in batches.flatMap(\.bytes) {
-                checksum = (checksum ^ UInt64(byte)) &* 0x0000_0100_0000_01B3
+    func testFinishedEventReuseKeepsTheFiniteBirthDrawSequenceAndResetsOldValues() {
+        var particles = boxEvents(#"{"name": "a", "type": "eventspawn"}"#, continuous: true,
+                                  childLifetime: 0.05, prewarm: false)
+        let expected = WPEParityMT19937(seed: 7)
+        for frame in 1 ... 5 {
+            let parentU = expected.unit()
+            for _ in 0 ..< 5 {
+                _ = expected.next()
             }
-            if frame == 150 {
-                warm = particles.eventChildConstructions
+            _ = expected.unit() // Spawn probability.
+            let childU = expected.unit()
+            for _ in 0 ..< 5 {
+                _ = expected.next()
             }
+            particles.advance(dt: 0.1)
+            XCTAssertEqual(particles.birthU[0], parentU)
+            XCTAssertEqual(particles.eventChildren[0].count, 1)
+            let child = particles.eventChildren[0][0]
+            XCTAssertEqual(child.birthU[0], childU, "frame \(frame)")
+            XCTAssertEqual(child.color[0], SIMD3(repeating: 1))
+            XCTAssertEqual(child.velocity[0], .zero)
+            if frame > 1 {
+                XCTAssertEqual(particles.eventChildConstructions, 2)
+            }
+            particles.eventChildren[0][0].color[0] = SIMD3(3, 2, 1)
+            particles.eventChildren[0][0].velocity[0] = SIMD3(9, 8, 7)
         }
-        print("event child reuse: \(particles.eventChildConstructions) constructions, checksum \(checksum)")
-        XCTAssertGreaterThan(warm, 0)
-        XCTAssertEqual(particles.eventChildConstructions, warm)
-        // Recorded from the build that constructed a new system per event.
-        XCTAssertEqual(checksum, 7_387_180_156_559_087_736)
+        XCTAssertEqual(particles.rng.next(), expected.next())
     }
 
     func testCapVelocityDefaultsTo100In2DAnd1In3D() {

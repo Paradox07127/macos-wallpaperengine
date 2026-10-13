@@ -91,7 +91,7 @@ struct WPEParityParticleRemap: Equatable, Sendable {
         outputRange = entry.vector("outputrangemax", SIMD3(repeating: 1)) - outputMin
         inputControlPoint = entry.controlPoint("inputcontrolpoint0")
         outputControlPoint0 = entry.controlPoint("outputcontrolpoint0")
-        outputControlPoint1 = entry.controlPoint("outputcontrolpoint1")
+        outputControlPoint1 = entry.controlPoint("outputcontrolpoint1", 1)
         inputScale = entry.number("transforminputscale", 2)
     }
 

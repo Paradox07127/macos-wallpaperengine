@@ -3,6 +3,59 @@ import simd
 import XCTest
 
 final class ParityLightsTests: XCTestCase {
+    func testPlainPointDoesNotAliasShaderLpoint() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"lightconfig":{"point":1}},
+         "objects":[{"id":1,"light":"point","color":"1 1 1","intensity":2}]}
+        """)
+        XCTAssertEqual(document.lightObjects[0].type, .unknown("point"))
+        let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        XCTAssertTrue(WPEParityUniformLights(document: document, transforms: transforms).pointColor.isEmpty)
+    }
+
+    func testLiveLightFieldsAncestorVisibilityAndAmbientAreOneSnapshot() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"lightconfig":{"point":1,"spot":1,"directional":1}},
+         "objects":[
+          {"id":10,"origin":"10 20 30","visible":false},
+          {"id":1,"light":"lpoint","parent":10,"origin":"1 2 3"},
+          {"id":2,"light":"lspot","origin":"4 5 6","scale":"2 3 4"},
+          {"id":3,"light":"ldirectional","scale":"3 4 5"}]}
+        """)
+        var transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        var state = WPEParitySceneState(document: document, hdr: false)
+        var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        XCTAssertTrue(lights.pointOrigin.isEmpty)
+        XCTAssertEqual(lights.ambient, .zero)
+        XCTAssertEqual(lights.skylight, .zero)
+        XCTAssertEqual(document.lightObjects[0].radius, 1)
+        XCTAssertEqual(document.lightObjects[0].intensity, 0)
+        XCTAssertEqual(document.lightObjects[1].innerConeDegrees, 20)
+        XCTAssertEqual(document.lightObjects[1].outerConeDegrees, 30)
+        state.set(.visible, of: "10", to: SIMD4(1, 0, 0, 0))
+        state.set(.color, of: "1", to: SIMD4(0.25, 0.5, 1, 0))
+        for (name, value) in [("intensity", Float(4)), ("radius", 9), ("exponent", 3)] {
+            state.setScriptField(name, of: "1", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .lighting)
+        }
+        state.setScriptField("ambientcolor", of: "", to: .vector(SIMD4(0.1, 0.2, 0.3, 0)), invalidating: .lighting)
+        transforms.setTransform("10", origin: SIMD3(20, 30, 40), angles: .zero, scale: .one)
+        transforms.refreshWorlds()
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        assertEqual(lights.pointColor, [SIMD4(1, 2, 4, 9)])
+        assertEqual(lights.pointOrigin, [SIMD4(21, 32, 43, 3)])
+        XCTAssertEqual(lights.ambient, SIMD3(0.1, 0.2, 0.3))
+        XCTAssertEqual(lights.spotDirection[0].x, 2, "native light axes are not normalized")
+        XCTAssertEqual(lights.spotOrigin[0].w, cos(20 * Float.pi / 180), accuracy: 1e-6)
+        XCTAssertEqual(lights.spotDirection[0].w, cos(30 * Float.pi / 180), accuracy: 1e-6)
+        XCTAssertEqual(lights.directionalDirection, [SIMD3(-3, 0, 0)])
+        state.set(.visible, of: "10", to: .zero)
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        XCTAssertTrue(lights.pointColor.isEmpty)
+        XCTAssertEqual(lights.ambient, SIMD3(0.1, 0.2, 0.3), "light visibility never restores a static ambient value")
+    }
+
     /// 3470948192's two directional lights under the `sd` model (14) and group 55, as authored.
     private static let scene = """
     {"camera": {"center": "0.32276 -0.01105 -0.52150", "eye": "-0.05628 0.03727 0.40262", "up": "0 1 0"},

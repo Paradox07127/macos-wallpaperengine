@@ -72,30 +72,58 @@ public struct WPEParityUniformLights: Sendable, Equatable {
     }
 
     public init(document: WPESceneDocument) {
-        self.init(ambient: SIMD3<Float>(document.general.lightAmbientColor),
-                  skylight: SIMD3<Float>(document.general.lightSkylightColor))
+        func color(_ name: String) -> SIMD3<Float> {
+            let raw = document.resolvedGeneralJSON[name]
+            let value = raw?["value"] ?? raw
+            guard case let .string(text)? = value else { return .zero }
+            let components = text.split(separator: " ").compactMap { Float($0) }
+            guard components.count >= 3 else { return .zero }
+            return SIMD3(components[0], components[1], components[2])
+        }
+        // 140186c90 initializes absent ambient/skylight to zero. The generic parser's legacy white fallback must
+        // not create light in parity scenes.
+        self.init(ambient: color("ambientcolor"), skylight: color("skylightcolor"))
     }
 
     /// `transforms` gives each light's world matrix W. Colour is colour × intensity; point and spot origins are W's
     /// translation, the spot direction W's first column and the directional direction its negation, all unnormalised.
     public init(document: WPESceneDocument, transforms: WPEParityLayerTransformSet) {
+        self.init(document: document, transforms: transforms, state: nil)
+    }
+
+    /// Rebuilds from one live state snapshot. Ancestor visibility, light fields and general colours are consumed
+    /// together, so rebuilding moving lights cannot restore static ambient/skylight over a script write.
+    public init(document: WPESceneDocument, transforms: WPEParityLayerTransformSet, state: WPEParitySceneState?) {
         self.init(document: document)
+        for (name, keyPath) in [("ambientcolor", \Self.ambient), ("skylightcolor", \Self.skylight)] {
+            if case let .vector(value)? = state?.scriptField(name, of: "") {
+                self[keyPath: keyPath] = SIMD3(value.x, value.y, value.z)
+            }
+        }
         let config = WPEParityLightConfig(general: document.resolvedGeneralJSON)
         let degrees = Float.pi / 180
-        for light in document.lightObjects where light.visible {
+        for light in document.lightObjects where state?.isVisible(light.id) ?? light.visible {
+            func scalar(_ name: String, _ fallback: Double) -> Float {
+                if case let .vector(value)? = state?.scriptField(name, of: light.id) {
+                    return value.x
+                }
+                return Float(fallback)
+            }
             let world = transforms.world(light.id)
-            let color = SIMD4(SIMD3<Float>(light.color) * Float(light.intensity), Float(light.radius))
+            let liveColor = state?.object(light.id)?.color ?? SIMD3<Float>(light.color)
+            let color = SIMD4(liveColor * scalar("intensity", light.intensity), scalar("radius", light.radius))
             let origin = SIMD3(world.columns.3.x, world.columns.3.y, world.columns.3.z)
             let axis = SIMD3(world.columns.0.x, world.columns.0.y, world.columns.0.z)
+            let exponent = scalar("exponent", light.exponent)
             switch light.type {
             case .point where pointColor.count < config.point:
                 pointColor.append(color)
-                pointOrigin.append(SIMD4(origin, Float(light.exponent)))
+                pointOrigin.append(SIMD4(origin, exponent))
             case .spot where spotColor.count < config.spot:
                 spotColor.append(color)
-                spotOrigin.append(SIMD4(origin, cos(Float(light.innerConeDegrees) * degrees)))
-                spotDirection.append(SIMD4(axis, cos(Float(light.outerConeDegrees) * degrees)))
-                spotExponent.append(SIMD4(Float(light.exponent), 0, 0, 0))
+                spotOrigin.append(SIMD4(origin, cos(scalar("innercone", light.innerConeDegrees) * degrees)))
+                spotDirection.append(SIMD4(axis, cos(scalar("outercone", light.outerConeDegrees) * degrees)))
+                spotExponent.append(SIMD4(exponent, 0, 0, 0))
             case .directional where directionalColor.count < config.directional:
                 directionalColor.append(SIMD4(color.x, color.y, color.z, 1))
                 directionalDirection.append(-axis)

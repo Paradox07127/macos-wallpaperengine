@@ -97,6 +97,30 @@ public struct WPEParityLayerTransformSet: Sendable {
         layers[id]?.scale = scale
     }
 
+    /// Descriptor fields with no native transform-dirty hook still affect the draw's V/P. The frame owner calls
+    /// this when scriptFieldsGeneration changes; unchanged values leave the placement alone.
+    @discardableResult
+    public mutating func applyFields(state: WPEParitySceneState) -> Bool {
+        var changed = false
+        for id in layers.keys {
+            if case let .vector(value)? = state.scriptField("parallaxDepth", of: id) {
+                let depth = SIMD2(value.x, value.y)
+                if layers[id]?.parallaxDepth != depth {
+                    layers[id]?.parallaxDepth = depth
+                    changed = true
+                }
+            }
+            if case let .vector(value)? = state.scriptField("perspective", of: id) {
+                let perspective = value.x != 0
+                if layers[id]?.perspective != perspective {
+                    layers[id]?.perspective = perspective
+                    changed = true
+                }
+            }
+        }
+        return changed
+    }
+
     /// Recomputes every world matrix from the current local transforms, parents on the left. `boneWorlds` gives a
     /// puppet parent's bone worlds for this frame (`WPEParityPuppetAnimator.boneWorld`); attachments to a parent it
     /// has none for use the rest pose. WPE recomputes attached worlds every frame (R24 Q4).

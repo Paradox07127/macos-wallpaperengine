@@ -24,6 +24,9 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertEqual(object.kind, .image)
         let puppet = try XCTUnwrap(object.puppet)
         XCTAssertEqual(puppet.vertices.count, 3)
+        XCTAssertEqual(puppet.vertexStream?.vertexCount, 3)
+        XCTAssertEqual(puppet.vertexStream?.layout.stride, 52)
+        XCTAssertEqual(puppet.vertexStream?.data.count, 156)
         XCTAssertEqual(puppet.indices, [0, 1, 2])
         XCTAssertEqual(puppet.vertices[1].skinBlendIndices, SIMD4(1, 0, 0, 0))
         XCTAssertEqual(puppet.boneCount, 2)
@@ -70,6 +73,35 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertEqual(final.source?.combos["BONECOUNT"], 2)
         XCTAssertNil(final.source?.combos["SKINNING_ALPHA"])
         XCTAssertNil(final.source?.combos["MORPHING"])
+    }
+
+    func testClipColorRoleReachesProgramBindingWithNonWhiteHalfAlpha() throws {
+        for composite in [false, true] {
+            var layer = D.layer(json: ["color": "0.2 0.4 0.6", "alpha": 0.5],
+                                effects: composite ? [D.effect(passes: [D.pass("fx")])] : [])
+            layer.model["puppet"] = "models/7_puppet.mdl"
+            let scene = try D.programScene([layer], binaries: ["models/7_puppet.mdl": Self.skinnedMDL(boneCount: 2)])
+            XCTAssertEqual(scene.layerColors["7"], SIMD4(0.2, 0.4, 0.6, 0.5))
+            var description = scene.scene
+            let original = try XCTUnwrap(description.objects[0].puppet)
+            description.objects[0].puppet = WPEParityScenePuppet(
+                vertices: original.vertices, indices: original.indices, boneCount: original.boneCount, skinned: true,
+                parts: [.init(id: 0, start: 0, count: 3), .init(id: 1, start: 0, count: 3)],
+                clipGroups: [.init(clipped: [1], mask: [0], maskTexture: "mask")], vertexStream: original.vertexStream
+            )
+            let frame = try WPEParityFrameComposer.compose(scene: description, post: scene.postProcess, frameIndex: 0)
+            let (index, target) = try sceneDraw(frame, "7/clip1/target")
+            XCTAssertEqual(target.colorRole, composite ? .compositePublish : .albedo)
+            let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene,
+                                                                         description: description)[index])
+            XCTAssertEqual(binding.layerColorObjectID, composite ? nil : "7",
+                           "native bit4 publish resets layer colour/alpha after its FBO fill")
+            if composite {
+                let (fill, _) = try sceneDraw(frame, "7/albedo")
+                XCTAssertEqual(WPEParityProgramBuilder.bindings(frame: frame, scene: scene,
+                                                                description: description)[fill]?.layerColorObjectID, "7")
+            }
+        }
     }
 
     /// Workshop 2370640409: layers 43 (no effect), 47 and 51 (opacity effect) are skinned puppets.

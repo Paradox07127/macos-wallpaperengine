@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
+import simd
 
 public protocol WPESceneTransformScriptResolving {
     func resolveVec3(
@@ -414,7 +415,7 @@ public enum WPESceneDocumentParser {
                 ))
             }
 
-            if resolution.primary == .unknown {
+            if resolution.primary == .unknown, !(entry["camera"] is String) {
                 let type = resolution.explicitType ?? "missing"
                 diagnostics.append(.init(severity: .info, message: "Object type \(type) is unsupported by the current renderer"))
             }
@@ -514,10 +515,16 @@ public enum WPESceneDocumentParser {
         }
         let authoredType = nonEmptyString(dict["light"])?.lowercased() ?? "point"
         let type: WPESceneLightType = switch authoredType {
-        case "point", "lpoint": .point
-        case "spot", "lspot": .spot
-        case "directional", "ldirectional": .directional
+        // 14025da80 distinguishes point (5) from shader lpoint (0). H08 confirms these registered shader-light
+        // strings after load; plain-name aliases are not registered and must not create g_L* slots.
+        case "lpoint": .point
+        case "lspot": .spot
+        case "ldirectional": .directional
         default: .unknown(authoredType)
+        }
+        if case .unknown = type {
+            diagnostics.append(.init(severity: .info,
+                                     message: "Light type \(authoredType) has no supported shader-light consumer"))
         }
         let local = localTransform(in: dict)
         var fieldBindings: [String: WPESceneLightFieldBinding] = [:]
@@ -545,26 +552,27 @@ public enum WPESceneDocumentParser {
             localAngles: local.angles,
             parentObjectID: parentID(in: dict),
             parallaxDepth: parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"]),
-            color: parseVector3(dict["color"]) ?? SIMD3<Double>(repeating: 1),
-            radius: parseDouble(dict["radius"]) ?? 1_000,
-            intensity: parseDouble(dict["intensity"]) ?? 1,
+            // Inline native light constructor in 14018ff60.c:203-218.
+            color: parseVector3(dict["color"]) ?? .zero,
+            radius: parseDouble(dict["radius"]) ?? 1,
+            intensity: parseDouble(dict["intensity"]) ?? 0,
             visible: effectiveVisible ?? parseBool(dict["visible"]) ?? true,
             shape: nonEmptyString(dict["shape"]),
             ledSource: parseBool(dict["ledsource"]) ?? false,
             castShadow: parseBool(dict["castshadow"]) ?? false,
             castVolumetrics: parseBool(dict["castvolumetrics"]) ?? false,
-            innerConeDegrees: parseDouble(dict["innercone"]) ?? 0,
-            outerConeDegrees: parseDouble(dict["outercone"]) ?? 0,
+            innerConeDegrees: parseDouble(dict["innercone"]) ?? 20,
+            outerConeDegrees: parseDouble(dict["outercone"]) ?? 30,
             attenuation: parseDouble(dict["attenuation"]) ?? 0,
-            exponent: parseDouble(dict["exponent"]) ?? 1,
-            density: parseDouble(dict["density"]) ?? 1,
+            exponent: parseDouble(dict["exponent"]) ?? 2,
+            density: parseDouble(dict["density"]) ?? 2,
             volumetricsExponent: parseDouble(dict["volumetricsexponent"]) ?? 1,
             lightSourceSize: parseDouble(dict["lightsourcesize"]) ?? 0,
             minimumDistance: parseDouble(dict["mindistance"]) ?? 0,
             cascadeDistances: SIMD3<Double>(
-                parseDouble(dict["cascadedistance0"]) ?? 0,
-                parseDouble(dict["cascadedistance1"]) ?? 0,
-                parseDouble(dict["cascadedistance2"]) ?? 0
+                parseDouble(dict["cascadedistance0"]) ?? 3,
+                parseDouble(dict["cascadedistance1"]) ?? 10,
+                parseDouble(dict["cascadedistance2"]) ?? 100
             ),
             lockTransforms: parseBool(dict["locktransforms"]) ?? false,
             muteInEditor: parseBool(dict["muteineditor"]) ?? false,
@@ -1777,7 +1785,7 @@ public enum WPESceneDocumentParser {
         _ objects: [[String: Any]],
         scriptOrigins: [String: SIMD3<Double>]
     ) -> WPESceneCameraMotion? {
-        guard let entry = objects.last(where: { $0["camera"] is String && (parseBool($0["visible"]) ?? true) }) else { return nil }
+        guard let entry = activeCameraObject(objects) else { return nil }
         let animation = (entry["origin"] as? [String: Any])?["animation"] as? [String: Any]
         let options = animation?["options"] as? [String: Any]
         let parent = options?["parent"] as? [String: Any]
@@ -1812,36 +1820,41 @@ public enum WPESceneDocumentParser {
         _ rawObjects: [[String: Any]],
         scriptOrigins: [String: SIMD3<Double>],
         base: WPESceneCamera,
-        diagnostics: inout [WPESceneDiagnostic]
+        diagnostics _: inout [WPESceneDiagnostic]
     ) -> WPESceneCamera {
-        // The camera contract selects the bottom-most visible camera in authored list
-        // order, which `rawObjects` preserves.
-        guard let entry = rawObjects.last(where: {
-            $0["camera"] is String && (parseBool($0["visible"]) ?? true)
-        }) else { return base }
-        let origin = localTransform(in: entry, scriptOrigins: scriptOrigins).origin
-        var fov = base.fov
-        if let raw = entry["fov"] {
-            if let dict = raw as? [String: Any], let value = parseDouble(dict["value"]) {
-                fov = value
-            } else if let value = parseDouble(raw) {
-                fov = value
-            }
+        guard let entry = activeCameraObject(rawObjects) else { return base }
+        let objects = indexObjectsByID(rawObjects)
+        // Keep the same parent-left Float32 matrix composition as the live parity transform set. Adding Euler
+        // angles or using only a baked origin loses rotated/scaled camera parents (1401891a0.c:85-104).
+        func world(_ object: [String: Any], visiting: Set<String>) -> simd_float4x4 {
+            let id = objectID(in: object) ?? ""
+            let local = localTransform(in: object, scriptOrigins: scriptOrigins)
+            let matrix = WPEParityLayerTransform(id: id, origin: SIMD3(local.origin),
+                                                 angles: SIMD3(local.angles), scale: SIMD3(local.scale)).local
+            guard let parent = parentID(in: object), parent != id, !visiting.contains(parent), let inherited = objects[parent]
+            else { return matrix }
+            return world(inherited, visiting: visiting.union([id])) * matrix
         }
-        if parseVector3(entry["angles"]) != nil {
-            diagnostics.append(.init(
-                severity: .warning,
-                message: "Camera object orientation is consumed by native 2D geometry; perspective/depth contracts remain unverified"
-            ))
-        }
+        let matrix = world(entry, visiting: [])
+        let eye = SIMD3<Double>(Double(matrix.columns.3.x), Double(matrix.columns.3.y), Double(matrix.columns.3.z))
+        let forward = SIMD3<Double>(Double(matrix.columns.2.x), Double(matrix.columns.2.y), Double(matrix.columns.2.z))
+        let up = SIMD3<Double>(Double(matrix.columns.1.x), Double(matrix.columns.1.y), Double(matrix.columns.1.z))
         return WPESceneCamera(
-            center: origin + SIMD3<Double>(0, 0, -1),
-            eye: origin,
-            up: SIMD3<Double>(0, 1, 0),
+            center: eye - forward,
+            eye: eye,
+            up: up,
             nearZ: base.nearZ,
             farZ: base.farZ,
-            fov: fov
+            fov: entry["fov"].flatMap(cameraDouble) ?? 50
         )
+    }
+
+    /// The same native selection used during live playback, including hidden non-renderable ancestors.
+    private static func activeCameraObject(_ objects: [[String: Any]]) -> [String: Any]? {
+        let visibility = resolvedObjectVisibility(indexObjectsByID(objects))
+        return objects.last {
+            $0["camera"] is String && (objectID(in: $0).flatMap { visibility[$0] } ?? (parseBool($0["visible"]) ?? true))
+        }
     }
 
     // MARK: - General

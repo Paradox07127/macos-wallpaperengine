@@ -2,10 +2,8 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import Testing
 
-/// Regression: MDLV0021 multi-mesh puppets can carry a channel-map companion mesh whose
-/// vertex flags declare UV2 (0x20) without UV (0x8). The file still stores texcoords —
-/// UV is emitted whenever either texcoord flag is set — so its 44-byte vertices must
-/// parse instead of failing `vertexByteCount % stride`.
+/// MDLV0021's flag 0x20 is native TEXCOORD0 float4 (not a second semantic). Its last two components and the
+/// independent optional companion block both survive parsing without assigning the latter unproved semantics.
 @Suite("WPEMdlParser UV2-implied UV")
 struct WPEMdlParserUV2ImpliedUVTests {
     @Test("UV2-only mesh keeps texcoords in the vertex layout")
@@ -19,9 +17,25 @@ struct WPEMdlParserUV2ImpliedUVTests {
         #expect(channelMap.indices == [0, 1, 2, 2, 3, 0])
         #expect(channelMap.vertices[0].uv == SIMD2<Float>(0, 0))
         #expect(channelMap.vertices[2].uv == SIMD2<Float>(1, 1))
+        let attribute = try #require(channelMap.vertexStream?.layout.attributes(semantic: "TEXCOORD", index: 0).first)
+        #expect(attribute.componentCount == 4)
     }
 
-    private func twoMeshMDLV21() -> Data {
+    @Test("The optional companion block retains its own header and bytes")
+    func companionPayloadRemainsIndependent() throws {
+        let model = try WPEMdlParser.parse(data: twoMeshMDLV21(includeCompanion: true))
+        let mesh = model.meshes[1]
+        let companion = try #require(mesh.companion)
+        #expect(companion.hasPayload == 1)
+        #expect(companion.headerWord == 0x1234)
+        #expect(companion.headerByte == 7)
+        #expect(companion.declaredByteCount == 48)
+        #expect(companion.data == Data((0 ..< 48).map(UInt8.init)))
+        #expect(mesh.vertexStream?.layout.stride == 44)
+        #expect(mesh.vertexStream?.layout.attributes(semantic: "TEXCOORD", index: 1).isEmpty == true)
+    }
+
+    private func twoMeshMDLV21(includeCompanion: Bool = false) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0021".utf8))
         data.append(UInt8(0))
@@ -54,7 +68,7 @@ struct WPEMdlParserUV2ImpliedUVTests {
         data.append(UInt8(0)) // uv2 marker
         data.append(UInt8(0)) // hasParts
 
-        // Mesh 1: channel-map quad — flags 0x00800021 (uv2 + skinBlendIndices, no uv).
+        // Mesh 1: flags 0x00800021 (POSITION0, BLENDINDICES0, TEXCOORD0 float4).
         data.appendCString("materials/b.json")
         data.appendLE(UInt32(2)) // flagA
         data.appendLE(UInt32(1)) // flagA payload
@@ -82,7 +96,15 @@ struct WPEMdlParserUV2ImpliedUVTests {
         for i in [UInt16(0), 1, 2, 2, 3, 0] {
             data.appendLE(i)
         }
-        data.append(UInt8(0)) // uv2 marker
+        if includeCompanion {
+            data.append(contentsOf: [1, 1]) // companion marker and payload present
+            data.appendLE(UInt16(0x1234))
+            data.append(UInt8(7))
+            data.appendLE(UInt32(48))
+            data.append(contentsOf: (0 ..< 48).map(UInt8.init))
+        } else {
+            data.append(UInt8(0))
+        }
         data.append(UInt8(0)) // hasParts
 
         return data

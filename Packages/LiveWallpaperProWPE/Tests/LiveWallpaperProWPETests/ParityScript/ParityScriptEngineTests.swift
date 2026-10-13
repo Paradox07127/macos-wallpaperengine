@@ -3,6 +3,35 @@ import LiveWallpaperProWPE
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testLightAndCameraModuleGettersUseFactoryDefaultsAndTypedWrites() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100}},
+         "objects":[
+          {"id":1,"light":"lpoint","intensity":{"script":"const sum = thisObject.color.x + thisObject.intensity + thisObject.radius + thisObject.exponent + thisObject.innercone + thisObject.outercone; if (!thisObject.solid || thisObject.parallaxDepth.x !== 1 || thisObject.parallaxDepth.y !== 1) throw new Error('native defaults'); export function init(v) { thisObject.color = new Vec3(0.25, 0.5, 1); return sum; }"}},
+          {"id":2,"camera":"camera","visible":false,"zoom":{"script":"const fov = thisObject.fov; export function init(v) { return fov; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        // Fixed shipped helper, SHA256 708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294.
+        // Kept outside the test target's source directory; this guard needs no installed Steam assets.
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+                path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+            }]),
+            canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("intensity", of: "1"), .vector(SIMD4(53, 0, 0, 0)))
+        XCTAssertEqual(state.object("1")?.color, SIMD3(0.25, 0.5, 1))
+        XCTAssertEqual(state.scriptField("zoom", of: "2"), .vector(SIMD4(50, 0, 0, 0)))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     static let install = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
 

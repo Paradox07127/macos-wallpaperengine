@@ -263,9 +263,10 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
-    /// 300 frames of Workshop 3448877775 at seed 1: every draw key's batches hashed, simulation, packing and an
-    /// arena-style copy timed apart.
-    func testWorkshopSceneBatchesKeepTheirChecksum() throws {
+    /// Native prewarm does not recursively update event children (14022ebe0 → 140236cd0). The old checksum
+    /// recorded Mac's earlier recursive prewarm/RNG behavior; retain it as a diagnostic, not a native oracle.
+    /// Still parse, advance, pack and copy every batch of Workshop 3448877775 for 300 frames.
+    func testWorkshopScenePrewarmAndBatchesFollowTheOwnerUpdateContract() throws {
         let install = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
         let package = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -284,6 +285,27 @@ final class ParityParticleSceneTests: XCTestCase {
         let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [install])
         var scene = WPEParityParticleScene(document: document, assets: assets, engineFlags: WPEEngineComboFlags(),
                                            seed: 1)
+        do {
+            let shooting = try XCTUnwrap(Self.root(scene, "15706"))
+            XCTAssertEqual(shooting.config.startTime, 9)
+            XCTAssertGreaterThan(shooting.prewarmStepCount, 0)
+            XCTAssertEqual(shooting.simulationTime, 0)
+            XCTAssertEqual(shooting.objectTime, 0)
+            let death = try XCTUnwrap(shooting.config.children.first)
+            XCTAssertEqual(death.trigger, .death)
+            XCTAssertEqual(death.maxCount, 10)
+            XCTAssertEqual(death.config.startTime, 0)
+            XCTAssertEqual(shooting.eventChildren.count, 1)
+            XCTAssertEqual(shooting.eventChildren[0].count, 10)
+            for child in shooting.eventChildren[0] {
+                // The parent has prewarmed past several deaths, but these starttime=0 children have not updated.
+                XCTAssertEqual(child.liveCount, 0)
+                XCTAssertEqual(child.prewarmStepCount, 0)
+                XCTAssertEqual(child.simulationTime, 0)
+                XCTAssertEqual(child.objectTime, 0)
+                XCTAssertTrue(child.emitterStates[0].burstPending)
+            }
+        }
         let visible = document.particleObjects.filter(\.visible)
         let keys = visible.flatMap { particle in
             var diagnostics: [WPEParitySceneDiagnostic] = []
@@ -294,6 +316,7 @@ final class ParityParticleSceneTests: XCTestCase {
         var (simulate, pack, copy) = (Duration.zero, Duration.zero, Duration.zero)
         var arena = [UInt8](repeating: 0, count: 16 << 20)
         var checksum: UInt64 = 0xCBF2_9CE4_8422_2325
+        var vertexCount = 0
         let frames = 300
         for frame in 1 ... frames {
             var contexts: [String: WPEParityParticleFrameContext] = [:]
@@ -303,10 +326,20 @@ final class ParityParticleSceneTests: XCTestCase {
             var start = clock.now
             scene.advance(dt: 1.0 / 60, frames: contexts)
             simulate += clock.now - start
+            if frame == 1 {
+                let shooting = try XCTUnwrap(Self.root(scene, "15706"))
+                for child in shooting.eventChildren[0] {
+                    XCTAssertEqual(child.liveCount, 1, "The first normal owner update emits each pending burst")
+                    XCTAssertEqual(child.age[0], 0)
+                    XCTAssertEqual(child.simulationTime, shooting.objectTime, accuracy: 1e-6)
+                    XCTAssertEqual(child.objectTime, shooting.objectTime)
+                }
+            }
             var offset = 0
             for key in keys {
                 start = clock.now
                 let batches = scene.batches(for: key)
+                vertexCount += batches.reduce(0) { $0 + $1.count }
                 pack += clock.now - start
                 start = clock.now
                 for batch in batches {
@@ -330,7 +363,7 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         print("scene 3448877775: \(keys.count) draw keys, checksum \(checksum); per frame advance \(mean(simulate)) ms, "
             + "batches \(mean(pack)) ms, copy \(mean(copy)) ms")
-        XCTAssertEqual(checksum, 11_516_893_083_052_642_319)
+        XCTAssertGreaterThan(vertexCount, 0, "The real scene must still produce and copy particle batches")
     }
 
     func testChildNamingItsOwnFileIsSkipped() throws {

@@ -554,6 +554,9 @@ public final class WPEParityScriptEngine {
         if document.soundObjects.contains(where: { $0.id == id }) {
             return .sound
         }
+        if document.lightObjects.contains(where: { $0.id == id }) {
+            return .light
+        }
         return .group
     }
 
@@ -1015,6 +1018,13 @@ public final class WPEParityScriptEngine {
 
     private static func fallback(_ descriptor: WPEParityScriptProperty, objectID: String,
                                  document: WPESceneDocument?) -> WPEParitySceneState.ScriptValue? {
+        if descriptor.owner == .object, descriptor.name == "parallaxDepth", let document {
+            let object = document.resolvedObjectsJSON.first { WPEParitySceneAnimations.id($0) == objectID }
+            let raw = object?["parallaxDepth"] ?? object?["parallaxdepth"]
+            let depth = raw.map { components($0["value"] ?? $0) } ?? [1, 1]
+            let x = depth.first ?? 0
+            return .vector(SIMD4(x, depth.count > 1 ? depth[1] : x, 0, 0))
+        }
         if descriptor.owner == .text, let text = document?.textObjects.first(where: { $0.id == objectID }) {
             switch descriptor.name {
             case "text": return .string(text.text)
@@ -1039,6 +1049,8 @@ public final class WPEParityScriptEngine {
             }
         }
         switch (descriptor.owner, descriptor.name) {
+        case (.object, "solid"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.object, "sortorder"): return .integer(0)
         case (.particleInstance, "colorn"):
             let authoredColor = document?.particleObjects.first { $0.id == objectID }?.instanceOverride?.color
             let color = authoredColor.map { SIMD3<Float>($0 / 255) } ?? .one
@@ -1047,7 +1059,15 @@ public final class WPEParityScriptEngine {
             return .vector(SIMD4(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude,
                                  Float.greatestFiniteMagnitude, 0))
         case (.particleInstance, _): return .vector(SIMD4(1, 0, 0, 0))
+        // Camera constructor in 14018ff60.c: fov=0x42480000, zoom=0x3f800000.
+        case (.camera, "fov"): return .vector(SIMD4(50, 0, 0, 0))
         case (.camera, "zoom"): return .vector(SIMD4(1, 0, 0, 0))
+        // Inline light constructor, 14018ff60.c:203-218, before authored descriptor values are loaded.
+        case (.light, "intensity"): return .vector(.zero)
+        case (.light, "radius"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.light, "exponent"): return .vector(SIMD4(2, 0, 0, 0))
+        case (.light, "innercone"): return .vector(SIMD4(20, 0, 0, 0))
+        case (.light, "outercone"): return .vector(SIMD4(30, 0, 0, 0))
         case (.text, "pointsize"): return .vector(SIMD4(32, 0, 0, 0))
         case (.text, "font"): return .string("systemfont_arial")
         case (.text, "padding"): return .vector(SIMD4(32, 32, 0, 0))

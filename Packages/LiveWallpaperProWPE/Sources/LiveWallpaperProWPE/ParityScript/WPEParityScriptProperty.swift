@@ -50,6 +50,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         /// A particle system's instance override object (14024d940).
         case particleInstance
         case camera
+        case light
         case text
         case sound
         /// The IVideoTexture of an image layer (140214050).
@@ -146,6 +147,15 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "zoom", owner: .camera, type: .float),
     ]
 
+    /// Basic shader-light fields (14025da80.c). Native fields have no setter hook; the lighting generation is the
+    /// parity renderer's consumption boundary. Type/shadow/cookie changes need a real resource reclassification.
+    public static let light: [WPEParityScriptProperty] = [
+        WPEParityScriptProperty(name: "color", owner: .light, type: .vec3, target: .object(.color),
+                                invalidation: .lighting),
+    ] + ["intensity", "radius", "exponent", "innercone", "outercone"].map {
+        WPEParityScriptProperty(name: $0, owner: .light, type: .float, invalidation: .lighting)
+    }
+
     /// Text fields whose hook re-lays the text out (R25/dis1.txt:134-135); the alpha/colour group has no hook.
     public static let text: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "alpha", owner: .text, type: .float, target: .object(.alpha)),
@@ -208,6 +218,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
                                                         invalidation: .visibility)] + particleInstance
         case .sound: base + sound
         case .camera: base + [visible] + camera
+        case .light: base + [visible] + light
         case .group: base + [visible]
         }
     }
@@ -276,7 +287,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
 
 /// The descriptor table a layer registers, by the object class the scene JSON names.
 public enum WPEParityScriptLayerKind: Int, Sendable, CaseIterable {
-    case image, text, particle, sound, camera, group
+    case image, text, particle, sound, camera, group, light
 }
 
 extension WPEParitySceneState.ScriptValue {

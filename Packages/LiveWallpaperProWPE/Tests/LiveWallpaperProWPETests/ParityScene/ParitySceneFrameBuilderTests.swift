@@ -4,6 +4,83 @@ import Testing
 private typealias F = ParitySceneFixtures
 private typealias D = ParitySceneDocuments
 
+struct ParityScenePuppetClipContractTests {
+    private let parts = (0 ..< 3).map { WPEPuppetMeshPart(id: UInt32($0), start: $0 * 3, count: 3) }
+
+    @Test func laterParentMaskUsesItsOwnAllocatedSegment() throws {
+        let puppet = WPEParityScenePuppet(vertices: [], indices: Array(0 ... 8), boneCount: 1, skinned: true,
+                                          parts: parts, clipGroups: [
+                                              .init(clipped: [0], mask: [1], maskTexture: "child", parent: 1),
+                                              .init(clipped: [1], mask: [2], maskTexture: "parent"),
+                                          ])
+        try #require(puppet.clipOperations.count == 3)
+        #expect(puppet.clipOperations[0] == .segment(0))
+        #expect(puppet.clipOperations[2] == .clip(group: 1, ancestors: [], segment: 3))
+        guard case let .clip(group, ancestors, segment) = puppet.clipOperations[1] else {
+            Issue.record("Child clipping operation is absent")
+            return
+        }
+        #expect(group == 0)
+        #expect(segment == 1)
+        #expect(ancestors.count == 1)
+        #expect(ancestors.first?.group == 1)
+        #expect(ancestors.first?.segment == 3)
+        #expect(puppet.clipIndices == [6, 7, 8, 3, 4, 5, 0, 1, 2, 6, 7, 8, 3, 4, 5])
+    }
+
+    @Test func unchangedPartOrderKeepsClipGenerationAndStableSegments() {
+        var puppet = WPEParityScenePuppet(vertices: [], indices: Array(0 ... 8), boneCount: 1, skinned: true,
+                                          parts: parts, clipGroups: [.init(clipped: [1], mask: [0], maskTexture: "mask")])
+        let unchanged = puppet.setPartOrder([0, 1, 2])
+        #expect(!unchanged)
+        #expect(puppet.clipGeneration == 0)
+        let reordered = puppet.setPartOrder([2, 0, 1])
+        #expect(reordered)
+        #expect(puppet.clipGeneration == 1)
+        #expect(puppet.clipIndices == [6, 7, 8, 0, 1, 2, 0, 1, 2, 3, 4, 5])
+        let segments = puppet.clipSegments
+        let normalizedUnchanged = puppet.setPartOrder([2, 2, -1, 0])
+        #expect(!normalizedUnchanged)
+        #expect(puppet.partOrder == [2, 0, 1])
+        #expect(puppet.clipSegments == segments)
+        #expect(puppet.clipGeneration == 1)
+    }
+
+    @Test func clipTargetInheritsDirectOrCompositePublishColorRole() throws {
+        for composite in [false, true] {
+            for clipped in [false, true] {
+                var object = F.layer(effects: composite ? [F.effect("fx")] : [])
+                object.material = .init(materialPath: "materials/shared.json")
+                object.puppetForcesComposite = composite
+                object.puppet = WPEParityScenePuppet(vertices: [], indices: [0, 1, 2, 3, 4, 5],
+                                                     boneCount: 1, skinned: true, parts: Array(parts.prefix(2)),
+                                                     clipGroups: clipped ? [.init(clipped: [1], mask: [0], flags: 3,
+                                                                                  maskTexture: "mask")] : [])
+                let frame = WPEParitySceneFrameBuilder.build(F.scene([object]))
+                let pass = clipped ? "L/clip1/target" : composite ? "L/passthrough4" : "L/albedo"
+                let target = try #require(frame.draws[WPEPassIdentity(pass)])
+                #expect(target.colorRole == (composite ? .compositePublish : .albedo))
+                #expect(target.colorRole.usesLayerColor == !composite)
+                if composite {
+                    #expect(frame.draws["L/albedo"]?.colorRole == .compositeFill)
+                }
+                if clipped {
+                    #expect(target.blend == .additive)
+                    #expect(frame.draws["L/clip1/mask0"]?.colorRole == .mask)
+                    #expect(frame.draws["L/clip1/mask0"]?.clipMaskInverted == true)
+                    #expect(frame.operations.contains { operation in
+                        if case let .clearColor(view, color) = operation.kind,
+                           view.resource == WPEParitySceneResource.fullAlphaMask {
+                            return color == WPEClearColor(red: 1, green: 1, blue: 1, alpha: 1)
+                        }
+                        return false
+                    })
+                }
+            }
+        }
+    }
+}
+
 struct ParitySceneFrameStructureTests {
     @Test func reportSequenceAWithFullFrameRead() {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2", readsFullFrameBuffer: true)])])

@@ -114,10 +114,16 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
     /// its FBO size, which WPE writes into the layer size (140258900.c:12-38).
     public static func textLayers(document: WPESceneDocument, sizes: [String: SIMD2<Float>] = [:]) -> [Self] {
         let attachments = attachmentNames(document)
+        let perspective = Dictionary(document.resolvedObjectsJSON.compactMap { object -> (String, Bool)? in
+            guard let id = WPEParitySceneAnimations.id(object) else { return nil }
+            let raw = object["perspective"]
+            return (id, WPEParityProgramScene.flag(raw?["value"] ?? raw))
+        }) { _, last in last }
         return document.textObjects.map { text in
             Self(id: text.id, parentID: text.parentObjectID, origin: SIMD3(text.localOrigin ?? text.origin),
                  angles: SIMD3(text.localAngles ?? text.angles), scale: SIMD3(text.localScale ?? text.scale),
                  size: sizes[text.id] ?? .zero, parallaxDepth: SIMD2(text.parallaxDepth),
+                 perspective: perspective[text.id] ?? false,
                  attachment: attachments[text.id])
         }
     }

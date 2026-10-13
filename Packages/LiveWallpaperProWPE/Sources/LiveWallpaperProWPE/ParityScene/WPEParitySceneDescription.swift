@@ -147,7 +147,12 @@ public struct WPEParitySceneText: Hashable, Sendable {
 /// Mesh0 of an image layer's model JSON `"puppet"` (FUN_1401fbae0): positions go straight into the layer MVP.
 public struct WPEParityScenePuppet: Hashable, Sendable {
     public var vertices: [WPEPuppetVertex]
+    public let vertexStream: WPEPuppetVertexStream?
     public var indices: [UInt16]
+    public let parts: [WPEPuppetMeshPart]
+    /// Stable part-table indices, supplied by the animation sort consumer when its order actually changes.
+    public private(set) var partOrder: [Int]
+    public private(set) var clipGeneration: UInt64 = 0
     /// MDLS bone count; BONECOUNT and the length of `g_Bones`.
     public var boneCount: Int
     /// FUN_1402076e0: mesh0's format has bone indices (0x800000) and the model has bones.
@@ -165,9 +170,12 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
 
     public init(vertices: [WPEPuppetVertex], indices: [UInt16], boneCount: Int, skinned: Bool,
                 blendMeshIndex: Int? = nil, parts: [WPEPuppetMeshPart] = [],
-                clipGroups: [WPEParityPuppetClipGroup] = []) {
+                clipGroups: [WPEParityPuppetClipGroup] = [], vertexStream: WPEPuppetVertexStream? = nil) {
         self.vertices = vertices
+        self.vertexStream = vertexStream
         self.indices = indices
+        self.parts = parts
+        partOrder = Array(parts.indices)
         self.boneCount = boneCount
         self.skinned = skinned
         self.blendMeshIndex = blendMeshIndex
@@ -175,18 +183,39 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices)
     }
 
+    /// Rebuild only when the sorted order changes. Invalid/duplicate entries are ignored and unauthored entries
+    /// keep their original relative order; no per-frame vertex stream or shader rebuild is required.
+    @discardableResult
+    public mutating func setPartOrder(_ order: [Int]) -> Bool {
+        let order = Self.normalizedPartOrder(order, count: parts.count)
+        guard order != partOrder else { return false }
+        partOrder = order
+        (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices,
+                                                                    partOrder: order)
+        clipGeneration &+= 1
+        return true
+    }
+
+    private static func normalizedPartOrder(_ order: [Int], count: Int) -> [Int] {
+        var seen: Set<Int> = []
+        let accepted = order.filter { (0 ..< count).contains($0) && seen.insert($0).inserted }
+        return accepted + (0 ..< count).filter { !seen.contains($0) }
+    }
+
     /// FUN_14020b720 over the part table in file order, which is the draw order while no animation reorders it
     /// (1401fdf90.c:4434-4470). A segment concatenates the index ranges of its parts (14020c710).
-    static func clipPlan(parts: [WPEPuppetMeshPart], groups: [WPEParityPuppetClipGroup], indices: [UInt16])
+    static func clipPlan(parts: [WPEPuppetMeshPart], groups: [WPEParityPuppetClipGroup], indices: [UInt16],
+                         partOrder: [Int]? = nil)
         -> (indices: [UInt16], segments: [Range<Int>], operations: [WPEParityPuppetClipOperation]) {
         guard !groups.isEmpty else { return ([], [], []) }
+        let order = normalizedPartOrder(partOrder ?? Array(parts.indices), count: parts.count)
         // 14020ae00.c:289-314: bit0 clipped, bit2 clipped in a group with flag 8, bit3 mask part.
         var partFlags = [UInt32](repeating: 0, count: parts.count)
         for group in groups {
-            for part in group.clipped {
+            for part in group.clipped where parts.indices.contains(part) {
                 partFlags[part] |= group.flags & 8 != 0 ? 5 : 1
             }
-            for part in group.mask {
+            for part in group.mask where parts.indices.contains(part) {
                 partFlags[part] |= 8
             }
         }
@@ -203,15 +232,15 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         var hidden: Set<Int> = []
         for (index, group) in groups.enumerated() {
             var record = Record(group: index)
-            for part in parts.indices {
+            for (position, part) in order.enumerated() {
                 if group.clipped.contains(part) {
                     record.clipped.append(part)
-                    record.firstClipped = min(record.firstClipped, part)
+                    record.firstClipped = min(record.firstClipped, position)
                     groupOfPart[part] = index
                 }
                 if group.mask.contains(part) {
-                    record.firstMask = record.firstMask < 0 ? part : record.firstMask
-                    record.lastMask = part
+                    record.firstMask = record.firstMask < 0 ? position : record.firstMask
+                    record.lastMask = position
                     if group.flags & 4 != 0 {
                         hidden.insert(part)
                     }
@@ -219,12 +248,13 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
             }
             // The mask draws every part between the first and last mask part that the group does not clip.
             record.maskSegment = record.firstMask < 0 ? []
-                : (record.firstMask ... record.lastMask).filter { !record.clipped.contains($0) }
+                : order[record.firstMask ... record.lastMask].filter { !record.clipped.contains($0) }
             records.append(record)
         }
         for index in records.indices {
             var parent = groups[index].parent
-            while let ancestor = parent {
+            var seen: Set<Int> = [index]
+            while let ancestor = parent, groups.indices.contains(ancestor), seen.insert(ancestor).inserted {
                 records[index].lastMask = max(records[index].lastMask, records[ancestor].lastMask)
                 parent = groups[ancestor].parent
             }
@@ -235,7 +265,11 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
 
         var clipIndices: [UInt16] = []
         var segments: [Range<Int>] = []
-        var operations: [WPEParityPuppetClipOperation] = []
+        enum PlannedOperation {
+            case segment(Int)
+            case clip(group: Int, segment: Int)
+        }
+        var planned: [PlannedOperation] = []
         var maskSegments: [Int: Int] = [:]
         var pending: [Int] = []
         func segment(_ list: [Int]) -> Int {
@@ -249,23 +283,17 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         }
         func flush() {
             guard !pending.isEmpty else { return }
-            operations.append(.segment(segment(pending)))
+            planned.append(.segment(segment(pending)))
             pending.removeAll()
         }
         // 14020cab0: the mask segment, the clipped segment, then op 1, or op 2 with each ancestor's mask segment.
         func clip(_ record: Record, _ clipped: [Int]) {
-            var ancestors: [WPEParityPuppetClipOperation.Mask] = []
-            var parent = groups[record.group].parent
-            while let ancestor = parent {
-                ancestors.append(.init(group: ancestor, segment: maskSegments[ancestor] ?? 0))
-                parent = groups[ancestor].parent
-            }
             let mask = segment(record.maskSegment)
             maskSegments[record.group] = mask
             _ = segment(clipped)
-            operations.append(.clip(group: record.group, ancestors: ancestors, segment: mask))
+            planned.append(.clip(group: record.group, segment: mask))
         }
-        for part in parts.indices {
+        for (position, part) in order.enumerated() {
             let flags = partFlags[part]
             if flags & 1 == 0 {
                 if !hidden.contains(part) {
@@ -279,17 +307,51 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
                 // new run at every part of it.
                 guard flags & 4 != 0, let group = groupOfPart[part],
                       let record = records.first(where: { $0.group == group }) else { continue }
-                let run = (part ..< parts.count).prefix { groupOfPart[$0] == group }
+                let run = order[position...].prefix { groupOfPart[$0] == group }
                 flush()
                 clip(record, Array(run))
             } else {
-                for record in records where groups[record.group].flags & 8 == 0 && record.lastMask == part {
+                for record in records where groups[record.group].flags & 8 == 0 && record.lastMask == position {
                     flush()
                     clip(record, record.clipped)
                 }
             }
         }
         flush()
+        // All identities exist before resolving ancestry, including a parent whose clipped operation comes later
+        // (or whose own target is absent). Ancestors consume mask geometry, not the parent's target segment.
+        let usedGroups = planned.compactMap { operation -> Int? in
+            if case let .clip(group, _) = operation {
+                return group
+            }
+            return nil
+        }
+        for group in usedGroups {
+            var parent = groups[group].parent
+            var seen: Set<Int> = [group]
+            while let ancestor = parent, groups.indices.contains(ancestor), seen.insert(ancestor).inserted {
+                if maskSegments[ancestor] == nil, let record = records.first(where: { $0.group == ancestor }) {
+                    maskSegments[ancestor] = segment(record.maskSegment)
+                }
+                parent = groups[ancestor].parent
+            }
+        }
+        let operations: [WPEParityPuppetClipOperation] = planned.map { operation in
+            switch operation {
+            case let .segment(index): return .segment(index)
+            case let .clip(group, index):
+                var ancestors: [WPEParityPuppetClipOperation.Mask] = []
+                var parent = groups[group].parent
+                var seen: Set<Int> = [group]
+                while let ancestor = parent, groups.indices.contains(ancestor), seen.insert(ancestor).inserted {
+                    if let mask = maskSegments[ancestor] {
+                        ancestors.append(.init(group: ancestor, segment: mask))
+                    }
+                    parent = groups[ancestor].parent
+                }
+                return .clip(group: group, ancestors: ancestors, segment: index)
+            }
+        }
         return (clipIndices, segments, operations)
     }
 
@@ -331,11 +393,11 @@ public struct WPEParityPuppetClipGroup: Hashable, Sendable {
     }
 
     /// The parent is the first other group that clips every mask part of this one; a link closing a cycle is dropped
-    /// (140261880.c:540-631). `WPEMdlParser` drops the flags word, so `flags` stays 0.
+    /// (140261880.c:540-631).
     public static func groups(of mesh: WPEPuppetMesh) -> [WPEParityPuppetClipGroup] {
         var groups = mesh.clipGroups.map {
             WPEParityPuppetClipGroup(clipped: $0.targetPartIndices, mask: $0.sourcePartIndices,
-                                     maskTexture: $0.maskName)
+                                     flags: $0.flags, maskTexture: $0.maskName)
         }
         guard groups.count > 1 else { return groups }
         for index in groups.indices where !groups[index].mask.isEmpty {

@@ -247,6 +247,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
 
     /// The scene's railing layer (1266) and one particle object whose only renderer sits in an eventdeath child:
     /// the parent's 0.05 s particles die 1000 times a second, so about 1500 one-particle instances live at once.
+    /// An explicit 2000-instance cap exercises arena pressure independently of the native default cap of 10.
     private static func eventChildFiles(sceneJSON: Data) throws -> [String: Data] {
         var scene = try XCTUnwrap(JSONSerialization.jsonObject(with: sceneJSON) as? [String: Any])
         let objects = try XCTUnwrap(scene["objects"] as? [[String: Any]])
@@ -262,7 +263,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         {"maxcount": 64, "material": "\(material)",
          "emitter": [{"name": "sphererandom", "rate": 1000, "distancemax": 0}],
          "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
-         "children": [{"name": "particles/w35/child.json", "type": "eventdeath"}]}
+         "children": [{"name": "particles/w35/child.json", "type": "eventdeath", "maxcount": 2000}]}
         """
         let child = """
         {"maxcount": 1, "material": "\(material)",

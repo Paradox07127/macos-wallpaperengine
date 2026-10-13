@@ -79,6 +79,10 @@ public struct WPEPuppetMeshBounds: Equatable, Sendable {
 public struct WPEPuppetMesh: Equatable, Sendable {
     public let materialPath: String
     public let vertices: [WPEPuppetVertex]
+    /// Complete immutable authored input; parity shaders consume this instead of legacy typed projections.
+    public let vertexStream: WPEPuppetVertexStream?
+    /// Optional MDLV21 companion bytes. Its shader semantics are not inferred from its old "UV2" label.
+    public let companion: WPEPuppetMeshCompanion?
     /// CPU-side indices are normalized to UInt32. `indexElementWidth` preserves the authored MDL
     /// representation so the Metal upload and draw call use the matching index type.
     public let indices: [UInt32]
@@ -103,12 +107,16 @@ public struct WPEPuppetMesh: Equatable, Sendable {
         clipMaskName: String? = nil,
         clipGroups: [WPEPuppetClipGroup] = [],
         vertexFormat: UInt32 = 0,
-        flags: UInt32 = 0
+        flags: UInt32 = 0,
+        vertexStream: WPEPuppetVertexStream? = nil,
+        companion: WPEPuppetMeshCompanion? = nil
     ) {
         self.vertexFormat = vertexFormat
         self.flags = flags
         self.materialPath = materialPath
         self.vertices = vertices
+        self.vertexStream = vertexStream
+        self.companion = companion
         self.indices = indices
         self.indexElementWidth = indexElementWidth
         self.parts = parts
@@ -122,11 +130,19 @@ public struct WPEPuppetClipGroup: Equatable, Sendable {
     public let maskName: String
     public let sourcePartIndices: [Int]
     public let targetPartIndices: [Int]
+    /// Two identity words before the mask name (native entry +0x0) and the flags word after it (+0x44).
+    public let rawHeader: SIMD3<UInt32>
+    /// 140261880:355–361,525–529 copies the word immediately after the name to entry +0x44.
+    public var flags: UInt32 {
+        rawHeader.z
+    }
 
-    public init(maskName: String, sourcePartIndices: [Int], targetPartIndices: [Int]) {
+    public init(maskName: String, sourcePartIndices: [Int], targetPartIndices: [Int],
+                rawHeader: SIMD3<UInt32> = .zero) {
         self.maskName = maskName
         self.sourcePartIndices = sourcePartIndices
         self.targetPartIndices = targetPartIndices
+        self.rawHeader = rawHeader
     }
 }
 
@@ -1283,7 +1299,8 @@ public enum WPEMdlParser {
         }
         let meshFlags = features.perMeshFlags ? try reader.readUInt32() : headerMeshFlags
         let vertexByteCount = try reader.readUInt32()
-        let vertexStride = Self.vertexStride(for: meshFlags)
+        let vertexLayout = WPEPuppetVertexLayout(format: meshFlags)
+        let vertexStride = vertexLayout.stride
         guard vertexStride > 0, vertexByteCount % UInt32(vertexStride) == 0 else {
             throw WPEMdlParserError.invalidVertexBuffer(byteCount: vertexByteCount, stride: vertexStride)
         }
@@ -1295,6 +1312,7 @@ public enum WPEMdlParser {
         let vertexCount = vertexByteCount / UInt32(vertexStride)
         var vertices: [WPEPuppetVertex] = []
         vertices.reserveCapacity(Int(vertexCount))
+        let vertexStart = reader.currentOffset
 
         for _ in 0..<vertexCount {
             vertices.append(try parseVertex(
@@ -1303,6 +1321,8 @@ public enum WPEMdlParser {
                 reader: &reader
             ))
         }
+        let vertexStream = WPEPuppetVertexStream(data: reader.bytes(in: vertexStart ..< reader.currentOffset),
+                                                 layout: vertexLayout)
 
         let indexByteCount = try reader.readUInt32()
         let indexElementWidth: WPEPuppetIndexElementWidth = features.wideIndices
@@ -1331,13 +1351,14 @@ public enum WPEMdlParser {
             throw WPEMdlParserError.invalidIndexBuffer(indexByteCount)
         }
 
-        let parts = features.partTable
+        let partData = features.partTable
             ? try parseVersion21Parts(
                 vertexCount: Int(vertexCount),
                 auditRecorder: auditRecorder,
                 reader: &reader
             )
-            : []
+            : (parts: [], companion: nil)
+        let parts = partData.parts
 
         // MDLV22+ always stores a mask-count block after each mesh. It must advance the main
         // reader: otherwise a multi-mesh model starts its next mesh four bytes too early.
@@ -1355,7 +1376,9 @@ public enum WPEMdlParser {
             clipMaskName: clipGroups.first?.maskName,
             clipGroups: clipGroups,
             vertexFormat: meshFlags,
-            flags: flagA
+            flags: flagA,
+            vertexStream: vertexStream,
+            companion: partData.companion
         )
         auditRecorder?.endSection(at: reader.currentOffset)
         return mesh
@@ -1373,12 +1396,12 @@ public enum WPEMdlParser {
         var groups: [WPEPuppetClipGroup] = []
         groups.reserveCapacity(Int(groupCount))
         for _ in 0..<groupCount {
-            guard (try? r.readUInt32()) != nil,
-                  (try? r.readUInt32()) != nil,
+            guard let header0 = try? r.readUInt32(),
+                  let header1 = try? r.readUInt32(),
                   let name = try? r.readCString(),
                   !name.isEmpty,
                   name.utf8.count <= 1_024,
-                  (try? r.readUInt32()) != nil,
+                  let header2 = try? r.readUInt32(),
                   let targetCount = try? r.readUInt32(),
                   targetCount <= UInt32(partCount),
                   targetCount <= UInt32((r.dataCount - r.currentOffset) / MemoryLayout<UInt32>.size) else {
@@ -1404,7 +1427,8 @@ public enum WPEMdlParser {
             groups.append(WPEPuppetClipGroup(
                 maskName: name,
                 sourcePartIndices: sources,
-                targetPartIndices: targets
+                targetPartIndices: targets,
+                rawHeader: SIMD3(header0, header1, header2)
             ))
         }
         reader = r
@@ -1473,36 +1497,42 @@ public enum WPEMdlParser {
 
     /// 140261880.c:290-319.
     static func vertexStride(for meshFlags: UInt32) -> Int {
-        let format = WPEMdlMeshFlags.withPosition(meshFlags)
-        return WPEMdlMeshFlags.table.reduce(0) { $0 + (format & $1.flag != 0 ? $1.size : 0) }
+        WPEPuppetVertexLayout(format: meshFlags).stride
     }
 
     private static func parseVersion21Parts(
         vertexCount: Int,
         auditRecorder: WPEMdlParseAuditRecorder?,
         reader: inout WPEMdlBinaryReader
-    ) throws -> [WPEPuppetMeshPart] {
+    ) throws -> (parts: [WPEPuppetMeshPart], companion: WPEPuppetMeshCompanion?) {
         let uv2Marker = try reader.readUInt8()
+        var companion: WPEPuppetMeshCompanion?
         if uv2Marker == 1 {
             let hasUV2Payload = try reader.readUInt8()
             if hasUV2Payload != 0 {
-                try readIgnoredUInt16(reader: &reader, auditRecorder: auditRecorder, label: "MDLV uv2 payload marker")
-                try readIgnoredUInt8(reader: &reader, auditRecorder: auditRecorder, label: "MDLV uv2 payload flag")
+                let headerWord = try reader.readUInt16()
+                let headerByte = try reader.readUInt8()
                 let payloadSize = try reader.readUInt32()
                 let expectedSize = UInt32(vertexCount * 12)
+                let start = reader.currentOffset
                 try skipKnownBytes(
                     byteCount: Int(max(payloadSize, expectedSize)),
                     reader: &reader,
                     auditRecorder: auditRecorder,
                     label: "MDLV uv2 payload"
                 )
+                companion = .init(hasPayload: hasUV2Payload, headerWord: headerWord, headerByte: headerByte,
+                                  declaredByteCount: payloadSize, data: reader.bytes(in: start ..< reader.currentOffset))
+            } else {
+                companion = .init(hasPayload: hasUV2Payload, headerWord: nil, headerByte: nil,
+                                  declaredByteCount: nil, data: Data())
             }
         } else if uv2Marker != 0 {
             throw WPEMdlParserError.unsupportedSectionMarker(uv2Marker)
         }
 
         let hasParts = try reader.readUInt8()
-        guard hasParts != 0 else { return [] }
+        guard hasParts != 0 else { return ([], companion) }
 
         let byteCount = try reader.readUInt32()
         guard byteCount % 16 == 0,
@@ -1519,7 +1549,7 @@ public enum WPEMdlParser {
             let count = try reader.readUInt32()
             parts.append(WPEPuppetMeshPart(id: id, start: Int(start), count: Int(count)))
         }
-        return parts
+        return (parts, companion)
     }
 
     private static func parseSkeletonIfPresent(
@@ -2146,12 +2176,9 @@ private enum WPEMdlMeshFlags {
 
     /// WPE's vertex format table in attribute order (exe 0x140484a20 flags, 0x1404849b0 byte sizes); the input
     /// layout places each set bit at the running sum (1400d7f90.c:81-97).
-    static let table: [(flag: UInt32, size: Int)] = [
-        (0x1, 12), (0x10000, 16), (0x2000000, 12), (0x2, 12), (0x4, 16), (0x800000, 16), (0x1000000, 16),
-        (0x8, 8), (0x10, 12), (0x20, 16), (0x40, 8), (0x80, 12), (0x100, 16), (0x200, 8), (0x400, 12),
-        (0x800, 16), (0x1000, 8), (0x2000, 12), (0x4000, 16), (0x20000, 8), (0x40000, 12), (0x80000, 16),
-        (0x100000, 8), (0x200000, 12), (0x400000, 16), (0x8000, 16),
-    ]
+    static let table: [(flag: UInt32, size: Int)] = WPEPuppetVertexLayout(format: .max).attributes.map {
+        ($0.flag, $0.byteSize)
+    }
 }
 
 public enum WPEMdlParserError: Error, Equatable, Sendable {
@@ -2193,6 +2220,10 @@ private struct WPEMdlBinaryReader {
 
     init(data: Data) {
         self.data = data
+    }
+
+    func bytes(in range: Range<Int>) -> Data {
+        data.subdata(in: range)
     }
 
     mutating func readUInt8() throws -> UInt8 {

@@ -1,4 +1,18 @@
 public struct WPEParitySceneDraw: Hashable, Sendable {
+    /// Engine colour is assigned by the pass's purpose, independently of shader/material identity. In particular,
+    /// the bit4 publish and its clipped targets use white after the composite already consumed the layer colour.
+    public enum ColorRole: Hashable, Sendable {
+        case none
+        case albedo
+        case compositeFill
+        case compositePublish
+        case mask
+
+        public var usesLayerColor: Bool {
+            self == .albedo || self == .compositeFill
+        }
+    }
+
     public enum Geometry: Hashable, Sendable {
         case fullscreenQuad
         /// The layer's own mesh transformed by the layer MVP.
@@ -26,6 +40,9 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let shader: String
     /// Nil when the scene description did not say which material the draw uses.
     public let source: WPEParitySceneMaterialSource?
+    public let colorRole: ColorRole
+    /// The mask draw's flags2 value, also written to native RenderVar+0xa8 (14020d6a0:19–42).
+    public let clipMaskInverted: Bool
     public let reads: [WPEResourceID]
     public let target: WPEResourceID
     public let blend: WPEParitySceneBlend
@@ -53,13 +70,16 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
                 compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
                 fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
-                cullsBackFaces: Bool = false, layerMatrices: Bool = false, multipliesDestination: Bool = false) {
+                cullsBackFaces: Bool = false, layerMatrices: Bool = false, multipliesDestination: Bool = false,
+                colorRole: ColorRole = .none, clipMaskInverted: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
         self.passIndex = passIndex
         self.shader = shader
         self.source = source
+        self.colorRole = colorRole
+        self.clipMaskInverted = clipMaskInverted
         self.reads = reads
         self.target = target
         self.blend = blend

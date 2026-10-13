@@ -99,13 +99,18 @@ final class WPEParityFrameRenderer {
     private let queue: MTLCommandQueue
     private let screen: WPEParityUniformScreen
     /// The scene camera; a camera path pose replaces it for the frame.
+    private let rootCamera: WPEParityCamera
     private var camera: WPEParityCamera
+    private var activeCameraID: String?
     /// The scene's SceneScript engine; nil for a scene without property scripts.
     private(set) var script: WPEParitySceneScript?
     private var seenScriptBloom = 0
     private var seenScriptSound = 0
     private var seenSoundVisibility = -1
-    private var seenScriptLighting = 0
+    private var seenScriptLighting = -1
+    private var seenLightTransforms = -1
+    private var seenLightVisibility = -1
+    private var seenLayerFields = -1
     private var lights: WPEParityUniformLights
     private let generalZoom: Float
     private var cameraPaths: WPEParityCameraPaths
@@ -213,7 +218,7 @@ final class WPEParityFrameRenderer {
 
     /// The camera before the shake: the last frame's path pose, or the scene camera.
     var pathCamera: WPEParityCamera {
-        cameraPose.map { camera.posed($0, generalZoom: generalZoom) } ?? camera
+        camera
     }
 
     var heapBytes: Int {
@@ -372,7 +377,10 @@ final class WPEParityFrameRenderer {
         self.baseArenaBytes = baseArenaBytes
         growsParticleShare = particleArenaBytes == nil
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
-        camera = planner.layers.camera
+        rootCamera = WPEParityCamera.root(document: plan.document,
+                                          renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
+                                          alignment: plan.alignment)
+        camera = rootCamera
         generalZoom = Float(plan.document.general.zoom)
         cameraPaths = plan.scene.cameraPaths
         layers = planner.layers
@@ -433,6 +441,7 @@ final class WPEParityFrameRenderer {
         parallax = previous.parallax
         cameraPaths = previous.cameraPaths
         cameraPose = previous.cameraPose
+        activeCameraID = previous.activeCameraID
         audio = previous.audio
         textureSlots = previous.textureSlots
         renderVars = previous.renderVars
@@ -488,7 +497,7 @@ final class WPEParityFrameRenderer {
         }
         for text in update.texts {
             recordTextDelta(textPipeline.relayoutWithDelta(text))
-            for (name, value) in Self.textFields(text) {
+            for (name, value) in WPEParityTextFields.seed(text) {
                 state.setScriptField(name, of: text.id, to: value, invalidating: .textLayout)
             }
         }
@@ -507,21 +516,33 @@ final class WPEParityFrameRenderer {
         script = nil
     }
 
-    /// The fov and zoom scripts wrote to a camera object; read before this frame's V/P, so a write lands one frame
-    /// after its update ran (R25 §2). Which camera object drives the scene camera is not known; the first one does.
-    private func applyScriptCamera() {
-        guard let id = script?.cameraIDs.first else { return }
-        var changed = false
-        if case let .vector(fov)? = state.scriptField("fov", of: id), fov.x != camera.perspectiveFOV {
-            camera.perspectiveFOV = fov.x
-            changed = true
+    /// Object updates precede camera selection; scripts/animations of this frame affect the next selection.
+    /// The last effectively visible camera owns the world pose. Root paths hold while an object is active.
+    private func selectCamera(dt: Float) {
+        let active = WPEParityCamera.activeObjectID(document: plan.document, state: state)
+        var selected = rootCamera
+        if let active {
+            selected = selected.applyingObject(world: layers.world(active), objectID: active, document: plan.document,
+                                               state: state, generalZoom: generalZoom)
+        } else {
+            cameraPose = cameraPaths.advance(dt: dt)
+            if let pose = cameraPose {
+                selected = selected.posed(pose, generalZoom: generalZoom)
+            }
         }
-        if case let .vector(zoom)? = state.scriptField("zoom", of: id), generalZoom * zoom.x != camera.zoom {
-            camera.zoom = generalZoom * zoom.x
-            changed = true
+        if camera != selected || activeCameraID != active {
+            layersMoved = true
         }
-        // Draws place themselves from the live camera only while the layers count as moved.
-        layersMoved = layersMoved || changed
+        camera = selected
+        activeCameraID = active
+    }
+
+    private func applyLayerFields() {
+        guard seenLayerFields != state.scriptFieldsGeneration else { return }
+        if layers.applyFields(state: state) {
+            layersMoved = true
+        }
+        seenLayerFields = state.scriptFieldsGeneration
     }
 
     /// Bloom strength and threshold scripts wrote, rebuilt after the tick (14017fa70.c:478-481).
@@ -542,20 +563,19 @@ final class WPEParityFrameRenderer {
 
     /// Scene colour terms are consumed after the script tick, before this frame's lighting constants are packed.
     private func applyScriptLighting() {
-        guard state.generation(.lighting) != seenScriptLighting else { return }
-        if case let .vector(value)? = state.scriptField("ambientcolor", of: "") {
-            lights.ambient = SIMD3(value.x, value.y, value.z)
-        }
-        if case let .vector(value)? = state.scriptField("skylightcolor", of: "") {
-            lights.skylight = SIMD3(value.x, value.y, value.z)
-        }
+        guard seenScriptLighting != state.generation(.lighting)
+            || seenLightTransforms != state.transformGeneration || seenLightVisibility != state.visibilityGeneration
+            || layers.hasAttachments else { return }
+        lights = WPEParityUniformLights(document: plan.document, transforms: layers, state: state)
         seenScriptLighting = state.generation(.lighting)
+        seenLightTransforms = state.transformGeneration
+        seenLightVisibility = state.visibilityGeneration
     }
 
     var scriptFieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
         var defaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:]
         for text in planner.texts.values {
-            for (name, value) in Self.textFields(text.object) {
+            for (name, value) in WPEParityTextFields.seed(text.object) {
                 defaults[.init(objectID: text.object.id, name: name)] = value
             }
         }
@@ -591,11 +611,9 @@ final class WPEParityFrameRenderer {
         script.dispatchMedia(state: &state)
     }
 
-    /// The cursor unprojected through the scene camera onto z = 0 (14018e070 mode 0).
+    /// Native viewport-depth .5 unprojection; only an orthographic scene drops the returned Z.
     private func cursorWorld(camera: WPEParityCamera) -> SIMD3<Float> {
-        let ndc = SIMD2(pointer.position.x * 2 - 1, 1 - pointer.position.y * 2)
-        let world = (camera.projection * camera.view).inverse * SIMD4(ndc.x, ndc.y, 0, 1)
-        return SIMD3(world.x, world.y, 0) / (world.w == 0 ? 1 : world.w)
+        camera.cursorWorld(normalizedPointer: pointer.position)
     }
 
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
@@ -623,39 +641,6 @@ final class WPEParityFrameRenderer {
         }
     }
 
-    private static let textStrings: [(String, WritableKeyPath<WPEParityTextObject, String> & Sendable)] = [
-        ("text", \.text), ("font", \.font),
-    ]
-    private static let textScalars: [(String, WritableKeyPath<WPEParityTextObject, Float> & Sendable)] = [
-        ("pointsize", \.pointSize), ("maxwidth", \.maxWidth),
-    ]
-    private static let textVectors: [(String, WritableKeyPath<WPEParityTextObject, SIMD2<Float>> & Sendable)] = [
-        ("padding", \.padding), ("spacing", \.spacing),
-    ]
-    private static let textFlags: [(String, WritableKeyPath<WPEParityTextObject, Bool> & Sendable)] = [
-        ("limitwidth", \.limitWidth), ("limitrows", \.limitRows), ("limituseellipsis", \.limitUseEllipsis),
-    ]
-
-    private static func textFields(_ text: WPEParityTextObject) -> [String: WPEParitySceneState.ScriptValue] {
-        var fields: [String: WPEParitySceneState.ScriptValue] = [:]
-        for (name, key) in textStrings {
-            fields[name] = .string(text[keyPath: key])
-        }
-        for (name, key) in textScalars {
-            fields[name] = .vector(SIMD4(text[keyPath: key], 0, 0, 0))
-        }
-        for (name, key) in textVectors {
-            fields[name] = .vector(SIMD4(text[keyPath: key].x, text[keyPath: key].y, 0, 0))
-        }
-        for (name, key) in textFlags {
-            fields[name] = .vector(SIMD4(text[keyPath: key] ? 1 : 0, 0, 0, 0))
-        }
-        fields["maxrows"] = .integer(Int32(clamping: text.maxRows))
-        fields["horizontalalign"] = .string(String(describing: text.horizontalAlign))
-        fields["verticalalign"] = .string(String(describing: text.verticalAlign))
-        return fields
-    }
-
     /// The native text dirty hook is consumed once; unchanged frames perform no layout or atlas upload.
     private func applyScriptText() {
         let changed = state.generation(.textLayout) != seenScriptText
@@ -664,45 +649,7 @@ final class WPEParityFrameRenderer {
         for current in textPipeline.texts.values {
             var object = current.object
             if changed {
-                for (name, key) in Self.textStrings {
-                    if case let .string(value)? = state.scriptField(name, of: object.id) {
-                        object[keyPath: key] = value
-                    }
-                }
-                for (name, key) in Self.textScalars {
-                    if case let .vector(value)? = state.scriptField(name, of: object.id) {
-                        object[keyPath: key] = value.x
-                    }
-                }
-                for (name, key) in Self.textVectors {
-                    if case let .vector(value)? = state.scriptField(name, of: object.id) {
-                        object[keyPath: key] = SIMD2(value.x, value.y)
-                    }
-                }
-                for (name, key) in Self.textFlags {
-                    if case let .vector(value)? = state.scriptField(name, of: object.id) {
-                        object[keyPath: key] = value.x != 0
-                    }
-                }
-                if case let .integer(value)? = state.scriptField("maxrows", of: object.id) {
-                    object.maxRows = Int(value)
-                }
-                if case let .string(value)? = state.scriptField("horizontalalign", of: object.id) {
-                    switch value {
-                    case "left": object.horizontalAlign = .left
-                    case "right": object.horizontalAlign = .right
-                    case "center": object.horizontalAlign = .center
-                    default: break
-                    }
-                }
-                if case let .string(value)? = state.scriptField("verticalalign", of: object.id) {
-                    switch value {
-                    case "top": object.verticalAlign = .top
-                    case "bottom": object.verticalAlign = .bottom
-                    case "center": object.verticalAlign = .center
-                    default: break
-                    }
-                }
+                object = WPEParityTextFields.applying(to: object, state: state)
             }
             let effects = state.effects.indices.count {
                 state.effects[$0].objectID == object.id && state.effectVisibility[$0]
@@ -762,20 +709,24 @@ final class WPEParityFrameRenderer {
     func encodeFrame(elapsed: Double, paused: Bool = false,
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused)
+        let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
+        let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
+                                             second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
         // Scene time, so a paused clock holds the pose.
         for id in puppets.keys {
             puppets[id]?.advance(dt: Double(clock.frametime))
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
-        applyScriptCamera()
-        cameraPose = cameraPaths.advance(dt: clock.frametime)
+        applyTransforms()
+        applyLayerFields()
+        selectCamera(dt: clock.frametime)
         let fadeAlpha = cameraPaths.fadeAlpha
         let camera = pathCamera.shaken(time: clock.timeUniform)
         particles.beginFrame()
         _ = particles.scene.applyScriptInstanceFields(state: state)
         particles.scene.advance(dt: clock.frametime, frames: Self.particleFrames(
             particleObjects, state: state, layers: layers, camera: camera, time: clock.timeUniform,
-            cursor: pointer.position
+            cursor: pointer.position, timeOfDay: daytime
         ))
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
@@ -787,9 +738,6 @@ final class WPEParityFrameRenderer {
         let silence = [Float](repeating: 0, count: 64)
         audio.advance(left: input.audio?.left ?? silence, right: input.audio?.right ?? silence,
                       dt: clock.frametime, silence: input.audio == nil)
-        let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
-        let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
-                                             second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
         var uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
                                              parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
                                              audio: audio)
@@ -812,6 +760,7 @@ final class WPEParityFrameRenderer {
         }
         videos.applyScriptFields(state: &state)
         applyTransforms()
+        applyLayerFields()
         applyScriptBloom()
         applyScriptLighting()
         uniforms.lights = lights
@@ -852,15 +801,15 @@ final class WPEParityFrameRenderer {
                                                       textures: textures, arena: arena, textureSlots: &textureSlots,
                                                       renderVars: &renderVars, particles: &particles, layers: live)
             } else {
-                renderVars.rv0 = plan.renderVarWrites.rv0 ?? renderVars.rv0
-                renderVars.rv1 = plan.renderVarWrites.rv1 ?? renderVars.rv1
+                plan.applyRenderVarWrites(to: &renderVars)
                 // A colour equal to the loaded one is already in the planned constants.
                 let color = plan.layerColor.map { state.layerColor(at: $0.object) }
                 provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
                                               textureSlots: &textureSlots, puppets: puppets, layers: live,
                                               constants: fade ? fadeConstants
                                                   : postConstants[operation] ?? materialConstants(operation, plan),
-                                              layerColor: color == plan.layerColor?.loaded ? nil : color)]
+                                              layerColor: color == plan.layerColor?.loaded ? nil : color,
+                                              renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0)]
             }
             for index in provided.indices {
                 for (name, texture) in provided[index].textures {
@@ -1173,12 +1122,13 @@ final class WPEParityFrameRenderer {
     /// view-projection and the object's world matrix.
     private static func particleFrames(_ objects: [(id: String, index: Int?)], state: WPEParitySceneState,
                                        layers: WPEParityLayerTransformSet, camera: WPEParityCamera, time: Float,
-                                       cursor: SIMD2<Float>?) -> [String: WPEParityParticleFrameContext] {
+                                       cursor: SIMD2<Float>?, timeOfDay: Float = 0)
+        -> [String: WPEParityParticleFrameContext] {
         let viewProjection = camera.projection * camera.view
         var frames: [String: WPEParityParticleFrameContext] = [:]
         for (id, index) in objects where index.map(state.isVisible(at:)) ?? true {
             frames[id] = WPEParityParticleFrameContext(time: time, cursor: cursor, viewProjection: viewProjection,
-                                                       objectMatrix: layers.world(id))
+                                                       objectMatrix: layers.world(id), timeOfDay: timeOfDay)
         }
         return frames
     }

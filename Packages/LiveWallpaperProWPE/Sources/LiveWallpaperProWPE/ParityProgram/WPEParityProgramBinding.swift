@@ -64,13 +64,9 @@ public extension WPEParityProgramBuilder {
             case let .scene(draw):
                 guard let material = scene.material(for: draw) else { continue }
                 let object = (description ?? scene.scene).objects.first { $0.id == draw.objectID }
-                // 1401e8aa0.c:1092-1095: effect, compose and passthrough draws run with colour and alpha 1.
-                // A puppet's albedo adds skinning combos and clip textures to the layer material.
-                var layerSource = draw.source
-                layerSource?.combos = object?.material?.combos ?? [:]
-                layerSource?.textures = object?.material?.textures ?? [:]
-                let albedo = draw.effectID == nil && layerSource != nil && layerSource == object?.material
-                var layerColor = albedo ? scene.layerColors[draw.objectID] : nil
+                // The producer assigns the native pass role once. Clip targets inherit their albedo/fill role;
+                // masks and composite publication cannot multiply the layer colour a second time.
+                var layerColor = draw.colorRole.usesLayerColor ? scene.layerColors[draw.objectID] : nil
                 var fixedColor = white
                 var atlas: WPEParityProgramBinding.TextureSource?
                 if case let .text(text)? = object?.kind {

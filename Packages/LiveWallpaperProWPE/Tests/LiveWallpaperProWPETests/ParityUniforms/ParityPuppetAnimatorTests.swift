@@ -63,6 +63,32 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         }
     }
 
+    func testDisabledLayerKeepsIdentityCursorAndHotRateBlend() {
+        let disabled = WPESceneAnimationLayer(id: 42, rate: 1, visible: false, blend: 1, animation: 7)
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(frames: 2), layers: [layer(999), disabled])
+        XCTAssertEqual(animator.layers.count, 1)
+        XCTAssertEqual(animator.layers[0].id, 42)
+        XCTAssertEqual(animator.layers[0].sceneIndex, 1)
+        XCTAssertFalse(animator.layers[0].enabled)
+        animator.advance(dt: 0.25)
+        XCTAssertEqual(animator.layers[0].time, 0)
+        assertEqual(animator.palette[1], matrix_identity_float4x4)
+        XCTAssertFalse(animator.updateLayer(at: 0, enabled: true), "missing animations do not shift authored indices")
+        XCTAssertTrue(animator.updateLayer(at: 1, enabled: true, rate: 2))
+        animator.advance(dt: 0.0625)
+        XCTAssertEqual(animator.layers[0].time, 0.125)
+        XCTAssertTrue(animator.updateLayer(at: 1, enabled: false))
+        animator.advance(dt: 0.25)
+        XCTAssertEqual(animator.layers[0].time, 0.125, "disabled playback holds its cursor")
+        XCTAssertTrue(animator.updateLayer(at: 1, enabled: true, rate: 0, blend: 0.5))
+        animator.advance(dt: 0.1)
+        XCTAssertEqual(animator.layers[0].time, 0.125)
+        XCTAssertEqual(animator.layers[0].weight, 0.5)
+        let blended = simd_normalize(rotationZ(0) * 0.5 + rotationZ(.pi / 4) * 0.5)
+        let expected = translation(SIMD3(1, 2, 0)) * simd_float4x4(blended) * translation(SIMD3(-1, -2, 0))
+        assertEqual(animator.palette[1], expected)
+    }
+
     func testChildPaletteFollowsNlerpBetweenKeys() {
         var animator = WPEParityPuppetAnimator(model: rotatingChild(), layers: [layer(7)])
         animator.advance(dt: 0.0625)

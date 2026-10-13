@@ -137,6 +137,7 @@ public struct WPEParitySceneState: Sendable {
     /// Includes fields with no native dirty hook, such as particle instance rate.
     public private(set) var scriptFieldsGeneration = 0
     private var scriptFieldGenerations = [Int](repeating: 0, count: Invalidation.allCases.count)
+    private let lightIDs: Set<String>
     private let indexByID: [String: Int]
     private let parents: [Int?]
     private var passes: [Pass]
@@ -158,6 +159,8 @@ public struct WPEParitySceneState: Sendable {
         let images = Dictionary(document.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         let particles = Dictionary(document.particleObjects.map { ($0.id, $0) }) { first, _ in first }
         let texts = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
+        let lights = Dictionary(document.lightObjects.map { ($0.id, $0) }) { first, _ in first }
+        lightIDs = Set(lights.keys)
         for layer in WPEParityLayerTransform.layers(document: document)
             + WPEParityLayerTransform.textLayers(document: document) {
             var object = Object(origin: layer.origin, scale: layer.scale, angles: layer.angles, alpha: 1, color: .one,
@@ -170,6 +173,8 @@ public struct WPEParitySceneState: Sendable {
                                                                    Float(text.brightness))
             } else if let particle = particles[layer.id] {
                 (object.alpha, object.color) = (Float(particle.alpha), SIMD3(particle.color))
+            } else if let light = lights[layer.id] {
+                object.color = SIMD3(light.color)
             }
             add(layer.id, object)
         }
@@ -283,8 +288,11 @@ public struct WPEParitySceneState: Sendable {
             transformGeneration += 1
         case .alpha:
             objects[index].alpha = value.x
-        case .color:
+        case .color where objects[index].color != xyz:
             objects[index].color = xyz
+            if lightIDs.contains(ids[index]) {
+                scriptFieldGenerations[Invalidation.lighting.rawValue] += 1
+            }
         case .brightness:
             objects[index].brightness = value.x
         case .visible where objects[index].visible != (value.x != 0):

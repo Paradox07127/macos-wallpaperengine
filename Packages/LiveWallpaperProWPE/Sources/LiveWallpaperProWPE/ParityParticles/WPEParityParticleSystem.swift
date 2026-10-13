@@ -128,12 +128,13 @@ public struct WPEParityParticleSystem {
     var ropeTrailBytes: [UInt8] = []
     /// The inputs of the frame being stepped; prewarm steps with the defaults.
     var frameContext = WPEParityParticleFrameContext()
-    /// Control point transforms (translation in column 3) and last frame's translations.
+    /// Control point transforms (translation in column 3) and the previous operator pass's full transforms.
     var controlPoints = Array(repeating: matrix_identity_float4x4, count: WPEParityParticleControlPoint.count)
     /// Local instance bases are rebuilt by the property hook, not by every simulation step.
     var instanceControlPointRotations = Array(repeating: matrix_identity_float4x4,
                                               count: WPEParityParticleControlPoint.count)
-    var previousControlPoints = Array(repeating: SIMD3<Float>.zero, count: WPEParityParticleControlPoint.count)
+    var previousControlPoints = Array(repeating: matrix_identity_float4x4,
+                                      count: WPEParityParticleControlPoint.count)
     var controlPointsSeeded = false
     /// Positions at the start of the operator pass: the path segment controlpointattract tests.
     var previousPosition: [SIMD3<Float>]
@@ -145,9 +146,9 @@ public struct WPEParityParticleSystem {
     var eventChildConstructions = 0
     /// The emitter state `init` built; a hidden reset restores it without drawing (D/14022f6c0.c).
     var builtEmitterStates: [EmitterState] = []
-    /// inst+0x3f0, advanced by every step, prewarm included [I]; remapinitialvalue's particlesystemtime.
+    /// inst+0x3f0, advanced by normal system updates, excluding construction prewarm (1402308a0:60).
     var simulationTime: Float = 0
-    /// Object +0x770: rate-scaled time while shown, zeroed by a hidden reset (140230650.c:21, 64-67); layertime.
+    /// Owner +0x770: the root advances it; children receive that same owner time, including during prewarm.
     public internal(set) var objectTime: Float = 0
     /// The parent slot of an event child (inst+0x478) and what the parent holds there now.
     var parentSlot = -1
@@ -175,10 +176,11 @@ public struct WPEParityParticleSystem {
         config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
         eventOrigin: SIMD3<Float>? = nil, localTransform: simd_float4x4 = matrix_identity_float4x4,
         context: WPEParityParticleFrameContext = .init(), parentSlot: Int = -1,
-        parentSample: WPEParityParticleParentSample? = nil
+        parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0
     ) {
         self.parentSlot = parentSlot
         self.parentSample = parentSample
+        objectTime = ownerTime
         self.config = config
         self.instance = instance
         instanceControlPointRotations = instance.controlPointAngles.map {
@@ -226,7 +228,8 @@ public struct WPEParityParticleSystem {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
                     config: child.config, instance: Instance(), rng: rng, crt: crt,
-                    localTransform: localTransform * Self.translation(child.origin), context: context
+                    localTransform: localTransform * Self.translation(child.origin), context: context,
+                    ownerTime: ownerTime
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -256,12 +259,13 @@ public struct WPEParityParticleSystem {
     /// clearing its slot arrays in place. Event children have no children of their own.
     private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
                                         context: WPEParityParticleFrameContext, parentSlot: Int,
-                                        parentSample: WPEParityParticleParentSample) {
+                                        parentSample: WPEParityParticleParentSample, ownerTime: Float) {
         self.origin = origin
         self.localTransform = localTransform
         self.parentSlot = parentSlot
         self.parentSample = parentSample
         frameContext = context
+        objectTime = ownerTime
         restart(redraw: true)
         prewarm()
     }
@@ -343,7 +347,7 @@ public struct WPEParityParticleSystem {
         clear(&trailCount, to: 0)
         clear(&trailHead, to: 0)
         clear(&controlPoints, to: matrix_identity_float4x4)
-        clear(&previousControlPoints, to: .zero)
+        clear(&previousControlPoints, to: matrix_identity_float4x4)
         controlPointsSeeded = false
         boidsFrame = 0
     }
@@ -441,59 +445,27 @@ public struct WPEParityParticleSystem {
         prewarmStep = capacity < 500 ? 0.05 : 0.2
         var elapsed: Float = 0
         while elapsed < config.startTime {
-            step(dt: prewarmStep)
+            simulate(dt: prewarmStep)
             elapsed += prewarmStep
             prewarmStepCount += 1
         }
     }
 
-    /// age/death → control points → emit → operators, then children after the parent
-    /// (D/140236cd0.c:54-79, 360; D/1402308a0.c:2734-2767).
+    /// The normal update wrapper advances this system's elapsed time and then its children (1402308a0).
     mutating func step(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
         guard dt > 0 else { return }
         simulationTime += dt
-        for slot in 0 ..< highWater where lifetime[slot] != 0 {
-            age[slot] += dt
-            if age[slot] > lifetime[slot] {
-                kill(slot)
-            }
-        }
-        updateControlPoints(parent: parentControlPoints)
-        for index in config.emitters.indices {
-            emit(index, dt: dt)
-        }
-        runOperators(dt: dt)
-        boidsFrame &+= 1
-        pushTrailHistory(dt: dt)
-        for event in pendingEvents {
-            let child = config.children[event.child]
-            let group = childGroup[event.child]
-            let origin = event.position + child.origin
-            let sample = parentSample(slot: event.slot)
-            if let last = finishedEventChildren[group].indices.last {
-                finishedEventChildren[group][last].reuseForEvent(
-                    origin: origin, localTransform: localTransform, context: frameContext, parentSlot: event.slot,
-                    parentSample: sample
-                )
-                eventChildren[group].append(finishedEventChildren[group].removeLast())
-            } else {
-                eventChildConstructions += 1
-                eventChildren[group].append(WPEParityParticleSystem(
-                    config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
-                    rng: rng, crt: crt, eventOrigin: origin,
-                    localTransform: localTransform, context: frameContext, parentSlot: event.slot, parentSample: sample
-                ))
-            }
-        }
-        pendingEvents.removeAll(keepingCapacity: true)
+        simulate(dt: dt, parentControlPoints: parentControlPoints)
         for index in children.indices {
             children[index].frameContext = frameContext
+            children[index].objectTime = objectTime
             children[index].step(dt: dt, parentControlPoints: controlPoints)
         }
         for group in eventChildren.indices {
             for index in eventChildren[group].indices {
                 eventChildren[group][index].parentSample = parentSample(slot: eventChildren[group][index].parentSlot)
                 eventChildren[group][index].frameContext = frameContext
+                eventChildren[group][index].objectTime = objectTime
                 eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
             }
             var index = 0
@@ -504,6 +476,99 @@ public struct WPEParityParticleSystem {
                     index += 1
                 }
             }
+        }
+    }
+
+    /// Construction prewarm calls only this inner simulation: it neither advances system elapsed nor recursively
+    /// updates existing children (14022ebe0:363 → 140236cd0). Death children prewarm before the parent's emit.
+    private mutating func simulate(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
+        guard dt > 0 else { return }
+        for slot in 0 ..< highWater where lifetime[slot] != 0 {
+            age[slot] += dt
+            if age[slot] > lifetime[slot] {
+                kill(slot)
+            }
+        }
+        processDeathEvents()
+        updateControlPoints(parent: parentControlPoints)
+        for index in config.emitters.indices {
+            emit(index, dt: dt)
+        }
+        processSpawnEvents()
+        runOperators(dt: dt)
+        commitControlPointHistory()
+        boidsFrame &+= 1
+        pushTrailHistory(dt: dt)
+    }
+
+    /// The native death CFG has one wrapping 32-bit remaining count shared by all death groups. It checks != 0
+    /// only at the start of a dead parent, and reaching one group's exact max skips that parent's later groups.
+    /// In particular, this deliberately is not a conventional per-group clamp (1402373c8–1402376ce).
+    private mutating func processDeathEvents() {
+        guard !pendingEvents.isEmpty else { return }
+        var remaining: Int32 = 0
+        for (index, child) in config.children.enumerated() where child.trigger == .death {
+            remaining &+= Int32(truncatingIfNeeded: child.maxCount)
+                &- Int32(truncatingIfNeeded: eventChildren[childGroup[index]].count)
+        }
+        var parentSlot = -1
+        var skipParent = false
+        for event in pendingEvents {
+            if event.slot != parentSlot {
+                parentSlot = event.slot
+                skipParent = remaining == 0
+            }
+            guard !skipParent else { continue }
+            let child = config.children[event.child]
+            if rng.unit() <= child.probability {
+                // The old slot still holds its final values; each child's prewarm consumes RNG before emit.
+                spawnEvent(event)
+                remaining &-= 1
+                skipParent = eventChildren[childGroup[event.child]].count
+                    == Int(UInt32(truncatingIfNeeded: child.maxCount))
+            }
+        }
+        pendingEvents.removeAll(keepingCapacity: true)
+    }
+
+    /// Spawn/follow native order is group first, then this emitter pass's births, after all emitters and before
+    /// parent operators (1402378a0:1800–1967). Follow is still excluded by Config pending its lifecycle/IR handoff.
+    private mutating func processSpawnEvents() {
+        guard !pendingEvents.isEmpty else { return }
+        for (index, child) in config.children.enumerated() where child.trigger == .spawn {
+            let group = childGroup[index]
+            let limit = Int(UInt32(truncatingIfNeeded: child.maxCount))
+            guard eventChildren[group].count != limit else { continue }
+            for event in pendingEvents where event.child == index {
+                if rng.unit() <= child.probability {
+                    spawnEvent(event)
+                    if eventChildren[group].count == limit {
+                        break
+                    }
+                }
+            }
+        }
+        pendingEvents.removeAll(keepingCapacity: true)
+    }
+
+    private mutating func spawnEvent(_ event: PendingEvent) {
+        let child = config.children[event.child]
+        let group = childGroup[event.child]
+        let origin = event.position + child.origin
+        let sample = parentSample(slot: event.slot)
+        if let last = finishedEventChildren[group].indices.last {
+            finishedEventChildren[group][last].reuseForEvent(
+                origin: origin, localTransform: localTransform, context: frameContext, parentSlot: event.slot,
+                parentSample: sample, ownerTime: objectTime
+            )
+            eventChildren[group].append(finishedEventChildren[group].removeLast())
+        } else {
+            eventChildConstructions += 1
+            eventChildren[group].append(WPEParityParticleSystem(
+                config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
+                rng: rng, crt: crt, eventOrigin: origin, localTransform: localTransform, context: frameContext,
+                parentSlot: event.slot, parentSample: sample, ownerTime: objectTime
+            ))
         }
     }
 
@@ -534,11 +599,9 @@ public struct WPEParityParticleSystem {
         } else {
             birthTail = previous
         }
-        // eventdeath fires when U ≤ probability (D/140236cd0.c:203-251).
+        // Finish the death list before processing children; their probability draws and prewarm belong before emit.
         for (index, child) in config.children.enumerated() where child.trigger == .death {
-            if rng.unit() <= child.probability {
-                pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
-            }
+            pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
     }
 

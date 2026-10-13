@@ -89,7 +89,7 @@ struct WPEParityParticleChildConfig: Equatable, Sendable {
     var trigger: Trigger
     var origin: SIMD3<Float>
     var probability: Float
-    /// Parsed with WPE's default (D/1401c1430.c:125); R19 has no runtime reader for it yet.
+    /// Native child config +0x70, default 10 (D/1401c1430.c:125); event groups consume this independently of slots.
     var maxCount: Int
     var config: WPEParityParticleConfig
 }

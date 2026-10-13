@@ -291,7 +291,7 @@ extension WPEParityParticleSystem {
         controlPoint: Int, distance: Float, variableStrength: Float, slot: Int, weight: Float, dt: Float
     ) {
         let center = controlPointTranslation(controlPoint)
-        let moved = position[slot] + (center - previousControlPoints[controlPoint])
+        let moved = position[slot] + (center - previousControlPointTranslation(controlPoint))
         let offset = moved - center
         let strength = variableStrength != 0 ? WPEParityParticleMath.saturate(variableStrength * dt) : 1
         let local = controlPointBasis(controlPoint).inverse * offset
@@ -302,7 +302,7 @@ extension WPEParityParticleSystem {
     /// Keeps the particle's place along A0→B0 and its perpendicular offset on the moved segment A→B (S598712-598880).
     mutating func applyMaintainBetween(start: Int, end: Int, slot: Int, weight: Float) {
         let a = controlPointTranslation(start), b = controlPointTranslation(end)
-        let a0 = previousControlPoints[start], b0 = previousControlPoints[end]
+        let a0 = previousControlPointTranslation(start), b0 = previousControlPointTranslation(end)
         let previous = b0 - a0
         guard simd_length_squared(b - a) > 1.42e-14, simd_length_squared(previous) > 1.42e-14 else { return }
         let length = simd_length(previous)

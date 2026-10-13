@@ -1,4 +1,5 @@
 @testable import LiveWallpaperProWPE
+import simd
 import XCTest
 
 final class ParityParticleRemapTests: XCTestCase {
@@ -121,6 +122,62 @@ final class ParityParticleRemapTests: XCTestCase {
            "outputrangemax": 10}
         """, age: 0)
         XCTAssertEqual(particles.size[0], 5, accuracy: 1e-6)
+    }
+
+    func testMissingOutputControlPointOneUsesTheSecondPointForInitialAndOperatorRemap() {
+        for initializer in [true, false] {
+            let component = initializer
+                ? #""initializer": [{"name": "lifetimerandom", "min": 2, "max": 2}, {"name": "remapinitialvalue", "operation": "remap", "inputrangemax": 4, "output": "positionbetweentwocontrolpoints"}]"#
+                : #""initializer": [{"name": "lifetimerandom", "min": 2, "max": 2}], "operator": [{"name": "remapvalue", "operation": "remap", "output": "positionbetweentwocontrolpoints"}]"#
+            var particles = WPEParityParticleSystem(json: Support.json("""
+            {"maxcount": 1,
+             "controlpoint": [{"id": 0, "offset": "2 0 0"}, {"id": 1, "offset": "6 0 0"}],
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             \(component)}
+            """), rng: WPEParityMT19937())
+            particles.advance(dt: 0.001)
+            if !initializer {
+                particles.advance(dt: 0.5)
+            }
+            XCTAssertEqual(particles.position[0].x, initializer ? 4 : 3, accuracy: 1e-6)
+            XCTAssertEqual(particles.position[0].y, 0)
+            XCTAssertEqual(particles.position[0].z, 0)
+        }
+    }
+
+    func testOwnerAndSystemClocksStayDistinctAcrossStaticChildPrewarmAndNormalFrames() {
+        let body = """
+        "maxcount": 4, "starttime": 0.1,
+        "emitter": [{"name": "boxrandom", "rate": 20, "distancemin": "1 1 1", "distancemax": "1 1 1"}],
+        "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                        {"name": "remapinitialvalue", "operation": "remap", "input": "particlesystemtime", "output": "position", "outputcomponent": "x"},
+                        {"name": "remapinitialvalue", "operation": "remap", "input": "layertime", "output": "position", "outputcomponent": "y"},
+                        {"name": "remapinitialvalue", "operation": "remap", "input": "runtime", "output": "position", "outputcomponent": "z"}],
+        "operator": [{"name": "remapvalue", "operation": "remap", "input": "timeofday", "inputrangemax": 86400, "output": "opacity"}]
+        """
+        let child = Support.json("{\(body)}")
+        let config = WPEParityParticleConfig(json: Support.json("""
+        {\(body), "children": [{"name": "child.json", "type": "static"}]}
+        """), is3D: true, resolveChild: { _ in child })
+        var particles = WPEParityParticleSystem(config: config, instance: .init(), rng: WPEParityMT19937(seed: 7),
+                                                crt: WPEParityCRTRandom(), context: .init(time: 7, timeOfDay: 43200))
+        for system in [particles, particles.children[0]] {
+            XCTAssertEqual(system.prewarmStepCount, 2)
+            XCTAssertEqual(system.liveCount, 2, "Parent prewarm must not step the already prewarmed child again")
+            XCTAssertEqual(system.simulationTime, 0)
+            XCTAssertEqual(system.objectTime, 0)
+            XCTAssertEqual(system.position[0], SIMD3(0, 0, 7))
+            XCTAssertEqual(system.alpha[0], 0.5)
+            XCTAssertEqual(system.age[0], 0.05, accuracy: 1e-6)
+        }
+        particles.advance(dt: 0.25, frame: .init(time: 11, timeOfDay: 21600))
+        for system in [particles, particles.children[0]] {
+            XCTAssertEqual(system.simulationTime, 0.25)
+            XCTAssertEqual(system.objectTime, 0.25)
+            XCTAssertEqual(system.liveCount, 4)
+            XCTAssertEqual(system.position[2], SIMD3(0.25, 0.25, 11))
+            XCTAssertEqual(system.alpha[2], 0.25)
+        }
     }
 
     /// remapinitialvalue sine uses CRT sinf on (v·π)·scale − π/2 (full.s 594869-594901).
