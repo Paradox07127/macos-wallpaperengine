@@ -73,24 +73,30 @@ final class ParityTextPipelineTests: XCTestCase {
     }
 
     /// 256 pt NotoSans glyphs fill a 4096² atlas in a few dozen glyphs; a second set that cannot evict the first
-    /// resets it.
-    func testAtlasResetRelaysEveryLayerOnIt() throws {
+    /// resets it. WPE's reset only clears the shelves and marks entries stale, leaving other layers' meshes
+    /// (1401b0410.c:1095-1214), so B keeps UVs into the cleared atlas.
+    func testAtlasResetLeavesOtherLayersAsTheyWere() throws {
         let pipeline = try Self.makePipeline()
         pipeline.add(Self.object("A", "ABCDEFGHIJKLMNOP", pointSize: 256), effectCount: 0)
         pipeline.add(Self.object("B", "ab", pointSize: 256), effectCount: 0)
         pipeline.refreshUVs()
         let key = try XCTUnwrap(pipeline.texts["A"]?.atlasKey)
+        let other = try XCTUnwrap(pipeline.texts["B"])
+        let otherGlyphs = try XCTUnwrap(other.layout.mesh?.mono.glyphKeys)
         var changed: [String] = []
+        var reset = false
         for text in ["QRSTUVWXYZ0123456789", "WMQGOD@%&#$WMQGOD", "mwqgdbhkpyMWQGBDHK"] {
             changed = pipeline.relayout(Self.object("A", text, pointSize: 256))
-            if changed.contains("B") {
+            let atlas = try XCTUnwrap(pipeline.atlases[key]).mono
+            if otherGlyphs.contains(where: { atlas.entry(forKey: $0) == nil }) {
+                reset = true
                 break
             }
         }
-        print("atlas \(key): size \(pipeline.atlases[key]?.mono.width ?? 0), changed \(changed)")
-        XCTAssertEqual(changed, ["A", "B"], "a reset lays out every layer on the atlas")
+        XCTAssertTrue(reset, "the atlas never reset")
+        XCTAssertEqual(changed, ["A"])
+        XCTAssertEqual(pipeline.texts["B"], other)
         try Self.assertUVsMatchAtlas(pipeline, "A")
-        try Self.assertUVsMatchAtlas(pipeline, "B")
     }
 
     func testFrameShapeKeepsTheFBOSizeOnlyThroughAnFBO() throws {

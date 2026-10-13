@@ -50,8 +50,8 @@ public final class WPEParityTextPipeline {
     }
 
     /// The new values of `object`'s layer. A field FUN_140256f20's dirty check covers lays it out again and packs
-    /// the glyphs its atlas lacks; when that resets the atlas, every other layer on it is laid out again too, and
-    /// every layer on an atlas that changed re-reads its UVs. Returns the layers whose values changed, in load order.
+    /// the glyphs its atlas lacks, and every layer on an atlas that changed re-reads its UVs. When that resets the
+    /// atlas, the other layers on it keep their stale UVs, as WPE's do. Returns the changed layers, in load order.
     @discardableResult
     public func relayout(_ object: WPEParityTextObject) -> [String] {
         guard let current = texts[object.id] else { return [] }
@@ -64,18 +64,11 @@ public final class WPEParityTextPipeline {
         }
         let resets = planner.resets
         place(object, effectCount: current.effectCount)
-        var touched: Set = [current.atlasKey]
-        if let key = texts[object.id]?.atlasKey {
-            touched.insert(key)
-            if planner.resets[key] != resets[key] {
-                for id in order where id != object.id && texts[id]?.atlasKey == key {
-                    guard let other = texts[id] else { continue }
-                    place(other.object, effectCount: other.effectCount)
-                }
-            }
-        }
+        let key = texts[object.id]?.atlasKey ?? current.atlasKey
+        let stale = planner.resets[key] != resets[key] ? key : nil
         for id in order {
-            guard var text = texts[id], touched.contains(text.atlasKey) else { continue }
+            guard var text = texts[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
+                  id == object.id || text.atlasKey != stale else { continue }
             planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
             texts[id] = text
         }
