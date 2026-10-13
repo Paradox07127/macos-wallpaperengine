@@ -20,16 +20,9 @@ public struct WPEParityParticleScene {
         let rng = WPEParityMT19937(seed: seed)
         let crt = WPEParityCRTRandom()
         let is3D = !engineFlags.orthographicProjection
-        let resolveMaterial = { (path: String) -> WPEParityParticleMaterial? in
-            WPEParityProgramMaterial(path: path, assets: assets).map {
-                WPEParityParticleMaterial(texture0: $0.textures[0].flatMap(assets.textureHeader(named:)))
-            }
-        }
         for particle in document.particleObjects {
-            let path = particle.particleRelativePath
-            guard let json = assets.json(path) else { continue }
-            let config = WPEParityParticleConfig(json: json, ancestors: [path], eventChild: false, is3D: is3D,
-                                                 resolveChild: assets.json, resolveMaterial: resolveMaterial)
+            guard let config = WPEParityParticleConfig(path: particle.particleRelativePath, assets: assets,
+                                                       is3D: is3D) else { continue }
             var frame = frames[particle.id] ?? WPEParityParticleFrameContext()
             frame.worldSpace = config.flags & 1 != 0
             let instance = WPEParityParticleSystem.Instance(particle.instanceOverride, hdr: engineFlags.hdr)
@@ -77,11 +70,30 @@ public struct WPEParityParticleScene {
         }
     }
 
-    /// A root or static node gives zero or one batch, an event group one per instance with live particles. A
-    /// system with no live particle (rope: fewer than two) gives none, and the caller skips the draw (R22 Q3).
+    /// Renderer and slot facts from the same resolved Config tree as prototypes and simulation, without slots,
+    /// prewarm or RNG. Only the root uses the object's instance override, as in the existing child constructor.
+    public static func prototype(for key: WPEParityParticleDrawKey, document: WPESceneDocument,
+                                 assets: WPEParityProgramAssets) -> WPEParityParticlePrototype? {
+        guard let object = document.particleObjects.first(where: { $0.id == key.objectID }),
+              let root = WPEParityParticleConfig(path: object.particleRelativePath, assets: assets, is3D: false),
+              let config = root.descendant(at: key.path[...]) else { return nil }
+        let instance = WPEParityParticleSystem.Instance(key.path.isEmpty ? object.instanceOverride : nil, hdr: false)
+        return WPEParityParticlePrototype(renderers: config.renderers,
+                                          slotCount: Int((Float(config.maxCount) * instance.count).rounded()))
+    }
+
+    /// Native draw order (1402366f0): own entries, each static child's complete subtree, then each event group's
+    /// instances, completing an instance's subtree before the next. Each actual entry is packed once here.
+    public mutating func drawBatches(for objectID: String) -> [WPEParityParticleDrawBatch] {
+        guard let index = indexByID[objectID] else { return [] }
+        return objects[index].system.drawBatches(objectID: objectID)
+    }
+
+    /// Compatibility lookup for a prototype key. Uses the same traversal/packing as `drawBatches(for:)`, packing
+    /// only matching entries. Product drawing consumes the object API once so renderer keys do not reorder instances.
     public mutating func batches(for key: WPEParityParticleDrawKey) -> [WPEParityParticleVertexBatch] {
         guard let index = indexByID[key.objectID] else { return [] }
-        return objects[index].system.batches(node: key.node[...], renderer: key.renderer, eventGroup: key.eventGroup)
+        return objects[index].system.drawBatches(objectID: key.objectID, matching: key).map(\.vertices)
     }
 
     /// Live particles of the object's systems, children included; nil for an unknown object.
@@ -89,43 +101,79 @@ public struct WPEParityParticleScene {
         indexByID[objectID].map { objects[$0].system.totalLiveCount }
     }
 
-    /// Static-child translations from the object down to `key.node`, so that M = object world × this (R16 Q4);
-    /// event groups use their parent's. Nil when the key names no system.
+    /// Legacy static-path matrix; a terminal event group retains its parent's matrix even when empty. Mixed paths
+    /// through multiple event instances have no single matrix. Product draws use each actual DrawBatch's matrix.
     public func childLocal(for key: WPEParityParticleDrawKey) -> simd_float4x4? {
         guard let index = indexByID[key.objectID] else { return nil }
-        return objects[index].system.localTransform(at: key.node[...])
+        return objects[index].system.localTransform(at: key.path[...])
     }
 }
 
 extension WPEParityParticleSystem {
-    mutating func batches(node: ArraySlice<Int>, renderer: Int, eventGroup: Int?) -> [WPEParityParticleVertexBatch] {
-        if let first = node.first {
-            guard children.indices.contains(first) else { return [] }
-            return children[first].batches(node: node.dropFirst(), renderer: renderer, eventGroup: eventGroup)
-        }
-        guard let eventGroup else {
-            return batch(renderer).map { [$0] } ?? []
-        }
-        guard eventChildren.indices.contains(eventGroup) else { return [] }
-        var batches: [WPEParityParticleVertexBatch] = []
-        for index in eventChildren[eventGroup].indices {
-            if let batch = eventChildren[eventGroup][index].batch(renderer) {
-                batches.append(batch)
-            }
-        }
+    mutating func drawBatches(objectID: String, matching: WPEParityParticleDrawKey? = nil)
+        -> [WPEParityParticleDrawBatch] {
+        var batches: [WPEParityParticleDrawBatch] = []
+        appendDrawBatches(at: WPEParityParticleDrawKey(objectID: objectID, path: [], renderer: 0),
+                          matching: matching, into: &batches)
         return batches
     }
 
-    func localTransform(at node: ArraySlice<Int>) -> simd_float4x4? {
-        guard let first = node.first else { return localTransform }
-        guard children.indices.contains(first) else { return nil }
-        return children[first].localTransform(at: node.dropFirst())
+    private mutating func appendDrawBatches(at node: WPEParityParticleDrawKey,
+                                            matching: WPEParityParticleDrawKey?,
+                                            into batches: inout [WPEParityParticleDrawBatch]) {
+        var mainBatch: WPEParityParticleVertexBatch?
+        for renderer in renderers.indices {
+            var key = node
+            key.renderer = renderer
+            if matching == nil || matching == key, let vertices = batch(renderer, mainBatch: &mainBatch) {
+                batches.append(WPEParityParticleDrawBatch(key: key, vertices: vertices, localTransform: localTransform))
+            }
+        }
+        for index in children.indices {
+            var key = node
+            key.path.append(.staticChild(index))
+            children[index].appendDrawBatches(at: key, matching: matching, into: &batches)
+        }
+        for group in eventChildren.indices {
+            var key = node
+            key.path.append(.eventGroup(group))
+            for index in eventChildren[group].indices {
+                eventChildren[group][index].appendDrawBatches(at: key, matching: matching, into: &batches)
+            }
+        }
     }
 
-    private mutating func batch(_ index: Int) -> WPEParityParticleVertexBatch? {
+    func localTransform(at path: ArraySlice<WPEParityParticlePathElement>) -> simd_float4x4? {
+        guard let first = path.first else { return localTransform }
+        switch first {
+        case let .staticChild(index):
+            guard children.indices.contains(index) else { return nil }
+            return children[index].localTransform(at: path.dropFirst())
+        case let .eventGroup(group):
+            guard eventChildren.indices.contains(group) else { return nil }
+            if path.count == 1 {
+                return localTransform
+            }
+            guard eventChildren[group].count == 1 else { return nil }
+            return eventChildren[group][0].localTransform(at: path.dropFirst())
+        }
+    }
+
+    private mutating func batch(_ index: Int, mainBatch: inout WPEParityParticleVertexBatch?)
+        -> WPEParityParticleVertexBatch? {
         guard renderers.indices.contains(index) else { return nil }
         let renderer = renderers[index]
         guard liveCount > (renderer.kind == .rope ? 1 : 0) else { return nil }
+        if renderer.kind == .sprite || renderer.kind == .spriteTrail {
+            if let mainBatch {
+                return WPEParityParticleVertexBatch(bytes: mainBatch.bytes, stride: mainBatch.stride,
+                                                    count: mainBatch.count,
+                                                    renderVar0: Self.mainRenderVar0(renderer: renderer))
+            }
+            let batch = vertices(for: renderer)
+            mainBatch = batch
+            return batch
+        }
         return vertices(for: renderer)
     }
 }

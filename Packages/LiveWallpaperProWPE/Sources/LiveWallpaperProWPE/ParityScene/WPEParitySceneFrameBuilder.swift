@@ -485,8 +485,7 @@ private struct WPEParitySceneEmitter {
         var snapshotTaken = false
         for entry in particle.draws {
             let key = entry.key
-            let path = key.node.map { "/\($0)" }.joined() + (key.eventGroup.map { "/e\($0)" } ?? "")
-            let identity = WPEPassIdentity("\(object.id)/particle\(path)/r\(key.renderer)")
+            let identity = key.passIdentity
             if entry.readsFullFrameBuffer, !snapshotTaken {
                 snapshot(WPEPassIdentity("\(object.id)/particle/snapshot"))
                 snapshotTaken = true

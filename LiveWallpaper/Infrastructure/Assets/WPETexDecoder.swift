@@ -82,7 +82,7 @@ struct WPETexDecoder: Sendable {
     /// establish a fixed composite extent from their container dimensions.
     func probeStaticImage(span: WPEMappedByteSpan) throws -> WPETexInfo? {
         let parsed = try parse(span: span)
-        guard !parsed.bitmap.isVideoPayload, parsed.bitmap.frames.count == 1,
+        guard !parsed.info.isVolume, !parsed.bitmap.isVideoPayload, parsed.bitmap.frames.count == 1,
               parsed.frameInfo == nil, !parsed.bitmap.usesEncodedImagePayload else { return nil }
         return parsed.info
     }
@@ -151,6 +151,9 @@ struct WPETexDecoder: Sendable {
         do {
             let parsed = try parse(span: span)
 
+            guard !parsed.info.isVolume else {
+                throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+            }
             if let videoPayload = makeVideoPayload(from: parsed) {
                 return .success(WPETexTexturePayload(
                     info: parsed.info,
@@ -170,13 +173,15 @@ struct WPETexDecoder: Sendable {
                 info: parsed.info,
                 scope: scope
             )
-            let animationTrack = try makeAnimationTrack(from: parsed)
+            let animationTrack = try makeAnimationTrack(from: parsed,
+                                                        firstImageMipmaps: scope == .fullChain ? firstFrameMipmaps : nil)
 
             return .success(WPETexTexturePayload(
                 info: parsed.info,
                 mipmaps: firstFrameMipmaps,
                 hasAnimationFrames: parsed.hasAnimationFrames,
-                animationTrack: animationTrack
+                animationTrack: animationTrack,
+                hasConditionalVariants: !parsed.bitmap.conditionalVariants.isEmpty
             ))
         } catch let error as WPETexDecodeError {
             return .failure(error)
@@ -212,7 +217,8 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    private func makeAnimationTrack(from parsed: ParsedTex) throws -> WPETexAnimationTrack? {
+    private func makeAnimationTrack(from parsed: ParsedTex,
+                                    firstImageMipmaps: [WPETexTextureMipmap]? = nil) throws -> WPETexAnimationTrack? {
         let texsFrames = parsed.frameInfo?.frames ?? []
         guard parsed.bitmap.frames.count > 1 || !texsFrames.isEmpty else { return nil }
 
@@ -231,7 +237,7 @@ struct WPETexDecoder: Sendable {
         }
 
         // Share decompressed images across TEXS frames (avoids multi-GB OOM).
-        var mipmapsByImageID: [Int: [WPETexTextureMipmap]] = [:]
+        var mipmapsByImageID: [Int: [WPETexTextureMipmap]] = firstImageMipmaps.map { [0: $0] } ?? [:]
         func mipmaps(for sourceIndex: Int) throws -> [WPETexTextureMipmap] {
             if let cached = mipmapsByImageID[sourceIndex] { return cached }
             let materialized = try normalizedTextureMipmaps(parsed.bitmap.frames[sourceIndex], info: info)
@@ -288,6 +294,9 @@ struct WPETexDecoder: Sendable {
     }
 
     private func makeStreamingPayload(from parsed: ParsedTex) throws -> WPETexStreamingPayload {
+        guard !parsed.info.isVolume else {
+            throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+        }
         guard !parsed.bitmap.isVideoPayload else {
             throw WPETexDecodeError.unsupportedAnimation
         }
@@ -436,10 +445,14 @@ struct WPETexDecoder: Sendable {
     private func parseHeader(span: WPEMappedByteSpan) throws -> WPETexInfo {
         var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
-        guard containerMagic.hasPrefix("TEXV") else {
+        guard containerMagic == "TEXV0004" || containerMagic == "TEXV0005" else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
         }
         let containerVersion = parseTrailingVersion(containerMagic)
+
+        if containerVersion == 4 {
+            return try parseInfoBlock(versionedMagic: "TEXI0000", containerVersion: containerVersion, reader: &reader)
+        }
 
         let infoMagic = try reader.readMagic()
         guard infoMagic.hasPrefix("TEXI") else {
@@ -455,7 +468,7 @@ struct WPETexDecoder: Sendable {
     private func parse(span: WPEMappedByteSpan) throws -> ParsedTex {
         var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
-        guard containerMagic.hasPrefix("TEXV") else {
+        guard containerMagic == "TEXV0004" || containerMagic == "TEXV0005" else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
         }
         let containerVersion = parseTrailingVersion(containerMagic)
@@ -463,6 +476,14 @@ struct WPETexDecoder: Sendable {
         var info: WPETexInfo?
         var bitmap: WPETexBitmapBlock?
         var frameInfo: WPETexFrameInfoBlock?
+
+        // 14015e580:161-163: TEXV4 embeds version-zero info and bitmap records, without TEXI/TEXB tags.
+        if containerVersion == 4 {
+            let legacyInfo = try parseInfoBlock(versionedMagic: "TEXI0000", containerVersion: containerVersion,
+                                                reader: &reader)
+            info = legacyInfo
+            bitmap = try parseBitmapBlock(versionedMagic: "TEXB0000", info: legacyInfo, reader: &reader)
+        }
 
         while !reader.isAtEnd {
             let blockMagic = try reader.readMagic()
@@ -591,11 +612,10 @@ struct WPETexDecoder: Sendable {
         let textureHeight = Int(try reader.readInt32(blockName: "TEXI.textureHeight"))
         let imageWidth = Int(try reader.readInt32(blockName: "TEXI.imageWidth"))
         let imageHeight = Int(try reader.readInt32(blockName: "TEXI.imageHeight"))
-        let unknownInt0 = try reader.readInt32(blockName: "TEXI.unkInt0")
         let flag0x40Extension: WPETexFlag0x40Extension?
         if flags & WPETexInfo.rawExtensionFlag != 0 {
             let sourceStart = reader.cursor
-            let rawValue = try reader.readInt32(blockName: "TEXI.flag0x40Raw")
+            let rawValue = try reader.readInt32(blockName: "TEXI.depth")
             flag0x40Extension = WPETexFlag0x40Extension(
                 rawValue: rawValue,
                 sourceRange: sourceStart..<reader.cursor
@@ -603,18 +623,22 @@ struct WPETexDecoder: Sendable {
         } else {
             flag0x40Extension = nil
         }
+        let unknownInt0: Int32 = if infoVersion > 0 {
+            try reader.readInt32(blockName: "TEXI.unkInt0")
+        } else {
+            0
+        }
 
         let format = WPETexFormat(rawValue: formatCode)
         let info = WPETexInfo(
             containerVersion: containerVersion,
             infoVersion: infoVersion,
-            width: max(textureWidth, 1),
-            height: max(textureHeight, 1),
+            width: textureWidth,
+            height: textureHeight,
             textureFormatCode: formatCode,
             format: format,
             mipmapCount: 0,
             flags: flags,
-            // Dump raw TEXI dims; runtime width/height stay clamped for allocation.
             imageWidth: imageWidth,
             imageHeight: imageHeight,
             unknownInt0: unknownInt0,
@@ -634,7 +658,7 @@ struct WPETexDecoder: Sendable {
         reader: inout WPETexByteReader
     ) throws -> WPETexBitmapBlock {
         let bitmapVersion = parseTrailingVersion(versionedMagic)
-        let imageCount = Int(try reader.readInt32(blockName: "TEXB.imageCount"))
+        let imageCount = try bitmapVersion == 0 ? 1 : Int(reader.readInt32(blockName: "TEXB.imageCount"))
         guard imageCount > 0 && imageCount <= 4_096 else {
             throw WPETexDecodeError.mipmapOutOfBounds(index: imageCount)
         }
@@ -644,7 +668,7 @@ struct WPETexDecoder: Sendable {
         var conditionalVariantCount = 0
         var effectiveBitmapVersion = bitmapVersion
         switch bitmapVersion {
-        case 1, 2:
+        case 0, 1, 2:
             break
         case 3:
             sourceImageFormatCode = Int(try reader.readInt32(blockName: "TEXB.imageFormat"))
@@ -828,6 +852,7 @@ struct WPETexDecoder: Sendable {
 
         let mipWidth = Int(try reader.readInt32(blockName: "TEXB.mipWidth"))
         let mipHeight = Int(try reader.readInt32(blockName: "TEXB.mipHeight"))
+        let mipDepth = try info.isVolume ? Int(reader.readUInt32(blockName: "TEXB.mipDepth")) : 1
         guard mipWidth > 0 && mipHeight > 0 && mipWidth <= info.width && mipHeight <= info.height else {
             throw WPETexDecodeError.invalidDimensions(width: mipWidth, height: mipHeight)
         }
@@ -849,14 +874,19 @@ struct WPETexDecoder: Sendable {
             storedByteCount: storedSize,
             decompressedByteCount: decompressedByteCount,
             payload: payload,
-            isCompressed: compressedFlag != 0,
-            v4Fields: v4Fields
+            isCompressed: compressedFlag & 1 != 0,
+            v4Fields: v4Fields,
+            depth: mipDepth,
+            compressionFlags: compressedFlag
         )
     }
 
     // MARK: - Pixel dispatch
 
     private func makeCGImage(from parsed: ParsedTex) throws -> CGImage {
+        guard !parsed.info.isVolume else {
+            throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+        }
         guard let mip = parsed.bitmap.largestMipmap else {
             throw WPETexDecodeError.missingBitmapBlock
         }
@@ -955,7 +985,7 @@ struct WPETexDecoder: Sendable {
         return try bridgeSingleEncodedImagePayload(parsed)
     }
 
-    private func rgba8888Info(from source: WPETexInfo, width: Int, height: Int) -> WPETexInfo {
+    private func rgba8888Info(from source: WPETexInfo, width: Int, height: Int, mipmapCount: Int) -> WPETexInfo {
         WPETexInfo(
             containerVersion: source.containerVersion,
             infoVersion: source.infoVersion,
@@ -963,7 +993,7 @@ struct WPETexDecoder: Sendable {
             height: height,
             textureFormatCode: WPETexFormat.rgba8888.rawValue,
             format: .rgba8888,
-            mipmapCount: 1,
+            mipmapCount: mipmapCount,
             flags: source.flags,
             imageWidth: source.imageWidth,
             imageHeight: source.imageHeight,
@@ -973,18 +1003,15 @@ struct WPETexDecoder: Sendable {
     }
 
     private func bridgeSingleEncodedImagePayload(_ parsed: ParsedTex) throws -> WPETexTexturePayload {
-        let rgba = try rasterizeFirstEncodedFrame(parsed)
-        let bridgedInfo = rgba8888Info(from: parsed.info, width: rgba.width, height: rgba.height)
-        let bridgedMipmap = WPETexTextureMipmap(
-            index: 0,
-            width: rgba.width,
-            height: rgba.height,
-            bytes: rgba.pixels
-        )
+        let mipmaps = try rasterizeEncodedMipmaps(parsed, sourceIndex: 0)
+        guard let base = mipmaps.first else { throw WPETexDecodeError.missingBitmapBlock }
+        let bridgedInfo = rgba8888Info(from: parsed.info, width: base.width, height: base.height,
+                                       mipmapCount: mipmaps.count)
         return WPETexTexturePayload(
             info: bridgedInfo,
-            mipmaps: [bridgedMipmap],
-            hasAnimationFrames: false
+            mipmaps: mipmaps,
+            hasAnimationFrames: false,
+            hasConditionalVariants: !parsed.bitmap.conditionalVariants.isEmpty
         )
     }
 
@@ -992,23 +1019,14 @@ struct WPETexDecoder: Sendable {
         let texsFrames = parsed.frameInfo?.frames ?? []
         let defaultDuration = 1.0 / WPETexAnimationTrack.defaultFrameRate
 
-        var rasterizedByImageID: [Int: WPETexTextureMipmap] = [:]
-        func atlas(for imageID: Int) throws -> WPETexTextureMipmap {
-            let sourceIndex = parsed.bitmap.frames.indices.contains(imageID)
-                ? imageID
-                : min(max(imageID, 0), max(parsed.bitmap.frames.count - 1, 0))
+        var rasterizedByImageID: [Int: [WPETexTextureMipmap]] = [:]
+        func atlas(for sourceIndex: Int) throws -> [WPETexTextureMipmap] {
             if let cached = rasterizedByImageID[sourceIndex] {
                 return cached
             }
-            let rgba = try rasterizeEncodedFrame(parsed, sourceIndex: sourceIndex)
-            let mip = WPETexTextureMipmap(
-                index: 0,
-                width: rgba.width,
-                height: rgba.height,
-                bytes: rgba.pixels
-            )
-            rasterizedByImageID[sourceIndex] = mip
-            return mip
+            let mipmaps = try rasterizeEncodedMipmaps(parsed, sourceIndex: sourceIndex)
+            rasterizedByImageID[sourceIndex] = mipmaps
+            return mipmaps
         }
 
         // Multi-TEXB without TEXS → default-cadence frames (static if one image).
@@ -1032,7 +1050,11 @@ struct WPETexDecoder: Sendable {
 
         let frames: [WPETexAnimationFrame] = try descriptors.map { descriptor in
             let requestedID = descriptor.frameInfo?.imageID ?? descriptor.fallbackIndex
-            let mip = try atlas(for: requestedID)
+            let sourceIndex = parsed.bitmap.frames.indices.contains(requestedID)
+                ? requestedID
+                : min(descriptor.fallbackIndex, max(parsed.bitmap.frames.count - 1, 0))
+            let mipmaps = try atlas(for: sourceIndex)
+            guard let mip = mipmaps.first else { throw WPETexDecodeError.missingBitmapBlock }
             let duration: TimeInterval
             if let frameInfo = descriptor.frameInfo, frameInfo.frameTime > 0 {
                 duration = frameInfo.frameTime
@@ -1044,9 +1066,9 @@ struct WPETexDecoder: Sendable {
                 textureHeight: mip.height
             )
             return WPETexAnimationFrame(
-                imageID: requestedID,
+                imageID: sourceIndex,
                 duration: duration,
-                mipmaps: [mip],
+                mipmaps: mipmaps,
                 subRect: subRect,
                 samplingDescriptor: descriptor.frameInfo?.samplingDescriptor(
                     textureWidth: mip.width,
@@ -1067,34 +1089,34 @@ struct WPETexDecoder: Sendable {
         let bridgedInfo = rgba8888Info(
             from: parsed.info,
             width: infoSource?.width ?? parsed.info.width,
-            height: infoSource?.height ?? parsed.info.height
+            height: infoSource?.height ?? parsed.info.height,
+            mipmapCount: frames.first?.mipmaps.count ?? 0
         )
         return WPETexTexturePayload(
             info: bridgedInfo,
             mipmaps: [],
             hasAnimationFrames: true,
-            animationTrack: track
+            animationTrack: track,
+            hasConditionalVariants: !parsed.bitmap.conditionalVariants.isEmpty
         )
     }
 
-    private func rasterizeFirstEncodedFrame(_ parsed: ParsedTex) throws -> DecodedRGBAImage {
-        try rasterizeEncodedFrame(parsed, sourceIndex: 0)
-    }
-
-    private func rasterizeEncodedFrame(_ parsed: ParsedTex, sourceIndex: Int) throws -> DecodedRGBAImage {
-        guard parsed.bitmap.frames.indices.contains(sourceIndex),
-              let mip = parsed.bitmap.frames[sourceIndex].first else {
+    /// Encoded images are the only TEX path that goes through ImageIO. Decode every authored mip;
+    /// retaining just image 0/level 0 silently changes minification and sprite atlas sampling.
+    private func rasterizeEncodedMipmaps(_ parsed: ParsedTex, sourceIndex: Int) throws -> [WPETexTextureMipmap] {
+        guard parsed.bitmap.frames.indices.contains(sourceIndex) else {
             throw WPETexDecodeError.missingBitmapBlock
         }
-        let payloadBytes = try inflateIfNeeded(
-            payload: mip.payload,
-            expectedByteCount: nil,
-            decompressedByteCount: mip.decompressedByteCount,
-            isCompressed: mip.isCompressed,
-            mipmap: mip.index
-        )
-        let image = try makeEncodedCGImage(from: payloadBytes, mipmap: mip.index, info: parsed.info)
-        return try rasterizeRGBA8(from: image, mipmap: mip.index)
+        let mipmaps = try parsed.bitmap.frames[sourceIndex].map { mip in
+            let bytes = try inflateIfNeeded(payload: mip.payload, expectedByteCount: nil,
+                                            decompressedByteCount: mip.decompressedByteCount,
+                                            isCompressed: mip.isCompressed, mipmap: mip.index)
+            let image = try makeEncodedCGImage(from: bytes, mipmap: mip.index, info: parsed.info)
+            let rgba = try rasterizeRGBA8(from: image, mipmap: mip.index)
+            return WPETexTextureMipmap(index: mip.index, width: rgba.width, height: rgba.height, bytes: rgba.pixels)
+        }
+        try WPETexMipValidation.decoded(mipmaps, format: .rgba8888)
+        return mipmaps
     }
 
     /// Renders a `CGImage` into straight-alpha, sRGB-encoded RGBA8 bytes suitable for upload as `MTLPixelFormat.rgba8Unorm_srgb`.
@@ -1221,7 +1243,7 @@ struct WPETexDecoder: Sendable {
             return payload.prefix(expectedByteCount).materializedData()
         }
 
-        return try lz4Inflate(payload: payload, outputCount: expectedByteCount, mipmap: mipmap)
+        throw WPETexDecodeError.decodeFailed(mipmap: mipmap, detail: "Truncated uncompressed mip payload")
     }
 
     private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int) throws -> Data {

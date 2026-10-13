@@ -1,5 +1,6 @@
 import Compression
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import LiveWallpaperProWPE
@@ -9,9 +10,9 @@ import UniformTypeIdentifiers
 
 @Suite("WPETexDecoder — container + RGBA8888")
 struct WPETexDecoderTests {
-    private static let officialFlag0x40Fixtures: [(name: String, rawBits: UInt32)] = [
-        ("lutx32_daisy.tex", 0xff30_b1c5),
-        ("neutral.tex", 0xff55_55aa),
+    private static let officialFlag0x40Fixtures: [(name: String, tailBits: UInt32, sha256: String)] = [
+        ("lutx32_daisy.tex", 0xFF30_B1C5, "28151a832fee1ffa0cc18c2081c49639ceaf82a7b60b3063e355fb12c75ae352"),
+        ("neutral.tex", 0xFF55_55AA, "967ea45d38c40eda283d440bd80b914587c779ec6fbe1981e761d2443a68fa3b"),
     ]
 
     private static var officialFlag0x40FixtureRoot: URL {
@@ -25,14 +26,6 @@ struct WPETexDecoderTests {
                 atPath: officialFlag0x40FixtureRoot.appendingPathComponent(fixture.name).path
             )
         }
-    }
-
-    private static var officialLUTTexURLs: [URL] {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: officialFlag0x40FixtureRoot,
-            includingPropertiesForKeys: nil
-        )) ?? []
-        return contents.filter { $0.pathExtension.lowercased() == "tex" }.sorted { $0.path < $1.path }
     }
 
     // MARK: - Container guards
@@ -263,8 +256,8 @@ struct WPETexDecoderTests {
         #expect(info.flag0x40Extension == nil)
     }
 
-    @Test("TEXI flag 0x40 consumes one asset-specific raw Int32 and preserves TEXB alignment")
-    func texiFlag0x40RawExtensionIsRetainedWithoutReinterpretation() throws {
+    @Test("TEXI depth precedes the versioned tail word and every volume mip retains depth")
+    func texiFlag0x40DepthPrecedesVersionedTail() throws {
         let expectedRawBits: [UInt32] = [0xff30_b1c5, 0xff22_7322]
 
         for rawBits in expectedRawBits {
@@ -273,63 +266,67 @@ struct WPETexDecoderTests {
                 textureHeight: 32,
                 imageWidth: 1_024,
                 imageHeight: 32,
-                unknownInt0: 32,
+                unknownInt0: Int32(bitPattern: rawBits),
                 flags: 0x42,
-                flag0x40RawBits: rawBits
+                flag0x40RawBits: 32
             )
 
             // Parsing through TEXB (rather than header-only probe) proves the
             // extra field was consumed and the following block magic is aligned.
             let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
             let rawExtension = try #require(metadata.info.flag0x40Extension)
-            #expect(UInt32(bitPattern: rawExtension.rawValue) == rawBits)
-            #expect(rawExtension.sourceRange == 46..<50)
-            #expect(metadata.info.unknownInt0 == 32)
+            #expect(rawExtension.rawValue == 32)
+            #expect(rawExtension.sourceRange == 42 ..< 46)
+            #expect(metadata.info.depth == 32)
+            #expect(metadata.info.isVolume)
+            #expect(UInt32(bitPattern: metadata.info.unknownInt0) == rawBits)
             #expect(metadata.info.imageWidth == 1_024)
             #expect(metadata.info.imageHeight == 32)
             #expect(metadata.bitmap.version == 3)
             #expect(metadata.bitmap.frames.count == 1)
+            #expect(metadata.bitmap.largestMipmap?.depth == 32)
+            #expect(throws: WPETexDecodeError.unsupportedTextureDimension(depth: 32)) {
+                _ = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+            }
+        }
+    }
+
+    @Test("TEXI version zero omits the tail word after depth")
+    func texiVersionZeroOmitsTail() throws {
+        for volume in [false, true] {
+            let buffer = makeImageWithTEXIImageDimensions(textureWidth: 2, textureHeight: 2,
+                                                          imageWidth: 2, imageHeight: 2, unknownInt0: 0x1234,
+                                                          flags: volume ? 0x40 : 0, flag0x40RawBits: volume ? 3 : nil, infoVersion: 0)
+            let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
+            #expect(metadata.info.infoVersion == 0)
+            #expect(metadata.info.unknownInt0 == 0)
+            #expect(metadata.info.depth == (volume ? 3 : 1))
+            #expect(metadata.bitmap.largestMipmap?.depth == (volume ? 3 : 1))
         }
     }
 
     @Test(
-        "Official LUT TEXI 0x40 values vary per asset and TEXB0004 remains aligned",
+        "Pinned official LUT bytes retain depth at 42 and the asset-specific tail at 46",
         .enabled(if: officialFlag0x40FixturesAvailable)
     )
-    func officialLUTFlag0x40CorpusRetainsActualRawValues() throws {
-        var observed: Set<UInt32> = []
-        var flag0x40Count = 0
-        let pinnedRawBits = Dictionary(uniqueKeysWithValues: Self.officialFlag0x40Fixtures.map { ($0.name, $0.rawBits) })
-
-        // 走整个目录而不是写死的那一对:将来 WPE 新增一个 0x40 资产必须在这里
-        // 红,而不是因为不在列表里而通过。
-        for url in Self.officialLUTTexURLs {
+    func officialLUTFlag0x40RetainsNativeFieldPositions() throws {
+        for fixture in Self.officialFlag0x40Fixtures {
+            let url = Self.officialFlag0x40FixtureRoot.appendingPathComponent(fixture.name)
             let data = try Data(contentsOf: url)
+            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            #expect(hash == fixture.sha256)
             let info = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: data)).get()
-            guard info.flags & WPETexInfo.rawExtensionFlag != 0 else { continue }
-            flag0x40Count += 1
-
             let rawExtension = try #require(info.flag0x40Extension, "\(url.lastPathComponent)")
-            let rawBits = UInt32(bitPattern: rawExtension.rawValue)
-
             #expect(info.flags == 0x42, "\(url.lastPathComponent)")
             #expect(info.imageWidth == 1_024, "\(url.lastPathComponent)")
             #expect(info.imageHeight == 32, "\(url.lastPathComponent)")
-            #expect(info.unknownInt0 == 32, "\(url.lastPathComponent)")
-            #expect(rawExtension.sourceRange == 46..<50, "\(url.lastPathComponent)")
+            #expect(info.depth == 32, "\(url.lastPathComponent)")
+            #expect(UInt32(bitPattern: info.unknownInt0) == fixture.tailBits, "\(url.lastPathComponent)")
+            #expect(rawExtension.sourceRange == 42 ..< 46, "\(url.lastPathComponent)")
             // 在扩展字段之后的偏移读 TEXB magic,才是对齐的真正证据。
             #expect(data.subdata(in: 50..<58) == Data("TEXB0004".utf8), "\(url.lastPathComponent)")
             #expect(data[58] == 0, "\(url.lastPathComponent)")
-            if let pinned = pinnedRawBits[url.lastPathComponent] {
-                #expect(rawBits == pinned, "\(url.lastPathComponent)")
-            }
-            observed.insert(rawBits)
         }
-
-        #expect(flag0x40Count >= 28, "installed LUT corpus should carry at least the 28 measured 0x40 assets")
-        // The raw int32 is asset-specific, which is why it is preserved unnamed.
-        // A constant here would mean it had been mistaken for a dimension.
-        #expect(observed.count > 1)
     }
 
     @Test("Streaming extraction preserves TEXS sub-rects and compressed image payloads")
@@ -630,7 +627,8 @@ struct WPETexDecoderTests {
         imageHeight: Int,
         unknownInt0: Int32,
         flags: UInt32 = 0,
-        flag0x40RawBits: UInt32? = nil
+        flag0x40RawBits: UInt32? = nil,
+        infoVersion: Int = 1
     ) -> Data {
         precondition((flags & WPETexInfo.rawExtensionFlag != 0) == (flag0x40RawBits != nil))
         let pixel: [UInt8] = [0xff, 0x80, 0x33, 0xff]
@@ -639,16 +637,18 @@ struct WPETexDecoderTests {
         for _ in 0..<(textureWidth * textureHeight) { raw.append(contentsOf: pixel) }
         var buffer = Data()
         appendMagic(&buffer, magic: "TEXV0005")
-        appendMagic(&buffer, magic: "TEXI0001")
+        appendMagic(&buffer, magic: infoVersion == 0 ? "TEXI0000" : "TEXI0001")
         appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
         appendUInt32(&buffer, flags)
         appendInt32(&buffer, Int32(textureWidth))
         appendInt32(&buffer, Int32(textureHeight))
         appendInt32(&buffer, Int32(imageWidth))
         appendInt32(&buffer, Int32(imageHeight))
-        appendInt32(&buffer, unknownInt0)
         if let rawBits = flag0x40RawBits {
             appendInt32(&buffer, Int32(bitPattern: rawBits))
+        }
+        if infoVersion > 0 {
+            appendInt32(&buffer, unknownInt0)
         }
 
         appendMagic(&buffer, magic: "TEXB0003")
@@ -657,6 +657,9 @@ struct WPETexDecoderTests {
         appendInt32(&buffer, 1)
         appendInt32(&buffer, Int32(textureWidth))
         appendInt32(&buffer, Int32(textureHeight))
+        if let depth = flag0x40RawBits {
+            appendUInt32(&buffer, depth)
+        }
         appendUInt32(&buffer, 0)
         appendUInt32(&buffer, UInt32(raw.count))
         appendUInt32(&buffer, UInt32(raw.count))
@@ -711,6 +714,7 @@ extension WPETexDecoderTests {
         #expect(variants[1].mipmaps[0].width == 2 && variants[1].mipmaps[0].height == 2)
 
         let payload = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        #expect(payload.hasConditionalVariants)
         #expect(payload.hasAnimationFrames == false)
         #expect(payload.mipmaps.first?.width == 4)
     }

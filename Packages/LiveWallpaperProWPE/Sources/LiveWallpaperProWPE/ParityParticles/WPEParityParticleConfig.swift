@@ -112,7 +112,37 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var controlPoints = Array(repeating: WPEParityParticleControlPoint(), count: WPEParityParticleControlPoint.count)
     /// Texture facts of this system's own `material`.
     var material = WPEParityParticleMaterial()
+    var materialPath: String?
+    /// Children rejected by the current depth/cycle/nested gate, for the scene's existing omission diagnostic.
+    var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
+
+    /// Program prototypes, probes and runtime systems share this resolved tree and its accepted-child indexes.
+    init?(path: String, assets: WPEParityProgramAssets, is3D: Bool) {
+        guard let json = assets.json(path) else { return nil }
+        self.init(json: json, ancestors: [path], eventChild: false, is3D: is3D, resolveChild: assets.json,
+                  resolveMaterial: { materialPath in
+                      WPEParityProgramMaterial(path: materialPath, assets: assets).map {
+                          WPEParityParticleMaterial(texture0: $0.textures[0].flatMap(assets.textureHeader(named:)))
+                      }
+                  })
+    }
+
+    func descendant(at path: ArraySlice<WPEParityParticlePathElement>) -> WPEParityParticleConfig? {
+        guard let first = path.first else { return self }
+        let candidates: [WPEParityParticleChildConfig]
+        let index: Int
+        switch first {
+        case let .staticChild(value):
+            candidates = children.filter { $0.trigger == .always }
+            index = value
+        case let .eventGroup(value):
+            candidates = children.filter { $0.trigger != .always }
+            index = value
+        }
+        guard candidates.indices.contains(index) else { return nil }
+        return candidates[index].config.descendant(at: path.dropFirst())
+    }
 
     /// `is3D` picks the 3D defaults of R18/R19 (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5, …).
     init(json: WPESceneJSONValue, is3D: Bool, resolveChild: (String) -> WPESceneJSONValue?) {
@@ -125,7 +155,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     init(json: WPESceneJSONValue, ancestors: [String], eventChild: Bool, is3D: Bool,
          resolveChild: (String) -> WPESceneJSONValue?, resolveMaterial: (String) -> WPEParityParticleMaterial?) {
         typealias JSON = WPEParityParticleJSON
-        material = JSON.string(json["material"]).flatMap(resolveMaterial) ?? material
+        materialPath = JSON.string(json["material"])
+        material = materialPath.flatMap(resolveMaterial) ?? material
         maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
         startTime = JSON.number(json["starttime"]) ?? 0
         flags = Int(JSON.number(json["flags"]) ?? 0)
@@ -403,6 +434,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         guard !eventChild, !ancestors.contains(path),
               ancestors.count < WPEParityProgramScene.particleChildDepthLimit else {
             diagnostics.append("child \(path) omitted")
+            omittedChildPaths.append(path)
             return
         }
         guard let json = resolveChild(path) else {

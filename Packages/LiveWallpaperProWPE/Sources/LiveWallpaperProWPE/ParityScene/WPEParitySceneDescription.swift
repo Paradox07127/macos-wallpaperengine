@@ -610,20 +610,41 @@ public struct WPEParitySceneShape: Hashable, Sendable {
     }
 }
 
-/// One particle renderer-entry draw: `node` indexes the static children (`WPEParityParticleSystem.children`) from the
-/// root system; with `eventGroup` the draw covers every instance of that node's `eventChildren[eventGroup]`.
+/// One step from a particle system to a static child or to every active instance of an event group.
+public enum WPEParityParticlePathElement: Hashable, Sendable {
+    case staticChild(Int)
+    case eventGroup(Int)
+}
+
+/// A renderer-entry prototype. An event segment can address more than one actual system instance.
 public struct WPEParityParticleDrawKey: Hashable, Sendable {
     public var objectID: String
-    public var node: [Int]
+    public var path: [WPEParityParticlePathElement]
     /// Index into the drawn system's `renderers`.
     public var renderer: Int
-    public var eventGroup: Int?
 
-    public init(objectID: String, node: [Int] = [], renderer: Int, eventGroup: Int? = nil) {
+    public init(objectID: String, path: [WPEParityParticlePathElement], renderer: Int) {
         self.objectID = objectID
-        self.node = node
+        self.path = path
         self.renderer = renderer
-        self.eventGroup = eventGroup
+    }
+
+    /// Compatibility for the original static-prefix / terminal-event address. `path` is the sole stored address.
+    public init(objectID: String, node: [Int] = [], renderer: Int, eventGroup: Int? = nil) {
+        self.init(objectID: objectID,
+                  path: node.map(WPEParityParticlePathElement.staticChild)
+                      + (eventGroup.map { [.eventGroup($0)] } ?? []), renderer: renderer)
+    }
+
+    /// Keeps existing pass identities while distinguishing ordered mixed paths such as /0/e1 and /e1/0.
+    public var passIdentity: WPEPassIdentity {
+        let suffix = path.map { element in
+            switch element {
+            case let .staticChild(index): "/\(index)"
+            case let .eventGroup(index): "/e\(index)"
+            }
+        }.joined()
+        return WPEPassIdentity("\(objectID)/particle\(suffix)/r\(renderer)")
     }
 }
 

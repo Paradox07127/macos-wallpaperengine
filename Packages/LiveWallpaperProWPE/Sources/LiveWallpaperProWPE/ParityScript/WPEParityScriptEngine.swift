@@ -795,6 +795,9 @@ public final class WPEParityScriptEngine {
             entries["id"] = nil
             return Self.jsonText(.object(entries))
         }
+        let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
+            Double(self?.layers.firstIndex { $0.id == id } ?? -1)
+        }
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
@@ -808,6 +811,7 @@ public final class WPEParityScriptEngine {
         set("sortLayer", sort)
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
+        set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
         set("storageEnabled", configuration.storage != nil)
         let storageGet: @convention(block) (String, Double) -> String? = { [weak self] key, location in

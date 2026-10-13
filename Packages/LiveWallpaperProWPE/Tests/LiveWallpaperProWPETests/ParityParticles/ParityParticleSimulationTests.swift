@@ -369,8 +369,7 @@ final class ParityParticleSimulationTests: XCTestCase {
         var warm: Set<UInt> = []
         for frame in 1 ... 300 {
             particles.advance(dt: 1.0 / 60)
-            let count = particles.batches(node: [], renderer: 0, eventGroup: nil).count
-                + particles.batches(node: [], renderer: 0, eventGroup: 0).count
+            let count = particles.drawBatches(objectID: "5").count
             if frame == 150 {
                 warm = Self.buffers(particles)
             } else if frame > 150 {
@@ -378,6 +377,41 @@ final class ParityParticleSimulationTests: XCTestCase {
                 XCTAssertEqual(Self.buffers(particles), warm, "frame \(frame)")
             }
         }
+    }
+
+    /// Isolate the draw consumer with an already-instantiated tree. The JSON gate still rejects event children
+    /// with descendants until the real product draw block and lifecycle are integrated.
+    func testDrawTraversalCompletesEachEventSubtreeAndCarriesItsOwnMatrix() {
+        let leaf = ParityParticleTestSupport.json("""
+        {"maxcount": 1, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}], "renderer": [{"name": "sprite"}]}
+        """)
+        let json = ParityParticleTestSupport.json("""
+        {"maxcount": 1, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}], "renderer": [{"name": "sprite"}],
+         "children": [{"name": "leaf", "origin": "5 0 0"}]}
+        """)
+        let config = WPEParityParticleConfig(json: json, is3D: false) { $0 == "leaf" ? leaf : nil }
+        let rng = WPEParityMT19937(seed: 7)
+        let crt = WPEParityCRTRandom()
+        var instances: [WPEParityParticleSystem] = []
+        for x in [Float(-20), Float(20)] {
+            var transform = matrix_identity_float4x4
+            transform.columns.3.x = x
+            var instance = WPEParityParticleSystem(config: config, instance: .init(), rng: rng, crt: crt,
+                                                   localTransform: transform)
+            instance.advance(dt: 0.1)
+            instances.append(instance)
+        }
+        var parent = system(#"{"maxcount": 0}"#, rng: rng)
+        parent.eventChildren = [instances]
+        let batches = parent.drawBatches(objectID: "5")
+        XCTAssertEqual(batches.map(\.key.passIdentity), ["5/particle/e0/r0", "5/particle/e0/0/r0",
+                                                         "5/particle/e0/r0", "5/particle/e0/0/r0"])
+        XCTAssertEqual(batches.map(\.localTransform.columns.3.x), [-20, -15, 20, 25])
+        XCTAssertEqual(batches.map(\.vertices.count), [1, 1, 1, 1])
+        XCTAssertNotEqual(WPEParityParticleDrawKey(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
+                          WPEParityParticleDrawKey(objectID: "5", node: [0], renderer: 0, eventGroup: 0))
     }
 
     func testFinishedEventReuseKeepsTheFiniteBirthDrawSequenceAndResetsOldValues() {

@@ -107,6 +107,7 @@ enum SceneFailureCause {
         case .missingInfoBlock: (code, retry) = ("missing_info", false)
         case .missingBitmapBlock: (code, retry) = ("missing_bitmap", false)
         case .unsupportedFormat: (code, retry) = ("format", false)
+        case .unsupportedTextureDimension: (code, retry) = ("dimension", false)
         case .unsupportedAnimation: (code, retry) = ("animation", false)
         case .invalidDimensions: (code, retry) = ("dimensions", false)
         case .truncatedBlock: (code, retry) = ("truncated", false)

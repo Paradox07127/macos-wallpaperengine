@@ -92,8 +92,11 @@ enum WPEParityScriptPrelude {
       if ((mask & 0x400) && value !== null && typeof value === 'object') return { type: 0x400, value: _Internal.stringifyConfig(value) };
       return null;
     }
+    const materialWrapper = Symbol('materialWrapper');
     function material(fields) {
+      if (fields[materialWrapper]) return fields[materialWrapper];
       const wrapper = Object.create(null);
+      Object.defineProperty(fields, materialWrapper, { value: wrapper });
       for (const name of Object.keys(fields)) {
         const f = fields[name];
         Object.defineProperty(wrapper, name, accessor(() => f.slot, { rel: 0, type: f.type, angle: f.angle, readonly: f.readonly }));
@@ -102,6 +105,19 @@ enum WPEParityScriptPrelude {
       return wrapper;
     }
     const EffectProto = {
+      getMaterial(key) {
+        const a = argument(key, 8 | 0x200);
+        if (!a || a.type !== 8) {
+          host.log(1, 'getMaterial is unsupported for this argument; native string lookup is not verified');
+          return null;
+        }
+        const pass = this.__passes[a.value];
+        if (!pass) {
+          host.log(1, 'getMaterial has no pass metadata at this index; native failure behavior is not verified');
+          return null;
+        }
+        return pass[materialWrapper];
+      },
       setMaterialProperty(name, value) {
         if (!argument(name, 0x200)) return;
         const a = argument(value, 4 | 8 | 0x10 | 0x20 | 0x40);
@@ -339,7 +355,25 @@ enum WPEParityScriptPrelude {
       },
       getLayerCount() { return order.length - pending.size; },
       enumerateLayers() { return order.filter(l => !pending.has(l)); },
-      getLayerIndex(layer) { return order.indexOf(layer); },
+      getLayerByID(id) {
+        if (!argument(id, 0x200)) {
+          host.log(1, 'getLayerByID is unsupported for a non-string ID; native argument behavior is not verified');
+          return null;
+        }
+        const layer = table[host.layerIndexByID(id)];
+        if (layer && order.includes(layer)) return layer;
+        host.log(1, 'getLayerByID found no exact ID; native missing-ID behavior is not verified');
+        return null;
+      },
+      getLayerIndex(key) {
+        const a = argument(key, 0x200 | 0x800);
+        if (!a) {
+          host.log(1, 'getLayerIndex requires a layer name or a scene layer wrapper');
+          return -1;
+        }
+        const layer = a.type === 0x200 ? order.find(l => l.name === a.value) : a.value;
+        return order.indexOf(layer);
+      },
       sortLayer(layer, index) {
         if (!argument(layer, 0x800) || !argument(index, 8)) return;
         const at = order.indexOf(layer);

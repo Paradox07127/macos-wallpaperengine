@@ -84,7 +84,7 @@ struct ParitySceneParticleTests {
             ["id": 7, "name": "7", "image": "models/7.json", "size": "400 200"],
             ["id": 5, "name": "fx", "particle": "particles/fx.json"],
         ]
-        try ParticleSceneFiles.withScene(objects, files: files) { scene in
+        try ParticleSceneFiles.withScene(objects, files: files) { scene, _ in
             let sheet = ["THICKFORMAT": 1, "SPRITESHEET": 1, "SPRITESHEETBLEND": 1, "SPRITESHEETBLENDNPOT": 1,
                          "TEX0FORMAT": 8]
             let draws = Self.draws(scene, "5")
@@ -136,7 +136,7 @@ struct ParitySceneParticleTests {
             "materials/particle.json": ["passes": [["shader": "genericparticle"]]],
         ]
         try ParticleSceneFiles.withScene([["id": 5, "name": "loop", "particle": "particles/loop.json"]],
-                                         files: files) { scene in
+                                         files: files) { scene, _ in
             #expect(scene.scene.diagnostics == [.particleChildOmitted(objectID: "5", path: "particles/loop.json")])
             #expect(Self.draws(scene, "5").map(\.key) == [WPEParityParticleDrawKey(objectID: "5", renderer: 0)])
         }
@@ -149,9 +149,73 @@ struct ParitySceneParticleTests {
             "materials/particle.json": ["passes": [["shader": "genericparticle"]]],
         ]
         try ParticleSceneFiles.withScene([["id": 5, "name": "mixed", "particle": "particles/mixed.json"]],
-                                         files: files) { scene in
+                                         files: files) { scene, _ in
             #expect(Self.draws(scene, "5").map(\.shader) == ["genericparticle", "genericropeparticle",
                                                              "genericropeparticle"])
+        }
+    }
+
+    @Test func acceptedChildIndexesMatchProgramProbeAndSimulationWhileNestedEventsStayRejected() throws {
+        let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                         "instanceoverride": ["count": 2]]]
+        let files: [String: Any] = [
+            "materials/particle.json": ["passes": [["shader": "genericparticle"]]],
+            "particles/fx.json": [
+                "maxcount": 3, "material": "materials/particle.json", "renderer": [["name": "sprite"]],
+                "children": [
+                    ["name": "particles/missing.json"],
+                    ["name": "particles/missing-event.json", "type": "eventspawn"],
+                    ["name": "particles/static.json", "type": "eventfollow"],
+                    ["name": "particles/event.json", "type": "eventdeath"],
+                    ["name": "particles/static.json"],
+                ],
+            ],
+            "particles/static.json": [
+                "maxcount": 2, "material": "materials/particle.json", "renderer": [["name": "sprite"]],
+                "children": [["name": "particles/leaf.json", "type": "eventspawn"]],
+            ],
+            "particles/event.json": [
+                "maxcount": 4, "material": "materials/particle.json", "renderer": [["name": "spritetrail"]],
+                "children": [["name": "particles/leaf.json"]],
+            ],
+            "particles/leaf.json": ["maxcount": 5, "material": "materials/particle.json",
+                                    "renderer": [["name": "sprite"]]],
+        ]
+        try ParticleSceneFiles.withScene(objects, files: files) { program, document in
+            let keys = Self.draws(program, "5").map(\.key)
+            #expect(keys == [
+                .init(objectID: "5", path: [], renderer: 0),
+                .init(objectID: "5", path: [.staticChild(0)], renderer: 0),
+                .init(objectID: "5", path: [.staticChild(0), .eventGroup(0)], renderer: 0),
+                .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
+            ])
+            #expect(keys.map(\.passIdentity) == ["5/particle/r0", "5/particle/0/r0", "5/particle/0/e0/r0",
+                                                 "5/particle/e0/r0"])
+            let probes = keys.compactMap {
+                WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets)
+            }
+            #expect(probes.count == 4)
+            #expect(probes.map(\.slotCount) == [6, 2, 5, 4])
+            #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .spriteTrail])
+            let scene = WPEParityParticleScene(document: document, assets: program.assets,
+                                               engineFlags: program.engineFlags, seed: 7)
+            let root = try #require(scene.objects.first?.system)
+            #expect(root.capacity == 6)
+            #expect(root.children.count == 1)
+            let child = try #require(root.children.first)
+            #expect(child.capacity == 2)
+            #expect(child.eventChildren.count == 1)
+            #expect(root.eventChildren.count == 1)
+            #expect(root.config.children.filter { $0.trigger != .always }.first?.config.maxCount == 4)
+            #expect(program.scene.diagnostics == [.particleChildOmitted(objectID: "5", path: "particles/leaf.json")])
+            #expect(WPEParityParticleScene.prototype(
+                for: .init(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
+                document: document, assets: program.assets
+            ) == nil)
+            #expect(WPEParityParticleScene.prototype(
+                for: .init(objectID: "5", path: [.staticChild(1)], renderer: 0),
+                document: document, assets: program.assets
+            ) == nil)
         }
     }
 }
@@ -159,7 +223,7 @@ struct ParitySceneParticleTests {
 /// A wallpaper directory that lives until `body` returns, so draws can still read their materials and shaders.
 private enum ParticleSceneFiles {
     static func withScene(_ objects: [[String: Any]], files: [String: Any],
-                          _ body: (WPEParityProgramScene) throws -> Void) throws {
+                          _ body: (WPEParityProgramScene, WPESceneDocument) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parity-particles-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let scene: [String: Any] = ["camera": ["center": "0 0 0"],
@@ -177,7 +241,7 @@ private enum ParticleSceneFiles {
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         try body(WPEParityProgramScene(document: document,
                                        assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
-                                       settings: WPEParityProgramSettings()))
+                                       settings: WPEParityProgramSettings()), document)
     }
 }
 

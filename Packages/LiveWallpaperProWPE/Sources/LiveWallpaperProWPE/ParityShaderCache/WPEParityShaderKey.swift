@@ -6,7 +6,8 @@ public struct WPEParityShaderCompileOptions: Sendable, Hashable {
     public let minimumMacOS: String
     public let boundsCheck: Bool
 
-    public init(hlslVersion: String = "2016", minimumMacOS: String = "14.6.0", boundsCheck: Bool = false) {
+    /// Direct3D Load guarantees zero outside the resource; MSC must preserve that contract on Metal.
+    public init(hlslVersion: String = "2016", minimumMacOS: String = "14.6.0", boundsCheck: Bool = true) {
         self.hlslVersion = hlslVersion
         self.minimumMacOS = minimumMacOS
         self.boundsCheck = boundsCheck

@@ -96,3 +96,16 @@ public struct WPEParityParticleVertexBatch: Equatable, Sendable {
     public let count: Int
     public let renderVar0: WPEParityRenderVar0
 }
+
+/// One actual renderer draw, in recursive instance order, with that instance's model contribution.
+public struct WPEParityParticleDrawBatch: Sendable {
+    public let key: WPEParityParticleDrawKey
+    public let vertices: WPEParityParticleVertexBatch
+    public let localTransform: simd_float4x4
+}
+
+/// Initialization facts for a renderer prototype; obtaining them does not allocate slots or consume RNG.
+public struct WPEParityParticlePrototype: Sendable {
+    public let renderers: [WPEParityParticleRenderer]
+    public let slotCount: Int
+}

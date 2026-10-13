@@ -81285,6 +81285,42 @@
         }
       }
     },
+    "error.texture.decode.unsupported_dimension" : {
+      "comment" : "Error shown when a Wallpaper Engine volume texture cannot be uploaded.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".tex volume textures (depth %lld) are not yet supported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las texturas de volumen .tex (profundidad %lld) aún no son compatibles."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".tex のボリュームテクスチャ（深さ %lld）はまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支持 .tex 体积纹理（深度 %lld）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支援 .tex 體積紋理（深度 %lld）。"
+          }
+        }
+      }
+    },
     "error.texture.decode.unsupported_format" : {
       "comment" : "Error shown when a Wallpaper Engine .tex file uses an unsupported format code.",
       "extractionState" : "manual",

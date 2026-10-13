@@ -4,28 +4,28 @@ extension WPEParityProgramScene {
     /// The draws of the particle JSON at `path`, keyed the way `WPEParityParticleSystem` nests its children.
     static func particleDraws(objectID: String, path: String, assets: WPEParityProgramAssets,
                               diagnostics: inout [WPEParitySceneDiagnostic]) -> [WPEParitySceneParticleDraw] {
-        guard let json = assets.json(path) else { return [] }
+        guard let config = WPEParityParticleConfig(path: path, assets: assets, is3D: false) else { return [] }
         var draws: [WPEParitySceneParticleDraw] = []
-        appendParticleDraws(json, at: WPEParityParticleDrawKey(objectID: objectID, renderer: 0), ancestors: [path],
+        appendParticleDraws(config, at: WPEParityParticleDrawKey(objectID: objectID, path: [], renderer: 0),
                             assets: assets, draws: &draws, diagnostics: &diagnostics)
         return draws
     }
 
     /// R16 Q4: the system's entries, then static children depth first, then one group per event child.
-    private static func appendParticleDraws(_ json: WPESceneJSONValue, at node: WPEParityParticleDrawKey,
-                                            ancestors: [String], assets: WPEParityProgramAssets,
+    private static func appendParticleDraws(_ config: WPEParityParticleConfig, at node: WPEParityParticleDrawKey,
+                                            assets: WPEParityProgramAssets,
                                             draws: inout [WPEParitySceneParticleDraw],
                                             diagnostics: inout [WPEParitySceneDiagnostic]) {
-        // Children resolve to nil so the config parses only this system, indexed as the simulation indexes it.
-        let config = WPEParityParticleConfig(json: json, is3D: false) { _ in nil }
-        if let path = string(json["material"]), let material = WPEParityProgramMaterial(path: path, assets: assets) {
-            let texture = WPEParityParticleMaterial(texture0: material.textures[0].flatMap(assets.textureHeader(named:)))
+        diagnostics.append(contentsOf: config.omittedChildPaths.map {
+            .particleChildOmitted(objectID: node.objectID, path: $0)
+        })
+        if let path = config.materialPath, let material = WPEParityProgramMaterial(path: path, assets: assets) {
             let state = materialState(assets.json(path)?["passes"]?[0])
             for (index, renderer) in config.renderers.enumerated() {
                 var key = node
                 key.renderer = index
                 let shader = WPEParityParticleSystem.shaderOverride(renderer: renderer)
-                let combos = WPEParityParticleSystem.combos(config: config, material: texture, renderer: renderer)
+                let combos = WPEParityParticleSystem.combos(config: config, material: config.material, renderer: renderer)
                 draws.append(WPEParitySceneParticleDraw(
                     key: key, shader: shader ?? material.shader,
                     source: WPEParitySceneMaterialSource(materialPath: path, combos: combos, shader: shader),
@@ -36,33 +36,15 @@ extension WPEParityProgramScene {
             }
         }
 
-        var staticCount = 0
-        var eventGroups: [(json: WPESceneJSONValue, path: String)] = []
-        for entry in array(json["children"]) {
-            let kind = WPEParticleChildEventKind(authoredType: string(entry["type"]),
-                                                 flags: number(entry["flags"]).map { Int($0) })
-            guard [.staticSystem, .spawn, .death].contains(kind) else { continue }
-            let path = string(entry["name"]) ?? string(entry["particle"]) ?? ""
-            guard node.eventGroup == nil, !ancestors.contains(path), ancestors.count < particleChildDepthLimit else {
-                diagnostics.append(.particleChildOmitted(objectID: node.objectID, path: path))
-                continue
-            }
-            guard let child = assets.json(path) else { continue }
-            if kind == .staticSystem {
-                var key = node
-                key.node.append(staticCount)
-                staticCount += 1
-                appendParticleDraws(child, at: key, ancestors: ancestors + [path], assets: assets, draws: &draws,
-                                    diagnostics: &diagnostics)
-            } else {
-                eventGroups.append((child, path))
-            }
-        }
-        for (group, event) in eventGroups.enumerated() {
+        for (index, child) in config.children.filter({ $0.trigger == .always }).enumerated() {
             var key = node
-            key.eventGroup = group
-            appendParticleDraws(event.json, at: key, ancestors: ancestors + [event.path], assets: assets, draws: &draws,
-                                diagnostics: &diagnostics)
+            key.path.append(.staticChild(index))
+            appendParticleDraws(child.config, at: key, assets: assets, draws: &draws, diagnostics: &diagnostics)
+        }
+        for (group, child) in config.children.filter({ $0.trigger != .always }).enumerated() {
+            var key = node
+            key.path.append(.eventGroup(group))
+            appendParticleDraws(child.config, at: key, assets: assets, draws: &draws, diagnostics: &diagnostics)
         }
     }
 }

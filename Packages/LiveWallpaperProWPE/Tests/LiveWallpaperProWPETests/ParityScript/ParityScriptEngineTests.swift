@@ -14,15 +14,8 @@ final class ParityScriptEngineTests: XCTestCase {
         let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         var state = WPEParitySceneState(document: document, hdr: false)
-        // Fixed shipped helper, SHA256 708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294.
-        // Kept outside the test target's source directory; this guard needs no installed Steam assets.
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
-        let baseClasses = try Data(contentsOf: fixture)
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
-            assets: WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
-                path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
-            }]),
+            assets: Self.fixedAssets(),
             canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
         ))
         engine.start(state: &state)
@@ -41,12 +34,24 @@ final class ParityScriptEngineTests: XCTestCase {
         let engine: WPEParityScriptEngine
     }
 
+    private static func fixedAssets() throws -> WPEParityProgramAssets {
+        // Fixed shipped helper, SHA256 708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294.
+        // Kept outside the test target's source directory; these guards need no installed Steam assets.
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        return WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+    }
+
     private static func scene(_ objects: [[String: Any]],
                               constants: [WPEParityMaterialPassKey: [String: [Double]]] = [:],
                               angleConstants: Set<WPEParityScriptEngine.ConstantKey> = [],
                               general: [String: Any] = [:],
+                              assets: WPEParityProgramAssets? = nil,
                               configure: (inout WPEParityScriptEngine.Configuration) -> Void = { _ in }) throws -> Scene {
-        guard FileManager.default.fileExists(atPath: install.appendingPathComponent("scripts").path) else {
+        guard assets != nil || FileManager.default.fileExists(atPath: install.appendingPathComponent("scripts").path) else {
             throw XCTSkip("No Wallpaper Engine assets")
         }
         var generalJSON: [String: Any] = ["orthogonalprojection": ["width": 1920, "height": 1080]]
@@ -59,8 +64,8 @@ final class ParityScriptEngineTests: XCTestCase {
         )
         let state = WPEParitySceneState(document: document, hdr: false, constants: constants)
         var configuration = WPEParityScriptEngine.Configuration(
-            assets: WPEParityProgramAssets(sceneDirectory: FileManager.default.temporaryDirectory,
-                                           assetRoots: [install]),
+            assets: assets ?? WPEParityProgramAssets(sceneDirectory: FileManager.default.temporaryDirectory,
+                                                     assetRoots: [install]),
             canvasSize: SIMD2(1920, 1080), screenResolution: SIMD2(1920, 1080), angleConstants: angleConstants
         )
         configure(&configuration)
@@ -399,7 +404,16 @@ final class ParityScriptEngineTests: XCTestCase {
                              }
                              """), "passes": [["constantshadervalues": [
                                  "v2": Self.scripted("0 0", """
-                                 export function init() { shared.material = thisObject; return new Vec2(90, 180); }
+                                 export function init() {
+                                     const effect = thisLayer.getEffect(0);
+                                     const material = effect.getMaterial(0);
+                                     if (material !== thisObject || material !== effect.getMaterial(0)) throw Error('material identity');
+                                     const empty = effect.getMaterial(1);
+                                     if (empty === material || empty !== effect.getMaterial(1) || Object.keys(empty).length !== 0)
+                                         throw Error('empty pass identity');
+                                     shared.material = thisObject;
+                                     return new Vec2(90, 180);
+                                 }
                                  """),
                                  "v4": Self.scripted("0 0 0 0", """
                                  export function init() {
@@ -408,9 +422,9 @@ final class ParityScriptEngineTests: XCTestCase {
                                      return new Vec4(90, 180, 270, 360);
                                  }
                                  """),
-                             ]]]]],
+                             ]], [:]]]],
             ]),
-        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]]],
+        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]]], assets: Self.fixedAssets(),
         configure: { configuration in
             configuration.materialConstants = [
                 .init(pass: pass, name: "v2"): .init(value: .zero, components: 2, angle: true),
@@ -422,13 +436,46 @@ final class ParityScriptEngineTests: XCTestCase {
         })
         scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.origin, .one)
-        XCTAssertEqual(scene.state.object("1")?.color, .one)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 2))
         XCTAssertEqual(scene.state.object("1")?.alpha, 0.5)
         XCTAssertEqual(scene.state.constant("extra", of: pass)?.value.x, 8)
         XCTAssertEqual(scene.state.constant("v2", of: pass)?.value, SIMD4(90, 180, 0, 0))
         XCTAssertEqual(scene.state.constant("v4", of: pass)?.value, SIMD4(90, 180, 270, 360))
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.angles, SIMD3(90, 90, 90), "scalar vec3 angle branch skips conversion")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testLayerQueriesReuseSceneWrappersAndReadLiveNames() throws {
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "Shared", ["alpha": Self.scripted(1, """
+            export function init() {
+                const second = thisScene.getLayer(1), third = thisScene.getLayer(2);
+                const byID = thisScene.getLayerByID('2');
+                thisLayer.color = new Vec3(byID === second ? 1 : 99,
+                    thisScene.getLayerIndex('Shared'), thisScene.getLayerIndex(byID));
+                third.name = 'Renamed';
+                thisLayer.origin = new Vec3(thisScene.getLayerIndex('Renamed'),
+                    thisScene.getLayerIndex('Other'), thisScene.getLayerIndex(second));
+                const invalid = thisScene.getLayerIndex(0) === -1
+                    && thisScene.getLayerIndex({__index: 0}) === -1
+                    && thisScene.getLayerIndex(thisScene) === -1;
+                // These rejected branches are an explicit bounded product policy, not native failure expectations.
+                const unsupported = thisScene.getLayerByID(2) === null && thisScene.getLayerByID('missing') === null;
+                thisLayer.brightness = invalid && unsupported ? 7 : 99;
+            }
+            """)]),
+            Self.layer(2, "Shared"),
+            Self.layer(3, "Other"),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 0, 1))
+        XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(2, -1, 1))
+        XCTAssertEqual(scene.state.object("1")?.brightness, 7)
+        XCTAssertEqual(diagnostics.count, 5, "unsupported arguments must be observable without fabricating a wrapper")
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 

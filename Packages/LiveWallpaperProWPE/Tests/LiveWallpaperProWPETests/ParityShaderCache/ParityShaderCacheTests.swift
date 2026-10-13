@@ -13,7 +13,9 @@ final class ParityShaderCacheTests: XCTestCase {
 
     func testStableLowercaseSHA256() {
         XCTAssertEqual(key(), key())
-        XCTAssertEqual(key().rawValue, "a0360743b954956a2bbe3093e4d2dd917c927438f0341917803f93c96aea3a38")
+        // Retain the independent old encoding vector with its original, explicitly unchecked option.
+        XCTAssertEqual(key(options: .init(boundsCheck: false)).rawValue,
+                       "a0360743b954956a2bbe3093e4d2dd917c927438f0341917803f93c96aea3a38")
         XCTAssertEqual(key().rawValue.count, 64)
         XCTAssertTrue(key().rawValue.allSatisfy { "0123456789abcdef".contains($0) })
     }
@@ -57,7 +59,8 @@ final class ParityShaderCacheTests: XCTestCase {
     func testEachCompileOptionChangesKey() {
         XCTAssertNotEqual(key(), key(options: .init(hlslVersion: "2021")))
         XCTAssertNotEqual(key(), key(options: .init(minimumMacOS: "15.0.0")))
-        XCTAssertNotEqual(key(), key(options: .init(boundsCheck: true)))
+        XCTAssertTrue(WPEParityShaderCompileOptions().boundsCheck)
+        XCTAssertNotEqual(key(), key(options: .init(boundsCheck: false)))
     }
 
     func testBothVersionsChangeKey() {

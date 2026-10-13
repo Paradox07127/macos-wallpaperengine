@@ -39,61 +39,12 @@ struct WPEParityParticleFrame {
     }
 }
 
-/// A particle system read from its own JSON through the public `WPEParityParticleSystem` init, without children or
-/// prewarm: its renderer entries and slot count are known before the scene's systems exist.
+/// Renderer and capacity facts read through the package's resolved particle Config tree, without allocating a
+/// simulation system, prewarming it, or consuming either scene generator.
 enum WPEParityParticleProbe {
-    /// Children are numbered as `WPEParityProgramScene` keys them: missing or recursive files take no index.
-    static func system(for key: WPEParityParticleDrawKey, document: WPESceneDocument,
-                       assets: WPEParityProgramAssets) -> WPEParityParticleSystem? {
-        guard let object = document.particleObjects.first(where: { $0.id == key.objectID }),
-              var json = assets.json(object.particleRelativePath) else { return nil }
-        var ancestors = [object.particleRelativePath]
-        for index in key.node {
-            let statics = children(json, ancestors: ancestors, assets: assets).statics
-            guard statics.indices.contains(index) else { return nil }
-            (json, ancestors) = (statics[index].json, ancestors + [statics[index].path])
-        }
-        if let group = key.eventGroup {
-            let events = children(json, ancestors: ancestors, assets: assets).events
-            guard events.indices.contains(group) else { return nil }
-            json = events[group].json
-        }
-        guard case var .object(fields) = json else { return nil }
-        fields["starttime"] = nil
-        fields["children"] = nil
-        let root = key.node.isEmpty && key.eventGroup == nil
-        return WPEParityParticleSystem(json: .object(fields), instanceOverride: root ? object.instanceOverride : nil,
-                                       rng: WPEParityMT19937())
-    }
-
-    private static func children(_ json: WPESceneJSONValue, ancestors: [String], assets: WPEParityProgramAssets)
-        -> (statics: [(path: String, json: WPESceneJSONValue)], events: [(path: String, json: WPESceneJSONValue)]) {
-        guard case let .array(entries)? = json["children"] else { return ([], []) }
-        var statics: [(path: String, json: WPESceneJSONValue)] = []
-        var events: [(path: String, json: WPESceneJSONValue)] = []
-        for entry in entries {
-            func string(_ key: String) -> String? {
-                if case let .string(value)? = entry[key] {
-                    value
-                } else {
-                    nil
-                }
-            }
-            let flags: Int? = if case let .number(value)? = entry["flags"] {
-                Int(value)
-            } else {
-                nil
-            }
-            let kind = WPEParticleChildEventKind(authoredType: string("type"), flags: flags)
-            let path = string("name") ?? string("particle") ?? ""
-            guard !ancestors.contains(path), let child = assets.json(path) else { continue }
-            switch kind {
-            case .staticSystem: statics.append((path, child))
-            case .spawn, .death: events.append((path, child))
-            default: break
-            }
-        }
-        return (statics, events)
+    static func prototype(for key: WPEParityParticleDrawKey, document: WPESceneDocument,
+                          assets: WPEParityProgramAssets) -> WPEParityParticlePrototype? {
+        WPEParityParticleScene.prototype(for: key, document: document, assets: assets)
     }
 }
 #endif

@@ -71,6 +71,7 @@ public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {
     case missingInfoBlock
     case missingBitmapBlock
     case unsupportedFormat(code: Int)
+    case unsupportedTextureDimension(depth: Int)
     case unsupportedAnimation
     case invalidDimensions(width: Int, height: Int)
     case truncatedBlock(block: String, offset: Int)
@@ -81,37 +82,40 @@ public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .unsupportedContainer(let magic):
-            return String(localized: "error.texture.decode.unsupported_container", defaultValue: ".tex container '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex container magic is unsupported.")
-        case .unsupportedBlock(let magic):
-            return String(localized: "error.texture.decode.unsupported_block", defaultValue: ".tex block '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block magic is unsupported.")
+        case let .unsupportedContainer(magic):
+            String(localized: "error.texture.decode.unsupported_container", defaultValue: ".tex container '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex container magic is unsupported.")
+        case let .unsupportedBlock(magic):
+            String(localized: "error.texture.decode.unsupported_block", defaultValue: ".tex block '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block magic is unsupported.")
         case .missingInfoBlock:
-            return String(localized: "error.texture.decode.missing_info_block", defaultValue: ".tex file is missing the TEXI info block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXI block.")
+            String(localized: "error.texture.decode.missing_info_block", defaultValue: ".tex file is missing the TEXI info block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXI block.")
         case .missingBitmapBlock:
-            return String(localized: "error.texture.decode.missing_bitmap_block", defaultValue: ".tex file is missing the TEXB bitmap block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXB block.")
-        case .unsupportedFormat(let code):
-            return String(localized: "error.texture.decode.unsupported_format", defaultValue: ".tex format code \(code) is not yet supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file uses an unsupported format code.")
+            String(localized: "error.texture.decode.missing_bitmap_block", defaultValue: ".tex file is missing the TEXB bitmap block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXB block.")
+        case let .unsupportedFormat(code):
+            String(localized: "error.texture.decode.unsupported_format", defaultValue: ".tex format code \(code) is not yet supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file uses an unsupported format code.")
+        case let .unsupportedTextureDimension(depth):
+            String(localized: "error.texture.decode.unsupported_dimension", defaultValue: ".tex volume textures (depth \(depth)) are not yet supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine volume texture cannot be uploaded.")
         case .unsupportedAnimation:
-            return String(localized: "error.texture.decode.unsupported_animation", defaultValue: ".tex animation/sequence frames are not supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file contains unsupported animation frames.")
-        case .invalidDimensions(let w, let h):
-            return String(localized: "error.texture.decode.invalid_dimensions", defaultValue: ".tex declares invalid dimensions \(w)×\(h).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file declares invalid pixel dimensions.")
-        case .truncatedBlock(let block, let offset):
-            return String(localized: "error.texture.decode.truncated_block", defaultValue: ".tex block '\(block)' truncated at offset \(offset).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block ends before its declared payload.")
-        case .mipmapOutOfBounds(let index):
-            return String(localized: "error.texture.decode.mipmap_out_of_bounds", defaultValue: ".tex mipmap index \(index) is out of bounds.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap index is invalid.")
-        case .decompressionFailed(let mipmap):
-            return String(localized: "error.texture.decode.decompression_failed", defaultValue: ".tex mipmap \(mipmap) decompression failed.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decompressed.")
-        case .decodeFailed(let mipmap, let detail):
-            return String(localized: "error.texture.decode.decode_failed", defaultValue: ".tex mipmap \(mipmap) decode failed: \(detail)", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decoded.")
-        case .metalUnavailable(let format):
-            return String(localized: "error.texture.decode.metal_unavailable", defaultValue: "Cannot decode \(format.debugLabel) without Metal support on this machine.", bundle: .appLanguage, comment: "Error shown when a texture format requires Metal support that is unavailable.")
+            String(localized: "error.texture.decode.unsupported_animation", defaultValue: ".tex animation/sequence frames are not supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file contains unsupported animation frames.")
+        case let .invalidDimensions(w, h):
+            String(localized: "error.texture.decode.invalid_dimensions", defaultValue: ".tex declares invalid dimensions \(w)×\(h).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file declares invalid pixel dimensions.")
+        case let .truncatedBlock(block, offset):
+            String(localized: "error.texture.decode.truncated_block", defaultValue: ".tex block '\(block)' truncated at offset \(offset).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block ends before its declared payload.")
+        case let .mipmapOutOfBounds(index):
+            String(localized: "error.texture.decode.mipmap_out_of_bounds", defaultValue: ".tex mipmap index \(index) is out of bounds.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap index is invalid.")
+        case let .decompressionFailed(mipmap):
+            String(localized: "error.texture.decode.decompression_failed", defaultValue: ".tex mipmap \(mipmap) decompression failed.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decompressed.")
+        case let .decodeFailed(mipmap, detail):
+            String(localized: "error.texture.decode.decode_failed", defaultValue: ".tex mipmap \(mipmap) decode failed: \(detail)", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decoded.")
+        case let .metalUnavailable(format):
+            String(localized: "error.texture.decode.metal_unavailable", defaultValue: "Cannot decode \(format.debugLabel) without Metal support on this machine.", bundle: .appLanguage, comment: "Error shown when a texture format requires Metal support that is unavailable.")
         }
     }
 }
 
 // MARK: - Value types parsed out of the container
 
-/// Uninterpreted Int32 after flag `0x40`. It is not a texture dimension and does not imply a 3D texture.
+/// TEXI's conditional depth field. Native 14015c760 reads it before the versioned tail word;
+/// 1400ec220 uses it in the volume texture descriptor when flag 0x40 is set.
 public struct WPETexFlag0x40Extension: Sendable, Equatable {
     public let rawValue: Int32
     public let sourceRange: Range<Int>
@@ -122,7 +126,8 @@ public struct WPETexFlag0x40Extension: Sendable, Equatable {
     }
 }
 
-/// `imageWidth`/`imageHeight`/`unknownInt0` are TEXI fields the decoder reads but does not act on. Modal `.tex` records padded atlas size, not logical image size, in `width`/`height`.
+/// `unknownInt0` preserves TEXI's versioned tail word. `width`/`height` describe the texture,
+/// while `imageWidth`/`imageHeight` retain the authored image extent.
 public struct WPETexInfo: Sendable, Equatable {
     public let containerVersion: Int
     public let infoVersion: Int
@@ -136,6 +141,14 @@ public struct WPETexInfo: Sendable, Equatable {
     public let imageHeight: Int
     public let unknownInt0: Int32
     public let flag0x40Extension: WPETexFlag0x40Extension?
+
+    public var isVolume: Bool {
+        flags & Self.rawExtensionFlag != 0
+    }
+
+    public var depth: Int {
+        flag0x40Extension.map { Int(UInt32(bitPattern: $0.rawValue)) } ?? 1
+    }
 
     public init(
         containerVersion: Int,
@@ -177,8 +190,7 @@ public struct WPETexInfo: Sendable, Equatable {
     /// TEXI bit 0x2 = ClampUVs (must not tile). Unset (the default) tiles with `repeat`, required for scrolled maps whose UVs leave [0,1].
     public static let clampUVsFlag: UInt32 = 0x0000_0002
 
-    /// TEXI flag bit `0x40` appends one uninterpreted `Int32` after
-    /// `unknownInt0` and before the next block magic.
+    /// TEXI flag bit `0x40` adds depth before the versioned tail word and adds depth to every mip record.
     public static let rawExtensionFlag: UInt32 = 0x0000_0040
 
     /// Sample with clamp-to-edge (`true`) vs `repeat`/tile (`false`). See `clampUVsFlag`.
@@ -213,12 +225,14 @@ public struct WPETexMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
     public let height: Int
+    public let depth: Int
     public let storedByteCount: Int
     public let decompressedByteCount: Int?
     /// View into the container bytes (mmap-backed when the provider maps the
     /// file) — the compressed payload is never duplicated onto the heap.
     public let payload: WPEMappedByteSpan
     public let isCompressed: Bool
+    public let compressionFlags: UInt32
     public let v4Fields: WPETexMipmapV4Fields?
 
     public init(
@@ -229,15 +243,19 @@ public struct WPETexMipmap: Sendable, Equatable {
         decompressedByteCount: Int?,
         payload: WPEMappedByteSpan,
         isCompressed: Bool,
-        v4Fields: WPETexMipmapV4Fields? = nil
+        v4Fields: WPETexMipmapV4Fields? = nil,
+        depth: Int = 1,
+        compressionFlags: UInt32 = 0
     ) {
         self.index = index
         self.width = width
         self.height = height
+        self.depth = depth
         self.storedByteCount = storedByteCount
         self.decompressedByteCount = decompressedByteCount
         self.payload = payload
         self.isCompressed = isCompressed
+        self.compressionFlags = compressionFlags
         self.v4Fields = v4Fields
     }
 }
@@ -502,6 +520,7 @@ public struct WPETexTexturePayload: Sendable, Equatable {
     public let mipmaps: [WPETexTextureMipmap]
     public let animationTrack: WPETexAnimationTrack?
     public let videoPayload: WPETexVideoPayload?
+    public let hasConditionalVariants: Bool
 
     private let explicitAnimationFlag: Bool
 
@@ -510,13 +529,15 @@ public struct WPETexTexturePayload: Sendable, Equatable {
         mipmaps: [WPETexTextureMipmap],
         hasAnimationFrames: Bool,
         animationTrack: WPETexAnimationTrack? = nil,
-        videoPayload: WPETexVideoPayload? = nil
+        videoPayload: WPETexVideoPayload? = nil,
+        hasConditionalVariants: Bool = false
     ) {
         self.info = info
         self.mipmaps = mipmaps
         self.explicitAnimationFlag = hasAnimationFrames
         self.animationTrack = animationTrack
         self.videoPayload = videoPayload
+        self.hasConditionalVariants = hasConditionalVariants
     }
 
     public var hasAnimationFrames: Bool {

@@ -43,12 +43,11 @@ struct WPEMetalTextureFormatMapperTests {
         }
     }
 
-    @Test("Rejects RGBA1010102 until a concrete sampling path exists")
-    func rejectsRGBA1010102() {
+    @Test("TEX format 13 maps to native RGB10A2 without RGBA8 conversion")
+    func mapsRGBA1010102() throws {
         let capabilities = WPEMetalTextureCapabilities(supportsBCTextureCompression: true)
 
-        #expect(throws: WPEMetalTextureLoaderError.unsupportedFormat(.rgba1010102)) {
-            _ = try WPEMetalTextureFormatMapper.mapping(for: .rgba1010102, capabilities: capabilities)
-        }
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .rgba1010102, capabilities: capabilities).pixelFormat
+            == .rgb10a2Unorm)
     }
 }

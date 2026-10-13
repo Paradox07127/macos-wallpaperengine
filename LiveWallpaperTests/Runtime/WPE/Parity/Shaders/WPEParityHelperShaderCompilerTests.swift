@@ -68,6 +68,75 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         }
     }
 
+    /// Exercise the actual HLSL Load through the helper and MSC; sampler clamping cannot satisfy this contract.
+    /// https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-load
+    func testDefaultCompilerPreservesOutOfBoundsLoadZero() async throws {
+        let compiler = try makeCompiler(binaries())
+        let program = WPEHLSLProgram(vertex: Array("""
+        float4 main(uint id : SV_VertexID) : SV_Position {
+            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+            return float4(p[id], 0, 1);
+        }
+        """.utf8), fragment: Array("""
+        Texture2D<float4> tex : register(t0);
+        float4 main(float4 position : SV_Position) : SV_Target {
+            const int3 locations[8] = {int3(0,0,0), int3(-1,0,0), int3(2,0,0), int3(0,-1,0),
+                                      int3(0,2,0), int3(0,0,1), int3(1,0,1), int3(0,0,2)};
+            return tex.Load(locations[(uint)position.x]);
+        }
+        """.utf8))
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(
+            cachesURL: workDirectory.appending(path: "cache")
+        ))
+        let request = WPEParityShaderCompileRequest(program: program, compilerIdentity: compiler.compilerIdentity,
+                                                    bindingABIVersion: 1)
+        XCTAssertTrue(request.options.boundsCheck)
+        let artifact = try await store.artifact(for: request)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let factory = WPEParityPipelineFactory(device: device)
+        let pipeline = try factory.makePipeline(artifact: artifact, blend: .wpe(.normal, modifiers: .writeAlpha),
+                                                colorPixelFormat: .rgba8Unorm)
+        let inputDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 2,
+                                                                       height: 2, mipmapped: true)
+        let input = try XCTUnwrap(device.makeTexture(descriptor: inputDescriptor))
+        let first: [UInt8] = [51, 102, 153, 204]
+        let second: [UInt8] = [230, 128, 64, 255]
+        input.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                      withBytes: first + first + first + first, bytesPerRow: 8)
+        input.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 1, withBytes: second, bytesPerRow: 4)
+        let targetDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 8,
+                                                                        height: 1, mipmapped: false)
+        targetDescriptor.usage = .renderTarget
+        targetDescriptor.storageMode = .shared
+        let target = try XCTUnwrap(device.makeTexture(descriptor: targetDescriptor))
+        let arena = try XCTUnwrap(WPEParityFrameArena(device: device, capacity: 65536))
+        let command = try XCTUnwrap(queue.makeCommandBuffer())
+        let frame = try XCTUnwrap(arena.beginFrame(for: command))
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(1, 0, 1, 1)
+        pass.colorAttachments[0].storeAction = .store
+        let encoder = try XCTUnwrap(command.makeRenderCommandEncoder(descriptor: pass))
+        var draw = try WPEParityDraw(
+            pipeline: pipeline, depthStencil: .wpe(depthTest: false, depthWrite: false),
+            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
+            vertexBuffer: XCTUnwrap(device.makeBuffer(length: 16, options: .storageModeShared)),
+            primitiveType: .triangle, vertexCount: 3
+        )
+        draw.textures = ["tex": input]
+        try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, on: encoder)
+        encoder.endEncoding()
+        command.commit()
+        await command.completed()
+        XCTAssertNil(command.error)
+        var output = [UInt8](repeating: 255, count: 32)
+        target.getBytes(&output, bytesPerRow: 32, from: MTLRegionMake2D(0, 0, 8, 1), mipmapLevel: 0)
+        let zero = [UInt8](repeating: 0, count: 4)
+        XCTAssertEqual(output, first + zero + zero + zero + zero + second + zero + zero)
+    }
+
     func testIdentityFollowsLibraryBytesNotPath() throws {
         let binaries = try binaries()
         let original = try makeCompiler(binaries).compilerIdentity

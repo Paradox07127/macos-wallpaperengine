@@ -118,7 +118,7 @@ enum WPEMetalTextureFormatMapper {
                 bytesPerBlock: 16
             )
         case .rgba1010102:
-            throw WPEMetalTextureLoaderError.unsupportedFormat(format)
+            return WPEMetalTextureFormatMapping(pixelFormat: .rgb10a2Unorm, bytesPerPixel: 4, bytesPerBlock: nil)
         }
     }
 }

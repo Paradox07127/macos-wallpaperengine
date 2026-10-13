@@ -249,14 +249,14 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         for (index, child) in system.children.enumerated() {
             var key = node
-            key.node.append(index)
+            key.path.append(.staticChild(index))
             Self.keys(child, at: key, into: &keys)
         }
         for (group, child) in system.config.children.filter({ $0.trigger != .always }).enumerated() {
             XCTAssertTrue(child.config.children.isEmpty)
             for index in child.config.renderers.indices {
                 var key = node
-                key.eventGroup = group
+                key.path.append(.eventGroup(group))
                 key.renderer = index
                 keys.append(key)
             }
@@ -433,16 +433,45 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(Self.root(scene)?.position[0], SIMD3(103, 54, 0))
     }
 
-    func testEachDeathEventIsOneBatchOfItsGroup() throws {
-        let parent = Self.burst(2, lifetime: 0.05,
-                                extra: #", "children": [{"name": "particles/glow.json", "type": "eventdeath"}]"#)
+    func testEachDeathEventCompletesItsRendererEntriesBeforeTheNextInstance() throws {
+        let parent = """
+        {"maxcount": 2, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1,
+                      "distancemax": 0, "origin": "-20 0 0"},
+                     {"name": "sphererandom", "rate": 0, "instantaneous": 1,
+                      "distancemax": 0, "origin": "20 0 0"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
+         "renderer": [{"name": "sprite"}],
+         "children": [{"name": "particles/glow.json", "type": "eventdeath"}]}
+        """
+        let glow = Self.burst(1, renderer: #"{"name": "sprite"}, {"name": "spritetrail"}"#)
         var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent,
-                                                          "particles/glow.json": Self.burst(1)])
+                                                          "particles/glow.json": glow])
+        var control = try Self.scene(Self.five, particles: ["particles/fx.json": parent,
+                                                            "particles/glow.json": glow])
         scene.advance(dt: 0.1, frames: ["5": .init()])
         scene.advance(dt: 0.1, frames: ["5": .init()])
-        let group = scene.batches(for: WPEParityParticleDrawKey(objectID: "5", renderer: 0, eventGroup: 0))
-        XCTAssertEqual(group.map(\.count), [1, 1])
+        control.advance(dt: 0.1, frames: ["5": .init()])
+        control.advance(dt: 0.1, frames: ["5": .init()])
+        let actual = scene.drawBatches(for: "5")
+        XCTAssertEqual(actual.map(\.key), [
+            .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
+            .init(objectID: "5", path: [.eventGroup(0)], renderer: 1),
+            .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
+            .init(objectID: "5", path: [.eventGroup(0)], renderer: 1),
+        ])
+        XCTAssertEqual(actual.map { Support.float($0.vertices.bytes, at: 0) }, [-20, -20, 20, 20])
+        XCTAssertEqual(actual.map(\.vertices.count), [1, 1, 1, 1])
+        XCTAssertEqual(actual.map(\.vertices.renderVar0), [
+            .init(), .init(x: 0.05, y: 10, z: 0), .init(), .init(x: 0.05, y: 10, z: 0),
+        ])
+        XCTAssertTrue(actual.allSatisfy { $0.localTransform == matrix_identity_float4x4 })
+        let key = WPEParityParticleDrawKey(objectID: "5", renderer: 0, eventGroup: 0)
+        XCTAssertEqual(scene.batches(for: key), actual.filter { $0.key == key }.map(\.vertices))
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next(),
+                       "Neither object packing nor compatibility lookup consumes the shared RNG")
         XCTAssertEqual(scene.batches(for: WPEParityParticleDrawKey(objectID: "5", renderer: 0)), [])
+        XCTAssertTrue(scene.drawBatches(for: "missing").isEmpty)
     }
 
     func testNoLiveParticlesOrALoneRopeParticleYieldNoBatch() throws {

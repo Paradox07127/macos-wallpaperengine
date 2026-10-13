@@ -10,11 +10,8 @@ public extension WPEParityParticleSystem {
         case .sprite, .spriteTrail:
             let stride = usesThickMainBuffer ? 60 : 44
             packMain(stride: stride)
-            // spritetrail RV0 = (length, maxlength, minlength, kept) (D/1401c0af0.c:15-47).
-            let renderVar0 = renderer.kind == .spriteTrail
-                ? WPEParityRenderVar0(x: renderer.length, y: renderer.maxLength, z: renderer.minLength)
-                : WPEParityRenderVar0()
-            return WPEParityParticleVertexBatch(bytes: mainBytes, stride: stride, count: liveCount, renderVar0: renderVar0)
+            return WPEParityParticleVertexBatch(bytes: mainBytes, stride: stride, count: liveCount,
+                                                renderVar0: Self.mainRenderVar0(renderer: renderer))
         case .rope:
             let count = packRope()
             return WPEParityParticleVertexBatch(
@@ -40,6 +37,13 @@ public extension WPEParityParticleSystem {
 }
 
 extension WPEParityParticleSystem {
+    /// spritetrail RV0 = (length, maxlength, minlength, kept) (D/1401c0af0.c:15-47).
+    static func mainRenderVar0(renderer: WPEParityParticleRenderer) -> WPEParityRenderVar0 {
+        renderer.kind == .spriteTrail
+            ? WPEParityRenderVar0(x: renderer.length, y: renderer.maxLength, z: renderer.minLength)
+            : WPEParityRenderVar0()
+    }
+
     /// A system whose only renderers are `rope` draws with genericropeparticle (B/1401c5490.c:10109-10116).
     static func shaderOverride(renderers: [WPEParityParticleRenderer]) -> String? {
         !renderers.isEmpty && renderers.allSatisfy { $0.kind == .rope } ? "genericropeparticle" : nil
