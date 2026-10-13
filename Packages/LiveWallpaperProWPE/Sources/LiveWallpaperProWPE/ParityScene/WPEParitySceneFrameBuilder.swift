@@ -55,6 +55,9 @@ private struct WPEParitySceneEmitter {
     var owners: [WPEPassIdentity: String] = [:]
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
+    /// Each `_rt_imageLayerComposite_<id>_a` the scene has and the layer it belongs to, so a draw of another layer
+    /// may name it in its reads before the owner renders.
+    private let layerComposites: [WPEResourceID: WPEParitySceneObject]
 
     init(_ scene: WPEParitySceneDescription, frameIndex: Int) {
         self.scene = scene
@@ -74,6 +77,11 @@ private struct WPEParitySceneEmitter {
         }
         self.roots = roots
         childrenByParent = children
+        var layerComposites: [WPEResourceID: WPEParitySceneObject] = [:]
+        for object in scene.objects where object.hasLayerComposite(scene) {
+            layerComposites[Resource.layerCompositeA(object.id)] = object
+        }
+        self.layerComposites = layerComposites
 
         let multisampled = scene.msaaSamples > 1
         sceneColor = multisampled ? Resource.multisampled : Resource.backbuffer
@@ -126,11 +134,15 @@ private struct WPEParitySceneEmitter {
     /// 1401e8aa0. `ancestors` are the composites the enclosing layers draw their children into.
     private mutating func render(_ object: WPEParitySceneObject, into destination: WPEParitySceneDestination,
                                  ancestors: [WPEResourceID]) {
-        guard object.visible else { return }
+        // 1401e8aa0.c:90-100 with 1401ea2d0: a dependency target renders while hidden, without its scene draw.
+        guard object.visible || object.dependencyTarget else { return }
         let enclosing = owner
-        owner = object.id
+        owner = object.dependencyTarget ? nil : object.id
         defer { owner = enclosing }
         let children = childrenByParent[object.id] ?? []
+        if case let .shape(shape) = object.kind {
+            return renderShape(object, shape, into: destination)
+        }
         if case let .particle(particle) = object.kind {
             renderParticles(object, particle, into: destination)
             for child in children {
@@ -145,7 +157,8 @@ private struct WPEParitySceneEmitter {
         let effects = object.effects.filter(\.enabled)
         let lastPass = (effects.count - 1, (effects.last?.passes.count ?? 0) - 1)
         let n = effects.count + effects.reduce(0) { $0 + $1.passes.count(where: \.compose) }
-        let bit4 = object.requiresLayerComposite || scene.forcesLayerComposite
+        let ownBit4 = object.requiresLayerComposite || scene.forcesLayerComposite
+        let bit4 = object.hasLayerComposite(scene)
         let clearsAlpha = if case let .text(text) = object.kind, n > 0, !text.object.opaqueBackground {
             true
         } else {
@@ -153,26 +166,22 @@ private struct WPEParitySceneEmitter {
         }
 
         // 1401e8aa0.c:169-176; a copybackground composelayer and a text FBO's clearalpha sample the snapshot too.
-        if bit4 || !children.isEmpty || (object.passthrough && object.copyBackground) || clearsAlpha {
+        if ownBit4 || !children.isEmpty || (object.passthrough && object.copyBackground) || clearsAlpha {
             snapshot(WPEPassIdentity("\(object.id)/snapshot"))
         }
         guard n > 0 || bit4 else {
             return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
         }
 
-        // 1401ea500.c:102-116
-        let width = max(4, object.fullscreen ? scene.width : object.width)
-        let height = max(4, object.fullscreen ? scene.height : object.height)
-        let sampler = WPEParitySceneSampler(filter: object.noInterpolation ? .point : .linear,
-                                            address: object.clampUVs ? .clamp : .wrap)
+        let (width, height) = compositeExtent(object)
+        let sampler = object.compositeSampler
         let composites = (0 ..< 2).map { index in
             bit4 && index == 0 ? Resource.layerCompositeA(object.id)
                 : Resource.pooledComposite(width: width, height: height, sampler: sampler, index: index,
                                            ancestors: ancestors)
         }
         for composite in composites {
-            register(composite, width, height, format: compositeFormat)
-            samplers[composite] = sampler
+            registerComposite(composite, of: object)
         }
         // 1401e8aa0.c:476-487: the last reader always lands on composites[0].
         var current = bit4 ? n % 2 : (n - 1) % 2
@@ -234,7 +243,7 @@ private struct WPEParitySceneEmitter {
                     snapshot(WPEPassIdentity("\(object.id)/\(effect.id)/snapshot"))
                 }
                 let reads = [composites[current]] + pass.binds.map(fbo)
-                    + (pass.readsFullFrameBuffer ? [Resource.fullFrameBuffer] : [])
+                    + (pass.readsFullFrameBuffer ? [Resource.fullFrameBuffer] : []) + frameReads(pass.frameReads)
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id,
                                         passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
                                         target: target, blend: blend, alphaMax: alphaMax,
@@ -245,18 +254,13 @@ private struct WPEParitySceneEmitter {
                     flips += 1
                 }
             }
-            for fbo in effect.fbos {
-                guard let partner = fbo.swapPartner, fbo.name < partner else { continue }
-                let first = Self.fboID(object, effect, fbo.name)
-                let second = Self.fboID(object, effect, partner)
-                let exchanged = (bound(second), bound(first))
-                (bindings[first], bindings[second]) = exchanged
-            }
+            exchangeSwapPairs(object, effect)
             current ^= 1
             flips += 1
         }
 
-        guard bit4 else { return }
+        guard bit4, object.visible else { return }
+        owner = object.id
         // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
         let identity = WPEPassIdentity("\(object.id)/passthrough4")
         bind(identity, destination.color, depth: destination.depth)
@@ -321,16 +325,17 @@ private struct WPEParitySceneEmitter {
 
     /// FUN_1402222a0: each sub-mesh in file order binds its own material, draws into the bound target and unbinds;
     /// the model sets no target or state itself. Blending other than opaque (0, 3) turns depth writes off
-    /// (140155fc0.c:713-738). Textures come from the materials, so the draws read no frame resource.
+    /// (140155fc0.c:713-738). The draws read only the frame resources their materials name.
     private mutating func renderModel(_ object: WPEParitySceneObject, _ model: WPEParitySceneModel,
                                       children: [WPEParitySceneObject],
                                       into destination: WPEParitySceneDestination, ancestors: [WPEResourceID]) {
         for (index, mesh) in model.meshes.enumerated() {
             let identity = WPEParitySceneModel.pass(objectID: object.id, mesh: index)
             let state = mesh.materialState
+            let reads = frameReads(mesh.material.flatMap { object.materialFrameReads[$0.materialPath] } ?? [])
             bind(identity, destination.color, depth: destination.depth)
             draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: mesh.shader, source: mesh.material,
-                                    reads: [], target: destination.color, blend: mesh.blend,
+                                    reads: reads, target: destination.color, blend: mesh.blend,
                                     alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
                                     writeMask: destination.writeMask(state), geometry: .modelMesh,
                                     depthTest: state.depthTest, depthWrite: state.depthWrite && mesh.blend == .normal,
@@ -427,7 +432,84 @@ private struct WPEParitySceneEmitter {
         }
         let image = Resource.layerImage(object.id)
         register(image, object.width, object.height, lifetime: .imported)
-        return (object.materialShader, object.material, [image])
+        let named = object.material.flatMap { object.materialFrameReads[$0.materialPath] } ?? []
+        return (object.materialShader, object.material, [image] + frameReads(named))
+    }
+
+    /// FUN_14025faf0: no albedo, composite or children. The passes of the last effect draw into the bound target
+    /// with the layer matrices, every one with DIRECTDRAW=1 (14025ff50); `previous` is never bound (1401ebf60.c:146).
+    private mutating func renderShape(_ object: WPEParitySceneObject, _: WPEParitySceneShape,
+                                      into destination: WPEParitySceneDestination) {
+        guard let effect = object.effects.last(where: \.enabled) else { return }
+        for fbo in effect.fbos {
+            register(Self.fboID(object, effect, fbo.name), fbo.width, fbo.height, format: fbo.format)
+        }
+        // 1401ebf60.c:178-183, 345: effect+0x144, the last draw pass, draws the shape mesh additive (140260790).
+        let finalPass = effect.passes.lastIndex { $0.kind == .draw }
+        let readsFullFrame = effect.passes.contains(where: \.readsFullFrameBuffer)
+        for (passIndex, pass) in effect.passes.enumerated() {
+            let identity = WPEPassIdentity("\(object.id)/\(effect.id)/\(passIndex)")
+            func fbo(_ name: String) -> WPEResourceID {
+                bound(Self.fboID(object, effect, name))
+            }
+            if case let .copy(source) = pass.kind {
+                if let source, let target = pass.target {
+                    emit(identity, .copy(source: fbo(source), destination: fbo(target)))
+                }
+                continue
+            }
+            let final = passIndex == finalPass
+            let target = pass.target.map(fbo) ?? destination.color
+            bind(identity, target, depth: pass.target == nil ? destination.depth : nil)
+            if passIndex == 0, readsFullFrame {
+                snapshot(WPEPassIdentity("\(object.id)/\(effect.id)/snapshot"))
+            }
+            var source = pass.source
+            source?.combos["DIRECTDRAW"] = 1
+            let reads = pass.binds.map(fbo) + (pass.readsFullFrameBuffer ? [Resource.fullFrameBuffer] : [])
+                + frameReads(pass.frameReads)
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id, passIndex: passIndex,
+                                    shader: pass.shader, source: source, reads: reads, target: target,
+                                    blend: final ? .additive : pass.blend,
+                                    alphaMax: pass.target == nil && destination.alphaMax,
+                                    compositeOwnerID: destination.compositeOwnerID,
+                                    writeMask: final ? destination.writeMask : .rgba,
+                                    geometry: final ? .shapeQuad : .fullscreenQuad, layerMatrices: !final))
+        }
+        exchangeSwapPairs(object, effect)
+    }
+
+    private mutating func exchangeSwapPairs(_ object: WPEParitySceneObject, _ effect: WPEParitySceneEffect) {
+        for fbo in effect.fbos {
+            guard let partner = fbo.swapPartner, fbo.name < partner else { continue }
+            let first = Self.fboID(object, effect, fbo.name)
+            let second = Self.fboID(object, effect, partner)
+            let exchanged = (bound(second), bound(first))
+            (bindings[first], bindings[second]) = exchanged
+        }
+    }
+
+    /// 1401ea500.c:102-116
+    private func compositeExtent(_ object: WPEParitySceneObject) -> (Int, Int) {
+        (max(4, object.fullscreen ? scene.width : object.width), max(4, object.fullscreen ? scene.height : object.height))
+    }
+
+    private mutating func registerComposite(_ composite: WPEResourceID, of object: WPEParitySceneObject) {
+        let (width, height) = compositeExtent(object)
+        register(composite, width, height, format: compositeFormat)
+        samplers[composite] = object.compositeSampler
+    }
+
+    /// The material names the frame has: `_rt_FullFrameBuffer` and every layer's `_a`. Any other name stays out,
+    /// and the draw that samples it is skipped downstream.
+    private mutating func frameReads(_ names: [WPEResourceID]) -> [WPEResourceID] {
+        names.filter { name in
+            if let owner = layerComposites[name] {
+                registerComposite(name, of: owner)
+                return true
+            }
+            return name == Resource.fullFrameBuffer
+        }
     }
 
     /// A name `effect` does not declare resolves to the first enabled effect of the layer that does.
@@ -495,6 +577,19 @@ private struct WPEParitySceneEmitter {
 private extension WPEParitySceneObject {
     var layerGeometry: WPEParitySceneDraw.Geometry {
         puppet == nil ? .layerMesh : .puppetMesh
+    }
+
+    /// FUN_140099980 with the layer's flags.
+    var compositeSampler: WPEParitySceneSampler {
+        WPEParitySceneSampler(filter: noInterpolation ? .point : .linear, address: clampUVs ? .clamp : .wrap)
+    }
+
+    /// Bit4 of an image or text layer, which then owns `_rt_imageLayerComposite_<id>_a`.
+    func hasLayerComposite(_ scene: WPEParitySceneDescription) -> Bool {
+        switch kind {
+        case .image, .text: requiresLayerComposite || scene.forcesLayerComposite || dependencyTarget
+        case .model, .particle, .shape: false
+        }
     }
 }
 

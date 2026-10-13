@@ -76,7 +76,14 @@ public struct WPEParityProgramScene: Sendable {
         let height = Int(document.general.orthogonalProjection.height.rounded())
         let format = flags.hdr ? "rgba16float" : WPEParitySceneResource.colorFormat
         var authoredByID: [String: WPESceneJSONValue] = [:]
+        // 140186c90.c:759-788: every id any object lists under "dependencies".
+        var dependencyTargets: Set<String> = []
         for object in objects {
+            for dependency in Self.array(object["dependencies"]) {
+                if let id = Self.string(dependency) ?? Self.number(dependency).map({ String(Int($0)) }) {
+                    dependencyTargets.insert(id)
+                }
+            }
             guard let id = Self.string(object["id"]) ?? Self.number(object["id"]).map({ String(Int($0)) }) else {
                 continue
             }
@@ -137,6 +144,14 @@ public struct WPEParityProgramScene: Sendable {
                 material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
             }
             var kind = WPEParitySceneObject.Kind.image
+            var frameReads: [String: [WPEResourceID]] = [:]
+            if let materialPath, let material {
+                frameReads[materialPath] = WPEParityAuthoredPass.frameReads(material.textureNames)
+            }
+            if image.isShapeQuad {
+                kind = .shape(WPEParitySceneShape(points: Self.shapePoints(effects.first, objectID: image.id,
+                                                                           materials: materials, assets: assets)))
+            }
             if isModel {
                 var meshes: [WPEParitySceneModelMesh] = []
                 for (meshIndex, mesh) in (modelFile?.meshes ?? []).enumerated() {
@@ -145,6 +160,7 @@ public struct WPEParityProgramScene: Sendable {
                         : WPEParityProgramMaterial(path: mesh.materialPath, assets: assets)
                     if let meshMaterial {
                         materials[MaterialKey(objectID: image.id, effectID: nil, source: source)] = meshMaterial
+                        frameReads[mesh.materialPath] = WPEParityAuthoredPass.frameReads(meshMaterial.textureNames)
                     }
                     meshes.append(WPEParitySceneModelMesh(
                         material: meshMaterial == nil ? nil : source,
@@ -158,17 +174,24 @@ public struct WPEParityProgramScene: Sendable {
             sceneObjects.append(WPEParitySceneObject(
                 id: image.id, kind: kind, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
-                materialShader: material?.shader ?? "genericimage2", material: albedoSource, blend: blend,
+                materialShader: material?.shader ?? "genericimage2", material: image.isShapeQuad ? nil : albedoSource,
+                blend: blend,
                 materialState: Self.materialState(materialPath.flatMap { assets.json($0)?["passes"]?[0] }),
                 materialFog: material.map { Self.programHasFog($0, assets: assets) } ?? false,
-                colorBlendMode: image.colorBlendMode,
+                // The parser gives a point-quad shape colorBlendMode 9; WPE keeps the authored key, which a shape's
+                // draws never read.
+                colorBlendMode: image.isShapeQuad ? Self.number(authored?["colorBlendMode"]).map { Int($0) } ?? 0
+                    : image.colorBlendMode,
                 passthrough: Self.flag(model?["passthrough"]) || image.config.passthrough,
                 copyBackground: image.copyBackground, fullscreen: fullscreen,
                 ledSource: Self.flag(authored?["ledsource"]), puppetForcesComposite: puppetForcesComposite,
                 puppet: puppet,
                 noInterpolation: Self.flag(authored?["nointerpolation"]),
                 clampUVs: Self.number(authored?["clampuvs"]).map { $0 != 0 } ?? true,
-                parentID: image.parentObjectID
+                parentID: image.parentObjectID,
+                // Only object types 1 and 4, image and text, take the flags.
+                dependencyTarget: kind == .image && dependencyTargets.contains(image.id),
+                materialFrameReads: frameReads
             ))
         }
         // Text layers come next so `authoredObjects` still lines up with the leading scene objects.
@@ -195,6 +218,7 @@ public struct WPEParityProgramScene: Sendable {
                                                                height: sceneText.layout.fboSize.y, effects: effects))
                 sceneObjects.append(.text(sceneText, sortKey: document.objectPaintOrder[text.id] ?? index,
                                           visible: Self.visible(text.id, document), parentID: schema?.parentObjectID))
+                sceneObjects[sceneObjects.count - 1].dependencyTarget = dependencyTargets.contains(text.id)
             }
             pipeline.refreshUVs()
             for index in first ..< sceneObjects.count {
@@ -372,6 +396,27 @@ public struct WPEParityProgramScene: Sendable {
                                            cullsBackFaces: value("cullmode") != "nocull", alphaWriting: alphaWriting)
     }
 
+    /// 140260190.c:80-166: the first effect's first material pass, enabled or not, gives the points when its program
+    /// declares all four material keys; a key the material does not set holds its annotation default.
+    private static func shapePoints(_ effect: WPEParityAuthoredEffect?, objectID: String,
+                                    materials: [MaterialKey: WPEParityProgramMaterial],
+                                    assets: WPEParityProgramAssets) -> [SIMD2<Float>]? {
+        guard let effect, let source = effect.passes.first(where: { $0.source != nil })?.source,
+              let material = materials[MaterialKey(objectID: objectID, effectID: effect.id, source: source)]
+        else { return nil }
+        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
+        let uniforms = [sources.vertex, sources.fragment].flatMap { WPEParityProgramConstants.uniforms($0).values }
+        var points: [SIMD2<Float>] = []
+        for index in 0 ..< 4 {
+            let key = "point\(index)"
+            guard let uniform = uniforms.first(where: { $0.material == key }),
+                  let value = material.constants[key] ?? uniform.defaultValue, value.count >= 2
+            else { return nil }
+            points.append(SIMD2(Float(value[0]), Float(value[1])))
+        }
+        return points
+    }
+
     /// Mesh0 of a model JSON `"puppet"` (FUN_1401fbae0); puppet+0x390 is the first mesh with flag bit 1.
     private static func puppet(_ path: String,
                                assets: WPEParityProgramAssets) -> (puppet: WPEParityScenePuppet, model: WPEPuppetModel)? {
@@ -538,6 +583,11 @@ extension WPEParityProgramMaterial {
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
                   combos: combos, textures: textures, constants: constants,
                   cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull")
+    }
+
+    /// Texture names in slot order.
+    var textureNames: [String] {
+        textures.sorted { $0.key < $1.key }.map(\.value)
     }
 
     static func blendMode(_ raw: String?) -> WPEParityBlendMode {

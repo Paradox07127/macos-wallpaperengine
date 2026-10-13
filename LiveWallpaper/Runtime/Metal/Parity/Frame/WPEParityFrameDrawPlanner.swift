@@ -462,6 +462,19 @@ struct WPEParityFrameDrawPlanner {
         } else {
             nil
         }
+        let sceneObject: WPEParitySceneObject? = if case let .scene(draw) = description {
+            plan.scene.scene.objects.first { $0.id == draw.objectID }
+        } else {
+            nil
+        }
+        // A shape never binds `previous` (1401ebf60.c:146), and D3D11 samples an unbound slot as zero.
+        let unboundIsTransparent = if particleKey != nil {
+            true
+        } else if case .shape? = sceneObject?.kind {
+            true
+        } else {
+            false
+        }
         var textures = [[String: WPEParityFrameDrawPlan.TextureSource]](repeating: [:], count: bindings.count)
         var samplers: [String: WPEParitySamplerState] = [:]
         var uniformTextures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
@@ -493,7 +506,7 @@ struct WPEParityFrameDrawPlanner {
                 do throws(WPEParityFrameSkip) {
                     textures[variant][name] = try textureSource(source, slot: slot, shader: shader,
                                                                 reads: operation.reads.map(\.resource))
-                } catch .texture(_) where particleKey != nil {
+                } catch .texture(_) where unboundIsTransparent {
                     textures[variant][name] = try .image(transparentTexture())
                     if variant == 0 {
                         fallbackTextures.append(name)
@@ -570,6 +583,11 @@ struct WPEParityFrameDrawPlanner {
                 Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
                 Self.geometry(mesh.vertices, indices: mesh.indices, inputs: inputs, device: device)
+            } else if case let .scene(draw) = description, draw.geometry == .shapeQuad, let object = sceneObject,
+                      case let .shape(shape) = object.kind {
+                Self.geometry(shape.vertices(width: Float(object.width), height: Float(object.height)).map {
+                    Vertex(position: $0.position, texcoord: $0.texcoord)
+                }, indices: shape.indices, inputs: inputs, device: device)
             } else {
                 Self.geometry(quad.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
                               indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)

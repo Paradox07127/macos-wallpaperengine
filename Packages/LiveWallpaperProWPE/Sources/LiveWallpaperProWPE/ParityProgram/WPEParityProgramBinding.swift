@@ -141,23 +141,29 @@ public extension WPEParityProgramBuilder {
                                  imported: Set<WPEResourceID>) -> [Int32: WPEParityProgramBinding.TextureSource] {
         var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
         // Slot 0 of a draw outside an effect is its first read: the layer image, the snapshot a compose layer draws
-        // over, or the bit4 composite. A material without textures still reads its layer image. A particle reads only
-        // `_rt_FullFrameBuffer`, in the slot its material names.
-        let particle = if case .particles = draw.geometry {
-            true
-        } else {
-            false
+        // over, or the bit4 composite. A material without textures still reads its layer image. Particles and models
+        // read only the frame resources their materials name, in the slots that name them.
+        let materialSlotsOnly = switch draw.geometry {
+        case .particles, .modelMesh: true
+        default: false
         }
-        if !particle, draw.effectID == nil, let first = draw.reads.first {
+        if !materialSlotsOnly, draw.effectID == nil, let first = draw.reads.first {
             textures[0] = imported.contains(first) ? .imported(first, asset: names[0]) : .resource(first)
         }
         let effect = object?.effects.first { $0.id == draw.effectID }
         let binds = draw.passIndex.flatMap { index in effect.map { $0.passes[index].binds } } ?? []
+        // A shape pass reads no composite, so its first read is a bind.
+        let previous = if case .shape = object?.kind {
+            nil as WPEResourceID?
+        } else {
+            draw.reads.first
+        }
+        let bindsStart = previous == nil ? 0 : 1
         for (slot, name) in names where textures[slot] == nil && !name.isEmpty {
             if name == "previous" {
-                textures[slot] = draw.reads.first.map { .resource($0) }
-            } else if let position = binds.firstIndex(of: name), position + 1 < draw.reads.count {
-                textures[slot] = .resource(draw.reads[position + 1])
+                textures[slot] = previous.map { .resource($0) }
+            } else if let position = binds.firstIndex(of: name), position + bindsStart < draw.reads.count {
+                textures[slot] = .resource(draw.reads[position + bindsStart])
             } else if name.hasPrefix("_rt_") {
                 textures[slot] = .resource(WPEResourceID(name))
             } else {

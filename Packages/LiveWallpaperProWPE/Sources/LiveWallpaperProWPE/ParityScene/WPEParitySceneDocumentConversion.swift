@@ -195,9 +195,24 @@ private extension WPEParityAuthoredPass {
         for name in textures where visible[name] != nil && name != target && !binds.contains(name) {
             binds.append(name)
         }
+        let frameReads = Self.frameReads(textures.filter { visible[$0] == nil })
         return WPEParityScenePass(shader: shader, target: target, binds: binds, compose: compose,
                                   readsFullFrameBuffer: textures.contains(WPESceneAliasName.fullFrameBuffer),
-                                  blend: blend, source: source)
+                                  blend: blend, source: source, frameReads: frameReads)
+    }
+}
+
+extension WPEParityAuthoredPass {
+    /// The `_rt_*` names among `textures` other than `_rt_FullFrameBuffer`, which draws flag on their own.
+    static func frameReads(_ textures: [String]) -> [WPEResourceID] {
+        var reads: [WPEResourceID] = []
+        for name in textures where name.hasPrefix("_rt_") && name != WPESceneAliasName.fullFrameBuffer {
+            let id = WPEResourceID(name)
+            if !reads.contains(id) {
+                reads.append(id)
+            }
+        }
+        return reads
     }
 }
 

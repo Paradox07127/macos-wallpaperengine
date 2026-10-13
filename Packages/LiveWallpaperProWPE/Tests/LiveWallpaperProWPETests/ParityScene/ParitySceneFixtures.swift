@@ -68,6 +68,7 @@ enum ParitySceneFixtures {
         case .textBackground: "background"
         case .textGlyphs(.mono): "glyphs"
         case .textGlyphs(.color): "glyphs.color"
+        case .shapeQuad: "shape"
         }
         let mask = draw.writeMask == .rgba ? "rgba" : "rgb"
         return "draw \(draw.shader) [\(draw.reads.map(\.rawValue).joined(separator: ","))] "

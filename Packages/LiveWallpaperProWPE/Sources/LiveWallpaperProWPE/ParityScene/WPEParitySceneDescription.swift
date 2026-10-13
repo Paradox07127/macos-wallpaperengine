@@ -216,6 +216,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         case particle(WPEParitySceneParticle)
         /// A text layer: glyph draws straight into the destination, or into its FBO ahead of its effects.
         case text(WPEParitySceneText)
+        /// `"shape": "quad"` (FUN_14025faf0): only its last effect's passes draw, with no albedo or composite.
+        case shape(WPEParitySceneShape)
     }
 
     public var id: String
@@ -248,6 +250,11 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var clampUVs: Bool
     public var parentID: String?
     public var effects: [WPEParitySceneEffect]
+    /// Another object's `"dependencies"` names this image or text layer: flags304 0x1010 gives it an `_a` composite,
+    /// which it keeps rendering while hidden; only the draw into the scene stops (140186c90.c:783-788, 1401ea2d0).
+    public var dependencyTarget: Bool
+    /// Frame resources (`_rt_*` names the frame builds) each albedo or model material samples, keyed by material path.
+    public var materialFrameReads: [String: [WPEResourceID]]
 
     public init(id: String, kind: Kind = .image, sortKey: Int = 0, visible: Bool = true, width: Int, height: Int,
                 materialShader: String = "genericimage2", material: WPEParitySceneMaterialSource? = nil,
@@ -256,7 +263,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
                 colorBlendMode: Int = 0, passthrough: Bool = false, copyBackground: Bool = true,
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
                 puppet: WPEParityScenePuppet? = nil, noInterpolation: Bool = false, clampUVs: Bool = true,
-                parentID: String? = nil, effects: [WPEParitySceneEffect] = []) {
+                parentID: String? = nil, effects: [WPEParitySceneEffect] = [], dependencyTarget: Bool = false,
+                materialFrameReads: [String: [WPEResourceID]] = [:]) {
         self.id = id
         self.kind = kind
         self.sortKey = sortKey
@@ -279,6 +287,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.clampUVs = clampUVs
         self.parentID = parentID
         self.effects = effects
+        self.dependencyTarget = dependencyTarget
+        self.materialFrameReads = materialFrameReads
     }
 
     public var isModel: Bool {
@@ -308,6 +318,36 @@ public struct WPEParitySceneObject: Hashable, Sendable {
                                                        cullsBackFaces: false),
             materialFog: true, colorBlendMode: colorBlendMode, parentID: parentID, effects: effects
         )
+    }
+}
+
+/// The mesh a shape quad's last pass draws (FUN_140260190), stride float3 + float2 like every WPE quad.
+public struct WPEParitySceneShape: Hashable, Sendable {
+    public struct Vertex: Hashable, Sendable {
+        public var position: SIMD3<Float>
+        public var texcoord: SIMD2<Float>
+    }
+
+    /// `point0`–`point3` of the first effect's first material pass, when its shader declares all four.
+    public var points: [SIMD2<Float>]?
+
+    public init(points: [SIMD2<Float>]? = nil) {
+        self.points = points
+    }
+
+    /// The four points at (w·p.x − w/2, h·(1 − p.y) − h/2) with uv p, or the centred w×h quad of FUN_1401ede30 with
+    /// flags 1 (no inset).
+    public func vertices(width: Float, height: Float) -> [Vertex] {
+        let corners = points ?? [SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)]
+        return corners.map { point in
+            Vertex(position: SIMD3(width * point.x - width / 2, height * (1 - point.y) - height / 2, 0),
+                   texcoord: point)
+        }
+    }
+
+    /// 140260190.c:208-210 and 1401ede30.c:90-92: the point quad is a fan around point0, the default quad two strips.
+    public var indices: [UInt16] {
+        points == nil ? [0, 2, 1, 1, 2, 3] : [0, 2, 1, 0, 3, 2]
     }
 }
 
@@ -397,10 +437,12 @@ public struct WPEParityScenePass: Hashable, Sendable {
     public var kind: Kind
     /// Nil for a command.
     public var source: WPEParitySceneMaterialSource?
+    /// `_rt_*` textures besides the effect's FBOs and `_rt_FullFrameBuffer`, such as another layer's composite.
+    public var frameReads: [WPEResourceID]
 
     public init(shader: String, target: String? = nil, binds: [String] = [], compose: Bool = false,
                 readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw,
-                source: WPEParitySceneMaterialSource? = nil) {
+                source: WPEParitySceneMaterialSource? = nil, frameReads: [WPEResourceID] = []) {
         self.shader = shader
         self.target = target
         self.binds = binds
@@ -409,6 +451,7 @@ public struct WPEParityScenePass: Hashable, Sendable {
         self.blend = blend
         self.kind = kind
         self.source = source
+        self.frameReads = frameReads
     }
 }
 

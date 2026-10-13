@@ -13,6 +13,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case textBackground
         /// One glyph list of the text layer's mesh. Drawn with `fillsComposite` it lands in the text FBO.
         case textGlyphs(WPEParityGlyphAtlasInstance.Atlas)
+        /// A shape quad's `WPEParitySceneShape` mesh transformed by the layer MVP.
+        case shapeQuad
     }
 
     public let pass: WPEPassIdentity
@@ -99,7 +101,8 @@ public struct WPEParitySceneFrame: Hashable, Sendable {
     /// Sampler a draw binds when it reads one of the layer composites.
     public let samplers: [WPEResourceID: WPEParitySceneSampler]
     public let diagnostics: [WPEParitySceneDiagnostic]
-    /// The object each pass renders; scene-wide passes are absent.
+    /// The object each pass renders. Scene-wide passes are absent, and so are the passes filling a
+    /// `dependencyTarget` layer's composites, which run while the layer is hidden.
     public let owners: [WPEPassIdentity: String]
 }
 
