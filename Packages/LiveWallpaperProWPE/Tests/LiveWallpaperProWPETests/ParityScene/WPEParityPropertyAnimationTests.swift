@@ -197,13 +197,55 @@ struct WPEParityPropertyAnimationTests {
             ]), valueType: .float
         ))
         animation.advance(dt: 0.3)
-        #expect(animation.firedEvents == ["start", "quarter"])
+        #expect(animation.firedEvents.map(\.name) == ["start", "quarter"])
         animation.advance(dt: 0.1)
         #expect(animation.firedEvents.isEmpty)
+        // 1401a9f60: the unwrapped step [0.4, 1.3) first, then [0, 0.3) after the wrap.
         animation.advance(dt: 0.9)
-        #expect(animation.firedEvents == ["start", "quarter", "late"])
+        #expect(animation.firedEvents.map(\.name) == ["late", "start", "quarter"])
         animation.advance(dt: 0)
         #expect(animation.firedEvents.isEmpty)
+    }
+
+    @Test func eventAtFrameKFiresOncePerLoopAcrossTheBoundary() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(10, 1)]], fps: 10, length: 10, options: [
+                "events": [["frame": 8, "name": "k"]],
+            ]), valueType: .float
+        ))
+        var fired: [[String]] = []
+        for dt: Float in [0.5, 0.4, 0.3, 0.7, 0.3] {
+            animation.advance(dt: dt)
+            fired.append(animation.firedEvents.map(\.name))
+        }
+        #expect(fired == [[], ["k"], [], ["k"], []])
+        animation.advance(dt: 0.1)
+        #expect(animation.firedEvents == [])
+        #expect(abs(animation.time - 0.3) < 1e-5)
+    }
+
+    @Test func mirrorFiresBackwardsOnlyInsideTheStep() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(4, 1)]], fps: 4, length: 4, options: [
+                "mode": "mirror", "events": [["frame": 3, "name": "e"]],
+            ]), valueType: .float
+        ))
+        animation.advance(dt: 0.9)
+        #expect(animation.firedEvents.first?.frame == 3)
+        // 0.9 + 0.3 reflects to 0.8 without firing; backwards from 0.8 the span is (0.6, 0.8].
+        animation.advance(dt: 0.3)
+        #expect(animation.firedEvents.isEmpty)
+        animation.advance(dt: 0.2)
+        #expect(animation.firedEvents.map(\.name) == ["e"])
+    }
+
+    @Test func rateScalesTheRootStep() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(4, 1)]], fps: 4, length: 4), valueType: .float
+        ))
+        animation.rate = 0.5
+        animation.advance(dt: 0.5)
+        #expect(animation.time == 0.25)
     }
 
     @Test func startPausedKeepsProducingItsInitialValue() throws {

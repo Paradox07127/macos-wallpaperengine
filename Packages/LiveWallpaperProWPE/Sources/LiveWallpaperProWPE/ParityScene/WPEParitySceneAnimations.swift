@@ -10,16 +10,29 @@ public struct WPEParitySceneAnimations {
     private struct Binding {
         let animation: WPEParityPropertyAnimation
         let target: Target
+        let objectID: String
     }
 
     private struct Authored {
         let property: WPESceneJSONValue
         let valueType: WPEParityPropertyAnimation.ValueType
         let target: Target
+        let objectID: String
+    }
+
+    /// One event a keyframe animation crossed, for the SceneScript event 6 dispatch.
+    public struct FiredEvent: Sendable, Equatable {
+        public let objectID: String
+        public let name: String
+        /// The authored frame of the event.
+        public let frame: Float
     }
 
     private let bindings: [Binding]
     private var frameStamp: UInt64 = 0
+    /// The events the last `advance` fired, binding by binding in scene order. WPE dispatches them inside the
+    /// animation step, after the object update and camera and before the script update (140171440.c:857-896).
+    public private(set) var firedEvents: [FiredEvent] = []
 
     public var isEmpty: Bool {
         bindings.isEmpty
@@ -36,7 +49,8 @@ public struct WPEParitySceneAnimations {
                 guard let raw = object[property.rawValue],
                       let valueType = WPEParityPropertyAnimation.ValueType(rawValue: property.componentCount)
                 else { continue }
-                authored.append(Authored(property: raw, valueType: valueType, target: .object(index, property)))
+                authored.append(Authored(property: raw, valueType: valueType, target: .object(index, property),
+                                         objectID: id))
             }
             func constants(_ values: WPESceneJSONValue?, _ key: WPEParityMaterialPassKey) {
                 guard case let .object(entries)? = values, let pass = state.passIndex(of: key) else { return }
@@ -44,7 +58,8 @@ public struct WPEParitySceneAnimations {
                     guard let components = constantComponents[key]?[name],
                           let valueType = WPEParityPropertyAnimation.ValueType(rawValue: components) else { continue }
                     authored.append(Authored(property: raw, valueType: valueType,
-                                             target: .constant(pass: pass, name: name, components: components)))
+                                             target: .constant(pass: pass, name: name, components: components),
+                                             objectID: id))
                 }
             }
             constants(object["instance"]?["constantshadervalues"], WPEParityMaterialPassKey(objectID: id))
@@ -69,7 +84,7 @@ public struct WPEParitySceneAnimations {
                 if let name = animation.name, byName[name] == nil {
                     byName[name] = animation
                 }
-                bindings.append(Binding(animation: animation, target: entry.target))
+                bindings.append(Binding(animation: animation, target: entry.target, objectID: entry.objectID))
             }
         }
         self.bindings = bindings
@@ -79,8 +94,12 @@ public struct WPEParitySceneAnimations {
     /// component count writes nothing.
     public mutating func advance(dt: Float, state: inout WPEParitySceneState) {
         frameStamp &+= 1
+        firedEvents.removeAll(keepingCapacity: true)
         for binding in bindings {
             binding.animation.advance(dt: dt, frameStamp: frameStamp)
+            for event in binding.animation.firedEvents {
+                firedEvents.append(FiredEvent(objectID: binding.objectID, name: event.name, frame: event.frame))
+            }
             guard let value = binding.animation.value else { continue }
             switch binding.target {
             case let .object(index, property):

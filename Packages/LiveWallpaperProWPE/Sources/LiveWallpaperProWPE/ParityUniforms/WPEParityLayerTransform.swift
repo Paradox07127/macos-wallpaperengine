@@ -48,10 +48,12 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
     public var parallaxDepth: SIMD2<Float>
     /// obj+0x120 bit 0x80: drawn with the camera's perspective P and V.
     public var perspective: Bool
+    /// The object's own `"attachment"` string, which a puppet parent resolves to an attachment point.
+    public var attachment: String?
 
     public init(id: String, parentID: String? = nil, origin: SIMD3<Float>, angles: SIMD3<Float> = .zero,
                 scale: SIMD3<Float> = .one, size: SIMD2<Float> = .zero, alignment: WPEParityLayerAlignment = .center,
-                parallaxDepth: SIMD2<Float> = .zero, perspective: Bool = false) {
+                parallaxDepth: SIMD2<Float> = .zero, perspective: Bool = false, attachment: String? = nil) {
         self.id = id
         self.parentID = parentID
         self.origin = origin
@@ -61,6 +63,7 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
         self.alignment = alignment
         self.parallaxDepth = parallaxDepth
         self.perspective = perspective
+        self.attachment = attachment
     }
 
     /// Image layers, groups and particle systems of a document with their local (not parent-baked) transforms.
@@ -89,16 +92,33 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
                  angles: SIMD3(particle.localAngles), scale: SIMD3(particle.localScale),
                  parallaxDepth: SIMD2(particle.parallaxDepth))
         }
+        let attachments = attachmentNames(document)
+        for index in layers.indices {
+            layers[index].attachment = attachments[layers[index].id]
+        }
         return layers
+    }
+
+    /// 1401de470.c:89-100: only a string `"attachment"` of the object itself is looked up, never an inherited one.
+    static func attachmentNames(_ document: WPESceneDocument) -> [String: String] {
+        var names: [String: String] = [:]
+        for object in WPEParityProgramScene.array(document.sourceJSON["objects"]) {
+            guard let id = WPEParitySceneAnimations.id(object),
+                  let name = WPEParityProgramScene.string(object["attachment"]) else { continue }
+            names[id] = name
+        }
+        return names
     }
 
     /// Text layers of a document with their local transforms; `sizes` (`WPEParityProgramScene.textSizes`) gives each
     /// its FBO size, which WPE writes into the layer size (140258900.c:12-38).
     public static func textLayers(document: WPESceneDocument, sizes: [String: SIMD2<Float>] = [:]) -> [Self] {
-        document.textObjects.map { text in
+        let attachments = attachmentNames(document)
+        return document.textObjects.map { text in
             Self(id: text.id, parentID: text.parentObjectID, origin: SIMD3(text.localOrigin ?? text.origin),
                  angles: SIMD3(text.localAngles ?? text.angles), scale: SIMD3(text.localScale ?? text.scale),
-                 size: sizes[text.id] ?? .zero, parallaxDepth: SIMD2(text.parallaxDepth))
+                 size: sizes[text.id] ?? .zero, parallaxDepth: SIMD2(text.parallaxDepth),
+                 attachment: attachments[text.id])
         }
     }
 

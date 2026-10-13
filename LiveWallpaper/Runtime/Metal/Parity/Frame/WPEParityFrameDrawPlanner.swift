@@ -355,7 +355,7 @@ struct WPEParityFrameDrawPlanner {
         layers = WPEParityLayerTransformSet(document: plan.document,
                                             renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
                                             alignment: plan.alignment, cameraZoom: 1,
-                                            textSizes: plan.scene.textSizes)
+                                            textSizes: plan.scene.textSizes, puppetModels: plan.scene.puppetModels)
         textAtlases = WPEParityTextAtlasTextures(atlases: plan.scene.textAtlases)
         textAtlases.upload(device: device)
     }

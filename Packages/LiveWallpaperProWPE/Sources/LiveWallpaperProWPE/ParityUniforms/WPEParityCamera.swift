@@ -149,21 +149,37 @@ public struct WPEParityCamera: Sendable, Equatable {
         1 / projection.columns.1.y / tan(perspectiveFOVRadians / 2)
     }
 
-    /// Replacement P for `perspective` objects (obj+0x120 bit 0x80).
+    /// Replacement P for a top-level `perspective` object (obj+0x120 bit 0x80).
     public var perspectiveProjection: simd_float4x4 {
-        let far = max(15000, perspectiveDistance + 1000)
-        return Self.perspective(fovY: perspectiveFOVRadians, aspect: renderTargetSize.x / renderTargetSize.y,
-                                near: 5, far: far)
+        pushPerspective(view: view, projection: projection).projection
     }
 
-    /// Replacement V for `perspective` objects: the visible canvas centre moved to the axis, pushed back by D.
+    /// Replacement V for a top-level `perspective` object.
     public var perspectiveView: simd_float4x4 {
-        let b = bounds
-        var matrix = view
-        matrix.columns.3.x -= (b.x + b.y) / 2
-        matrix.columns.3.y -= (b.z + b.w) / 2
-        matrix.columns.3.z = -perspectiveDistance
-        return matrix
+        pushPerspective(view: view, projection: projection).view
+    }
+
+    /// FUN_1401e5b60 on the V and P in force, the scene's or a parent composite's: V moves by the unmirrored crop
+    /// centre (W·cx, H·cy; 140183a70.c:136-138) and back by D = (1/P.m5)/tan(fov/2); P becomes the perspective,
+    /// its first column negated under fliph (1401e5b60.c:28-43).
+    public func pushPerspective(view: simd_float4x4, projection: simd_float4x4)
+        -> (view: simd_float4x4, projection: simd_float4x4) {
+        let crop = alignmentCrop
+        let centre = SIMD2((size.x * 0.5 - (crop.y - crop.x) * 0.5) / size.x,
+                           (size.y * 0.5 - (crop.w - crop.z) * 0.5) / size.y)
+        let distance = 1 / projection.columns.1.y / tan(perspectiveFOVRadians / 2)
+        var pushed = view
+        // W and H are the integer canvas size (ctx+0x84/0x88).
+        pushed.columns.3.x -= size.x.rounded(.towardZero) * centre.x
+        pushed.columns.3.y -= size.y.rounded(.towardZero) * centre.y
+        pushed.columns.3.z = -distance
+        var perspective = Self.perspective(fovY: perspectiveFOVRadians,
+                                           aspect: renderTargetSize.x / renderTargetSize.y,
+                                           near: 5, far: max(15000, distance + 1000))
+        if alignment.flipHorizontal {
+            perspective.columns.0 = -perspective.columns.0
+        }
+        return (pushed, perspective)
     }
 
     /// FUN_14009a630: z in [near, far] maps to [0, 1].

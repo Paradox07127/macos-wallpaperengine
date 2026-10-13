@@ -54,10 +54,20 @@ public final class WPEParityPropertyAnimation {
         return result
     }
 
-    /// Names fired by the most recent advance, in authored event order.
-    public var firedEvents: [String] {
-        events.compactMap { $0.fired ? $0.name : nil }
+    /// An authored `options.events` entry; WPE sends each crossing to the scripts as event 6 (140171440.c:857-883).
+    public struct Event: Sendable, Equatable {
+        public let name: String
+        /// The authored frame; it fires at `frame / fps` seconds.
+        public let frame: Float
+        let time: Float
     }
+
+    /// The events the most recent advance crossed, in 1401a9f60's order: the step's span, then after a loop wrap
+    /// the span from the start. A child binding runs on its root's clock and fires none of its own [I].
+    public private(set) var firedEvents: [Event] = []
+
+    /// binding+0xf8: multiplies the root's dt (14017fa70.c:727-734); WPE leaves it 1 unless something sets it.
+    public var rate: Float = 1
 
     private enum Mode { case loop, mirror, single }
 
@@ -69,12 +79,6 @@ public final class WPEParityPropertyAnimation {
         var step: Bool
     }
 
-    private struct Event {
-        var time: Float
-        var name: String
-        var fired = false
-    }
-
     private let root: WPEParityPropertyAnimation?
     private let valueType: ValueType
     private let fps: Float
@@ -83,14 +87,11 @@ public final class WPEParityPropertyAnimation {
     private let mode: Mode
     private let startPaused: Bool
     private let samples: [[Float]]
-    private var events: [Event]
+    private let events: [Event]
     private var clockTime: Float = 0
     private var clockDirection: Float = 1
     private var clockFinished = false
     private var lastFrameStamp: UInt64?
-    private var previousTime: Float = 0
-    private var previousDirection: Float = 1
-    private var travelledTime: Float = 0
 
     /// Parses a raw property; a supplied parent must match parent.key and already have its root resolved.
     public init?(property: WPESceneJSONValue, valueType: ValueType,
@@ -158,84 +159,72 @@ public final class WPEParityPropertyAnimation {
             for entry in entries {
                 guard let frame = Self.number(entry["frame"]),
                       let name = Self.string(entry["name"]) else { continue }
-                parsedEvents.append(Event(time: frame / fps, name: name))
+                parsedEvents.append(Event(name: name, frame: frame, time: frame / fps))
             }
         }
         events = parsedEvents
+        firedEvents.reserveCapacity(parsedEvents.count)
     }
 
     /// Advances without allocation; pass the same frame stamp to all bindings sharing a root.
     public func advance(dt: Float, frameStamp: UInt64? = nil) {
         if let root {
             root.advance(dt: dt, frameStamp: frameStamp)
-            if let frameStamp, lastFrameStamp == frameStamp {
-                return
-            }
-            lastFrameStamp = frameStamp
-            updateEvents(clock: root)
             return
         }
         if let frameStamp, lastFrameStamp == frameStamp {
             return
         }
         lastFrameStamp = frameStamp
-        previousTime = clockTime
-        previousDirection = clockDirection
-        travelledTime = 0
-        if !startPaused, !clockFinished, dt.isFinite, dt > 0 {
-            switch mode {
-            case .loop:
-                travelledTime = dt
-                clockTime = fmodf(clockTime + dt, duration)
-            case .mirror:
-                // 1401a9f60: the signed dt is added directly; only crossing an end reflects.
-                travelledTime = dt
-                let next = (clockDirection > 0 ? dt : -dt) + clockTime
-                if clockDirection > 0, next >= duration {
-                    clockTime = duration - fmodf(next, duration)
-                    clockDirection = -1
-                } else if clockDirection < 0, next <= 0 {
-                    clockTime = -fmodf(next, duration)
-                    clockDirection = 1
-                } else {
-                    clockTime = next
-                }
-            case .single:
-                clockTime = min(clockTime + dt, duration)
-                travelledTime = clockTime - previousTime
-                clockFinished = clockTime >= duration
-            }
-        }
-        updateEvents(clock: self)
+        firedEvents.removeAll(keepingCapacity: true)
+        step(rate * dt)
     }
 
-    private func updateEvents(clock: WPEParityPropertyAnimation) {
-        for index in events.indices {
-            let eventTime = events[index].time
-            var fired = false
-            if clock.travelledTime > 0, eventTime >= 0, eventTime <= clock.duration {
-                switch clock.mode {
-                case .loop:
-                    if eventTime < clock.duration {
-                        let distance = eventTime >= clock.previousTime
-                            ? eventTime - clock.previousTime
-                            : clock.duration - clock.previousTime + eventTime
-                        fired = distance < clock.travelledTime
-                    }
-                case .single:
-                    fired = eventTime >= clock.previousTime && eventTime < clock.clockTime
-                case .mirror:
-                    let period = 2 * clock.duration
-                    let phase = clock.previousDirection > 0
-                        ? clock.previousTime : period - clock.previousTime
-                    let forward = eventTime >= phase ? eventTime - phase : period - phase + eventTime
-                    let backwardPhase = period - eventTime
-                    let backward = backwardPhase >= phase
-                        ? backwardPhase - phase : period - phase + backwardPhase
-                    fired = min(forward, backward) < clock.travelledTime
+    /// FUN_1401a9f60: events fire on the unwrapped step before the clock wraps, reflects or clamps.
+    private func step(_ delta: Float) {
+        guard !startPaused, !clockFinished, !(mode == .single && duration <= clockTime), duration > 0 else { return }
+        let signed = clockDirection < 0 ? -delta : delta
+        let start = clockTime
+        let next = signed + start
+        if signed <= 0 {
+            fire { next < $0 && $0 <= start }
+        } else {
+            fire { start <= $0 && $0 < next }
+        }
+        clockTime = next
+        switch mode {
+        case .loop:
+            if clockTime < 0 {
+                clockTime = fmodf(clockTime + duration, duration)
+                if clockTime >= 0 {
+                    let wrapped = clockTime
+                    fire { wrapped < $0 && $0 <= duration }
                 }
             }
-            events[index].fired = fired
+            guard clockTime >= duration else { return }
+            clockTime = fmodf(clockTime, duration)
+            guard clockTime < duration else { return }
+            let wrapped = clockTime
+            fire { $0 >= 0 && $0 < wrapped }
+        case .mirror:
+            if clockDirection > 0, next >= duration {
+                clockTime = duration - fmodf(next, duration)
+                clockDirection = -1
+            } else if clockDirection < 0, next <= 0 {
+                clockTime = -fmodf(next, duration)
+                clockDirection = 1
+            }
+        case .single:
+            if next >= duration {
+                clockTime = duration
+                clockFinished = true
+            }
+        }
+    }
+
+    private func fire(_ crossed: (Float) -> Bool) {
+        for event in events where crossed(event.time) {
+            firedEvents.append(event)
         }
     }
 

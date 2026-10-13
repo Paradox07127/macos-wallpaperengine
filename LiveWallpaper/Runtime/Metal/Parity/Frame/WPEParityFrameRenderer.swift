@@ -517,15 +517,19 @@ final class WPEParityFrameRenderer {
         return constants
     }
 
-    /// Moves the layer worlds to the state's transforms when any changed.
+    /// Moves the layer worlds to the state's transforms when any changed, and every frame while a child hangs on a
+    /// puppet attachment point, whose bones this frame's animator step moved (R24 Q4).
     private func applyTransforms() {
-        guard state.transformGeneration != seenTransforms else { return }
-        seenTransforms = state.transformGeneration
-        for (index, id) in state.ids.enumerated() {
-            let object = state.objects[index]
-            layers.setTransform(id, origin: object.origin, angles: object.angles, scale: object.scale)
+        let moved = state.transformGeneration != seenTransforms
+        guard moved || layers.hasAttachments else { return }
+        if moved {
+            seenTransforms = state.transformGeneration
+            for (index, id) in state.ids.enumerated() {
+                let object = state.objects[index]
+                layers.setTransform(id, origin: object.origin, angles: object.angles, scale: object.scale)
+            }
         }
-        layers.refreshWorlds()
+        layers.refreshWorlds { puppets[$0]?.boneWorld }
         layersMoved = true
     }
 
