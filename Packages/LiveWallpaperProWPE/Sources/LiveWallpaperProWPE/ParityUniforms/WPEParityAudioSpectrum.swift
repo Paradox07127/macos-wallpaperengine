@@ -12,6 +12,11 @@ public struct WPEParityAudioSpectrum: Sendable {
         Array(output.suffix(64))
     }
 
+    /// The 64 left then 64 right published bins.
+    public var bins: [Float] {
+        output
+    }
+
     public init() {}
 
     /// Provider bins are linear, dimensionless magnitudes in [0, +∞), not dB or clamped to 1; dt is seconds.

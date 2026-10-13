@@ -99,7 +99,11 @@ final class WPEParityFrameRenderer {
     private let queue: MTLCommandQueue
     private let screen: WPEParityUniformScreen
     /// The scene camera; a camera path pose replaces it for the frame.
-    private let camera: WPEParityCamera
+    private var camera: WPEParityCamera
+    /// The scene's SceneScript engine; nil for a scene without property scripts.
+    private(set) var script: WPEParitySceneScript?
+    private var seenScriptBloom = 0
+    private var seenScriptSound = 0
     private let generalZoom: Float
     private var cameraPaths: WPEParityCameraPaths
     private var cameraPose: WPEParityCameraPose?
@@ -201,7 +205,7 @@ final class WPEParityFrameRenderer {
     }
 
     /// The camera before the shake: the last frame's path pose, or the scene camera.
-    private var pathCamera: WPEParityCamera {
+    var pathCamera: WPEParityCamera {
         cameraPose.map { camera.posed($0, generalZoom: generalZoom) } ?? camera
     }
 
@@ -390,6 +394,12 @@ final class WPEParityFrameRenderer {
         state = previous.state
         animations = previous.animations
         cameraParallax = previous.cameraParallax
+        camera.perspectiveFOV = previous.camera.perspectiveFOV
+        camera.zoom = previous.camera.zoom
+        script = previous.script
+        seenScriptSound = previous.seenScriptSound
+        // A script's bloom write reaches `bloom` below; the generation only marks it consumed.
+        seenScriptBloom = previous.seenScriptBloom
         // The next frame takes the transforms, visibility and effects over from the copied state.
         seenTransforms = previous.layersMoved ? -1 : 0
         seenVisibility = -1
@@ -398,14 +408,106 @@ final class WPEParityFrameRenderer {
         repackBloom()
     }
 
-    /// Writes a user-property change between frames; the next frame reads it like any state write.
-    func applyUserProperties(_ update: WPEParityUserPropertyUpdate) {
+    /// Writes a user-property change between frames; the next frame reads it like any state write. The script
+    /// path follows the descriptor bindings (1401731d0.c:143-840): `changedJSON` holds the changed project
+    /// properties, `mergedJSON` all of them.
+    func applyUserProperties(_ update: WPEParityUserPropertyUpdate, changedJSON: String = "{}",
+                             mergedJSON: String = "{}") {
         update.apply(to: &state)
         cameraParallax = update.cameraParallax
         if update.bloom != bloom {
             bloom = update.bloom
             repackBloom()
         }
+        script?.engine.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
+    }
+
+    /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.
+    func attachScript(_ script: WPEParitySceneScript) {
+        self.script = script
+        script.start(state: &state)
+    }
+
+    /// Event 3 to every binding; later frames run no script.
+    func destroyScript() {
+        script?.engine.destroy(state: &state)
+        script = nil
+    }
+
+    /// The fov and zoom scripts wrote to a camera object; read before this frame's V/P, so a write lands one frame
+    /// after its update ran (R25 §2). Which camera object drives the scene camera is not known; the first one does.
+    private func applyScriptCamera() {
+        guard let id = script?.cameraIDs.first else { return }
+        var changed = false
+        if case let .vector(fov)? = state.scriptField("fov", of: id), fov.x != camera.perspectiveFOV {
+            camera.perspectiveFOV = fov.x
+            changed = true
+        }
+        if case let .vector(zoom)? = state.scriptField("zoom", of: id), generalZoom * zoom.x != camera.zoom {
+            camera.zoom = generalZoom * zoom.x
+            changed = true
+        }
+        // Draws place themselves from the live camera only while the layers count as moved.
+        layersMoved = layersMoved || changed
+    }
+
+    /// Bloom strength and threshold scripts wrote, rebuilt after the tick (14017fa70.c:478-481).
+    private func applyScriptBloom() {
+        guard state.generation(.bloom) != seenScriptBloom else { return }
+        seenScriptBloom = state.generation(.bloom)
+        var settings = bloom
+        if case let .vector(strength)? = state.scriptField("bloomStrength", of: "") {
+            settings.strength = strength.x
+        }
+        if case let .vector(threshold)? = state.scriptField("bloomThreshold", of: "") {
+            settings.threshold = threshold.x
+        }
+        guard settings != bloom else { return }
+        bloom = settings
+        repackBloom()
+    }
+
+    /// Sound volumes scripts wrote since the last call, by sound object; the runtime applies volume² × master.
+    func takeScriptSoundVolumes(_ body: (String, Float) -> Void) {
+        guard let script, state.generation(.soundGain) != seenScriptSound else { return }
+        seenScriptSound = state.generation(.soundGain)
+        for id in script.soundIDs {
+            if case let .vector(volume)? = state.scriptField("volume", of: id) {
+                body(id, volume.x)
+            }
+        }
+    }
+
+    /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
+    private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, input: WPEParityFrameInput,
+                                 timeOfDay: Float) {
+        let world = cursorWorld(camera: camera)
+        script.updateCursorTargets(quad: { cursorQuad($0, camera: camera) }, visible: { state.isVisible($0) })
+        script.cursor(at: input.cursor, world: world, leftDown: input.buttonDown, timeOfDay: timeOfDay, state: &state)
+        script.dispatchMedia(state: &state)
+    }
+
+    /// The cursor unprojected through the scene camera onto z = 0 (14018e070 mode 0).
+    private func cursorWorld(camera: WPEParityCamera) -> SIMD3<Float> {
+        let ndc = SIMD2(pointer.position.x * 2 - 1, 1 - pointer.position.y * 2)
+        let world = (camera.projection * camera.view).inverse * SIMD4(ndc.x, ndc.y, 0, 1)
+        return SIMD3(world.x, world.y, 0) / (world.w == 0 ? 1 : world.w)
+    }
+
+    /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
+    func cursorQuad(_ id: String,
+                    camera: WPEParityCamera) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)? {
+        guard let size = layers.layers[id]?.size, size.x > 0, size.y > 0 else { return nil }
+        var placed = layers
+        placed.camera = camera
+        let matrix = placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * placed.model(id)
+        let pixels = SIMD2(Float(backbuffer.width), Float(backbuffer.height))
+        func corner(_ x: Float, _ y: Float) -> SIMD2<Float> {
+            let clip = matrix * SIMD4(x, y, 0, 1)
+            let ndc = SIMD2(clip.x, clip.y) / clip.w
+            return SIMD2((ndc.x + 1) * 0.5, (1 - ndc.y) * 0.5) * pixels
+        }
+        return (corner(0, 0), corner(size.x, 0), corner(size.x, size.y), corner(0, size.y))
     }
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
@@ -419,6 +521,7 @@ final class WPEParityFrameRenderer {
             puppets[id]?.advance(dt: clock.time - sceneTime)
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
+        applyScriptCamera()
         cameraPose = cameraPaths.advance(dt: clock.frametime)
         let fadeAlpha = cameraPaths.fadeAlpha
         let camera = pathCamera.shaken(time: clock.timeUniform)
@@ -443,9 +546,22 @@ final class WPEParityFrameRenderer {
         let uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
                                              parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
                                              audio: audio)
+        if let script {
+            script.updateAudio(audio.bins)
+            runScriptEvents(script, camera: camera, input: input, timeOfDay: daytime)
+        }
         // R24 Q1: animations run after the object update and the camera, and render reads their values.
         animations.advance(dt: clock.frametime, state: &state)
+        if let script {
+            // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
+            script.tick(dt: clock.frametime, cursor: input.cursor, world: cursorWorld(camera: camera),
+                        leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
+            for id in script.takeDestroyed() {
+                state.set(.visible, of: id, to: .zero)
+            }
+        }
         applyTransforms()
+        applyScriptBloom()
         try selectGraphs()
         let graphs = graphs
         let draws = graphs.layout.draws

@@ -159,6 +159,9 @@ enum WPEParityScriptPrelude {
           localPosition: new Vec3(p.local[0], p.local[1], p.local[2]), hitBox: p.hitBox }];
       }
       if (id === 6 && p) return [p.event, p.value];
+      if (id === 17 && p) {
+        for (const k in p) if (Array.isArray(p[k]) && p[k].length === 3) p[k] = new Vec3(p[k][0], p[k][1], p[k][2]);
+      }
       return [p];
     }
     // `target` -1 reaches every binding; a layer index reaches that layer's bindings and those without a layer.

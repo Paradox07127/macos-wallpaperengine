@@ -93,6 +93,8 @@ final class WPEParitySceneDriver {
     private(set) var userPropertyBindings: [String: [WPEScenePropertyBinding]] = [:]
     /// A change `prepareUserProperties` accepted, parsed with its new values, waiting for its commit.
     private var pendingUserProperties: (patch: WPEScenePropertyPatch, document: WPESceneDocument)?
+    /// engine.userProperties as last applied: project.json's properties with the user's values.
+    private var scriptUserProperties = "{}"
     /// Bumped on load and cleanup, so presents of an older load never count as ready.
     private(set) var loadGeneration = 0
     private(set) var loadDiagnostics: SceneLoadDiagnostic?
@@ -146,6 +148,11 @@ final class WPEParitySceneDriver {
         didLoad && completedPresentGeneration == loadGeneration
     }
 
+    /// Some script of the loaded scene exports a media handler.
+    var scriptHandlesMedia: Bool {
+        renderer?.script?.handlesMedia == true
+    }
+
     /// Present command buffers committed and not yet completed.
     var inFlightCount: Int {
         presentState.inFlight
@@ -184,13 +191,14 @@ final class WPEParitySceneDriver {
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
         diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
-        workshopID: String? = nil
+        workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init()
     ) async throws {
         loadGeneration &+= 1
         let generation = loadGeneration
         presentState.reset(generation: generation)
         spanFrames?.reset(generation: generation)
         didLoad = false
+        renderer?.destroyScript()
         renderer = nil
         planSource = nil
         plannedTarget = nil
@@ -252,6 +260,20 @@ final class WPEParitySceneDriver {
                                     workshopID: workshopID, sceneSize: sceneSize)
             plannedTarget = target
             userPropertyBindings = WPEParityUserProperties.bindings(document: document)
+            scriptUserProperties = scriptHost.userPropertiesJSON
+            if WPEParitySceneScript.hasScripts(document) {
+                do {
+                    // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
+                    try renderer.attachScript(WPEParitySceneScript(
+                        document: document, state: renderer.state, assets: assets,
+                        canvasSize: renderer.pathCamera.size,
+                        screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+                        host: scriptHost
+                    ))
+                } catch {
+                    Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)
+                }
+            }
             self.renderer = renderer
             lastTimestamp = nil
             didLoad = true
@@ -319,7 +341,12 @@ final class WPEParitySceneDriver {
             return false
         }
         pendingUserProperties = nil
-        renderer.applyUserProperties(update)
+        scriptUserProperties = WPEParitySceneScript.userPropertiesJSON(
+            scriptUserProperties, values: patch.newValues.filter { patch.changedKeys.contains($0.key) }
+        )
+        renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
+            scriptUserProperties, keys: patch.changedKeys
+        ), mergedJSON: scriptUserProperties)
         self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize)
@@ -446,6 +473,11 @@ final class WPEParitySceneDriver {
             let submission = try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
             encodeSeconds += CACurrentMediaTime() - start
             encodeCount += 1
+            if let soundRuntime {
+                renderer.takeScriptSoundVolumes { id, volume in
+                    soundRuntime.setVolume(Double(volume), forSoundID: id)
+                }
+            }
             guard case .committed = submission else { return false }
             return true
         } catch {
@@ -607,6 +639,7 @@ final class WPEParitySceneDriver {
         loadGeneration &+= 1
         presentState.reset(generation: loadGeneration)
         spanFrames?.reset(generation: loadGeneration)
+        renderer?.destroyScript()
         renderer = nil
         planSource = nil
         plannedTarget = nil
@@ -688,6 +721,29 @@ struct WPEParitySceneInputs: Sendable {
     var span: (frames: WPESceneSpanFrames, outputTextureLimit: Int)?
     /// As `WPEMetalSceneRenderer.onRuntimeActivityChange`: called on the render actor when the activity changes.
     var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
+    /// The usershortcut product link's bridge for this scene: engine.openUserShortcut launches through it.
+    var userShortcuts: WPEUserShortcutScriptBridge?
+    /// Held for the link, which keeps only a weak reference.
+    var userShortcutIcons: WPEUserShortcutIconStore?
+    /// The now-playing events, started once a script handles them.
+    var media: WPESceneMediaEventDispatcher?
+
+    /// The script host of a load: `userPropertiesJSON` from `scriptUserProperties()`.
+    func scriptHost(userPropertiesJSON: String) -> WPEParitySceneScript.Host {
+        let bridge = userShortcuts
+        return WPEParitySceneScript.Host(userPropertiesJSON: userPropertiesJSON,
+                                         openUserShortcut: { bridge?.requestLaunch($0) ?? false },
+                                         media: media?.mailbox)
+    }
+
+    /// project.json's properties with the user's values, as engine.userProperties takes them.
+    func scriptUserProperties() -> String {
+        WPEParitySceneScript.userPropertiesJSON(
+            projectRoot: projectRoot,
+            values: WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
+                                                                              cacheRootURL: projectRoot)
+        )
+    }
 
     /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does; `patch` replaces
     /// the values of its changed keys.

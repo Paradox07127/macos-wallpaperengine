@@ -147,6 +147,8 @@ public final class WPEParityScriptEngine {
         dirty = .allocate(capacity: 1)
         globals = .allocate(capacity: 16)
         globals.initialize(repeating: 0, count: 16)
+        (globals[3], globals[4]) = (configuration.canvasSize.x, configuration.canvasSize.y)
+        (globals[5], globals[6]) = (configuration.screenResolution.x, configuration.screenResolution.y)
         audio = .allocate(capacity: 336)
         audio.initialize(repeating: 0, count: 336)
         guard let baseClasses = configuration.assets.data("scripts/jsclasses/baseclasses.js") else {
@@ -398,7 +400,12 @@ public final class WPEParityScriptEngine {
         WPEParityScriptProperty.layer(kind) + (kind == .image ? WPEParityScriptProperty.video : [])
     }
 
-    private static func kind(of id: String, document: WPESceneDocument) -> WPEParityScriptLayerKind {
+    private static func kind(of id: String, object: WPESceneJSONValue,
+                             document: WPESceneDocument) -> WPEParityScriptLayerKind {
+        // 14018ff60.c:116-118: a string `camera` member makes the object a camera.
+        if case .string? = object["camera"] {
+            return .camera
+        }
         if document.textObjects.contains(where: { $0.id == id }) {
             return .text
         }
@@ -419,7 +426,7 @@ public final class WPEParityScriptEngine {
     private func layout(document: WPESceneDocument, state: WPEParitySceneState) {
         for object in document.resolvedObjectsJSON {
             guard let id = WPEParitySceneAnimations.id(object) else { continue }
-            addLayer(id: id, kind: Self.kind(of: id, document: document), config: object, state: state)
+            addLayer(id: id, kind: Self.kind(of: id, object: object, document: document), config: object, state: state)
         }
         sceneBase = slots.count
         for descriptor in WPEParityScriptProperty.scene {

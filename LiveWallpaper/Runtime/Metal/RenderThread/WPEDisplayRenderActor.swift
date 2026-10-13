@@ -528,12 +528,18 @@ actor WPEDisplayRenderActor {
 
     private func loadParity() async throws {
         guard let parityDriver, let inputs = parityInputs else { return }
-        let document = try await CancellableBackgroundWork.run { try inputs.makeDocument() }
+        let (document, userProperties) = try await CancellableBackgroundWork.run {
+            try (inputs.makeDocument(), inputs.scriptUserProperties())
+        }
         try await parityDriver.load(document: document, assets: inputs.assets, settings: inputs.settings,
                                     drawableSize: parityDriver.drawableSize, pixelFormat: inputs.pixelFormat,
                                     compiler: inputs.compiler, soundResolver: inputs.soundResolver,
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
-                                    workshopID: inputs.descriptor.workshopID)
+                                    workshopID: inputs.descriptor.workshopID,
+                                    scriptHost: inputs.scriptHost(userPropertiesJSON: userProperties))
+        if parityDriver.scriptHandlesMedia, let media = inputs.media {
+            Task { @MainActor in media.start() }
+        }
         requestParityFrame()
         // A resize or fit change that arrived while loading.
         replanParityIfNeeded()
@@ -580,6 +586,9 @@ actor WPEDisplayRenderActor {
         spanPresenter = nil
         parityDriver?.cleanup()
         parityDriver = nil
+        if let media = parityInputs?.media {
+            Task { @MainActor in media.stop() }
+        }
         parityInputs = nil
         if let retiringRenderer {
             let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()

@@ -1,0 +1,259 @@
+#if !LITE_BUILD
+import Foundation
+import LiveWallpaperCore
+import LiveWallpaperProWPE
+import simd
+
+/// One scene's SceneScript engine and the host inputs it reads each frame (R25 §1, §4). Confined to the renderer's
+/// actor, like the renderer that drives it.
+final class WPEParitySceneScript {
+    /// What the product connects: merged user properties, the usershortcut launcher and the now-playing events.
+    struct Host {
+        /// project.json `general.properties` with the user's values, `{key: {type, value, …}}`.
+        var userPropertiesJSON = "{}"
+        var openUserShortcut: (String) -> Bool = { _ in false }
+        var media: WPESceneMediaEventMailbox?
+    }
+
+    /// A layer the cursor pass may test, in scene order.
+    struct CursorCandidate {
+        let id: String
+        let solid: Bool
+        let disablePropagation: Bool
+    }
+
+    let engine: WPEParityScriptEngine
+    /// Some binding exports a cursor handler, which turns the cursor pass on (140175880.c:377-379).
+    let handlesCursor: Bool
+    /// Some binding exports a media handler, which subscribes the engine to media events (140175880.c:373-375).
+    let handlesMedia: Bool
+    /// Topmost first (140189e10.c:115-122).
+    let cursorCandidates: [CursorCandidate]
+    /// Objects of the camera class, whose fov and zoom the next frame's camera reads.
+    let cameraIDs: [String]
+    let soundIDs: [String]
+    private let media: WPESceneMediaEventMailbox?
+    private var tracker = WPEParityCursorTracker()
+    private var targets: [WPEParityCursorTarget] = []
+    private var lastCursor: SIMD2<Float>?
+    private var destroyedSeen = 0
+
+    /// Some object or the general block carries a property script.
+    static func hasScripts(_ document: WPESceneDocument) -> Bool {
+        ([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: hasScript)
+    }
+
+    private static func hasScript(_ value: WPESceneJSONValue) -> Bool {
+        switch value {
+        case let .object(members): members["script"] != nil || members.values.contains(where: hasScript)
+        case let .array(elements): elements.contains(where: hasScript)
+        default: false
+        }
+    }
+
+    init(document: WPESceneDocument, state: WPEParitySceneState, assets: WPEParityProgramAssets,
+         canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>, host: Host) throws {
+        engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
+            userPropertiesJSON: host.userPropertiesJSON,
+            log: { level, message in
+                if level >= 2 {
+                    Logger.warning("SceneScript: \(message)", category: .wpeRender)
+                }
+            },
+            openUserShortcut: host.openUserShortcut
+        ))
+        let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }
+        handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0
+        handlesMedia = bits & WPEParityScriptEvent.mediaBits != 0
+        media = host.media
+        var candidates: [CursorCandidate] = []
+        var cameras: [String] = []
+        for object in document.resolvedObjectsJSON {
+            guard let id = Self.id(object) else { continue }
+            if case .string? = object["camera"] {
+                cameras.append(id)
+            }
+            // The editor writes `solid` on every layer; an object without it counts as solid.
+            candidates.append(CursorCandidate(id: id, solid: Self.flag(object["solid"]) ?? true,
+                                              disablePropagation: Self.flag(object["disablepropagation"]) ?? false))
+        }
+        cursorCandidates = candidates.reversed()
+        cameraIDs = cameras
+        soundIDs = document.soundObjects.map(\.id)
+        targets.reserveCapacity(candidates.count)
+    }
+
+    /// Event 0 once every object loaded, then the current media state to the media handlers (140172830.c:82-288).
+    func start(state: inout WPEParitySceneState) {
+        engine.start(state: &state)
+        guard handlesMedia, media != nil else { return }
+        engine.dispatch(.mediaStatusChanged, payloadJSON: #"{"enabled":true}"#, state: &state)
+        dispatchMedia(state: &state)
+    }
+
+    /// The layers the cursor pass tests this frame. `quad` gives a layer's corners in client pixels, nil for an object
+    /// the frame does not draw as a quad.
+    func updateCursorTargets(quad: (String) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)?,
+                             visible: (String) -> Bool) {
+        guard handlesCursor else { return }
+        targets.removeAll(keepingCapacity: true)
+        for candidate in cursorCandidates where candidate.solid {
+            guard let corners = quad(candidate.id) else { continue }
+            targets.append(WPEParityCursorTarget(id: candidate.id, quad: corners, visible: visible(candidate.id),
+                                                 disablePropagation: candidate.disablePropagation))
+        }
+    }
+
+    /// The cursor pass over the targets of `updateCursorTargets` (14017fa70.c:473-474).
+    func cursor(at cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool, timeOfDay: Float,
+                state: inout WPEParitySceneState) {
+        guard handlesCursor else { return }
+        let moved = lastCursor.map { $0 != cursor } ?? true
+        lastCursor = cursor
+        let dispatches = tracker.update(targets: targets, cursor: cursor, leftDown: leftDown, moved: moved)
+        engine.cursor(dispatches, input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay),
+                      state: &state)
+    }
+
+    /// Queued now-playing events, first in the manager tick (140171440.c:148-535).
+    func dispatchMedia(state: inout WPEParitySceneState) {
+        guard handlesMedia, let media else { return }
+        for event in media.drain() {
+            let (id, payload) = Self.payload(event)
+            engine.dispatch(id, payloadJSON: payload, state: &state)
+        }
+    }
+
+    func tick(dt: Float, cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool, timeOfDay: Float,
+              state: inout WPEParitySceneState) {
+        engine.tick(dt: dt, input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay),
+                    state: &state)
+    }
+
+    /// Refreshes the registerAudioBuffers bins from the frame's spectrum: 64 as published, 32 and 16 max-pooled
+    /// like the g_AudioSpectrum uniforms; `average` is the mean of both channels.
+    func updateAudio(_ bins: [Float]) {
+        guard bins.count == 128, let full = engine.audioBuffer(resolution: 64),
+              let half = engine.audioBuffer(resolution: 32), let quarter = engine.audioBuffer(resolution: 16) else { return }
+        for index in 0 ..< 64 {
+            (full[index], full[64 + index]) = (bins[index], bins[64 + index])
+            full[128 + index] = (bins[index] + bins[64 + index]) * 0.5
+        }
+        func pool(_ source: UnsafeMutableBufferPointer<Float>, into target: UnsafeMutableBufferPointer<Float>,
+                  count: Int) {
+            for channel in 0 ..< 2 {
+                for index in 0 ..< count {
+                    let base = channel * count * 2 + index * 2
+                    target[channel * count + index] = max(source[base], source[base + 1])
+                }
+            }
+            for index in 0 ..< count {
+                target[2 * count + index] = (target[index] + target[count + index]) * 0.5
+            }
+        }
+        pool(full, into: half, count: 32)
+        pool(half, into: quarter, count: 16)
+    }
+
+    /// Objects destroyLayer removed since the last call (14017fa70.c:477).
+    func takeDestroyed() -> ArraySlice<String> {
+        let ids = engine.destroyedObjectIDs
+        defer { destroyedSeen = ids.count }
+        return ids[destroyedSeen...]
+    }
+
+    private func input(cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool,
+                       timeOfDay: Float) -> WPEParityScriptEngine.Input {
+        WPEParityScriptEngine.Input(cursorScreen: cursor, cursorWorld: world, leftDown: leftDown, timeOfDay: timeOfDay)
+    }
+
+    /// The engine's object id: `id` as a string or number, else `name`.
+    private static func id(_ object: WPESceneJSONValue) -> String? {
+        switch object["id"] {
+        case let .string(id)? where !id.isEmpty: id
+        case let .number(number)?: String(Int(number))
+        default: if case let .string(name)? = object["name"] {
+                name
+            } else {
+                nil
+            }
+        }
+    }
+
+    private static func flag(_ value: WPESceneJSONValue?) -> Bool? {
+        switch value {
+        case let .bool(flag)?: flag
+        case let .number(number)?: number != 0
+        case let .object(entries)?: flag(entries["value"])
+        default: nil
+        }
+    }
+
+    /// WPE's media event ids (R25 §4) with the payload fields `lib.sceneScript.d.ts` declares.
+    static func payload(_ event: WPESceneMediaEvent) -> (WPEParityScriptEvent, String) {
+        switch event {
+        case let .playbackChanged(state):
+            return (.mediaPlaybackChanged, #"{"state":\#(state.rawValue)}"#)
+        case let .propertiesChanged(properties):
+            guard let properties else { return (.mediaPropertiesChanged, "{}") }
+            let fields = ["title": properties.title, "artist": properties.artist, "subTitle": properties.subTitle,
+                          "albumTitle": properties.albumTitle, "albumArtist": properties.albumArtist,
+                          "genres": properties.genres, "contentType": properties.contentType]
+            return (.mediaPropertiesChanged, json(fields))
+        case let .thumbnailChanged(thumbnail):
+            func color(_ value: SIMD3<Double>) -> [Double] {
+                [value.x, value.y, value.z]
+            }
+            return (.mediaThumbnailChanged, json([
+                "hasThumbnail": thumbnail.hasThumbnail, "primaryColor": color(thumbnail.primaryColor),
+                "secondaryColor": color(thumbnail.secondaryColor), "tertiaryColor": color(thumbnail.tertiaryColor),
+                "textColor": color(thumbnail.textColor), "highContrastColor": color(thumbnail.highContrastColor),
+            ]))
+        case let .timelineChanged(timeline):
+            return (.mediaTimelineChanged, json(["position": timeline.position, "duration": timeline.duration]))
+        }
+    }
+
+    /// project.json's `general.properties` with each entry's `value` replaced by the user's, as engine.userProperties
+    /// takes it; "{}" without a readable project.json.
+    static func userPropertiesJSON(projectRoot: URL, values: [String: WallpaperEngineProjectPropertyValue]) -> String {
+        guard let data = try? Data(contentsOf: projectRoot.appending(path: "project.json")),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let properties = (root["general"] as? [String: Any])?["properties"] as? [String: Any] else { return "{}" }
+        return mergedUserProperties(properties, values: values)
+    }
+
+    /// `base` (a userPropertiesJSON) with `values` written over the entries' `value`.
+    static func userPropertiesJSON(_ base: String, values: [String: WallpaperEngineProjectPropertyValue]) -> String {
+        let properties = (try? JSONSerialization.jsonObject(with: Data(base.utf8))) as? [String: Any] ?? [:]
+        return mergedUserProperties(properties, values: values)
+    }
+
+    /// Only the entries of `values`, for applyUserProperties' changed set.
+    static func changedUserPropertiesJSON(_ merged: String, keys: Set<String>) -> String {
+        let properties = (try? JSONSerialization.jsonObject(with: Data(merged.utf8))) as? [String: Any] ?? [:]
+        return json(properties.filter { keys.contains($0.key) })
+    }
+
+    private static func mergedUserProperties(_ properties: [String: Any],
+                                             values: [String: WallpaperEngineProjectPropertyValue]) -> String {
+        var merged = properties
+        for (key, value) in values {
+            var entry = merged[key] as? [String: Any] ?? [:]
+            entry["value"] = switch value {
+            case let .bool(flag): flag
+            case let .number(number): number
+            case let .string(text): text
+            }
+            merged[key] = entry
+        }
+        return json(merged)
+    }
+
+    private static func json(_ object: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return "{}" }
+        return String(bytes: data, encoding: .utf8) ?? "{}"
+    }
+}
+#endif

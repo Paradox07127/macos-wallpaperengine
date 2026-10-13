@@ -354,7 +354,14 @@ final class AmbientWallpaperSessionBuilder {
                 }
                 let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
                 let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
-                session.startAdoptingParityScene(WPEParitySceneInputs(
+                // The old renderer's product link and now-playing feed; the parity engine replaces its scripts.
+                let userShortcuts = WPEUserShortcutScriptBridge()
+                let userShortcutIcons = WPEUserShortcutIconStore(device: device)
+                UserShortcutRendererLink.shared.attach(
+                    userShortcuts, icons: userShortcutIcons, wallpaperID: descriptor.workshopID,
+                    declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot)
+                )
+                var inputs = WPEParitySceneInputs(
                     descriptor: descriptor,
                     entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
                         ?? SceneResourceResolver(cacheRootURL: cacheURL),
@@ -386,7 +393,11 @@ final class AmbientWallpaperSessionBuilder {
                             session?.noteRendererRuntimeActivity(latest)
                         }
                     }
-                ))
+                )
+                inputs.userShortcuts = userShortcuts
+                inputs.userShortcutIcons = userShortcutIcons
+                inputs.media = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
+                session.startAdoptingParityScene(inputs)
                 return session
             case let .failure(reason):
                 Logger.warning("Parity renderer unavailable for \(descriptor.workshopID), using the Metal scene renderer: \(reason)",
