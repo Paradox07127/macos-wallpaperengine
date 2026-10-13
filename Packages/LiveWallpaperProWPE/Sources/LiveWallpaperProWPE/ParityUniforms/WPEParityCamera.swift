@@ -17,7 +17,22 @@ public struct WPEParityCameraAlignment: Sendable, Equatable {
     public static let noCrop = Self()
 }
 
-/// WPE's 2D scene camera: lookAtRH view and the ortho canvas projection (1401891a0.c, 0x140183e95).
+/// General `fov` (degrees), `nearz` and `farz` of a scene whose `orthogonalprojection` is null (Main+0x140/0x14c/0x150,
+/// defaults from 140186c90.c:137-141).
+public struct WPEParityScenePerspective: Sendable, Equatable {
+    public var fov: Float
+    public var near: Float
+    public var far: Float
+
+    public init(fov: Float = 50, near: Float = 0.1, far: Float = 10000) {
+        self.fov = fov
+        self.near = near
+        self.far = far
+    }
+}
+
+/// WPE's scene camera: lookAtRH view and the ortho canvas projection (1401891a0.c, 0x140183e95), or the perspective
+/// one when `scenePerspective` is set (140183a70.c:36-68).
 public struct WPEParityCamera: Sendable, Equatable {
     public var eye: SIMD3<Float>
     public var center: SIMD3<Float>
@@ -33,10 +48,13 @@ public struct WPEParityCamera: Sendable, Equatable {
     /// `perspectiveoverridefov` in degrees.
     public var perspectiveFOV: Float
     public var shake: WPEParityCameraShake?
+    /// Nil for an orthographic scene.
+    public var scenePerspective: WPEParityScenePerspective?
 
     public init(eye: SIMD3<Float>, center: SIMD3<Float>, up: SIMD3<Float>, size: SIMD2<Float>,
                 renderTargetSize: SIMD2<Float>, zoom: Float = 1, alignment: WPEParityCameraAlignment = .noCrop,
-                parallaxAmount: Float? = nil, perspectiveFOV: Float = 50, shake: WPEParityCameraShake? = nil) {
+                parallaxAmount: Float? = nil, perspectiveFOV: Float = 50, shake: WPEParityCameraShake? = nil,
+                scenePerspective: WPEParityScenePerspective? = nil) {
         self.eye = eye
         self.center = center
         self.up = up
@@ -47,6 +65,7 @@ public struct WPEParityCamera: Sendable, Equatable {
         self.parallaxAmount = parallaxAmount
         self.perspectiveFOV = perspectiveFOV
         self.shake = shake
+        self.scenePerspective = scenePerspective
     }
 
     /// `cameraZoom` is the camera path or camera object zoom for the frame.
@@ -57,12 +76,22 @@ public struct WPEParityCamera: Sendable, Equatable {
         let size = Self.autoLayer(document)?.size.map { SIMD2(Float($0.width), Float($0.height)) }
             ?? SIMD2(Float(ortho.width), Float(ortho.height))
         let parallax = general.cameraParallax
+        let resolved = document.resolvedGeneralJSON
+        func value(_ key: String, _ fallback: Float) -> Float {
+            WPEParityProgramScene.number(resolved[key]).map(Float.init) ?? fallback
+        }
+        let defaults = WPEParityScenePerspective()
+        let perspective = general.usesPerspectiveProjection
+            ? WPEParityScenePerspective(fov: value("fov", defaults.fov), near: value("nearz", defaults.near),
+                                        far: value("farz", defaults.far))
+            : nil
+        // The V parallax push needs an orthographic scene (14018aac0.c:87).
         self.init(eye: SIMD3(document.camera.eye), center: SIMD3(document.camera.center),
                   up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
-                  parallaxAmount: parallax.enabled ? Float(parallax.amount) : nil,
+                  parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
                   perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
-                  shake: WPEParityCameraShake(general: general))
+                  shake: WPEParityCameraShake(general: general), scenePerspective: perspective)
     }
 
     /// The camera on a path pose, which comes before the shake (1401891a0.c:253-255); the projection zooms by
@@ -119,16 +148,28 @@ public struct WPEParityCamera: Sendable, Equatable {
         return crop
     }
 
-    /// Ortho over `bounds` with depth ±2000, zoomed about the canvas centre (14017fa70.c:227-346).
+    /// Ortho over `bounds` with depth ±2000, zoomed about the canvas centre (14017fa70.c:227-346). A perspective
+    /// scene takes the render-target aspect, no crop and no zoom, its first column negated under fliph
+    /// (140183a70.c:36-68); the fov clamp is 1401891a0.c:279-287.
     public var projection: simd_float4x4 {
+        if let scenePerspective {
+            let fov = min(max(scenePerspective.fov, 0.1), 179.9) * (Float.pi / 180)
+            var perspective = Self.perspective(fovY: fov, aspect: renderTargetSize.x / renderTargetSize.y,
+                                               near: scenePerspective.near, far: scenePerspective.far)
+            if alignment.flipHorizontal {
+                perspective.columns.0 = -perspective.columns.0
+            }
+            return perspective
+        }
         let b = bounds
         let ortho = Self.ortho(left: b.x, right: b.y, bottom: b.z, top: b.w, near: -2000, far: 2000)
         return ortho * Self.translation(SIMD3(size / 2, 0)) * simd_float4x4(diagonal: SIMD4(zoom, zoom, 1, 1))
             * Self.translation(SIMD3(-size / 2, 0))
     }
 
+    /// The eye itself in a perspective scene (1401891a0.c:391-397).
     public var eyePosition: SIMD3<Float> {
-        WPEParityUniformParallax.eyePosition2D(eye: SIMD2(eye.x, eye.y), ortho: size)
+        scenePerspective == nil ? WPEParityUniformParallax.eyePosition2D(eye: SIMD2(eye.x, eye.y), ortho: size) : eye
     }
 
     /// V·T(p) with p = (root origin − m)·amount·root depth; `smoothed` is `WPEParityUniformParallax.smoothed`
@@ -165,8 +206,10 @@ public struct WPEParityCamera: Sendable, Equatable {
     public func pushPerspective(view: simd_float4x4, projection: simd_float4x4)
         -> (view: simd_float4x4, projection: simd_float4x4) {
         let crop = alignmentCrop
-        let centre = SIMD2((size.x * 0.5 - (crop.y - crop.x) * 0.5) / size.x,
-                           (size.y * 0.5 - (crop.w - crop.z) * 0.5) / size.y)
+        // A perspective scene zeroes the crop centre (140183a70.c:37).
+        let centre = scenePerspective != nil ? .zero
+            : SIMD2((size.x * 0.5 - (crop.y - crop.x) * 0.5) / size.x,
+                    (size.y * 0.5 - (crop.w - crop.z) * 0.5) / size.y)
         let distance = 1 / projection.columns.1.y / tan(perspectiveFOVRadians / 2)
         var pushed = view
         // W and H are the integer canvas size (ctx+0x84/0x88).
@@ -206,13 +249,14 @@ public struct WPEParityCamera: Sendable, Equatable {
         ])
     }
 
-    /// Right-handed perspective with depth in [0, 1].
+    /// FUN_14009a360, XMMatrixPerspectiveFovRH with near and far swapped: reversed depth, `near` maps to 1.
     static func perspective(fovY: Float, aspect: Float, near: Float, far: Float) -> simd_float4x4 {
         let focal = 1 / tan(fovY / 2)
+        let range = near / (far - near)
         return simd_float4x4(rows: [
             SIMD4(focal / aspect, 0, 0, 0),
             SIMD4(0, focal, 0, 0),
-            SIMD4(0, 0, far / (near - far), -far * near / (far - near)),
+            SIMD4(0, 0, range, range * far),
             SIMD4(0, 0, -1, 0),
         ])
     }

@@ -14,25 +14,10 @@ public enum WPEParityParticleMatrices {
                                                                  parentSize: owner.size, childModel: own)
         }
         if perspective {
-            (matrices.view, matrices.projection) = pushPerspective(camera: transforms.camera, view: matrices.view,
-                                                                   projection: matrices.projection)
+            (matrices.view, matrices.projection) = transforms.camera.pushPerspective(view: matrices.view,
+                                                                                     projection: matrices.projection)
         }
         return matrices
-    }
-
-    /// FUN_1401e5b60 on top of the current V/P; W·cx, H·cy is the visible canvas centre as in `perspectiveView`.
-    static func pushPerspective(camera: WPEParityCamera, view: simd_float4x4, projection: simd_float4x4)
-        -> (view: simd_float4x4, projection: simd_float4x4) {
-        let focal = camera.perspectiveProjection.columns.1.y
-        let distance = focal / projection.columns.1.y
-        let bounds = camera.bounds
-        var pushed = view
-        pushed.columns.3.x -= (bounds.x + bounds.y) / 2
-        pushed.columns.3.y -= (bounds.z + bounds.w) / 2
-        pushed.columns.3.z = -distance
-        let aspect = camera.renderTargetSize.x / camera.renderTargetSize.y
-        return (pushed, WPEParityCamera.perspective(fovY: 2 * atan(1 / focal), aspect: aspect, near: 5,
-                                                    far: max(15000, distance + 1000)))
     }
 }
 

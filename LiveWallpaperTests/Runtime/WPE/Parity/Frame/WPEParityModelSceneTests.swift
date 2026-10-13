@@ -87,6 +87,31 @@ final class WPEParityModelSceneTests: XCTestCase {
         XCTAssertGreaterThan(lit, 0, "nothing drawn inside the Earth's projected bounds")
     }
 
+    /// The local scenes with `"orthogonalprojection": null` draw through the perspective scene camera.
+    func testPerspectiveScenesEncodeThreeFrames() async throws {
+        let compiler = try makeCompiler()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        for sceneID in ["3509243656", "3470948192", "3589454154"] {
+            let plan = try makePlan(sceneID: sceneID)
+            XCTAssertNotNil(plan.layout.frames.first, sceneID)
+            let store = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(
+                cachesURL: scratch.appending(path: "shader-cache", directoryHint: .isDirectory)
+            ))
+            let renderer = try await WPEParityFrameRenderer(
+                plan: plan, device: device, queue: queue,
+                shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
+                                                    bindingABIVersion: 1)
+            )
+            for frame in 0 ..< 3 {
+                guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: Double(frame) / 30)
+                else { XCTFail("scene \(sceneID) frame \(frame) was skipped"); continue }
+                await commandBuffer.completed()
+                XCTAssertNil(commandBuffer.error, "scene \(sceneID) frame \(frame)")
+            }
+        }
+    }
+
     private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
         let environment = ProcessInfo.processInfo.environment
         func path(_ key: String, _ fallback: String) -> URL {
@@ -103,17 +128,17 @@ final class WPEParityModelSceneTests: XCTestCase {
                                                  workDirectory: scratch.appending(path: "shaderc"))
     }
 
-    private func makePlan() throws -> WPEParityFramePlan {
+    private func makePlan(sceneID: String = WPEParityModelSceneTests.sceneID) throws -> WPEParityFramePlan {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
-        let folder = steam.appending(path: "workshop/content/431960/\(Self.sceneID)", directoryHint: .isDirectory)
+        let folder = steam.appending(path: "workshop/content/431960/\(sceneID)", directoryHint: .isDirectory)
         let package = folder.appending(path: "scene.pkg")
         let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
             .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")
         guard FileManager.default.fileExists(atPath: package.path),
               FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
-            throw XCTSkip("Needs Workshop \(Self.sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
+            throw XCTSkip("Needs Workshop \(sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
         }
         let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
                                                    projectRoot: folder, dependencyMounts: [],

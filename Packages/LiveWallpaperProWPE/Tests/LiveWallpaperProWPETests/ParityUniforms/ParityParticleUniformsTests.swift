@@ -98,7 +98,7 @@ final class ParityParticleUniformsTests: XCTestCase {
         assertEqual(matrices.view, translation(-960, -540, -540))
         let expected = simd_float4x4(rows: [
             SIMD4(0.5625, 0, 0, 0), SIMD4(0, 1, 0, 0),
-            SIMD4(0, 0, -1.00033344, -5.00166722), SIMD4(0, 0, -1, 0),
+            SIMD4(0, 0, 0.00033344448, 5.00166722), SIMD4(0, 0, -1, 0),
         ])
         assertEqual(matrices.projection, expected, accuracy: 1e-5)
     }
@@ -111,7 +111,7 @@ final class ParityParticleUniformsTests: XCTestCase {
                                                       childLocal: matrix_identity_float4x4, worldSpace: false,
                                                       perspective: true, compositeOwnerID: "p", parallax: canvas / 2)
         assertEqual(matrices.view, translation(-960, -540, -150))
-        XCTAssertEqual(matrices.projection.columns.2.z, -15000 / Float(14995), accuracy: 1e-6)
+        XCTAssertEqual(matrices.projection.columns.2.z, 5 / Float(14995), accuracy: 1e-6)
     }
 
     // MARK: Renderer orientation fields

@@ -349,7 +349,6 @@ struct WPEParityFrameDrawPlanner {
         self.device = device
         self.factory = factory
         self.plan = plan
-        lights = WPEParityUniformLights(document: plan.document)
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -359,6 +358,7 @@ struct WPEParityFrameDrawPlanner {
                                             renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
                                             alignment: plan.alignment, cameraZoom: 1,
                                             textSizes: plan.scene.textSizes, puppetModels: plan.scene.puppetModels)
+        lights = WPEParityUniformLights(document: plan.document, transforms: layers)
         textAtlases = WPEParityTextAtlasTextures(atlases: plan.scene.textAtlases)
         textAtlases.upload(device: device)
         for object in plan.scene.scene.objects {

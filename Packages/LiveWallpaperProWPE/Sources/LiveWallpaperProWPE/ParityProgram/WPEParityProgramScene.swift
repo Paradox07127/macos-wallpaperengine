@@ -63,6 +63,7 @@ public struct WPEParityProgramScene: Sendable {
         // Main+0x118 bits 23/24 (140186440.c:28-39).
         flags.fogDistance = Self.flag(general?["fogdistance"])
         flags.fogHeight = Self.flag(general?["fogheight"])
+        WPEParityLightConfig(general: general).apply(to: &flags)
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
         let sceneBloom = bloomGeneral["bloom"].map { Self.flag($0) } ?? true
         // 14010df40.c:299-335, 365, 519-552
