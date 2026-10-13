@@ -193,7 +193,7 @@ enum WPEParityScriptPrelude {
     function addTimer(callback, delay, every) {
       const id = ++timerId, ms = Math.max(0, +delay || 0);
       timers.set(id, { callback, due: now + ms, every: every ? ms : -1 });
-      return id;
+      return () => { timers.delete(id); };
     }
     function runTimers(ms) {
       now += ms;
@@ -206,7 +206,7 @@ enum WPEParityScriptPrelude {
     }
     const setTimeout = (callback, delay) => addTimer(callback, delay, false);
     const setInterval = (callback, delay) => addTimer(callback, delay, true);
-    const clearTimeout = id => { timers.delete(id); };
+    const clearTimeout = cancel => { if (typeof cancel === 'function') cancel(); };
 
     // Host objects.
     const audio = host.audio;

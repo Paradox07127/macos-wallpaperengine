@@ -161,6 +161,8 @@ public final class WPEParityScriptEngine {
                                withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
         layout(document: document, state: state)
         installHost(document: document)
+        // Module bodies run here and may read their layer.
+        mirror(state)
         compileBindings(document: document, state: state)
     }
 
@@ -314,6 +316,19 @@ public final class WPEParityScriptEngine {
 
     /// Mirrors the state into the slots, runs `body`, and applies every slot it wrote.
     private func run(state: inout WPEParitySceneState, _ body: () -> Void) {
+        mirror(state)
+        body()
+        let count = Int(dirty[0])
+        guard count > 0 else { return }
+        for entry in 1 ... count {
+            let slot = Int(dirty[entry])
+            dirtyFlags[slot] = 0
+            apply(slot: slot, to: &state)
+        }
+        dirty[0] = 0
+    }
+
+    private func mirror(_ state: WPEParitySceneState) {
         for entry in refresh {
             switch entry {
             case let .object(slot, index, property):
@@ -336,15 +351,6 @@ public final class WPEParityScriptEngine {
                 }
             }
         }
-        body()
-        let count = Int(dirty[0])
-        guard count > 0 else { return }
-        for entry in 1 ... count {
-            let slot = Int(dirty[entry])
-            dirtyFlags[slot] = 0
-            apply(slot: slot, to: &state)
-        }
-        dirty[0] = 0
     }
 
     private func store(_ value: SIMD4<Float>, at slot: Int) {

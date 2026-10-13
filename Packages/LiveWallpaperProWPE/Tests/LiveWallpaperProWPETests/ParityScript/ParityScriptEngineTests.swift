@@ -60,6 +60,36 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// engine.setTimeout / setInterval return a function that cancels the timer, as Workshop 3326873240 calls it.
+    func testTimersReturnACancelFunction() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            let ticks = 0;
+            const stop = engine.setInterval(() => { ticks += 1; }, 10);
+            export function update(value) { if (ticks === 2) stop(); return ticks; }
+            """)]),
+        ])
+        scene.engine.start(state: &scene.state)
+        for _ in 0 ..< 6 {
+            scene.engine.tick(dt: 0.011, state: &scene.state)
+        }
+        XCTAssertEqual(scene.state.object("1")?.alpha, 2)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// Module scope already reads the loaded layer values.
+    func testModuleScopeReadsTheLoadedState() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["origin": "100 200 0", "alpha": Self.scripted(1, """
+            const original = thisLayer.origin.x;
+            export function update(value) { return original / 100; }
+            """)]),
+        ])
+        scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 1)
+    }
+
     /// With a keyframe animation on the property, update receives this frame's animated value and its return wins.
     func testUpdateReceivesTheAnimatedValueAndItsReturnOverridesIt() throws {
         let animation: [String: Any] = [
