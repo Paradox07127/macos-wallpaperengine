@@ -143,7 +143,7 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var boneCount: Int
     /// FUN_1402076e0: mesh0's format has bone indices (0x800000) and the model has bones.
     public var skinned: Bool
-    /// puppet+0x390, the first mesh with flag & 2; `WPEMdlParser` does not expose mesh flags, so always nil.
+    /// puppet+0x390, the first mesh with flag & 2 (1401fbae0.c:237-238); WPE builds a second mesh from it.
     public var blendMeshIndex: Int?
 
     public init(vertices: [WPEPuppetVertex], indices: [UInt16], boneCount: Int, skinned: Bool,
@@ -153,6 +153,15 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         self.boneCount = boneCount
         self.skinned = skinned
         self.blendMeshIndex = blendMeshIndex
+    }
+
+    /// WPE uploads the index bytes as R16_UINT, bytes / 2 of them (14020ae00.c:77, 14009a880 arg 7 = 0), so
+    /// a u32 index buffer reads as its low and high halves.
+    public static func indices(of mesh: WPEPuppetMesh) -> [UInt16] {
+        switch mesh.indexElementWidth {
+        case .uint16: mesh.indices.map { UInt16(truncatingIfNeeded: $0) }
+        case .uint32: mesh.indices.flatMap { [UInt16(truncatingIfNeeded: $0), UInt16(truncatingIfNeeded: $0 >> 16)] }
+        }
     }
 
     /// FUN_140207710.

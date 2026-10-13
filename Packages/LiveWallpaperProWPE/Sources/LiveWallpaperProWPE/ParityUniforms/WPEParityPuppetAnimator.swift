@@ -6,9 +6,9 @@ public struct WPEParityPuppetAnimator: Sendable {
     public enum Mode: Sendable, Equatable {
         case loop, mirror, single
 
-        /// [I] R12 did not find the string-to-flag mapping; the old evaluator's: "mirror", "single", else loop.
+        /// FUN_1401a8c10: ASCII case-insensitive "mirror" sets flag bit0, "single" bit1, anything else loops.
         init(_ string: String) {
-            switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            switch string.lowercased() {
             case "mirror": self = .mirror
             case "single": self = .single
             default: self = .loop
@@ -100,9 +100,14 @@ public struct WPEParityPuppetAnimator: Sendable {
     public private(set) var layers: [Layer]
     /// currentWorld · inverse(bindWorld) per MDLS bone.
     public private(set) var palette: [simd_float4x4] = []
+    /// This frame's world matrix per MDLS bone (puppet+0x2c8), the parent matrix attachments compose with.
+    public private(set) var boneWorld: [simd_float4x4] = []
     private let parents: [Int?]
     private let restLocal: [simd_float4x4]
+    /// puppet+0x230: each rest local split into T, R, S; the first layer's base and every additive reference.
+    private let restPose: [Pose]
     private let inverseBindWorld: [simd_float4x4]
+    private var poses: [Pose?] = []
 
     /// Invisible layers and layers naming an animation the model lacks are dropped (FUN_1401fdf90 skips +0xD0 bit0 = 0).
     public init(model: WPEPuppetModel, layers sceneLayers: [WPESceneAnimationLayer]) {
@@ -121,7 +126,12 @@ public struct WPEParityPuppetAnimator: Sendable {
         // The MDLS parser keeps a parent only when it precedes the bone, so one forward pass composes worlds.
         parents = model.bones.enumerated().map { index, bone in bone.parentIndex.flatMap { $0 < index ? $0 : nil } }
         restLocal = model.bones.map { WPEMdlParser.matrix(fromColumnMajorFloats: $0.rawMatrix) ?? matrix_identity_float4x4 }
-        inverseBindWorld = Self.world(locals: restLocal, parents: parents).map(\.inverse)
+        restPose = restLocal.map { Self.pose(of: $0) }
+        let bindWorld = Self.world(locals: restLocal, parents: parents)
+        inverseBindWorld = bindWorld.map(\.inverse)
+        boneWorld = bindWorld
+        palette = bindWorld
+        poses = [Pose?](repeating: nil, count: restLocal.count)
         evaluate()
     }
 
@@ -170,7 +180,9 @@ public struct WPEParityPuppetAnimator: Sendable {
 
     private mutating func evaluate() {
         // nil = untouched by every layer, drawn at its MDLS rest matrix.
-        var poses = [Pose?](repeating: nil, count: restLocal.count)
+        for bone in poses.indices {
+            poses[bone] = nil
+        }
         for layer in layers {
             let frame = Self.frame(time: layer.time, frameDuration: layer.frameDuration,
                                    frameCount: layer.animation.frameCount)
@@ -178,21 +190,21 @@ public struct WPEParityPuppetAnimator: Sendable {
                 let bone = channel.boneIndex
                 let sample = Self.interpolate(channel.keyframes[frame.a], channel.keyframes[frame.b], t: frame.t)
                 if layer.additive {
-                    let reference = layer.mode == .single ? Self.pose(of: restLocal[bone])
-                        : Self.pose(of: channel.keyframes[0])
-                    poses[bone] = Self.add(sample, reference: reference,
-                                           onto: poses[bone] ?? Self.pose(of: restLocal[bone]), weight: layer.weight)
+                    poses[bone] = Self.add(sample, reference: restPose[bone], onto: poses[bone] ?? restPose[bone],
+                                           weight: layer.weight)
                 } else if layer.weight == 1 {
                     // FUN_1401f89a0 overwrites instead of blending when the weight is exactly 1.
                     poses[bone] = sample
                 } else {
-                    poses[bone] = Self.blend(sample, over: poses[bone] ?? Self.pose(of: restLocal[bone]),
-                                             weight: layer.weight)
+                    poses[bone] = Self.blend(sample, over: poses[bone] ?? restPose[bone], weight: layer.weight)
                 }
             }
         }
-        let locals = poses.enumerated().map { $1?.matrix ?? restLocal[$0] }
-        palette = zip(Self.world(locals: locals, parents: parents), inverseBindWorld).map { $0 * $1 }
+        for bone in poses.indices {
+            let local = poses[bone]?.matrix ?? restLocal[bone]
+            boneWorld[bone] = parents[bone].map { boneWorld[$0] * local } ?? local
+            palette[bone] = boneWorld[bone] * inverseBindWorld[bone]
+        }
     }
 
     /// Lerp T and S, nlerp the rotation on the shorter arc (FUN_1401f9020 SoA inner loop).
@@ -212,21 +224,19 @@ public struct WPEParityPuppetAnimator: Sendable {
                     scale: sample.scale * weight + previous.scale * (1 - weight))
     }
 
-    /// [I] R12 did not decode WPE's additive branch; this is `WPEPuppetAnimationEvaluator`'s additive delta.
+    /// FUN_1401f9820: T and S add (sample − rest) · w; the rotation delta conj(rest) · sample is nlerped from
+    /// identity by w (sign of the delta's w) and post-multiplied without renormalizing.
     private static func add(_ sample: Pose, reference: Pose, onto base: Pose, weight: Float) -> Pose {
-        let delta = simd_slerp(simd_quatf(real: 1, imag: .zero), sample.rotation * reference.rotation.inverse, weight)
-        var scale = base.scale
-        for axis in 0 ..< 3 {
-            // A collapsed-at-rest track carries absolute scale; division would lose it.
-            scale[axis] = abs(reference.scale[axis]) <= 1e-6
-                ? base.scale[axis] + (sample.scale[axis] - base.scale[axis]) * weight
-                : base.scale[axis] * (1 + (sample.scale[axis] / reference.scale[axis] - 1) * weight)
-        }
+        let delta = reference.rotation.conjugate * sample.rotation
+        let signedWeight = delta.real.sign == .minus ? -weight : weight
+        let ramp = simd_normalize(simd_quatf(real: delta.real * signedWeight + (1 - weight),
+                                             imag: delta.imag * signedWeight))
         return Pose(translation: base.translation + (sample.translation - reference.translation) * weight,
-                    rotation: base.rotation * delta, scale: scale)
+                    rotation: base.rotation * ramp,
+                    scale: base.scale + (sample.scale - reference.scale) * weight)
     }
 
-    /// [I] Euler order Z·Y·X as the old evaluator; R12 did not find where WPE converts the 9-float key.
+    /// Z·Y·X: the load-time key conversion stores (cx cy cz + sx sy sz, sx cy cz − cx sy sz, …) (140261880.c:2212-2234).
     private static func rotation(euler: SIMD3<Float>) -> simd_quatf {
         simd_normalize(simd_quatf(angle: euler.z, axis: SIMD3(0, 0, 1)) * simd_quatf(angle: euler.y, axis: SIMD3(0, 1, 0))
             * simd_quatf(angle: euler.x, axis: SIMD3(1, 0, 0)))
@@ -236,7 +246,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         Pose(translation: key.translation, rotation: rotation(euler: key.euler), scale: key.scale)
     }
 
-    /// [I] Rest pose a first layer with weight < 1 blends against: the MDLS local split into T, R, S.
+    /// The MDLS local split into T, R, S (1401fdf90.c:587-676); [I] the negative-determinant flip.
     private static func pose(of matrix: simd_float4x4) -> Pose {
         let axes = [matrix.columns.0, matrix.columns.1, matrix.columns.2].map { SIMD3($0.x, $0.y, $0.z) }
         var scale = SIMD3(simd_length(axes[0]), simd_length(axes[1]), simd_length(axes[2]))

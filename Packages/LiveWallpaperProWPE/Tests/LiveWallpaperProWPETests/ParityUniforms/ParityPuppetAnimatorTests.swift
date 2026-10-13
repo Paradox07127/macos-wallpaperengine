@@ -170,6 +170,92 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         XCTAssertEqual(words, animator.bones.flatMap { [$0.x, $0.y, $0.z, $0.w] }.map(\.bitPattern))
     }
 
+    /// FUN_1401a8c10: case-insensitive "mirror" sets bit0, "single" bit1, anything else loops.
+    func testModeStringsCompareWithoutCaseOrTrimming() {
+        XCTAssertEqual(WPEParityPuppetAnimator.Mode("Mirror"), .mirror)
+        XCTAssertEqual(WPEParityPuppetAnimator.Mode("SINGLE"), .single)
+        XCTAssertEqual(WPEParityPuppetAnimator.Mode(" single"), .loop)
+        XCTAssertEqual(WPEParityPuppetAnimator.Mode(""), .loop)
+    }
+
+    /// FUN_1401f9820 over a base layer, against the decompiled formula written out per component.
+    func testAdditiveLayerMatchesTheDecompiledFormula() {
+        typealias Q = SIMD4<Float> // (w, x, y, z)
+        func euler(_ e: SIMD3<Float>) -> Q { // 140261880.c:2212-2234
+            let (cx, cy, cz) = (cos(e.x * 0.5), cos(e.y * 0.5), cos(e.z * 0.5))
+            let (sx, sy, sz) = (sin(e.x * 0.5), sin(e.y * 0.5), sin(e.z * 0.5))
+            return Q(sx * sy * sz + cx * cy * cz, sx * cy * cz - cx * sy * sz,
+                     sx * cy * sz + cx * sy * cz, cx * cy * sz - sx * sy * cz)
+        }
+        func mul(_ a: Q, _ b: Q) -> Q {
+            Q(a.x * b.x - a.y * b.y - a.z * b.z - a.w * b.w, a.x * b.y + a.y * b.x + a.z * b.w - a.w * b.z,
+              a.x * b.z - a.y * b.w + a.z * b.x + a.w * b.y, a.x * b.w + a.y * b.z - a.z * b.y + a.w * b.x)
+        }
+        func matrix(_ t: SIMD3<Float>, _ q: Q, _ s: SIMD3<Float>) -> simd_float4x4 {
+            var m = simd_float4x4(simd_quatf(ix: q.y, iy: q.z, iz: q.w, r: q.x))
+            m.columns.0 *= s.x
+            m.columns.1 *= s.y
+            m.columns.2 *= s.z
+            m.columns.3 = SIMD4(t, 1)
+            return m
+        }
+        let restT = SIMD3<Float>(1, 0, 0), restQ = euler(SIMD3(0, 0, 0.4)), restS = SIMD3<Float>(2, 2, 2)
+        let rest = matrix(restT, restQ, restS)
+        let base = [(SIMD3<Float>(0, 0, 0), SIMD3<Float>(0.2, 0, 0), SIMD3<Float>(1, 1, 1)),
+                    (SIMD3<Float>(0, 4, 0), SIMD3<Float>(0.2, 0.3, 0.6), SIMD3<Float>(1, 2, 1))]
+        let added = [(SIMD3<Float>(1, 0, 0), SIMD3<Float>(0, 0, 0.4), SIMD3<Float>(2, 2, 2)),
+                     (SIMD3<Float>(1, 2, 0), SIMD3<Float>(0.5, 0, 1.2), SIMD3<Float>(3, 2, 2))]
+        func keys(_ list: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)]) -> [WPEPuppetAnimKey] {
+            list.enumerated().map { WPEPuppetAnimKey(frame: $0, translation: $1.0, euler: $1.1, scale: $1.2) }
+        }
+        let model = WPEPuppetModel(version: 23, meshes: [], bones: [
+            WPEPuppetBone(index: 0, parentIndex: nil, rawMatrix: floats(rest)),
+        ], animations: [
+            WPEPuppetAnimation(id: 1, name: "base", mode: "loop", fps: 4, frameCount: 1,
+                               channels: [WPEPuppetAnimChannel(boneIndex: 0, keyframes: keys(base))]),
+            WPEPuppetAnimation(id: 2, name: "add", mode: "single", fps: 4, frameCount: 1,
+                               channels: [WPEPuppetAnimChannel(boneIndex: 0, keyframes: keys(added))]),
+        ])
+        var animator = WPEParityPuppetAnimator(model: model, layers: [
+            layer(1), layer(2, id: 2, blend: 0.5, additive: true),
+        ])
+        func sample(_ list: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)], _ t: Float)
+            -> (SIMD3<Float>, Q, SIMD3<Float>) {
+            let qa = euler(list[0].1), qb = euler(list[1].1)
+            let tb = simd_dot(qa, qb) < 0 ? -t : t
+            return (list[0].0 * (1 - t) + list[1].0 * t, simd_normalize(qa * (1 - t) + qb * tb),
+                    list[0].2 * (1 - t) + list[1].2 * t)
+        }
+        for dt in [0.05, 0.05, 0.1] {
+            animator.advance(dt: dt)
+            let t = animator.layers.map { $0.time.truncatingRemainder(dividingBy: 0.25) / 0.25 }
+            let w = animator.layers[1].weight
+            XCTAssertEqual(w, 0.5)
+            let (bt, bq, bs) = sample(base, t[0])
+            let (at, aq, as_) = sample(added, t[1])
+            let delta = mul(Q(restQ.x, -restQ.y, -restQ.z, -restQ.w), aq)
+            let signed = delta.x.sign == .minus ? -w : w
+            let ramp = simd_normalize(Q(signed * delta.x + (1 - w), signed * delta.y, signed * delta.z,
+                                        signed * delta.w))
+            let local = matrix(bt + (at - restT) * w, mul(bq, ramp), bs + (as_ - restS) * w)
+            assertEqual(animator.palette[0], local * rest.inverse, accuracy: 1e-4)
+            assertEqual(animator.boneWorld[0], local, accuracy: 1e-4)
+        }
+    }
+
+    func testBoneWorldComposesAlongParents() {
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(), layers: [layer(7)])
+        animator.advance(dt: 0.1)
+        assertEqual(animator.boneWorld[0], translation(SIMD3(1, 0, 0)))
+        // nlerp at t = 0.4 between 0 and a quarter turn.
+        let root = Float(0.5).squareRoot()
+        let half = SIMD2<Float>(0.6 + 0.4 * root, 0.4 * root)
+        let child = translation(SIMD3(0, 2, 0)) * simd_float4x4(rotationZ(2 * atan2(half.y, half.x)))
+        XCTAssertEqual(animator.boneWorld.count, 2)
+        assertEqual(animator.boneWorld[1], animator.boneWorld[0] * child)
+        assertEqual(animator.palette[1], animator.boneWorld[1] * translation(SIMD3(1, 2, 0)).inverse)
+    }
+
     func testWorkshop2370640409PuppetStaysFinite() throws {
         let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
             "Library/Application Support/Steam/steamapps/workshop/content/431960/2370640409/scene.pkg"

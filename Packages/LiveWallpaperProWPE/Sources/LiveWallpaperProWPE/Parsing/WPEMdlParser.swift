@@ -88,6 +88,10 @@ public struct WPEPuppetMesh: Equatable, Sendable {
     public let clipMaskName: String?
     /// Stored integers are mesh part-table indices, not `WPEPuppetMeshPart.id` (IDs may repeat). WPE stores the target list before the source list; every target is clipped by the union of every source.
     public let clipGroups: [WPEPuppetClipGroup]
+    /// Vertex format bits (WPE mesh record +0x38); `WPEMdlParser.vertexStride(for:)` gives the stride.
+    public let vertexFormat: UInt32
+    /// Mesh flags (record +0x18): bit 1 marks the blend mesh (puppet+0x390), bit 3 the segmented draw.
+    public let flags: UInt32
 
     public init(
         materialPath: String,
@@ -97,8 +101,12 @@ public struct WPEPuppetMesh: Equatable, Sendable {
         parts: [WPEPuppetMeshPart],
         bounds: WPEPuppetMeshBounds? = nil,
         clipMaskName: String? = nil,
-        clipGroups: [WPEPuppetClipGroup] = []
+        clipGroups: [WPEPuppetClipGroup] = [],
+        vertexFormat: UInt32 = 0,
+        flags: UInt32 = 0
     ) {
+        self.vertexFormat = vertexFormat
+        self.flags = flags
         self.materialPath = materialPath
         self.vertices = vertices
         self.indices = indices
@@ -1253,7 +1261,7 @@ public enum WPEMdlParser {
             if skinIndex == 0 { materialPath = path }
         }
         let flagA = try reader.readUInt32()
-        if flagA == 2 {
+        if flagA & WPEMdlMeshFlags.flagPayload != 0 {
             try readIgnoredUInt32(reader: &reader, auditRecorder: auditRecorder, label: "MDLV mesh flag payload")
         }
         let bounds: WPEPuppetMeshBounds?
@@ -1275,7 +1283,7 @@ public enum WPEMdlParser {
         }
         let meshFlags = features.perMeshFlags ? try reader.readUInt32() : headerMeshFlags
         let vertexByteCount = try reader.readUInt32()
-        let vertexStride = stride(for: meshFlags)
+        let vertexStride = Self.vertexStride(for: meshFlags)
         guard vertexStride > 0, vertexByteCount % UInt32(vertexStride) == 0 else {
             throw WPEMdlParserError.invalidVertexBuffer(byteCount: vertexByteCount, stride: vertexStride)
         }
@@ -1345,7 +1353,9 @@ public enum WPEMdlParser {
             parts: parts,
             bounds: bounds,
             clipMaskName: clipGroups.first?.maskName,
-            clipGroups: clipGroups
+            clipGroups: clipGroups,
+            vertexFormat: meshFlags,
+            flags: flagA
         )
         auditRecorder?.endSection(at: reader.currentOffset)
         return mesh
@@ -1406,80 +1416,50 @@ public enum WPEMdlParser {
         auditRecorder: WPEMdlParseAuditRecorder?,
         reader: inout WPEMdlBinaryReader
     ) throws -> WPEPuppetVertex {
-        let position = SIMD3<Float>(
-            try reader.readFloat(),
-            try reader.readFloat(),
-            try reader.readFloat()
-        )
-
+        var position = SIMD3<Float>(0, 0, 0)
         // Consumed by the 3D scene-model path only. `(0, 0, 1)` when unauthored:
         // generic2/generic4 normalize it, so a zero vector would produce NaN.
         var normal = SIMD3<Float>(0, 0, 1)
-        if meshFlags & WPEMdlMeshFlags.normal != 0 {
-            normal = try SIMD3<Float>(
-                reader.readFloat(),
-                reader.readFloat(),
-                reader.readFloat()
-            )
-            // An authored zero is the same NaN as unauthored; a NaN compares false against the threshold, so finiteness is checked on its own.
-            let lengthSquared = simd_length_squared(normal)
-            if !lengthSquared.isFinite || lengthSquared < 1e-12 {
-                normal = SIMD3<Float>(0, 0, 1)
-            }
-        }
-        if meshFlags & WPEMdlMeshFlags.tangent != 0 {
-            try skipKnownBytes(
-                byteCount: 4 * MemoryLayout<Float>.size,
-                reader: &reader,
-                auditRecorder: auditRecorder,
-                label: "MDLV vertex tangent"
-            )
-        }
-        if meshFlags & WPEMdlMeshFlags.extra4 != 0 {
-            try skipKnownBytes(
-                byteCount: 4 * MemoryLayout<UInt8>.size,
-                reader: &reader,
-                auditRecorder: auditRecorder,
-                label: "MDLV vertex extra4"
-            )
-        }
         var skinBlendIndices = SIMD4<Int32>(0, 0, 0, 0)
         var skinBlendWeights = SIMD4<Float>(0, 0, 0, 0)
-        if meshFlags & WPEMdlMeshFlags.skinBlendIndices != 0 {
-            // Skin-blend indices are 4× little-endian Int32 (not floats, which
-            // the old decode misread — collapsing every index to bone 0).
-            skinBlendIndices = SIMD4<Int32>(
-                try reader.readInt32(),
-                try reader.readInt32(),
-                try reader.readInt32(),
-                try reader.readInt32()
-            )
-        }
-        if meshFlags & WPEMdlMeshFlags.skinBlendWeights != 0 {
-            skinBlendWeights = SIMD4<Float>(
-                try reader.readFloat(),
-                try reader.readFloat(),
-                try reader.readFloat(),
-                try reader.readFloat()
-            )
-        }
-
-        // UV is emitted whenever either texcoord flag is set: a UV2-only mesh (e.g. the
-        // channel-map companion mesh in MDLV0021 multi-mesh puppets, flags 0x800021) still
-        // stores texcoords in front of texcoord2.
-        let uv: SIMD2<Float>
-        if meshFlags & (WPEMdlMeshFlags.uv | WPEMdlMeshFlags.uv2) != 0 {
-            uv = SIMD2<Float>(try reader.readFloat(), try reader.readFloat())
-        } else {
-            uv = SIMD2<Float>(0, 0)
-        }
-        if meshFlags & WPEMdlMeshFlags.uv2 != 0 {
-            try skipKnownBytes(
-                byteCount: 2 * MemoryLayout<Float>.size,
-                reader: &reader,
-                auditRecorder: auditRecorder,
-                label: "MDLV vertex uv2"
-            )
+        var uv = SIMD2<Float>(0, 0)
+        var hasPosition = false
+        var hasTexcoord0 = false
+        let format = WPEMdlMeshFlags.withPosition(meshFlags)
+        for (flag, size) in WPEMdlMeshFlags.table where format & flag != 0 {
+            switch flag {
+            case WPEMdlMeshFlags.position where !hasPosition, WPEMdlMeshFlags.positionVec4 where !hasPosition:
+                position = try SIMD3<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat())
+                hasPosition = true
+                if size > 12 {
+                    try skipKnownBytes(byteCount: size - 12, reader: &reader, auditRecorder: auditRecorder,
+                                       label: "MDLV vertex position w")
+                }
+            case WPEMdlMeshFlags.normal:
+                normal = try SIMD3<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat())
+                // An authored zero is the same NaN as unauthored; a NaN compares false against the threshold, so finiteness is checked on its own.
+                let lengthSquared = simd_length_squared(normal)
+                if !lengthSquared.isFinite || lengthSquared < 1e-12 {
+                    normal = SIMD3<Float>(0, 0, 1)
+                }
+            case WPEMdlMeshFlags.skinBlendIndices:
+                // BLENDINDICES is R32G32B32A32_UINT.
+                skinBlendIndices = try SIMD4<Int32>(reader.readInt32(), reader.readInt32(), reader.readInt32(),
+                                                    reader.readInt32())
+            case WPEMdlMeshFlags.skinBlendWeights:
+                skinBlendWeights = try SIMD4<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat(),
+                                                    reader.readFloat())
+            case _ where WPEMdlMeshFlags.texcoord0.contains(flag) && !hasTexcoord0:
+                uv = try SIMD2<Float>(reader.readFloat(), reader.readFloat())
+                hasTexcoord0 = true
+                if size > 8 {
+                    try skipKnownBytes(byteCount: size - 8, reader: &reader, auditRecorder: auditRecorder,
+                                       label: "MDLV vertex texcoord0 zw")
+                }
+            default:
+                try skipKnownBytes(byteCount: size, reader: &reader, auditRecorder: auditRecorder,
+                                   label: "MDLV vertex attribute 0x\(String(flag, radix: 16))")
+            }
         }
 
         return WPEPuppetVertex(
@@ -1491,30 +1471,10 @@ public enum WPEMdlParser {
         )
     }
 
-    private static func stride(for meshFlags: UInt32) -> Int {
-        var stride = 3 * MemoryLayout<Float>.size
-        if meshFlags & WPEMdlMeshFlags.normal != 0 {
-            stride += 3 * MemoryLayout<Float>.size
-        }
-        if meshFlags & WPEMdlMeshFlags.tangent != 0 {
-            stride += 4 * MemoryLayout<Float>.size
-        }
-        if meshFlags & WPEMdlMeshFlags.extra4 != 0 {
-            stride += 4 * MemoryLayout<UInt8>.size
-        }
-        if meshFlags & WPEMdlMeshFlags.skinBlendIndices != 0 {
-            stride += 4 * MemoryLayout<Float>.size
-        }
-        if meshFlags & WPEMdlMeshFlags.skinBlendWeights != 0 {
-            stride += 4 * MemoryLayout<Float>.size
-        }
-        if meshFlags & (WPEMdlMeshFlags.uv | WPEMdlMeshFlags.uv2) != 0 {
-            stride += 2 * MemoryLayout<Float>.size
-        }
-        if meshFlags & WPEMdlMeshFlags.uv2 != 0 {
-            stride += 2 * MemoryLayout<Float>.size
-        }
-        return stride
+    /// 140261880.c:290-319.
+    static func vertexStride(for meshFlags: UInt32) -> Int {
+        let format = WPEMdlMeshFlags.withPosition(meshFlags)
+        return WPEMdlMeshFlags.table.reduce(0) { $0 + (format & $1.flag != 0 ? $1.size : 0) }
     }
 
     private static func parseVersion21Parts(
@@ -2170,13 +2130,28 @@ public enum WPEMdlParser {
 }
 
 private enum WPEMdlMeshFlags {
+    static let position: UInt32 = 0x1
+    static let positionVec4: UInt32 = 0x10000
     static let normal: UInt32 = 0x2
-    static let tangent: UInt32 = 0x4
-    static let uv: UInt32 = 0x8
-    static let uv2: UInt32 = 0x20
-    static let extra4: UInt32 = 0x10000
     static let skinBlendIndices: UInt32 = 0x800000
     static let skinBlendWeights: UInt32 = 0x1000000
+    static let texcoord0: [UInt32] = [0x8, 0x10, 0x20]
+    static let flagPayload: UInt32 = 0x2
+
+    /// A format with neither position bit has no POSITION for WPE to draw; such (synthetic) meshes keep the
+    /// parser's older reading of a leading float3 position.
+    static func withPosition(_ format: UInt32) -> UInt32 {
+        format & (position | positionVec4) == 0 ? format | position : format
+    }
+
+    /// WPE's vertex format table in attribute order (exe 0x140484a20 flags, 0x1404849b0 byte sizes); the input
+    /// layout places each set bit at the running sum (1400d7f90.c:81-97).
+    static let table: [(flag: UInt32, size: Int)] = [
+        (0x1, 12), (0x10000, 16), (0x2000000, 12), (0x2, 12), (0x4, 16), (0x800000, 16), (0x1000000, 16),
+        (0x8, 8), (0x10, 12), (0x20, 16), (0x40, 8), (0x80, 12), (0x100, 16), (0x200, 8), (0x400, 12),
+        (0x800, 16), (0x1000, 8), (0x2000, 12), (0x4000, 16), (0x20000, 8), (0x40000, 12), (0x80000, 16),
+        (0x100000, 8), (0x200000, 12), (0x400000, 16), (0x8000, 16),
+    ]
 }
 
 public enum WPEMdlParserError: Error, Equatable, Sendable {

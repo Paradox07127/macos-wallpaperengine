@@ -350,40 +350,16 @@ public struct WPEParityProgramScene: Sendable {
         assets.data(path).flatMap { try? WPEMdlParser.parse(data: $0).meshes.first?.materialPath }
     }
 
-    /// Mesh0 of a model JSON `"puppet"`; its indices are u16 as WPE draws them (FUN_1401fbae0).
+    /// Mesh0 of a model JSON `"puppet"` (FUN_1401fbae0); puppet+0x390 is the first mesh with flag bit 1.
     private static func puppet(_ path: String,
                                assets: WPEParityProgramAssets) -> (puppet: WPEParityScenePuppet, model: WPEPuppetModel)? {
         guard let data = assets.data(path), let model = try? WPEMdlParser.parse(data: data),
               let mesh = model.meshes.first else { return nil }
-        let boneIndices = firstMeshFormat(data).map { $0 & 0x800000 != 0 } ?? false
-        let puppet = WPEParityScenePuppet(vertices: mesh.vertices,
-                                          indices: mesh.indices.map { UInt16(truncatingIfNeeded: $0) },
-                                          boneCount: model.bones.count, skinned: boneIndices && !model.bones.isEmpty)
+        let puppet = WPEParityScenePuppet(vertices: mesh.vertices, indices: WPEParityScenePuppet.indices(of: mesh),
+                                          boneCount: model.bones.count,
+                                          skinned: mesh.vertexFormat & 0x800000 != 0 && !model.bones.isEmpty,
+                                          blendMeshIndex: model.meshes.firstIndex { $0.flags & 2 != 0 })
         return (puppet, model)
-    }
-
-    /// Mesh0's vertex format, found the way `WPEMdlParser` walks the MDLV header; the parser does not expose it.
-    private static func firstMeshFormat(_ data: Data) -> UInt32? {
-        let bytes = [UInt8](data)
-        guard bytes.count >= 21, let version = String(bytes: bytes[4 ..< 8], encoding: .ascii).flatMap(Int.init) else {
-            return nil
-        }
-        func uint32(_ offset: Int) -> UInt32? {
-            guard offset + 4 <= bytes.count else { return nil }
-            return (0 ..< 4).reduce(0) { $0 | UInt32(bytes[offset + $1]) << (8 * $1) }
-        }
-        let features = WPEMdlvFeatures(version: version)
-        guard let headerFormat = uint32(9), let skins = uint32(13) else { return nil }
-        guard features.perMeshFlags else { return headerFormat }
-        var offset = 21
-        for _ in 0 ..< skins {
-            guard let end = bytes[offset...].firstIndex(of: 0) else { return nil }
-            offset = end + 1
-        }
-        // Mesh flag 2 carries one more u32, then the bounds.
-        guard let flag = uint32(offset) else { return nil }
-        offset += (flag == 2 ? 8 : 4) + (features.meshBounds ? 24 : 0)
-        return uint32(offset)
     }
 
     /// The object's own visible flag ANDed with every ancestor's.
