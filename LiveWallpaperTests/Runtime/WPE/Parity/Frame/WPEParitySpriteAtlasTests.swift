@@ -29,6 +29,27 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
         XCTAssertNotEqual(try firstPixel(first, queue: queue), try firstPixel(second, queue: queue))
     }
 
+    /// 14015e1d0.c:181-192: a TEXS frame's x and width-x terms divide by the image width, its y and width-y terms by
+    /// the image height; heightX by the width and heightY by the height.
+    func testRotatedFrameOnAWideImageUploadsWPERotation() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        // A 90° frame on an 8×4 image: x 2, y 1, width (0, 4), height (-8, 0).
+        let image = try WPEParityFrameDrawPlanner.image(
+            WPEMappedByteSpan(data: Self.singleFrameSheet(width: 8, height: 4, frame: [2, 1, 0, 4, -8, 0])),
+            device: device
+        )
+        let frame = try XCTUnwrap(image.sprites.first?.frame)
+        let texture = WPEParityUniformTexture(textureWidth: 8, textureHeight: 4, imageWidth: 8, imageHeight: 4,
+                                              mipMapInfo: 1, spriteFrame: frame)
+        let values = WPEParityUniformTextures.values(slot: 0, texture: texture)
+        guard case let .vector(rotation)? = values["g_Texture0Rotation"],
+              case let .vector(translation)? = values["g_Texture0Translation"] else {
+            return XCTFail("no TEXS rotation uploaded: \(values.keys.sorted())")
+        }
+        XCTAssertEqual(rotation, [0, 1, -1, 0])
+        XCTAssertEqual(translation, [0.25, 0.25])
+    }
+
     private func boundTexture(_ plan: WPEParityFrameDrawPlan, advances: Int) throws -> MTLTexture {
         var clock = WPEParityClock()
         for _ in 0 ..< advances {
@@ -99,6 +120,50 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
     }
 
     // MARK: Fixture
+
+    /// RGBA8888 .tex with TEXI flag 0x4, one `width`×`height` TEXB image and one TEXS frame of x, y, width, widthY,
+    /// heightX, height.
+    private static func singleFrameSheet(width: Int32, height: Int32, frame: [Float]) -> Data {
+        var data = Data()
+        func magic(_ text: String) {
+            data.append(contentsOf: text.utf8)
+            data.append(0)
+        }
+        func int(_ value: Int32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        func float(_ value: Float) {
+            withUnsafeBytes(of: value.bitPattern.littleEndian) { data.append(contentsOf: $0) }
+        }
+        magic("TEXV0005")
+        magic("TEXI0001")
+        int(Int32(WPETexFormat.rgba8888.rawValue))
+        int(0x4)
+        for _ in 0 ..< 2 {
+            int(width)
+            int(height)
+        }
+        int(0)
+        magic("TEXB0003")
+        int(1)
+        int(-1)
+        let pixels = Data(repeating: 255, count: Int(width * height) * 4)
+        int(1)
+        int(width)
+        int(height)
+        int(0)
+        int(Int32(pixels.count))
+        int(Int32(pixels.count))
+        data.append(pixels)
+        magic("TEXS0003")
+        int(1)
+        int(width)
+        int(height)
+        int(0)
+        float(1)
+        frame.forEach(float)
+        return data
+    }
 
     /// RGBA8888 .tex with TEXI flag 0x4, two 4×4 TEXB images (red, blue) and a TEXS frame on each.
     private static func twoImageSheet() -> Data {

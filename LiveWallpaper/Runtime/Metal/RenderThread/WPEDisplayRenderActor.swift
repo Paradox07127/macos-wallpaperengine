@@ -43,6 +43,9 @@ actor WPEDisplayRenderActor {
     private var parityDriver: WPEParitySceneDriver?
     private var parityInputs: WPEParitySceneInputs?
     private var parityReplanning = false
+    /// A static parity scene runs the link until one frame after a change presents, then parks it.
+    private var parityFramePending = false
+    private var parityActivity: WPESceneRuntimeActivity?
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
@@ -212,11 +215,15 @@ actor WPEDisplayRenderActor {
             // As the old renderer: the shared system-audio capture, not the scene's own sounds.
             let audio = SystemAudioCaptureManager.isCapturing
                 ? SystemAudioCaptureManager.broker.snapshot(clampedTo01: false) : nil
-            parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer, timestamp: start,
-                                               pointer: pointer.position, buttonDown: pointer.buttonDown,
-                                               audio: audio)
+            let presented = parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer,
+                                                               timestamp: start, pointer: pointer.position,
+                                                               buttonDown: pointer.buttonDown, audio: audio)
             thread?.noteFrameDuration(CACurrentMediaTime() - start,
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
+            if parityFramePending, presented != nil {
+                parityFramePending = false
+                applyParityPacing()
+            }
             return
         }
         // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
@@ -365,7 +372,15 @@ actor WPEDisplayRenderActor {
 
     private func replanParity() async {
         defer { parityReplanning = false }
-        while let parityDriver, parityDriver.needsReplan, await parityDriver.replan() {}
+        while let parityDriver, parityDriver.needsReplan, await parityDriver.replan() {
+            requestParityFrame()
+        }
+    }
+
+    /// The next frame shows a change a static scene's parked link would not draw on its own.
+    private func requestParityFrame() {
+        parityFramePending = true
+        applyParityPacing()
     }
 
     func performStaticReload(
@@ -508,26 +523,40 @@ actor WPEDisplayRenderActor {
                                     compiler: inputs.compiler, soundResolver: inputs.soundResolver,
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
                                     workshopID: inputs.descriptor.workshopID)
-        applyParityPacing()
+        requestParityFrame()
         // A resize or fit change that arrived while loading.
         replanParityIfNeeded()
         thread?.boostRenderQoSWarmup()
     }
 
-    /// The display link starts paused; the parity scene runs it while loaded and not suspended. The frame-rate
-    /// ceiling and pointer monitoring follow the old renderer: neither applies while suspended.
+    /// The display link starts paused; the parity scene runs it while loaded and not suspended, and a static one
+    /// only until its pending frame presents. The frame-rate ceiling and pointer monitoring follow the old renderer:
+    /// neither applies while suspended.
     private func applyParityPacing() {
         guard let parityDriver, let parityInputs else { return }
         let running = parityDriver.didLoad && !parityDriver.isPaused
+            && (parityDriver.needsContinuousFrames || parityFramePending)
         let pointerDemand = parityDriver.mouseInteractionEnabled || parityInputs.mailbox.read().clickCaptureEnabled
         parityInputs.surfaceControl.applyPacing(WPERenderPacingUpdate(
             isPaused: !running, enableSetNeedsDisplay: !running,
             preferredFramesPerSecond: parityDriver.isPaused ? nil : parityDriver.effectiveFPS,
             pointerEventsEnabled: !parityDriver.isPaused && pointerDemand
         ))
+        let activity = WPESceneRuntimeActivity(producesFrames: parityDriver.needsContinuousFrames,
+                                               audible: parityDriver.soundRuntime != nil)
+        guard activity != parityActivity else { return }
+        parityActivity = activity
+        parityInputs.onRuntimeActivityChange?(activity)
     }
 
     func hibernate() async -> Bool {
+        if let parityDriver {
+            guard parityDriver.didLoad else { return false }
+            scenePropertyRendererGeneration &+= 1
+            parityDriver.cleanup()
+            applyParityPacing()
+            return true
+        }
         guard let renderer else { return false }
         scenePropertyRendererGeneration &+= 1
         return await renderer.hibernate(on: self)
@@ -557,6 +586,7 @@ actor WPEDisplayRenderActor {
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         if let parityDriver {
             parityDriver.applyPerformanceProfile(profile)
+            parityFramePending = parityFramePending || profile != .suspended
             applyParityPacing()
             return
         }
@@ -685,6 +715,7 @@ actor WPEDisplayRenderActor {
             guard parityDriver.commitUserProperties(prepared.patch) else { return false }
             // A later reload parses with the committed values.
             parityInputs?.descriptor = updatedDescriptor
+            requestParityFrame()
             return true
         }
         guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
@@ -695,6 +726,12 @@ actor WPEDisplayRenderActor {
     }
 
     func captureLivePoster() async -> NSImage? {
+        if let parityDriver {
+            // As `enqueueLivePosterCapture`: only a presented, running scene.
+            guard !parityDriver.isPaused, let copy = await parityDriver.copyPresentedBackbuffer(),
+                  !Task.isCancelled else { return nil }
+            return await WPEMetalTextureSnapshotter.shared.snapshotAsync(from: copy)
+        }
         let id = UUID()
         // Keep the suspension and its continuation on the owning actor. Nesting these
         // closures in the renderer's isolated-parameter method lost executor inheritance
@@ -720,6 +757,12 @@ actor WPEDisplayRenderActor {
             await withCheckedContinuation { continuation in
                 self.preconditionIsolated()
                 resumer.install(continuation)
+                if let parityDriver = self.parityDriver, let parityInputs = self.parityInputs, !Task.isCancelled {
+                    parityDriver.captureDisplayedFrame(colorSpace: parityInputs.presentLayer.layer.colorspace) {
+                        resumer.resume(returning: $0)
+                    }
+                    return
+                }
                 guard !Task.isCancelled, let renderer = self.renderer, let source = renderer.outputTexture else {
                     resumer.resume(returning: nil)
                     return
@@ -775,7 +818,8 @@ actor WPEDisplayRenderActor {
                 shaderErrorCount: shader.count,
                 gpuErrorCount: 0,
                 gpuErrorLast: nil,
-                descriptor: parityInputs?.descriptor
+                descriptor: parityInputs?.descriptor,
+                parity: parityDriver.diagnostics
             )
         }
         guard let renderer else { return nil }
@@ -840,5 +884,7 @@ struct WPERendererStateSnapshot: Sendable {
     let gpuErrorLast: String?
     var descriptor: SceneDescriptor?
     var compatibilitySummary = ""
+    /// Set only for a scene on the parity pipeline.
+    var parity: WPEParityRuntimeDiagnostics?
 }
 #endif

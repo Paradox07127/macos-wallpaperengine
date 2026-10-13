@@ -129,6 +129,10 @@ extension QAControlPlane {
                     entry["shaderErrorCount"] = diagnostics.shaderErrors.count
                     entry["gpuErrorCount"] = diagnostics.gpuErrors.count
                     entry["lastGPUError"] = diagnostics.gpuErrors.last ?? NSNull()
+                    if let parity = diagnostics.parity {
+                        entry["pipeline"] = "parity"
+                        entry["parity"] = parity.qaFields
+                    }
                 }
             }
             #endif

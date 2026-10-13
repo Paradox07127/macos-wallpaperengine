@@ -235,7 +235,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 entries: snapshot.shaderErrors.map { .init(shader: $0.shader, reason: $0.reason) }
             ),
             gpuErrors: .init(count: snapshot.gpuErrorCount, last: snapshot.gpuErrorLast),
-            compatibilitySummary: snapshot.compatibilitySummary
+            compatibilitySummary: snapshot.compatibilitySummary,
+            parity: snapshot.parity
         )
         // The renderer's own generation also advances on retire/hibernate, so attempts count session loads instead.
         if !isHibernated, let descriptor = snapshot.descriptor {
@@ -890,5 +891,6 @@ struct SceneRendererDiagnostics: Sendable {
     let shaderErrors: ShaderErrors
     let gpuErrors: GPUErrors
     var compatibilitySummary = ""
+    var parity: WPEParityRuntimeDiagnostics?
 }
 #endif

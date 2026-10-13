@@ -349,6 +349,7 @@ final class AmbientWallpaperSessionBuilder {
                     surface.startDisplayLinkDriver(renderActor: renderActor)
                 }
                 let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+                let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
                 session.startAdoptingParityScene(WPEParitySceneInputs(
                     descriptor: descriptor,
                     entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
@@ -371,7 +372,15 @@ final class AmbientWallpaperSessionBuilder {
                                                      engineAssetsRootURL: engineAssetsRootURL)
                     } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
                                                       engineAssetsRootURL: engineAssetsRootURL),
-                    presentFitMode: WPEPresentFitMode(fitMode)
+                    presentFitMode: WPEPresentFitMode(fitMode),
+                    // Latest-wins, as the Metal scene renderer's activity hop below.
+                    onRuntimeActivityChange: { [weak session] activity in
+                        activityMailbox.withLock { $0 = activity }
+                        Task { @MainActor in
+                            guard let latest = activityMailbox.withLock({ $0 }) else { return }
+                            session?.noteRendererRuntimeActivity(latest)
+                        }
+                    }
                 ))
                 return session
             case let .failure(reason):

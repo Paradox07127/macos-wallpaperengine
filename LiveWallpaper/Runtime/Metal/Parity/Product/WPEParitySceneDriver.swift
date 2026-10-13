@@ -109,6 +109,27 @@ final class WPEParitySceneDriver {
     private var paused = false
     private var lastTimestamp: CFTimeInterval?
     private var didLogFrameFailure = false
+    /// CPU time in `encodeFrame` since the load, for the QA mean.
+    private var encodeSeconds = 0.0
+    private var encodeCount = 0
+
+    /// The loaded scene changes its frame on its own, as `WPEMetalSceneRenderer.needsContinuousFrames`, or plays
+    /// sound, whose random intervals count down by frame time.
+    var needsContinuousFrames: Bool {
+        didLoad && (renderer?.isStatic == false || soundRuntime != nil)
+    }
+
+    var diagnostics: WPEParityRuntimeDiagnostics? {
+        guard didLoad, let renderer else { return nil }
+        return WPEParityRuntimeDiagnostics(
+            loadGeneration: loadGeneration, drawCount: renderer.drawCount,
+            encodedDrawCount: renderer.lastFrameDraws.count,
+            skippedDraws: renderer.skipped.values.reduce(into: [:]) { $0[$1.category, default: 0] += 1 },
+            encodeFrameCPUMeanMilliseconds: encodeCount == 0 ? nil : encodeSeconds / Double(encodeCount) * 1000,
+            arenaBytes: renderer.arenaBytes, heapBytes: renderer.heapBytes,
+            dedicatedTextureBytes: renderer.dedicatedTextureBytes, isStatic: renderer.isStatic
+        )
+    }
 
     var completedPresentGeneration: Int? {
         presentState.completedGeneration
@@ -174,6 +195,7 @@ final class WPEParitySceneDriver {
         requiresSystemAudioCapture = false
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
+        (encodeSeconds, encodeCount) = (0, 0)
         soundRuntime?.stop()
         soundRuntime = nil
         self.audioPreset = audioPreset
@@ -332,8 +354,11 @@ final class WPEParitySceneDriver {
         let input = WPEParityFrameInput(cursor: cursor, buttonDown: buttonDown,
                                         audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
-            guard case .committed = try renderer.encodeFrame(elapsed: elapsed, paused: paused,
-                                                             input: input) else { return nil }
+            let start = CACurrentMediaTime()
+            let submission = try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
+            encodeSeconds += CACurrentMediaTime() - start
+            encodeCount += 1
+            guard case .committed = submission else { return nil }
         } catch {
             logFrameFailure(error)
             return nil
@@ -363,6 +388,72 @@ final class WPEParitySceneDriver {
             logFrameFailure(error)
             return nil
         }
+    }
+
+    /// A private copy of the presented backbuffer, encoded on the frame queue so the next frame cannot overwrite it
+    /// first; nil before a frame was presented or when the GPU failed.
+    nonisolated(nonsending) func copyPresentedBackbuffer() async -> WPEMetalTextureSnapshotter.SnapshotSource? {
+        guard hasPresentedFrame, let source = renderer?.backbuffer,
+              let copy = device.makeTexture(descriptor: Self.copyDescriptor(source)),
+              let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer(),
+              let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
+        copy.label = "parity.backbufferCopy"
+        blit.copy(from: source, to: copy)
+        blit.endEncoding()
+        let result = WPEMetalTextureSnapshotter.SnapshotSource(texture: copy)
+        return await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { commandBuffer in
+                continuation.resume(returning: commandBuffer.status == .completed ? result : nil)
+            }
+            commandBuffer.commit()
+        }
+    }
+
+    /// Replays the last present pass into a texture, as `WPEMetalRenderExecutor.encodeDisplayedFrameCapture` does, but
+    /// on the frame queue that writes the backbuffer. `completion` runs on a Metal callback thread.
+    func captureDisplayedFrame(colorSpace: CGColorSpace?,
+                               completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void) {
+        guard hasPresentedFrame, let source = renderer?.backbuffer, let pass = executor.lastPresentPass,
+              !pass.usedMetalFX else {
+            completion(nil)
+            return
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: pass.targetPixelFormat, width: pass.targetWidth, height: pass.targetHeight, mipmapped: false
+        )
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        guard let target = device.makeTexture(descriptor: descriptor),
+              let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer() else {
+            completion(nil)
+            return
+        }
+        target.label = "wpe.displayedFrameCapture"
+        do {
+            try executor.encodePresentPass(source: source, target: target, fitMode: pass.fitMode,
+                                           worldSourceSize: pass.worldSourceSize, uniforms: pass.uniforms,
+                                           into: commandBuffer)
+        } catch {
+            completion(nil)
+            return
+        }
+        let capture = WPEDisplayedFrameCapture(
+            texture: target, pixelFormat: target.pixelFormat, colorSpace: colorSpace,
+            isEDR: WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: target.pixelFormat)
+        )
+        commandBuffer.addCompletedHandler { commandBuffer in
+            completion(commandBuffer.status == .completed ? capture : nil)
+        }
+        commandBuffer.commit()
+    }
+
+    private static func copyDescriptor(_ source: MTLTexture) -> MTLTextureDescriptor {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: source.pixelFormat, width: source.width, height: source.height, mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        descriptor.storageMode = .private
+        return descriptor
     }
 
     /// `.suspended` ramps scene time to a hold; `.quality` ramps it back.
@@ -486,6 +577,30 @@ final class WPEParitySceneDriver {
     }
 }
 
+/// What QA `runtime.state` reports for a parity screen.
+struct WPEParityRuntimeDiagnostics: Sendable, Equatable {
+    let loadGeneration: Int
+    /// Draw operations of the frame, and the draws the last frame encoded.
+    let drawCount: Int
+    let encodedDrawCount: Int
+    /// Skipped draw operations by `WPEParityFrameSkip.category`.
+    let skippedDraws: [String: Int]
+    let encodeFrameCPUMeanMilliseconds: Double?
+    let arenaBytes: Int
+    let heapBytes: Int
+    let dedicatedTextureBytes: Int
+    let isStatic: Bool
+
+    var qaFields: [String: Any] {
+        [
+            "loadGeneration": loadGeneration, "drawCount": drawCount, "encodedDrawCount": encodedDrawCount,
+            "skippedDraws": skippedDraws, "encodeFrameCPUMeanMs": encodeFrameCPUMeanMilliseconds ?? NSNull(),
+            "arenaBytes": arenaBytes, "heapBytes": heapBytes, "dedicatedTextureBytes": dedicatedTextureBytes,
+            "static": isStatic,
+        ]
+    }
+}
+
 /// Everything the render actor needs to build, load and drive a parity scene on a session's surface.
 struct WPEParitySceneInputs: Sendable {
     var descriptor: SceneDescriptor
@@ -504,6 +619,8 @@ struct WPEParitySceneInputs: Sendable {
     /// Resolves the scene's sound files, as `WPEMetalSceneRenderer.resourceResolver`; nil plays no sound.
     var soundResolver: WPEMultiRootResourceResolver?
     var presentFitMode = WPEPresentFitMode.cover
+    /// As `WPEMetalSceneRenderer.onRuntimeActivityChange`: called on the render actor when the activity changes.
+    var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
 
     /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does; `patch` replaces
     /// the values of its changed keys.

@@ -196,6 +196,14 @@ final class WPEParityFrameRenderer {
         graphs.executors.reduce(0) { $0 + ($1.heap?.size ?? 0) }
     }
 
+    var arenaBytes: Int {
+        arena.capacity * WPEParityFrameArena.slotCount
+    }
+
+    /// Nothing the scene loaded changes its frame: no keyframe animation, particle, video, puppet, camera shake or
+    /// parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
+    let isStatic: Bool
+
     var dedicatedTextureBytes: Int {
         targets.values.reduce(0) { $0 + $1.allocatedSize }
     }
@@ -286,8 +294,9 @@ final class WPEParityFrameRenderer {
                 constantComponents[pass, default: [:]][constant.material] = constant.components
             }
         }
-        animations = WPEParitySceneAnimations(document: plan.document, state: plan.state,
-                                              constantComponents: constantComponents)
+        let animations = WPEParitySceneAnimations(document: plan.document, state: plan.state,
+                                                  constantComponents: constantComponents)
+        self.animations = animations
         self.backbuffer = backbuffer
         self.targets = targets
         images = planner.layerImages
@@ -315,10 +324,37 @@ final class WPEParityFrameRenderer {
                                           engineFlags: plan.scene.engineFlags, seed: particleSeed, frames: prewarm),
             budget: particleBytes
         )
-        for object in plan.scene.scene.objects where object.puppet?.skinned == true {
+        let skinned = plan.scene.scene.objects.filter {
+            $0.puppet?.skinned == true && plan.scene.puppetModels[$0.id] != nil
+        }
+        let document = plan.document
+        isStatic = animations.isEmpty && particleObjects.isEmpty
+            && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
+            && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
+            && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
+            && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
+            && !([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: Self.hasScript)
+        for object in skinned {
             guard let model = plan.scene.puppetModels[object.id] else { continue }
             let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
             puppets[object.id] = WPEParityPuppetAnimator(model: model, layers: layers)
+        }
+    }
+
+    /// WPE's HLSL declares only the engine uniforms its combos leave live, so a mention is a read.
+    private static func readsFrameInputs(_ program: WPEParityProgram) -> Bool {
+        let inputs = ["g_Time", "g_Frametime", "g_Daytime", "g_Pointer", "g_AudioSpectrum", "g_ParallaxPosition"]
+        return [program.hlsl.vertex, program.hlsl.geometry, program.hlsl.fragment].contains { stage in
+            guard let source = stage.flatMap({ String(bytes: $0, encoding: .utf8) }) else { return false }
+            return inputs.contains { source.contains($0) }
+        }
+    }
+
+    private static func hasScript(_ value: WPESceneJSONValue) -> Bool {
+        switch value {
+        case let .object(members): members["script"] != nil || members.values.contains(where: hasScript)
+        case let .array(elements): elements.contains(where: hasScript)
+        default: false
         }
     }
 
