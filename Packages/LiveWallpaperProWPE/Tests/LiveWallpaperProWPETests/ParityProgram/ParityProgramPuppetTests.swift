@@ -48,6 +48,8 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertEqual(program.material.combos["SKINNING"], 1)
         XCTAssertEqual(program.material.combos["BONECOUNT"], 2)
         XCTAssertEqual(program.material.blending, .translucent)
+        XCTAssertEqual(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[index]?.layerColorObjectID, "7",
+                       "the skinned albedo takes the layer colour and alpha")
     }
 
     func testPuppetLayerWithAnEffectDrawsItsMeshThroughTheLayerComposite() throws {

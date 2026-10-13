@@ -56,7 +56,11 @@ public extension WPEParityProgramBuilder {
                 guard let material = scene.material(for: draw) else { continue }
                 let object = scene.scene.objects.first { $0.id == draw.objectID }
                 // 1401e8aa0.c:1092-1095: effect, compose and passthrough draws run with colour and alpha 1.
-                let albedo = draw.effectID == nil && draw.source != nil && draw.source == object?.material
+                // A puppet's albedo adds skinning combos and clip textures to the layer material.
+                var layerSource = draw.source
+                layerSource?.combos = object?.material?.combos ?? [:]
+                layerSource?.textures = object?.material?.textures ?? [:]
+                let albedo = draw.effectID == nil && layerSource != nil && layerSource == object?.material
                 var layerColor = albedo ? scene.layerColors[draw.objectID] : nil
                 var fixedColor = white
                 var atlas: WPEParityProgramBinding.TextureSource?
