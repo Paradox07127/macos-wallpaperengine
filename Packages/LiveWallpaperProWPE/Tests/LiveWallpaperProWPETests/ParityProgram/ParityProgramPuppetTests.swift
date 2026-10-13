@@ -125,6 +125,108 @@ final class ParityProgramPuppetTests: XCTestCase {
         }
     }
 
+    /// Part 0 shapes the mask, part 1 is clipped: the mask part draws, then its mask, then part 1 through it.
+    func testTwoPartPuppetWithOneClipGroupBuildsWPEsOperationList() {
+        let parts = [WPEPuppetMeshPart(id: 0, start: 0, count: 3), WPEPuppetMeshPart(id: 0, start: 3, count: 3)]
+        let puppet = WPEParityScenePuppet(vertices: [], indices: [0, 1, 2, 3, 4, 5], boneCount: 1, skinned: true,
+                                          parts: parts,
+                                          clipGroups: [WPEParityPuppetClipGroup(clipped: [1], mask: [0],
+                                                                                maskTexture: "masks/m")])
+        XCTAssertEqual(puppet.clipOperations, [.segment(0), .clip(group: 0, ancestors: [], segment: 1)])
+        XCTAssertEqual(puppet.clipSegments, [0 ..< 3, 3 ..< 6, 6 ..< 9])
+        XCTAssertEqual(puppet.clipIndices, [0, 1, 2, 0, 1, 2, 3, 4, 5])
+    }
+
+    /// Group 1's mask part is clipped by group 0, so group 1 is its child and merges group 0's mask first (op 2).
+    func testNestedClipGroupMergesItsAncestorsMask() {
+        let mesh = WPEPuppetMesh(materialPath: "m", vertices: [], indices: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+                                 parts: (0 ..< 3).map { WPEPuppetMeshPart(id: 0, start: $0 * 3, count: 3) },
+                                 clipGroups: [WPEPuppetClipGroup(maskName: "a", sourcePartIndices: [0],
+                                                                 targetPartIndices: [1]),
+                                              WPEPuppetClipGroup(maskName: "b", sourcePartIndices: [1],
+                                                                 targetPartIndices: [2])])
+        let groups = WPEParityPuppetClipGroup.groups(of: mesh)
+        XCTAssertEqual(groups.map(\.parent), [nil, 0])
+        let puppet = WPEParityScenePuppet(vertices: [], indices: WPEParityScenePuppet.indices(of: mesh), boneCount: 1,
+                                          skinned: true, parts: mesh.parts, clipGroups: groups)
+        XCTAssertEqual(puppet.clipOperations, [
+            .segment(0),
+            .clip(group: 0, ancestors: [], segment: 1),
+            .clip(group: 1, ancestors: [.init(group: 0, segment: 1)], segment: 3),
+        ])
+        XCTAssertEqual(puppet.clipSegments, [0 ..< 3, 3 ..< 6, 6 ..< 9, 9 ..< 12, 12 ..< 15])
+        XCTAssertEqual(puppet.clipIndices, [0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 6, 7, 8])
+    }
+
+    /// Workshop 3704273480 and 3808922316 have puppets with clip groups.
+    func testRealClipGroupScenesDrawMasksAndClippedSegments() throws {
+        var checked = 0
+        for id in ["3704273480", "3808922316"] {
+            guard let scene = try Self.workshopScene(id) else { continue }
+            let clipped = scene.scene.objects.filter { !($0.puppet?.clipOperations.isEmpty ?? true) }
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let draws = frame.draws.values.compactMap { draw -> WPEParitySceneDraw? in
+                if case let .scene(draw) = draw {
+                    draw
+                } else {
+                    nil
+                }
+            }
+            for object in clipped {
+                let puppet = try XCTUnwrap(object.puppet)
+                let own = draws.filter { $0.objectID == object.id }
+                let masks = own.filter { $0.target == WPEParitySceneResource.fullAlphaMask && !$0.multipliesDestination }
+                let targets = own.filter { $0.source?.combos["CLIPPINGTARGET"] == 1 }
+                print("\(id) puppet \(object.id): \(puppet.clipGroups.count) groups, "
+                    + "\(puppet.clipOperations.count) ops, \(masks.count) masks, \(targets.count) clipped draws, "
+                    + "bit4 \(object.requiresLayerComposite), effects \(object.effects.count(where: \.enabled)), "
+                    + "visible \(object.visible)")
+                guard object.visible else { continue }
+                let clips = puppet.clipOperations.count {
+                    if case .clip = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                XCTAssertEqual(targets.count, clips, object.id)
+                XCTAssertGreaterThanOrEqual(masks.count, clips, object.id)
+                for mask in masks {
+                    XCTAssertEqual(mask.source?.materialPath, "materials/util/clippingmaskimage4.json")
+                    XCTAssertNotNil(mask.source?.textures[1])
+                }
+                for target in targets {
+                    XCTAssertEqual(target.source?.textures[8], "_rt_FullAlphaMask")
+                    XCTAssertTrue(target.reads.contains(WPEParitySceneResource.fullAlphaMask))
+                }
+                XCTAssertNil(own.first { $0.geometry == .puppetMesh }, object.id)
+                checked += 1
+            }
+        }
+        if checked == 0 {
+            throw XCTSkip("Workshop 3704273480 and 3808922316 or the WPE assets are not installed")
+        }
+    }
+
+    private static func workshopScene(_ id: String) throws -> WPEParityProgramScene? {
+        let package = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+            "Library/Application Support/Steam/steamapps/workshop/content/431960/\(id)/scene.pkg"
+        )
+        let wpeAssets = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        guard FileManager.default.fileExists(atPath: package.path),
+              FileManager.default.fileExists(atPath: wpeAssets.appendingPathComponent("materials/util").path)
+        else { return nil }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parity-clip-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try unpack(package, into: root)
+        let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
+                                                        userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [wpeAssets])
+        return WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
+    }
+
     /// MDLV0017 with one mesh (position, bone indices, weights, uv) and an MDLS0001 skeleton.
     private static func skinnedMDL(boneCount: Int) -> Data {
         var data = Data("MDLV0017".utf8) + [0]

@@ -262,17 +262,20 @@ private struct WPEParitySceneEmitter {
         guard bit4, object.visible else { return }
         owner = object.id
         // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
-        let identity = WPEPassIdentity("\(object.id)/passthrough4")
-        bind(identity, destination.color, depth: destination.depth)
-        draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "effectpassthrough_4",
-                                source: .layerPassthrough(colorBlendMode: object.colorBlendMode,
-                                                          layerFog: object.materialFog, puppet: object.puppet),
-                                reads: [composites[current], Resource.fullFrameBuffer], target: destination.color,
-                                blend: object.colorBlendMode == 31 ? .additive : object.blend,
-                                alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
-                                writeMask: destination.writeMask, geometry: object.layerGeometry,
-                                depthTest: object.materialState.depthTest,
-                                depthWrite: object.materialState.depthWrite))
+        puppetDraw(object, WPEParitySceneDraw(pass: WPEPassIdentity("\(object.id)/passthrough4"),
+                                              objectID: object.id, shader: "effectpassthrough_4",
+                                              source: .layerPassthrough(colorBlendMode: object.colorBlendMode,
+                                                                        layerFog: object.materialFog,
+                                                                        puppet: object.puppet),
+                                              reads: [composites[current], Resource.fullFrameBuffer],
+                                              target: destination.color,
+                                              blend: object.colorBlendMode == 31 ? .additive : object.blend,
+                                              alphaMax: destination.alphaMax,
+                                              compositeOwnerID: destination.compositeOwnerID,
+                                              writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                              depthTest: object.materialState.depthTest,
+                                              depthWrite: object.materialState.depthWrite),
+                   depth: destination.depth)
     }
 
     /// 140207b50: albedo into the starting composite with ONE/ZERO and RGBA.
@@ -308,19 +311,87 @@ private struct WPEParitySceneEmitter {
         } else if !object.fullscreen, !object.passthrough || object.copyBackground {
             let identity = WPEPassIdentity("\(object.id)/albedo")
             let (shader, albedo, reads) = albedoSource(object)
-            bind(identity, destination.color, depth: destination.depth)
             // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.
             var source = albedo
             source?.combos.merge(object.puppet?.skinningCombos ?? [:]) { _, new in new }
-            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
-                                    reads: reads, target: destination.color, blend: object.blend,
-                                    alphaMax: destination.alphaMax,
-                                    compositeOwnerID: destination.compositeOwnerID,
-                                    writeMask: destination.writeMask, geometry: object.layerGeometry))
+            puppetDraw(object, WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
+                                                  reads: reads, target: destination.color, blend: object.blend,
+                                                  alphaMax: destination.alphaMax,
+                                                  compositeOwnerID: destination.compositeOwnerID,
+                                                  writeMask: destination.writeMask, geometry: object.layerGeometry),
+                       depth: destination.depth)
         }
         for child in children {
             render(child, into: destination, ancestors: ancestors)
         }
+    }
+
+    /// `layer` as is, or op by op over puppet+0x430 when the layer's skinned puppet has clip groups: FUN_140208670 for
+    /// the direct draw, FUN_140208c80 for the bit4 one (140208c80.c:37-131). Segments draw as `layer` does; a clip
+    /// draws its masks into `_rt_FullAlphaMask`, then the clipped parts with the layer material and CLIPPINGTARGET.
+    private mutating func puppetDraw(_ object: WPEParitySceneObject, _ layer: WPEParitySceneDraw,
+                                     depth: WPEResourceID?) {
+        guard let puppet = object.puppet, puppet.skinned, !puppet.clipOperations.isEmpty else {
+            bind(layer.pass, layer.target, depth: depth)
+            return draw(layer)
+        }
+        let image = layer.reads[0]
+        for operation in puppet.clipOperations {
+            switch operation {
+            case let .segment(index):
+                let identity = WPEPassIdentity("\(object.id)/segment\(index)")
+                bind(identity, layer.target, depth: depth)
+                draw(layer.segment(identity, index))
+            case let .clip(group, ancestors, index):
+                let prefix = "\(object.id)/clip\(index)"
+                let masks = ancestors + [WPEParityPuppetClipOperation.Mask(group: group, segment: index)]
+                for (position, mask) in masks.enumerated() {
+                    clipMask(WPEPassIdentity("\(prefix)/mask\(position)"), object, puppet, mask, image: image,
+                             merged: position > 0, compositeOwnerID: layer.compositeOwnerID)
+                }
+                // 140209540.c:725-744, 140208670.c:114-126: puppet+0x428 samples slot 0 of the layer draw and the
+                // mask in slot 8, with the blend of entry +0x40.
+                var source = object.material
+                source?.combos.merge(puppet.skinningCombos) { _, new in new }
+                source?.combos.merge(["CLIPPINGUVS": 1, "CLIPPINGTARGET": 1]) { _, new in new }
+                source?.textures[8] = Resource.fullAlphaMask.rawValue
+                let identity = WPEPassIdentity("\(prefix)/target")
+                bind(identity, layer.target, depth: depth)
+                draw(layer.segment(identity, index + 1, shader: object.materialShader, source: source,
+                                   reads: [image, Resource.fullAlphaMask],
+                                   blend: puppet.clipGroups[group].flags & 1 != 0 ? .additive : .translucent))
+            }
+        }
+    }
+
+    /// FUN_14020d6a0: one group's mask, cleared to 1 when inverted (flag 2), sampling `image` in slot 0. Past the first
+    /// it goes through the intermediate and is multiplied into `_rt_FullAlphaMask` with the identity matrices.
+    private mutating func clipMask(_ identity: WPEPassIdentity, _ object: WPEParitySceneObject,
+                                   _ puppet: WPEParityScenePuppet, _ mask: WPEParityPuppetClipOperation.Mask,
+                                   image: WPEResourceID, merged: Bool, compositeOwnerID: String?) {
+        let target = merged ? Resource.fullAlphaMaskIntermediate : Resource.fullAlphaMask
+        for id in [Resource.fullAlphaMask, target] {
+            register(id, scene.width, scene.height, format: "r8unorm")
+        }
+        let group = puppet.clipGroups[mask.group]
+        let clear = group.flags & 2 != 0 ? 1.0 : 0
+        bind(identity, target, depth: nil)
+        emit(identity, .clearColor(WPETextureView(target),
+                                   WPEClearColor(red: clear, green: clear, blue: clear, alpha: clear)))
+        var textures = [1: group.maskTexture]
+        textures[0] = puppet.albedoTexture
+        let source = WPEParitySceneMaterialSource(materialPath: "materials/util/clippingmaskimage4.json",
+                                                  combos: puppet.skinningCombos, textures: textures)
+        draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "clippingmaskimage4", source: source,
+                                reads: [image], target: target, blend: .translucent,
+                                compositeOwnerID: compositeOwnerID, writeMask: .rgb,
+                                geometry: .puppetSegment(mask.segment)))
+        guard merged else { return }
+        let merge = WPEPassIdentity("\(identity.rawValue)/merge")
+        bind(merge, Resource.fullAlphaMask, depth: nil)
+        draw(WPEParitySceneDraw(pass: merge, objectID: object.id, shader: "minimalalpha", source: .flatTexture,
+                                reads: [target], target: Resource.fullAlphaMask, blend: .translucent, writeMask: .rgb,
+                                geometry: .fullscreenQuad, multipliesDestination: true))
     }
 
     /// FUN_1402222a0: each sub-mesh in file order binds its own material, draws into the bound target and unbinds;
@@ -590,6 +661,19 @@ private extension WPEParitySceneObject {
         case .image, .text: requiresLayerComposite || scene.forcesLayerComposite || dependencyTarget
         case .model, .particle, .shape: false
         }
+    }
+}
+
+private extension WPEParitySceneDraw {
+    /// This draw restricted to one puppet clip segment.
+    func segment(_ pass: WPEPassIdentity, _ index: Int, shader: String? = nil,
+                 source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID]? = nil,
+                 blend: WPEParitySceneBlend? = nil) -> WPEParitySceneDraw {
+        WPEParitySceneDraw(pass: pass, objectID: objectID, effectID: effectID, passIndex: passIndex,
+                           shader: shader ?? self.shader, source: source ?? self.source, reads: reads ?? self.reads,
+                           target: target, blend: blend ?? self.blend, alphaMax: alphaMax,
+                           compositeOwnerID: compositeOwnerID, writeMask: writeMask, geometry: .puppetSegment(index),
+                           depthTest: depthTest, depthWrite: depthWrite, cullsBackFaces: cullsBackFaces)
     }
 }
 

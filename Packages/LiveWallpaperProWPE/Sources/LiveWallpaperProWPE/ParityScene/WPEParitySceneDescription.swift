@@ -64,18 +64,24 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
     public var combos: [String: Int]
     /// Shader the engine draws with instead of the pass JSON's, such as a rope-only particle system's.
     public var shader: String?
+    /// Texture names the engine sets on the material's slots for this draw.
+    public var textures: [Int: String]
 
     public init(materialPath: String, materialPass: Int = 0, effectFile: String? = nil, effectPass: Int? = nil,
-                combos: [String: Int] = [:], shader: String? = nil) {
+                combos: [String: Int] = [:], shader: String? = nil, textures: [Int: String] = [:]) {
         self.materialPath = materialPath
         self.materialPass = materialPass
         self.effectFile = effectFile
         self.effectPass = effectPass
         self.combos = combos
         self.shader = shader
+        self.textures = textures
     }
 
     public static let composeLayer = WPEParitySceneMaterialSource(materialPath: "materials/util/composelayer.json")
+
+    /// The clip mask merge (14020d6a0.c:147).
+    public static let flatTexture = WPEParitySceneMaterialSource(materialPath: "materials/util/flattexture.json")
 
     /// genericimage4 with the combos FUN_140206ae0 adds; FOG_COMPUTED (and FOG, which the pass JSON never sets) goes
     /// when the layer material's own program (`layerFog`) has no FOG ≠ 0. Material flag 0x18 (LIGHTING/REFLECTION=0)
@@ -148,14 +154,143 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var skinned: Bool
     /// puppet+0x390, the first mesh with flag & 2 (1401fbae0.c:237-238); WPE builds a second mesh from it.
     public var blendMeshIndex: Int?
+    /// Texture 0 of the layer material, which the clip mask draws sample (14020d6a0.c:44).
+    public var albedoTexture: String?
+    public var clipGroups: [WPEParityPuppetClipGroup]
+    /// FUN_14020b720's sub-meshes: segment k draws `clipIndices[clipSegments[k]]`.
+    public var clipIndices: [UInt16]
+    public var clipSegments: [Range<Int>]
+    /// puppet+0x430; empty without clip groups, where the whole mesh draws at once.
+    public var clipOperations: [WPEParityPuppetClipOperation]
 
     public init(vertices: [WPEPuppetVertex], indices: [UInt16], boneCount: Int, skinned: Bool,
-                blendMeshIndex: Int? = nil) {
+                blendMeshIndex: Int? = nil, parts: [WPEPuppetMeshPart] = [],
+                clipGroups: [WPEParityPuppetClipGroup] = []) {
         self.vertices = vertices
         self.indices = indices
         self.boneCount = boneCount
         self.skinned = skinned
         self.blendMeshIndex = blendMeshIndex
+        self.clipGroups = clipGroups
+        (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices)
+    }
+
+    /// FUN_14020b720 over the part table in file order, which is the draw order while no animation reorders it
+    /// (1401fdf90.c:4434-4470). A segment concatenates the index ranges of its parts (14020c710).
+    static func clipPlan(parts: [WPEPuppetMeshPart], groups: [WPEParityPuppetClipGroup], indices: [UInt16])
+        -> (indices: [UInt16], segments: [Range<Int>], operations: [WPEParityPuppetClipOperation]) {
+        guard !groups.isEmpty else { return ([], [], []) }
+        // 14020ae00.c:289-314: bit0 clipped, bit2 clipped in a group with flag 8, bit3 mask part.
+        var partFlags = [UInt32](repeating: 0, count: parts.count)
+        for group in groups {
+            for part in group.clipped {
+                partFlags[part] |= group.flags & 8 != 0 ? 5 : 1
+            }
+            for part in group.mask {
+                partFlags[part] |= 8
+            }
+        }
+        struct Record {
+            let group: Int
+            var firstClipped = Int.max
+            var firstMask = -1
+            var lastMask = -1
+            var clipped: [Int] = []
+            var maskSegment: [Int] = []
+        }
+        var records: [Record] = []
+        var groupOfPart: [Int: Int] = [:]
+        var hidden: Set<Int> = []
+        for (index, group) in groups.enumerated() {
+            var record = Record(group: index)
+            for part in parts.indices {
+                if group.clipped.contains(part) {
+                    record.clipped.append(part)
+                    record.firstClipped = min(record.firstClipped, part)
+                    groupOfPart[part] = index
+                }
+                if group.mask.contains(part) {
+                    record.firstMask = record.firstMask < 0 ? part : record.firstMask
+                    record.lastMask = part
+                    if group.flags & 4 != 0 {
+                        hidden.insert(part)
+                    }
+                }
+            }
+            // The mask draws every part between the first and last mask part that the group does not clip.
+            record.maskSegment = record.firstMask < 0 ? []
+                : (record.firstMask ... record.lastMask).filter { !record.clipped.contains($0) }
+            records.append(record)
+        }
+        for index in records.indices {
+            var parent = groups[index].parent
+            while let ancestor = parent {
+                records[index].lastMask = max(records[index].lastMask, records[ancestor].lastMask)
+                parent = groups[ancestor].parent
+            }
+        }
+        // Stable sort on the first clipped part (comparator at 0x1401fac40).
+        records = records.enumerated().sorted { ($0.element.firstClipped, $0.offset) < ($1.element.firstClipped, $1.offset) }
+            .map(\.element)
+
+        var clipIndices: [UInt16] = []
+        var segments: [Range<Int>] = []
+        var operations: [WPEParityPuppetClipOperation] = []
+        var maskSegments: [Int: Int] = [:]
+        var pending: [Int] = []
+        func segment(_ list: [Int]) -> Int {
+            let start = clipIndices.count
+            for part in list {
+                let range = parts[part].start ..< parts[part].start + parts[part].count
+                clipIndices += indices[range.clamped(to: indices.indices)]
+            }
+            segments.append(start ..< clipIndices.count)
+            return segments.count - 1
+        }
+        func flush() {
+            guard !pending.isEmpty else { return }
+            operations.append(.segment(segment(pending)))
+            pending.removeAll()
+        }
+        // 14020cab0: the mask segment, the clipped segment, then op 1, or op 2 with each ancestor's mask segment.
+        func clip(_ record: Record, _ clipped: [Int]) {
+            var ancestors: [WPEParityPuppetClipOperation.Mask] = []
+            var parent = groups[record.group].parent
+            while let ancestor = parent {
+                ancestors.append(.init(group: ancestor, segment: maskSegments[ancestor] ?? 0))
+                parent = groups[ancestor].parent
+            }
+            let mask = segment(record.maskSegment)
+            maskSegments[record.group] = mask
+            _ = segment(clipped)
+            operations.append(.clip(group: record.group, ancestors: ancestors, segment: mask))
+        }
+        for part in parts.indices {
+            let flags = partFlags[part]
+            if flags & 1 == 0 {
+                if !hidden.contains(part) {
+                    pending.append(part)
+                }
+            } else if flags & 0xC == 0 {
+                continue
+            }
+            if flags & 8 == 0 {
+                // A run of parts clipped by the same flag-8 group draws where its first part sits; WPE starts a
+                // new run at every part of it.
+                guard flags & 4 != 0, let group = groupOfPart[part],
+                      let record = records.first(where: { $0.group == group }) else { continue }
+                let run = (part ..< parts.count).prefix { groupOfPart[$0] == group }
+                flush()
+                clip(record, Array(run))
+            } else {
+                for record in records where groups[record.group].flags & 8 == 0 && record.lastMask == part {
+                    flush()
+                    clip(record, record.clipped)
+                }
+            }
+        }
+        flush()
+        return (clipIndices, segments, operations)
     }
 
     /// WPE uploads the index bytes as R16_UINT, bytes / 2 of them (14020ae00.c:77, 14009a880 arg 7 = 0), so
@@ -171,6 +306,68 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var skinningCombos: [String: Int] {
         skinned ? ["SKINNING": 1, "BONECOUNT": boneCount] : [:]
     }
+}
+
+/// One MDLV clip group of mesh0 (140261880.c:342-530), indices into the part table.
+public struct WPEParityPuppetClipGroup: Hashable, Sendable {
+    /// Entry +0x8: parts drawn only inside the mask.
+    public var clipped: [Int]
+    /// Entry +0x20: parts that shape the mask.
+    public var mask: [Int]
+    /// Entry +0x44: bit0 additive clipped draw, bit1 inverted mask, bit2 mask parts not drawn themselves, bit3 clipped
+    /// parts draw where they sit instead of after the last mask part.
+    public var flags: UInt32
+    /// Entry +0x38, the texture the mask draw samples in slot 1.
+    public var maskTexture: String
+    /// Entry +0x48.
+    public var parent: Int?
+
+    public init(clipped: [Int], mask: [Int], flags: UInt32 = 0, maskTexture: String, parent: Int? = nil) {
+        self.clipped = clipped
+        self.mask = mask
+        self.flags = flags
+        self.maskTexture = maskTexture
+        self.parent = parent
+    }
+
+    /// The parent is the first other group that clips every mask part of this one; a link closing a cycle is dropped
+    /// (140261880.c:540-631). `WPEMdlParser` drops the flags word, so `flags` stays 0.
+    public static func groups(of mesh: WPEPuppetMesh) -> [WPEParityPuppetClipGroup] {
+        var groups = mesh.clipGroups.map {
+            WPEParityPuppetClipGroup(clipped: $0.targetPartIndices, mask: $0.sourcePartIndices,
+                                     maskTexture: $0.maskName)
+        }
+        guard groups.count > 1 else { return groups }
+        for index in groups.indices where !groups[index].mask.isEmpty {
+            groups[index].parent = groups.indices.first { other in
+                other != index && groups[index].mask.allSatisfy(groups[other].clipped.contains)
+            }
+            var seen: Set<Int> = []
+            var next = groups[index].parent
+            while let current = next {
+                guard seen.insert(current).inserted else {
+                    groups[index].parent = nil
+                    break
+                }
+                next = groups[current].parent
+            }
+        }
+        return groups
+    }
+}
+
+/// One entry of puppet+0x430 as FUN_140208670 draws it.
+public enum WPEParityPuppetClipOperation: Hashable, Sendable {
+    public struct Mask: Hashable, Sendable {
+        public let group: Int
+        public let segment: Int
+    }
+
+    /// Op 0: the segment with the layer material.
+    case segment(Int)
+    /// Op 1 (no ancestors) or op 2: each ancestor's mask, then the group's own from `segment`, multiplied into
+    /// `_rt_FullAlphaMask`; then the clipped parts, segment `segment + 1`, through it.
+    case clip(group: Int, ancestors: [Mask], segment: Int)
 }
 
 /// What one frame of the WPE scene loop needs to know; everything else (uniforms, meshes) stays with the caller.

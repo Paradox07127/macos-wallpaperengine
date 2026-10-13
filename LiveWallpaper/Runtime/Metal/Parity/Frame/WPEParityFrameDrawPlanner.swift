@@ -546,7 +546,13 @@ struct WPEParityFrameDrawPlanner {
                 layers.quad(placed.objectID, kind: placed.kind)
             }
         } ?? .effectPass
-        let puppet: WPEParityScenePuppet? = if case let .scene(draw) = description, draw.geometry == .puppetMesh {
+        let puppetSegment: Int? = if case let .scene(draw) = description, case let .puppetSegment(index) = draw.geometry {
+            index
+        } else {
+            nil
+        }
+        let puppet: WPEParityScenePuppet? = if case let .scene(draw) = description,
+                                               draw.geometry == .puppetMesh || puppetSegment != nil {
             plan.scene.scene.objects.first { $0.id == draw.objectID }?.puppet
         } else {
             nil
@@ -580,7 +586,7 @@ struct WPEParityFrameDrawPlanner {
                 throw .pipeline("\(shader): \(draw.pass) has no model mesh")
             } else if let puppet {
                 // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
-                Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
+                Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: uvMax, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
                 Self.geometry(mesh.vertices, indices: mesh.indices, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, draw.geometry == .shapeQuad, let object = sceneObject,
@@ -928,6 +934,9 @@ struct WPEParityFrameDrawPlanner {
             if draw.alphaMax {
                 modifiers.insert(.alphaMax)
             }
+            if draw.multipliesDestination {
+                modifiers.insert(.multiply)
+            }
             return .wpe(mode, modifiers: modifiers)
         case let .post(draw):
             switch draw.blend {
@@ -956,14 +965,15 @@ struct WPEParityFrameDrawPlanner {
         }, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs, device: device)
     }
 
-    /// Mesh0 of a puppet layer with its texcoords scaled by `uvMax`.
-    static func puppetGeometry(_ puppet: WPEParityScenePuppet, uvMax: SIMD2<Float>,
+    /// Mesh0 of a puppet layer, or one of its clip segments, with its texcoords scaled by `uvMax`.
+    static func puppetGeometry(_ puppet: WPEParityScenePuppet, segment: Int? = nil, uvMax: SIMD2<Float>,
                                inputs: [WPEStageReflection.StageAttribute],
                                device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
         geometry(puppet.vertices.map {
             Vertex(position: $0.position, texcoord: $0.uv * uvMax,
                    blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices), blendWeights: $0.skinBlendWeights)
-        }, indices: puppet.indices, inputs: inputs, device: device)
+        }, indices: segment.map { Array(puppet.clipIndices[puppet.clipSegments[$0]]) } ?? puppet.indices,
+        inputs: inputs, device: device)
     }
 
     /// One glyph list of a text layer, or its background quad from (0, 0) to the FBO size with the glyph quads'

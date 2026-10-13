@@ -5,6 +5,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         case layerMesh
         /// The layer's `WPEParitySceneObject.puppet` mesh transformed by the layer MVP.
         case puppetMesh
+        /// One `WPEParityScenePuppet.clipSegments` entry of the layer's puppet, transformed by the layer MVP.
+        case puppetSegment(Int)
         /// The meshes of the object's `.mdl` file.
         case modelMesh
         /// The vertices a particle renderer entry writes this frame.
@@ -43,13 +45,15 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     /// A `fullscreenQuad` pass of the last effect after its last flip: WPE draws the 2×2 quad with the layer's
     /// matrices instead of the effect ortho (1401e8aa0.c:951-997, 1052-1075).
     public let layerMatrices: Bool
+    /// RD flag 0x100 (SrcBlend DEST_COLOR), set around the clip mask merge (14020d6a0.c:150-169).
+    public let multipliesDestination: Bool
 
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
                 shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
                 compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
                 fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
-                cullsBackFaces: Bool = false, layerMatrices: Bool = false) {
+                cullsBackFaces: Bool = false, layerMatrices: Bool = false, multipliesDestination: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -68,6 +72,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.depthWrite = depthWrite
         self.cullsBackFaces = cullsBackFaces
         self.layerMatrices = layerMatrices
+        self.multipliesDestination = multipliesDestination
     }
 }
 
@@ -114,6 +119,9 @@ public enum WPEParitySceneResource {
     public static let multisampledDepth: WPEResourceID = "_rt_FullFrameBufferMultiSampledDepth"
     public static let colorFormat = "rgba8unorm"
     public static let depthFormat = "depth32float"
+    /// Puppet clip masks, R8 at the scene size (140208670.c:90-138).
+    public static let fullAlphaMask: WPEResourceID = "_rt_FullAlphaMask"
+    public static let fullAlphaMaskIntermediate: WPEResourceID = "_rt_FullAlphaMaskIntermediate"
 
     /// 1401ea500.c:137-446: `sc.<w>.<h>.<n|b><c|r><index>`, then the number of `ancestors` (the composites the
     /// enclosing layers draw their children into) whose name starts with that, when above 0.

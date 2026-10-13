@@ -63,6 +63,7 @@ enum ParitySceneFixtures {
         case .fullscreenQuad: "quad"
         case .layerMesh: "mesh"
         case .puppetMesh: "puppet"
+        case let .puppetSegment(index): "puppet.\(index)"
         case .modelMesh: "model"
         case .particles: "particles"
         case .textBackground: "background"

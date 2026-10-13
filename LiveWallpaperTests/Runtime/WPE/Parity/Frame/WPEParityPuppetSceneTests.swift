@@ -85,6 +85,34 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         }
     }
 
+    /// Workshop 3808922316: its bit4 puppets have clip groups, so they draw segments, masks and clipped parts.
+    func testClipGroupSceneDrawsMasksAndClippedSegments() async throws {
+        let compiler = try makeCompiler()
+        let plan = try makePlan("3808922316")
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, compiler: compiler,
+                                              cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
+                                              device: device, queue: queue)
+        let clipDraws = renderer.frames[0].draws.compactMap { index, draw -> (Int, WPEParitySceneDraw)? in
+            guard case let .scene(scene) = draw, case .puppetSegment = scene.geometry else { return nil }
+            return (index, scene)
+        }
+        XCTAssertTrue(clipDraws.contains { $0.1.target == WPEParitySceneResource.fullAlphaMask })
+        XCTAssertTrue(clipDraws.contains { $0.1.source?.combos["CLIPPINGTARGET"] == 1 })
+        for (index, draw) in clipDraws {
+            XCTAssertNil(renderer.skipped[index], draw.pass.rawValue)
+        }
+        try await renderFrame(renderer, elapsed: 0, label: "frame 0")
+        let encoded = Set(renderer.lastFrameDraws.map(\.operation))
+        let visible = Set(plan.scene.scene.objects.filter(\.visible).map(\.id))
+        let shown = clipDraws.filter { visible.contains($0.1.objectID) }
+        print("scene 3808922316: \(clipDraws.count) clip draws, \(shown.count) of visible layers, "
+            + "\(clipDraws.count { encoded.contains($0.0) }) encoded")
+        XCTAssertFalse(shown.isEmpty)
+        XCTAssertTrue(shown.allSatisfy { encoded.contains($0.0) })
+    }
+
     private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
         let environment = ProcessInfo.processInfo.environment
         func path(_ key: String, _ fallback: String) -> URL {
@@ -101,17 +129,17 @@ final class WPEParityPuppetSceneTests: XCTestCase {
                                                  workDirectory: scratch.appending(path: "shaderc"))
     }
 
-    private func makePlan() throws -> WPEParityFramePlan {
+    private func makePlan(_ sceneID: String = sceneID) throws -> WPEParityFramePlan {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
-        let folder = steam.appending(path: "workshop/content/431960/\(Self.sceneID)", directoryHint: .isDirectory)
+        let folder = steam.appending(path: "workshop/content/431960/\(sceneID)", directoryHint: .isDirectory)
         let package = folder.appending(path: "scene.pkg")
         let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
             .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")
         guard FileManager.default.fileExists(atPath: package.path),
               FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
-            throw XCTSkip("Needs Workshop \(Self.sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
+            throw XCTSkip("Needs Workshop \(sceneID) and WPE's assets (or WPE_ASSETS_DIR)")
         }
         // Read in place from scene.pkg; the folder is named after the workshop id the video textures use.
         let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),

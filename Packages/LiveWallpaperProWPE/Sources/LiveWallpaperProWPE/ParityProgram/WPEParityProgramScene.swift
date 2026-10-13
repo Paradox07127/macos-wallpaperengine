@@ -129,7 +129,8 @@ public struct WPEParityProgramScene: Sendable {
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
-            let puppet = loadedPuppet?.puppet
+            var puppet = loadedPuppet?.puppet
+            puppet?.albedoTexture = material?.textures[0]
             puppetModels[image.id] = loadedPuppet?.model
             // FUN_14020ae00: the albedo's TEXI flags are Texture+0x1c, where bit2 marks a sequence. A bit4 already
             // set by blend mode, ledsource or fog needs nothing here.
@@ -340,10 +341,10 @@ public struct WPEParityProgramScene: Sendable {
     func material(for draw: WPEParitySceneDraw) -> WPEParityProgramMaterial? {
         guard let source = draw.source else { return nil }
         var stored = source
-        stored.combos = [:]
+        (stored.combos, stored.textures) = ([:], [:])
         var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)]
             ?? WPEParityProgramMaterial(path: source.materialPath, pass: source.materialPass, assets: assets)
-        material?.merge(combos: source.combos, textures: [:])
+        material?.merge(combos: source.combos, textures: source.textures)
         if let shader = source.shader {
             material?.shader = shader
         }
@@ -353,7 +354,7 @@ public struct WPEParityProgramScene: Sendable {
     /// The scene material pass whose constants `draw` uses; nil for engine materials, which the scene cannot set.
     func passKey(for draw: WPEParitySceneDraw) -> WPEParityMaterialPassKey? {
         guard var stored = draw.source else { return nil }
-        stored.combos = [:]
+        (stored.combos, stored.textures) = ([:], [:])
         let key = MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)
         guard materials[key] != nil else { return nil }
         return WPEParityMaterialPassKey(objectID: draw.objectID, effectID: draw.effectID, pass: overridePasses[key] ?? 0)
@@ -425,7 +426,8 @@ public struct WPEParityProgramScene: Sendable {
         let puppet = WPEParityScenePuppet(vertices: mesh.vertices, indices: WPEParityScenePuppet.indices(of: mesh),
                                           boneCount: model.bones.count,
                                           skinned: mesh.vertexFormat & 0x800000 != 0 && !model.bones.isEmpty,
-                                          blendMeshIndex: model.meshes.firstIndex { $0.flags & 2 != 0 })
+                                          blendMeshIndex: model.meshes.firstIndex { $0.flags & 2 != 0 },
+                                          parts: mesh.parts, clipGroups: WPEParityPuppetClipGroup.groups(of: mesh))
         return (puppet, model)
     }
 
