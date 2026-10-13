@@ -418,14 +418,23 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     public var shared: Bool
     /// The FBO whose binding this one exchanges with after the effect, once per frame; both entries name each other.
     public var swapPartner: String?
+    /// `"unique": true`: WPE names it after the effect's scene id, so no other effect shares its texture.
+    public var unique: Bool
+    /// The extent before `scale` divides it (fit applied) and `scale`; with the name they key a non-unique FBO in
+    /// WPE's scene-wide pool.
+    public var unscaledSize: SIMD2<Int>
+    public var scale: Int
 
     public init(name: String, width: Int, height: Int, format: String = "rgba8unorm", shared: Bool = false,
-                swapPartner: String? = nil) {
+                swapPartner: String? = nil, unique: Bool = false, unscaledSize: SIMD2<Int>? = nil, scale: Int = 1) {
         self.name = name
         self.width = width
         self.height = height
         self.format = format
         self.shared = shared
         self.swapPartner = swapPartner
+        self.unique = unique
+        self.unscaledSize = unscaledSize ?? SIMD2(width, height)
+        self.scale = scale
     }
 }

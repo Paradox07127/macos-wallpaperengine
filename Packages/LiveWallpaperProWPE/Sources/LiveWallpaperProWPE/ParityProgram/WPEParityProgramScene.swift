@@ -414,7 +414,8 @@ public struct WPEParityProgramScene: Sendable {
             guard let name = string(fbo["name"]) else { continue }
             fbos.append(WPEParityAuthoredFBO(name: name, scale: number(fbo["scale"]) ?? 1, fit: number(fbo["fit"]),
                                              format: string(fbo["format"]) ?? "rgba8888",
-                                             swapPartner: swapPartners[name]))
+                                             swapPartner: swapPartners[name],
+                                             unique: fbo["unique"] == .bool(true)))
         }
         var passes: [WPEParityAuthoredPass] = []
         var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)] = []

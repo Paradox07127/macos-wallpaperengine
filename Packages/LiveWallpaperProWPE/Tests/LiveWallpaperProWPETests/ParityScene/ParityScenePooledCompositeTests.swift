@@ -100,7 +100,7 @@ struct ParityScenePooledCompositeTests {
             WPEParitySceneFBO(name: "b", width: 512, height: 256, swapPartner: "a"),
         ])
         let post = WPEParityPostProcessConfig(backbufferWidth: 1920, backbufferHeight: 1080)
-        for (frameIndex, target) in [(0, "L/e/a"), (1, "L/e/b")] {
+        for (frameIndex, target) in [(0, "a_512_256_1"), (1, "b_512_256_1")] {
             let frame = try WPEParityFrameComposer.compose(scene: F.scene([F.layer(effects: [effect])]), post: post,
                                                            frameIndex: frameIndex)
             let step = frame.draws.values.compactMap { draw -> WPEParitySceneDraw? in
@@ -116,8 +116,8 @@ struct ParityScenePooledCompositeTests {
                                           fbos: [WPEParitySceneFBO(name: "half", width: 256, height: 128)])
         let reader = WPEParitySceneEffect(id: "r", passes: [WPEParityScenePass(shader: "read", binds: ["half"])])
         let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [writer, reader])]))
-        #expect(frame.draws["L/w/0"]?.target == "L/w/half")
-        #expect(frame.draws["L/r/0"]?.reads.last == "L/w/half")
+        #expect(frame.draws["L/w/0"]?.target == "half_256_128_1")
+        #expect(frame.draws["L/r/0"]?.reads.last == "half_256_128_1")
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
     }
 

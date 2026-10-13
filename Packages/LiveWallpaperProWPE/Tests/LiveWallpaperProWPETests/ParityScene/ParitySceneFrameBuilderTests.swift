@@ -179,12 +179,12 @@ struct ParitySceneLayerCompositeTests {
         #expect(Array(F.lines(frame).dropFirst(3)) == [
             "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "bind L/blur/half",
+            "bind half_256_128_1",
             "draw down [\(F.bc0)] normal rgba quad",
             F.sceneBind,
-            "draw up [\(F.bc0),L/blur/half] translucent rgb mesh",
+            "draw up [\(F.bc0),half_256_128_1] translucent rgb mesh",
         ])
-        #expect(frame.resources.first { $0.id == "L/blur/half" }?.lifetime == .pooled)
+        #expect(frame.resources.first { $0.id == "half_256_128_1" }?.lifetime == .pooled)
     }
 }
 
@@ -343,7 +343,8 @@ struct ParitySceneDocumentConversionTests {
             WPEParityScenePass(shader: "up", binds: ["half"], readsFullFrameBuffer: true, blend: .translucent,
                                source: source("up", 1)),
         ])
-        #expect(object.effects[0].fbos == [WPEParitySceneFBO(name: "half", width: 200, height: 100)])
+        #expect(object.effects[0].fbos == [WPEParitySceneFBO(name: "half", width: 200, height: 100,
+                                                             unscaledSize: SIMD2(400, 200), scale: 2)])
     }
 
     @Test func drawsNameTheMaterialPassTheyComeFrom() throws {

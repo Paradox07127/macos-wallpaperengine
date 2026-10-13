@@ -184,8 +184,9 @@ private struct WPEParitySceneEmitter {
             render(child, into: childDestination, ancestors: ancestors + [composites[current]])
         }
 
-        // Spec conclusion ③ and catsout's `last_output`: only this pass draws into the destination.
-        let finalPass = bit4 ? nil : effects.last?.passes.lastIndex { $0.kind == .draw && $0.target == nil }
+        // 1401e7170.c:719-751: effect+0x144, the last draw pass, takes the layer mesh, blend and mask.
+        let finalPass = bit4 ? nil : effects.last?.passes.lastIndex { $0.kind == .draw }
+        var flips = 0
         for (effectIndex, effect) in effects.enumerated() {
             for fbo in effect.fbos {
                 register(Self.fboID(object, effect, fbo.name), fbo.width, fbo.height, format: fbo.format)
@@ -193,6 +194,9 @@ private struct WPEParitySceneEmitter {
             let readsFullFrame = effect.passes.contains(where: \.readsFullFrameBuffer)
             for (passIndex, pass) in effect.passes.enumerated() {
                 let identity = WPEPassIdentity("\(object.id)/\(effect.id)/\(passIndex)")
+                // 1401e8aa0.c:805-809: after N−1 flips the loop breaks; the rest of the last effect runs with the
+                // layer's matrices and no composite target bound (:951-997, :1052-1075).
+                let lastSegment = !bit4 && flips == n - 1
                 func fbo(_ name: String) -> WPEResourceID {
                     bound(Self.fboID(object, effect, name))
                 }
@@ -208,18 +212,22 @@ private struct WPEParitySceneEmitter {
                 var compositeOwnerID: String?
                 var mask = WPEParitySceneWriteMask.rgba
                 var geometry = WPEParitySceneDraw.Geometry.fullscreenQuad
+                if lastSegment {
+                    compositeOwnerID = destination.compositeOwnerID
+                }
                 if let name = pass.target {
                     target = fbo(name)
-                } else if effectIndex == effects.count - 1, passIndex == finalPass {
+                } else if lastSegment {
                     target = destination.color
                     depth = destination.depth
-                    blend = object.blend
                     alphaMax = destination.alphaMax
-                    compositeOwnerID = destination.compositeOwnerID
-                    mask = destination.writeMask
-                    geometry = object.layerGeometry
                 } else {
                     target = composites[current ^ 1]
+                }
+                if lastSegment, passIndex == finalPass {
+                    blend = object.blend
+                    mask = destination.writeMask
+                    geometry = object.layerGeometry
                 }
                 bind(identity, target, depth: depth)
                 if passIndex == 0, readsFullFrame {
@@ -230,9 +238,11 @@ private struct WPEParitySceneEmitter {
                 draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id,
                                         passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
                                         target: target, blend: blend, alphaMax: alphaMax,
-                                        compositeOwnerID: compositeOwnerID, writeMask: mask, geometry: geometry))
+                                        compositeOwnerID: compositeOwnerID, writeMask: mask, geometry: geometry,
+                                        layerMatrices: lastSegment && geometry == .fullscreenQuad))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
+                    flips += 1
                 }
             }
             for fbo in effect.fbos {
@@ -243,6 +253,7 @@ private struct WPEParitySceneEmitter {
                 (bindings[first], bindings[second]) = exchanged
             }
             current ^= 1
+            flips += 1
         }
 
         guard bit4 else { return }
@@ -427,9 +438,11 @@ private struct WPEParitySceneEmitter {
         }
         let owner = declaration(effect) != nil ? effect
             : object.effects.first { $0.enabled && declaration($0) != nil } ?? effect
-        return declaration(owner)?.shared == true
-            ? Resource.sharedFBO(name)
-            : Resource.effectFBO(objectID: object.id, effectID: owner.id, name: name)
+        guard let fbo = declaration(owner) else {
+            return Resource.effectFBO(objectID: object.id, effectID: owner.id, name: name)
+        }
+        return fbo.shared ? Resource.sharedFBO(name)
+            : Resource.effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
     }
 
     private func bound(_ id: WPEResourceID) -> WPEResourceID {
@@ -456,7 +469,8 @@ private struct WPEParitySceneEmitter {
         let opaque = draw.blend == .normal && draw.writeMask == .rgba && !draw.alphaMax
         emit(draw.pass, .draw(WPEDrawOperation(reads: draw.reads.map { WPETextureView($0) },
                                                readsDestination: !opaque,
-                                               overwritesTargets: opaque && draw.geometry == .fullscreenQuad,
+                                               overwritesTargets: opaque && draw.geometry == .fullscreenQuad
+                                                   && !draw.layerMatrices,
                                                depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                                                state: WPEDrawStateKey(draw))))
     }

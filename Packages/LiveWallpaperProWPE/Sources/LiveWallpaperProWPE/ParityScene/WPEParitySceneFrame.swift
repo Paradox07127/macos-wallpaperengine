@@ -38,13 +38,16 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let depthTest: Bool
     public let depthWrite: Bool
     public let cullsBackFaces: Bool
+    /// A `fullscreenQuad` pass of the last effect after its last flip: WPE draws the 2×2 quad with the layer's
+    /// matrices instead of the effect ortho (1401e8aa0.c:951-997, 1052-1075).
+    public let layerMatrices: Bool
 
     public init(pass: WPEPassIdentity, objectID: String, effectID: String? = nil, passIndex: Int? = nil,
                 shader: String, source: WPEParitySceneMaterialSource? = nil, reads: [WPEResourceID],
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
                 compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
                 fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
-                cullsBackFaces: Bool = false) {
+                cullsBackFaces: Bool = false, layerMatrices: Bool = false) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -62,6 +65,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.depthTest = depthTest
         self.depthWrite = depthWrite
         self.cullsBackFaces = cullsBackFaces
+        self.layerMatrices = layerMatrices
     }
 }
 
@@ -127,8 +131,19 @@ public enum WPEParitySceneResource {
         WPEResourceID("\(objectID)/image")
     }
 
+    /// A name no effect of the layer declares.
     public static func effectFBO(objectID: String, effectID: String, name: String) -> WPEResourceID {
         WPEResourceID("\(objectID)/\(effectID)/\(name)")
+    }
+
+    /// 1401ea500.c:576-831: `<name>_<effect id>` for a unique FBO; otherwise `<name>_<w>_<h>_<scale>`, or the bare
+    /// name on a fullscreen layer (0x304 bit1), so equal declarations on different layers share one pool texture.
+    public static func effectFBO(_ fbo: WPEParitySceneFBO, effectID: String, fullscreen: Bool) -> WPEResourceID {
+        if fbo.unique {
+            return WPEResourceID("\(fbo.name)_\(effectID)")
+        }
+        let size = fbo.unscaledSize
+        return WPEResourceID(fullscreen ? fbo.name : "\(fbo.name)_\(size.x)_\(size.y)_\(fbo.scale)")
     }
 
     /// An effect FBO that more than one layer touches keeps its pool name.

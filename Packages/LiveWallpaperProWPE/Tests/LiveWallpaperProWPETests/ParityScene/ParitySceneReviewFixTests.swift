@@ -124,9 +124,9 @@ struct ParitySceneEffectCommandTests {
         #expect(Array(F.lines(frame).dropFirst(3)) == [
             "bind \(F.bc0)",
             "draw genericimage2 [L/image] normal rgba quad",
-            "copy \(F.bc0)->L/e/history",
+            "copy \(F.bc0)->history_512_256_1",
             F.sceneBind,
-            "draw trail [\(F.bc0),L/e/history] translucent rgb mesh",
+            "draw trail [\(F.bc0),history_512_256_1] translucent rgb mesh",
         ])
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
     }
@@ -149,7 +149,7 @@ struct ParitySceneEffectCommandTests {
             WPEParitySceneFBO(name: "b", width: 512, height: 256, swapPartner: "a"),
         ])
         let scene = F.scene([F.layer(effects: [effect])])
-        let expected: [[WPEResourceID]] = [["L/e/a", "L/e/b"], ["L/e/b", "L/e/a"]]
+        let expected: [[WPEResourceID]] = [["a_512_256_1", "b_512_256_1"], ["b_512_256_1", "a_512_256_1"]]
         for (frameIndex, pair) in expected.enumerated() {
             let frame = WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex)
             #expect(frame.draws["L/e/0"]?.target == pair[0], "frame \(frameIndex)")
@@ -171,7 +171,8 @@ struct ParitySceneCrossLayerFBOTests {
                                                 passes: [D.pass("emit", target: "glow")])])
         let reader = D.layer("8", effects: [D.effect(passes: [D.pass("use", binds: [1: "glow"])])])
         let description = try D.convert([writer, reader])
-        let shared = WPEParitySceneFBO(name: "glow", width: 400, height: 200, shared: true)
+        let shared = WPEParitySceneFBO(name: "glow", width: 400, height: 200, shared: true,
+                                       unscaledSize: SIMD2(800, 400), scale: 2)
         #expect(description.objects[0].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].passes.map(\.binds) == [["glow"]])
@@ -189,9 +190,9 @@ struct ParitySceneCrossLayerFBOTests {
             D.effect("2", passes: [D.pass("read", binds: [1: "half"])]),
         ])
         let frame = try WPEParitySceneFrameBuilder.build(D.convert([layer]))
-        #expect(frame.draws["7/1/0"]?.target == "7/1/half")
-        #expect(frame.draws["7/2/0"]?.reads.last == "7/1/half")
-        #expect(frame.resources.count(where: { $0.id.rawValue.hasSuffix("half") }) == 1)
+        #expect(frame.draws["7/1/0"]?.target == "half_400_200_2")
+        #expect(frame.draws["7/2/0"]?.reads.last == "half_400_200_2")
+        #expect(frame.resources.count(where: { $0.id.rawValue.hasPrefix("half") }) == 1)
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
     }
 }

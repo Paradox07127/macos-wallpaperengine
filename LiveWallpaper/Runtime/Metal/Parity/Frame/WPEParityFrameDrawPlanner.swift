@@ -101,11 +101,12 @@ struct WPEParityFrameDrawPlan {
                 matrices = WPEParityLayerTransform.compositeMatrices(parentModel: layers.model(ownerID),
                                                                      parentSize: owner.size, childModel: model)
             }
+            let layerMatrices = kind == .layer || kind == .lastEffectPass
             placed.effectPass = WPEParityUniformEffectPass(
                 layerModel: matrices.model, layerModelViewProjection: matrices.modelViewProjection,
-                size: layers.layers[objectID]?.size ?? .zero, isLastPass: kind == .layer
+                size: layers.layers[objectID]?.size ?? .zero, isLastPass: layerMatrices
             )
-            if kind == .layer {
+            if layerMatrices {
                 placed.matrices = matrices
             }
             return placed
@@ -494,7 +495,8 @@ struct WPEParityFrameDrawPlanner {
             WPEParityFrameDrawPlan.Placement(
                 layers: layers, objectID: draw.objectID,
                 kind: draw.fillsComposite ? .compositeFill(size: SIMD2(Float(color.width), Float(color.height)))
-                    : draw.geometry == .fullscreenQuad ? .effectPass : .layer,
+                    : draw.geometry != .fullscreenQuad ? .layer
+                    : draw.layerMatrices ? .lastEffectPass : .effectPass,
                 compositeOwnerID: draw.compositeOwnerID,
                 text: text.map { textPlacement($0, draw) }
             )

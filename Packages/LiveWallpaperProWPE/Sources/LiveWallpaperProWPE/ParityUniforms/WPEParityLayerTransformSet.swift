@@ -7,6 +7,8 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
     case compositeFill(size: SIMD2<Float>)
     /// An intermediate effect pass on the 2×2 quad.
     case effectPass
+    /// A pass of the last effect after its last flip: the 2×2 quad with the layer's matrices (1401e8aa0.c:951-1075).
+    case lastEffectPass
 }
 
 /// The camera and every layer's world matrix, answering per draw with the matrices `WPEParityUniformSet` packs.
@@ -165,11 +167,13 @@ public struct WPEParityLayerTransformSet: Sendable {
             (matrices.view, matrices.projection) = camera.pushPerspective(view: matrices.view,
                                                                           projection: matrices.projection)
         }
+        // 1401ebf60.c:201-333 branches on param_5, which every pass after the break carries.
         let effectPass = WPEParityUniformEffectPass(layerModel: matrices.model,
                                                     layerModelViewProjection: matrices.modelViewProjection,
-                                                    size: layers[id]?.size ?? .zero, isLastPass: kind == .layer)
+                                                    size: layers[id]?.size ?? .zero,
+                                                    isLastPass: kind == .layer || kind == .lastEffectPass)
         let drawn = switch kind {
-        case .layer: matrices
+        case .layer, .lastEffectPass: matrices
         case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
         case .effectPass: WPEParityUniformMatrices.effectPass
         }
@@ -180,7 +184,7 @@ public struct WPEParityLayerTransformSet: Sendable {
         switch kind {
         case .layer: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
         case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
-        case .effectPass: .effectPass
+        case .effectPass, .lastEffectPass: .effectPass
         }
     }
 }

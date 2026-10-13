@@ -6,6 +6,7 @@ struct WPEParityAuthoredFBO: Sendable {
     let format: String
     /// The FBO a `swap` command of the same effect exchanges it with.
     let swapPartner: String?
+    let unique: Bool
 }
 
 /// One effect file pass before its FBO names resolve against the scene.
@@ -136,20 +137,28 @@ struct WPEParitySceneFBOScope {
 private extension WPEParitySceneFBOScope.Declaration {
     func parityFBO(shared: Bool, format: String) -> WPEParitySceneFBO {
         let size = extent
+        let fitted = fittedExtent
         return WPEParitySceneFBO(name: fbo.name, width: size.width, height: size.height, format: format,
-                                 shared: shared, swapPartner: local ? fbo.swapPartner : nil)
+                                 shared: shared, swapPartner: local ? fbo.swapPartner : nil, unique: fbo.unique,
+                                 unscaledSize: SIMD2(fitted?.width ?? width, fitted?.height ?? height),
+                                 scale: Int(divisor))
+    }
+
+    /// catsout WPImageObject.cpp parses `scale` as uint32_t and resets 0 to 1, so fractions truncate and a scale
+    /// below 1 never enlarges; WPSceneParser.cpp truncates `size / scale`.
+    private var divisor: Double {
+        max(1, fbo.scale.rounded(.towardZero))
+    }
+
+    private var fittedExtent: (width: Int, height: Int)? {
+        guard let fit = fbo.fit, fit > 0, max(width, height) > 0 else { return nil }
+        let ratio = fit / Double(max(width, height))
+        return (max(1, Int((Double(width) * ratio).rounded())), max(1, Int((Double(height) * ratio).rounded())))
     }
 
     /// `fit` over the object extent, else the object extent divided by `scale`.
     var extent: (width: Int, height: Int) {
-        // catsout WPImageObject.cpp parses `scale` as uint32_t and resets 0 to 1, so fractions truncate and a scale
-        // below 1 never enlarges; WPSceneParser.cpp truncates `size / scale`.
-        let divisor = max(1, fbo.scale.rounded(.towardZero))
-        if let fit = fbo.fit, fit > 0, max(width, height) > 0 {
-            let ratio = fit / Double(max(width, height))
-            return (max(1, Int((Double(width) * ratio).rounded())), max(1, Int((Double(height) * ratio).rounded())))
-        }
-        return (max(1, Int(Double(width) / divisor)), max(1, Int(Double(height) / divisor)))
+        fittedExtent ?? (max(1, Int(Double(width) / divisor)), max(1, Int(Double(height) / divisor)))
     }
 
     /// 1401e7170.c:220-242 and FUN_1401e53a0 (string → engine code), FUN_1400d2a20 (engine code → DXGI); nil for a
