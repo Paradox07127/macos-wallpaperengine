@@ -339,12 +339,16 @@ final class AmbientWallpaperSessionBuilder {
         // the layer here returns 0x0 — it stays zero until the first
         // `nextDrawable()`, whatever the window and layout have done.
         let seededDrawableSize = spanFrames == nil ? surface.backingDrawableSize : CGSize(width: frame.width * spanDensity, height: frame.height * spanDensity)
-        if spanFrames == nil, WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
+        if WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
             switch WPEParityShaderToolchain.makeCompiler() {
             case let .success(compiler):
                 let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
                 surface.attach(client: shim)
-                window.orderBack(nil)
+                if spanFrames == nil {
+                    window.orderBack(nil)
+                } else {
+                    window.orderOut(nil)
+                }
                 if case .renderThread = backing {
                     surface.startDisplayLinkDriver(renderActor: renderActor)
                 }
@@ -373,6 +377,7 @@ final class AmbientWallpaperSessionBuilder {
                     } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
                                                       engineAssetsRootURL: engineAssetsRootURL),
                     presentFitMode: WPEPresentFitMode(fitMode),
+                    span: spanFrames.map { ($0, max(spanMemberCount, 1) + 8) },
                     // Latest-wins, as the Metal scene renderer's activity hop below.
                     onRuntimeActivityChange: { [weak session] activity in
                         activityMailbox.withLock { $0 = activity }

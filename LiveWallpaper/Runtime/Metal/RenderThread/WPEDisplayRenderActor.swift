@@ -179,6 +179,8 @@ actor WPEDisplayRenderActor {
         let driver = try WPEParitySceneDriver(device: inputs.device)
         driver.updateSurfaceGeometry(drawableSize: inputs.drawableSize)
         driver.setPresentFitMode(inputs.presentFitMode)
+        driver.spanFrames = inputs.span?.frames
+        driver.executor.spanOutputTextureLimit = inputs.span?.outputTextureLimit
         parityDriver = driver
         parityInputs = inputs
         startConfigConsumer()
@@ -215,9 +217,14 @@ actor WPEDisplayRenderActor {
             // As the old renderer: the shared system-audio capture, not the scene's own sounds.
             let audio = SystemAudioCaptureManager.isCapturing
                 ? SystemAudioCaptureManager.broker.snapshot(clampedTo01: false) : nil
-            let presented = parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer,
-                                                               timestamp: start, pointer: pointer.position,
-                                                               buttonDown: pointer.buttonDown, audio: audio)
+            let presented = if let frames = parityDriver.spanFrames {
+                parityDriver.renderAndPublishSpanFrame(to: frames, timestamp: start, pointer: pointer.position,
+                                                       buttonDown: pointer.buttonDown, audio: audio)
+            } else {
+                parityDriver.renderAndPresentFrame(layer: parityInputs.presentLayer.layer, timestamp: start,
+                                                   pointer: pointer.position, buttonDown: pointer.buttonDown,
+                                                   audio: audio)
+            }
             thread?.noteFrameDuration(CACurrentMediaTime() - start,
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             if parityFramePending, presented != nil {
@@ -469,6 +476,10 @@ actor WPEDisplayRenderActor {
 
     /// Once one present succeeds, later frame errors remain diagnostics and cannot revoke the already-visible readiness contract.
     func recordPresentCompletion(_ result: WPEFrameReadinessResult) {
+        if let parityDriver {
+            parityDriver.recordSpanPresent(result)
+            return
+        }
         guard let renderer,
               WPEFrameReadinessCoordinator.isCurrent(
                   result,

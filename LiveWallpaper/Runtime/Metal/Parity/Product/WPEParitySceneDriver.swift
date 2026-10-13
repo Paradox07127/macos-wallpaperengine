@@ -104,6 +104,9 @@ final class WPEParitySceneDriver {
     private var audioMuted = false
     private var audioVolume = 1.0
     private var audioPreset: WPEEngineAudioSettings?
+    /// Set on a span group's hidden producer: frames go to the members' presenters instead of a drawable.
+    var spanFrames: WPESceneSpanFrames?
+    private var spanFrameSequence: UInt64 = 0
     private let device: MTLDevice
     private let presentState = WPEParityPresentState()
     private var paused = false
@@ -186,6 +189,7 @@ final class WPEParitySceneDriver {
         loadGeneration &+= 1
         let generation = loadGeneration
         presentState.reset(generation: generation)
+        spanFrames?.reset(generation: generation)
         didLoad = false
         renderer = nil
         planSource = nil
@@ -344,25 +348,10 @@ final class WPEParitySceneDriver {
     func renderAndPresentFrame(layer: CAMetalLayer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                                buttonDown: Bool = false, audio: AudioSpectrumFrame? = nil,
                                date: Date = Date()) -> MTLCommandBuffer? {
-        guard didLoad, let renderer, let plannedTarget else { return nil }
-        // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
-        let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
-        lastTimestamp = timestamp
-        soundRuntime?.advance(by: elapsed)
+        guard didLoad, let renderer, let plannedTarget,
+              encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
+                          date: date) else { return nil }
         let backbuffer = renderer.backbuffer
-        let cursor = SIMD2<Float>(pointer * SIMD2(Double(backbuffer.width), Double(backbuffer.height)))
-        let input = WPEParityFrameInput(cursor: cursor, buttonDown: buttonDown,
-                                        audio: audio.map { ($0.left, $0.right) }, date: date)
-        do {
-            let start = CACurrentMediaTime()
-            let submission = try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
-            encodeSeconds += CACurrentMediaTime() - start
-            encodeCount += 1
-            guard case .committed = submission else { return nil }
-        } catch {
-            logFrameFailure(error)
-            return nil
-        }
         // Same queue as the frame, so the present reads the finished backbuffer.
         guard let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer() else { return nil }
         let state = presentState
@@ -387,6 +376,81 @@ final class WPEParitySceneDriver {
         } catch {
             logFrameFailure(error)
             return nil
+        }
+    }
+
+    /// The span producer's frame: renders as `renderAndPresentFrame` does, then copies the backbuffer into a pooled
+    /// output texture that `frames` publishes once the copy completes, as `renderAndPublishSpanFrame` of the old
+    /// renderer. Returns the committed copy command buffer, or nil when nothing was published.
+    @discardableResult
+    func renderAndPublishSpanFrame(to frames: WPESceneSpanFrames, timestamp: CFTimeInterval,
+                                   pointer: SIMD2<Double>, buttonDown: Bool = false,
+                                   audio: AudioSpectrumFrame? = nil, date: Date = Date()) -> MTLCommandBuffer? {
+        guard didLoad, let renderer, let plannedTarget else { return nil }
+        let backbuffer = renderer.backbuffer
+        let size = CGSize(width: backbuffer.width, height: backbuffer.height)
+        executor.currentOutputPixelFormat = backbuffer.pixelFormat
+        let output: MTLTexture
+        do {
+            // Taken before the frame, so a pool full of member reads skips the frame rather than its scene time.
+            output = try executor.makeOutputTexture(size: size)
+        } catch is WPEMetalFrameInFlightBudgetExhausted {
+            return nil
+        } catch {
+            logFrameFailure(error)
+            return nil
+        }
+        guard encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
+                          date: date),
+            let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer(),
+            let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
+        blit.copy(from: backbuffer, to: output)
+        blit.endEncoding()
+        spanFrameSequence &+= 1
+        let frame = WPESceneSpanFrame(texture: output, generation: loadGeneration, sequence: spanFrameSequence,
+                                      sourceSize: size, fitMode: plannedTarget.presentFit,
+                                      tracker: executor.presentTracker)
+        let state = presentState
+        state.begin()
+        commandBuffer.addCompletedHandler { commandBuffer in
+            if commandBuffer.status == .completed {
+                frames.publish(frame, generation: frame.generation, sequence: frame.sequence)
+            } else {
+                state.record(generation: frame.generation, succeeded: false)
+            }
+            state.end()
+        }
+        commandBuffer.commit()
+        didLogFrameFailure = false
+        return commandBuffer
+    }
+
+    /// A span member's present of a published frame: readiness, as the old renderer's `recordPresentCompletion`.
+    func recordSpanPresent(_ result: WPEFrameReadinessResult) {
+        presentState.record(generation: result.generation, succeeded: result.renderCompleted && result.presentCompleted)
+    }
+
+    /// Steps the scene clock and commits one frame into the backbuffer; false when nothing was committed.
+    private func encodeFrame(_ renderer: WPEParityFrameRenderer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
+                             buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date) -> Bool {
+        // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
+        let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
+        lastTimestamp = timestamp
+        soundRuntime?.advance(by: elapsed)
+        let backbuffer = renderer.backbuffer
+        let cursor = SIMD2<Float>(pointer * SIMD2(Double(backbuffer.width), Double(backbuffer.height)))
+        let input = WPEParityFrameInput(cursor: cursor, buttonDown: buttonDown,
+                                        audio: audio.map { ($0.left, $0.right) }, date: date)
+        do {
+            let start = CACurrentMediaTime()
+            let submission = try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
+            encodeSeconds += CACurrentMediaTime() - start
+            encodeCount += 1
+            guard case .committed = submission else { return false }
+            return true
+        } catch {
+            logFrameFailure(error)
+            return false
         }
     }
 
@@ -542,6 +606,7 @@ final class WPEParitySceneDriver {
         didLoad = false
         loadGeneration &+= 1
         presentState.reset(generation: loadGeneration)
+        spanFrames?.reset(generation: loadGeneration)
         renderer = nil
         planSource = nil
         plannedTarget = nil
@@ -619,6 +684,8 @@ struct WPEParitySceneInputs: Sendable {
     /// Resolves the scene's sound files, as `WPEMetalSceneRenderer.resourceResolver`; nil plays no sound.
     var soundResolver: WPEMultiRootResourceResolver?
     var presentFitMode = WPEPresentFitMode.cover
+    /// A span group's producer: where its frames go, and its output pool's cap as the old renderer's.
+    var span: (frames: WPESceneSpanFrames, outputTextureLimit: Int)?
     /// As `WPEMetalSceneRenderer.onRuntimeActivityChange`: called on the render actor when the activity changes.
     var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
 
