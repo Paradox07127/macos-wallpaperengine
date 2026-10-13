@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Preserve the hashed shipped SceneScript fixture, including its original line endings.
+Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js -text
