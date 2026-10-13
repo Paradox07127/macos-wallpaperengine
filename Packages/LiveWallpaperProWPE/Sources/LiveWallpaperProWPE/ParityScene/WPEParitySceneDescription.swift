@@ -112,6 +112,8 @@ public struct WPEParitySceneText: Hashable, Sendable {
     public var layout: WPEParityTextLayout
     /// `WPEParityGlyphAtlasInstance.key` of the atlas the quad UVs index.
     public var atlasKey: String
+    /// Enabled effects (+0x320) the layout was made with.
+    public var effectCount: Int
     /// p of the translations and the FBO size: min(padding, 512) with effects, bit4 or opaquebackground, else 0.
     public var padding: SIMD2<Float>
     /// Background colour × (HDR ? backgroundbrightness : 1) and the layer alpha (140258050.c:106-116).
@@ -126,6 +128,7 @@ public struct WPEParitySceneText: Hashable, Sendable {
         self.object = object
         self.layout = layout
         self.atlasKey = atlasKey
+        self.effectCount = effectCount
         let input = object.layoutInput(effectCount: effectCount)
         padding = input.appliesPadding ? SIMD2(min(input.padding.x, 512), min(input.padding.y, 512)) : .zero
         let brightness = hdr ? object.backgroundBrightness : 1

@@ -129,7 +129,7 @@ public struct WPEParityTextObject: Hashable, Sendable {
     }
 
     /// bit4 (1401e6f50.c:24-29): composited through effectpassthrough.
-    private var composesThroughPassthrough: Bool {
+    var composesThroughPassthrough: Bool {
         colorBlendMode != 0 && colorBlendMode != 31
     }
 

@@ -67,6 +67,10 @@ public final class WPEParityFontFace {
     private let library: WPEParityFreeTypeLibrary
     private var boxes: [UInt32: WPEParityGlyphBox?] = [:]
     private var layoutGlyphs: [UInt32: LayoutGlyph?] = [:]
+    /// Renders layout made that no atlas has taken yet.
+    private var unpackedBitmaps: [UInt32: WPEParityGlyphBitmap] = [:]
+    /// FT_LOAD_RENDER calls so far.
+    private(set) var renders = 0
 
     /// Opens face `index` from `bytes`, or from `path` when `bytes` is nil.
     static func open(_ library: WPEParityFreeTypeLibrary, bytes: WPEParityFontBytes?, path: String?,
@@ -140,8 +144,12 @@ public final class WPEParityFontFace {
     }
 
     /// FT_Load_Glyph(FT_LOAD_RENDER | FT_LOAD_COLOR) with the rows copied out tightly packed; nil when FreeType cannot
-    /// render it.
+    /// render it. The first call after layout met the glyph hands over layout's render.
     public func rasterize(_ glyph: UInt32) -> WPEParityGlyphBitmap? {
+        unpackedBitmaps.removeValue(forKey: glyph) ?? render(glyph)
+    }
+
+    private func render(_ glyph: UInt32) -> WPEParityGlyphBitmap? {
         guard let mode = renderedPixelMode(glyph) else { return nil }
         let bitmap = face.pointee.glyph.pointee.bitmap
         let (width, rows) = (Int(bitmap.width), Int(bitmap.rows))
@@ -161,14 +169,19 @@ public final class WPEParityFontFace {
         if let cached = layoutGlyphs[glyph] {
             return cached
         }
-        let entry = renderedPixelMode(glyph).flatMap { mode in
-            glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: mode == .bgra) }
+        let bitmap = render(glyph)
+        let entry = bitmap.flatMap { bitmap in
+            glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: bitmap.pixelMode == .bgra) }
         }
         layoutGlyphs[glyph] = entry
+        if entry != nil {
+            unpackedBitmaps[glyph] = bitmap
+        }
         return entry
     }
 
     private func renderedPixelMode(_ glyph: UInt32) -> WPEParityGlyphBitmap.PixelMode? {
+        renders += 1
         guard FT_Load_Glyph(face, glyph, FT_Int32(FT_LOAD_RENDER | FT_LOAD_COLOR)) == 0 else { return nil }
         switch UInt32(face.pointee.glyph.pointee.bitmap.pixel_mode) {
         case FT_PIXEL_MODE_GRAY.rawValue: return .gray

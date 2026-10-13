@@ -18,6 +18,12 @@ struct WPEParityTextAtlasTextures {
         self.atlases = atlases
     }
 
+    /// Takes `atlases` as a re-layout left them and uploads the ones that are new, resized or dirty.
+    mutating func replace(_ atlases: [String: WPEParityGlyphAtlasInstance], device: MTLDevice) {
+        self.atlases = atlases
+        upload(device: device)
+    }
+
     /// Makes the textures that are missing or no longer match their atlas size and uploads each new texture's or
     /// dirty atlas's pixels whole, as WPE does before a draw (1401b3430.c:133-144, :187-202).
     mutating func upload(device: MTLDevice) {

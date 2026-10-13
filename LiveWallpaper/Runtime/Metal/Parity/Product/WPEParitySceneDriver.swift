@@ -325,10 +325,11 @@ final class WPEParitySceneDriver {
     }
 
     /// Accepts `patch` when `document`, the scene parsed with its new values, differs from the loaded one only in
-    /// live state; the commit applies it.
+    /// live state, text layouts included while they keep the frame graph; the commit applies it.
     func prepareUserProperties(_ patch: WPEScenePropertyPatch, document: WPESceneDocument) -> Bool {
         guard canApplyUserPropertiesLive(patch), let planSource,
-              WPEParityUserPropertyUpdate(from: planSource.document, to: document) != nil else { return false }
+              let update = WPEParityUserPropertyUpdate(from: planSource.document, to: document),
+              update.texts.isEmpty || renderer?.canRelayoutLive(update.texts) == true else { return false }
         pendingUserProperties = (patch, document)
         return true
     }

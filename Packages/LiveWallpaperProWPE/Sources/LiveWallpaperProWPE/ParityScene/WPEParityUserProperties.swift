@@ -8,13 +8,20 @@ public enum WPEParityUserProperties {
         "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter",
     ]
 
+    /// Text layer fields that only move glyphs, which a live re-layout redraws (the enum fields never bind).
+    private static let liveTextFields: Set = [
+        "text", "font", "pointsize", "padding", "spacing", "maxwidth", "maxrows", "limitwidth", "limitrows",
+        "limituseellipsis", "blockalign",
+    ]
+
     /// Every user property the scene JSON binds, with each target it reaches. Object fields of image layers, groups
-    /// and particles, effect visibility and material constants of image layers, the per-frame parallax terms and the
-    /// bloom constants are `.incremental`; anything else is `.reload`.
+    /// and particles, effect visibility and material constants of image layers, the layout fields of text layers, the
+    /// per-frame parallax terms and the bloom constants are `.incremental`; anything else is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
         let particles = Set(document.particleObjects.map(\.id))
+        let texts = Set(WPEParityTextObject.textObjects(in: document).map(\.id))
         let objects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         var result: [String: [WPEScenePropertyBinding]] = [:]
         func target(_ path: [String], scripted: Bool) -> (WPEScenePropertyBindingTarget, WPEScenePropertyBindingKind,
@@ -38,6 +45,9 @@ public enum WPEParityUserProperties {
                 case .brightness: (owner, .brightness, true)
                 case .origin, .scale, .angles: (.objectResource(objectID: id, field: field[0]), .resource, true)
                 }
+            }
+            if texts.contains(id), field.count == 1, liveTextFields.contains(field[0]) {
+                return (.textObject(id: id), .resource, true)
             }
             guard images.contains(id) else { return reload }
             if field.count == 3, field[0] == "instance", field[1] == "constantshadervalues" {
@@ -114,6 +124,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public private(set) var objects: [ObjectWrite] = []
     public private(set) var effects: [EffectWrite] = []
     public private(set) var constants: [ConstantWrite] = []
+    /// Text layers whose parsed fields differ, with their new fields.
+    public private(set) var texts: [WPEParityTextObject] = []
     public let cameraParallax: WPESceneCameraParallaxSettings
     /// The new parse's bloom values, which the post-process draws read on the next frame.
     public let bloom: WPEParityBloomSettings
@@ -136,6 +148,11 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         for (index, effect) in after.effects.enumerated()
             where after.effectVisibility[index] != before.effectVisibility[index] {
             effects.append(EffectWrite(effect: effect, visible: after.effectVisibility[index]))
+        }
+        let earlierTexts = Dictionary(WPEParityTextObject.textObjects(in: old).map { ($0.id, $0) }) { first, _ in first }
+        for text in WPEParityTextObject.textObjects(in: new) where earlierTexts[text.id] != text {
+            guard earlierTexts[text.id] != nil else { return nil }
+            texts.append(text)
         }
         let previous = Dictionary(old.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         for image in new.imageObjects {

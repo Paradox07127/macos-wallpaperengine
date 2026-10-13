@@ -175,35 +175,32 @@ public struct WPEParityProgramScene: Sendable {
         let texts = WPEParityTextObject.textObjects(in: document)
         var textAtlases: [String: WPEParityGlyphAtlasInstance] = [:]
         if !texts.isEmpty {
-            let planner = WPEParityTextPlanner(assets: assets)
+            let pipeline = WPEParityTextPipeline(assets: assets, hdr: flags.hdr,
+                                                 orthographic: flags.orthographicProjection)
             let schemas = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
             let first = sceneObjects.count
             for (index, text) in texts.enumerated() {
                 let schema = schemas[text.id]
                 let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
                                            materials: &materials, overridePasses: &overridePasses)
-                let effectCount = effects.count(where: \.enabled)
-                let (layout, atlasKey) = planner.plan(text, effectCount: effectCount)
+                pipeline.add(text, effectCount: effects.count(where: \.enabled))
+                guard let sceneText = pipeline.texts[text.id] else { continue }
                 if text.msdf || text.outline || text.blur || text.dropShadow {
                     diagnostics.append(.textGlyphEffectsIgnored(objectID: text.id))
                 }
                 let color = text.color * (flags.hdr ? text.brightness : 1)
                 layerColors[text.id] = SIMD4(color, text.alpha)
-                authoredObjects.append(WPEParityAuthoredObject(id: text.id, width: layout.fboSize.x,
-                                                               height: layout.fboSize.y, effects: effects))
-                let sceneText = WPEParitySceneText(object: text, effectCount: effectCount, layout: layout,
-                                                   atlasKey: atlasKey, hdr: flags.hdr,
-                                                   orthographic: flags.orthographicProjection)
+                authoredObjects.append(WPEParityAuthoredObject(id: text.id, width: sceneText.layout.fboSize.x,
+                                                               height: sceneText.layout.fboSize.y, effects: effects))
                 sceneObjects.append(.text(sceneText, sortKey: document.objectPaintOrder[text.id] ?? index,
                                           visible: Self.visible(text.id, document), parentID: schema?.parentObjectID))
             }
-            // A later object's glyphs may have doubled a shared atlas, halving the UVs planned before it.
+            pipeline.refreshUVs()
             for index in first ..< sceneObjects.count {
-                guard case var .text(text) = sceneObjects[index].kind else { continue }
-                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
+                guard let text = pipeline.texts[sceneObjects[index].id] else { continue }
                 sceneObjects[index].kind = .text(text)
             }
-            textAtlases = planner.atlases
+            textAtlases = pipeline.atlases
         }
         self.textAtlases = textAtlases
         let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)

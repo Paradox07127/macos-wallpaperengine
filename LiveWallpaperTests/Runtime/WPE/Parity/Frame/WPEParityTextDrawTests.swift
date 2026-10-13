@@ -1,6 +1,7 @@
 #if !LITE_BUILD && DEBUG
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -148,6 +149,65 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(bytes, atlas.pixels)
     }
 
+    func testTextUserPropertyRelaysTheLayerWithoutReloading() async throws {
+        let wpeAssets = try wpeAssets()
+        let scene = try Self.syntheticScene(effect: false, text: ["user": "caption", "value": "Hi"])
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
+        let cache = FileManager.default.temporaryDirectory.appending(path: "parity-text-cache",
+                                                                     directoryHint: .isDirectory)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let driver = try WPEParitySceneDriver(device: device)
+        try await driver.load(document: Self.parse(scene),
+                              assets: WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [wpeAssets]),
+                              settings: WPEParityProgramSettings(),
+                              drawableSize: CGSize(width: Self.width, height: Self.height), pixelFormat: .rgba8Unorm,
+                              compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: cache))
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        let generation = driver.loadGeneration
+        try await encode(renderer, label: "Hi")
+        let before = try XCTUnwrap(renderer.texts[Self.textID])
+
+        let patch = WPEScenePropertyPatch(bindingsByProperty: driver.userPropertyBindings,
+                                          oldValues: ["caption": .string("Hi")],
+                                          newValues: ["caption": .string("Hello")])
+        let changed = try Self.parse(scene, userValues: ["caption": .string("Hello")])
+        XCTAssertTrue(driver.prepareUserProperties(patch, document: changed))
+        XCTAssertTrue(driver.commitUserProperties(patch))
+        XCTAssertTrue(driver.renderer === renderer, "the renderer is not rebuilt")
+        XCTAssertEqual(driver.loadGeneration, generation, "the scene did not reload")
+        try await encode(renderer, label: "Hello")
+        XCTAssertEqual(renderer.skipped, [:])
+        let after = try XCTUnwrap(renderer.texts[Self.textID])
+        XCTAssertEqual(after.object.text, "Hello")
+        let pixels = try readBack(renderer.backbuffer, device: device, queue: queue)
+
+        let old = try glyphRect(before, document: changed)
+        let rect = try glyphRect(after, document: changed)
+        XCTAssertGreaterThan(rect.max.x - rect.min.x, old.max.x - old.min.x)
+        var (inside, outside, beyondOld) = (0, 0, 0)
+        for y in 0 ..< Self.height {
+            for x in 0 ..< Self.width {
+                let offset = (y * Self.width + x) * 4
+                guard pixels[offset ..< offset + 3].contains(where: { $0 != 0 }) else { continue }
+                if x >= rect.min.x, x < rect.max.x, y >= rect.min.y, y < rect.max.y {
+                    inside += 1
+                } else {
+                    outside += 1
+                }
+                if x < old.min.x || x >= old.max.x {
+                    beyondOld += 1
+                }
+            }
+        }
+        print("re-laid glyph block \(rect.min) ..< \(rect.max) (was \(old.min) ..< \(old.max)): covered inside "
+            + "\(inside), outside \(outside), beyond the old block \(beyondOld)")
+        XCTAssertGreaterThan(inside, 0)
+        XCTAssertEqual(outside, 0)
+        XCTAssertGreaterThan(beyondOld, 0, "the frame draws the new layout")
+    }
+
     // MARK: Helpers
 
     private func sceneText(_ plan: WPEParityFramePlan) throws -> WPEParitySceneText {
@@ -160,11 +220,16 @@ final class WPEParityTextDrawTests: XCTestCase {
     /// Pixel bounds of the glyph quads under the direct draw's MVP: anchor none, the layer model, the block offset
     /// and the glyph translation (140258050.c:145-179).
     private func glyphRect(_ plan: WPEParityFramePlan) throws -> (min: SIMD2<Int>, max: SIMD2<Int>) {
-        let text = try sceneText(plan)
+        try glyphRect(sceneText(plan), document: plan.document)
+    }
+
+    private func glyphRect(_ text: WPEParitySceneText,
+                           document: WPESceneDocument) throws -> (min: SIMD2<Int>, max: SIMD2<Int>) {
         let mesh = try XCTUnwrap(text.layout.mesh)
-        let layers = WPEParityLayerTransformSet(document: plan.document,
+        let layers = WPEParityLayerTransformSet(document: document,
                                                 renderTargetSize: SIMD2(Float(Self.width), Float(Self.height)),
-                                                textSizes: plan.scene.textSizes)
+                                                textSizes: [Self.textID: SIMD2(Float(text.layout.fboSize.x),
+                                                                               Float(text.layout.fboSize.y))])
         let layerModel = WPEParityTextMatrices.layerModel(layers.model(Self.textID), anchorOffset: .zero,
                                                           blockOffset: text.layout.blockOffset)
         let model = WPEParityTextMatrices.direct(layerModel: layerModel,
@@ -194,25 +259,33 @@ final class WPEParityTextDrawTests: XCTestCase {
         return assets
     }
 
-    /// One white 64 pt "Hi" at the canvas centre of a black orthographic scene without bloom; `effect` adds a tint.
-    private func makeSyntheticRenderer(effect: Bool) async throws -> Fixture {
-        let wpeAssets = try wpeAssets()
+    /// One white 64 pt `text` at the canvas centre of a black orthographic scene without bloom; `effect` adds a tint.
+    private static func syntheticScene(effect: Bool, text value: Any = "Hi") throws -> Data {
         var text: [String: Any] = [
-            "id": Int(Self.textID)!, "name": "hi", "text": "Hi", "font": "fonts/NotoSans-Regular.ttf",
-            "pointsize": 64, "color": "1 1 1", "origin": "\(Self.width / 2) \(Self.height / 2) 0",
+            "id": Int(textID)!, "name": "hi", "text": value, "font": "fonts/NotoSans-Regular.ttf",
+            "pointsize": 64, "color": "1 1 1", "origin": "\(width / 2) \(height / 2) 0",
         ]
         if effect {
             text["effects"] = [["file": "effects/tint/effect.json", "id": 7, "name": "tint", "visible": true]]
         }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
-            "general": ["orthogonalprojection": ["width": Self.width, "height": Self.height], "clearcolor": "0 0 0",
+            "general": ["orthogonalprojection": ["width": width, "height": height], "clearcolor": "0 0 0",
                         "bloom": false],
             "objects": [text],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in TextNoScripts() })
+        return try JSONSerialization.data(withJSONObject: scene)
+    }
+
+    private static func parse(_ scene: Data,
+                              userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) throws -> WPESceneDocument {
+        try WPESceneDocumentParser.parse(data: scene, userValues: userValues,
+                                         makeTransformScriptResolver: { _, _ in TextNoScripts() })
+    }
+
+    private func makeSyntheticRenderer(effect: Bool) async throws -> Fixture {
+        let wpeAssets = try wpeAssets()
+        let document = try Self.parse(Self.syntheticScene(effect: effect))
         // The tint effect keeps its material and shaders in its own folder.
         let assets = WPEParityProgramAssets(sceneDirectory: scratch,
                                             assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")])
@@ -282,10 +355,14 @@ final class WPEParityTextDrawTests: XCTestCase {
     }
 
     private func readBack(_ texture: MTLTexture, _ fixture: Fixture) throws -> [UInt8] {
+        try readBack(texture, device: fixture.device, queue: fixture.queue)
+    }
+
+    private func readBack(_ texture: MTLTexture, device: MTLDevice, queue: MTLCommandQueue) throws -> [UInt8] {
         let bytesPerRow = texture.width * 4
         let length = bytesPerRow * texture.height
-        let buffer = try XCTUnwrap(fixture.device.makeBuffer(length: length, options: .storageModeShared))
-        let commandBuffer = try XCTUnwrap(fixture.queue.makeCommandBuffer())
+        let buffer = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
+        let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
         let blit = try XCTUnwrap(commandBuffer.makeBlitCommandEncoder())
         blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                   sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer,

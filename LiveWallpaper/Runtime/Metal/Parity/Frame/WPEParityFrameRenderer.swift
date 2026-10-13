@@ -235,6 +235,27 @@ final class WPEParityFrameRenderer {
         planner.textAtlases.atlases
     }
 
+    /// Each text layer as its draws were last planned.
+    var texts: [String: WPEParitySceneText] {
+        planner.texts
+    }
+
+    /// Built on the first text change, from the layers and atlases as loaded.
+    private lazy var textPipeline = WPEParityTextPipeline(
+        assets: plan.scene.assets, hdr: plan.scene.engineFlags.hdr,
+        orthographic: plan.scene.engineFlags.orthographicProjection,
+        texts: plan.scene.scene.objects.compactMap { object in
+            if case let .text(text) = object.kind {
+                planner.texts[object.id] ?? text
+            } else {
+                nil
+            }
+        },
+        atlases: planner.textAtlases.atlases
+    )
+    /// Text layers re-laid since their draws were last planned.
+    private var relaidTexts: Set<String> = []
+
     /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
     /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
     /// particle batches, up to `maxParticleShare`. `workshopID` keys the video disk cache; nil uses the scene
@@ -408,9 +429,8 @@ final class WPEParityFrameRenderer {
         repackBloom()
     }
 
-    /// Writes a user-property change between frames; the next frame reads it like any state write. The script
-    /// path follows the descriptor bindings (1401731d0.c:143-840): `changedJSON` holds the changed project
-    /// properties, `mergedJSON` all of them.
+    /// Writes a user-property change between frames; changed text layers are re-laid now. `changedJSON` holds the
+    /// changed project properties, `mergedJSON` all of them (1401731d0.c:143-840).
     func applyUserProperties(_ update: WPEParityUserPropertyUpdate, changedJSON: String = "{}",
                              mergedJSON: String = "{}") {
         update.apply(to: &state)
@@ -418,6 +438,9 @@ final class WPEParityFrameRenderer {
         if update.bloom != bloom {
             bloom = update.bloom
             repackBloom()
+        }
+        for text in update.texts {
+            relaidTexts.formUnion(textPipeline.relayout(text))
         }
         script?.engine.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
     }
@@ -510,6 +533,46 @@ final class WPEParityFrameRenderer {
         return (corner(0, 0), corner(size.x, 0), corner(size.x, size.y), corner(0, size.y))
     }
 
+    /// Whether re-laying `texts` leaves the frame graph as it is, so their change needs no reload.
+    func canRelayoutLive(_ texts: [WPEParityTextObject]) -> Bool {
+        texts.allSatisfy(textPipeline.keepsFrameShape)
+    }
+
+    /// Re-plans the glyph and background draws of the re-laid text layers in the current graphs (R23 Q7).
+    private func replanRelaidTexts() throws {
+        guard !relaidTexts.isEmpty else { return }
+        defer { relaidTexts.removeAll() }
+        let pipeline = textPipeline
+        planner.updateTexts(relaidTexts.compactMap { pipeline.texts[$0] }, atlases: pipeline.atlases)
+        // The upload left the atlases clean.
+        pipeline.atlases = planner.textAtlases.atlases
+        let current = graphs.layout
+        let planned = current.effects == plan.state.effectVisibility ? plan.layout : try plan.layout(effects: state)
+        planner.use(planned)
+        var draws = current.draws
+        var skipped = current.skipped
+        for (index, draw) in planned.frames[0].draws {
+            guard case let .scene(scene) = draw, relaidTexts.contains(scene.objectID),
+                  scene.geometry == .textBackground || scene.geometry == .textGlyphs(.mono)
+                  || scene.geometry == .textGlyphs(.color), let program = planned.programs[index] else { continue }
+            let artifact = artifacts[program.hlsl] ?? .failure(.noShader("\(program.shader): not compiled at load"))
+            do throws(WPEParityFrameSkip) {
+                draws[index] = try planner.makePlan(index, artifact: artifact.get())
+                skipped[index] = nil
+            } catch {
+                draws[index] = nil
+                skipped[index] = error
+            }
+        }
+        let layout = Layout(effects: current.effects, frames: current.frames, draws: draws, skipped: skipped,
+                            fade: current.fade)
+        graphs = Graphs(layout: layout, hidden: graphs.hidden, executors: graphs.executors,
+                        operations: graphs.operations)
+        // Its text draws were planned from the old layouts.
+        retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
+        previousGraphs = nil
+    }
+
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
     /// `paused` ramps scene time down to a hold, and back up once it is false again.
     func encodeFrame(elapsed: Double, paused: Bool = false,
@@ -563,6 +626,7 @@ final class WPEParityFrameRenderer {
         applyTransforms()
         applyScriptBloom()
         try selectGraphs()
+        try replanRelaidTexts()
         let graphs = graphs
         let draws = graphs.layout.draws
         let live = layersMoved ? layers : nil

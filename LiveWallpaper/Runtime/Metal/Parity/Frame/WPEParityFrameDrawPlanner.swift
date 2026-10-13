@@ -338,10 +338,12 @@ struct WPEParityFrameDrawPlanner {
     private var pipelines: [PipelineKey: WPEParityPipeline] = [:]
     /// Pipeline states built, over the planner's life; draws with the same program and state share one.
     private(set) var pipelineCreations = 0
-    /// The text layers' atlas textures, uploaded at load.
+    /// The text layers' atlas textures, uploaded at load and after each re-layout.
     private(set) var textAtlases: WPEParityTextAtlasTextures
     /// Scene light terms; WPE writes them for every draw that declares them.
     private let lights: WPEParityUniformLights
+    /// Each text layer as last laid out, which its draws are planned from.
+    private(set) var texts: [String: WPEParitySceneText] = [:]
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
@@ -359,6 +361,21 @@ struct WPEParityFrameDrawPlanner {
                                             textSizes: plan.scene.textSizes, puppetModels: plan.scene.puppetModels)
         textAtlases = WPEParityTextAtlasTextures(atlases: plan.scene.textAtlases)
         textAtlases.upload(device: device)
+        for object in plan.scene.scene.objects {
+            if case let .text(text) = object.kind {
+                texts[object.id] = text
+            }
+        }
+    }
+
+    /// Takes re-laid text layers and their atlases, uploading the atlases that changed; later plans of their draws
+    /// read the new layouts.
+    mutating func updateTexts(_ changed: some Sequence<WPEParitySceneText>,
+                              atlases: [String: WPEParityGlyphAtlasInstance]) {
+        for text in changed {
+            texts[text.object.id] = text
+        }
+        textAtlases.replace(atlases, device: device)
     }
 
     /// Plans later draws from `layout`; loaded images and built pipelines carry over.
@@ -455,6 +472,11 @@ struct WPEParityFrameDrawPlanner {
             artifact.map { (stage, $0.reflection) }
         }
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
+        let text: WPEParitySceneText? = if case let .scene(draw) = description {
+            texts[draw.objectID]
+        } else {
+            nil
+        }
         for name in names.sorted() {
             guard name.hasPrefix("g_Texture"), let slot = Int32(name.dropFirst("g_Texture".count)) else {
                 throw .texture("\(shader) declares \(name)")
@@ -463,8 +485,13 @@ struct WPEParityFrameDrawPlanner {
                 guard case let .draw(operation) = layout.frames[variant].operations[index].kind else {
                     throw .pipeline("operation \(index) is not a draw in frame variant \(variant)")
                 }
+                // A re-laid layer's font or size may have moved it to another atlas.
+                var source = binding.textures[slot]
+                if case let .textAtlas(_, atlas)? = source, let text {
+                    source = .textAtlas(key: text.atlasKey, atlas: atlas)
+                }
                 do throws(WPEParityFrameSkip) {
-                    textures[variant][name] = try textureSource(binding.textures[slot], slot: slot, shader: shader,
+                    textures[variant][name] = try textureSource(source, slot: slot, shader: shader,
                                                                 reads: operation.reads.map(\.resource))
                 } catch .texture(_) where particleKey != nil {
                     textures[variant][name] = try .image(transparentTexture())
@@ -481,13 +508,6 @@ struct WPEParityFrameDrawPlanner {
             }
         }
 
-        let text: WPEParitySceneText? = if case let .scene(draw) = description,
-                                           let object = plan.scene.scene.objects.first(where: { $0.id == draw.objectID }),
-                                           case let .text(sceneText) = object.kind {
-            sceneText
-        } else {
-            nil
-        }
         // Post-process draws have no layer and keep the effect-pass matrices; particle draws place themselves per frame.
         let placement: WPEParityFrameDrawPlan.Placement? = switch description {
         case .scene where particleKey != nil: nil
