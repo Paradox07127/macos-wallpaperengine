@@ -76,6 +76,45 @@ public struct WPEParitySceneState: Sendable {
         var generation = 0
     }
 
+    /// The hook WPE's descriptor onChanged runs for a written field (R25 §2).
+    public enum Invalidation: Int, Sendable, CaseIterable {
+        case none
+        /// obj+0xd0 cleared; angles also rebuild the rotation first.
+        case transform
+        case visibility
+        /// Visible effects recounted and the layer's passes rebuilt.
+        case effectPasses
+        /// pass+0x1f8 set to 3: uploaded at the pass's next bind.
+        case materialConstants
+        /// scene+0xe0 bit31: bloom constants rebuilt after the script tick.
+        case bloom
+        /// Copied to Main+0x1298.
+        case lighting
+        /// instance+0x1b0 = 1, applied by the system's next update.
+        case particleInstance
+        case textLayout
+        /// Player vtable +0x68 (rate) or +0x70 (loop).
+        case mediaPlayer
+        /// Stream gain volume² × master.
+        case soundGain
+    }
+
+    /// A field only script descriptors write (R25 §3), keyed by descriptor name; `objectID` "" is the scene.
+    public struct ScriptFieldKey: Hashable, Sendable {
+        public var objectID: String
+        public var name: String
+
+        public init(objectID: String, name: String) {
+            self.objectID = objectID
+            self.name = name
+        }
+    }
+
+    public enum ScriptValue: Sendable, Equatable {
+        case vector(SIMD4<Float>)
+        case string(String)
+    }
+
     public let ids: [String]
     public private(set) var objects: [Object]
     /// HDR frames multiply the layer colour by brightness (R24 Q6).
@@ -90,6 +129,10 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var effectVisibility: [Bool]
     /// Bumped by every effect visible change.
     public private(set) var effectVisibilityGeneration = 0
+    /// Bumped by every material constant change of any pass.
+    public private(set) var constantsGeneration = 0
+    public private(set) var scriptFields: [ScriptFieldKey: ScriptValue] = [:]
+    private var scriptFieldGenerations = [Int](repeating: 0, count: Invalidation.allCases.count)
     private let indexByID: [String: Int]
     private let parents: [Int?]
     private var passes: [Pass]
@@ -282,6 +325,32 @@ public struct WPEParitySceneState: Sendable {
         guard passes[index].constants[name] != constant else { return }
         passes[index].constants[name] = constant
         passes[index].generation += 1
+        constantsGeneration += 1
+    }
+
+    /// The counter `invalidation` bumps; `.none` never moves.
+    public func generation(_ invalidation: Invalidation) -> Int {
+        switch invalidation {
+        case .none: 0
+        case .transform: transformGeneration
+        case .visibility: visibilityGeneration
+        case .effectPasses: effectVisibilityGeneration
+        case .materialConstants: constantsGeneration
+        default: scriptFieldGenerations[invalidation.rawValue]
+        }
+    }
+
+    public func scriptField(_ name: String, of objectID: String) -> ScriptValue? {
+        scriptFields[ScriptFieldKey(objectID: objectID, name: name)]
+    }
+
+    /// A changed value bumps `generation(invalidation)`.
+    public mutating func setScriptField(_ name: String, of objectID: String, to value: ScriptValue,
+                                        invalidating invalidation: Invalidation) {
+        let key = ScriptFieldKey(objectID: objectID, name: name)
+        guard scriptFields[key] != value else { return }
+        scriptFields[key] = value
+        scriptFieldGenerations[invalidation.rawValue] += 1
     }
 
     /// The pass's constants by material key name.
