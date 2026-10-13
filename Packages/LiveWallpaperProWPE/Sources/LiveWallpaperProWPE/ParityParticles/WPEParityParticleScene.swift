@@ -11,6 +11,7 @@ public struct WPEParityParticleScene {
 
     private(set) var objects: [Object] = []
     private var indexByID: [String: Int] = [:]
+    private var seenScriptFieldsGeneration = 0
 
     /// `engineFlags` supplies the 2D defaults (orthographic projection, R22 Q8) and the HDR bit for brightness
     /// overrides. Each object prewarms with `frames[id]` (default context when absent) before the next is created.
@@ -31,7 +32,7 @@ public struct WPEParityParticleScene {
                                                  resolveChild: assets.json, resolveMaterial: resolveMaterial)
             var frame = frames[particle.id] ?? WPEParityParticleFrameContext()
             frame.worldSpace = config.flags & 1 != 0
-            let instance = WPEParityParticleSystem.Instance(particle.instanceOverride, json: json, hdr: engineFlags.hdr)
+            let instance = WPEParityParticleSystem.Instance(particle.instanceOverride, hdr: engineFlags.hdr)
             indexByID[particle.id] = objects.count
             objects.append(Object(id: particle.id, system: WPEParityParticleSystem(
                 config: config, instance: instance, rng: rng, crt: crt, context: frame
@@ -42,6 +43,23 @@ public struct WPEParityParticleScene {
     /// The low 32 bits of milliseconds since 1970 (R22 Q7).
     public static func productSeed(now: Date = Date()) -> UInt32 {
         UInt32(truncatingIfNeeded: Int64(now.timeIntervalSince1970 * 1000))
+    }
+
+    /// Applies the typed instance fields before the next object update (R25 §2; 140230650:55–64). Neither live
+    /// slots nor RNG/emitter/history state are rebuilt. The general field generation includes rate, which has
+    /// no native dirty hook; unchanged fields therefore require no object walk or parameter work.
+    @discardableResult
+    public mutating func applyScriptInstanceFields(state: WPEParitySceneState) -> [String] {
+        guard seenScriptFieldsGeneration != state.scriptFieldsGeneration else { return [] }
+        var changed: [String] = []
+        for index in objects.indices {
+            let id = objects[index].id
+            if objects[index].system.applyScriptInstanceFields(state: state, objectID: id) {
+                changed.append(id)
+            }
+        }
+        seenScriptFieldsGeneration = state.scriptFieldsGeneration
+        return changed
     }
 
     /// Steps every object in `objects` order. An object without a context is hidden: it is not stepped, and while its

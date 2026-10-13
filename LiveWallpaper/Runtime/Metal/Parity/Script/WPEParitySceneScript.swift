@@ -7,12 +7,38 @@ import simd
 /// One scene's SceneScript engine and the host inputs it reads each frame (R25 §1, §4). Confined to the renderer's
 /// actor, like the renderer that drives it.
 final class WPEParitySceneScript {
+    /// Product policy keeps SceneScript storage within this scene lifetime (10-01 user decision).
+    /// Pass the same instance through a resize/replan; it deliberately writes no disk state.
+    final class Storage {
+        private var values = [[String: String](), [String: String]()]
+
+        var provider: WPEParityScriptEngine.Storage {
+            WPEParityScriptEngine.Storage(
+                get: { [self] key, location in values[Self.index(location)][key] },
+                set: { [self] key, text, location in values[Self.index(location)][key] = text },
+                delete: { [self] key, location in values[Self.index(location)].removeValue(forKey: key) != nil },
+                clear: { [self] location in values[Self.index(location)].removeAll(); return true }
+            )
+        }
+
+        private static func index(_ location: WPEParityScriptEngine.Storage.Location) -> Int {
+            switch location {
+            case .global: 0
+            case .screen: 1
+            }
+        }
+    }
+
     /// What the product connects: merged user properties, the usershortcut launcher and the now-playing events.
     struct Host {
         /// project.json `general.properties` with the user's values, `{key: {type, value, …}}`.
         var userPropertiesJSON = "{}"
         var openUserShortcut: (String) -> Bool = { _ in false }
         var media: WPESceneMediaEventMailbox?
+        var storage = Storage()
+        var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
+        var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
+        var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -23,6 +49,7 @@ final class WPEParitySceneScript {
     }
 
     let engine: WPEParityScriptEngine
+    let storage: Storage
     /// Some binding exports a cursor handler, which turns the cursor pass on (140175880.c:377-379).
     let handlesCursor: Bool
     /// Some binding exports a media handler, which subscribes the engine to media events (140175880.c:373-375).
@@ -52,12 +79,18 @@ final class WPEParitySceneScript {
     }
 
     init(document: WPESceneDocument, state: WPEParitySceneState, assets: WPEParityProgramAssets,
-         canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>, host: Host) throws {
+         canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
+         materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:],
+         fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:], host: Host) throws {
+        storage = host.storage
+        let defaults = Self.generalFields(document.resolvedGeneralJSON).merging(fieldDefaults) { _, value in value }
         engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
-            userPropertiesJSON: host.userPropertiesJSON,
+            userPropertiesJSON: host.userPropertiesJSON, materialConstants: materialConstants,
+            fieldDefaults: defaults, storage: host.storage.provider,
+            createLayer: host.createLayer, destroyLayer: host.destroyLayer, sortLayer: host.sortLayer,
             log: { level, message in
-                if level >= 2 {
+                if level >= 1 {
                     Logger.warning("SceneScript: \(message)", category: .wpeRender)
                 }
             },
@@ -129,6 +162,54 @@ final class WPEParitySceneScript {
               state: inout WPEParitySceneState) {
         engine.tick(dt: dt, input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay),
                     state: &state)
+    }
+
+    func prepareFrame(frame: UInt64, dt: Float, runtime: Float, cursor: SIMD2<Float>, world: SIMD3<Float>,
+                      leftDown: Bool, timeOfDay: Float) {
+        engine.prepareFrame(frame: frame, dt: dt, runtime: runtime,
+                            input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay))
+    }
+
+    func resize(canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>, state: inout WPEParitySceneState) {
+        engine.resize(canvasSize: canvasSize, screenResolution: screenResolution, state: &state)
+    }
+
+    /// Read native seeds from the authored/resolved JSON. Parser defaults currently differ from Windows H05.
+    private static func generalFields(_ general: WPESceneJSONValue)
+        -> [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
+        func components(_ value: WPESceneJSONValue?) -> [Float]? {
+            switch value {
+            case let .object(entries)?: return components(entries["value"])
+            case let .number(number)?: return [Float(number)]
+            case let .string(text)?:
+                let tokens = text.split { $0.isWhitespace || $0 == "," }
+                let parsed = tokens.compactMap { Float($0) }
+                return parsed.count == tokens.count ? parsed : nil
+            case let .array(values)?:
+                var result: [Float] = []
+                for value in values {
+                    guard case let .number(number) = value else { return nil }
+                    result.append(Float(number))
+                }
+                return result
+            default: return nil
+            }
+        }
+        let native: [(String, SIMD4<Float>)] = [
+            ("bloomstrength", SIMD4(2, 0, 0, 0)), ("bloomthreshold", SIMD4(0.65, 0, 0, 0)),
+            ("ambientcolor", .zero), ("skylightcolor", .zero),
+        ]
+        return Dictionary(uniqueKeysWithValues: native.map { name, fallback in
+            var value = fallback
+            if let parsed = components(general[name]), !parsed.isEmpty {
+                value = .zero
+                for (lane, number) in parsed.prefix(4).enumerated() {
+                    value[lane] = number
+                }
+            }
+            return (WPEParitySceneState.ScriptFieldKey(objectID: "", name: name),
+                    WPEParitySceneState.ScriptValue.vector(value))
+        })
     }
 
     /// Refreshes the registerAudioBuffers bins from the frame's spectrum: 64 as published, 32 and 16 max-pooled

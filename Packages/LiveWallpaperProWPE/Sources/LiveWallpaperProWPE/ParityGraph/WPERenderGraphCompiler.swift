@@ -8,6 +8,7 @@ public enum WPEParityGraphError: Error, Hashable, Sendable {
     case feedbackLoop(operation: Int)
     case incompatibleCopy(operation: Int)
     case invalidResolve(operation: Int)
+    case incompatibleSwap(operation: Int)
 }
 
 /// Compiles one structural generation of a WPE frame. Authored order is never changed:
@@ -15,16 +16,38 @@ public enum WPEParityGraphError: Error, Hashable, Sendable {
 /// only folded into an encoder when nothing in between touches its source or destination.
 public enum WPERenderGraphCompiler {
     public static func compile(resources: [WPELogicalResource],
-                               operations: [WPERenderOperation]) throws(WPEParityGraphError) -> WPECompiledRenderGraph {
+                               operations: [WPERenderOperation], excludingDraws: Set<Int> = [],
+                               drawReads: [Int: [WPETextureView]] = [:],
+                               discardableHistory: Set<WPEResourceID> = []) throws(WPEParityGraphError)
+        -> WPECompiledRenderGraph {
         var table: [WPEResourceID: WPELogicalResource] = [:]
         for resource in resources where table.updateValue(resource, forKey: resource.id) != nil {
             throw .duplicateResource(resource.id)
         }
-        let normalized = try normalize(operations, table)
+        // Final draw preparation owns readiness and the reflected read set. Keep operation indices stable so
+        // diagnostics and the provider still refer to the authored stream, but skipped draws have no accesses.
+        let operations = operations.enumerated().map { index, operation in
+            guard case let .draw(draw) = operation.kind, let reads = drawReads[index] else { return operation }
+            return WPERenderOperation(pass: operation.pass, .draw(WPEDrawOperation(
+                reads: reads, readsDestination: draw.readsDestination, overwritesTargets: draw.overwritesTargets,
+                depthTest: draw.depthTest, depthWrite: draw.depthWrite, state: draw.state
+            )))
+        }
+        let normalized = try normalize(operations, table, excludingDraws: excludingDraws)
         let versions = Versioning(normalized)
         var builders = formEncoders(normalized)
         foldResolves(&builders, normalized, versions)
-        let (steps, downgraded) = deriveActions(builders, normalized, versions, table)
+        let swapped = Set(operations.flatMap { operation -> [WPEResourceID] in
+            if case let .swapResources(first, second) = operation.kind {
+                return [first, second]
+            }
+            if case let .resourceScope(_, resources) = operation.kind {
+                return resources
+            }
+            return []
+        })
+        let (steps, downgraded) = deriveActions(builders, normalized, versions, table,
+                                                discardableHistory: discardableHistory.subtracting(swapped))
         var stepOf: [Int: Int] = [:]
         for (index, step) in steps.enumerated() {
             for operation in step.operations {
@@ -32,7 +55,7 @@ public enum WPERenderGraphCompiler {
             }
         }
         let lifetimes = lifetimes(steps)
-        let (storage, groups) = allocate(steps, normalized, lifetimes, table, downgraded)
+        let (storage, groups) = allocate(steps, normalized, lifetimes, table, downgraded, swapped: swapped)
         return WPECompiledRenderGraph(
             resources: table, operations: operations, accesses: versions.accesses, steps: steps,
             dependencies: dependencies(steps, stepOf), lifetimes: lifetimes, storage: storage, allocationGroups: groups
@@ -80,7 +103,8 @@ private enum Normalized {
 }
 
 private func normalize(_ operations: [WPERenderOperation],
-                       _ table: [WPEResourceID: WPELogicalResource]) throws(WPEParityGraphError) -> [Normalized] {
+                       _ table: [WPEResourceID: WPELogicalResource],
+                       excludingDraws: Set<Int>) throws(WPEParityGraphError) -> [Normalized] {
     var colors: [WPESubresource] = []
     var depth: WPESubresource?
     var result: [Normalized] = []
@@ -124,6 +148,10 @@ private func normalize(_ operations: [WPERenderOperation],
         case let .clearDepth(view, value):
             try result.append(.clear(single(view), .depth(value)))
         case let .draw(draw):
+            if excludingDraws.contains(index) {
+                result.append(.state)
+                continue
+            }
             guard !colors.isEmpty || depth != nil else { throw .drawWithoutTargets(operation: index) }
             var samples: [WPESubresource] = []
             for view in draw.reads {
@@ -143,6 +171,22 @@ private func normalize(_ operations: [WPERenderOperation],
             let mips = try allMips(sourceID)
             result.append(.transfer(.copy(source: sourceID, destination: destinationID),
                                     reads: mips, writes: mips.map { WPESubresource(destinationID, mip: $0.mip) }))
+        case let .swapResources(first, second):
+            let (a, b) = try (resource(first), resource(second))
+            guard first != second, a.width == b.width, a.height == b.height, a.format == b.format,
+                  a.sampleCount == b.sampleCount, a.mipCount == b.mipCount else {
+                throw .incompatibleSwap(operation: index)
+            }
+            let touched = try allMips(first) + allMips(second)
+            result.append(.transfer(.swapResources(first: first, second: second), reads: touched, writes: touched))
+        case let .resourceScope(scope, resources):
+            var touched: [WPESubresource] = []
+            for id in resources {
+                try touched += allMips(id)
+            }
+            // Versions describe the contents bound to each logical view. Scope changes, like swaps, change those
+            // identities without copying pixels; account for all possible preserved physical versions.
+            result.append(.transfer(.resourceScope(scope: scope, resources: resources), reads: touched, writes: touched))
         case let .generateMips(id):
             let mips = try allMips(id)
             result.append(.transfer(.generateMips(id), reads: [mips[0]], writes: Array(mips.dropFirst())))
@@ -294,7 +338,8 @@ private func foldResolves(_ steps: inout [StepBuilder], _ operations: [Normalize
 // MARK: - 5. Attachment actions
 
 private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized], _ versions: Versioning,
-                           _ table: [WPEResourceID: WPELogicalResource])
+                           _ table: [WPEResourceID: WPELogicalResource],
+                           discardableHistory: Set<WPEResourceID>)
     -> (steps: [WPECompiledStep], downgraded: Set<WPEResourceID>) {
     struct Pending {
         var reads: [WPEResourceVersion]
@@ -346,6 +391,7 @@ private func deriveActions(_ builders: [StepBuilder], _ operations: [Normalized]
     // Every mip is written and no step observes frame-entry contents (sample, load or transfer read).
     let downgraded = Set(table.values.filter { resource in
         resource.lifetime == .pooled
+            && discardableHistory.contains(resource.id)
             && (0 ..< resource.mipCount).allSatisfy { versions.final[WPESubresource(resource.id, mip: $0)] != nil }
             && !readers.keys.contains { $0.subresource.resource == resource.id && $0.revision == 0 }
     }.map(\.id))
@@ -465,11 +511,15 @@ private func lifetimes(_ steps: [WPECompiledStep]) -> [WPEResourceID: ClosedRang
 
 private func allocate(_ steps: [WPECompiledStep], _ operations: [Normalized],
                       _ lifetimes: [WPEResourceID: ClosedRange<Int>], _ table: [WPEResourceID: WPELogicalResource],
-                      _ downgraded: Set<WPEResourceID>)
+                      _ downgraded: Set<WPEResourceID>, swapped: Set<WPEResourceID>)
     -> ([WPEResourceID: WPEResourceStorage], [[WPEResourceID]]) {
     var storage: [WPEResourceID: WPEResourceStorage] = [:]
     var scratch: [(id: WPEResourceID, range: ClosedRange<Int>)] = []
     for resource in table.values {
+        if swapped.contains(resource.id) {
+            storage[resource.id] = .dedicated
+            continue
+        }
         switch downgraded.contains(resource.id) ? .frameTransient : resource.lifetime {
         case .persistent, .pooled, .output:
             storage[resource.id] = .dedicated

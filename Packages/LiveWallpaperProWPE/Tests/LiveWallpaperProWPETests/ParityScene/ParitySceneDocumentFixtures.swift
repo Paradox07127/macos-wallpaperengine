@@ -8,6 +8,7 @@ enum ParitySceneDocuments {
         let id: String
         var visible = true
         var fbos: [[String: Any]] = []
+        var combos: [String: Any] = [:]
         var passes: [[String: Any]]
     }
 
@@ -43,8 +44,8 @@ enum ParitySceneDocuments {
     }
 
     static func effect(_ id: String = "1", visible: Bool = true, fbos: [[String: Any]] = [],
-                       passes: [[String: Any]]) -> Effect {
-        Effect(id: id, visible: visible, fbos: fbos, passes: passes)
+                       passes: [[String: Any]], combos: [String: Any] = [:]) -> Effect {
+        Effect(id: id, visible: visible, fbos: fbos, combos: combos, passes: passes)
     }
 
     static func layer(_ id: String = "7", width: Double = 400, height: Double = 200, image: String? = nil,
@@ -89,7 +90,7 @@ enum ParitySceneDocuments {
                 let file = effectFile(layer, effect)
                 try write(file, ["fbos": effect.fbos, "passes": effect.passes])
                 materials.formUnion(effect.passes.compactMap { $0["material"] as? String })
-                authored.append(["id": Int(effect.id) ?? 0, "file": file, "visible": effect.visible])
+                authored.append(["id": Int(effect.id) ?? 0, "file": file, "visible": effect.visible, "combos": effect.combos])
             }
             object["effects"] = authored
             sceneObjects.append(object)

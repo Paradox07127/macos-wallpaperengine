@@ -167,15 +167,26 @@ final class ParityGlyphAtlasTests: XCTestCase {
     func testDirtyFlagFollowsPixelChangesOnly() throws {
         var atlas = WPEParityGlyphAtlas(format: .r8)
         XCTAssertFalse(atlas.isDirty)
+        XCTAssertEqual(atlas.contentGeneration, 0)
 
         let entry = try XCTUnwrap(atlas.insert(key: 1, bitmap: gray(4, 4)))
         XCTAssertTrue(atlas.isDirty)
         XCTAssertTrue(atlas.takeDirty())
         XCTAssertFalse(atlas.takeDirty())
+        let uploaded = atlas.contentGeneration
+        XCTAssertGreaterThan(uploaded, 0)
 
         XCTAssertEqual(atlas.entry(forKey: 1), entry)
         XCTAssertEqual(atlas.insert(key: 1, bitmap: gray(4, 4)), entry)
         XCTAssertFalse(atlas.isDirty)
+        atlas.retain([1])
+        atlas.release([1])
+        XCTAssertEqual(atlas.contentGeneration, uploaded, "reference changes do not create a pixel version")
+        atlas.reset()
+        XCTAssertEqual(atlas.contentGeneration, uploaded, "reset retains the pixel buffer")
+        XCTAssertFalse(atlas.isDirty)
+        _ = try XCTUnwrap(atlas.insert(key: 2, bitmap: gray(4, 4, seed: 9)))
+        XCTAssertGreaterThan(atlas.contentGeneration, uploaded)
     }
 
     func testInstanceKeysAndAtlasRouting() {

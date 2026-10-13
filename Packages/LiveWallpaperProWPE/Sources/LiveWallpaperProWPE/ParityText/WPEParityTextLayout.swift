@@ -85,6 +85,8 @@ public struct WPEParityTextGlyphMesh: Hashable, Sendable {
     public var indices: [UInt16] = []
     /// Per quad: the face's index in the font chain << 24 | glyph id. The atlas fills the quad's UVs from it.
     public var glyphKeys: [UInt32] = []
+    /// Reset epoch in which these keys acquired references. A stale mesh keeps this alongside its old UVs.
+    public var atlasResetGeneration: UInt64?
 
     mutating func appendQuad(key: UInt32, x0: Float, x1: Float, top: Float, bottom: Float) {
         let base = UInt16(truncatingIfNeeded: glyphKeys.count * 4)
@@ -446,7 +448,7 @@ private struct WPEParityTextLayouter {
         for run in splitRuns(text) {
             let face = chain.faces[run.faceIndex]
             for (info, position) in shape(run) {
-                guard let box = face.glyphBox(info.codepoint) else { continue }
+                guard let box = face.layoutGlyph(info.codepoint)?.box else { continue }
                 right = Float(position.x_offset >> 6) + pen + Float(box.xMax)
                 pen += Float(position.x_advance >> 6)
             }

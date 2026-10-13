@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// User and device state that feeds WPE's global combos (Main+0x118 / Main+0x128).
@@ -125,7 +126,7 @@ public struct WPEParityProgramScene: Sendable {
             let objectWidth = fullscreen ? width : image.size.map { Int($0.width.rounded()) } ?? width
             let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
-                                       materials: &materials, overridePasses: &overridePasses)
+                                       materials: &materials, overridePasses: &overridePasses, authored: authored)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
@@ -207,7 +208,8 @@ public struct WPEParityProgramScene: Sendable {
             for (index, text) in texts.enumerated() {
                 let schema = schemas[text.id]
                 let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
-                                           materials: &materials, overridePasses: &overridePasses)
+                                           materials: &materials, overridePasses: &overridePasses,
+                                           authored: authoredByID[text.id])
                 pipeline.add(text, effectCount: effects.count(where: \.enabled))
                 guard let sceneText = pipeline.texts[text.id] else { continue }
                 if text.msdf || text.outline || text.blur || text.dropShadow {
@@ -270,10 +272,15 @@ public struct WPEParityProgramScene: Sendable {
 
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
     /// load with that set gives them.
-    public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool)
+    public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool,
+                      textSizes: [String: SIMD2<Int>] = [:])
         -> WPEParitySceneDescription {
         var authored = authoredObjects
         for object in authored.indices {
+            if let size = textSizes[authored[object].id] {
+                authored[object].width = size.x
+                authored[object].height = size.y
+            }
             for effect in authored[object].effects.indices {
                 authored[object].effects[effect].enabled = visible(authored[object].id,
                                                                    authored[object].effects[effect].id)
@@ -283,6 +290,10 @@ public struct WPEParityProgramScene: Sendable {
         var description = scene
         var diagnostics: [WPEParitySceneDiagnostic] = []
         for index in authored.indices {
+            if let size = textSizes[authored[index].id] {
+                description.objects[index].width = size.x
+                description.objects[index].height = size.y
+            }
             description.objects[index].effects = scope.effects(of: authored[index], diagnostics: &diagnostics)
         }
         return description
@@ -301,11 +312,15 @@ public struct WPEParityProgramScene: Sendable {
     /// Loads each effect file and records the merged material of every pass under `objectID`.
     private static func effects(_ effects: [WPESceneImageEffect], objectID: String, assets: WPEParityProgramAssets,
                                 materials: inout [MaterialKey: WPEParityProgramMaterial],
-                                overridePasses: inout [MaterialKey: Int]) -> [WPEParityAuthoredEffect] {
+                                overridePasses: inout [MaterialKey: Int],
+                                authored: WPESceneJSONValue? = nil) -> [WPEParityAuthoredEffect] {
         var loaded: [WPEParityAuthoredEffect] = []
         for effect in effects {
             guard let file = assets.json(effect.fileRelativePath) else { continue }
-            let result = Self.effect(effect, file: file, assets: assets)
+            let configuration = Self.array(authored?["effects"]).first {
+                (Self.string($0["id"]) ?? Self.number($0["id"]).map { String(Int($0)) }) == effect.id
+            }
+            let result = Self.effect(effect, file: file, assets: assets, combos: configuration?["combos"])
             loaded.append(result.effect)
             for (source, material, pass) in result.materials {
                 let key = MaterialKey(objectID: objectID, effectID: effect.id, source: source)
@@ -444,35 +459,45 @@ public struct WPEParityProgramScene: Sendable {
         return true
     }
 
-    private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets)
+    private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets,
+                               combos: WPESceneJSONValue?)
         -> (effect: WPEParityAuthoredEffect,
             materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)]) {
         let filePasses = array(file["passes"])
         var swapPartners: [String: String] = [:]
-        for pass in filePasses where string(pass["command"]) == "swap" {
+        for pass in filePasses where string(pass["command"]) == "swap"
+            && WPEParityAuthoredFBO.conditionsMatch(pass["conditions"], combos: combos) {
             guard let first = string(pass["source"]), let second = string(pass["target"]) else { continue }
             swapPartners[first] = second
             swapPartners[second] = first
         }
         var fbos: [WPEParityAuthoredFBO] = []
         for case let .object(fbo) in array(file["fbos"]) {
+            guard WPEParityAuthoredFBO.conditionsMatch(fbo["conditions"], combos: combos) else { continue }
             guard let name = string(fbo["name"]) else { continue }
-            fbos.append(WPEParityAuthoredFBO(name: name, scale: number(fbo["scale"]) ?? 1, fit: number(fbo["fit"]),
+            fbos.append(WPEParityAuthoredFBO(name: name, scale: fboNumber(fbo["scale"]) ?? 1, fit: fboNumber(fbo["fit"]),
                                              format: string(fbo["format"]) ?? "rgba8888",
                                              swapPartner: swapPartners[name],
-                                             unique: fbo["unique"] == .bool(true)))
+                                             unique: fbo["unique"] == .bool(true),
+                                             explicitWidth: fboNumber(fbo["width"]), explicitHeight: fboNumber(fbo["height"]),
+                                             initialClear: fboClear(fbo["clear"]), repeats: string(fbo["uvs"]) == "repeat"))
         }
         var passes: [WPEParityAuthoredPass] = []
         var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)] = []
         var materialIndex = 0
         for (passIndex, pass) in filePasses.enumerated() {
+            guard WPEParityAuthoredFBO.conditionsMatch(pass["conditions"], combos: combos) else { continue }
             if let command = string(pass["command"]) {
-                // A swap is carried by the FBOs' swap partners.
-                guard command == "copy" else { continue }
-                let source = string(pass["source"]).flatMap { $0 == "previous" ? nil : $0 }
-                passes.append(WPEParityAuthoredPass(kind: .copy(source: source), shader: "commands/copy",
-                                                    target: string(pass["target"]), textures: [], compose: false,
-                                                    blend: .normal, source: nil))
+                if command == "swap", let first = string(pass["source"]), let second = string(pass["target"]) {
+                    passes.append(WPEParityAuthoredPass(kind: .swap(first: first, second: second),
+                                                        shader: "commands/swap", target: nil, textures: [],
+                                                        compose: false, blend: .normal, source: nil))
+                } else if command == "copy" {
+                    let source = string(pass["source"]).flatMap { $0 == "previous" ? nil : $0 }
+                    passes.append(WPEParityAuthoredPass(kind: .copy(source: source), shader: "commands/copy",
+                                                        target: string(pass["target"]), textures: [], compose: false,
+                                                        blend: .normal, source: nil))
+                }
                 continue
             }
             guard let path = string(pass["material"]),
@@ -484,6 +509,7 @@ public struct WPEParityProgramScene: Sendable {
             }
             materialIndex += 1
             for case let .object(bind) in array(pass["bind"]) {
+                guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos) else { continue }
                 guard let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
                 material.textures[Int32(index)] = name
             }
@@ -503,6 +529,37 @@ public struct WPEParityProgramScene: Sendable {
             materials.append((source, material, materialIndex - 1))
         }
         return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials)
+    }
+
+    private static func fboNumber(_ value: WPESceneJSONValue?) -> Double? {
+        guard case let .number(number)? = value else { return nil }
+        return number
+    }
+
+    /// 1401e7170:245-324: four atof floats separated by ASCII spaces. Arrays are not a clear declaration, and a
+    /// nonempty string without all three separators does not set the native clear flag.
+    private static func fboClear(_ value: WPESceneJSONValue?) -> WPEClearColor? {
+        guard case let .string(text)? = value else { return nil }
+        return text.withCString { start in
+            if start.pointee == 0 {
+                return WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            }
+            var cursor = start
+            var channels: [Double] = []
+            for index in 0 ..< 4 {
+                channels.append(Double(Float(atof(cursor))))
+                if index < 3 {
+                    while cursor.pointee != 0, cursor.pointee != 32 {
+                        cursor += 1
+                    }
+                    guard cursor.pointee != 0 else { return nil }
+                    while cursor.pointee == 32 {
+                        cursor += 1
+                    }
+                }
+            }
+            return WPEClearColor(red: channels[0], green: channels[1], blue: channels[2], alpha: channels[3])
+        }
     }
 
     static func array(_ value: WPESceneJSONValue?) -> [WPESceneJSONValue] {

@@ -54,8 +54,8 @@ final class ParityScriptPropertyTests: XCTestCase {
         try check(XCTUnwrap(Property.material(name: "k", components: 2)), .vector(SIMD4(1, 2, 0, 0)),
                   pass: WPEParityMaterialPassKey(objectID: "1", effectID: "5"), expect: .materialConstants)
         check(Property.effectVisible, .vector(.zero), effect: "5", expect: .effectPasses)
-        check(Self.row("bloomStrength", in: Property.scene), scalar, objectID: "", expect: .bloom)
-        check(Self.row("ambientColor", in: Property.scene), vector, objectID: "", expect: .lighting)
+        check(Self.row("bloomstrength", in: Property.scene), scalar, objectID: "", expect: .bloom)
+        check(Self.row("ambientcolor", in: Property.scene), vector, objectID: "", expect: .lighting)
         check(Self.row("count", in: Property.particleInstance), scalar, expect: .particleInstance)
         check(Self.row("rate", in: Property.particleInstance), scalar, expect: .none)
         check(Self.row("fov", in: Property.camera), scalar, expect: .none)

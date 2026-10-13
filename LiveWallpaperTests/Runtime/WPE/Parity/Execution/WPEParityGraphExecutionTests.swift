@@ -19,6 +19,192 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testRendererKeepsAuthoredClearAndSwapHistoryAcrossVisibilityAndEffectCaches() async throws {
+        let harness = try makeHarness()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-renderer-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let renderer = try await commandRenderer(harness, directory: directory, authoredClear: true)
+        let output = try XCTUnwrap(renderer.targets["O_7"])
+        try await submit(renderer)
+        try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
+        XCTAssertTrue(renderer.state.set(.visible, of: "900", to: .zero))
+        try await submit(renderer)
+        try assertEvery(readBack(harness, output), equals: [0, 255, 0, 255])
+        XCTAssertTrue(renderer.state.set(.visible, of: "900", to: .one))
+        try await submit(renderer)
+        try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
+        XCTAssertTrue(renderer.state.setEffect("7", of: "1", visible: false))
+        for _ in 0 ..< 2 {
+            try await submit(renderer)
+            try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
+        }
+        XCTAssertTrue(renderer.state.setEffect("7", of: "1", visible: true))
+        try await submit(renderer)
+        try assertEvery(readBack(harness, output), equals: [0, 255, 0, 255])
+    }
+
+    func testRendererResizePreservesCompatibleUnclearedHistoryAndBindingIdentity() async throws {
+        let harness = try makeHarness()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-resize-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = try await commandRenderer(harness, directory: directory, authoredClear: false)
+        let (a, b) = try (XCTUnwrap(original.targets["A_7"]), XCTUnwrap(original.targets["B_7"]))
+        try seedHistory(harness, a: a, b: b, first: .init(red: 1, green: 0, blue: 0, alpha: 1),
+                        second: .init(red: 0, green: 1, blue: 0, alpha: 1))
+        try await submit(original) // Its effect now binds logical A to physical B.
+        let resized = try await commandRenderer(harness, directory: directory, authoredClear: false, width: 8, height: 8)
+        try resized.continueScene(from: original)
+        XCTAssertTrue(resized.targets["A_7"] === a)
+        XCTAssertTrue(resized.targets["B_7"] === b)
+        try await submit(resized)
+        try assertEvery(readBack(harness, XCTUnwrap(resized.targets["O_7"])), equals: [0, 255, 0, 255])
+    }
+
+    func testRendererResizeReappliesAuthoredClearEvenWhenTheFBODescriptorIsUnchanged() async throws {
+        let harness = try makeHarness()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-resize-clear-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = try await commandRenderer(harness, directory: directory, authoredClear: true)
+        try await submit(original)
+        let (a, b) = try (XCTUnwrap(original.targets["A_7"]), XCTUnwrap(original.targets["B_7"]))
+        try seedHistory(harness, a: a, b: b, first: .init(red: 0, green: 0, blue: 1, alpha: 1),
+                        second: .init(red: 1, green: 0, blue: 1, alpha: 1))
+        let resized = try await commandRenderer(harness, directory: directory, authoredClear: true, width: 8, height: 8)
+        try resized.continueScene(from: original)
+        try await submit(resized)
+        // Native resize clears flagged FBOs even if their explicit size stays 4x4. The effect's saved swap still
+        // selects B's restored green, rather than the magenta pixels written before resize.
+        try assertEvery(readBack(harness, XCTUnwrap(resized.targets["O_7"])), equals: [0, 255, 0, 255])
+    }
+
+    func testOverlappingSwapsExecuteInOrderAndCarryBindingsAcrossSubmissions() throws {
+        let harness = try makeHarness()
+        let histories = [resource("A", .pooled), resource("B", .pooled), resource("C", .pooled)]
+        let (a, b, c) = try (makeTexture(harness), makeTexture(harness), makeTexture(harness))
+        try execute(harness, WPERenderGraphCompiler.compile(resources: histories, operations: [
+            clear("A", .init(red: 1, green: 0, blue: 0, alpha: 1)),
+            clear("B", .init(red: 0, green: 1, blue: 0, alpha: 1)),
+            clear("C", .init(red: 0, green: 0, blue: 1, alpha: 1)),
+        ]), external: ["A": a, "B": b, "C": c], draws: [:])
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: histories + [resource("O0", .persistent), resource("O1", .persistent), resource("O2", .persistent)],
+            operations: [op(.copy(source: "A", destination: "O0")),
+                         op(.swapResources(first: "A", second: "B")),
+                         op(.copy(source: "A", destination: "O1")),
+                         op(.swapResources(first: "B", second: "C")),
+                         op(.copy(source: "B", destination: "O2")),
+                         op(.swapResources(first: "A", second: "B")),
+                         op(.swapResources(first: "A", second: "B"))]
+        )
+        let (o0, o1, o2) = try (makeTexture(harness), makeTexture(harness), makeTexture(harness))
+        let textures: [WPEResourceID: MTLTexture] = ["A": a, "B": b, "C": c, "O0": o0, "O1": o1, "O2": o2]
+        let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                  arena: harness.arena, pixelFormats: Self.formats)
+        for expected in [
+            [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]],
+            [[0, 255, 0, 255], [0, 0, 255, 255], [255, 0, 0, 255]],
+        ] as [[[UInt8]]] {
+            guard case let .committed(buffer) = try executor.encodeFrame(on: harness.queue, textures: textures,
+                                                                         draw: { _, _, _ in [] }) else {
+                return XCTFail("frame was skipped")
+            }
+            buffer.waitUntilCompleted()
+            XCTAssertNil(buffer.error)
+            for (target, pixel) in zip([o0, o1, o2], expected) {
+                try assertEvery(readBack(harness, target), equals: pixel)
+            }
+        }
+        // A cached/rebuilt graph resumes the current permutation using the same physical textures.
+        let resumed = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                 arena: harness.arena, pixelFormats: Self.formats)
+        resumed.restoreResourceBindings(executor.resourceBindings)
+        guard case let .committed(buffer) = try resumed.encodeFrame(on: harness.queue, textures: textures,
+                                                                    draw: { _, _, _ in [] }) else {
+            return XCTFail("resumed frame was skipped")
+        }
+        buffer.waitUntilCompleted()
+        XCTAssertNil(buffer.error)
+        try assertEvery(readBack(harness, o0), equals: [0, 0, 255, 255])
+        try assertEvery(readBack(harness, o1), equals: [255, 0, 0, 255])
+        try assertEvery(readBack(harness, o2), equals: [0, 255, 0, 255])
+        XCTAssertTrue(resumed.resourceBindings.isEmpty, "three cumulative cycles restore physical identity")
+    }
+
+    func testExcludedOverwriteLeavesHistoryAvailableToTheNextReader() throws {
+        let harness = try makeHarness()
+        let histories = [resource("P", .pooled), resource("O", .persistent)]
+        let (history, output) = try (makeTexture(harness), makeTexture(harness))
+        try execute(harness, WPERenderGraphCompiler.compile(resources: histories, operations: [
+            clear("P", .init(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)),
+        ]), external: ["P": history], draws: [:])
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: histories, operations: [bind("P"), draw(overwrites: true), op(.copy(source: "P", destination: "O"))],
+            excludingDraws: [1]
+        )
+        let executor = try execute(harness, graph, external: ["P": history, "O": output], draws: [:])
+        XCTAssertNil(executor.transientTextures["P"])
+        try assertEvery(readBack(harness, output), equals: [51, 102, 153, 255])
+    }
+
+    func testEffectSwapLeavesOtherEffectBindingsIntactWhileSharingWrittenContents() throws {
+        let harness = try makeHarness()
+        let resources = [resource("A", .pooled), resource("B", .pooled), resource("Inside", .persistent),
+                         resource("OutsideA", .persistent), resource("OutsideB", .persistent)]
+        let (a, b, inside, outsideA, outsideB) = try (makeTexture(harness), makeTexture(harness), makeTexture(harness),
+                                                      makeTexture(harness), makeTexture(harness))
+        let external: [WPEResourceID: MTLTexture] = ["A": a, "B": b, "Inside": inside,
+                                                     "OutsideA": outsideA, "OutsideB": outsideB]
+        try execute(harness, WPERenderGraphCompiler.compile(resources: resources, operations: [
+            clear("A", .init(red: 1, green: 0, blue: 0, alpha: 1)),
+            clear("B", .init(red: 0, green: 1, blue: 0, alpha: 1)),
+        ]), external: external, draws: [:])
+        let first = WPEResourceBindingScope.effect(objectID: "L", effectID: "first")
+        let second = WPEResourceBindingScope.effect(objectID: "L", effectID: "second")
+        let graph = try WPERenderGraphCompiler.compile(resources: resources, operations: [
+            op(.resourceScope(scope: first, resources: ["A", "B"])),
+            op(.swapResources(first: "A", second: "B")),
+            clear("A", .init(red: 0, green: 0, blue: 1, alpha: 1)),
+            op(.copy(source: "A", destination: "Inside")),
+            op(.resourceScope(scope: .frame, resources: ["A", "B"])),
+            op(.resourceScope(scope: second, resources: ["A", "B"])),
+            op(.copy(source: "A", destination: "OutsideA")),
+            op(.copy(source: "B", destination: "OutsideB")),
+            op(.resourceScope(scope: .frame, resources: ["A", "B"])),
+        ])
+        let executor = try execute(harness, graph, external: external, draws: [:])
+        XCTAssertEqual(executor.resourceBindings, [first: ["A": "B", "B": "A"]])
+        try assertEvery(readBack(harness, inside), equals: [0, 0, 255, 255])
+        try assertEvery(readBack(harness, outsideA), equals: [255, 0, 0, 255])
+        try assertEvery(readBack(harness, outsideB), equals: [0, 0, 255, 255])
+    }
+
+    func testPartialOpaqueDrawPreservesTheUncoveredHistoryPixels() throws {
+        let harness = try makeHarness()
+        let histories = [resource("P", .pooled)]
+        let history = try makeTexture(harness)
+        try execute(harness, WPERenderGraphCompiler.compile(resources: histories, operations: [
+            clear("P", .init(red: 0, green: 0, blue: 1, alpha: 1)),
+        ]), external: ["P": history], draws: [:])
+        let graph = try WPERenderGraphCompiler.compile(resources: histories,
+                                                       operations: [bind("P"), draw(overwrites: false)])
+        let pipeline = try harness.factory.makePipeline(
+            artifact: loadProgram("shaders/flat"), blend: .wpe(.normal, modifiers: .writeAlpha),
+            colorPixelFormat: .rgba8Unorm
+        )
+        var partial = try flatDraw(harness, pipeline: pipeline, color: SIMD3(1, 0, 0), alpha: 1)
+        // Same shader/blend as a fullscreen draw, but the VS positions cover only the left half.
+        let corners: [(Float, Float)] = [(-1, 1), (-1, -1), (0, 1), (0, -1)]
+        let vertices: [Float] = corners.flatMap { [$0.0, $0.1, 0, 1, 1, 1, 1] }
+        partial.vertexBuffer = try XCTUnwrap(harness.device.makeBuffer(
+            bytes: vertices, length: vertices.count * MemoryLayout<Float>.stride, options: .storageModeShared
+        ))
+        try execute(harness, graph, external: ["P": history], draws: [1: partial])
+        let expected: [UInt8] = (0 ..< Self.side * Self.side).flatMap { index in
+            index % Self.side < Self.side / 2 ? [255, 0, 0, 255] : [0, 0, 255, 255]
+        }
+        try assertPixels(readBack(harness, history), equal: expected)
+    }
+
     func testClearDrawThenCopyReachesTheCopyDestination() throws {
         let harness = try makeHarness()
         let graph = try WPERenderGraphCompiler.compile(
@@ -162,7 +348,8 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         let harness = try makeHarness()
         let graph = try WPERenderGraphCompiler.compile(
             resources: [resource("I", .imported), resource("P", .persistent)],
-            operations: [bind("P"), clear("P", .init(red: 0, green: 1, blue: 0, alpha: 1)), draw(sampling: "I")]
+            operations: [bind("P"), clear("P", .init(red: 0, green: 1, blue: 0, alpha: 1)), draw(sampling: "I")],
+            excludingDraws: [2]
         )
         let target = try makeTexture(harness)
         let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
@@ -176,16 +363,19 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         ) else { return XCTFail("frame was skipped") }
         commandBuffer.waitUntilCompleted()
         XCTAssertNil(commandBuffer.error)
-        XCTAssertEqual(asked, [2])
+        XCTAssertTrue(asked.isEmpty)
         try assertEvery(readBack(harness, target), equals: [0, 255, 0, 255])
     }
 
     func testFrameIsSkippedWhileEveryArenaSlotIsInFlight() throws {
         let harness = try makeHarness()
         let graph = try WPERenderGraphCompiler.compile(
-            resources: [resource("P", .persistent)], operations: [bind("P"), clear("P", .init(red: 1, green: 1, blue: 1, alpha: 1))]
+            resources: [resource("P", .persistent), resource("Q", .persistent)],
+            operations: [bind("P"), clear("P", .init(red: 1, green: 1, blue: 1, alpha: 1)),
+                         op(.swapResources(first: "P", second: "Q"))]
         )
         let target = try makeTexture(harness)
+        let partner = try makeTexture(harness)
         let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
                                                   arena: harness.arena, pixelFormats: Self.formats)
         // Never committed, so these slots stay taken for the life of this arena.
@@ -193,25 +383,92 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         for commandBuffer in held {
             XCTAssertNotNil(harness.arena.beginFrame(for: commandBuffer))
         }
-        let skipped = try executor.encodeFrame(on: harness.queue, textures: ["P": target]) { _, _, _ in
+        let skipped = try executor.encodeFrame(on: harness.queue, textures: ["P": target, "Q": partner]) { _, _, _ in
             throw WPEParityExecutionError.arenaExhausted
         }
         guard case .skipped = skipped else { return XCTFail("frame was committed without an arena slot") }
+        XCTAssertTrue(executor.resourceBindings.isEmpty, "a skipped frame must not execute its swap")
 
         let freeArena = try XCTUnwrap(WPEParityFrameArena(device: harness.device, capacity: 64 * 1024))
         let control = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
                                                  arena: freeArena, pixelFormats: Self.formats)
-        guard case let .committed(commandBuffer) = try control.encodeFrame(on: harness.queue, textures: ["P": target],
+        guard case let .committed(commandBuffer) = try control.encodeFrame(on: harness.queue, textures: ["P": target, "Q": partner],
                                                                            draw: { _, _, _ in
                                                                                throw WPEParityExecutionError.arenaExhausted
                                                                            })
         else { return XCTFail("frame with a free slot was skipped") }
         commandBuffer.waitUntilCompleted()
         XCTAssertNil(commandBuffer.error)
+        XCTAssertEqual(control.resourceBindings, [.frame: ["P": "Q", "Q": "P"]])
         try assertEvery(readBack(harness, target), equals: [255, 255, 255, 255])
     }
 
     // MARK: Graph builders
+
+    private struct UnavailableCompiler: WPEParityShaderCompiling {
+        struct Unavailable: Error {}
+        func compile(_: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
+            throw Unavailable()
+        }
+    }
+
+    /// A real product plan/renderer with shader preparation unavailable at the input boundary. Copy, swap and
+    /// allocation clears still have to operate correctly; no fabricated shader output or external corpus is used.
+    private func commandRenderer(_ harness: Harness, directory: URL, authoredClear: Bool,
+                                 width: Int = 4, height: Int = 4) async throws -> WPEParityFrameRenderer {
+        func write(_ path: String, _ value: [String: Any]) throws {
+            let url = directory.appending(path: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: value).write(to: url)
+        }
+        let scene: [String: Any] = [
+            "camera": ["eye": "0 0 1", "center": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 4, "height": 4], "bloom": false],
+            "objects": [
+                ["id": 1, "name": "history", "image": "models/history.json", "size": "4 4", "origin": "2 2 0",
+                 "effects": [["id": 7, "file": "effects/history.json", "visible": true]]],
+                ["id": 900, "name": "group", "origin": "0 0 0", "scale": "1 1 1", "angles": "0 0 0"],
+            ],
+        ]
+        try write("scene.json", scene)
+        try write("models/history.json", ["material": "materials/unavailable.json"])
+        var fbos: [[String: Any]] = ["A", "B", "O"].map {
+            ["name": $0, "format": "rgba8888", "unique": true, "width": 4, "height": 4]
+        }
+        if authoredClear {
+            fbos[0]["clear"] = "1 0 0 1"
+            fbos[1]["clear"] = "0 1 0 1"
+        }
+        try write("effects/history.json", ["fbos": fbos, "passes": [
+            ["command": "copy", "source": "A", "target": "O"],
+            ["command": "swap", "source": "A", "target": "B"],
+        ]])
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
+        let assets = WPEParityProgramAssets(sceneDirectory: directory, assetRoots: [])
+        let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                          settings: .init(bloom: false), width: width, height: height)
+        XCTAssertFalse(plan.skipped.isEmpty, "unavailable draw preparation must be observed")
+        let store = WPEParityShaderStore(compiler: UnavailableCompiler(),
+                                         diskCache: WPEParityShaderDiskCache(cachesURL: directory.appending(path: "cache")))
+        return try await WPEParityFrameRenderer(plan: plan, device: harness.device, queue: harness.queue,
+                                                shaders: .init(store: store, compilerIdentity: "unavailable-test-input",
+                                                               bindingABIVersion: 1), particleSeed: 1)
+    }
+
+    private func submit(_ renderer: WPEParityFrameRenderer) async throws {
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+            return XCTFail("frame was skipped")
+        }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+    }
+
+    private func seedHistory(_ harness: Harness, a: MTLTexture, b: MTLTexture,
+                             first: WPEClearColor, second: WPEClearColor) throws {
+        let graph = try WPERenderGraphCompiler.compile(resources: [resource("A", .persistent), resource("B", .persistent)],
+                                                       operations: [clear("A", first), clear("B", second)])
+        try execute(harness, graph, external: ["A": a, "B": b], draws: [:])
+    }
 
     private func resource(_ id: WPEResourceID, _ lifetime: WPEResourceLifetime,
                           mips: Int = 1, samples: Int = 1) -> WPELogicalResource {
@@ -313,7 +570,6 @@ final class WPEParityGraphExecutionTests: XCTestCase {
     }
 
     private func makeHarness() throws -> Harness {
-        _ = try fixtureDirectory()
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let factory = WPEParityPipelineFactory(device: device)
         return try Harness(

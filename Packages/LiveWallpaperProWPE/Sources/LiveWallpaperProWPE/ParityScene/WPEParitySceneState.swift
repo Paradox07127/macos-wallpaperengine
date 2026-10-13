@@ -112,6 +112,8 @@ public struct WPEParitySceneState: Sendable {
 
     public enum ScriptValue: Sendable, Equatable {
         case vector(SIMD4<Float>)
+        /// Native type 0 fields keep the full signed 32-bit domain instead of passing through Float32.
+        case integer(Int32)
         case string(String)
     }
 
@@ -132,11 +134,13 @@ public struct WPEParitySceneState: Sendable {
     /// Bumped by every material constant change of any pass.
     public private(set) var constantsGeneration = 0
     public private(set) var scriptFields: [ScriptFieldKey: ScriptValue] = [:]
+    /// Includes fields with no native dirty hook, such as particle instance rate.
+    public private(set) var scriptFieldsGeneration = 0
     private var scriptFieldGenerations = [Int](repeating: 0, count: Invalidation.allCases.count)
     private let indexByID: [String: Int]
     private let parents: [Int?]
     private var passes: [Pass]
-    private let passIndexByKey: [WPEParityMaterialPassKey: Int]
+    private var passIndexByKey: [WPEParityMaterialPassKey: Int]
     private let effectIndexByKey: [EffectKey: Int]
 
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
@@ -206,6 +210,16 @@ public struct WPEParitySceneState: Sendable {
         self.effects = effects
         self.effectVisibility = effectVisibility
         self.effectIndexByKey = effectIndexByKey
+    }
+
+    /// Seeds a shader annotation default at load without marking a runtime write. Authored values win.
+    public mutating func seedConstant(_ name: String, of key: WPEParityMaterialPassKey, value: Constant) {
+        if passIndexByKey[key] == nil {
+            passIndexByKey[key] = passes.count
+            passes.append(Pass(constants: [:]))
+        }
+        guard let index = passIndexByKey[key], passes[index].constants[name] == nil else { return }
+        passes[index].constants[name] = value
     }
 
     /// Nil for an effect the scene does not have.
@@ -350,6 +364,7 @@ public struct WPEParitySceneState: Sendable {
         let key = ScriptFieldKey(objectID: objectID, name: name)
         guard scriptFields[key] != value else { return }
         scriptFields[key] = value
+        scriptFieldsGeneration += 1
         scriptFieldGenerations[invalidation.rawValue] += 1
     }
 

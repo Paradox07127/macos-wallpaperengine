@@ -120,7 +120,7 @@ extension WPEParityParticleSystem {
                         ? frame[slot] : age[slot] / lifetime[slot] * config.sequenceMultiplier
                     writer.put(velocity[slot], phase)
                 }
-                writer.put(color[slot] * instance.brightness, alpha[slot])
+                writer.put(color[slot], alpha[slot])
             }
         }
         mainBytes = bytes
@@ -145,8 +145,8 @@ extension WPEParityParticleSystem {
                 writer.put(position[next], Float(liveCount))
                 writer.put(position[previous], index)
                 writer.put(position[afterNext], size[next])
-                writer.put(color[next] * instance.brightness, alpha[next])
-                writer.put(color[current] * instance.brightness, alpha[current])
+                writer.put(color[next], alpha[next])
+                writer.put(color[current], alpha[current])
                 previous = current
                 current = next
                 index += 1
@@ -175,7 +175,7 @@ extension WPEParityParticleSystem {
                     )
                     writer.put(trailPoint(slot, index - 1, pushed: pushed), Float(index))
                     writer.put(trailPoint(slot, index + 2, pushed: pushed))
-                    writer.put(color[slot] * instance.brightness, alpha[slot])
+                    writer.put(color[slot], alpha[slot])
                 }
             }
         }

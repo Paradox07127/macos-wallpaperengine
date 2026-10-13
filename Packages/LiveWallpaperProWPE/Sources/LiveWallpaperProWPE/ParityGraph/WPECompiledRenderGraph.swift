@@ -63,6 +63,8 @@ public struct WPECompiledStep: Hashable, Sendable {
         /// One render encoder; folded clears and resolves are expressed by its attachment actions.
         case render(WPEEncoderGroup)
         case copy(source: WPEResourceID, destination: WPEResourceID)
+        case swapResources(first: WPEResourceID, second: WPEResourceID)
+        case resourceScope(scope: WPEResourceBindingScope, resources: [WPEResourceID])
         case generateMips(WPEResourceID)
         case resolve(source: WPEResourceID, destination: WPEResourceID)
     }
@@ -122,8 +124,8 @@ public struct WPECompiledRenderGraph: Hashable, Sendable {
     public let dependencies: [WPEStepDependency]
     /// Inclusive step-index range over which each accessed resource must hold its contents.
     public let lifetimes: [WPEResourceID: ClosedRange<Int>]
-    /// Unaccessed frame-transient resources have no entry. A `.pooled` resource that is not `.dedicated` here
-    /// was downgraded to frame-transient: its entry contents are never observed.
+    /// Unaccessed frame-transient resources have no entry. A `.pooled` resource can become transient only when
+    /// the caller permits discarding its history and the compiler proves its entry contents are never observed.
     public let storage: [WPEResourceID: WPEResourceStorage]
     /// Members of one group have pairwise disjoint lifetimes.
     public let allocationGroups: [[WPEResourceID]]

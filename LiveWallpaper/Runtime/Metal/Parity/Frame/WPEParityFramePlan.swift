@@ -73,6 +73,7 @@ struct WPEParityFramePlan {
     let alignment: WPEParityCameraAlignment
     /// Object and material state as loaded, hidden objects included.
     let state: WPEParitySceneState
+    let materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant]
     let post: WPEParityPostProcessConfig
     /// The program of every draw any effect set has, disabled effects included, as WPE loads them (R24 Q3).
     let programCache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>]
@@ -110,6 +111,7 @@ struct WPEParityFramePlan {
         var cache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>] = [:]
         layout = try Self.layout(Self.sized(scene.scene, width: width, height: height), post: post, scene: scene,
                                  cache: &cache)
+        var constantBindings = layout.bindings.flatMap(\.values)
         // Every effect on, then every effect off, draws each material any effect set does.
         for enabled in [true, false] {
             let frame = try WPEParityFrameComposer.compose(
@@ -118,7 +120,60 @@ struct WPEParityFramePlan {
                 frameIndex: 0
             )
             _ = Self.programs(frame, scene: scene, cache: &cache)
+            constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
         }
+
+        // Empty text and later colour/depth/background changes still use programs compiled once at load.
+        for object in scene.scene.objects {
+            guard case .text = object.kind else { continue }
+            for depth in [false, true] {
+                let variants: [(WPEParitySceneMaterialSource, WPEParitySceneDraw.Geometry)] = [
+                    (.textGlyphs(.mono, depth: depth), .textGlyphs(.mono)),
+                    (.textGlyphs(.color, depth: depth), .textGlyphs(.color)),
+                    (.textBackground(depth: depth), .textBackground),
+                ]
+                for (source, geometry) in variants {
+                    let draw = WPEParityFrameDraw.scene(WPEParitySceneDraw(
+                        pass: WPEPassIdentity("\(object.id)/text-prewarm"), objectID: object.id,
+                        shader: geometry == .textBackground ? "flat" : "font", source: source, reads: [],
+                        target: WPEParitySceneResource.backbuffer, blend: .translucent, writeMask: .rgba,
+                        geometry: geometry, depthTest: depth
+                    ))
+                    guard let description = WPEParityProgramBuilder.description(of: draw, scene: scene) else { continue }
+                    do {
+                        cache[WPEParityProgramKey(draw)] = try .success(
+                            WPEParityProgramResolver.resolve(description, sources: scene.assets)
+                        )
+                    } catch {
+                        cache[WPEParityProgramKey(draw)] = .failure(.program("\(description.material.shader): \(error)"))
+                    }
+                }
+            }
+        }
+        var metadata: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:]
+        var loadedState = WPEParitySceneState(scene: scene, document: document)
+        for binding in constantBindings {
+            guard let pass = binding.materialPass else { continue }
+            for (stage, constants) in binding.materialConstants {
+                for uniform in constants {
+                    var vector = SIMD4<Float>.zero
+                    switch binding.constants[stage]?[uniform.name] {
+                    case let .float(value)?: vector.x = value
+                    case let .vector(values)?:
+                        for lane in 0 ..< min(4, values.count) {
+                            vector[lane] = values[lane]
+                        }
+                    default: continue
+                    }
+                    metadata[.init(pass: pass, name: uniform.material)] = .init(
+                        value: vector, components: uniform.components, angle: uniform.angle
+                    )
+                    loadedState.seedConstant(uniform.material, of: pass,
+                                             value: .init(value: vector, count: uniform.components))
+                }
+            }
+        }
+        materialConstants = metadata
 
         self.document = document
         self.scene = scene
@@ -127,14 +182,27 @@ struct WPEParityFramePlan {
         self.alignment = alignment
         self.post = post
         programCache = cache
-        state = WPEParitySceneState(scene: scene, document: document)
+        state = loadedState
     }
 
     /// The layout of the effects `state` shows.
-    func layout(effects state: WPEParitySceneState) throws -> WPEParityFrameLayout {
+    func layout(effects state: WPEParitySceneState, texts: [String: WPEParitySceneText] = [:]) throws
+        -> WPEParityFrameLayout {
         var cache = programCache
-        return try Self.layout(Self.sized(Self.scene(scene, effects: state.effectVisibility, of: state.effects),
-                                          width: width, height: height),
+        let visible = Dictionary(zip(state.effects, state.effectVisibility)) { first, _ in first }
+        var description = scene.scene(effectVisible: {
+            visible[.init(objectID: $0, effectID: $1)] ?? true
+        }, textSizes: texts.mapValues { $0.layout.fboSize })
+        for index in description.objects.indices {
+            let previous = description.objects[index]
+            guard let text = texts[previous.id] else { continue }
+            var updated = WPEParitySceneObject.text(text, sortKey: previous.sortKey, visible: previous.visible,
+                                                    parentID: previous.parentID, effects: previous.effects)
+            updated.dependencyTarget = previous.dependencyTarget
+            updated.materialFrameReads = previous.materialFrameReads
+            description.objects[index] = updated
+        }
+        return try Self.layout(Self.sized(description, width: width, height: height),
                                post: post, scene: scene, cache: &cache)
     }
 
@@ -190,7 +258,7 @@ struct WPEParityFramePlan {
         let (programs, skipped) = Self.programs(even, scene: scene, cache: &cache)
         let frames = even == odd ? [even] : [even, odd]
         return WPEParityFrameLayout(frames: frames, programs: programs,
-                                    bindings: frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene) },
+                                    bindings: frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene, description: description) },
                                     skipped: skipped)
     }
 

@@ -54,6 +54,24 @@ final class ParitySceneCompositeReadTests: XCTestCase {
         XCTAssertEqual(visible.owners["A/passthrough4"], "A")
     }
 
+    func testHiddenOrdinaryLayerLeavesItsReaderOnPreservedEntryHistory() throws {
+        var scene = twoLayers(visibleA: false)
+        scene.objects[0].dependencyTarget = false
+        scene.objects[0].colorBlendMode = 5
+        let frame = WPEParitySceneFrameBuilder.build(scene)
+        XCTAssertFalse(frame.draws.values.contains { $0.objectID == "A" })
+        XCTAssertEqual(frame.draws["B/albedo"]?.reads, ["B/image", compositeA])
+        let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+        XCTAssertEqual(graph.storage[compositeA], .dedicated)
+        let reader = try XCTUnwrap(frame.operations.firstIndex { operation in
+            guard operation.pass == "B/albedo", case .draw = operation.kind else { return false }
+            return true
+        })
+        let history = try XCTUnwrap(graph.accesses[reader].reads.first { $0.subresource.resource == compositeA })
+        XCTAssertEqual(history.revision, 0)
+        XCTAssertNil(history.producer)
+    }
+
     func testModelSubMeshListsTheCompositeItsMaterialNames() {
         var a = Fixtures.layer("A")
         a.dependencyTarget = true

@@ -34,9 +34,9 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
             self.rawValue = rawValue
         }
 
-        /// Computed or read-only: not parsed from JSON.
+        /// The native wrapper registers this member without a setter, and JSON does not parse it.
         public static let notFromJSON = Flags(rawValue: 2)
-        /// Stored in radians, scripts read and write degrees.
+        /// Float and vec3 object conversions use the native angle branch.
         public static let angle = Flags(rawValue: 4)
     }
 
@@ -154,10 +154,15 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "text", owner: .text, type: .string, invalidation: .textLayout),
         WPEParityScriptProperty(name: "font", owner: .text, type: .string, invalidation: .textLayout),
         WPEParityScriptProperty(name: "pointsize", owner: .text, type: .float, invalidation: .textLayout),
-        WPEParityScriptProperty(name: "alignment", owner: .text, type: .string, invalidation: .textLayout),
         WPEParityScriptProperty(name: "horizontalalign", owner: .text, type: .string, invalidation: .textLayout),
         WPEParityScriptProperty(name: "verticalalign", owner: .text, type: .string, invalidation: .textLayout),
-        WPEParityScriptProperty(name: "padding", owner: .text, type: .int, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "padding", owner: .text, type: .vec2, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "spacing", owner: .text, type: .vec2, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "maxwidth", owner: .text, type: .float, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "maxrows", owner: .text, type: .int, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "limitwidth", owner: .text, type: .flagBool, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "limitrows", owner: .text, type: .flagBool, invalidation: .textLayout),
+        WPEParityScriptProperty(name: "limituseellipsis", owner: .text, type: .flagBool, invalidation: .textLayout),
     ]
 
     /// Sound: volume's hook sets each stream's gain to volume² × master (1401f7090.c:71).
@@ -173,15 +178,16 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     public static let video: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "rate", owner: .video, type: .float, invalidation: .mediaPlayer),
         WPEParityScriptProperty(name: "loop", owner: .video, type: .byteBool, invalidation: .mediaPlayer),
+        WPEParityScriptProperty(name: "duration", owner: .video, type: .float, flags: .notFromJSON),
     ]
 
     /// Scene fields under the IScene names of the official docs: bloom sets scene+0xe0 bit31 (R25/dis1.txt:154-156),
     /// ambient and skylight copy to Main+0x1298 (:161-167).
     public static let scene: [WPEParityScriptProperty] = [
-        WPEParityScriptProperty(name: "bloomStrength", owner: .scene, type: .float, invalidation: .bloom),
-        WPEParityScriptProperty(name: "bloomThreshold", owner: .scene, type: .float, invalidation: .bloom),
-        WPEParityScriptProperty(name: "ambientColor", owner: .scene, type: .vec3, invalidation: .lighting),
-        WPEParityScriptProperty(name: "skylightColor", owner: .scene, type: .vec3, invalidation: .lighting),
+        WPEParityScriptProperty(name: "bloomstrength", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomthreshold", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "ambientcolor", owner: .scene, type: .vec3, invalidation: .lighting),
+        WPEParityScriptProperty(name: "skylightcolor", owner: .scene, type: .vec3, invalidation: .lighting),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.
@@ -197,7 +203,9 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         switch kind {
         case .image: base + [visible] + image
         case .text: base + [visible] + text
-        case .particle: base + [visible] + particleInstance
+        case .particle: base + [WPEParityScriptProperty(name: "visible", owner: .object, type: .flagBool,
+                                                        flags: .notFromJSON, target: .object(.visible),
+                                                        invalidation: .visibility)] + particleInstance
         case .sound: base + sound
         case .camera: base + [visible] + camera
         case .group: base + [visible]
@@ -206,16 +214,17 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
 
     /// Stored units of a script value: flag 4 degrees become radians.
     public func stored(fromScript value: SIMD4<Float>) -> SIMD4<Float> {
-        flags.contains(.angle) ? value * Self.degreesToRadians : value
+        flags.contains(.angle) && (type == .float || type == .vec3) ? value * Self.degreesToRadians : value
     }
 
     public func script(fromStored value: SIMD4<Float>) -> SIMD4<Float> {
-        flags.contains(.angle) ? value * Self.radiansToDegrees : value
+        flags.contains(.angle) && (type == .float || type == .vec3) ? value * Self.radiansToDegrees : value
     }
 
     /// Writes `value` (script units) to the object `objectID`; `pass` names the material pass of a constant.
     public func write(_ value: WPEParitySceneState.ScriptValue, objectID: String, effectID: String? = nil,
                       pass: WPEParityMaterialPassKey? = nil, to state: inout WPEParitySceneState) {
+        guard !flags.contains(.notFromJSON) else { return }
         switch (target, value) {
         case let (.object(property), .vector(vector)):
             state.set(property, of: objectID, to: stored(fromScript: vector))
@@ -232,6 +241,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         case (.field, .vector):
             state.setScriptField(fieldName, of: objectID, to: value.map(stored(fromScript:)), invalidating: invalidation)
         case (.field, .string):
+            state.setScriptField(fieldName, of: objectID, to: value, invalidating: invalidation)
+        case (.field, .integer):
             state.setScriptField(fieldName, of: objectID, to: value, invalidating: invalidation)
         default:
             break
@@ -272,7 +283,7 @@ extension WPEParitySceneState.ScriptValue {
     func map(_ transform: (SIMD4<Float>) -> SIMD4<Float>) -> Self {
         switch self {
         case let .vector(vector): .vector(transform(vector))
-        case .string: self
+        case .string, .integer: self
         }
     }
 }

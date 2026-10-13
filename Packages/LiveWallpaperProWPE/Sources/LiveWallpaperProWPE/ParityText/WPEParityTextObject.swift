@@ -171,6 +171,7 @@ public struct WPEParityTextObject: Hashable, Sendable {
             || spacing != previous.spacing
             || maxWidth != previous.maxWidth
             || maxRows != previous.maxRows
+            || composesThroughPassthrough != previous.composesThroughPassthrough
             || depthTest != previous.depthTest
             || usesGlyphEffects != previous.usesGlyphEffects
     }

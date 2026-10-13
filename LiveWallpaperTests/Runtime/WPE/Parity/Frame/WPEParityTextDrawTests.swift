@@ -149,6 +149,57 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(bytes, atlas.pixels)
     }
 
+    /// Four real GPU readers are held behind an event while later CPU atlas versions are published. Waiting
+    /// after each upload would hide an in-place texture overwrite; each reader must see its own earlier pixels.
+    func testAtlasVersionsStayImmutableAcrossOverlappingGPUReaders() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let ready = try XCTUnwrap(device.makeSharedEvent())
+        defer { ready.signaledValue = 1 }
+        var instance = WPEParityGlyphAtlasInstance(fontPath: "overlapping-readers", pointSize: 32)
+        let key = WPEParityTextAtlasTextures.Key(atlasKey: instance.key, atlas: .mono)
+        var cache = WPEParityTextAtlasTextures(atlases: [:])
+        var submitted: [(commandBuffer: MTLCommandBuffer, result: MTLBuffer, expected: UInt8)] = []
+        var versions: Set<ObjectIdentifier> = []
+
+        for step in 1 ... 4 {
+            let expected = UInt8(step * 37)
+            instance.mono.reset()
+            _ = try XCTUnwrap(instance.mono.insert(key: UInt32(step), bitmap: WPEParityGlyphBitmap(
+                width: 2, rows: 2, pixelMode: .gray, pixels: Array(repeating: expected, count: 4)
+            )))
+            XCTAssertTrue(cache.replace([instance.key: instance], device: device))
+            instance = try XCTUnwrap(cache.atlases[instance.key])
+            let texture = try XCTUnwrap(cache.textures[key])
+            XCTAssertTrue(versions.insert(ObjectIdentifier(texture)).inserted,
+                          "a changed atlas must publish a new texture while earlier versions have readers")
+            XCTAssertEqual(cache.contentGenerations[key], instance.mono.contentGeneration)
+            XCTAssertFalse(instance.mono.isDirty)
+            XCTAssertTrue(cache.upload(device: device))
+            XCTAssertTrue(try XCTUnwrap(cache.textures[key]) === texture, "a clean atlas reuses its GPU version")
+
+            let result = try XCTUnwrap(device.makeBuffer(length: 256, options: .storageModeShared))
+            let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
+            XCTAssertTrue(commandBuffer.retainedReferences, "GPU readers must own the textures they encode")
+            commandBuffer.encodeWaitForEvent(ready, value: 1)
+            let blit = try XCTUnwrap(commandBuffer.makeBlitCommandEncoder())
+            blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                      sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: result, destinationOffset: 0,
+                      destinationBytesPerRow: 256, destinationBytesPerImage: 256)
+            blit.endEncoding()
+            commandBuffer.commit()
+            XCTAssertNotEqual(commandBuffer.status, .completed, "this reader must overlap the later CPU updates")
+            submitted.append((commandBuffer, result, expected))
+        }
+
+        ready.signaledValue = 1
+        for submission in submitted {
+            await submission.commandBuffer.completed()
+            XCTAssertNil(submission.commandBuffer.error)
+            XCTAssertEqual(submission.result.contents().load(as: UInt8.self), submission.expected)
+        }
+    }
+
     func testTextUserPropertyRelaysTheLayerWithoutReloading() async throws {
         let wpeAssets = try wpeAssets()
         let scene = try Self.syntheticScene(effect: false, text: ["user": "caption", "value": "Hi"])
@@ -206,6 +257,67 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertGreaterThan(inside, 0)
         XCTAssertEqual(outside, 0)
         XCTAssertGreaterThan(beyondOld, 0, "the frame draws the new layout")
+    }
+
+    func testTextUserPropertyRebuildsItsFBOAndEmptyDrawsWithoutReloading() async throws {
+        let wpeAssets = try wpeAssets()
+        let scene = try Self.syntheticScene(effect: true, text: ["user": "caption", "value": "Hi"])
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
+        let cache = FileManager.default.temporaryDirectory.appending(path: "parity-text-cache",
+                                                                     directoryHint: .isDirectory)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let driver = try WPEParitySceneDriver(device: device)
+        try await driver.load(document: Self.parse(scene),
+                              assets: WPEParityProgramAssets(sceneDirectory: scratch,
+                                                             assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")]),
+                              settings: WPEParityProgramSettings(),
+                              drawableSize: CGSize(width: Self.width, height: Self.height), pixelFormat: .rgba8Unorm,
+                              compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: cache))
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        let generation = driver.loadGeneration
+        try await encode(renderer, label: "initial effect text")
+        let initial = try readBack(renderer.backbuffer, device: device, queue: queue)
+        let originalSize = try XCTUnwrap(renderer.texts[Self.textID]).layout.fboSize
+        var caption = "Hi"
+
+        for next in ["Hello", "", "Hi"] {
+            let patch = WPEScenePropertyPatch(bindingsByProperty: driver.userPropertyBindings,
+                                              oldValues: ["caption": .string(caption)],
+                                              newValues: ["caption": .string(next)])
+            let changed = try Self.parse(scene, userValues: ["caption": .string(next)])
+            XCTAssertTrue(driver.prepareUserProperties(patch, document: changed), next.debugDescription)
+            XCTAssertTrue(driver.commitUserProperties(patch))
+            XCTAssertTrue(driver.renderer === renderer)
+            XCTAssertEqual(driver.loadGeneration, generation)
+            try await encode(renderer, label: "effect text \(next.debugDescription)")
+            XCTAssertEqual(renderer.skipped, [:])
+            let text = try XCTUnwrap(renderer.texts[Self.textID])
+            XCTAssertEqual(text.object.text, next)
+            let glyphs = renderer.frames[0].draws.values.compactMap { draw -> WPEParitySceneDraw? in
+                guard case let .scene(scene) = draw, scene.objectID == Self.textID,
+                      scene.fillsComposite, scene.geometry == .textGlyphs(.mono) else { return nil }
+                return scene
+            }
+            let pixels = try readBack(renderer.backbuffer, device: device, queue: queue)
+            let covered = stride(from: 0, to: pixels.count, by: 4).count { pixels[$0 ..< $0 + 3].contains { $0 != 0 } }
+            if next.isEmpty {
+                XCTAssertTrue(glyphs.isEmpty, "the old glyph draw must leave the current graph")
+                XCTAssertEqual(covered, 0, "the old text must leave the actual frame")
+            } else {
+                let glyph = try XCTUnwrap(glyphs.first)
+                let target = try XCTUnwrap(renderer.frames[0].resources.first { $0.id == glyph.target })
+                XCTAssertEqual(SIMD2(target.width, target.height), text.layout.fboSize)
+                XCTAssertGreaterThan(covered, 0)
+                if next == "Hello" {
+                    XCTAssertGreaterThan(target.width, originalSize.x, "the FBO grows in the current renderer")
+                } else {
+                    XCTAssertEqual(pixels, initial, "returning to Hi restores its original output")
+                }
+            }
+            caption = next
+        }
     }
 
     // MARK: Helpers

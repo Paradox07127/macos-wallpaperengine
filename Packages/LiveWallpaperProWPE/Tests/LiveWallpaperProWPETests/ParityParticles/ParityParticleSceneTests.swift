@@ -55,6 +55,138 @@ final class ParityParticleSceneTests: XCTestCase {
         [["id": 5, "name": "fx", "particle": "particles/fx.json"]]
     }
 
+    private static func state(hdr: Bool = false) throws -> WPEParitySceneState {
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080]], "objects": five,
+            ]),
+            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() }
+        )
+        return WPEParitySceneState(document: document, hdr: hdr)
+    }
+
+    func testTypedInstanceUpdateAffectsNewbornsWhileLiveSlotsAndRNGSurvive() throws {
+        let particle = """
+        {"maxcount": 8, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 10, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                         {"name": "velocityrandom", "min": "10 0 0", "max": "10 0 0"}],
+         "renderer": [{"name": "sprite"}], "children": [{"name": "particles/child.json"}]}
+        """
+        let child = particle.replacingOccurrences(of: #", "children": [{"name": "particles/child.json"}]"#,
+                                                  with: #", "hascolor": true"#)
+        let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                         "instanceoverride": ["color": "255 0 0", "brightness": 2, "alpha": 0.5]]]
+        var flags = WPEEngineComboFlags()
+        flags.hdr = true
+        let files = ["particles/fx.json": particle, "particles/child.json": child]
+        var scene = try Self.scene(objects, particles: files, flags: flags)
+        var control = try Self.scene(objects, particles: files, flags: flags)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        control.advance(dt: 0.1, frames: ["5": .init()])
+        let before = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(before.liveCount, 1)
+        let oldBytes = try XCTUnwrap(scene.batches(for: .init(objectID: "5", renderer: 0)).first).bytes
+        XCTAssertEqual(Support.floats(oldBytes, at: 28, count: 4), [2, 0, 0, 0.5])
+        var state = try Self.state(hdr: true)
+        let fields: [(String, Float)] = [
+            ("alpha", 0.25), ("brightness", 3), ("count", 2), ("size", 2), ("speed", 3), ("lifetime", 0.5),
+        ]
+        for (name, value) in fields {
+            state.setScriptField("instance.\(name)", of: "5", to: .vector(SIMD4(value, 0, 0, 0)),
+                                 invalidating: .particleInstance)
+        }
+        state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)),
+                             invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
+        let applied = try XCTUnwrap(Self.root(scene))
+        XCTAssertTrue(applied.rng === before.rng)
+        XCTAssertEqual(applied.rng.next(), try XCTUnwrap(Self.root(control)).rng.next(), "the hook draws no RNG")
+        XCTAssertEqual(applied.emitterStates.map(\.accumulator), before.emitterStates.map(\.accumulator))
+        XCTAssertEqual(applied.capacity, before.capacity)
+        XCTAssertEqual(applied.highWater, before.highWater)
+        XCTAssertEqual(applied.birthHead, before.birthHead)
+        XCTAssertEqual(applied.birthTail, before.birthTail)
+        XCTAssertEqual(applied.initialColor[0], SIMD3(2, 0, 0))
+        XCTAssertEqual(applied.lifetime[0], 10)
+
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let after = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(after.liveCount, 3, "count changes emission, without replacing the live particle")
+        XCTAssertEqual(after.capacity, 8)
+        XCTAssertEqual(after.lifetime[0], 10)
+        XCTAssertEqual(after.initialSize[0], 0.5)
+        XCTAssertEqual(after.velocity[0], SIMD3(10, 0, 0))
+        for slot in 1 ... 2 {
+            XCTAssertEqual(after.age[slot], 0)
+            XCTAssertEqual(after.lifetime[slot], 5)
+            XCTAssertEqual(after.initialSize[slot], 1)
+            XCTAssertEqual(after.velocity[slot], SIMD3(30, 0, 0))
+        }
+        let bytes = try XCTUnwrap(scene.batches(for: .init(objectID: "5", renderer: 0)).first).bytes
+        XCTAssertEqual(Support.floats(bytes, at: 28, count: 4), [2, 0, 0, 0.5], "old packed colour stays unchanged")
+        XCTAssertEqual(Support.floats(bytes, at: 44 + 28, count: 4), [0, 0, 3, 0.25])
+        let childBytes = try XCTUnwrap(scene.batches(for: .init(objectID: "5", node: [0], renderer: 0)).first).bytes
+        XCTAssertEqual(Support.floats(childBytes, at: 28, count: 4), [1, 1, 1, 1])
+        XCTAssertEqual(Support.floats(childBytes, at: 44 + 28, count: 4), [3, 3, 3, 0.25],
+                       "child brightness changes at birth while hascolor keeps its own colour gate")
+    }
+
+    func testRateWithoutDirtyHookChangesTheNextObjectUpdate() throws {
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": Self.burst(1, lifetime: 100)])
+        var state = try Self.state()
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let generation = state.generation(.particleInstance)
+        state.setScriptField("instance.rate", of: "5", to: .vector(SIMD4(2, 0, 0, 0)), invalidating: .none)
+        XCTAssertEqual(state.generation(.particleInstance), generation)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).age[0], 0, "the hook does not itself step the system")
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).age[0], 0.2, accuracy: 1e-6)
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).objectTime, 0.3, accuracy: 1e-6)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
+    }
+
+    func testInstanceControlPointReachesTheOperatorWithRadiansAndSentinelPreservesAuthoredOffset() throws {
+        let particle = Self.burst(1, extra: """
+        , "controlpoint": [{"id": 0, "offset": "1 2 3"}, {"id": 1, "flags": 1}],
+          "operator": [{"name": "maintaindistancetocontrolpoint", "controlpoint": 0, "distance": 1}]
+        """)
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": particle])
+        var state = try Self.state()
+        let sentinel = Float.greatestFiniteMagnitude
+        state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(sentinel, sentinel, sentinel, 0)),
+                             invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let before = try XCTUnwrap(Self.root(scene)).position[0]
+        let initial = SIMD3<Float>(1, 2, 3) * (1 - 1 / sqrt(Float(14)))
+        for axis in 0 ..< 3 {
+            XCTAssertEqual(before[axis], initial[axis], accuracy: 1e-5)
+        }
+
+        state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(4, 5, 6, 0)),
+                             invalidating: .particleInstance)
+        state.setScriptField("instance.controlpointangle0", of: "5", to: .vector(SIMD4(0, 0, .pi / 2, 0)),
+                             invalidating: .particleInstance)
+        state.setScriptField("instance.controlpoint1", of: "5", to: .vector(SIMD4(100, 200, 300, 0)),
+                             invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).position[0], before)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let root = try XCTUnwrap(Self.root(scene))
+        for axis in 0 ..< 3 {
+            XCTAssertEqual(root.position[0][axis], before[axis] + 3, accuracy: 1e-5,
+                           "the actual operator consumes the translated CP next update")
+        }
+        XCTAssertEqual(root.controlPointTranslation(0), SIMD3(4, 5, 6))
+        XCTAssertEqual(root.controlPointBasis(0).columns.0.x, 0, accuracy: 1e-6)
+        XCTAssertEqual(root.controlPointBasis(0).columns.0.y, 1, accuracy: 1e-6)
+        XCTAssertEqual(root.controlPointTranslation(1), .zero, "cursor-following points ignore instance overrides")
+    }
+
     func testParticleDrawKeysAndContainerNodesAgreeOnCaptureAndWorkshopScenes() throws {
         let install = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")

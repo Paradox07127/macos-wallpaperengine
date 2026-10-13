@@ -18,6 +18,38 @@ public final class WPEParityScriptEngine {
         }
     }
 
+    /// The final shader material table, including constants absent from scene JSON. Values use native stored units.
+    public struct MaterialConstant: Sendable {
+        public var value: SIMD4<Float>
+        public var components: Int
+        public var angle: Bool
+
+        public init(value: SIMD4<Float>, components: Int, angle: Bool = false) {
+            self.value = value
+            self.components = components
+            self.angle = angle
+        }
+    }
+
+    /// An optional product storage provider. The script bridge serializes on set and parses a new value on get.
+    /// Its lifetime and screen/project identity are the provider's responsibility, not inferred by this engine.
+    public struct Storage {
+        public enum Location: Sendable { case global, screen }
+        public var get: (String, Location) -> String?
+        public var set: (String, String, Location) -> Void
+        public var delete: (String, Location) -> Bool
+        public var clear: (Location) -> Bool
+
+        public init(get: @escaping (String, Location) -> String?,
+                    set: @escaping (String, String, Location) -> Void,
+                    delete: @escaping (String, Location) -> Bool, clear: @escaping (Location) -> Bool) {
+            self.get = get
+            self.set = set
+            self.delete = delete
+            self.clear = clear
+        }
+    }
+
     public struct Configuration {
         /// Scene files first, then WPE's `assets`; modules and baseclasses.js load through it.
         public var assets: WPEParityProgramAssets
@@ -27,12 +59,29 @@ public final class WPEParityScriptEngine {
         public var userPropertiesJSON: String
         /// Constants whose shader annotation sets the angle flag (constant flags +0xac bit 0x20).
         public var angleConstants: Set<ConstantKey>
+        public var materialConstants: [ConstantKey: MaterialConstant]
+        /// Native/parsed field seeds; scene fields have objectID "", video fields use "video.name".
+        public var fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue]
+        /// Extend/replace registered descriptors by (owner, name), including computed flag-2 fields.
+        public var propertyOverrides: [WPEParityScriptProperty]
+        public var storage: Storage?
+        /// A successful transaction must create the actual resources and append their live state before returning.
+        public var createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)?
+        /// Called at the deferred deletion phase, after that layer's destroy events.
+        public var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
+        public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Level 0 log, 1 warn, 2 error.
         public var log: (Int, String) -> Void
         public var openUserShortcut: (String) -> Bool
 
         public init(assets: WPEParityProgramAssets, canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
                     userPropertiesJSON: String = "{}", angleConstants: Set<ConstantKey> = [],
+                    materialConstants: [ConstantKey: MaterialConstant] = [:],
+                    fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:],
+                    propertyOverrides: [WPEParityScriptProperty] = [], storage: Storage? = nil,
+                    createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
+                    destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
+                    sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
             self.assets = assets
@@ -40,6 +89,13 @@ public final class WPEParityScriptEngine {
             self.screenResolution = screenResolution
             self.userPropertiesJSON = userPropertiesJSON
             self.angleConstants = angleConstants
+            self.materialConstants = materialConstants
+            self.fieldDefaults = fieldDefaults
+            self.propertyOverrides = propertyOverrides
+            self.storage = storage
+            self.createLayer = createLayer
+            self.destroyLayer = destroyLayer
+            self.sortLayer = sortLayer
             self.log = log
             self.openUserShortcut = openUserShortcut
         }
@@ -77,27 +133,33 @@ public final class WPEParityScriptEngine {
     public struct CreatedLayer: Sendable {
         public let id: String
         public let configJSON: String
+
+        public init(id: String, configJSON: String) {
+            self.id = id
+            self.configJSON = configJSON
+        }
     }
 
     private struct Slot {
         var layer: Int32
         var descriptor: Int32
         var effect: Int32 = -1
-        var pass: Int32 = -1
+        var materialPass: WPEParityMaterialPassKey?
     }
 
     private enum Refresh {
-        case object(slot: Int, state: Int, WPEParitySceneState.Property)
-        case effect(slot: Int, state: Int)
-        case constant(slot: Int, pass: Int, name: String)
+        case object(slot: Int, objectID: String, WPEParitySceneState.Property)
+        case effect(slot: Int, key: WPEParitySceneState.EffectKey)
+        case constant(slot: Int, key: WPEParityMaterialPassKey, name: String)
+        case field(slot: Int, objectID: String, name: String)
     }
 
     private struct Layer {
         let id: String
         let kind: WPEParityScriptLayerKind
         let base: Int
-        let stateIndex: Int?
         let config: WPESceneJSONValue
+        let hasVideo: Bool
     }
 
     /// Exceeding it resets the script clock to 0 (DAT_14049296c, 14017fa70.c:216-223).
@@ -113,12 +175,14 @@ public final class WPEParityScriptEngine {
     public private(set) var destroyedObjectIDs: [String] = []
     public private(set) var createdLayers: [CreatedLayer] = []
     public private(set) var started = false
+    public private(set) var audioResolutions: Set<Int> = []
 
     private let context: JSContext
     private let configuration: Configuration
     private var host: JSValue!
     private var tickFunction: JSValue!
     private var floats: UnsafeMutablePointer<Float>
+    private var integers: UnsafeMutablePointer<Int32>
     private var dirtyFlags: UnsafeMutablePointer<UInt8>
     private var dirty: UnsafeMutablePointer<Int32>
     private var capacity: Int
@@ -131,10 +195,12 @@ public final class WPEParityScriptEngine {
     private var refresh: [Refresh] = []
     private var effectKeys: [WPEParitySceneState.EffectKey] = []
     private var sceneBase = 0
-    private var clock: Double = 0
+    private var clock: Float = 0
+    private var preparedFrame = false
     private var wasDown = false
     private var dispatchCounts = [Int](repeating: 0, count: WPEParityScriptEvent.allCases.count)
     private let sourceObjects: [WPESceneJSONValue]
+    private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
 
     /// Compiles every property script of `document`; `start` runs their `init`.
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
@@ -143,6 +209,7 @@ public final class WPEParityScriptEngine {
         sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         capacity = 0
         floats = .allocate(capacity: 1)
+        integers = .allocate(capacity: 1)
         dirtyFlags = .allocate(capacity: 1)
         dirty = .allocate(capacity: 1)
         globals = .allocate(capacity: 16)
@@ -193,6 +260,7 @@ public final class WPEParityScriptEngine {
     public func start(state: inout WPEParitySceneState) {
         guard !started else { return }
         started = true
+        seedMissingFields(state: &state)
         run(state: &state) {
             count(.initialize)
             host.invokeMethod("init", withArguments: [0])
@@ -202,18 +270,14 @@ public final class WPEParityScriptEngine {
     /// One frame of the manager tick's script step (140171440.c:888-896): timers, then event 1 in binding order.
     /// Animations and media events of the frame must already be in `state`.
     public func tick(dt: Float, input: Input = Input(), state: inout WPEParitySceneState) {
-        frame &+= 1
-        frametime = dt
-        clock += Double(dt)
-        runtime = Float(clock)
-        if runtime > Self.runtimeWrap {
-            clock = 0
-            runtime = 0
+        if !preparedFrame {
+            clock += dt
+            if clock > Self.runtimeWrap {
+                clock = 0
+            }
+            prepareFrame(frame: frame &+ 1, dt: dt, runtime: clock, input: input)
         }
-        globals[0] = dt
-        globals[1] = runtime
-        globals[14] = dt * 1000
-        write(input)
+        preparedFrame = false
         run(state: &state) {
             count(.update)
             var exception: JSValueRef?
@@ -222,6 +286,20 @@ public final class WPEParityScriptEngine {
                 record(JSValue(jsValueRef: exception, in: context).toString())
             }
         }
+    }
+
+    /// Inject the scene's frame clock and sampled input before cursor, media and animation events.
+    /// The following tick consumes these values; its fallback dt/input apply only when no frame was prepared.
+    public func prepareFrame(frame: UInt64, dt: Float, runtime: Float, input: Input) {
+        self.frame = frame
+        frametime = dt
+        self.runtime = runtime
+        clock = runtime
+        globals[0] = dt
+        globals[1] = runtime
+        globals[14] = dt * 1000
+        write(input)
+        preparedFrame = true
     }
 
     /// The cursor pass's events of this frame, sent before `tick` (14017fa70.c:473-476). A left press opens the
@@ -247,8 +325,8 @@ public final class WPEParityScriptEngine {
         wasDown = input.leftDown
     }
 
-    /// Any other event with its payload JSON: media fields, `[w, h]` for resizeScreen, `{"event":…,"value":…}` for
-    /// animation events. `target` limits it to one object's bindings.
+    /// Any other event with its payload JSON: media fields, `[w, h]` for resizeScreen, and the authored event's
+    /// JSON text for animationEvent (whose second argument is the current property). `target` limits the object.
     public func dispatch(_ event: WPEParityScriptEvent, payloadJSON: String?, target: String? = nil,
                          state: inout WPEParitySceneState) {
         let index = target.flatMap { id in layers.firstIndex { $0.id == id } } ?? -1
@@ -256,6 +334,14 @@ public final class WPEParityScriptEngine {
             count(event)
             host.invokeMethod("dispatch", withArguments: [event.rawValue, index, payloadJSON ?? NSNull()])
         }
+    }
+
+    /// Refresh both sizes before resizeScreen observes them; the payload is the screen size.
+    public func resize(canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
+                       state: inout WPEParitySceneState) {
+        (globals[3], globals[4]) = (canvasSize.x, canvasSize.y)
+        (globals[5], globals[6]) = (screenResolution.x, screenResolution.y)
+        dispatch(.resizeScreen, payloadJSON: "[\(screenResolution.x),\(screenResolution.y)]", state: &state)
     }
 
     /// The user-property path after the descriptor bindings (1401731d0.c:238-840): engine.userProperties takes
@@ -317,7 +403,16 @@ public final class WPEParityScriptEngine {
     /// Mirrors the state into the slots, runs `body`, and applies every slot it wrote.
     private func run(state: inout WPEParitySceneState, _ body: () -> Void) {
         mirror(state)
-        body()
+        withUnsafeMutablePointer(to: &state) { pointer in
+            let previous = activeState
+            activeState = pointer
+            defer { activeState = previous }
+            body()
+        }
+        flushWrites(to: &state)
+    }
+
+    private func flushWrites(to state: inout WPEParitySceneState) {
         let count = Int(dirty[0])
         guard count > 0 else { return }
         for entry in 1 ... count {
@@ -331,23 +426,21 @@ public final class WPEParityScriptEngine {
     private func mirror(_ state: WPEParitySceneState) {
         for entry in refresh {
             switch entry {
-            case let .object(slot, index, property):
-                let object = state.objects[index]
-                let value: SIMD4<Float> = switch property {
-                case .origin: SIMD4(object.origin, 0)
-                case .scale: SIMD4(object.scale, 0)
-                case .angles: SIMD4(object.angles, 0)
-                case .alpha: SIMD4(object.alpha, 0, 0, 0)
-                case .color: SIMD4(object.color, 0)
-                case .brightness: SIMD4(object.brightness, 0, 0, 0)
-                case .visible: SIMD4(object.visible ? 1 : 0, 0, 0, 0)
+            case let .object(slot, objectID, property):
+                if let value = state.value(property, of: objectID) {
+                    store(value, at: slot)
                 }
-                store(value, at: slot)
-            case let .effect(slot, index):
-                floats[slot * 4] = state.effectVisibility[index] ? 1 : 0
-            case let .constant(slot, pass, name):
-                if let constant = state.constants(pass: pass)[name] {
+            case let .effect(slot, key):
+                if let visible = state.isEffectVisible(key.effectID, of: key.objectID) {
+                    floats[slot * 4] = visible ? 1 : 0
+                }
+            case let .constant(slot, key, name):
+                if let constant = state.constant(name, of: key) {
                     store(constant.value, at: slot)
+                }
+            case let .field(slot, objectID, name):
+                if let value = state.scriptField(name, of: objectID) {
+                    store(value, at: slot)
                 }
             }
         }
@@ -361,6 +454,28 @@ public final class WPEParityScriptEngine {
         base[3] = value.w
     }
 
+    private func store(_ value: WPEParitySceneState.ScriptValue, at slot: Int) {
+        switch value {
+        case let .vector(vector): store(vector, at: slot)
+        case let .integer(integer): integers[slot] = integer
+        case let .string(string):
+            if host != nil {
+                host.invokeMethod("setString", withArguments: [slot, string])
+            }
+        }
+    }
+
+    private func seedMissingFields(state: inout WPEParitySceneState, first: Int = 0) {
+        for (slotIndex, value) in initialValues.dropFirst(first) {
+            let slot = slots[slotIndex]
+            let descriptor = descriptors[Int(slot.descriptor)]
+            guard descriptor.target == .field else { continue }
+            let objectID = slot.layer < 0 ? "" : layers[Int(slot.layer)].id
+            guard state.scriptField(descriptor.fieldName, of: objectID) == nil else { continue }
+            state.setScriptField(descriptor.fieldName, of: objectID, to: value, invalidating: descriptor.invalidation)
+        }
+    }
+
     private func apply(slot index: Int, to state: inout WPEParitySceneState) {
         let slot = slots[index]
         let descriptor = descriptors[Int(slot.descriptor)]
@@ -369,7 +484,7 @@ public final class WPEParityScriptEngine {
         let layer = slot.layer >= 0 ? layers[Int(slot.layer)] : nil
         switch descriptor.target {
         case let .object(property):
-            if let stateIndex = layer?.stateIndex {
+            if let id = layer?.id, let stateIndex = state.index(of: id) {
                 state.set(property, at: stateIndex, to: value)
             }
         case .effectVisible:
@@ -378,14 +493,17 @@ public final class WPEParityScriptEngine {
                 state.setEffect(key.effectID, of: key.objectID, visible: value.x != 0)
             }
         case .constant:
-            if slot.pass >= 0 {
-                state.setConstant(descriptor.name, pass: Int(slot.pass),
+            if let key = slot.materialPass {
+                state.setConstant(descriptor.name, of: key,
                                   to: WPEParitySceneState.Constant(value: value,
                                                                    count: descriptor.type.componentCount))
             }
         case .field:
-            let stored: WPEParitySceneState.ScriptValue = descriptor.type == .string
-                ? .string(host.invokeMethod("getString", withArguments: [index]).toString()) : .vector(value)
+            let stored: WPEParitySceneState.ScriptValue = switch descriptor.type {
+            case .string: .string(host.invokeMethod("getString", withArguments: [index]).toString())
+            case .int: .integer(integers[index])
+            default: .vector(value)
+            }
             state.setScriptField(descriptor.fieldName, of: layer?.id ?? "", to: stored,
                                  invalidating: descriptor.invalidation)
         }
@@ -402,8 +520,20 @@ public final class WPEParityScriptEngine {
         return Int32(descriptors.count - 1)
     }
 
-    private static func fields(_ kind: WPEParityScriptLayerKind) -> [WPEParityScriptProperty] {
-        WPEParityScriptProperty.layer(kind) + (kind == .image ? WPEParityScriptProperty.video : [])
+    private func registered(_ fields: [WPEParityScriptProperty]) -> [WPEParityScriptProperty] {
+        fields.map { field in
+            configuration.propertyOverrides.first { $0.owner == field.owner && $0.name == field.name } ?? field
+        } + configuration.propertyOverrides.filter { override in
+            fields.contains { $0.owner == override.owner } && !fields.contains { $0.owner == override.owner && $0.name == override.name }
+        }
+    }
+
+    private func fields(_ kind: WPEParityScriptLayerKind) -> [WPEParityScriptProperty] {
+        registered(WPEParityScriptProperty.layer(kind) + (kind == .image ? WPEParityScriptProperty.video : []))
+    }
+
+    private var sceneFields: [WPEParityScriptProperty] {
+        registered(WPEParityScriptProperty.scene)
     }
 
     private static func kind(of id: String, object: WPESceneJSONValue,
@@ -432,44 +562,53 @@ public final class WPEParityScriptEngine {
     private func layout(document: WPESceneDocument, state: WPEParitySceneState) {
         for object in document.resolvedObjectsJSON {
             guard let id = WPEParitySceneAnimations.id(object) else { continue }
-            addLayer(id: id, kind: Self.kind(of: id, object: object, document: document), config: object, state: state)
+            addLayer(id: id, kind: Self.kind(of: id, object: object, document: document), config: object, state: state,
+                     document: document)
         }
         sceneBase = slots.count
-        for descriptor in WPEParityScriptProperty.scene {
+        for descriptor in sceneFields {
             let slot = slots.count
             slots.append(Slot(layer: -1, descriptor: index(of: descriptor)))
-            if let value = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor) {
+            refresh.append(.field(slot: slot, objectID: "", name: descriptor.fieldName))
+            let key = WPEParitySceneState.ScriptFieldKey(objectID: "", name: descriptor.fieldName)
+            if let value = configuration.fieldDefaults[key]
+                ?? Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
+                ?? Self.generalDefault(descriptor) {
                 initialValues.append((slot, value))
             }
         }
         grow(to: slots.count + 256)
         for (slot, value) in initialValues {
-            if case let .vector(vector) = value {
-                store(vector, at: slot)
-            }
+            store(value, at: slot)
         }
     }
 
     @discardableResult
     private func addLayer(id: String, kind: WPEParityScriptLayerKind, config: WPESceneJSONValue,
-                          state: WPEParitySceneState?) -> Int {
+                          state: WPEParitySceneState?, document: WPESceneDocument? = nil) -> Int {
         let layerIndex = Int32(layers.count)
         let base = slots.count
         let stateIndex = state?.index(of: id)
-        layers.append(Layer(id: id, kind: kind, base: base, stateIndex: stateIndex, config: config))
-        for descriptor in Self.fields(kind) {
+        let hasVideo = config["video"] != nil || ["video.rate", "video.loop", "video.duration"].contains {
+            configuration.fieldDefaults[.init(objectID: id, name: $0)] != nil || state?.scriptField($0, of: id) != nil
+        }
+        layers.append(Layer(id: id, kind: kind, base: base, config: config, hasVideo: hasVideo))
+        for descriptor in fields(kind) {
             let slot = slots.count
             slots.append(Slot(layer: layerIndex, descriptor: index(of: descriptor)))
-            if case let .object(property) = descriptor.target, let stateIndex {
-                refresh.append(.object(slot: slot, state: stateIndex, property))
+            if case let .object(property) = descriptor.target, stateIndex != nil {
+                refresh.append(.object(slot: slot, objectID: id, property))
                 continue
             }
             let raw: WPESceneJSONValue? = switch descriptor.owner {
             case .particleInstance: config["instanceoverride"]?[descriptor.name]
-            case .video: nil
+            case .video: config["video"]?[descriptor.name]
             default: config[descriptor.name]
             }
-            if let value = Self.parse(raw, descriptor) ?? Self.fallback(descriptor) {
+            refresh.append(.field(slot: slot, objectID: id, name: descriptor.fieldName))
+            let key = WPEParitySceneState.ScriptFieldKey(objectID: id, name: descriptor.fieldName)
+            if let value = configuration.fieldDefaults[key] ?? (descriptor.flags.contains(.notFromJSON) ? nil : Self.parse(raw, descriptor))
+                ?? Self.fallback(descriptor, objectID: id, document: document) {
                 initialValues.append((slot, value))
             }
         }
@@ -481,7 +620,7 @@ public final class WPEParityScriptEngine {
             if let effectIndex = state.effects.firstIndex(of: .init(objectID: id, effectID: effectID)) {
                 entry.effect = Int32(effectKeys.count)
                 effectKeys.append(state.effects[effectIndex])
-                refresh.append(.effect(slot: slot, state: effectIndex))
+                refresh.append(.effect(slot: slot, key: state.effects[effectIndex]))
             }
             slots.append(entry)
             effectSlots[Int(layerIndex), default: []].append((effectID, slot))
@@ -489,9 +628,15 @@ public final class WPEParityScriptEngine {
                 addConstants(values["constantshadervalues"], layer: layerIndex,
                              pass: WPEParityMaterialPassKey(objectID: id, effectID: effectID, pass: pass), state: state)
             }
+            for pass in Set(configuration.materialConstants.keys.filter { $0.pass.objectID == id && $0.pass.effectID == effectID }.map(\.pass)) {
+                addConstants(nil, layer: layerIndex, pass: pass, state: state)
+            }
         }
         addConstants(config["instance"]?["constantshadervalues"], layer: layerIndex,
                      pass: WPEParityMaterialPassKey(objectID: id), state: state)
+        for pass in Set(configuration.materialConstants.keys.filter { $0.pass.objectID == id && $0.pass.effectID == nil }.map(\.pass)) {
+            addConstants(nil, layer: layerIndex, pass: pass, state: state)
+        }
         return Int(layerIndex)
     }
 
@@ -501,20 +646,29 @@ public final class WPEParityScriptEngine {
 
     private func addConstants(_ values: WPESceneJSONValue?, layer: Int32, pass key: WPEParityMaterialPassKey,
                               state: WPEParitySceneState) {
-        guard case let .object(entries)? = values else { return }
+        let entries: [String: WPESceneJSONValue] = if case let .object(raw)? = values {
+            raw
+        } else {
+            [:]
+        }
         let passIndex = state.passIndex(of: key)
-        for (name, raw) in entries.sorted(by: { $0.key < $1.key }) {
-            let components = state.constant(name, of: key)?.count ?? Self.components(raw["value"] ?? raw).count
-            let angle = configuration.angleConstants.contains(ConstantKey(pass: key, name: name))
+        let native = passIndex.map { state.constants(pass: $0) } ?? [:]
+        let metadata = configuration.materialConstants.filter { $0.key.pass == key }
+        let names = Set(entries.keys).union(native.keys).union(metadata.keys.map(\.name)).sorted()
+        for name in names {
+            guard constantSlots[key]?[name] == nil else { continue }
+            let raw = entries[name]
+            let info = metadata[ConstantKey(pass: key, name: name)]
+            let components = info?.components ?? native[name]?.count ?? raw.map { Self.components($0["value"] ?? $0).count } ?? 0
+            let angle = info?.angle ?? configuration.angleConstants.contains(ConstantKey(pass: key, name: name))
             guard let descriptor = WPEParityScriptProperty.material(name: name, components: components, angle: angle)
             else { continue }
             let slot = slots.count
-            slots.append(Slot(layer: layer, descriptor: index(of: descriptor), pass: Int32(passIndex ?? -1)))
+            slots.append(Slot(layer: layer, descriptor: index(of: descriptor), materialPass: key))
             constantSlots[key, default: [:]][name] = slot
-            if let passIndex {
-                refresh.append(.constant(slot: slot, pass: passIndex, name: name))
-            } else {
-                initialValues.append((slot, .vector(Self.vector(Self.components(raw["value"] ?? raw)))))
+            refresh.append(.constant(slot: slot, key: key, name: name))
+            if let value = native[name]?.value ?? info?.value ?? raw.map({ Self.vector(Self.components($0["value"] ?? $0)) }) {
+                initialValues.append((slot, .vector(value)))
             }
         }
     }
@@ -524,23 +678,28 @@ public final class WPEParityScriptEngine {
         let newCapacity = max(count, capacity * 2)
         let newFloats = UnsafeMutablePointer<Float>.allocate(capacity: newCapacity * 4)
         newFloats.initialize(repeating: 0, count: newCapacity * 4)
+        let newIntegers = UnsafeMutablePointer<Int32>.allocate(capacity: newCapacity)
+        newIntegers.initialize(repeating: 0, count: newCapacity)
         let newFlags = UnsafeMutablePointer<UInt8>.allocate(capacity: newCapacity)
         newFlags.initialize(repeating: 0, count: newCapacity)
         let newDirty = UnsafeMutablePointer<Int32>.allocate(capacity: newCapacity + 1)
         newDirty.initialize(repeating: 0, count: newCapacity + 1)
         if capacity > 0 {
             newFloats.update(from: floats, count: capacity * 4)
+            newIntegers.update(from: integers, count: capacity)
             newFlags.update(from: dirtyFlags, count: capacity)
             newDirty.update(from: dirty, count: capacity + 1)
         } else {
             floats.deallocate()
+            integers.deallocate()
             dirtyFlags.deallocate()
             dirty.deallocate()
         }
         // The old buffers belong to their typed arrays, which free them when collected.
-        (floats, dirtyFlags, dirty, capacity) = (newFloats, newFlags, newDirty, newCapacity)
+        (floats, integers, dirtyFlags, dirty, capacity) = (newFloats, newIntegers, newFlags, newDirty, newCapacity)
         guard host != nil else { return }
         host.invokeMethod("rebind", withArguments: [typedArray(.float32, floats, newCapacity * 16),
+                                                    typedArray(.int32, integers, newCapacity * 4),
                                                     typedArray(.uint8, dirtyFlags, newCapacity),
                                                     typedArray(.int32, dirty, (newCapacity + 1) * 4)])
     }
@@ -573,15 +732,16 @@ public final class WPEParityScriptEngine {
             host.setObject(value, forKeyedSubscript: key as NSString)
         }
         set("floats", typedArray(.float32, floats, capacity * 16))
+        set("integers", typedArray(.int32, integers, capacity * 4))
         set("dirtyFlags", typedArray(.uint8, dirtyFlags, capacity))
         set("dirty", typedArray(.int32, dirty, (capacity + 1) * 4))
         set("globals", typedArray(.float32, globals, 64, owned: false))
         set("audio", typedArray(.float32, audio, 336 * 4, owned: false))
         set("eventNames", WPEParityScriptEvent.allCases.map { $0.functionName ?? NSNull() as Any })
         set("kinds", WPEParityScriptLayerKind.allCases.map { kind in
-            Self.fields(kind).enumerated().map { rel, field in Self.fieldInfo(field, rel: rel) }
+            fields(kind).enumerated().map { rel, field in Self.fieldInfo(field, rel: rel) }
         })
-        set("sceneFields", WPEParityScriptProperty.scene.enumerated().map { rel, field in
+        set("sceneFields", sceneFields.enumerated().map { rel, field in
             Self.fieldInfo(field, rel: rel)
         })
         set("sceneBase", sceneBase)
@@ -602,9 +762,30 @@ public final class WPEParityScriptEngine {
         let shortcut: @convention(block) (String) -> Bool = { [weak self] name in
             self?.configuration.openUserShortcut(name) ?? false
         }
-        let destroyed: @convention(block) (Double) -> Void = { [weak self] index in
-            guard let self else { return }
-            destroyedObjectIDs.append(layers[Int(index)].id)
+        let canDestroy: @convention(block) (Double) -> Bool = { [weak self] index in
+            guard let self else { return false }
+            return layers.indices.contains(Int(index)) && configuration.destroyLayer != nil
+        }
+        let destroyed: @convention(block) (Double) -> Bool = { [weak self] index in
+            guard let self, layers.indices.contains(Int(index)), let state = activeState,
+                  let destroy = configuration.destroyLayer else { return false }
+            let id = layers[Int(index)].id
+            flushWrites(to: &state.pointee)
+            guard destroy(id, &state.pointee) else {
+                record("destroyLayer transaction failed for \(id)")
+                return false
+            }
+            destroyedObjectIDs.append(id)
+            return true
+        }
+        let sort: @convention(block) (Double, Double) -> Bool = { [weak self] index, position in
+            guard let self, layers.indices.contains(Int(index)), let state = activeState,
+                  let sort = configuration.sortLayer else { return false }
+            flushWrites(to: &state.pointee)
+            return sort(layers[Int(index)].id, Int(position), &state.pointee)
+        }
+        let registerAudio: @convention(block) (Double) -> Void = { [weak self] resolution in
+            self?.audioResolutions.insert(Int(resolution))
         }
         let initialConfig: @convention(block) (Double) -> String? = { [weak self] index in
             guard let self, case var .object(entries) = layers[Int(index)].config else { return nil }
@@ -620,8 +801,28 @@ public final class WPEParityScriptEngine {
         set("log", log)
         set("openUserShortcut", shortcut)
         set("destroyed", destroyed)
+        set("canDestroyLayer", canDestroy)
+        set("sortLayer", sort)
+        set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("createLayer", create)
+        set("storageEnabled", configuration.storage != nil)
+        let storageGet: @convention(block) (String, Double) -> String? = { [weak self] key, location in
+            self?.configuration.storage?.get(key, location == 0 ? .global : .screen)
+        }
+        let storageSet: @convention(block) (String, String, Double) -> Void = { [weak self] key, value, location in
+            self?.configuration.storage?.set(key, value, location == 0 ? .global : .screen)
+        }
+        let storageDelete: @convention(block) (String, Double) -> Bool = { [weak self] key, location in
+            self?.configuration.storage?.delete(key, location == 0 ? .global : .screen) ?? false
+        }
+        let storageClear: @convention(block) (Double) -> Bool = { [weak self] location in
+            self?.configuration.storage?.clear(location == 0 ? .global : .screen) ?? false
+        }
+        set("storageGet", storageGet)
+        set("storageSet", storageSet)
+        set("storageDelete", storageDelete)
+        set("storageClear", storageClear)
         context.evaluateScript(WPEParityScriptPrelude.source, withSourceURL: URL(string: "parity-host.js"))
             .call(withArguments: [host])
         self.host = host
@@ -644,7 +845,7 @@ public final class WPEParityScriptEngine {
         default: ""
         }
         return ["name": field.name, "type": field.type.rawValue, "angle": field.flags.contains(.angle),
-                "rel": rel, "owner": owner]
+                "readonly": field.flags.contains(.notFromJSON), "rel": rel, "owner": owner]
     }
 
     private func addHostLayer(_ index: Int, _ layer: Layer) {
@@ -659,83 +860,124 @@ public final class WPEParityScriptEngine {
             guard let effect = effectJSON.first(where: { WPEParitySceneAnimations.id($0) == effectID }) else {
                 continue
             }
-            let passes = WPEParityProgramScene.array(effect["passes"]).indices.map { pass -> [String: Any] in
+            let passCount = max(WPEParityProgramScene.array(effect["passes"]).count,
+                                (constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == effectID }.map(\.pass).max() ?? -1) + 1)
+            let passes = (0 ..< passCount).map { pass -> [String: Any] in
                 let key = WPEParityMaterialPassKey(objectID: layer.id, effectID: effectID, pass: pass)
-                var constants: [String: Any] = [:]
-                for (name, constantSlot) in constantSlots[key] ?? [:] {
-                    let descriptor = descriptors[Int(slots[constantSlot].descriptor)]
-                    constants[name] = ["slot": constantSlot, "type": descriptor.type.rawValue,
-                                       "angle": descriptor.flags.contains(.angle)]
-                }
-                return constants
+                return materialInfo(key)
             }
             effects.append(["slot": slot, "name": WPEParityProgramScene.string(effect["name"]) ?? effectID,
                             "passes": passes])
         }
-        host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects])
+        let baseMaterials = constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == nil }
+            .sorted { $0.pass < $1.pass }.map(materialInfo)
+        host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials, layer.hasVideo])
+    }
+
+    private func materialInfo(_ key: WPEParityMaterialPassKey) -> [String: Any] {
+        var constants: [String: Any] = [:]
+        for (name, constantSlot) in constantSlots[key] ?? [:] {
+            let descriptor = descriptors[Int(slots[constantSlot].descriptor)]
+            constants[name] = ["slot": constantSlot, "type": descriptor.type.rawValue,
+                               "angle": descriptor.flags.contains(.angle), "readonly": descriptor.flags.contains(.notFromJSON)]
+        }
+        return constants
     }
 
     private func createLayer(json: String) -> Double {
-        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)),
-              let config = WPESceneJSONValue(jsonValue: object) else { return -1 }
+        guard let create = configuration.createLayer, let state = activeState else {
+            configuration.log(1, "createLayer is unsupported without a product resource transaction")
+            return -1
+        }
+        flushWrites(to: &state.pointee)
+        guard let created = create(json, &state.pointee),
+              let object = try? JSONSerialization.jsonObject(with: Data(created.configJSON.utf8)),
+              let config = WPESceneJSONValue(jsonValue: object),
+              state.pointee.index(of: created.id) != nil,
+              !layers.contains(where: { $0.id == created.id }) else { return -1 }
         let kind: WPEParityScriptLayerKind = config["text"] != nil ? .text
             : config["particle"] != nil ? .particle : config["sound"] != nil ? .sound : .image
-        let id = "created-\(createdLayers.count + 1)"
         let start = initialValues.count
-        let index = addLayer(id: id, kind: kind, config: config, state: nil)
+        let firstBinding = bindings.filter(\.compiled).count
+        let index = addLayer(id: created.id, kind: kind, config: config, state: state.pointee)
         grow(to: slots.count)
         for (slot, value) in initialValues[start...] {
-            switch value {
-            case let .vector(vector): store(vector, at: slot)
-            case let .string(string): host.invokeMethod("setString", withArguments: [slot, string])
-            }
+            store(value, at: slot)
         }
+        seedMissingFields(state: &state.pointee, first: start)
+        mirror(state.pointee)
         addHostLayer(index, layers[index])
-        createdLayers.append(CreatedLayer(id: id, configJSON: json))
+        compileLayerBindings(index, source: config)
+        host.invokeMethod("init", withArguments: [firstBinding])
+        createdLayers.append(created)
         return Double(index)
     }
 
     // MARK: Bindings
 
-    private func compileBindings(document _: WPESceneDocument, state _: WPEParitySceneState) {
+    private func compileBindings(document: WPESceneDocument, state _: WPEParitySceneState) {
+        if case let .object(entries) = document.resolvedGeneralJSON {
+            let supported = Set(sceneFields.map(\.name))
+            for (name, value) in entries where value["script"] != nil && !supported.contains(name) {
+                configuration.log(1, "general.\(name) script is unsupported: no registered descriptor consumer")
+            }
+        }
+        for (rel, descriptor) in sceneFields.enumerated() {
+            guard !descriptor.flags.contains(.notFromJSON) else { continue }
+            addBinding(layerIndex: -1, path: descriptor.name.lowercased(), slot: sceneBase + rel,
+                       descriptor: descriptor, className: "general", source: document.sourceJSON["general"],
+                       root: document.resolvedGeneralJSON)
+        }
         for (layerIndex, layer) in layers.enumerated() {
             let source = sourceObjects.first { WPEParitySceneAnimations.id($0) == layer.id }
-            for (rel, descriptor) in Self.fields(layer.kind).enumerated() {
-                let path = descriptor.owner == .particleInstance ? "instanceoverride/\(descriptor.name)"
-                    : descriptor.name
-                guard descriptor.owner != .video else { continue }
-                addBinding(layerIndex: layerIndex, path: path, slot: layer.base + rel, descriptor: descriptor,
-                           className: "\(layer.kind)", source: source)
+            compileLayerBindings(layerIndex, source: source)
+        }
+    }
+
+    private func compileLayerBindings(_ layerIndex: Int, source: WPESceneJSONValue?) {
+        let layer = layers[layerIndex]
+        if case let .object(entries) = layer.config {
+            let supported = Set(fields(layer.kind).filter { !$0.flags.contains(.notFromJSON) }
+                .filter { $0.owner != .video && $0.owner != .particleInstance }.map(\.name))
+            for (name, value) in entries where value["script"] != nil && !supported.contains(name) {
+                configuration.log(1, "\(layer.id).\(name) script is unsupported: no registered writable descriptor")
             }
-            for (effectIndex, effect) in WPEParityProgramScene.array(layer.config["effects"]).enumerated() {
-                guard let effectID = WPEParitySceneAnimations.id(effect) else { continue }
-                if let slot = effectSlots[layerIndex]?.first(where: { $0.id == effectID })?.slot {
-                    addBinding(layerIndex: layerIndex, path: "effects/\(effectIndex)/visible", slot: slot,
-                               descriptor: WPEParityScriptProperty.effectVisible, className: "effect", source: source)
+        }
+        for (rel, descriptor) in fields(layer.kind).enumerated() {
+            guard !descriptor.flags.contains(.notFromJSON) else { continue }
+            let path = descriptor.owner == .particleInstance ? "instanceoverride/\(descriptor.name)"
+                : descriptor.owner == .video ? "video/\(descriptor.name)" : descriptor.name
+            addBinding(layerIndex: layerIndex, path: path, slot: layer.base + rel, descriptor: descriptor,
+                       className: "\(layer.kind)", source: source)
+        }
+        for (effectIndex, effect) in WPEParityProgramScene.array(layer.config["effects"]).enumerated() {
+            guard let effectID = WPEParitySceneAnimations.id(effect) else { continue }
+            if let slot = effectSlots[layerIndex]?.first(where: { $0.id == effectID })?.slot {
+                addBinding(layerIndex: layerIndex, path: "effects/\(effectIndex)/visible", slot: slot,
+                           descriptor: WPEParityScriptProperty.effectVisible, className: "effect", source: source)
+            }
+            for pass in WPEParityProgramScene.array(effect["passes"]).indices {
+                let key = WPEParityMaterialPassKey(objectID: layer.id, effectID: effectID, pass: pass)
+                for (name, slot) in (constantSlots[key] ?? [:]).sorted(by: { $0.key < $1.key }) {
+                    addBinding(layerIndex: layerIndex,
+                               path: "effects/\(effectIndex)/passes/\(pass)/constantshadervalues/\(name)",
+                               slot: slot, descriptor: descriptors[Int(slots[slot].descriptor)],
+                               className: "material", source: source)
                 }
-                for pass in WPEParityProgramScene.array(effect["passes"]).indices {
-                    let key = WPEParityMaterialPassKey(objectID: layer.id, effectID: effectID, pass: pass)
-                    for (name, slot) in (constantSlots[key] ?? [:]).sorted(by: { $0.key < $1.key }) {
-                        addBinding(layerIndex: layerIndex,
-                                   path: "effects/\(effectIndex)/passes/\(pass)/constantshadervalues/\(name)",
-                                   slot: slot, descriptor: descriptors[Int(slots[slot].descriptor)],
-                                   className: "material", source: source)
-                    }
-                }
             }
-            for (name, slot) in (constantSlots[WPEParityMaterialPassKey(objectID: layer.id)] ?? [:])
-                .sorted(by: { $0.key < $1.key }) {
-                addBinding(layerIndex: layerIndex, path: "instance/constantshadervalues/\(name)", slot: slot,
-                           descriptor: descriptors[Int(slots[slot].descriptor)], className: "material",
-                           source: source)
-            }
+        }
+        for (name, slot) in (constantSlots[WPEParityMaterialPassKey(objectID: layer.id)] ?? [:])
+            .sorted(by: { $0.key < $1.key }) {
+            addBinding(layerIndex: layerIndex, path: "instance/constantshadervalues/\(name)", slot: slot,
+                       descriptor: descriptors[Int(slots[slot].descriptor)], className: "material", source: source)
         }
     }
 
     private func addBinding(layerIndex: Int, path: String, slot: Int, descriptor: WPEParityScriptProperty,
-                            className: String, source: WPESceneJSONValue?) {
+                            className: String, source: WPESceneJSONValue?, root: WPESceneJSONValue? = nil) {
         let components = path.split(separator: "/").map(String.init)
-        let resolved = components.reduce(Optional(layers[layerIndex].config)) { node, key in
+        let config = root ?? (layerIndex >= 0 ? layers[layerIndex].config : nil)
+        let resolved = components.reduce(config) { node, key in
             Int(key).flatMap { node?[$0] } ?? node?[key]
         }
         guard case let .string(script)? = resolved?["script"], !script.isEmpty else { return }
@@ -759,23 +1001,71 @@ public final class WPEParityScriptEngine {
         if exceptionCount == before, let function, function.isObject {
             bits = Int(host.invokeMethod("addBinding", withArguments: [
                 function, name, "scripts/\(name).js", layerIndex, slot, descriptor.type.rawValue,
-                descriptor.flags.contains(.angle), vars,
+                descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars,
             ]).toInt32())
             if bits >= 0 {
                 handle = bindings.filter { $0.script >= 0 }.count
             }
         }
-        bindings.append(Binding(objectID: layers[layerIndex].id, path: path, name: name, compiled: handle >= 0,
+        bindings.append(Binding(objectID: layerIndex < 0 ? "" : layers[layerIndex].id, path: path, name: name, compiled: handle >= 0,
                                 exportBits: max(bits, 0), script: handle, userKeys: userKeys))
     }
 
     // MARK: JSON
 
-    private static func fallback(_ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
-        switch (descriptor.owner, descriptor.type) {
-        case (.particleInstance, .vec3): .vector(SIMD4(1, 1, 1, 0))
-        case (.particleInstance, _): .vector(SIMD4(1, 0, 0, 0))
-        case (_, .string): .string("")
+    private static func fallback(_ descriptor: WPEParityScriptProperty, objectID: String,
+                                 document: WPESceneDocument?) -> WPEParitySceneState.ScriptValue? {
+        if descriptor.owner == .text, let text = document?.textObjects.first(where: { $0.id == objectID }) {
+            switch descriptor.name {
+            case "text": return .string(text.text)
+            case "font": return .string(text.fontRelativePath ?? "systemfont_arial")
+            case "pointsize": return .vector(SIMD4(Float(text.pointSize), 0, 0, 0))
+            case "horizontalalign": return .string(text.horizontalAlignment)
+            case "verticalalign": return .string(text.verticalAlignment)
+            case "padding": return .vector(SIMD4(32, 32, 0, 0))
+            case "spacing": return .vector(SIMD4(Float(text.spacing.x), Float(text.spacing.y), 0, 0))
+            case "limituseellipsis": return .vector(SIMD4(text.limitUseEllipsis ? 1 : 0, 0, 0, 0))
+            case "maxwidth": return .vector(SIMD4(500, 0, 0, 0))
+            case "maxrows": return .integer(1)
+            default: break
+            }
+        }
+        if descriptor.owner == .sound, let sound = document?.soundObjects.first(where: { $0.id == objectID }) {
+            switch descriptor.name {
+            case "volume": return .vector(SIMD4(Float(sound.volume), 0, 0, 0))
+            case "mintime": return .vector(SIMD4(Float(sound.minTime), 0, 0, 0))
+            case "maxtime": return .vector(SIMD4(Float(sound.maxTime), 0, 0, 0))
+            default: break
+            }
+        }
+        switch (descriptor.owner, descriptor.name) {
+        case (.particleInstance, "colorn"):
+            let authoredColor = document?.particleObjects.first { $0.id == objectID }?.instanceOverride?.color
+            let color = authoredColor.map { SIMD3<Float>($0 / 255) } ?? .one
+            return .vector(SIMD4(color, 0))
+        case let (.particleInstance, name) where name.hasPrefix("controlpoint"):
+            return .vector(SIMD4(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude,
+                                 Float.greatestFiniteMagnitude, 0))
+        case (.particleInstance, _): return .vector(SIMD4(1, 0, 0, 0))
+        case (.camera, "zoom"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.text, "pointsize"): return .vector(SIMD4(32, 0, 0, 0))
+        case (.text, "font"): return .string("systemfont_arial")
+        case (.text, "padding"): return .vector(SIMD4(32, 32, 0, 0))
+        case (.text, "spacing"): return .vector(.zero)
+        case (.text, "maxwidth"): return .vector(SIMD4(500, 0, 0, 0))
+        case (.text, "maxrows"): return .integer(1)
+        case (.text, "horizontalalign"): return .string("center")
+        case (.text, "verticalalign"): return .string("middle")
+        case (.text, "limitwidth"), (.text, "limitrows"), (.text, "limituseellipsis"): return .vector(.zero)
+        default: return descriptor.type == .string ? .string("") : nil
+        }
+    }
+
+    private static func generalDefault(_ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
+        switch descriptor.name {
+        case "ambientcolor", "skylightcolor": .vector(.zero)
+        case "bloomstrength": .vector(SIMD4(2, 0, 0, 0))
+        case "bloomthreshold": .vector(SIMD4(0.65, 0, 0, 0))
         default: nil
         }
     }
@@ -790,8 +1080,25 @@ public final class WPEParityScriptEngine {
         if descriptor.type == .string {
             return WPEParityProgramScene.string(value).map { .string($0) }
         }
+        if descriptor.type == .int {
+            let number: Double? = switch value {
+            case let .number(raw): raw
+            case let .string(raw): Double(raw)
+            default: nil
+            }
+            guard let number, number.isFinite, number >= Double(Int32.min), number <= Double(Int32.max) else { return nil }
+            return .integer(Int32(number.rounded(.towardZero)))
+        }
         let components = Self.components(value)
-        return components.isEmpty ? nil : .vector(vector(components))
+        guard !components.isEmpty else { return nil }
+        if components.count == 1, descriptor.type.componentCount > 1 {
+            var result = SIMD4<Float>.zero
+            for lane in 0 ..< descriptor.type.componentCount {
+                result[lane] = components[0]
+            }
+            return .vector(result)
+        }
+        return .vector(vector(components))
     }
 
     private static func components(_ value: WPESceneJSONValue) -> [Float] {

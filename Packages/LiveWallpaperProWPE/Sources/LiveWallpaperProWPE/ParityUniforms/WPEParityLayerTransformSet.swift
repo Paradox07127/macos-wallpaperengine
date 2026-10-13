@@ -84,6 +84,11 @@ public struct WPEParityLayerTransformSet: Sendable {
         return bones[attachment.bone] * attachment.matrix
     }
 
+    /// A re-laid text layer's FBO extent also sizes its final composite and cursor quad.
+    public mutating func setSize(_ id: String, size: SIMD2<Float>) {
+        layers[id]?.size = size
+    }
+
     /// Replaces a layer's own transform; the worlds follow on `refreshWorlds`.
     public mutating func setTransform(_ id: String, origin: SIMD3<Float>, angles: SIMD3<Float>, scale: SIMD3<Float>) {
         guard layers[id] != nil else { return }

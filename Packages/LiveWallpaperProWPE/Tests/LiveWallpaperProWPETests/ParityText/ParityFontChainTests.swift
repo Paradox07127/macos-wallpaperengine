@@ -7,6 +7,22 @@ final class ParityFontChainTests: XCTestCase {
         .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
     static let notoSans = "fonts/NotoSans-Regular.ttf"
 
+    /// Hand-authored SFNT with a single raw BGRA CBLC/CBDT strike at 100 ppem and no outlines. U+0041 maps to
+    /// glyph 1: a 2×3 bitmap, left bearing -1, top bearing 2, advance 3. Fixed bytes avoid platform font fallback.
+    /// SHA256 e7ed41e98aeb72194ee67f077b35a5d312ae25fd2d457971d72fe48251c5ac03.
+    private static let bitmapOnlyFont = """
+    AAEAAAAJAIAAAwAQQ0JEVAIGO3gAAACcAAAAIUNCTENwaCSBAAAAwAAAAFBjbWFwAAwAdAAAARAAAAAs
+    aGVhZF8UPb4AAAE8AAAANmhoZWEABAAFAAABdAAAACRobXR4AAb//wAAAZgAAAAIbWF4cAACUAAAAAGg
+    AAAABm5hbWUH/xB2AAABqAAAAG5wb3N0AAMAAAAAAhgAAAAgAAMAAAMC/wIDChQe/ygyPP9GUFr/ZG54
+    /4KMlv+gqrT/AAAAAAMAAAAAAAEAAAA4AAAAGAAAAAEAAAAAAv8DAQAA/wAC/wAAAv8DAQAA/wAC/wAA
+    AAEAAWRkIAEAAQABAAAACAABAAEAAAAEAAAAAAAAAB0AAAABAAMAAQAAAAwABAAgAAAABAAEAAEAAABB
+    //8AAABB////wAABAAAAAAABAAAAAQAAjwgdrF8PPPUAAABkAAAAAAAAAAAAAAAAAAAAAP////8AAQAC
+    AAAAZAACAAAAAAAAAAEAAAAC//8AAAAD//8AAAABAAEAAAAAAAAAAAAAAAAAAAACAAMAAAAD//8AAFAA
+    AAIAAAAAAAIAHgADAAEECQABACoAAAADAAEECQAGACYAKgBQAGEAcgBpAHQAeQAgAEIAaQB0AG0AYQBw
+    ACAARgBpAHgAdAB1AHIAZQBQAGEAcgBpAHQAeQBCAGkAdABtAGEAcABGAGkAeAB0AHUAcgBlAAAAAwAA
+    AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+    """
+
     /// A library reading only the WPE assets root; skips when Wallpaper Engine is not installed.
     static func makeLibrary() throws -> WPEParityFontLibrary {
         let font = assetsRoot.appendingPathComponent(notoSans)
@@ -64,5 +80,36 @@ final class ParityFontChainTests: XCTestCase {
         XCTAssertEqual(bitmap.rows, 95)
         XCTAssertEqual(bitmap.pixels.count, bitmap.width * bitmap.rows)
         XCTAssertTrue(bitmap.pixels.contains { $0 != 0 })
+    }
+
+    func testBitmapOnlyColorGlyphKeepsItsRenderedBearingsAndReachesTheColorMesh() throws {
+        let data = try XCTUnwrap(Data(base64Encoded: Self.bitmapOnlyFont, options: .ignoreUnknownCharacters))
+        let library = try XCTUnwrap(WPEParityFreeTypeLibrary())
+        let face = try XCTUnwrap(WPEParityFontFace(library: library, bytes: WPEParityFontBytes(data), path: nil,
+                                                   source: "bitmap-fixture", faceIndex: 0, pointSize: 24))
+        XCTAssertNil(face.glyphBox(1), "this input must exercise the path with no outline")
+        let glyph = try XCTUnwrap(face.layoutGlyph(1))
+        XCTAssertTrue(glyph.isColor)
+        XCTAssertEqual(glyph.box, WPEParityGlyphBox(xMin: -1, yMin: -1, xMax: 1, yMax: 2))
+        let bitmap = try XCTUnwrap(face.rasterize(1))
+        XCTAssertEqual(bitmap.pixelMode, .bgra)
+        XCTAssertEqual([bitmap.width, bitmap.rows], [2, 3])
+        XCTAssertEqual(Array(bitmap.pixels.prefix(4)), [10, 20, 30, 255])
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try data.write(to: directory.appendingPathComponent("bitmap.ttf"))
+        let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(directory)]))
+        let planned = planner.plan(WPEParityTextObject(json: .object([
+            "id": .string("bitmap"), "font": .string("bitmap.ttf"), "text": .string("A"),
+            "pointsize": .number(24),
+        ])), effectCount: 0)
+        let mesh = try XCTUnwrap(planned.layout.mesh)
+        XCTAssertTrue(mesh.mono.glyphKeys.isEmpty)
+        XCTAssertEqual(mesh.color.glyphKeys, [1])
+        XCTAssertEqual(mesh.color.vertices.map { SIMD2($0.x, $0.y) },
+                       [SIMD2(-1, 2), SIMD2(1, 2), SIMD2(-1, -1), SIMD2(1, -1)])
+        XCTAssertEqual(planner.atlases[planned.atlasKey]?.color?.entry(forKey: 1)?.references, 1)
     }
 }

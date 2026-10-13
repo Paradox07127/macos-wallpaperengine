@@ -52,6 +52,57 @@ final class ParityTextPlannerTests: XCTestCase {
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.isDirty, false)
     }
 
+    func testReplanningSameAtlasReleasesOldGlyphsIncludingEmptyText() throws {
+        let planner = try Self.makePlanner()
+        var known: Set<UInt32> = []
+        for text in ["HH", "ii", "H", ""] {
+            let planned = planner.plan(Self.textObject(text: text), effectCount: 0)
+            let keys = planned.layout.mesh?.mono.glyphKeys ?? []
+            known.formUnion(keys)
+            let atlas = try XCTUnwrap(planner.atlases[planned.atlasKey]).mono
+            for key in known {
+                XCTAssertEqual(try XCTUnwrap(atlas.entry(forKey: key)).references,
+                               keys.filter { $0 == key }.count, "text \(text.debugDescription), glyph \(key)")
+            }
+            XCTAssertEqual(atlas.width, 512, "replacing a small mesh does not grow its shared atlas")
+        }
+    }
+
+    func testOnePlanProtectsEveryGlyphFromItsLaterInserts() throws {
+        let planner = try Self.makePlanner()
+        var object = Self.textObject(text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz")
+        object.pointSize = 256
+        let planned = planner.plan(object, effectCount: 0)
+        let mesh = try XCTUnwrap(planned.layout.mesh)
+        let atlas = try XCTUnwrap(planner.atlases[planned.atlasKey]).mono
+        XCTAssertGreaterThan(mesh.mono.glyphKeys.count, 2)
+        for (quad, key) in mesh.mono.glyphKeys.enumerated() {
+            let entry = try XCTUnwrap(atlas.entry(forKey: key), "glyph \(key) was evicted within its own plan")
+            XCTAssertEqual(entry.references, mesh.mono.glyphKeys.filter { $0 == key }.count)
+            XCTAssertEqual(SIMD2(mesh.mono.vertices[quad * 4].u, mesh.mono.vertices[quad * 4].v),
+                           SIMD2(entry.uv.x, entry.uv.y))
+        }
+    }
+
+    func testOldMeshCannotReleaseAReinsertedGlyphAfterAtlasReset() throws {
+        let planner = try Self.makePlanner()
+        let planned = planner.plan(Self.textObject(text: "H"), effectCount: 0)
+        let key = try XCTUnwrap(planned.layout.mesh?.mono.glyphKeys.first)
+        var instance = try XCTUnwrap(planner.atlases[planned.atlasKey])
+        instance.mono.reset()
+        _ = try XCTUnwrap(instance.mono.insert(key: key, bitmap: WPEParityGlyphBitmap(
+            width: 2, rows: 2, pixelMode: .gray, pixels: [1, 2, 3, 4]
+        )))
+        instance.mono.retain([key]) // A new mesh owns the reinserted key, after the old mesh's reset.
+        planner.atlases[planned.atlasKey] = instance
+        // Taking over a scene must preserve the stale mesh's ownership epoch, as well as its old UVs.
+        planner.adopt(objectID: "T", layout: planned.layout, atlasKey: planned.atlasKey)
+
+        _ = planner.plan(Self.textObject(text: ""), effectCount: 0)
+
+        XCTAssertEqual(planner.atlases[planned.atlasKey]?.mono.entry(forKey: key)?.references, 1)
+    }
+
     func testGlyphAndFBOTranslationsFollowTheQ6Formulas() throws {
         let planner = try Self.makePlanner()
         let object = Self.textObject()

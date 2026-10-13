@@ -27,10 +27,38 @@ struct WPEParityDraw {
 struct WPEParityDrawEncoder {
     let factory: WPEParityPipelineFactory
 
+    /// Called once when a draw plan is built, before the graph promises its writes. Sampler and depth creation
+    /// can fail too; discovering that on the first encoded frame is too late for load/store and alias decisions.
+    func prepare(pipeline: WPEParityPipeline, depthStencil: WPEParityDepthStencilState,
+                 textureNames: Set<String>, samplers: [String: WPEParitySamplerState]) throws {
+        _ = try factory.depthStencilState(depthStencil)
+        for stage in [pipeline.vertex, pipeline.geometry?.geometry, pipeline.fragment].compactMap(\.self) {
+            for resource in stage.reflection.resources {
+                guard resource.count == 1 else {
+                    throw WPEParityExecutionError.resourceArrayUnsupported(resource.name)
+                }
+                switch resource.kind {
+                case .texture:
+                    guard textureNames.contains(resource.name) else {
+                        throw WPEParityExecutionError.missingTexture(resource.name)
+                    }
+                case .sampler:
+                    guard let sampler = samplers[resource.name] else {
+                        throw WPEParityExecutionError.missingSampler(resource.name)
+                    }
+                    _ = try factory.samplerState(sampler)
+                }
+            }
+        }
+    }
+
     /// Arena bytes `encode` takes for `pipeline`'s cbuffers and top-level argument buffers, each 256-byte aligned.
     static func argumentBytes(_ pipeline: WPEParityPipeline) -> Int {
-        let stages = [pipeline.vertex, pipeline.geometry?.geometry, pipeline.fragment].compactMap(\.self)
-        return stages.reduce(0) { total, stage in
+        pipeline.argumentBytes
+    }
+
+    static func argumentBytes(stages: [WPEParityPipeline.Stage]) -> Int {
+        stages.reduce(0) { total, stage in
             let plan = stage.bindingPlan
             guard plan.totalSize > 0 else { return total }
             let cbuffers = stage.cbuffers.filter {
@@ -47,6 +75,9 @@ struct WPEParityDrawEncoder {
         let emulation = draw.pipeline.geometry
         if emulation != nil, draw.primitiveType != .point || draw.indexBuffer != nil {
             throw WPEParityExecutionError.geometryDrawUnsupported
+        }
+        guard frame.canAllocate(length: Self.argumentBytes(draw.pipeline)) else {
+            throw WPEParityExecutionError.arenaExhausted
         }
         encoder.setRenderPipelineState(draw.pipeline.state)
         try encoder.setDepthStencilState(factory.depthStencilState(draw.depthStencil))

@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import Metal
 import MetalPerformanceShaders
 
@@ -16,13 +17,82 @@ final class WPEParityVideoTextures {
     private let scaler: MPSImageBilinearScale
     /// Indices of the sources whose staged frame went into the current frame's command buffer.
     private var encoded: Set<Int> = []
+    private var owners: [String: Int] = [:]
+    private struct ObservedControls {
+        var rate: WPEParitySceneState.ScriptValue?
+        var loop: WPEParitySceneState.ScriptValue?
+    }
+
+    private var observedControls: [String: ObservedControls] = [:]
+    private var seenScriptFieldsGeneration: Int?
 
     var textures: [MTLTexture] {
         videos.map(\.texture)
     }
 
+    /// Slot zero keeps the planner's existing shared-asset identity: owners of the same texture share one player.
+    func setOwners(_ textures: [String: MTLTexture]) {
+        var indices: [ObjectIdentifier: Int] = [:]
+        for (index, video) in videos.enumerated() {
+            indices[ObjectIdentifier(video.texture)] = index
+        }
+        let next = textures.compactMapValues { indices[ObjectIdentifier($0)] }
+        guard next != owners else { return }
+        observedControls = observedControls.filter { next[$0.key] == owners[$0.key] }
+        owners = next
+        seenScriptFieldsGeneration = nil
+    }
+
+    /// Seeds script descriptors from the player, including a duration that can become ready after scene loading.
+    var scriptFieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
+        let snapshots = videos.map(\.source.scriptPlaybackSnapshot)
+        var fields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:]
+        for (owner, index) in owners {
+            guard let snapshot = snapshots[index] else { continue }
+            fields[.init(objectID: owner, name: "video.rate")] = .vector(SIMD4(Float(snapshot.rate), 0, 0, 0))
+            fields[.init(objectID: owner, name: "video.loop")] = .vector(SIMD4(snapshot.loop ? 1 : 0, 0, 0, 0))
+            fields[.init(objectID: owner, name: "video.duration")] = .vector(SIMD4(Float(snapshot.duration), 0, 0, 0))
+        }
+        return fields
+    }
+
+    /// Applies only newly observed controls, then publishes asynchronously ready durations without dirtying draws.
+    func applyScriptFields(state: inout WPEParitySceneState) {
+        if seenScriptFieldsGeneration != state.scriptFieldsGeneration {
+            // A shared asset can have several owners. An unrelated field change must not replay another owner's
+            // older command over the current source value; owner ordering only resolves simultaneous new writes.
+            for owner in owners.keys.sorted() {
+                guard let index = owners[owner] else { continue }
+                let source = videos[index].source
+                let rate = state.scriptField("video.rate", of: owner)
+                let loop = state.scriptField("video.loop", of: owner)
+                let previous = observedControls[owner]
+                if rate != previous?.rate, case let .vector(value)? = rate,
+                   value.x.isFinite, (0.5 ... 2).contains(value.x),
+                   source.scriptPlaybackSnapshot?.rate != Double(value.x) {
+                    source.scriptSetRate(Double(value.x))
+                }
+                if loop != previous?.loop, case let .vector(value)? = loop, value.x.isFinite,
+                   source.scriptPlaybackSnapshot?.loop != (value.x != 0) {
+                    source.scriptSetLoop(value.x != 0)
+                }
+                observedControls[owner] = ObservedControls(rate: rate, loop: loop)
+            }
+        }
+        let durations = videos.map { $0.source.scriptPlaybackSnapshot?.duration }
+        for (owner, index) in owners {
+            guard let duration = durations[index], duration.isFinite else { continue }
+            let value = WPEParitySceneState.ScriptValue.vector(SIMD4(Float(duration), 0, 0, 0))
+            if state.scriptField("video.duration", of: owner) != value {
+                state.setScriptField("video.duration", of: owner, to: value, invalidating: .none)
+            }
+        }
+        seenScriptFieldsGeneration = state.scriptFieldsGeneration
+    }
+
     /// Stores each stream in the video disk cache and starts looping wall-clock playback.
-    init(streams: [Stream], workshopID: String, device: MTLDevice, queue: MTLCommandQueue) async throws {
+    nonisolated(nonsending) init(streams: [Stream], workshopID: String, device: MTLDevice,
+                                 queue: MTLCommandQueue) async throws {
         var videos: [(source: WPEVideoTextureSource, texture: MTLTexture)] = []
         for stream in streams {
             let url = try await WPEVideoTextureDiskCache.shared.store(stream.bytes, workshopID: workshopID)

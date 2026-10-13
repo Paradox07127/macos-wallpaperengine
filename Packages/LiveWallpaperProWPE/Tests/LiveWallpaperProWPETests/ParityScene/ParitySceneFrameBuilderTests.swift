@@ -279,6 +279,19 @@ struct ParitySceneCompositionTests {
 }
 
 struct ParitySceneCompileTests {
+    @Test func authoredFullscreenEffectKeepsHistoryUntilShaderCoverageIsProven() throws {
+        let effect = WPEParitySceneEffect(id: "e", passes: [
+            WPEParityScenePass(shader: "authored-discard-or-displaced-vs", target: "history"),
+            WPEParityScenePass(shader: "present", binds: ["history"]),
+        ], fbos: [WPEParitySceneFBO(name: "history", width: 512, height: 256)])
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer(effects: [effect])]))
+        let first = try #require(frame.draws["L/e/0"])
+        #expect(first.geometry == .fullscreenQuad && first.blend == .normal && first.writeMask == .rgba)
+        let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+        #expect(graph.encoders.first { $0.attachment(first.target) != nil }?.attachment(first.target)?.load == .load)
+        #expect(graph.storage[first.target] == .dedicated)
+    }
+
     @Test func reportSequenceACompilesWithPooledTargets() throws {
         let scene = F.scene([F.layer(effects: [F.effect("e1"), F.effect("e2", readsFullFrameBuffer: true)])])
         let frame = WPEParitySceneFrameBuilder.build(scene)
@@ -287,8 +300,8 @@ struct ParitySceneCompileTests {
             #expect(graph.resources[id]?.lifetime == .pooled, "\(id)")
         }
         ParityGraphStream.expectPooledStorage(graph)
-        #expect(graph.storage[WPEResourceID(F.bc0)] != .dedicated)
-        #expect(graph.storage[WPEResourceID(F.bc1)] != .dedicated)
+        #expect(graph.storage[WPEResourceID(F.bc0)] == .dedicated)
+        #expect(graph.storage[WPEResourceID(F.bc1)] == .dedicated)
         #expect(graph.storage[WPEParitySceneResource.backbuffer] == .dedicated)
     }
 
@@ -344,7 +357,8 @@ struct ParitySceneDocumentConversionTests {
                                source: source("up", 1)),
         ])
         #expect(object.effects[0].fbos == [WPEParitySceneFBO(name: "half", width: 200, height: 100,
-                                                             unscaledSize: SIMD2(400, 200), scale: 2)])
+                                                             unscaledSize: SIMD2(400, 200), scale: 2,
+                                                             sizing: .init(scale: 2))])
     }
 
     @Test func drawsNameTheMaterialPassTheyComeFrom() throws {

@@ -18,6 +18,14 @@ public struct WPEParityProgramBinding: Sendable {
         public let name: String
         public let material: String
         public let components: Int
+        public let angle: Bool
+
+        public init(name: String, material: String, components: Int, angle: Bool = false) {
+            self.name = name
+            self.material = material
+            self.components = components
+            self.angle = angle
+        }
 
         /// WPE reads as many numbers as the uniform has components; missing ones are 0.
         public func value(_ constant: WPEParitySceneState.Constant) -> WPECBufferValue {
@@ -46,7 +54,8 @@ public struct WPEParityProgramBinding: Sendable {
 
 public extension WPEParityProgramBuilder {
     /// Keyed by draw operation index like `frame.draws`; a draw without a material file has none.
-    static func bindings(frame: WPEParityFrame, scene: WPEParityProgramScene) -> [Int: WPEParityProgramBinding] {
+    static func bindings(frame: WPEParityFrame, scene: WPEParityProgramScene,
+                         description: WPEParitySceneDescription? = nil) -> [Int: WPEParityProgramBinding] {
         let imported = Set(frame.resources.filter { $0.lifetime == .imported }.map(\.id))
         let white = SIMD4<Float>(repeating: 1)
         var bindings: [Int: WPEParityProgramBinding] = [:]
@@ -54,7 +63,7 @@ public extension WPEParityProgramBuilder {
             switch draw {
             case let .scene(draw):
                 guard let material = scene.material(for: draw) else { continue }
-                let object = scene.scene.objects.first { $0.id == draw.objectID }
+                let object = (description ?? scene.scene).objects.first { $0.id == draw.objectID }
                 // 1401e8aa0.c:1092-1095: effect, compose and passthrough draws run with colour and alpha 1.
                 // A puppet's albedo adds skinning combos and clip textures to the layer material.
                 var layerSource = draw.source
@@ -88,7 +97,7 @@ public extension WPEParityProgramBuilder {
                     materialConstants: uniforms.mapValues { stage in
                         stage.values.sorted { $0.name < $1.name }.map {
                             WPEParityProgramBinding.MaterialConstant(name: $0.name, material: $0.material,
-                                                                     components: $0.components)
+                                                                     components: $0.components, angle: $0.angle)
                         }
                     }
                 )

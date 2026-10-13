@@ -49,6 +49,10 @@ public struct WPEParityGlyphAtlas: Sendable {
     public private(set) var isDirty = false
     /// Bumped on every doubling: meshes built on an older generation hold stale UVs.
     public private(set) var generation = 0
+    /// Pixel-buffer version. Uploaders publish a new immutable GPU texture when this changes.
+    public private(set) var contentGeneration: UInt64 = 0
+    /// References from before a reset no longer own entries, even if the same glyph key is inserted again.
+    public private(set) var resetGeneration: UInt64 = 0
 
     private struct Shelf {
         var height: Int
@@ -95,6 +99,7 @@ public struct WPEParityGlyphAtlas: Sendable {
         copy(bitmap, to: entry)
         clearGap(around: entry)
         isDirty = true
+        contentGeneration &+= 1
         return entry
     }
 
@@ -115,6 +120,7 @@ public struct WPEParityGlyphAtlas: Sendable {
     public mutating func reset() {
         shelves.removeAll()
         entries.removeAll()
+        resetGeneration &+= 1
     }
 
     public mutating func takeDirty() -> Bool {
@@ -222,6 +228,7 @@ public struct WPEParityGlyphAtlas: Sendable {
         }
         generation += 1
         isDirty = true
+        contentGeneration &+= 1
     }
 
     private mutating func addEntry(key: UInt32, x: Int, y: Int, width: Int, height: Int) {

@@ -86,7 +86,11 @@ final class WPEParitySceneDriver {
     private var userPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
     private var adaptiveThrottleActive = false
     /// The scene flag or a program reading `g_AudioSpectrum*`, as `WPEMetalSceneRenderer.sceneSupportsAudioProcessing`.
-    private(set) var requiresSystemAudioCapture = false
+    private var shaderRequiresAudio = false
+    var requiresSystemAudioCapture: Bool {
+        shaderRequiresAudio || renderer?.script?.engine.audioResolutions.isEmpty == false
+    }
+
     private var planSource: PlanSource?
     private var plannedTarget: RenderTarget?
     /// The loaded scene's user-property bindings; `.incremental` ones apply without a reload.
@@ -204,7 +208,7 @@ final class WPEParitySceneDriver {
         plannedTarget = nil
         userPropertyBindings = [:]
         pendingUserProperties = nil
-        requiresSystemAudioCapture = false
+        shaderRequiresAudio = false
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
         (encodeSeconds, encodeCount) = (0, 0)
@@ -255,7 +259,7 @@ final class WPEParitySceneDriver {
                 }
             }
             shaderErrorSummary = (shaderErrors.count, shaderErrors)
-            requiresSystemAudioCapture = Self.readsAudio(plan)
+            shaderRequiresAudio = Self.readsAudio(plan)
             planSource = PlanSource(document: document, assets: assets, settings: settings, shaders: shaders,
                                     workshopID: workshopID, sceneSize: sceneSize)
             plannedTarget = target
@@ -268,7 +272,7 @@ final class WPEParitySceneDriver {
                         document: document, state: renderer.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
                         screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
-                        host: scriptHost
+                        materialConstants: plan.materialConstants, fieldDefaults: renderer.scriptFieldDefaults, host: scriptHost
                     ))
                 } catch {
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)
@@ -300,10 +304,10 @@ final class WPEParitySceneDriver {
                                                settings: planSource.settings, target: target)
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
-                workshopID: planSource.workshopID
+                workshopID: planSource.workshopID, continuing: previous
             )
             guard generation == loadGeneration, self.renderer === previous else { return false }
-            renderer.continueScene(from: previous)
+            try renderer.continueScene(from: previous)
             self.renderer = renderer
             plannedTarget = target
             return true
@@ -328,8 +332,7 @@ final class WPEParitySceneDriver {
     /// live state, text layouts included while they keep the frame graph; the commit applies it.
     func prepareUserProperties(_ patch: WPEScenePropertyPatch, document: WPESceneDocument) -> Bool {
         guard canApplyUserPropertiesLive(patch), let planSource,
-              let update = WPEParityUserPropertyUpdate(from: planSource.document, to: document),
-              update.texts.isEmpty || renderer?.canRelayoutLive(update.texts) == true else { return false }
+              WPEParityUserPropertyUpdate(from: planSource.document, to: document) != nil else { return false }
         pendingUserProperties = (patch, document)
         return true
     }
@@ -478,6 +481,7 @@ final class WPEParitySceneDriver {
                 renderer.takeScriptSoundVolumes { id, volume in
                     soundRuntime.setVolume(Double(volume), forSoundID: id)
                 }
+                renderer.takeSoundVisibility { id, visible in soundRuntime.setVisible(visible, forSoundID: id) }
             }
             guard case .committed = submission else { return false }
             return true
@@ -646,7 +650,7 @@ final class WPEParitySceneDriver {
         plannedTarget = nil
         userPropertyBindings = [:]
         pendingUserProperties = nil
-        requiresSystemAudioCapture = false
+        shaderRequiresAudio = false
         lastTimestamp = nil
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])

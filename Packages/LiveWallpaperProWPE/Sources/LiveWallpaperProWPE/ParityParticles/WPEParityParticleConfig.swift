@@ -98,6 +98,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var maxCount: Int
     var startTime: Float
     var flags: Int
+    /// JSON hascolor opts out of the direct instance colorn multiplier (R22 Q9).
+    var hasColor: Bool
     var randomFrame: Bool
     /// Scales the sprite-sheet phase age/lifetime (R22 Q10).
     var sequenceMultiplier: Float
@@ -127,6 +129,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
         startTime = JSON.number(json["starttime"]) ?? 0
         flags = Int(JSON.number(json["flags"]) ?? 0)
+        hasColor = JSON.flag(json["hascolor"])
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
         sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {

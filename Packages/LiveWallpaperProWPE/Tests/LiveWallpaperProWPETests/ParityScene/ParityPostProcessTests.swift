@@ -304,6 +304,8 @@ struct ParityPostProcessTests {
                 drawIndex += 1
                 return "draw \(draw.shader) [\(draw.reads.map(\.rawValue).joined(separator: ","))] \(draw.blend)"
             case let .copy(source, destination): return "copy \(source) -> \(destination)"
+            case let .swapResources(first, second): return "swap \(first)<->\(second)"
+            case let .resourceScope(scope, _): return "scope \(scope)"
             case let .generateMips(id): return "mips \(id)"
             case let .resolve(source, destination): return "resolve \(source) -> \(destination)"
             case .clearColor, .clearDepth: return "unexpected clear"

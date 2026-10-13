@@ -7,11 +7,21 @@ struct WPEParityMaterialUniform: Equatable, Sendable {
     /// 4, 3 or 2 for `vec4`, `vec3`, `vec2`, else 1.
     let components: Int
     let defaultValue: [Double]?
+    /// Native descriptor flag4; scene and shader defaults remain in stored units.
+    let angle: Bool
+
+    init(name: String, material: String, components: Int, defaultValue: [Double]?, angle: Bool = false) {
+        self.name = name
+        self.material = material
+        self.components = components
+        self.defaultValue = defaultValue
+        self.angle = angle
+    }
 }
 
 /// Material constants (engine codes 0x8c–0x8f): a key missing from the merged `constantshadervalues` takes the
-/// annotation `default` (140154480.c:555-642). An annotation `conversion` changes no material or scene value: rad2deg
-/// only scales SceneScript `setMaterialProperty` input by π/180 (FUN_1401ee1d0), and startdelta is never read.
+/// annotation `default` (140154480.c:555-642). rad2deg preserves stored values and marks SceneScript descriptor
+/// flag4; property conversion and setMaterialProperty have their own native angle branches. startdelta is unused.
 enum WPEParityProgramConstants {
     /// One stage's annotations; each stage maps its HLSL names on its own (1400d5070.c:536,556,575).
     static func uniforms(_ source: String) -> [String: WPEParityMaterialUniform] {
@@ -31,7 +41,8 @@ enum WPEParityProgramConstants {
             uniforms[name] = WPEParityMaterialUniform(
                 name: name, material: material,
                 components: type.hasPrefix("vec") ? Int(String(type.dropFirst(3))) ?? 1 : 1,
-                defaultValue: json["default"].flatMap(defaultComponents)
+                defaultValue: json["default"].flatMap(defaultComponents),
+                angle: json["conversion"] as? String == "rad2deg"
             )
         }
         return uniforms

@@ -170,8 +170,16 @@ public final class WPEParityFontFace {
             return cached
         }
         let bitmap = render(glyph)
-        let entry = bitmap.flatMap { bitmap in
-            glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: bitmap.pixelMode == .bgra) }
+        let entry = bitmap.flatMap { bitmap -> LayoutGlyph? in
+            // A bitmap-only colour face has no NO_BITMAP outline. Keep the rendered slot's bearings before
+            // glyphBox loads another slot; BGRA quads cover that exact bitmap rather than an outline cbox.
+            let slot = face.pointee.glyph.pointee
+            let bitmapBox = WPEParityGlyphBox(xMin: slot.bitmap_left,
+                                              yMin: slot.bitmap_top - Int32(bitmap.rows),
+                                              xMax: slot.bitmap_left + Int32(bitmap.width),
+                                              yMax: slot.bitmap_top)
+            let box = bitmap.pixelMode == .bgra ? bitmapBox : glyphBox(glyph)
+            return box.map { LayoutGlyph(box: $0, isColor: bitmap.pixelMode == .bgra) }
         }
         layoutGlyphs[glyph] = entry
         if entry != nil {

@@ -99,14 +99,37 @@ final class ParityTextPipelineTests: XCTestCase {
         try Self.assertUVsMatchAtlas(pipeline, "A")
     }
 
-    func testFrameShapeKeepsTheFBOSizeOnlyThroughAnFBO() throws {
+    func testRelayoutDeltaCarriesDrawAndFBOChangesWithoutSpeculativeLayout() throws {
         let pipeline = try Self.makePipeline()
         pipeline.add(Self.object("D", "Hi"), effectCount: 0)
         pipeline.add(Self.object("F", "Hi"), effectCount: 1)
-        XCTAssertTrue(pipeline.keepsFrameShape(Self.object("D", "Hello")))
-        XCTAssertFalse(pipeline.keepsFrameShape(Self.object("F", "Hello")))
-        XCTAssertTrue(pipeline.keepsFrameShape(Self.object("F", "Hi")))
-        XCTAssertFalse(pipeline.keepsFrameShape(Self.object("D", "")), "the glyph list goes away")
+        let key = try XCTUnwrap(pipeline.texts["D"]?.atlasKey)
+        _ = pipeline.atlases[key]?.mono.takeDirty()
+        let version = pipeline.atlases[key]?.mono.contentGeneration
+        XCTAssertTrue(pipeline.relayoutWithDelta(Self.object("D", "Hi")).changes.isEmpty)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, version)
+        XCTAssertFalse(try XCTUnwrap(pipeline.atlases[key]).mono.isDirty)
+
+        let direct = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("D", "Hello")).changes.first)
+        XCTAssertEqual(direct.previous.object.text, "Hi")
+        XCTAssertEqual(direct.current.object.text, "Hello")
+        XCTAssertFalse(direct.requiresFrameRebuild, "direct glyphs can be repacked in the existing draw")
+        XCTAssertNotEqual(direct.current.layout.fboSize, direct.previous.layout.fboSize)
+
+        let composite = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("F", "Hello")).changes.first)
+        XCTAssertTrue(composite.requiresFrameRebuild, "the effect FBO must grow with its text")
+        XCTAssertNotEqual(composite.current.layout.fboSize, composite.previous.layout.fboSize)
+
+        let empty = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("D", "")).changes.first)
+        XCTAssertTrue(empty.requiresFrameRebuild, "the glyph draw goes away")
+        XCTAssertNil(empty.current.layout.mesh)
+
+        let effects = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("F", "Hello"),
+                                                               effectCount: 0).changes.first)
+        XCTAssertTrue(effects.requiresFrameRebuild)
+        XCTAssertEqual(effects.current.effectCount, 0)
+        XCTAssertEqual(effects.current.padding, .zero)
+        XCTAssertNotEqual(effects.current.layout.fboSize, effects.previous.layout.fboSize)
     }
 
     func testTextLayoutFieldsBindLiveAndTheUpdateCarriesTheLayer() throws {

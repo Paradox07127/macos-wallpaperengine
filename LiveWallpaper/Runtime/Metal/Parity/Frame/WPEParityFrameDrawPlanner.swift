@@ -48,7 +48,7 @@ struct WPEParityFrameDrawPlan {
     /// The skinned puppet layer whose animator supplies the vertex stage's `g_Bones`.
     let puppetID: String?
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
-    let textures: [[String: TextureSource]]
+    var textures: [[String: TextureSource]]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
     /// Where a scene layer draw sits; nil for post-process and particle draws.
@@ -327,7 +327,7 @@ struct WPEParityFrameDrawPlanner {
     /// Colour and depth target bound at each draw operation.
     private var targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)]
     /// The scene camera and every layer's world matrix.
-    let layers: WPEParityLayerTransformSet
+    private(set) var layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
@@ -341,14 +341,16 @@ struct WPEParityFrameDrawPlanner {
     /// The text layers' atlas textures, uploaded at load and after each re-layout.
     private(set) var textAtlases: WPEParityTextAtlasTextures
     /// Scene light terms; WPE writes them for every draw that declares them.
-    private let lights: WPEParityUniformLights
+    let lights: WPEParityUniformLights
     /// Each text layer as last laid out, which its draws are planned from.
     private(set) var texts: [String: WPEParitySceneText] = [:]
 
-    init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
+    init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan,
+         preservingVideoImages: [String: Image] = [:]) {
         self.device = device
         self.factory = factory
         self.plan = plan
+        assetImages = preservingVideoImages
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -368,14 +370,32 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
+    var videoImages: [String: Image] {
+        assetImages.filter { $0.value.info.map { $0.flags & Self.videoFlag != 0 } == true }
+    }
+
     /// Takes re-laid text layers and their atlases, uploading the atlases that changed; later plans of their draws
     /// read the new layouts.
     mutating func updateTexts(_ changed: some Sequence<WPEParitySceneText>,
-                              atlases: [String: WPEParityGlyphAtlasInstance]) {
+                              atlases: [String: WPEParityGlyphAtlasInstance]) -> Bool {
+        guard textAtlases.replace(atlases, device: device) else { return false }
         for text in changed {
             texts[text.object.id] = text
+            layers.setSize(text.object.id, size: SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
         }
-        textAtlases.replace(atlases, device: device)
+        return true
+    }
+
+    /// Rebinds the current immutable atlas version without touching another layer's glyph mesh or UVs.
+    func refreshAtlasBindings(_ draw: inout WPEParityFrameDrawPlan, operation: Int) {
+        for variant in draw.textures.indices {
+            guard let binding = layout.bindings[variant][operation] else { continue }
+            for (slot, source) in binding.textures {
+                guard case let .textAtlas(key, atlas) = source,
+                      let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas)] else { continue }
+                draw.textures[variant]["g_Texture\(slot)"] = .image(texture)
+            }
+        }
     }
 
     /// Plans later draws from `layout`; loaded images and built pipelines carry over.

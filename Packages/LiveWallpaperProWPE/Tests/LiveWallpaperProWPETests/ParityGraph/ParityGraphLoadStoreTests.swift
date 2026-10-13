@@ -6,6 +6,45 @@ private typealias S = ParityGraphStream
 struct ParityGraphLoadStoreTests {
     private let clearBlack = WPELoadAction.clear(.color(S.black))
 
+    @Test func unavailableDrawCannotDiscardHistoryOrBecomeItsProducer() throws {
+        let history = WPELogicalResource(id: "P", width: 64, height: 64, lifetime: .pooled)
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [history, S.persistent("X")],
+            operations: [S.bind("P"), S.draw(overwrites: true), S.bind("X"), S.draw(sampling: ["P"])],
+            excludingDraws: [1]
+        )
+        #expect(graph.accesses[1].reads.isEmpty && graph.accesses[1].writes.isEmpty)
+        #expect(graph.steps.flatMap(\.operations) == [3])
+        #expect(graph.accesses[3].reads.first?.revision == 0)
+        #expect(graph.accesses[3].reads.first?.producer == nil)
+        #expect(graph.storage["P"] == .dedicated)
+    }
+
+    @Test func reflectedReadsObserveEntryHistoryWithoutReorderingTheWriter() throws {
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [S.persistent("P"), S.persistent("X")],
+            operations: [S.bind("X"), S.draw(), S.bind("P"), S.draw(overwrites: true)],
+            drawReads: [1: [WPETextureView("P")]]
+        )
+        #expect(graph.accesses[1].reads.map(\.subresource.resource) == ["P"])
+        #expect(graph.accesses[1].reads.first?.revision == 0)
+        #expect(graph.steps.map(\.operations) == [[1], [3]])
+        #expect(S.depends(graph, 1, on: 0, "P", .writeAfterRead))
+    }
+
+    @Test func pooledWriterKeepsContentsForADifferentFutureGraph() throws {
+        let history = WPELogicalResource(id: "P", width: 64, height: 64, lifetime: .pooled)
+        let writer = try WPERenderGraphCompiler.compile(resources: [history],
+                                                        operations: [S.bind("P"), S.draw(overwrites: true)])
+        #expect(writer.storage["P"] == .dedicated)
+        #expect(writer.encoders.first?.attachment("P")?.store == .store)
+        #expect(history.canPreserveContents(of: history))
+        let resized = WPELogicalResource(id: "P", width: 128, height: 64, lifetime: .pooled)
+        #expect(!resized.canPreserveContents(of: history))
+        let reformatted = WPELogicalResource(id: "P", width: 64, height: 64, format: "rgba16float", lifetime: .pooled)
+        #expect(!reformatted.canPreserveContents(of: history))
+    }
+
     @Test func clearBeforeFirstDrawFoldsIntoLoadClear() throws {
         let resources = [S.persistent("A")]
         let folded = try S.compile(resources, [S.bind("A"), S.clear("A"), S.draw()])

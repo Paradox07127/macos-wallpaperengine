@@ -37,7 +37,7 @@ public struct WPEParityClock: Sendable {
             return false
         }
         frametime = Self.clampStep(Self.rate(percent: ratePercent) * pauseRamp * step)
-        time += Double(frametime)
+        time = Double(Float(time) + frametime)
         if Float(time) > Self.wrapTime {
             time = 0
         }

@@ -49,6 +49,10 @@ enum ParitySceneFixtures {
                 describe(frame.draws[operation.pass])
             case let .copy(source, destination):
                 "copy \(source)->\(destination)"
+            case let .swapResources(first, second):
+                "swap \(first)<->\(second)"
+            case let .resourceScope(scope, _):
+                "scope \(scope)"
             case let .generateMips(id):
                 "mips \(id)"
             case let .resolve(source, destination):

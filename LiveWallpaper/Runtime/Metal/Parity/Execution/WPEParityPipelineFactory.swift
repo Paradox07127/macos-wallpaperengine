@@ -41,6 +41,9 @@ struct WPEParityPipeline {
         let cbuffers: [WPECBufferLayout]
 
         init(_ reflection: WPEStageReflection) throws {
+            for resource in reflection.resources where resource.count != 1 {
+                throw WPEParityExecutionError.resourceArrayUnsupported(resource.name)
+            }
             self.reflection = reflection
             bindingPlan = try WPEStageBindingPlan(reflection)
             cbuffers = try reflection.cbuffers.map(WPECBufferLayout.init)
@@ -52,7 +55,18 @@ struct WPEParityPipeline {
     let vertex: Stage
     let fragment: Stage
     /// Set when `state` is a mesh pipeline emulating a WPE geometry shader.
-    var geometry: WPEParityGeometryEmulation?
+    let geometry: WPEParityGeometryEmulation?
+    /// Packed-stage allocation budget, computed once with the pipeline rather than traversed per draw.
+    let argumentBytes: Int
+
+    init(state: MTLRenderPipelineState, vertex: Stage, fragment: Stage,
+         geometry: WPEParityGeometryEmulation? = nil) {
+        self.state = state
+        self.vertex = vertex
+        self.fragment = fragment
+        self.geometry = geometry
+        argumentBytes = WPEParityDrawEncoder.argumentBytes(stages: [vertex, geometry?.geometry, fragment].compactMap(\.self))
+    }
 }
 
 final class WPEParityPipelineFactory {

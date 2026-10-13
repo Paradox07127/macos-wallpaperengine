@@ -1,3 +1,4 @@
+import Foundation
 import simd
 
 /// Per-frame scene inputs of a particle object; the defaults leave every control point at its offset.
@@ -76,7 +77,10 @@ extension WPEParityParticleSystem {
                     controlPoints[index] = parent[point.parent]
                 }
             } else {
-                let base = Self.translation(point.offset)
+                // The instance hook only overrides ordinary points, not frozen/cursor/parent-copy points.
+                // Angles are radians with no descriptor degree conversion (14024d940; 14022bd40:120–149).
+                var base = instanceControlPointRotations[index]
+                base.columns.3 = SIMD4(instance.controlPointOffsets[index] ?? point.offset, 1)
                 if point.flags & 2 != 0 {
                     controlPoints[index] = frame.worldSpace ? base : objectInverse * base
                 } else {
@@ -93,5 +97,19 @@ extension WPEParityParticleSystem {
         var matrix = matrix_identity_float4x4
         matrix.columns.3 = SIMD4(offset, 1)
         return matrix
+    }
+
+    /// Rz * Ry * Rx, with the basis and translation laid out as 14022bd40 writes the local CP matrix.
+    static func instanceControlPointTransform(offset: SIMD3<Float>, angles: SIMD3<Float>) -> simd_float4x4 {
+        guard angles != .zero else { return translation(offset) }
+        let (sx, cx) = (sin(angles.x), cos(angles.x))
+        let (sy, cy) = (sin(angles.y), cos(angles.y))
+        let (sz, cz) = (sin(angles.z), cos(angles.z))
+        return simd_float4x4(
+            SIMD4(cy * cz, cy * sz, -sy, 0),
+            SIMD4(sy * cz * sx - cx * sz, sy * sz * sx + cx * cz, sx * cy, 0),
+            SIMD4(cx * cz * sy + sx * sz, cx * sz * sy - sx * cz, cx * cy, 0),
+            SIMD4(offset, 1)
+        )
     }
 }

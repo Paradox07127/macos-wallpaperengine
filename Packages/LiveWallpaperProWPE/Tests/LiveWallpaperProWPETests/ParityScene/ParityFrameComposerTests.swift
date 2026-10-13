@@ -102,7 +102,7 @@ struct ParityFrameComposerTests {
         let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         ParityGraphStream.expectPooledStorage(graph)
         for resource in frame.resources where resource.id.rawValue.hasPrefix("sc.") {
-            #expect(graph.storage[resource.id] != .dedicated, "\(resource.id)")
+            #expect(graph.storage[resource.id] == .dedicated, "\(resource.id)")
         }
     }
 
@@ -173,6 +173,10 @@ struct ParityFrameComposerTests {
                 describe(frame.draws[index])
             case let .copy(source, destination):
                 "copy \(source)->\(destination)"
+            case let .swapResources(first, second):
+                "swap \(first)<->\(second)"
+            case let .resourceScope(scope, _):
+                "scope \(scope)"
             case let .generateMips(id):
                 "mips \(id)"
             case let .resolve(source, destination):

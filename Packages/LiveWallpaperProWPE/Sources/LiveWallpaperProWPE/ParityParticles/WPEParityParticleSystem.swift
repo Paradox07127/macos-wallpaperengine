@@ -5,7 +5,7 @@ import simd
 /// Not Sendable because every system of a scene shares the scene's `WPEParityMT19937`.
 public struct WPEParityParticleSystem {
     /// `instanceoverride` multipliers; color is 0–1 and alpha/color seed each birth (R18 初始化器).
-    struct Instance {
+    struct Instance: Equatable {
         var rate: Float = 1
         var count: Float = 1
         var lifetime: Float = 1
@@ -14,11 +14,13 @@ public struct WPEParityParticleSystem {
         var alpha: Float = 1
         var color = SIMD3<Float>(repeating: 1)
         var brightness: Float = 1
+        var controlPointOffsets = [SIMD3<Float>?](repeating: nil, count: WPEParityParticleControlPoint.count)
+        var controlPointAngles = [SIMD3<Float>?](repeating: nil, count: WPEParityParticleControlPoint.count)
 
         init() {}
 
-        /// `json` is the particle file; `hdr` is the scene's HDR bit (ctx+0x118 & 0x2000).
-        init(_ override: WPESceneParticleInstanceOverride?, json: WPESceneJSONValue, hdr: Bool) {
+        /// Colour/brightness gates are applied per system at birth; children may have different hascolor/flags.
+        init(_ override: WPESceneParticleInstanceOverride?, hdr: Bool) {
             guard let override else { return }
             // Object update multiplies dt by the instance rate, floored at 0.01 (D/140230650.c:55-64).
             rate = Float(max(override.rate ?? 1, 0.01))
@@ -27,11 +29,9 @@ public struct WPEParityParticleSystem {
             size = Float(max(override.size ?? 1, 0))
             speed = Float(max(override.speed ?? 1, 0))
             alpha = Float(override.alpha ?? 1)
-            // R22 Q9: colour only without `"hascolor": true`; brightness only in HDR with particle flags bit3 clear.
-            if !WPEParityParticleJSON.flag(json["hascolor"]) {
-                color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
-            }
-            if hdr, Int(WPEParityParticleJSON.number(json["flags"]) ?? 0) & 8 == 0 {
+            // R22 Q9: normalized colorn and the HDR brightness become the system's birth colour seed.
+            color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
+            if hdr {
                 brightness = Float(max(override.brightness ?? 1, 0))
             }
         }
@@ -55,7 +55,9 @@ public struct WPEParityParticleSystem {
     }
 
     let config: WPEParityParticleConfig
-    let instance: Instance
+    var instance: Instance
+    /// Event instances created after a hot update inherit that update, without changing the loaded child path.
+    private var hasScriptInstanceChanges = false
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
@@ -128,6 +130,9 @@ public struct WPEParityParticleSystem {
     var frameContext = WPEParityParticleFrameContext()
     /// Control point transforms (translation in column 3) and last frame's translations.
     var controlPoints = Array(repeating: matrix_identity_float4x4, count: WPEParityParticleControlPoint.count)
+    /// Local instance bases are rebuilt by the property hook, not by every simulation step.
+    var instanceControlPointRotations = Array(repeating: matrix_identity_float4x4,
+                                              count: WPEParityParticleControlPoint.count)
     var previousControlPoints = Array(repeating: SIMD3<Float>.zero, count: WPEParityParticleControlPoint.count)
     var controlPointsSeeded = false
     /// Positions at the start of the operator pass: the path segment controlpointattract tests.
@@ -162,7 +167,7 @@ public struct WPEParityParticleSystem {
     ) {
         var config = WPEParityParticleConfig(json: json, is3D: is3D, resolveChild: resolveChild)
         config.material = material
-        self.init(config: config, instance: Instance(instanceOverride, json: json, hdr: false), rng: rng, crt: crt)
+        self.init(config: config, instance: Instance(instanceOverride, hdr: false), rng: rng, crt: crt)
     }
 
     /// `context` is what prewarm steps with; an event child (`eventOrigin` set) uses its parent's space.
@@ -176,6 +181,9 @@ public struct WPEParityParticleSystem {
         self.parentSample = parentSample
         self.config = config
         self.instance = instance
+        instanceControlPointRotations = instance.controlPointAngles.map {
+            Self.instanceControlPointTransform(offset: .zero, angles: $0 ?? .zero)
+        }
         self.rng = rng
         self.crt = crt
         material = config.material
@@ -347,6 +355,86 @@ public struct WPEParityParticleSystem {
         step(dt: dt * instance.rate)
     }
 
+    /// The hook updates compiled emitter/birth parameters and control points, not existing particle slots
+    /// (14022bd40 → 1401d15a0). Count changes the emitter multiplier while the loaded slot capacity stays fixed.
+    mutating func applyScriptInstanceFields(state: WPEParitySceneState, objectID: String) -> Bool {
+        var next = instance
+        func scalar(_ name: String, nonnegative: Bool = false) -> Float? {
+            guard case let .vector(value)? = state.scriptField("instance.\(name)", of: objectID),
+                  value.x.isFinite, !nonnegative || value.x >= 0 else { return nil }
+            return value.x
+        }
+        func vector(_ name: String) -> SIMD3<Float>? {
+            guard case let .vector(value)? = state.scriptField("instance.\(name)", of: objectID),
+                  value.x.isFinite, value.y.isFinite, value.z.isFinite else { return nil }
+            return SIMD3(value.x, value.y, value.z)
+        }
+        if let value = scalar("rate") {
+            next.rate = max(value, 0.01)
+        }
+        if let value = scalar("count", nonnegative: true) {
+            next.count = value
+        }
+        if let value = scalar("lifetime") {
+            next.lifetime = value
+        }
+        if let value = scalar("size") {
+            next.size = value
+        }
+        if let value = scalar("speed") {
+            next.speed = value
+        }
+        if let value = scalar("alpha") {
+            next.alpha = value
+        }
+        if state.hdr, let value = scalar("brightness") {
+            next.brightness = value
+        }
+        if let value = vector("colorn") {
+            next.color = value
+        }
+        for index in 0 ..< WPEParityParticleControlPoint.count {
+            if let value = vector("controlpoint\(index)") {
+                let offset = value.x == Float.greatestFiniteMagnitude ? nil : value
+                if next.controlPointOffsets[index] != offset {
+                    next.controlPointOffsets[index] = offset
+                }
+            }
+            if let value = vector("controlpointangle\(index)") {
+                let angles = value.x == Float.greatestFiniteMagnitude ? nil : value
+                if next.controlPointAngles[index] != angles {
+                    next.controlPointAngles[index] = angles
+                }
+            }
+        }
+        guard next != instance else { return false }
+        useScriptInstance(next)
+        return true
+    }
+
+    /// The native hook walks static children and both active/finished event pools with their shared owner.
+    private mutating func useScriptInstance(_ next: Instance) {
+        for index in instanceControlPointRotations.indices
+            where instance.controlPointAngles[index] != next.controlPointAngles[index] {
+            instanceControlPointRotations[index] = Self.instanceControlPointTransform(
+                offset: .zero, angles: next.controlPointAngles[index] ?? .zero
+            )
+        }
+        instance = next
+        hasScriptInstanceChanges = true
+        for index in children.indices {
+            children[index].useScriptInstance(next)
+        }
+        for group in eventChildren.indices {
+            for index in eventChildren[group].indices {
+                eventChildren[group][index].useScriptInstance(next)
+            }
+            for index in finishedEventChildren[group].indices {
+                finishedEventChildren[group][index].useScriptInstance(next)
+            }
+        }
+    }
+
     /// Fixed 0.05 s steps, 0.2 s at maxcount ≥ 500, until starttime is covered (D/14022ebe0.c:349-367).
     private mutating func prewarm() {
         guard config.startTime > 0 else { return }
@@ -391,7 +479,8 @@ public struct WPEParityParticleSystem {
             } else {
                 eventChildConstructions += 1
                 eventChildren[group].append(WPEParityParticleSystem(
-                    config: child.config, instance: Instance(), rng: rng, crt: crt, eventOrigin: origin,
+                    config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
+                    rng: rng, crt: crt, eventOrigin: origin,
                     localTransform: localTransform, context: frameContext, parentSlot: event.slot, parentSample: sample
                 ))
             }
@@ -520,7 +609,8 @@ public struct WPEParityParticleSystem {
         age[slot] = 0
         lifetime[slot] = 1
         initialSize[slot] = 0.5
-        initialColor[slot] = instance.color
+        let brightness = config.flags & 8 == 0 ? instance.brightness : 1
+        initialColor[slot] = (config.hasColor ? SIMD3<Float>(repeating: 1) : instance.color) * brightness
         initialAlpha[slot] = instance.alpha
         birthU[slot] = u
         frame[slot] = config.randomFrame ? u : 0

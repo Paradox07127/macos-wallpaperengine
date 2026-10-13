@@ -25,8 +25,8 @@ public enum WPEResourceLifetime: Hashable, Sendable {
     case frameTransient
     /// Caller-supplied; contents survive into the next frame and may be read outside the graph.
     case persistent
-    /// A named RT in WPE's pool: contents survive between frames of this graph, but nothing outside reads them.
-    /// The compiler treats it as `.frameTransient` when no access in the frame observes its entry contents.
+    /// A named RT in WPE's pool. Contents survive structural graph changes as well as frames.
+    /// Discarding its history requires the caller's explicit proof that no other graph can observe it.
     case pooled
     /// Owned outside the graph (images, video frames); never pooled or aliased.
     case imported
@@ -43,9 +43,12 @@ public struct WPELogicalResource: Hashable, Sendable {
     public let mipCount: Int
     public let sampleCount: Int
     public let lifetime: WPEResourceLifetime
+    /// Authored FBO clear, applied when storage is created or resized, never as a per-frame implicit clear.
+    public let initialClear: WPEClearColor?
 
     public init(id: WPEResourceID, width: Int, height: Int, format: String = "rgba8unorm",
-                mipCount: Int = 1, sampleCount: Int = 1, lifetime: WPEResourceLifetime) {
+                mipCount: Int = 1, sampleCount: Int = 1, lifetime: WPEResourceLifetime,
+                initialClear: WPEClearColor? = nil) {
         self.id = id
         self.width = width
         self.height = height
@@ -53,6 +56,14 @@ public struct WPELogicalResource: Hashable, Sendable {
         self.mipCount = mipCount
         self.sampleCount = sampleCount
         self.lifetime = lifetime
+        self.initialClear = initialClear
+    }
+
+    /// Stable identity and an identical allocation descriptor permit preserving GPU contents on rebuild.
+    /// Lifetime is a graph decision; changing it does not itself resize or reinterpret the texture.
+    public func canPreserveContents(of previous: WPELogicalResource) -> Bool {
+        id == previous.id && width == previous.width && height == previous.height && format == previous.format
+            && mipCount == previous.mipCount && sampleCount == previous.sampleCount
     }
 }
 
@@ -77,6 +88,13 @@ public struct WPEPassIdentity: Hashable, Sendable, ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         rawValue = value
     }
+}
+
+/// A swap edits the pass bindings of one effect (1401ebf60: param_2+0xd0/+0xd8), while the named pool textures
+/// themselves remain shared. Frame scope is also useful for a standalone operation stream without scene effects.
+public enum WPEResourceBindingScope: Hashable, Sendable {
+    case frame
+    case effect(objectID: String, effectID: String)
 }
 
 /// Opaque key for the draw's complete fixed-function and shader state.
@@ -141,6 +159,12 @@ public struct WPERenderOperation: Hashable, Sendable {
         case draw(WPEDrawOperation)
         /// CopyResource: identical extent, format, mips and samples.
         case copy(source: WPEResourceID, destination: WPEResourceID)
+        /// Exchanges logical bindings at this exact point; no texels are copied. The binding permutation survives
+        /// only submitted frames, including partially encoded submissions, and is independent of frame number.
+        case swapResources(first: WPEResourceID, second: WPEResourceID)
+        /// Selects the persistent binding table of this effect, or restores frame bindings after it. `resources`
+        /// are the FBO names affected by its swaps; their physical allocation identities do not change.
+        case resourceScope(scope: WPEResourceBindingScope, resources: [WPEResourceID])
         case generateMips(WPEResourceID)
         /// ResolveSubresource of mip 0 from a multisampled resource.
         case resolve(source: WPEResourceID, destination: WPEResourceID)

@@ -37,6 +37,13 @@ final class WPEParityExecutionTests: XCTestCase {
         draw.textures = ["g_Texture0": input]
         draw.samplers = ["g_Texture0SamplerState": .wpe(filter: .point, address: .clamp)]
 
+        XCTAssertThrowsError(try harness.encoder.prepare(pipeline: pipeline, depthStencil: draw.depthStencil,
+                                                         textureNames: ["g_Texture0"], samplers: [:])) { error in
+            XCTAssertEqual(error as? WPEParityExecutionError, .missingSampler("g_Texture0SamplerState"))
+        }
+        try harness.encoder.prepare(pipeline: pipeline, depthStencil: draw.depthStencil,
+                                    textureNames: Set(draw.textures.keys), samplers: draw.samplers)
+
         let target = try makeTarget(harness.device)
         try renderAndWait(harness, draw: draw, target: target)
         let output = try readBack(harness, target: target)

@@ -58,6 +58,8 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertNil(vertex["g_Bounds"])
         // Material and scene angles are already radians; rad2deg only scales SceneScript input.
         XCTAssertEqual(Self.floats(vertex["g_Direction"]), [-1.5707963])
+        XCTAssertEqual(binding.materialConstants[.vertex]?.first { $0.name == "g_Direction" }?.angle, true)
+        XCTAssertEqual(binding.materialConstants[.vertex]?.first { $0.name == "g_Speed" }?.angle, false)
         // Instance values replace material values, and both win over annotation defaults.
         XCTAssertEqual(Self.floats(fragment["g_Bounds"]), [0.25, 0.75])
         XCTAssertEqual(Self.floats(vertex["g_Phase"]), [0.125])

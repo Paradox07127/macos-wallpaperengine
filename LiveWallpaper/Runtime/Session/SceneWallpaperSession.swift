@@ -223,6 +223,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             return
         }
         cacheRendererState(snapshot)
+        // Scripts may register audio buffers after init; reuse the existing diagnostic poll, without a timer.
+        await updateSystemAudioCaptureRequirement(renderActor.requiresSystemAudioCapture())
     }
 
     private func cacheRendererState(_ snapshot: WPERendererStateSnapshot) {

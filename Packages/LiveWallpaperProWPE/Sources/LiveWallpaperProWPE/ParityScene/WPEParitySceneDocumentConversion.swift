@@ -7,6 +7,52 @@ struct WPEParityAuthoredFBO: Sendable {
     /// The FBO a `swap` command of the same effect exchanges it with.
     let swapPartner: String?
     let unique: Bool
+    var explicitWidth: Double?
+    var explicitHeight: Double?
+    var initialClear: WPEClearColor?
+    var repeats = false
+
+    /// FUN_1401e63b0: arrays and each object in them are AND groups. Missing combo values are integer zero;
+    /// nonarrays and nonobject elements are accepted. PE constants fix op/ge/gt/le/lt (see wave1 raw evidence).
+    static func conditionsMatch(_ conditions: WPESceneJSONValue?, combos: WPESceneJSONValue?) -> Bool {
+        guard case let .array(groups)? = conditions else { return true }
+        func integer(_ value: WPESceneJSONValue?) -> Int32 {
+            guard case let .number(number)? = value else { return 0 }
+            return Int32(exactly: number.rounded(.towardZero)) ?? 0
+        }
+        for group in groups {
+            guard case let .object(entries) = group else { continue }
+            for (name, condition) in entries {
+                let actual = integer(combos?[name])
+                switch condition {
+                case .number:
+                    if actual != integer(condition) {
+                        return false
+                    }
+                case let .object(specification):
+                    let expected = integer(specification["value"])
+                    let operation: String = if case let .string(value)? = specification["op"] {
+                        value
+                    } else {
+                        ""
+                    }
+                    let accepted: Bool = switch operation {
+                    case "ge": actual >= expected
+                    case "gt": actual > expected
+                    case "le": actual <= expected
+                    case "lt": actual < expected
+                    default: actual == expected
+                    }
+                    if !accepted {
+                        return false
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        return true
+    }
 }
 
 /// One effect file pass before its FBO names resolve against the scene.
@@ -15,6 +61,7 @@ struct WPEParityAuthoredPass: Sendable {
         case draw
         /// A nil source is `previous`.
         case copy(source: String?)
+        case swap(first: String, second: String)
     }
 
     let kind: Kind
@@ -31,6 +78,9 @@ struct WPEParityAuthoredPass: Sendable {
         if case let .copy(source?) = kind {
             names.append(source)
         }
+        if case let .swap(first, second) = kind {
+            names += [first, second]
+        }
         return names
     }
 }
@@ -45,8 +95,8 @@ struct WPEParityAuthoredEffect: Sendable {
 struct WPEParityAuthoredObject: Sendable {
     let id: String
     /// Extent the object's FBOs are sized from.
-    let width: Int
-    let height: Int
+    var width: Int
+    var height: Int
     var effects: [WPEParityAuthoredEffect]
 
     var localFBOs: [WPEParityAuthoredFBO] {
@@ -138,27 +188,46 @@ private extension WPEParitySceneFBOScope.Declaration {
     func parityFBO(shared: Bool, format: String) -> WPEParitySceneFBO {
         let size = extent
         let fitted = fittedExtent
+        let base = baseExtent
         return WPEParitySceneFBO(name: fbo.name, width: size.width, height: size.height, format: format,
                                  shared: shared, swapPartner: local ? fbo.swapPartner : nil, unique: fbo.unique,
-                                 unscaledSize: SIMD2(fitted?.width ?? width, fitted?.height ?? height),
-                                 scale: Int(divisor))
+                                 unscaledSize: SIMD2(fitted?.width ?? base.width, fitted?.height ?? base.height),
+                                 scale: Int(divisor), sizing: WPEParitySceneFBOSizing(
+                                     scale: fbo.scale, fit: fbo.fit, width: fbo.explicitWidth, height: fbo.explicitHeight
+                                 ), initialClear: fbo.initialClear, repeats: fbo.repeats)
     }
 
-    /// catsout WPImageObject.cpp parses `scale` as uint32_t and resets 0 to 1, so fractions truncate and a scale
-    /// below 1 never enlarges; WPSceneParser.cpp truncates `size / scale`.
+    /// Native scale is an integer byte (+0xc); keep zero safe rather than reproducing integer division by zero.
     private var divisor: Double {
-        max(1, fbo.scale.rounded(.towardZero))
+        let integer = Int32(exactly: fbo.scale.rounded(.towardZero)) ?? 1
+        return Double(max(1, UInt8(truncatingIfNeeded: integer)))
+    }
+
+    /// Native width/height/fit are uint16; only values <= 4096 override the layer extent (1401ea500:537-574).
+    private func explicitExtent(_ value: Double?) -> Int? {
+        guard let value, let integer = Int32(exactly: value.rounded(.towardZero)) else { return nil }
+        let native = Int(UInt16(truncatingIfNeeded: integer))
+        return native <= 4096 ? native : nil
+    }
+
+    private var baseExtent: (width: Int, height: Int) {
+        (explicitExtent(fbo.explicitWidth) ?? width, explicitExtent(fbo.explicitHeight) ?? height)
     }
 
     private var fittedExtent: (width: Int, height: Int)? {
-        guard let fit = fbo.fit, fit > 0, max(width, height) > 0 else { return nil }
-        let ratio = fit / Double(max(width, height))
-        return (max(1, Int((Double(width) * ratio).rounded())), max(1, Int((Double(height) * ratio).rounded())))
+        let base = baseExtent
+        guard let fit = explicitExtent(fbo.fit), max(base.width, base.height) > 0 else { return nil }
+        let edge = min(fit, max(base.width, base.height))
+        if base.width < base.height {
+            return (Int(Float(base.width) / Float(base.height) * Float(edge)), edge)
+        }
+        return (edge, Int(Float(base.height) / Float(base.width) * Float(edge)))
     }
 
-    /// `fit` over the object extent, else the object extent divided by `scale`.
+    /// Explicit extents, then longest-edge fit without enlargement, then integer scale; allocation is at least 2.
     var extent: (width: Int, height: Int) {
-        fittedExtent ?? (max(1, Int(Double(width) / divisor)), max(1, Int(Double(height) / divisor)))
+        let base = fittedExtent ?? baseExtent
+        return (max(2, Int(Double(base.width) / divisor)), max(2, Int(Double(base.height) / divisor)))
     }
 
     /// 1401e7170.c:220-242 and FUN_1401e53a0 (string → engine code), FUN_1400d2a20 (engine code → DXGI); nil for a
@@ -183,10 +252,28 @@ private extension WPEParitySceneFBOScope.Declaration {
     }
 }
 
+public extension WPEParitySceneFBO {
+    /// Reuses the declaration converter; no ratio inferred from an already rounded allocation size.
+    func resized(layerWidth: Int, layerHeight: Int) -> WPEParitySceneFBO {
+        guard let sizing else { return self }
+        let authored = WPEParityAuthoredFBO(name: name, scale: sizing.scale, fit: sizing.fit, format: format,
+                                            swapPartner: swapPartner, unique: unique,
+                                            explicitWidth: sizing.width, explicitHeight: sizing.height,
+                                            initialClear: initialClear, repeats: repeats)
+        let declaration = WPEParitySceneFBOScope.Declaration(fbo: authored, width: layerWidth,
+                                                             height: layerHeight, local: true)
+        return declaration.parityFBO(shared: shared, format: format)
+    }
+}
+
 private extension WPEParityAuthoredPass {
     /// `nil` for a `copy` whose source or target does not resolve; catsout's WPSceneParser.cpp skips those too.
     func resolved(_ visible: [String: WPEParitySceneFBOScope.Declaration]) -> WPEParityScenePass? {
         let target = target.flatMap { visible[$0] == nil ? nil : $0 }
+        if case let .swap(first, second) = kind {
+            guard visible[first] != nil, visible[second] != nil, first != second else { return nil }
+            return WPEParityScenePass(shader: shader, kind: .swap(first: first, second: second))
+        }
         if case let .copy(source) = kind {
             guard let target, source.map({ visible[$0] != nil }) ?? true else { return nil }
             return WPEParityScenePass(shader: shader, target: target, kind: .copy(source: source))
@@ -221,6 +308,9 @@ private extension WPEParityScenePass {
         var names = binds + [target].compactMap(\.self)
         if case let .copy(source?) = kind {
             names.append(source)
+        }
+        if case let .swap(first, second) = kind {
+            names += [first, second]
         }
         return names
     }

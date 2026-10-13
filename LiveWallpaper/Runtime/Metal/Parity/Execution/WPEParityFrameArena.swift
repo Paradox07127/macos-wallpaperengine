@@ -25,10 +25,16 @@ final class WPEParityFrameArena {
             self.buffer = buffer
         }
 
+        /// Reserve eligibility for a whole draw before packing any of its stages. Encoding owns this slot
+        /// serially, so a draw that does not fit can be dropped without consuming part of the next draw's space.
+        func canAllocate(length: Int) -> Bool {
+            length >= 0 && WPEParityFrameArena.aligned(cursor) <= buffer.length - length
+        }
+
         /// `nil` when the slot is full; it never grows mid-frame.
         func allocate(length: Int) -> Allocation? {
             let offset = WPEParityFrameArena.aligned(cursor)
-            guard length >= 0, offset <= buffer.length - length else { return nil }
+            guard canAllocate(length: length) else { return nil }
             cursor = offset + length
             return Allocation(buffer: buffer, offset: offset)
         }

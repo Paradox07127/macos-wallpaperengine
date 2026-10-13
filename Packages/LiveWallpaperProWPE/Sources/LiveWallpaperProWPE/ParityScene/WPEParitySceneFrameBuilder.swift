@@ -1,7 +1,7 @@
 /// Emits WPE's RenderScene (140183550) up to the end of the object loop: scene clear, image layers and their effect
 /// chains, and the MSAA resolve. Bloom, mip-mapped/HDR copies, ccsimple, fade and present are not part of it.
 public enum WPEParitySceneFrameBuilder {
-    /// The parity of `frameIndex` picks which FBO of each swap pair the effect writes this frame.
+    /// `frameIndex` remains source-compatible; submitted command swaps now carry binding state in the executor.
     public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0) -> WPEParitySceneFrame {
         var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex)
         emitter.renderScene()
@@ -50,8 +50,6 @@ private struct WPEParitySceneEmitter {
     var resources: [WPEResourceID: WPELogicalResource] = [:]
     var draws: [WPEPassIdentity: WPEParitySceneDraw] = [:]
     var samplers: [WPEResourceID: WPEParitySceneSampler] = [:]
-    /// Effect FBO resource → the resource its name is currently bound to; absent means itself.
-    var bindings: [WPEResourceID: WPEResourceID] = [:]
     var owners: [WPEPassIdentity: String] = [:]
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
@@ -96,17 +94,13 @@ private struct WPEParitySceneEmitter {
             register(Resource.multisampledDepth, scene.width, scene.height, format: Resource.depthFormat,
                      samples: scene.msaaSamples)
         }
-        // One exchange per frame: odd frames start with every pair swapped. Each side of a pair is written in one
-        // frame and read in the next, so its contents must outlive the frame.
+        // Register swap resources even when only the other side is sampled in a material. Their contents and
+        // logical-to-physical identity survive frames; execution, rather than elapsed frame count, exchanges them.
         for object in scene.objects {
             for effect in object.effects {
                 for fbo in effect.fbos {
-                    guard let partner = fbo.swapPartner else { continue }
-                    let id = Self.fboID(object, effect, fbo.name)
-                    register(id, fbo.width, fbo.height, format: fbo.format, lifetime: .persistent)
-                    if frameIndex % 2 != 0 {
-                        bindings[id] = Self.fboID(object, effect, partner)
-                    }
+                    guard fbo.swapPartner != nil else { continue }
+                    registerFBO(fbo, object: object, effect: effect, lifetime: .persistent)
                 }
             }
         }
@@ -155,7 +149,7 @@ private struct WPEParitySceneEmitter {
             return renderModel(object, model, children: children, into: destination, ancestors: ancestors)
         }
         let effects = object.effects.filter(\.enabled)
-        let lastPass = (effects.count - 1, (effects.last?.passes.count ?? 0) - 1)
+        let lastPass = (effects.count - 1, effects.last?.passes.lastIndex { $0.kind == .draw } ?? -1)
         let n = effects.count + effects.reduce(0) { $0 + $1.passes.count(where: \.compose) }
         let ownBit4 = object.requiresLayerComposite || scene.forcesLayerComposite
         let bit4 = object.hasLayerComposite(scene)
@@ -198,7 +192,12 @@ private struct WPEParitySceneEmitter {
         var flips = 0
         for (effectIndex, effect) in effects.enumerated() {
             for fbo in effect.fbos {
-                register(Self.fboID(object, effect, fbo.name), fbo.width, fbo.height, format: fbo.format)
+                registerFBO(fbo, object: object, effect: effect)
+            }
+            let scoped = swapResources(object, effect)
+            if !scoped.isEmpty {
+                emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.begin"),
+                     .resourceScope(scope: .effect(objectID: object.id, effectID: effect.id), resources: scoped))
             }
             let readsFullFrame = effect.passes.contains(where: \.readsFullFrameBuffer)
             for (passIndex, pass) in effect.passes.enumerated() {
@@ -207,7 +206,11 @@ private struct WPEParitySceneEmitter {
                 // layer's matrices and no composite target bound (:951-997, :1052-1075).
                 let lastSegment = !bit4 && flips == n - 1
                 func fbo(_ name: String) -> WPEResourceID {
-                    bound(Self.fboID(object, effect, name))
+                    Self.fboID(object, effect, name)
+                }
+                if case let .swap(first, second) = pass.kind {
+                    emit(identity, .swapResources(first: fbo(first), second: fbo(second)))
+                    continue
                 }
                 if case let .copy(source) = pass.kind {
                     emit(identity, .copy(source: source.map(fbo) ?? composites[current],
@@ -254,7 +257,10 @@ private struct WPEParitySceneEmitter {
                     flips += 1
                 }
             }
-            exchangeSwapPairs(object, effect)
+            if !scoped.isEmpty {
+                emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.end"),
+                     .resourceScope(scope: .frame, resources: scoped))
+            }
             current ^= 1
             flips += 1
         }
@@ -513,7 +519,12 @@ private struct WPEParitySceneEmitter {
                                       into destination: WPEParitySceneDestination) {
         guard let effect = object.effects.last(where: \.enabled) else { return }
         for fbo in effect.fbos {
-            register(Self.fboID(object, effect, fbo.name), fbo.width, fbo.height, format: fbo.format)
+            registerFBO(fbo, object: object, effect: effect)
+        }
+        let scoped = swapResources(object, effect)
+        if !scoped.isEmpty {
+            emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.begin"),
+                 .resourceScope(scope: .effect(objectID: object.id, effectID: effect.id), resources: scoped))
         }
         // 1401ebf60.c:178-183, 345: effect+0x144, the last draw pass, draws the shape mesh additive (140260790).
         let finalPass = effect.passes.lastIndex { $0.kind == .draw }
@@ -521,7 +532,11 @@ private struct WPEParitySceneEmitter {
         for (passIndex, pass) in effect.passes.enumerated() {
             let identity = WPEPassIdentity("\(object.id)/\(effect.id)/\(passIndex)")
             func fbo(_ name: String) -> WPEResourceID {
-                bound(Self.fboID(object, effect, name))
+                Self.fboID(object, effect, name)
+            }
+            if case let .swap(first, second) = pass.kind {
+                emit(identity, .swapResources(first: fbo(first), second: fbo(second)))
+                continue
             }
             if case let .copy(source) = pass.kind {
                 if let source, let target = pass.target {
@@ -547,17 +562,17 @@ private struct WPEParitySceneEmitter {
                                     writeMask: final ? destination.writeMask : .rgba,
                                     geometry: final ? .shapeQuad : .fullscreenQuad, layerMatrices: !final))
         }
-        exchangeSwapPairs(object, effect)
+        if !scoped.isEmpty {
+            emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.end"),
+                 .resourceScope(scope: .frame, resources: scoped))
+        }
     }
 
-    private mutating func exchangeSwapPairs(_ object: WPEParitySceneObject, _ effect: WPEParitySceneEffect) {
-        for fbo in effect.fbos {
-            guard let partner = fbo.swapPartner, fbo.name < partner else { continue }
-            let first = Self.fboID(object, effect, fbo.name)
-            let second = Self.fboID(object, effect, partner)
-            let exchanged = (bound(second), bound(first))
-            (bindings[first], bindings[second]) = exchanged
-        }
+    private func swapResources(_ object: WPEParitySceneObject, _ effect: WPEParitySceneEffect) -> [WPEResourceID] {
+        Set(effect.passes.flatMap { pass -> [WPEResourceID] in
+            guard case let .swap(first, second) = pass.kind else { return [] }
+            return [Self.fboID(object, effect, first), Self.fboID(object, effect, second)]
+        }).sorted()
     }
 
     /// 1401ea500.c:102-116
@@ -569,6 +584,13 @@ private struct WPEParitySceneEmitter {
         let (width, height) = compositeExtent(object)
         register(composite, width, height, format: compositeFormat)
         samplers[composite] = object.compositeSampler
+    }
+
+    private mutating func registerFBO(_ fbo: WPEParitySceneFBO, object: WPEParitySceneObject,
+                                      effect: WPEParitySceneEffect, lifetime: WPEResourceLifetime = .pooled) {
+        let id = Self.fboID(object, effect, fbo.name)
+        register(id, fbo.width, fbo.height, format: fbo.format, lifetime: lifetime, initialClear: fbo.initialClear)
+        samplers[id] = WPEParitySceneSampler(filter: .linear, address: fbo.repeats ? .wrap : .clamp)
     }
 
     /// The material names the frame has: `_rt_FullFrameBuffer` and every layer's `_a`. Any other name stays out,
@@ -598,10 +620,6 @@ private struct WPEParitySceneEmitter {
             : Resource.effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
     }
 
-    private func bound(_ id: WPEResourceID) -> WPEResourceID {
-        bindings[id] ?? id
-    }
-
     private mutating func snapshot(_ identity: WPEPassIdentity) {
         transfer(identity, into: Resource.fullFrameBuffer)
     }
@@ -619,11 +637,12 @@ private struct WPEParitySceneEmitter {
 
     private mutating func draw(_ draw: WPEParitySceneDraw) {
         draws[draw.pass] = draw
-        let opaque = draw.blend == .normal && draw.writeMask == .rgba && !draw.alphaMax
+        let opaque = draw.blend == .normal && draw.writeMask == .rgba && !draw.alphaMax && !draw.multipliesDestination
         emit(draw.pass, .draw(WPEDrawOperation(reads: draw.reads.map { WPETextureView($0) },
                                                readsDestination: !opaque,
-                                               overwritesTargets: opaque && draw.geometry == .fullscreenQuad
-                                                   && !draw.layerMatrices,
+                                               // Neither a 2x2 mesh nor normal blending proves that arbitrary
+                                               // shader code covers every pixel (discard, displaced VS, depth).
+                                               overwritesTargets: false,
                                                depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                                                state: WPEDrawStateKey(draw))))
     }
@@ -638,10 +657,10 @@ private struct WPEParitySceneEmitter {
     /// Every named RT in WPE's pool, including FFB, sc.* and effect FBOs, keeps its contents across frames.
     private mutating func register(_ id: WPEResourceID, _ width: Int, _ height: Int,
                                    format: String = Resource.colorFormat, samples: Int = 1,
-                                   lifetime: WPEResourceLifetime = .pooled) {
+                                   lifetime: WPEResourceLifetime = .pooled, initialClear: WPEClearColor? = nil) {
         guard resources[id] == nil else { return }
         resources[id] = WPELogicalResource(id: id, width: width, height: height, format: format,
-                                           sampleCount: samples, lifetime: lifetime)
+                                           sampleCount: samples, lifetime: lifetime, initialClear: initialClear)
     }
 }
 
@@ -691,6 +710,8 @@ private extension WPERenderOperation.Kind {
         case let .clearColor(view, _), let .clearDepth(view, _): [view.resource]
         case let .draw(draw): draw.reads.map(\.resource)
         case let .copy(source, destination), let .resolve(source, destination): [source, destination]
+        case let .swapResources(first, second): [first, second]
+        case let .resourceScope(_, resources): resources
         case let .generateMips(id): [id]
         }
     }

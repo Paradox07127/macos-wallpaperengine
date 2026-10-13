@@ -621,6 +621,8 @@ public struct WPEParityScenePass: Hashable, Sendable {
         case draw
         /// Effect `copy` command into `target`; a `nil` source (or target) is the composite the next pass samples.
         case copy(source: String?)
+        /// Effect command: exchange these FBO bindings before the following pass executes.
+        case swap(first: String, second: String)
     }
 
     public var shader: String
@@ -659,7 +661,7 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     public var format: String
     /// Another layer reads or declares it: every effect resolves the name to one scene-wide resource.
     public var shared: Bool
-    /// The FBO whose binding this one exchanges with after the effect, once per frame; both entries name each other.
+    /// Compatibility metadata for FBO discovery. Ordered `.swap` passes, rather than this pair, drive exchanges.
     public var swapPartner: String?
     /// `"unique": true`: WPE names it after the effect's scene id, so no other effect shares its texture.
     public var unique: Bool
@@ -667,9 +669,15 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     /// WPE's scene-wide pool.
     public var unscaledSize: SIMD2<Int>
     public var scale: Int
+    /// Original extent rule, retained so text relayout or viewport changes use the same conversion as first load.
+    /// Nil for caller-created FBOs whose width and height are already absolute.
+    public var sizing: WPEParitySceneFBOSizing?
+    public var initialClear: WPEClearColor?
+    public var repeats: Bool
 
     public init(name: String, width: Int, height: Int, format: String = "rgba8unorm", shared: Bool = false,
-                swapPartner: String? = nil, unique: Bool = false, unscaledSize: SIMD2<Int>? = nil, scale: Int = 1) {
+                swapPartner: String? = nil, unique: Bool = false, unscaledSize: SIMD2<Int>? = nil, scale: Int = 1,
+                sizing: WPEParitySceneFBOSizing? = nil, initialClear: WPEClearColor? = nil, repeats: Bool = false) {
         self.name = name
         self.width = width
         self.height = height
@@ -679,5 +687,22 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
         self.unique = unique
         self.unscaledSize = unscaledSize ?? SIMD2(width, height)
         self.scale = scale
+        self.sizing = sizing
+        self.initialClear = initialClear
+        self.repeats = repeats
+    }
+}
+
+public struct WPEParitySceneFBOSizing: Hashable, Sendable {
+    public var scale: Double
+    public var fit: Double?
+    public var width: Double?
+    public var height: Double?
+
+    public init(scale: Double = 1, fit: Double? = nil, width: Double? = nil, height: Double? = nil) {
+        self.scale = scale
+        self.fit = fit
+        self.width = width
+        self.height = height
     }
 }

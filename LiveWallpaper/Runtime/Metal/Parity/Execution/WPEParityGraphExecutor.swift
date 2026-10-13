@@ -9,8 +9,11 @@ enum WPEParityGraphExecutionError: Error, Equatable {
     case objectUnavailable
     case missingTexture(WPEResourceID)
     case incompatibleCopy(source: WPEResourceID, destination: WPEResourceID)
+    case incompatibleTexture(WPEResourceID)
     case encoderUnavailable
 }
+
+typealias WPEParityResourceBindings = [WPEResourceBindingScope: [WPEResourceID: WPEResourceID]]
 
 /// Owns the frame-transient textures (`.aliased` in one untracked placement heap, `.memoryless` in
 /// tile memory); every other resource is supplied by the caller per frame.
@@ -31,17 +34,22 @@ final class WPEParityGraphExecutor {
     let transientTextures: [WPEResourceID: MTLTexture]
     private let drawEncoder: WPEParityDrawEncoder
     private let arena: WPEParityFrameArena
+    private let pixelFormats: [String: MTLPixelFormat]
     /// Consumer step -> producer steps whose fence it waits on before its first stage.
     private let waits: [Int: [Int]]
     private let fences: [Int: MTLFence]
     /// Orders heap use across frames, which per-encoder fences inside one command buffer do not cover.
     private let heapEvent: MTLEvent?
     private var frameCount: UInt64 = 0
+    /// Logical RT name -> physical RT identity after the last submitted command stream. Keep entries for disabled
+    /// effects too: re-enabling one resumes its last binding rather than deriving it from elapsed frame count.
+    private(set) var resourceBindings: WPEParityResourceBindings
     /// Draws marked `dropsWhenArenaIsFull` that were skipped for want of arena space, over the executor's life.
     private(set) var droppedDraws = 0
 
     init(graph: WPECompiledRenderGraph, device: MTLDevice, drawEncoder: WPEParityDrawEncoder,
-         arena: WPEParityFrameArena, pixelFormats: [String: MTLPixelFormat]) throws {
+         arena: WPEParityFrameArena, pixelFormats: [String: MTLPixelFormat],
+         resourceBindings: WPEParityResourceBindings = [:]) throws {
         func descriptor(_ resource: WPELogicalResource, _ storage: MTLStorageMode) throws -> MTLTextureDescriptor {
             guard let format = pixelFormats[resource.format] else {
                 throw WPEParityGraphExecutionError.unsupportedFormat(resource.format)
@@ -103,8 +111,16 @@ final class WPEParityGraphExecutor {
         transientTextures = textures
         self.drawEncoder = drawEncoder
         self.arena = arena
+        self.pixelFormats = pixelFormats
         self.waits = waits
         self.fences = fences
+        self.resourceBindings = resourceBindings
+    }
+
+    /// A cached graph must resume the most recently submitted permutation, not the one it last executed.
+    /// Texture allocation/reuse remains with the renderer; this changes bindings without allocating GPU objects.
+    func restoreResourceBindings(_ bindings: WPEParityResourceBindings) {
+        resourceBindings = bindings
     }
 
     /// Heap textures are untracked, so every hazard on them, and every hand-over of memory from one
@@ -140,7 +156,8 @@ final class WPEParityGraphExecutor {
     func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
                      prepare: (MTLCommandBuffer) throws -> Void = { _ in },
                      draw: DrawProvider) throws -> Submission {
-        let textures = try frameTextures(external)
+        let physicalTextures = try frameTextures(external)
+        var textures = try boundTextures(physicalTextures, bindings: resourceBindings[.frame, default: [:]])
         guard let commandBuffer = queue.makeCommandBuffer() else {
             throw WPEParityGraphExecutionError.encoderUnavailable
         }
@@ -151,10 +168,14 @@ final class WPEParityGraphExecutor {
         }
 
         var failure: (any Error)?
+        var bindings = resourceBindings
+        var scope = WPEResourceBindingScope.frame
         do {
             try prepare(commandBuffer)
             for index in graph.steps.indices {
-                try encodeStep(index, textures: textures, frame: frame, commandBuffer: commandBuffer, draw: draw)
+                try encodeStep(index, textures: &textures, physicalTextures: physicalTextures,
+                               bindings: &bindings, scope: &scope, frame: frame,
+                               commandBuffer: commandBuffer, draw: draw)
             }
         } catch {
             failure = error
@@ -163,6 +184,8 @@ final class WPEParityGraphExecutor {
             commandBuffer.encodeSignalEvent(heapEvent, value: frameCount)
         }
         commandBuffer.commit()
+        // Even an error above submits its already encoded prefix. Only swaps reached by that prefix take effect.
+        resourceBindings = bindings
         if let failure {
             throw failure
         }
@@ -172,7 +195,16 @@ final class WPEParityGraphExecutor {
     private func frameTextures(_ external: [WPEResourceID: MTLTexture]) throws -> [WPEResourceID: MTLTexture] {
         var textures = transientTextures
         for id in graph.lifetimes.keys where textures[id] == nil {
-            guard let texture = external[id] else { throw WPEParityGraphExecutionError.missingTexture(id) }
+            guard let texture = external[id] else {
+                throw WPEParityGraphExecutionError.missingTexture(id)
+            }
+            if let descriptor = graph.resources[id], descriptor.lifetime != .imported {
+                guard texture.width == descriptor.width, texture.height == descriptor.height,
+                      texture.mipmapLevelCount == descriptor.mipCount, texture.sampleCount == descriptor.sampleCount,
+                      texture.pixelFormat == pixelFormats[descriptor.format] else {
+                    throw WPEParityGraphExecutionError.incompatibleTexture(id)
+                }
+            }
             textures[id] = texture
         }
         for step in graph.steps {
@@ -187,7 +219,24 @@ final class WPEParityGraphExecutor {
         return textures
     }
 
-    private func encodeStep(_ index: Int, textures: [WPEResourceID: MTLTexture], frame: WPEParityFrameArena.Frame,
+    private func boundTextures(_ physical: [WPEResourceID: MTLTexture],
+                               bindings: [WPEResourceID: WPEResourceID],
+                               resources: [WPEResourceID]? = nil) throws -> [WPEResourceID: MTLTexture] {
+        guard !bindings.isEmpty else { return physical }
+        var textures = physical
+        for id in resources ?? Array(bindings.keys) where physical[id] != nil {
+            guard let destination = bindings[id] else { continue }
+            guard let texture = physical[destination] else {
+                throw WPEParityGraphExecutionError.missingTexture(destination)
+            }
+            textures[id] = texture
+        }
+        return textures
+    }
+
+    private func encodeStep(_ index: Int, textures: inout [WPEResourceID: MTLTexture],
+                            physicalTextures: [WPEResourceID: MTLTexture], bindings: inout WPEParityResourceBindings,
+                            scope: inout WPEResourceBindingScope, frame: WPEParityFrameArena.Frame,
                             commandBuffer: MTLCommandBuffer, draw: DrawProvider) throws {
         let step = graph.steps[index]
         let waitFences = waits[index, default: []].compactMap { fences[$0] }
@@ -213,6 +262,25 @@ final class WPEParityGraphExecutor {
 
         let pass = MTLRenderPassDescriptor()
         switch step.kind {
+        case let .resourceScope(next, resources):
+            scope = next
+            let frameTextures = try boundTextures(physicalTextures, bindings: bindings[.frame, default: [:]])
+            if next == .frame {
+                textures = frameTextures
+            } else {
+                textures = try boundTextures(frameTextures, bindings: bindings[next, default: [:]], resources: resources)
+            }
+            return
+        case let .swapResources(first, second):
+            let (a, b) = try (texture(first), texture(second))
+            textures[first] = b
+            textures[second] = a
+            var local = bindings[scope, default: [:]]
+            let (aID, bID) = (local[first] ?? first, local[second] ?? second)
+            local[first] = bID == first ? nil : bID
+            local[second] = aID == second ? nil : aID
+            bindings[scope] = local.isEmpty ? nil : local
+            return
         case let .copy(source, destination):
             let (from, to) = try (texture(source), texture(destination))
             try blit {

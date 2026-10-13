@@ -1,3 +1,28 @@
+/// A completed text update. The frame consumer can update geometry from the two layouts, and rebuild its graph
+/// when the draw kinds, materials or FBO allocation changed. Unchanged layers are absent, in load order.
+public struct WPEParityTextRelayoutDelta: Sendable {
+    public struct Change: Sendable {
+        public let previous: WPEParitySceneText
+        public let current: WPEParitySceneText
+
+        public var requiresFrameRebuild: Bool {
+            func glyphLists(_ text: WPEParitySceneText) -> [Bool] {
+                [text.layout.mesh != nil, !(text.layout.mesh?.mono.glyphKeys.isEmpty ?? true),
+                 !(text.layout.mesh?.color.glyphKeys.isEmpty ?? true)]
+            }
+            let throughFBO = current.effectCount > 0 || current.object.composesThroughPassthrough
+            return glyphLists(previous) != glyphLists(current)
+                || previous.object.opaqueBackground != current.object.opaqueBackground
+                || previous.object.colorBlendMode != current.object.colorBlendMode
+                || previous.depthMaterials != current.depthMaterials
+                || previous.effectCount != current.effectCount
+                || throughFBO && previous.layout.fboSize != current.layout.fboSize
+        }
+    }
+
+    public let changes: [Change]
+}
+
 /// The text layers of a scene and their shared atlases: each is laid out and packed at load, and a field change
 /// re-lays it at once, as FUN_140256f20 does when a property is set. Holds FreeType objects: one owner at a time.
 public final class WPEParityTextPipeline {
@@ -54,38 +79,50 @@ public final class WPEParityTextPipeline {
     /// atlas, the other layers on it keep their stale UVs, as WPE's do. Returns the changed layers, in load order.
     @discardableResult
     public func relayout(_ object: WPEParityTextObject) -> [String] {
-        guard let current = texts[object.id] else { return [] }
+        relayoutWithDelta(object).changes.map(\.current.object.id)
+    }
+
+    /// Rebuilds the changed text once, including when its active effects change. The returned layouts already
+    /// include any shared-atlas UV changes; the frame consumer need not run a speculative layout first.
+    public func relayoutWithDelta(_ object: WPEParityTextObject, effectCount: Int? = nil)
+        -> WPEParityTextRelayoutDelta {
+        guard let current = texts[object.id] else { return WPEParityTextRelayoutDelta(changes: []) }
+        let effects = effectCount ?? current.effectCount
+        guard object != current.object || effects != current.effectCount else {
+            return WPEParityTextRelayoutDelta(changes: [])
+        }
         let before = texts
-        guard object.needsRebuild(from: current.object) else {
+        if !object.needsRebuild(from: current.object), effects == current.effectCount {
             texts[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
                                                   layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
                                                   orthographic: orthographic)
-            return texts[object.id] == current ? [] : [object.id]
+        } else {
+            let resets = planner.resets
+            place(object, effectCount: effects)
+            let key = texts[object.id]?.atlasKey ?? current.atlasKey
+            let stale = planner.resets[key] != resets[key] ? key : nil
+            for id in order {
+                guard var text = texts[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
+                      id == object.id || text.atlasKey != stale else { continue }
+                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
+                texts[id] = text
+            }
         }
-        let resets = planner.resets
-        place(object, effectCount: current.effectCount)
-        let key = texts[object.id]?.atlasKey ?? current.atlasKey
-        let stale = planner.resets[key] != resets[key] ? key : nil
-        for id in order {
-            guard var text = texts[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
-                  id == object.id || text.atlasKey != stale else { continue }
-            planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
-            texts[id] = text
-        }
-        return order.filter { texts[$0] != before[$0] }
+        return WPEParityTextRelayoutDelta(changes: order.compactMap { id in
+            guard let previous = before[id], let current = texts[id], previous != current else { return nil }
+            return WPEParityTextRelayoutDelta.Change(previous: previous, current: current)
+        })
     }
 
     /// Whether `object`'s new layout keeps the frame's shape: the same glyph lists, and the same FBO size when the
     /// layer draws through its FBO.
     public func keepsFrameShape(_ object: WPEParityTextObject) -> Bool {
         guard let current = texts[object.id] else { return false }
-        guard object.needsRebuild(from: current.object) else { return true }
-        let layout = planner.layout(object, effectCount: current.effectCount)
-        func lists(_ layout: WPEParityTextLayout) -> [Bool] {
-            [layout.mesh?.mono.glyphKeys.isEmpty ?? true, layout.mesh?.color.glyphKeys.isEmpty ?? true]
-        }
-        let throughFBO = current.effectCount > 0 || object.composesThroughPassthrough
-        return lists(layout) == lists(current.layout) && (!throughFBO || layout.fboSize == current.layout.fboSize)
+        let layout = object.needsRebuild(from: current.object)
+            ? planner.layout(object, effectCount: current.effectCount) : current.layout
+        let proposed = WPEParitySceneText(object: object, effectCount: current.effectCount, layout: layout,
+                                          atlasKey: current.atlasKey, hdr: hdr, orthographic: orthographic)
+        return !WPEParityTextRelayoutDelta.Change(previous: current, current: proposed).requiresFrameRebuild
     }
 
     private func place(_ object: WPEParityTextObject, effectCount: Int) {

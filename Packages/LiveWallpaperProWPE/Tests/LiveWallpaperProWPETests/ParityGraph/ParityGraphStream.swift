@@ -53,19 +53,11 @@ enum ParityGraphStream {
         try WPERenderGraphCompiler.compile(resources: resources, operations: operations)
     }
 
-    /// A pooled resource is dedicated exactly when its frame-entry contents are read or one of its mips is never written.
+    /// Without an explicit cross-graph discard proof, pooled history must remain addressable on rebuild.
     static func expectPooledStorage(_ graph: WPECompiledRenderGraph,
                                     sourceLocation: SourceLocation = #_sourceLocation) {
         for resource in graph.resources.values where resource.lifetime == .pooled {
-            let id = resource.id
-            let readsEntry = graph.steps.contains { step in
-                step.reads.contains { $0.subresource.resource == id && $0.revision == 0 }
-            }
-            let covered = (0 ..< resource.mipCount).allSatisfy { mip in
-                graph.accesses.contains { $0.writes.contains { $0.subresource == WPESubresource(id, mip: mip) } }
-            }
-            #expect((graph.storage[id] == .dedicated) == (readsEntry || !covered), "\(id)",
-                    sourceLocation: sourceLocation)
+            #expect(graph.storage[resource.id] == .dedicated, "\(resource.id)", sourceLocation: sourceLocation)
         }
     }
 

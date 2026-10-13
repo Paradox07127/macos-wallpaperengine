@@ -88,14 +88,93 @@ struct ParitySceneFBOConversionTests {
             try D.converted(D.fbo("f", scale: scale, fit: fit)).flatMap { [$0.width, $0.height] }
         }
         #expect(try extent(scale: 2) == [200, 100])
-        // catsout truncates the divided extent and parses `scale` as an integer.
+        // Native truncates the divided extent and parses `scale` as an integer byte.
         #expect(try extent(scale: 3) == [133, 66])
         #expect(try extent(scale: 2.5) == [200, 100])
-        // A scale below 1 parses to 0 in catsout, which it resets to 1: no enlargement.
+        // Keep zero scale safe instead of reproducing the native divide-by-zero path.
         #expect(try extent(scale: 0.5) == [400, 200])
-        // Longest edge = fit, aspect kept, both edges rounded; `scale` no longer applies.
-        #expect(try extent(scale: 2, fit: 64) == [64, 32])
-        #expect(try extent(scale: 1, fit: 75) == [75, 38])
+        // Native longest-edge fit truncates its float aspect result, then scale still applies.
+        #expect(try extent(scale: 2, fit: 64) == [32, 16])
+        #expect(try extent(scale: 1, fit: 75) == [75, 37])
+        #expect(try extent(scale: 1, fit: 1000) == [400, 200])
+    }
+
+    @Test func relayoutReusesTheOriginalSizeRuleInsteadOfScalingRoundedAllocations() throws {
+        let scaled = try #require(D.converted(D.fbo("f", scale: 3)).first)
+        let resized = scaled.resized(layerWidth: 1001, layerHeight: 500)
+        #expect([resized.width, resized.height] == [333, 166])
+        let fitted = try #require(D.converted(D.fbo("f", scale: 3, fit: 75)).first)
+        let refitted = fitted.resized(layerWidth: 500, layerHeight: 1000)
+        #expect([refitted.width, refitted.height] == [12, 25])
+    }
+
+    @Test func explicitDimensionsPrecedeFitAndScaleAndAllocationIsAtLeastTwo() throws {
+        var declaration = D.fbo("f", scale: 2, fit: 75)
+        declaration["width"] = 120
+        declaration["height"] = 40
+        let fitted = try #require(D.converted(declaration).first)
+        #expect([fitted.width, fitted.height] == [37, 12])
+        declaration["fit"] = 0
+        let tiny = try #require(D.converted(declaration).first)
+        #expect([tiny.width, tiny.height] == [2, 2])
+        declaration.removeValue(forKey: "fit")
+        declaration["width"] = 5000
+        let defaultWidth = try #require(D.converted(declaration).first)
+        #expect([defaultWidth.width, defaultWidth.height] == [200, 20])
+    }
+
+    @Test func authoredClearIsStringOnlyAndTravelsToResourceInitialization() throws {
+        let variants: [(Any, WPEClearColor?)] = [
+            ("0.25 0.5 0.75 1", WPEClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1)),
+            ("", WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)),
+            ("1 0 0", nil), ([1, 0, 0, 1], nil),
+            ("1 0 0 ", WPEClearColor(red: 1, green: 0, blue: 0, alpha: 0)),
+        ]
+        for (authored, expected) in variants {
+            var declaration = D.fbo("history")
+            declaration["clear"] = authored
+            let description = try D.convert([D.layer(effects: [D.effect(fbos: [declaration],
+                                                                        passes: [D.pass("read", binds: [1: "history"])])])])
+            let frame = WPEParitySceneFrameBuilder.build(description)
+            let resource = try #require(frame.resources.first { $0.id == "history_400_200_1" })
+            #expect(resource.initialClear == expected)
+            #expect(!frame.operations.contains { operation in
+                if case let .clearColor(view, _) = operation.kind {
+                    return view.resource == resource.id
+                }
+                return false
+            }, "authored clear belongs to allocation/resize, not every frame")
+        }
+    }
+
+    @Test func fboRepeatUsesTheNativeUVSFieldAndEntersTheFrameSamplerTable() throws {
+        var declaration = D.fbo("history")
+        declaration["uvs"] = "repeat"
+        let description = try D.convert([D.layer(effects: [D.effect(fbos: [declaration],
+                                                                    passes: [D.pass("read", binds: [1: "history"])])])])
+        let frame = WPEParitySceneFrameBuilder.build(description)
+        #expect(frame.samplers["history_400_200_1"] == WPEParitySceneSampler(filter: .linear, address: .wrap))
+    }
+
+    @Test func fboAndPassConditionsUseTopLevelEffectCombosAndNativeComparisons() throws {
+        let comparisons: [(String, Bool)] = [("ge", true), ("gt", false), ("le", true), ("lt", false), ("unknown", true)]
+        var fbos: [[String: Any]] = []
+        var passes: [[String: Any]] = []
+        for (index, comparison) in comparisons.enumerated() {
+            let name = "f\(index)"
+            let condition: [[String: Any]] = [["ENABLED": 1], ["QUALITY": ["op": comparison.0, "value": 3]]]
+            var declaration = D.fbo(name)
+            declaration["conditions"] = condition
+            fbos.append(declaration)
+            passes.append(D.pass(name, target: name, extra: ["conditions": condition]))
+        }
+        let description = try D.convert([D.layer(effects: [D.effect(fbos: fbos, passes: passes,
+                                                                    combos: ["ENABLED": 1, "QUALITY": 3])])])
+        #expect(description.objects[0].effects[0].fbos.map(\.name) == ["f0", "f2", "f4"])
+        #expect(description.objects[0].effects[0].passes.map(\.shader) == ["f0", "f2", "f4"])
+        let disabled = try D.convert([D.layer(effects: [D.effect(fbos: fbos, passes: passes,
+                                                                 combos: ["ENABLED": 0, "QUALITY": 3])])])
+        #expect(disabled.objects[0].effects[0].fbos.isEmpty && disabled.objects[0].effects[0].passes.isEmpty)
     }
 }
 
@@ -136,25 +215,44 @@ struct ParitySceneEffectCommandTests {
             D.pass("step", target: "a", binds: [1: "b"]),
             D.command("swap", source: "a", target: "b"),
         ])])
-        let fbos = try D.convert([layer]).objects[0].effects[0].fbos
+        let effect = try D.convert([layer]).objects[0].effects[0]
+        let fbos = effect.fbos
         #expect(fbos.map(\.swapPartner) == ["b", "a"])
+        #expect(effect.passes.map(\.kind) == [.draw, .swap(first: "a", second: "b")])
     }
 
-    @Test func swapExchangesBindingsEveryFrameAndKeepsContents() throws {
+    @Test func swapKeepsItsCommandPositionAndDoesNotDependOnElapsedFrameNumber() throws {
         let effect = WPEParitySceneEffect(id: "e", passes: [
             WPEParityScenePass(shader: "step", target: "a", binds: ["b"]),
+            WPEParityScenePass(shader: "commands/swap", kind: .swap(first: "a", second: "b")),
             WPEParityScenePass(shader: "show", binds: ["a"]),
         ], fbos: [
             WPEParitySceneFBO(name: "a", width: 512, height: 256, swapPartner: "b"),
             WPEParitySceneFBO(name: "b", width: 512, height: 256, swapPartner: "a"),
         ])
         let scene = F.scene([F.layer(effects: [effect])])
-        let expected: [[WPEResourceID]] = [["a_512_256_1", "b_512_256_1"], ["b_512_256_1", "a_512_256_1"]]
-        for (frameIndex, pair) in expected.enumerated() {
+        let pair: [WPEResourceID] = ["a_512_256_1", "b_512_256_1"]
+        for frameIndex in [0, 1, 7] {
             let frame = WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex)
             #expect(frame.draws["L/e/0"]?.target == pair[0], "frame \(frameIndex)")
             #expect(frame.draws["L/e/0"]?.reads == [WPEResourceID(F.bc0), pair[1]], "frame \(frameIndex)")
-            #expect(frame.draws["L/e/1"]?.reads == [WPEResourceID(F.bc0), pair[0]], "frame \(frameIndex)")
+            #expect(frame.draws["L/e/2"]?.reads == [WPEResourceID(F.bc0), pair[0]], "frame \(frameIndex)")
+            let relevant = frame.operations.filter { $0.pass.rawValue.hasPrefix("L/e/") }.map(\.kind)
+            let command = try #require(relevant.firstIndex(of: .swapResources(first: pair[0], second: pair[1])))
+            #expect(relevant[..<command].contains {
+                if case .draw = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+            #expect(relevant[(command + 1)...].contains {
+                if case .draw = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
             let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
             for id in pair {
                 #expect(graph.resources[id]?.lifetime == .persistent, "\(id) frame \(frameIndex)")
@@ -172,7 +270,7 @@ struct ParitySceneCrossLayerFBOTests {
         let reader = D.layer("8", effects: [D.effect(passes: [D.pass("use", binds: [1: "glow"])])])
         let description = try D.convert([writer, reader])
         let shared = WPEParitySceneFBO(name: "glow", width: 400, height: 200, shared: true,
-                                       unscaledSize: SIMD2(800, 400), scale: 2)
+                                       unscaledSize: SIMD2(800, 400), scale: 2, sizing: .init(scale: 2))
         #expect(description.objects[0].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].passes.map(\.binds) == [["glow"]])
@@ -182,6 +280,13 @@ struct ParitySceneCrossLayerFBOTests {
         #expect(frame.draws["8/1/0"]?.reads.contains(WPEParitySceneResource.sharedFBO("glow")) == true)
         #expect(frame.resources.count(where: { $0.id.rawValue.hasSuffix("glow") }) == 1)
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+
+        let program = try D.programScene([writer, reader])
+        let resized = program.scene(effectVisible: { _, _ in true }, textSizes: ["7": SIMD2(300, 100)])
+        for object in resized.objects {
+            let fbo = try #require(object.effects[0].fbos.first)
+            #expect([fbo.width, fbo.height] == [150, 50], "shared size still comes from declaring layer 7")
+        }
     }
 
     @Test func readOfAnFBOWrittenByAnEarlierEffectOfTheLayerResolvesToItsResource() throws {
