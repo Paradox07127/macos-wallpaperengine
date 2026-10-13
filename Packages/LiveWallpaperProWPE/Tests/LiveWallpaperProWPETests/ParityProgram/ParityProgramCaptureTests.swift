@@ -17,13 +17,13 @@ final class ParityProgramCaptureTests: XCTestCase {
     }
 
     /// `.mdl` model draws, which take the generic4 material inside the model file.
-    private static let modelDraws: Set<String> = ["188/albedo", "214/albedo", "218/albedo", "2077/albedo",
-                                                  "238/albedo", "436/albedo"]
+    private static let modelDraws: Set<String> = ["188/mesh0", "214/mesh0", "218/mesh0", "2077/mesh0",
+                                                  "238/mesh0", "436/mesh0"]
 
     /// Draws whose program has the `.dxs` key of an earlier draw's capture but whose combo text order differs: 436
     /// shares 238's key, and 449's albedo (material combos FOG, LIGHTING) shares the key of n=15/16.
     private static let knownMatchedByKey: [String: [String: Int]] = [
-        "3509243656": ["436/albedo": 39, "449/albedo": 16],
+        "3509243656": ["436/mesh0": 39, "449/albedo": 16],
     ]
 
     /// Draws that match no capture, byte for byte or by key.

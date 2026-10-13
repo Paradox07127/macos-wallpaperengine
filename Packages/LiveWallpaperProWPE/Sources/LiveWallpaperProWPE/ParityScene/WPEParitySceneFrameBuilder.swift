@@ -139,8 +139,8 @@ private struct WPEParitySceneEmitter {
             return
         }
         // FUN_1402222a0: a model draws into the bound target with no composite and no effects.
-        if object.kind == .model {
-            return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
+        if case let .model(model) = object.kind {
+            return renderModel(object, model, children: children, into: destination, ancestors: ancestors)
         }
         let effects = object.effects.filter(\.enabled)
         let lastPass = (effects.count - 1, (effects.last?.passes.count ?? 0) - 1)
@@ -292,30 +292,38 @@ private struct WPEParitySceneEmitter {
             renderTextDirect(object, text, into: destination)
         } else if !object.fullscreen, !object.passthrough || object.copyBackground {
             let identity = WPEPassIdentity("\(object.id)/albedo")
-            let (shader, source, reads) = albedoSource(object)
+            let (shader, albedo, reads) = albedoSource(object)
             bind(identity, destination.color, depth: destination.depth)
-            if object.kind == .model {
-                // 140155fc0.c:713-738: blending other than opaque (0, 3) turns depth writes off.
-                let state = object.materialState
-                draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
-                                        reads: reads, target: destination.color, blend: object.blend,
-                                        alphaMax: destination.alphaMax,
-                                        compositeOwnerID: destination.compositeOwnerID,
-                                        writeMask: destination.writeMask(state),
-                                        geometry: .modelMesh,
-                                        depthTest: state.depthTest,
-                                        depthWrite: state.depthWrite && object.blend == .normal,
-                                        cullsBackFaces: state.cullsBackFaces))
-            } else {
-                // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.
-                var source = source
-                source?.combos.merge(object.puppet?.skinningCombos ?? [:]) { _, new in new }
-                draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
-                                        reads: reads, target: destination.color, blend: object.blend,
-                                        alphaMax: destination.alphaMax,
-                                        compositeOwnerID: destination.compositeOwnerID,
-                                        writeMask: destination.writeMask, geometry: object.layerGeometry))
-            }
+            // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.
+            var source = albedo
+            source?.combos.merge(object.puppet?.skinningCombos ?? [:]) { _, new in new }
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source,
+                                    reads: reads, target: destination.color, blend: object.blend,
+                                    alphaMax: destination.alphaMax,
+                                    compositeOwnerID: destination.compositeOwnerID,
+                                    writeMask: destination.writeMask, geometry: object.layerGeometry))
+        }
+        for child in children {
+            render(child, into: destination, ancestors: ancestors)
+        }
+    }
+
+    /// FUN_1402222a0: each sub-mesh in file order binds its own material, draws into the bound target and unbinds;
+    /// the model sets no target or state itself. Blending other than opaque (0, 3) turns depth writes off
+    /// (140155fc0.c:713-738). Textures come from the materials, so the draws read no frame resource.
+    private mutating func renderModel(_ object: WPEParitySceneObject, _ model: WPEParitySceneModel,
+                                      children: [WPEParitySceneObject],
+                                      into destination: WPEParitySceneDestination, ancestors: [WPEResourceID]) {
+        for (index, mesh) in model.meshes.enumerated() {
+            let identity = WPEParitySceneModel.pass(objectID: object.id, mesh: index)
+            let state = mesh.materialState
+            bind(identity, destination.color, depth: destination.depth)
+            draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: mesh.shader, source: mesh.material,
+                                    reads: [], target: destination.color, blend: mesh.blend,
+                                    alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
+                                    writeMask: destination.writeMask(state), geometry: .modelMesh,
+                                    depthTest: state.depthTest, depthWrite: state.depthWrite && mesh.blend == .normal,
+                                    cullsBackFaces: state.cullsBackFaces))
         }
         for child in children {
             render(child, into: destination, ancestors: ancestors)

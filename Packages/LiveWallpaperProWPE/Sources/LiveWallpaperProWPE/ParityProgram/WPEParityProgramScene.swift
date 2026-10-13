@@ -38,6 +38,8 @@ public struct WPEParityProgramScene: Sendable {
     public let cameraPaths: WPEParityCameraPaths
     /// The `.mdl` of each layer with a `WPEParityScenePuppet`, keyed by object id; the bone animator needs it.
     public let puppetModels: [String: WPEPuppetModel]
+    /// The `.mdl` of each model object, keyed by object id; its meshes line up with `WPEParitySceneModel.meshes`.
+    public let models: [String: WPEPuppetModel]
     /// The glyph atlases of the text layers as planning left them, keyed by `WPEParitySceneText.atlasKey`.
     public let textAtlases: [String: WPEParityGlyphAtlasInstance]
     let materials: [MaterialKey: WPEParityProgramMaterial]
@@ -85,13 +87,20 @@ public struct WPEParityProgramScene: Sendable {
         var puppetModels: [String: WPEPuppetModel] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
         var sceneObjects: [WPEParitySceneObject] = []
+        var models: [String: WPEPuppetModel] = [:]
         for (index, image) in document.imageObjects.enumerated() {
-            let color = SIMD3<Float>(image.color) * (flags.hdr ? Float(image.brightness) : 1)
-            layerColors[image.id] = SIMD4(color.x, color.y, color.z, Float(image.alpha))
             let isModel = image.imageRelativePath.lowercased().hasSuffix(".mdl")
+            let modelFile = isModel
+                ? assets.data(image.imageRelativePath).flatMap { try? WPEMdlParser.parse(data: $0) } : nil
+            if !isModel {
+                // FUN_1402222a0 draws models with g_Color4 = 1.
+                let color = SIMD3<Float>(image.color) * (flags.hdr ? Float(image.brightness) : 1)
+                layerColors[image.id] = SIMD4(color.x, color.y, color.z, Float(image.alpha))
+            }
+            models[image.id] = modelFile
             let model = isModel ? nil : assets.json(image.imageRelativePath)
             let materialPath = isModel
-                ? Self.modelMaterialPath(image.imageRelativePath, assets: assets)
+                ? modelFile?.meshes.first?.materialPath
                 : Self.string(model?["material"]) ?? image.materialRelativePath
             let albedoSource = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
             var material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
@@ -126,8 +135,27 @@ public struct WPEParityProgramScene: Sendable {
             } else {
                 material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
             }
+            var kind = WPEParitySceneObject.Kind.image
+            if isModel {
+                var meshes: [WPEParitySceneModelMesh] = []
+                for (meshIndex, mesh) in (modelFile?.meshes ?? []).enumerated() {
+                    let source = WPEParitySceneMaterialSource(materialPath: mesh.materialPath)
+                    let meshMaterial = meshIndex == 0 ? material
+                        : WPEParityProgramMaterial(path: mesh.materialPath, assets: assets)
+                    if let meshMaterial {
+                        materials[MaterialKey(objectID: image.id, effectID: nil, source: source)] = meshMaterial
+                    }
+                    meshes.append(WPEParitySceneModelMesh(
+                        material: meshMaterial == nil ? nil : source,
+                        shader: meshMaterial?.shader ?? "generic4",
+                        blend: meshMaterial.map { WPEParitySceneBlend($0.blending) } ?? .normal,
+                        materialState: Self.materialState(assets.json(mesh.materialPath)?["passes"]?[0])
+                    ))
+                }
+                kind = .model(WPEParitySceneModel(meshes: meshes))
+            }
             sceneObjects.append(WPEParitySceneObject(
-                id: image.id, kind: isModel ? .model : .image, sortKey: document.objectPaintOrder[image.id] ?? index,
+                id: image.id, kind: kind, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
                 materialShader: material?.shader ?? "genericimage2", material: albedoSource, blend: blend,
                 materialState: Self.materialState(materialPath.flatMap { assets.json($0)?["passes"]?[0] }),
@@ -195,6 +223,7 @@ public struct WPEParityProgramScene: Sendable {
         self.overridePasses = overridePasses
         self.layerColors = layerColors
         self.puppetModels = puppetModels
+        self.models = models
         self.authoredObjects = authoredObjects
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
@@ -343,11 +372,6 @@ public struct WPEParityProgramScene: Sendable {
         return WPEParitySceneMaterialState(depthTest: value("depthtest") != "disabled",
                                            depthWrite: value("depthwrite") != "disabled",
                                            cullsBackFaces: value("cullmode") != "nocull", alphaWriting: alphaWriting)
-    }
-
-    /// The material of the model's first mesh.
-    private static func modelMaterialPath(_ path: String, assets: WPEParityProgramAssets) -> String? {
-        assets.data(path).flatMap { try? WPEMdlParser.parse(data: $0).meshes.first?.materialPath }
     }
 
     /// Mesh0 of a model JSON `"puppet"` (FUN_1401fbae0); puppet+0x390 is the first mesh with flag bit 1.

@@ -81,15 +81,17 @@ struct ParitySceneLayerCompositeDrawTests {
 struct ParitySceneModelDrawStateTests {
     private static func modelDraw(_ blend: WPEParitySceneBlend, _ state: WPEParitySceneMaterialState,
                                   inParentComposite: Bool = false) -> (WPEParitySceneDraw?, WPEDrawOperation?) {
-        let model = WPEParitySceneObject(id: "M", kind: .model, width: 512, height: 256, materialShader: "generic4",
-                                         blend: blend, materialState: state, parentID: inParentComposite ? "P" : nil)
+        let mesh = WPEParitySceneModelMesh(material: WPEParitySceneMaterialSource(materialPath: "materials/m.json"),
+                                           shader: "generic4", blend: blend, materialState: state)
+        let model = WPEParitySceneObject(id: "M", kind: .model(WPEParitySceneModel(meshes: [mesh])), width: 512,
+                                         height: 256, parentID: inParentComposite ? "P" : nil)
         let parent = F.layer("P", sortKey: 1, passthrough: true, copyBackground: false, effects: [F.effect("pe")])
         let frame = WPEParitySceneFrameBuilder.build(F.scene(inParentComposite ? [model, parent] : [model]))
         let operation = frame.operations.lazy.compactMap { operation -> WPEDrawOperation? in
-            guard operation.pass == "M/albedo", case let .draw(draw) = operation.kind else { return nil }
+            guard operation.pass == "M/mesh0", case let .draw(draw) = operation.kind else { return nil }
             return draw
         }.first
-        return (frame.draws["M/albedo"], operation)
+        return (frame.draws["M/mesh0"], operation)
     }
 
     @Test func depthAndCullComeFromTheMaterial() {

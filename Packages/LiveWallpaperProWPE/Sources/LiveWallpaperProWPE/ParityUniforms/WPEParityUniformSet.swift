@@ -30,12 +30,15 @@ public struct WPEParityUniformDraw: Sendable {
     public var effectPass: WPEParityUniformEffectPass?
     /// Indexed by slot; missing or nil entries are unbound.
     public var textures: [WPEParityUniformTexture?]
+    /// Scene-wide light terms; nil leaves them to whatever the binding supplies.
+    public var lights: WPEParityUniformLights?
 
     public init(matrices: WPEParityUniformMatrices, effectPass: WPEParityUniformEffectPass? = nil,
-                textures: [WPEParityUniformTexture?] = []) {
+                textures: [WPEParityUniformTexture?] = [], lights: WPEParityUniformLights? = nil) {
         self.matrices = matrices
         self.effectPass = effectPass
         self.textures = textures
+        self.lights = lights
     }
 }
 
@@ -70,6 +73,9 @@ public enum WPEParityUniformSet {
         values.merge(draw.matrices.values) { $1 }
         if let effectPass = draw.effectPass {
             values.merge(effectPass.values) { $1 }
+        }
+        if let lights = draw.lights {
+            values.merge(lights.values) { $1 }
         }
         for slot in 0 ..< WPEParityUniformTextures.slotCount {
             let texture = slot < draw.textures.count ? draw.textures[slot] : nil

@@ -366,19 +366,28 @@ struct ParitySceneDocumentConversionTests {
     @Test func modelObjectHasItsOwnKindAndNoEffects() throws {
         let model = D.layer("9", image: "models/m.mdl", effects: [D.effect(passes: [D.pass("p")])])
         let object = try D.convert([model]).objects[0]
-        #expect(object.kind == .model)
+        #expect(object.isModel)
         #expect(object.effects.isEmpty)
     }
 
-    @Test func modelDrawsStraightIntoTheDestination() {
-        let source = WPEParitySceneMaterialSource(materialPath: "materials/models/m.json")
-        let model = WPEParitySceneObject(id: "M", kind: .model, width: 512, height: 256, materialShader: "generic4",
-                                         material: source, colorBlendMode: 5,
-                                         effects: [F.effect("e1")])
+    @Test func modelDrawsEachSubMeshStraightIntoTheDestination() {
+        let first = WPEParitySceneMaterialSource(materialPath: "materials/models/a.json")
+        let second = WPEParitySceneMaterialSource(materialPath: "materials/models/b.json")
+        let meshes = [
+            WPEParitySceneModelMesh(material: first, shader: "generic4", blend: .translucent),
+            WPEParitySceneModelMesh(material: second, shader: "chroma4", blend: .normal,
+                                    materialState: WPEParitySceneMaterialState(alphaWriting: .enabled)),
+        ]
+        let model = WPEParitySceneObject(id: "M", kind: .model(WPEParitySceneModel(meshes: meshes)), width: 512,
+                                         height: 256, colorBlendMode: 5, effects: [F.effect("e1")])
         let frame = WPEParitySceneFrameBuilder.build(F.scene([model]))
         #expect(F.lines(frame) == [F.sceneBind] + F.sceneClear + [
-            F.sceneBind, "draw generic4 [M/image] translucent rgb model",
+            F.sceneBind, "draw generic4 [] translucent rgb model",
+            F.sceneBind, "draw chroma4 [] normal rgba model",
         ])
-        #expect(frame.draws["M/albedo"]?.source == source)
+        #expect(frame.draws["M/mesh0"]?.source == first)
+        #expect(frame.draws["M/mesh1"]?.source == second)
+        #expect(frame.draws["M/mesh0"]?.depthWrite == false)
+        #expect(frame.draws["M/mesh1"]?.depthWrite == true)
     }
 }

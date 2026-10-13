@@ -207,8 +207,8 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
 public struct WPEParitySceneObject: Hashable, Sendable {
     public enum Kind: Hashable, Sendable {
         case image
-        /// A `.mdl` model; its material comes from the model file and it takes no effects.
-        case model
+        /// A `.mdl` model; its sub-mesh materials come from the model file and it takes no effects.
+        case model(WPEParitySceneModel)
         /// A particle system; it draws only its renderer entries and takes no composite or effects.
         case particle(WPEParitySceneParticle)
         /// A text layer: glyph draws straight into the destination, or into its FBO ahead of its effects.
@@ -276,6 +276,14 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.clampUVs = clampUVs
         self.parentID = parentID
         self.effects = effects
+    }
+
+    public var isModel: Bool {
+        if case .model = kind {
+            true
+        } else {
+            false
+        }
     }
 
     /// Layer bit4 (1401e6f50.c:24-29), without the global 0x1800000 flag.

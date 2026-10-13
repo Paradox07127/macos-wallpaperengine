@@ -339,11 +339,14 @@ struct WPEParityFrameDrawPlanner {
     private(set) var pipelineCreations = 0
     /// The text layers' atlas textures, uploaded at load.
     private(set) var textAtlases: WPEParityTextAtlasTextures
+    /// Scene light terms; WPE writes them for every draw that declares them.
+    private let lights: WPEParityUniformLights
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
         self.factory = factory
         self.plan = plan
+        lights = WPEParityUniformLights(document: plan.document)
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -514,6 +517,14 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         let puppetID = puppet?.skinned == true ? placement?.objectID : nil
+        let modelMesh: WPEPuppetMesh? = if case let .scene(draw) = description, draw.geometry == .modelMesh,
+                                           let mesh = WPEParitySceneModel.meshIndex(draw.pass, objectID: draw.objectID),
+                                           let meshes = plan.scene.models[draw.objectID]?.meshes,
+                                           meshes.indices.contains(mesh) {
+            meshes[mesh]
+        } else {
+            nil
+        }
         let geometry: WPEParityFrameDrawPlan.Geometry
         var placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
         if let particleKey, case let .scene(draw) = description {
@@ -528,7 +539,11 @@ struct WPEParityFrameDrawPlanner {
             )
         } else {
             let inputs = artifact.vertex.reflection.vertexInputs
-            let buffers = if let puppet {
+            let buffers = if let modelMesh {
+                Self.modelGeometry(modelMesh, inputs: inputs, device: device)
+            } else if case let .scene(draw) = description, draw.geometry == .modelMesh {
+                throw .pipeline("\(shader): \(draw.pass) has no model mesh")
+            } else if let puppet {
                 // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
                 Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
@@ -541,7 +556,7 @@ struct WPEParityFrameDrawPlanner {
             geometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount)
         }
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
-                                            textures: uniformTextures)
+                                            textures: uniformTextures, lights: lights)
 
         let probe = WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
                                           screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
@@ -888,6 +903,17 @@ struct WPEParityFrameDrawPlanner {
         var texcoord: SIMD2<Float>
         var blendIndices = SIMD4<UInt32>.zero
         var blendWeights = SIMD4<Float>.zero
+        var normal = SIMD3<Float>(0, 0, 1)
+    }
+
+    /// One model sub-mesh as the MDLV format table lays it out, indexed with R16 like every MDL mesh WPE builds
+    /// (14020ae00.c:77).
+    static func modelGeometry(_ mesh: WPEPuppetMesh, inputs: [WPEStageReflection.StageAttribute],
+                              device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        geometry(mesh.vertices.map {
+            Vertex(position: $0.position, texcoord: $0.uv, blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices),
+                   blendWeights: $0.skinBlendWeights, normal: $0.normal)
+        }, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs, device: device)
     }
 
     /// Mesh0 of a puppet layer with its texcoords scaled by `uvMax`.
@@ -940,6 +966,8 @@ struct WPEParityFrameDrawPlanner {
                     [vertex.position.x, vertex.position.y, vertex.position.z, 1]
                 } else if name == "texcoord0" {
                     [vertex.texcoord.x, vertex.texcoord.y, 0, 0]
+                } else if name.hasPrefix("normal") {
+                    [vertex.normal.x, vertex.normal.y, vertex.normal.z, 0]
                 } else if name.hasPrefix("blendweight") {
                     (0 ..< 4).map { vertex.blendWeights[$0] }
                 } else if name.hasPrefix("color") {

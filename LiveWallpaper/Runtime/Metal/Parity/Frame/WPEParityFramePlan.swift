@@ -200,10 +200,6 @@ struct WPEParityFramePlan {
         var programs: [Int: WPEParityProgram] = [:]
         var skipped: [Int: WPEParityFrameSkip] = [:]
         for (index, draw) in frame.draws {
-            if case let .scene(sceneDraw) = draw, sceneDraw.geometry == .modelMesh {
-                skipped[index] = .modelMesh
-                continue
-            }
             let key = WPEParityProgramKey(draw)
             let result = cache[key] ?? {
                 guard let description = WPEParityProgramBuilder.description(of: draw, scene: scene) else {
