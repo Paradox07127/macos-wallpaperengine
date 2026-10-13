@@ -21,6 +21,7 @@ public enum WPEParitySamplerFilter: Sendable, Hashable, CaseIterable {
 public enum WPEParitySamplerAddress: Sendable, Hashable, CaseIterable {
     case wrap
     case clamp
+    case border
 }
 
 public extension WPEParitySamplerState {
@@ -31,9 +32,28 @@ public extension WPEParitySamplerState {
         case .linear: .minMagMipLinear
         case .anisotropic: .anisotropic
         }
-        let mode: D3D11TextureAddressMode = address == .wrap ? .wrap : .clamp
+        let mode: D3D11TextureAddressMode = switch address {
+        case .wrap: .wrap
+        case .clamp: .clamp
+        case .border: .border
+        }
         return make(filter: d3dFilter, address: mode,
                     maxAnisotropy: filter == .anisotropic ? 8 : 1, comparisonFunc: .always)
+    }
+
+    /// Native 140099980:63–94: point, noncomparison TEX sampling. Border overrides clamp on all axes.
+    /// The native producer consumes TEXI flags after decoding, so encoded 2D and raw textures use this same leaf.
+    /// Other filter/comparison branches return nil rather than guessing their additional producer inputs.
+    static func wpePointTexture(flags: UInt32) -> Self? {
+        guard flags & 1 != 0, flags & 0x0800_0000 == 0 else { return nil }
+        let address: D3D11TextureAddressMode = if flags & 0x0400_0000 != 0 {
+            .border
+        } else if flags & 2 != 0 {
+            .clamp
+        } else {
+            .wrap
+        }
+        return make(filter: .minMagMipPoint, address: address, maxAnisotropy: 1, comparisonFunc: .always)
     }
 
     /// Shadow-atlas comparison sampler. 未实测。

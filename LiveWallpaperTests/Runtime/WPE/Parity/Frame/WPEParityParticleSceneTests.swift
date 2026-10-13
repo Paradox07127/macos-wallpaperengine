@@ -238,6 +238,88 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(Float(pixel[0]) / 255, expected, accuracy: 3.0 / 255)
     }
 
+    func testNestedStaticDrawsKeepLocalBirthsAndConsumeEachEventMatrixOnTheGPU() async throws {
+        var parent = Self.burstParticle(renderer: [])
+        parent["maxcount"] = 2
+        parent["emitter"] = [-10, 10].map { x in
+            ["name": "sphererandom", "origin": "\(x) 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0] as [String: Any]
+        }
+        parent["initializer"] = [["name": "lifetimerandom", "min": 0.03, "max": 0.03]]
+        parent["children"] = [["name": "particles/event.json", "type": "eventdeath", "origin": "3 0 0", "maxcount": 2]]
+        var event = Self.burstParticle(renderer: [])
+        event["children"] = [["name": "particles/leaf.json", "origin": "5 0 0"]]
+        var leaf = Self.burstParticle(renderer: [["name": "sprite"]])
+        leaf["emitter"] = [["name": "sphererandom", "origin": "2 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0]]
+        leaf["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                               ["name": "sizerandom", "min": 4, "max": 4]]
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": parent,
+                                                             "particles/event.json": event, "particles/leaf.json": leaf])
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        for _ in 0 ..< 6 {
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            if renderer.lastFrameDraws.count == 2 {
+                break
+            }
+        }
+        let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+        XCTAssertEqual(draws.count, 2)
+        guard draws.count == 2 else { return }
+        for (index, entry) in draws.enumerated() {
+            let birthX = entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset, as: Float.self)
+            XCTAssertEqual(birthX, 2, accuracy: 0.0001, "Event displacement belongs to the model, not the local birth")
+            guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+                return XCTFail("missing model matrix")
+            }
+            // WPE stores transposed rows. Owner32 + event(±10 + 3) + static5 = model30/50;
+            // the local birth2 then lands at pixel32/52. These constants are independent of simulation helpers.
+            XCTAssertEqual(model.columns[0][3], index == 0 ? 30 : 50, accuracy: 0.0001)
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(index == 0 ? 32 : 52, 32))[0], 255)
+        }
+        XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(22, 32))[0], 0)
+        XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(42, 32))[0], 0)
+    }
+
+    func testNestedStaticEntriesBlendInCompleteEventInstanceOrderWithIndependentColors() async throws {
+        var parent = Self.burstParticle(renderer: [])
+        parent["maxcount"] = 2
+        parent["emitter"] = [["name": "sphererandom", "rate": 0, "instantaneous": 2, "distancemax": 0]]
+        parent["initializer"] = [["name": "lifetimerandom", "min": 0.03, "max": 0.03]]
+        parent["children"] = [["name": "particles/event.json", "type": "eventdeath", "maxcount": 2]]
+        var event = Self.burstParticle(renderer: [["name": "sprite"]])
+        event["children"] = [["name": "particles/leaf.json"]]
+        var leaf = Self.burstParticle(renderer: [["name": "sprite"]])
+        leaf["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                               ["name": "sizerandom", "min": 128, "max": 128],
+                               ["name": "alpharandom", "min": 0.5, "max": 0.5],
+                               ["name": "colorrandom", "min": "0 0 0", "max": "0 0 0"]]
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": parent,
+                                                             "particles/event.json": event, "particles/leaf.json": leaf])
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        for _ in 0 ..< 6 {
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            if renderer.lastFrameDraws.count == 4 {
+                break
+            }
+        }
+        let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+        XCTAssertEqual(draws.count, 4)
+        guard draws.count == 4 else { return }
+        for (entry, expected) in zip(draws, [Float(1), 0, 1, 0]) {
+            let red = entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset + 28, as: Float.self)
+            XCTAssertEqual(red, expected, accuracy: 0.0001)
+        }
+        // White0.5 then black0.5, twice: 0 → .5 → .25 → .625 → .3125.
+        // Prototype-major order would give .1875; neither reference is derived from the observed vertex colors.
+        let output = try centerPixel(renderer.backbuffer, queue: queue)
+        for lane in 0 ..< 3 {
+            XCTAssertEqual(Float(output[lane]) / 255, 0.3125, accuracy: 3.0 / 255)
+        }
+    }
+
     func testLiveOneParticleRopeSnapshotsBeforeFollowingHealthySpriteEvenWhenArenaDropsDraws() async throws {
         let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
                                    "children": ["rope", "sprite", "refract"].map { ["name": "particles/\($0).json", "type": "static"] }]
@@ -346,11 +428,15 @@ final class WPEParityParticleSceneTests: XCTestCase {
     }
 
     private func centerPixel(_ texture: MTLTexture, queue: MTLCommandQueue) throws -> [UInt8] {
+        try pixel(texture, queue: queue, at: SIMD2(texture.width / 2, texture.height / 2))
+    }
+
+    private func pixel(_ texture: MTLTexture, queue: MTLCommandQueue, at point: SIMD2<Int>) throws -> [UInt8] {
         let data = try XCTUnwrap(queue.device.makeBuffer(length: 256, options: .storageModeShared))
         let buffer = try XCTUnwrap(queue.makeCommandBuffer())
         let blit = try XCTUnwrap(buffer.makeBlitCommandEncoder())
         blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0,
-                  sourceOrigin: MTLOrigin(x: texture.width / 2, y: texture.height / 2, z: 0),
+                  sourceOrigin: MTLOrigin(x: point.x, y: point.y, z: 0),
                   sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: data, destinationOffset: 0,
                   destinationBytesPerRow: 256, destinationBytesPerImage: 256)
         blit.endEncoding()

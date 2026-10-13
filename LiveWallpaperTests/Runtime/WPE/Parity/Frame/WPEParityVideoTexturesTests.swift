@@ -10,6 +10,88 @@ import XCTest
 
 @MainActor
 final class WPEParityVideoTexturesTests: XCTestCase {
+    func testSceneScriptPauseReachesSharedPlayerWithoutRewindingOrReplacingTexture() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let staticTexture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: texture, bytes: Data(contentsOf: url))],
+                                                      workshopID: "parity-video-pause-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["1": texture, "2": texture, "3": staticTexture])
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, (videos.playbackSnapshot(ownerID: "1")?.duration ?? 0) <= 0.5 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let ready = try XCTUnwrap(videos.playbackSnapshot(ownerID: "1"))
+        XCTAssertGreaterThan(ready.duration, 0.5)
+        XCTAssertEqual(ready.playbackRequested, true)
+        let metadata = videos.scriptFieldDefaults
+
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[
+          {"id":1,"name":"A","image":"models/shared.json","size":"64 64","alpha":{"value":1,"script":"export function init(value) { const video = thisLayer.getVideoTexture(); const result = video.pause(); thisLayer.color = new Vec3(result === undefined ? 1 : 99, video === thisLayer.getVideoTexture() ? 1 : 99, thisScene.getLayer('static').getVideoTexture() === null ? 1 : 99); return value; } export function update(value) { thisScene.getLayer('B').getVideoTexture().pause(); return value; }"}},
+          {"id":2,"name":"B","image":"models/shared.json","size":"64 64"},
+          {"id":3,"name":"static","image":"models/static.json","size":"64 64"}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        // Fixed package fixture: this product bridge guard does not depend on installed Steam or captures.
+        let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
+        let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
+        let assets = WPEParityProgramAssets(sources: [.lookup(root) {
+            $0 == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        var observations: [(String, WPEVideoPlaybackSnapshot, WPEVideoPlaybackSnapshot)] = []
+        let script = try WPEParitySceneScript(
+            document: document, state: state, assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64),
+            fieldDefaults: metadata, host: .init(pauseVideoTexture: { owner in
+                guard let before = videos.playbackSnapshot(ownerID: owner), videos.pause(ownerID: owner),
+                      let after = videos.playbackSnapshot(ownerID: owner) else { return false }
+                observations.append((owner, before, after))
+                return true
+            })
+        )
+        script.start(state: &state)
+        XCTAssertEqual(state.object("1")?.color, .one)
+        XCTAssertEqual(observations.map(\.0), ["1"])
+        let first = try XCTUnwrap(observations.first)
+        XCTAssertEqual(first.1.playbackRequested, true)
+        XCTAssertEqual(first.2.playbackRequested, false)
+        XCTAssertFalse(first.2.isPlaying)
+        XCTAssertEqual(first.2.currentTime, first.1.currentTime, accuracy: 0.1)
+        XCTAssertEqual(first.2.acknowledgedPausedSeekTime, first.1.acknowledgedPausedSeekTime)
+        XCTAssertEqual(first.2.sourceGeneration, ready.sourceGeneration)
+        XCTAssertEqual(first.2.rate, ready.rate)
+        XCTAssertEqual(first.2.loop, ready.loop)
+        XCTAssertEqual(first.2.duration, ready.duration)
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "2")?.sourceGeneration, ready.sourceGeneration)
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "2")?.playbackRequested, false)
+
+        script.tick(dt: 0.01, cursor: .zero, world: .zero, leftDown: false, timeOfDay: 0, state: &state)
+        XCTAssertEqual(observations.map(\.0), ["1", "2"])
+        let second = try XCTUnwrap(observations.last)
+        XCTAssertEqual(second.1.playbackRequested, false)
+        XCTAssertEqual(second.2.playbackRequested, false)
+        XCTAssertEqual(second.2.currentTime, second.1.currentTime, accuracy: 0.05)
+        XCTAssertEqual(second.2.sourceGeneration, ready.sourceGeneration)
+        XCTAssertFalse(videos.pause(ownerID: "missing"))
+        XCTAssertFalse(videos.pause(ownerID: "3"))
+        XCTAssertNil(videos.playbackSnapshot(ownerID: "missing"))
+        XCTAssertNil(videos.playbackSnapshot(ownerID: "3"))
+        XCTAssertEqual(videos.scriptFieldDefaults, metadata)
+        XCTAssertTrue(videos.textures[0] === texture)
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testSharedOwnersUseActualPlayerControlsAndPublishReadyDurationWithoutReplayingOldWrites() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())

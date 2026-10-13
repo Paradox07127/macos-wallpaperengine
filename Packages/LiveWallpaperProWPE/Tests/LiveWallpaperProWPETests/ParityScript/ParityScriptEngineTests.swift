@@ -1,5 +1,5 @@
 import Foundation
-import LiveWallpaperProWPE
+@testable import LiveWallpaperProWPE
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
@@ -331,6 +331,88 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertTrue(scene.engine.createdLayers.isEmpty)
         XCTAssertEqual(scene.engine.bindings.count, 1)
         XCTAssertEqual(diagnostics.filter { $0.contains("no state was committed") }.count, 1)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testVideoPauseUsesTheCachedWrapperAndRejectsBorrowedReceivers() throws {
+        var paused: [String] = []
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init(value) {
+                const video = thisLayer.getVideoTexture();
+                const result = video.pause();
+                video.pause.call({});
+                video.pause.call(thisLayer);
+                video.pause.call(Object.create(video));
+                thisLayer.color = new Vec3(result === undefined ? 1 : 99,
+                    video === thisLayer.getVideoTexture() ? 1 : 99,
+                    thisScene.getLayer('static').getVideoTexture() === null ? 1 : 99);
+                return value;
+            }
+            """)]),
+            Self.layer(2, "static"),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.fieldDefaults[.init(objectID: "1", name: "video.duration")] = .vector(SIMD4(1, 0, 0, 0))
+            configuration.pauseVideoTexture = { paused.append($0); return true }
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(paused, ["1"])
+        XCTAssertEqual(scene.state.object("1")?.color, .one)
+        XCTAssertEqual(diagnostics.filter { $0.contains("invalid video wrapper") }.count, 3)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testVideoPauseWithoutAConsumerStaysExplicitlyUnsupported() throws {
+        for accepted: Bool? in [nil, false] {
+            var attempts = 0
+            var diagnostics: [String] = []
+            var scene = try Self.scene([
+                Self.layer(1, "A", ["alpha": Self.scripted(1, """
+                export function init() { return thisLayer.getVideoTexture().pause() === undefined ? 1 : 99; }
+                """)]),
+            ], assets: Self.fixedAssets(), configure: { configuration in
+                configuration.fieldDefaults[.init(objectID: "1", name: "video.duration")] = .vector(SIMD4(1, 0, 0, 0))
+                if let accepted {
+                    configuration.pauseVideoTexture = { _ in attempts += 1; return accepted }
+                }
+                configuration.log = { _, message in diagnostics.append(message) }
+            })
+            scene.engine.start(state: &scene.state)
+            XCTAssertEqual(attempts, accepted == nil ? 0 : 1)
+            XCTAssertEqual(scene.state.object("1")?.alpha, 1)
+            XCTAssertEqual(diagnostics.filter { $0.contains("existing product video consumer") }.count, 1)
+            XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    func testLayerHostIndicesRejectNonIntegralAndOutOfBoundsValuesWithoutTrapping() throws {
+        for value in [Double.nan, .infinity, -.infinity, 1e100, Double(Int.max), -1, 0.5, 3] {
+            XCTAssertNil(WPEParityScriptEngine.checkedLayerIndex(value, count: 3))
+        }
+        for value in 0 ..< 3 {
+            XCTAssertEqual(WPEParityScriptEngine.checkedLayerIndex(Double(value), count: 3), value)
+        }
+        XCTAssertNil(WPEParityScriptEngine.checkedLayerIndex(0, count: 0))
+
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init(value) {
+                let rejected = 0;
+                for (const index of [Infinity, NaN, -1, 99, 0.5, 1e100]) {
+                    try { thisLayer.__index = index; } catch (error) { rejected += 1; }
+                }
+                thisLayer.color = new Vec3(rejected,
+                    thisScene.getInitialLayerConfig(thisLayer).name === 'A' ? 1 : 99,
+                    thisScene.getLayerIndex(thisLayer));
+                return value;
+            }
+            """)]),
+            Self.layer(2, "B"),
+        ], assets: Self.fixedAssets())
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(6, 1, 0))
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 

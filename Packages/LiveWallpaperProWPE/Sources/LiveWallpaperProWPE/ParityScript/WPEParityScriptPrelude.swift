@@ -77,6 +77,8 @@ enum WPEParityScriptPrelude {
 
     // Layers, in scene order; `table` keeps every layer the engine knows by its index.
     const table = [], order = [], pending = new Set(), owners = [];
+    // Identity only: playback remains in the product's existing video source.
+    const videoOwners = new WeakMap();
     // Method overloads are a separate protocol from property writes: vectors require their native class,
     // int32 is selected before float, and serialized configuration is passed as text.
     function argument(value, mask) {
@@ -156,8 +158,18 @@ enum WPEParityScriptPrelude {
       getEffectCount() { return this.__effects.length; },
       getVideoTexture() { return this.__video; }
     };
+    const VideoProto = {
+      pause() {
+        const index = videoOwners.get(this);
+        if (index === undefined) {
+          host.log(1, 'video.pause is unsupported for an invalid video wrapper');
+          return;
+        }
+        host.pauseVideoTexture(index);
+      }
+    };
     const protos = host.kinds.map(fields => {
-      const proto = Object.create(LayerProto), instance = {}, video = {};
+      const proto = Object.create(LayerProto), instance = {}, video = Object.create(VideoProto);
       for (const f of fields) {
         const target = f.owner === 'instance' ? instance : f.owner === 'video' ? video : proto;
         Object.defineProperty(target, f.name, accessor(o => o.__base, f));
@@ -166,9 +178,13 @@ enum WPEParityScriptPrelude {
     });
     host.addLayer = function (index, kind, base, parent, effects, baseMaterials, hasVideo) {
       const p = protos[kind];
-      const layer = hidden(Object.create(p.proto), { __index: index, __base: base, __parent: parent, __effects: [], __video: null });
+      const layer = hidden(Object.create(p.proto), { __base: base, __parent: parent, __effects: [], __video: null });
+      Object.defineProperty(layer, '__index', { value: index });
       if (Object.keys(p.instance).length) Object.defineProperty(layer, 'instance', { value: hidden(Object.create(p.instance), { __base: base }) });
-      if (hasVideo && Object.keys(p.video).length) layer.__video = hidden(Object.create(p.video), { __base: base });
+      if (hasVideo && Object.keys(p.video).length) {
+        layer.__video = hidden(Object.create(p.video), { __base: base });
+        videoOwners.set(layer.__video, index);
+      }
       for (const f of host.kinds[kind]) owners[base + f.rel] = f.owner === 'instance' ? layer.instance : f.owner === 'video' ? layer.__video : layer;
       for (const e of effects) {
         const effect = hidden(Object.create(EffectProto), { __s: e.slot, __passes: e.passes,

@@ -61,9 +61,9 @@ public struct WPEParityParticleSystem {
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
-    /// Baked into births: zero except for an event child, which starts at its event in the parent's space.
+    /// Legacy world/mixed-event offset only. Local event placement belongs solely to localTransform.
     private(set) var origin: SIMD3<Float>
-    /// Static-child origins from the object down to this system, which the model matrix carries (R16 Q4).
+    /// Owner-relative placement of this instance and its static ancestry, including local event placement.
     private(set) var localTransform: simd_float4x4
     /// A worldspace root or static child: its model matrix is I, so births go through the object matrix.
     let emitsInWorld: Bool
@@ -176,14 +176,17 @@ public struct WPEParityParticleSystem {
         config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
         eventOrigin: SIMD3<Float>? = nil, localTransform: simd_float4x4 = matrix_identity_float4x4,
         context: WPEParityParticleFrameContext = .init(), parentSlot: Int = -1,
-        parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0
+        parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0,
+        scriptInstance: Instance? = nil
     ) {
         self.parentSlot = parentSlot
         self.parentSample = parentSample
         objectTime = ownerTime
         self.config = config
-        self.instance = instance
-        instanceControlPointRotations = instance.controlPointAngles.map {
+        let birthInstance = scriptInstance ?? instance
+        self.instance = birthInstance
+        hasScriptInstanceChanges = scriptInstance != nil
+        instanceControlPointRotations = birthInstance.controlPointAngles.map {
             Self.instanceControlPointTransform(offset: .zero, angles: $0 ?? .zero)
         }
         self.rng = rng
@@ -229,7 +232,7 @@ public struct WPEParityParticleSystem {
                 children.append(WPEParityParticleSystem(
                     config: child.config, instance: Instance(), rng: rng, crt: crt,
                     localTransform: localTransform * Self.translation(child.origin), context: context,
-                    ownerTime: ownerTime
+                    ownerTime: ownerTime, scriptInstance: scriptInstance
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -255,19 +258,58 @@ public struct WPEParityParticleSystem {
         )
     }
 
-    /// Turns a finished event child into the system `init` would build for a new event, with the same RNG draws,
-    /// clearing its slot arrays in place. Event children have no children of their own.
+    /// Reuses the finished instance in place. Native reset/enable visits only static descendants and never
+    /// clears their slots or CP/history (22f6c0/22f5b0). Only this event root prewarms again (22f430).
     private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
                                         context: WPEParityParticleFrameContext, parentSlot: Int,
-                                        parentSample: WPEParityParticleParentSample, ownerTime: Float) {
+                                        parentSample: WPEParityParticleParentSample?, ownerTime: Float) {
         self.origin = origin
         self.localTransform = localTransform
         self.parentSlot = parentSlot
         self.parentSample = parentSample
         frameContext = context
         objectTime = ownerTime
-        restart(redraw: true)
+        if config.localSpaceChain {
+            rebaseStaticChildren(context: context, ownerTime: ownerTime)
+            resetFinishedEventThroughStaticChildren()
+        } else {
+            // N1 does not change the legacy world/mixed-event branch.
+            restart(redraw: true)
+        }
         prewarm()
+    }
+
+    private mutating func rebaseStaticChildren(context: WPEParityParticleFrameContext, ownerTime: Float) {
+        for (index, child) in config.children.enumerated() where child.trigger == .always {
+            let group = childGroup[index]
+            children[group].localTransform = localTransform * Self.translation(child.origin)
+            children[group].frameContext = context
+            children[group].objectTime = ownerTime
+            children[group].rebaseStaticChildren(context: context, ownerTime: ownerTime)
+        }
+    }
+
+    mutating func resetFinishedEventThroughStaticChildren() {
+        simulationTime = 0
+        prewarmStep = 0
+        prewarmStepCount = 0
+        for index in emitterStates.indices {
+            let emitter = config.emitters[index]
+            emitterStates[index].accumulator = 0
+            emitterStates[index].delayLeft = emitter.delay
+            emitterStates[index].durationLeft = emitter.duration
+            emitterStates[index].burstPending = emitter.instantaneous > 0
+            emitterStates[index].disabled = false
+            emitterStates[index].periodLeft = 0
+            emitterStates[index].periodOn = true
+            emitterStates[index].emittedThisPeriod = 0
+        }
+        for index in sequenceStates.indices {
+            sequenceStates[index].t = 0
+        }
+        for index in children.indices {
+            children[index].resetFinishedEventThroughStaticChildren()
+        }
     }
 
     /// A hidden object with live particles starts over at time 0: no particles, emitters restored as built without
@@ -280,7 +322,7 @@ public struct WPEParityParticleSystem {
             children[index].reset()
         }
         for group in eventChildren.indices {
-            finishedEventChildren[group] += eventChildren[group]
+            // 22fd90 destroys active event instances; they are not finished and cannot enter the reuse pool.
             eventChildren[group].removeAll(keepingCapacity: true)
         }
     }
@@ -554,11 +596,17 @@ public struct WPEParityParticleSystem {
     private mutating func spawnEvent(_ event: PendingEvent) {
         let child = config.children[event.child]
         let group = childGroup[event.child]
-        let origin = event.position + child.origin
+        // 22a360 local/local: T(parent raw position) * child base. Keep local positions local even when
+        // initializers/operators read CP or position; the batch model is their only event placement.
+        let local = child.config.localSpaceChain
+        let origin = local ? SIMD3<Float>.zero : event.position + child.origin
+        let placement = local
+            ? localTransform * Self.translation(event.position) * Self.translation(child.origin)
+            : localTransform
         let sample = parentSample(slot: event.slot)
         if let last = finishedEventChildren[group].indices.last {
             finishedEventChildren[group][last].reuseForEvent(
-                origin: origin, localTransform: localTransform, context: frameContext, parentSlot: event.slot,
+                origin: origin, localTransform: placement, context: frameContext, parentSlot: event.slot,
                 parentSample: sample, ownerTime: objectTime
             )
             eventChildren[group].append(finishedEventChildren[group].removeLast())
@@ -566,8 +614,9 @@ public struct WPEParityParticleSystem {
             eventChildConstructions += 1
             eventChildren[group].append(WPEParityParticleSystem(
                 config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
-                rng: rng, crt: crt, eventOrigin: origin, localTransform: localTransform, context: frameContext,
-                parentSlot: event.slot, parentSample: sample, ownerTime: objectTime
+                rng: rng, crt: crt, eventOrigin: origin, localTransform: placement, context: frameContext,
+                parentSlot: event.slot, parentSample: sample, ownerTime: objectTime,
+                scriptInstance: hasScriptInstanceChanges ? instance : nil
             ))
         }
     }
@@ -576,7 +625,11 @@ public struct WPEParityParticleSystem {
     var isFinished: Bool {
         guard liveCount == 0 else { return false }
         for (emitter, state) in zip(config.emitters, emitterStates) {
-            let idle = emitter.rate == 0 && !state.burstPending && !emitter.periodic
+            // 2378a0:1771–1788 uses compiled rate/burst, after delay and duration complete.
+            // A hot count=0 does not kill live slots, but it must allow the finished subtree into the pool.
+            let pendingBurst = state.burstPending && Float(emitter.instantaneous) * instance.count > 0
+            let idle = state.delayLeft <= 0 && state.durationLeft <= 0
+                && emitter.rate * instance.count <= 0 && !pendingBurst && !emitter.periodic
             if !state.disabled, !idle {
                 return false
             }

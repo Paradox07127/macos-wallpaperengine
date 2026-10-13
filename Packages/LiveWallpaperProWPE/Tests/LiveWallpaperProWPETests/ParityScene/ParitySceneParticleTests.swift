@@ -155,7 +155,7 @@ struct ParitySceneParticleTests {
         }
     }
 
-    @Test func acceptedChildIndexesMatchProgramProbeAndSimulationWhileNestedEventsStayRejected() throws {
+    @Test func acceptedChildIndexesMatchProgramProbeAndSimulationIncludingLocalStaticEventDescendants() throws {
         let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
                                          "instanceoverride": ["count": 2]]]
         let files: [String: Any] = [
@@ -188,19 +188,20 @@ struct ParitySceneParticleTests {
                 .init(objectID: "5", path: [.staticChild(0)], renderer: 0),
                 .init(objectID: "5", path: [.staticChild(0), .eventGroup(0)], renderer: 0),
                 .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
+                .init(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
             ])
             #expect(keys.map(\.passIdentity) == ["5/particle/r0", "5/particle/0/r0", "5/particle/0/e0/r0",
-                                                 "5/particle/e0/r0"])
+                                                 "5/particle/e0/r0", "5/particle/e0/0/r0"])
             let materials = WPEParityParticleScene.materialProbes(document: document, assets: program.assets,
                                                                   engineFlags: program.engineFlags)
-            #expect(materials.map(\.objectID) == ["5", "5", "5", "5"])
+            #expect(materials.map(\.objectID) == ["5", "5", "5", "5", "5"])
             #expect(materials.map(\.path) == keys.map(\.path))
             let probes = keys.compactMap {
                 WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets)
             }
-            #expect(probes.count == 4)
-            #expect(probes.map(\.slotCount) == [6, 2, 5, 4])
-            #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .spriteTrail])
+            #expect(probes.count == 5)
+            #expect(probes.map(\.slotCount) == [6, 2, 5, 4, 5])
+            #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .spriteTrail, .sprite])
             let scene = WPEParityParticleScene(document: document, assets: program.assets,
                                                engineFlags: program.engineFlags, seed: 7)
             let root = try #require(scene.objects.first?.system)
@@ -211,15 +212,44 @@ struct ParitySceneParticleTests {
             #expect(child.eventChildren.count == 1)
             #expect(root.eventChildren.count == 1)
             #expect(root.config.children.filter { $0.trigger != .always }.first?.config.maxCount == 4)
-            #expect(program.scene.diagnostics == [.particleChildOmitted(objectID: "5", path: "particles/leaf.json")])
+            #expect(program.scene.diagnostics.isEmpty)
             #expect(WPEParityParticleScene.prototype(
                 for: .init(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
                 document: document, assets: program.assets
-            ) == nil)
+            )?.slotCount == 5)
             #expect(WPEParityParticleScene.prototype(
                 for: .init(objectID: "5", path: [.staticChild(1)], renderer: 0),
                 document: document, assets: program.assets
             ) == nil)
+        }
+    }
+
+    @Test func unsupportedNestedBranchProjectsItsFieldAndPreservesHealthyProgramPaths() throws {
+        let files: [String: Any] = [
+            "materials/particle.json": ["passes": [["shader": "genericparticle"]]],
+            "particles/fx.json": ["maxcount": 1, "material": "materials/particle.json",
+                                  "children": [["name": "legacy"], ["name": "event", "type": "eventdeath"]]],
+            "legacy": ["maxcount": 1, "material": "materials/particle.json"],
+            "event": ["maxcount": 1, "material": "materials/particle.json", "renderer": [],
+                      "children": [["name": "bad"], ["name": "healthy"]]],
+            "bad": ["maxcount": 1, "material": "materials/particle.json",
+                    "operator": [["name": "maintaindistancetocontrolpoint"]]],
+            "healthy": ["maxcount": 1, "material": "materials/particle.json"],
+        ]
+        try ParticleSceneFiles.withScene([["id": 5, "name": "fx", "particle": "particles/fx.json"]], files: files) { program, document in
+            let keys = Self.draws(program, "5").map(\.key)
+            #expect(keys.map(\.path) == [[], [.staticChild(0)], [.eventGroup(0), .staticChild(0)]])
+            #expect(program.scene.diagnostics.contains { diagnostic in
+                if case let .particleChildUnsupported(id, path, asset, field, reason) = diagnostic {
+                    return id == "5" && path == [.eventGroup(0), .staticChild(0)] && asset == "bad"
+                        && field == "operator[0]" && !reason.isEmpty
+                }
+                return false
+            })
+            let probes = WPEParityParticleScene.materialProbes(document: document, assets: program.assets,
+                                                               engineFlags: program.engineFlags)
+            #expect(probes.map(\.path) == [[], [.staticChild(0)], [.eventGroup(0)], [.eventGroup(0), .staticChild(0)]])
+            #expect(keys.allSatisfy { WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets) != nil })
         }
     }
 

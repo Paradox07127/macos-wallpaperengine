@@ -39,6 +39,7 @@ final class WPEParitySceneScript {
         var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
+        var pauseVideoTexture: ((String) -> Bool)?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -91,6 +92,7 @@ final class WPEParitySceneScript {
             resolvedEffectRecords: resolvedEffectRecords,
             fieldDefaults: defaults, storage: host.storage.provider,
             createLayer: host.createLayer, destroyLayer: host.destroyLayer, sortLayer: host.sortLayer,
+            pauseVideoTexture: host.pauseVideoTexture,
             log: { level, message in
                 if level >= 1 {
                     Logger.warning("SceneScript: \(message)", category: .wpeRender)

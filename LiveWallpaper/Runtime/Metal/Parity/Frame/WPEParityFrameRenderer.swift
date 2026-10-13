@@ -261,6 +261,12 @@ final class WPEParityFrameRenderer {
         videos.textures
     }
 
+    /// A resize reuses the video collection. Keeping that collection as the command target avoids retaining or
+    /// calling the old renderer through a SceneScript engine that continues into the new frame plan.
+    var scriptVideoPause: (String) -> Bool {
+        { [weak videos] ownerID in videos?.pause(ownerID: ownerID) ?? false }
+    }
+
     /// The text layers' glyph atlases as last uploaded.
     var textAtlases: [String: WPEParityGlyphAtlasInstance] {
         planner.textAtlases.atlases

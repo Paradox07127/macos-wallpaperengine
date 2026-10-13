@@ -160,7 +160,9 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(particles.eventChildren[0].count, 1)
         let spawned = particles.eventChildren[0][0]
         XCTAssertEqual(spawned.liveCount, 4)
-        XCTAssertEqual(spawned.position[0].x, 1, accuracy: 1e-6)
+        XCTAssertEqual(spawned.position[0].x, 0, accuracy: 1e-6)
+        XCTAssertEqual(spawned.localTransform.columns.3.x, 1, accuracy: 1e-6)
+        XCTAssertEqual((spawned.localTransform * SIMD4(spawned.position[0], 1)).x, 1, accuracy: 1e-6)
     }
 
     func testDeathPrewarmInheritsTheOldSlotAndDrawsBeforeTheRebornParent() throws {
@@ -379,8 +381,7 @@ final class ParityParticleSimulationTests: XCTestCase {
         }
     }
 
-    /// Isolate the draw consumer with an already-instantiated tree. The JSON gate still rejects event children
-    /// with descendants until the real product draw block and lifecycle are integrated.
+    /// Isolate the walker with an already-instantiated tree; parsed N1 lifecycle is guarded separately.
     func testDrawTraversalCompletesEachEventSubtreeAndCarriesItsOwnMatrix() {
         let leaf = ParityParticleTestSupport.json("""
         {"maxcount": 1, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
@@ -442,6 +443,129 @@ final class ParityParticleSimulationTests: XCTestCase {
             particles.eventChildren[0][0].velocity[0] = SIMD3(9, 8, 7)
         }
         XCTAssertEqual(particles.rng.next(), expected.next())
+    }
+
+    private func nestedDeathSystem() -> WPEParityParticleSystem {
+        let leaf = ParityParticleTestSupport.json("""
+        {"maxcount": 1, "starttime": 0.09,
+         "emitter": [{"name": "boxrandom", "rate": 0, "instantaneous": 1, "origin": "2 0 0",
+                      "distancemin": "0 0 0", "distancemax": "0 0 0", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.085, "max": 0.085},
+                         {"name": "velocityrandom", "min": "10 0 0", "max": "10 0 0"},
+                         {"name": "remapinitialvalue", "input": "distancetocontrolpoint", "output": "size",
+                          "operation": "remap", "inputrangemax": 4, "outputrangemax": 4}],
+         "operator": [{"name": "movement"}]}
+        """)
+        let event = ParityParticleTestSupport.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "boxrandom", "rate": 0, "instantaneous": 1, "origin": "2 0 0",
+                      "distancemin": "0 0 0", "distancemax": "0 0 0", "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.015, "max": 0.015},
+                         {"name": "velocityrandom", "min": "10 0 0", "max": "10 0 0"}],
+         "operator": [{"name": "movement"}], "children": [{"name": "leaf", "origin": "5 0 0"}]}
+        """)
+        return WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "boxrandom", "rate": 100, "distancemin": "0 0 0", "distancemax": "0 0 0",
+                      "directions": "1 1 1"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.005, "max": 0.005}],
+         "children": [{"name": "event", "type": "eventdeath", "origin": "3 0 0", "maxcount": 1}]}
+        """), rng: WPEParityMT19937(seed: 7), resolveChild: { $0 == "event" ? event : leaf })
+    }
+
+    func testLocalNestedDeathPlacementReusePrewarmFullStepAndSharedRNG() throws {
+        var parent = nestedDeathSystem()
+        parent.advance(dt: 0.01)
+        parent.position[0] = SIMD3(-20, 0, 0)
+        parent.advance(dt: 0.01)
+        let first = try XCTUnwrap(parent.eventChildren[0].first)
+        let leaf = try XCTUnwrap(first.children.first)
+        XCTAssertEqual(first.localTransform.columns.3.x, -17)
+        XCTAssertEqual(leaf.localTransform.columns.3.x, -12)
+        XCTAssertEqual(first.position[0].x, 2.1, accuracy: 1e-5, "new event receives the full 0.01, not the 0.005 remaining after death")
+        XCTAssertEqual(leaf.position[0].x, 3.1, accuracy: 1e-5, "two constructor steps then the full parent step")
+        XCTAssertEqual(leaf.age[0], 0.06, accuracy: 1e-6)
+        XCTAssertEqual(leaf.initialSize[0], 2, accuracy: 1e-6, "CP distance uses local birth x=2, not event x=-20")
+        XCTAssertEqual(first.simulationTime, 0.01)
+        XCTAssertEqual(leaf.simulationTime, 0.01)
+        XCTAssertEqual(leaf.objectTime, 0.02)
+        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01)
+        XCTAssertEqual(parent.eventChildren[0][0].liveCount, 0)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].liveCount, 1,
+                       "an empty event root stays active until its static leaf finishes")
+        parent.advance(dt: 0.01)
+        XCTAssertTrue(parent.eventChildren[0].isEmpty)
+        XCTAssertEqual(parent.finishedEventChildren[0].count, 1)
+        parent.position[0] = SIMD3(20, 0, 0)
+        parent.advance(dt: 0.01)
+        let reused = try XCTUnwrap(parent.eventChildren[0].first)
+        let reusedLeaf = try XCTUnwrap(reused.children.first)
+        XCTAssertEqual(parent.eventChildConstructions, 1)
+        XCTAssertEqual(reused.localTransform.columns.3.x, 23)
+        XCTAssertEqual(reusedLeaf.localTransform.columns.3.x, 28, "rebase every static descendant from authored edges")
+        XCTAssertEqual(reusedLeaf.age[0], 0, "reuse prewarms only the event root, not static descendants")
+        XCTAssertEqual(reusedLeaf.position[0].x, 2.1, accuracy: 1e-5)
+        XCTAssertEqual(reusedLeaf.initialSize[0], 2, accuracy: 1e-6)
+        XCTAssertEqual(reusedLeaf.objectTime, parent.objectTime)
+        // Zero-offset box: u + xyz + fallback xyz + speed + lifetime = 9 words (2378a0:997–1007).
+        // Event/leaf velocity adds 3. Frames: 9; (prob1 + leaf12 + parent9 + event12); 9; 9; 9;
+        // (prob1 + parent9 + event12 + leaf12) = 104. The nonzero-offset fixture's 6-word path does not apply.
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 104 {
+            _ = expected.next()
+        }
+        XCTAssertEqual(parent.rng.next(), expected.next(), "reuse adds no constructor/reset draws to the shared stream")
+    }
+
+    func testFinishedStaticResetPreservesSlotsAndCPHistoryAndDrawsNothing() throws {
+        var parent = nestedDeathSystem()
+        for _ in 0 ..< 5 {
+            parent.advance(dt: 0.01)
+        }
+        var finished = try XCTUnwrap(parent.finishedEventChildren[0].first)
+        XCTAssertTrue(finished.isFinished)
+        finished.children[0].position[0] = SIMD3(91, 92, 93)
+        finished.children[0].previousPosition[0] = SIMD3(81, 82, 83)
+        finished.children[0].controlPoints[0].columns.3 = SIMD4(7, 8, 9, 1)
+        finished.children[0].previousControlPoints[0].columns.3 = SIMD4(4, 5, 6, 1)
+        finished.children[0].controlPointsSeeded = true
+        finished.children[0].boidsFrame = 23
+        let highWater = finished.children[0].highWater
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 70 {
+            _ = expected.next()
+        }
+        finished.resetFinishedEventThroughStaticChildren()
+        let leaf = finished.children[0]
+        XCTAssertEqual(leaf.highWater, highWater)
+        XCTAssertEqual(leaf.position[0], SIMD3(91, 92, 93))
+        XCTAssertEqual(leaf.previousPosition[0], SIMD3(81, 82, 83))
+        XCTAssertEqual(leaf.controlPoints[0].columns.3, SIMD4(7, 8, 9, 1))
+        XCTAssertEqual(leaf.previousControlPoints[0].columns.3, SIMD4(4, 5, 6, 1))
+        XCTAssertTrue(leaf.controlPointsSeeded)
+        XCTAssertEqual(leaf.boidsFrame, 23)
+        XCTAssertTrue(leaf.emitterStates[0].burstPending)
+        XCTAssertEqual(leaf.emitterStates[0].accumulator, 0)
+        XCTAssertEqual(leaf.simulationTime, 0)
+        XCTAssertEqual(finished.rng.next(), expected.next())
+        XCTAssertNil(parent.parentSample(slot: -1))
+        XCTAssertNil(parent.parentSample(slot: parent.highWater))
+    }
+
+    func testHiddenResetDiscardsActiveEventTreesInsteadOfReusingThemAsFinished() {
+        var parent = nestedDeathSystem()
+        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01)
+        XCTAssertEqual(parent.eventChildConstructions, 1)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].liveCount, 1)
+        parent.reset()
+        XCTAssertTrue(parent.eventChildren[0].isEmpty)
+        XCTAssertTrue(parent.finishedEventChildren[0].isEmpty)
+        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01)
+        XCTAssertEqual(parent.eventChildConstructions, 2, "hidden active trees are destroyed, so this event constructs and prewarms a fresh subtree")
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].age[0], 0.06, accuracy: 1e-6)
     }
 
     func testCapVelocityDefaultsTo100In2DAnd1In3D() {

@@ -589,8 +589,9 @@ extension WPEParityParticleSystem {
         }
     }
 
-    func parentSample(slot: Int) -> WPEParityParticleParentSample {
-        WPEParityParticleParentSample(
+    func parentSample(slot: Int) -> WPEParityParticleParentSample? {
+        guard slot >= 0, slot < highWater, lifetime.indices.contains(slot) else { return nil }
+        return WPEParityParticleParentSample(
             alive: lifetime[slot] > 0, color: color[slot], alpha: alpha[slot], velocity: velocity[slot],
             size: size[slot], rotation: rotation[slot], angularVelocity: angularVelocity[slot]
         )

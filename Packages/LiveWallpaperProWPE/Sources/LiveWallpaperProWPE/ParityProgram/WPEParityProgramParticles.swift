@@ -19,6 +19,10 @@ extension WPEParityProgramScene {
         diagnostics.append(contentsOf: config.omittedChildPaths.map {
             .particleChildOmitted(objectID: node.objectID, path: $0)
         })
+        diagnostics.append(contentsOf: config.unsupportedChildren.map {
+            .particleChildUnsupported(objectID: node.objectID, path: $0.path, asset: $0.asset,
+                                      field: $0.field, reason: $0.reason)
+        })
         if let path = config.materialPath, let material = WPEParityProgramMaterial(path: path, assets: assets) {
             let state = materialState(assets.json(path)?["passes"]?[0])
             for (index, renderer) in config.renderers.enumerated() {

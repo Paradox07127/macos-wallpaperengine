@@ -45,12 +45,54 @@ final class WPEParityVolumeSceneTests: XCTestCase {
         XCTAssertTrue(stride(from: 0, to: output.count, by: 4).allSatisfy { output[$0 ..< $0 + 3].allSatisfy { $0 == 0 } })
     }
 
-    private func makeRenderer(threeDShader: Bool) async throws -> (WPEParityFrameRenderer, MTLCommandQueue, URL) {
+    func testPointTextureBorderWinsOverClampOnAllThreeAxesThroughProductionShader() async throws {
+        for flags: UInt32 in [0x41, 0x43, 0x0400_0041, 0x0400_0043] {
+            let (renderer, queue, scratch) = try await makeRenderer(threeDShader: true, textureFlags: flags, borderProbe: true)
+            defer { try? FileManager.default.removeItem(at: scratch) }
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+                return XCTFail("frame skipped")
+            }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            let draw = try XCTUnwrap(renderer.lastFrameDraws.first?.draw)
+            let sampler = try XCTUnwrap(draw.samplers["g_Texture0SamplerState"])
+            let hasBorder = flags & 0x0400_0000 != 0
+            let address: D3D11TextureAddressMode = hasBorder ? .border : flags == 0x43 ? .clamp : .wrap
+            XCTAssertEqual(sampler.addressU, address)
+            XCTAssertEqual(sampler.addressV, address)
+            XCTAssertEqual(sampler.addressW, address)
+            // Six out-of-range samples, two per axis. The control wraps into the authored nonzero texels;
+            // zero border must replace both negative and positive coordinates, including when clamp is set.
+            let expected = hasBorder ? [0, 0, 0] : flags == 0x43 ? [38, 30, 48] : [68, 45, 73]
+            let output = try pixels(renderer.backbuffer, queue: queue)
+            for pixel in 0 ..< 8 {
+                for lane in 0 ..< 3 {
+                    XCTAssertLessThanOrEqual(abs(Int(output[pixel * 4 + lane]) - expected[lane]), 1)
+                }
+            }
+        }
+    }
+
+    private func makeRenderer(threeDShader: Bool, textureFlags: UInt32 = 0x40, borderProbe: Bool = false) async throws
+        -> (WPEParityFrameRenderer, MTLCommandQueue, URL) {
         let scratch = FileManager.default.temporaryDirectory.appending(path: "parity-volume-\(UUID().uuidString)")
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
             ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let fragment = threeDShader ? """
+        let fragment = borderProbe ? """
+        uniform sampler3D g_Texture0;
+        varying vec2 v_TexCoord;
+        void main() {
+            float r = 0.5 * texSample3D(g_Texture0, vec3(-0.125, 0.25, 0.25)).r
+                    + 0.25 * texSample3D(g_Texture0, vec3(1.125, 0.25, 0.25)).r;
+            float g = 0.5 * texSample3D(g_Texture0, vec3(0.125, -0.25, 0.25)).g
+                    + 0.25 * texSample3D(g_Texture0, vec3(0.125, 1.25, 0.25)).g;
+            float b = 0.5 * texSample3D(g_Texture0, vec3(0.125, 0.25, -0.25)).b
+                    + 0.25 * texSample3D(g_Texture0, vec3(0.125, 0.25, 1.25)).b;
+            gl_FragColor = vec4(r, g, b, 1.0);
+        }
+        """ : threeDShader ? """
         uniform sampler3D g_Texture0;
         varying vec2 v_TexCoord;
         void main() { gl_FragColor = texSample3D(g_Texture0, vec3(v_TexCoord.x, 0.25, 0.75)); }
@@ -62,7 +104,7 @@ final class WPEParityVolumeSceneTests: XCTestCase {
         let files: [String: Data] = try [
             "models/volume.json": Data(#"{"material":"materials/volume.json"}"#.utf8),
             "materials/volume.json": Data(#"{"passes":[{"shader":"volume","combos":{"TRANSFORM":1},"textures":["volume"],"blending":"normal"}]}"#.utf8),
-            "materials/volume.tex": Self.rawVolume(),
+            "materials/volume.tex": Self.rawVolume(flags: textureFlags),
             "shaders/volume.vert": Data(contentsOf: engine.appending(path: "shaders/passthrough.vert")),
             "shaders/volume.frag": Data(fragment.utf8),
         ]
@@ -81,12 +123,12 @@ final class WPEParityVolumeSceneTests: XCTestCase {
     }
 
     /// Native TEXV5/TEXI1 and TEXB3 raw records, xyz in dense row/slice order, with explicit depth per mip.
-    private static func rawVolume() -> Data {
+    private static func rawVolume(flags: UInt32 = 0x40) -> Data {
         var data = Data("TEXV0005\0TEXI0001\0".utf8)
         func word(_ value: UInt32) {
             var value = value.littleEndian; withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
         }
-        for value: UInt32 in [0, 0x40, 4, 2, 4, 2, 2, 0] {
+        for value: UInt32 in [0, flags, 4, 2, 4, 2, 2, 0] {
             word(value)
         }
         data.append(contentsOf: "TEXB0003\0".utf8)

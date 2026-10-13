@@ -45,9 +45,11 @@ public struct WPEParitySceneMaterialState: Hashable, Sendable {
 public enum WPEParitySceneDiagnostic: Hashable, Sendable {
     /// A block-compressed effect FBO format, which cannot be a render target; the FBO is allocated as `rgba8unorm`.
     case compressedFBOFormat(fbo: String, format: String)
-    /// A particle child left out of the draw list: its path repeats an ancestor, it nests deeper than 8 levels, or it
-    /// descends from an event child, which `WPEParityParticleDrawKey` cannot address.
+    /// A particle child omitted by the current depth-8/cycle product policy (native permits depth 0...10).
     case particleChildOmitted(objectID: String, path: String)
+    /// A new nested branch outside the bounded local/static N1 contract; healthy siblings remain accepted.
+    case particleChildUnsupported(objectID: String, path: [WPEParityParticlePathElement],
+                                  asset: String, field: String, reason: String)
     /// A text object with msdf, outline, blur or dropshadow on; it is drawn as plain grey glyphs without them.
     case textGlyphEffectsIgnored(objectID: String)
 }

@@ -43,6 +43,19 @@ final class WPEParityVideoTextures {
         seenScriptFieldsGeneration = nil
     }
 
+    /// Native pause forwards to the layer's existing player (1401fa560); shared owners keep sharing that source.
+    func pause(ownerID: String) -> Bool {
+        guard let index = owners[ownerID] else { return false }
+        videos[index].source.scriptPause()
+        return true
+    }
+
+    /// Observes the existing source; this is not a SceneScript query API or a second playback state.
+    func playbackSnapshot(ownerID: String) -> WPEVideoPlaybackSnapshot? {
+        guard let index = owners[ownerID] else { return nil }
+        return videos[index].source.scriptPlaybackSnapshot
+    }
+
     /// Seeds script descriptors from the player, including a duration that can become ready after scene loading.
     var scriptFieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
         let snapshots = videos.map(\.source.scriptPlaybackSnapshot)

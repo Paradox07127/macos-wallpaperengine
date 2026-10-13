@@ -30,6 +30,27 @@ struct WPEParityStateSamplerTests {
     @Test("Point clamp follows the same table")
     func pointClamp() {
         #expect(WPEParitySamplerState.wpe(filter: .point, address: .clamp) == samp(.minMagMipPoint, .clamp, aniso: 1))
+        #expect(WPEParitySamplerState.wpe(filter: .point, address: .border) == samp(.minMagMipPoint, .border, aniso: 1))
+    }
+
+    @Test("Native point TEX flags give border priority over clamp, independent of volume dimension")
+    func pointTextureFlags() {
+        // Independent cases from 140099980:63–94. Full descriptors include U/V/W, zero border and LOD defaults.
+        let cases: [(UInt32, D3D11TextureAddressMode)] = [
+            (0x0000_0001, .wrap), (0x0000_0003, .clamp),
+            (0x0400_0001, .border), (0x0400_0003, .border),
+        ]
+        for (flags, address) in cases {
+            for dimension: UInt32 in [0, 0x40] {
+                #expect(WPEParitySamplerState.wpePointTexture(flags: flags | dimension)
+                    == samp(.minMagMipPoint, address, aniso: 1))
+            }
+        }
+        // A sampler factory returning nil here does not claim the native branches are unsupported;
+        // they need inputs/consumers outside this point, noncomparison contract.
+        for flags: UInt32 in [0, 2, 0x0400_0000, 0x0800_0001, 0x0C00_0003] {
+            #expect(WPEParitySamplerState.wpePointTexture(flags: flags) == nil)
+        }
     }
 
     @Test("Comparison sampler: linear comparison filter, BORDER, GREATER")

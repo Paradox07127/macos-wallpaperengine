@@ -88,10 +88,30 @@ struct WPEParityParticleChildConfig: Equatable, Sendable {
 
     var trigger: Trigger
     var origin: SIMD3<Float>
+    var anglesRadians: SIMD3<Float>
+    var scale: SIMD3<Float>
+    var flags: Int
+    var controlPointStartIndex: Int
     var probability: Float
     /// Native child config +0x70, default 10 (D/1401c1430.c:125); event groups consume this independently of slots.
     var maxCount: Int
     var config: WPEParityParticleConfig
+}
+
+/// A rejected N1 field, retaining the attempted typed path and its authored asset.
+struct WPEParityParticleChildRejection: Equatable, Sendable {
+    var path: [WPEParityParticlePathElement]
+    var asset: String
+    var field: String
+    var reason: String
+}
+
+private struct WPEParityParticleParseContext {
+    var ancestors: [String]
+    var path: [WPEParityParticlePathElement] = []
+    var underEventAncestor = false
+    var localSpaceChain = true
+    var issues: [WPEParityParticleChildRejection] = []
 }
 
 struct WPEParityParticleConfig: Equatable, Sendable {
@@ -113,14 +133,18 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     /// Texture facts of this system's own `material`.
     var material = WPEParityParticleMaterial()
     var materialPath: String?
-    /// Children rejected by the current depth/cycle/nested gate, for the scene's existing omission diagnostic.
+    /// Children rejected by the existing depth/cycle policy, for its compatibility diagnostic.
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
+    var unsupportedChildren: [WPEParityParticleChildRejection] = []
+    /// Only local/local events migrate placement; the legacy world/mixed path is unchanged.
+    var localSpaceChain = true
+    private var nestedEligibilityIssues: [WPEParityParticleChildRejection] = []
 
     /// Program prototypes, probes and runtime systems share this resolved tree and its accepted-child indexes.
     init?(path: String, assets: WPEParityProgramAssets, is3D: Bool) {
         guard let json = assets.json(path) else { return nil }
-        self.init(json: json, ancestors: [path], eventChild: false, is3D: is3D, resolveChild: assets.json,
+        self.init(json: json, context: .init(ancestors: [path]), is3D: is3D, resolveChild: assets.json,
                   resolveMaterial: { materialPath in
                       WPEParityProgramMaterial(path: materialPath, assets: assets).map {
                           WPEParityParticleMaterial(texture0: $0.textures[0].flatMap(assets.textureHeader(named:)))
@@ -146,14 +170,13 @@ struct WPEParityParticleConfig: Equatable, Sendable {
 
     /// `is3D` picks the 3D defaults of R18/R19 (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5, …).
     init(json: WPESceneJSONValue, is3D: Bool, resolveChild: (String) -> WPESceneJSONValue?) {
-        self.init(json: json, ancestors: [""], eventChild: false, is3D: is3D, resolveChild: resolveChild,
+        self.init(json: json, context: .init(ancestors: [""]), is3D: is3D, resolveChild: resolveChild,
                   resolveMaterial: { _ in nil })
     }
 
-    /// `ancestors` are the paths from the root system down to this one; children are numbered the way
-    /// `WPEParityProgramScene.particleDraws` keys them, and an event child keeps none of its own.
-    init(json: WPESceneJSONValue, ancestors: [String], eventChild: Bool, is3D: Bool,
-         resolveChild: (String) -> WPESceneJSONValue?, resolveMaterial: (String) -> WPEParityParticleMaterial?) {
+    /// Parse context is copied per branch: a rejected new nested edge cannot change a healthy sibling.
+    private init(json: WPESceneJSONValue, context: WPEParityParticleParseContext, is3D: Bool,
+                 resolveChild: (String) -> WPESceneJSONValue?, resolveMaterial: (String) -> WPEParityParticleMaterial?) {
         typealias JSON = WPEParityParticleJSON
         materialPath = JSON.string(json["material"])
         material = materialPath.flatMap(resolveMaterial) ?? material
@@ -198,8 +221,14 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                 diagnostics.append("renderer \(name) skipped")
             }
         }
+        localSpaceChain = context.localSpaceChain && flags & 1 == 0
+        let asset = context.ancestors.last.flatMap { $0.isEmpty ? nil : $0 } ?? "<root>"
+        nestedEligibilityIssues = context.issues + nestedIssues(at: context.path, asset: asset)
+        var descendants = context
+        descendants.localSpaceChain = localSpaceChain
+        descendants.issues = nestedEligibilityIssues
         for entry in JSON.array(json["children"]) {
-            appendChild(entry, ancestors: ancestors, eventChild: eventChild, is3D: is3D, resolveChild: resolveChild,
+            appendChild(entry, context: descendants, is3D: is3D, resolveChild: resolveChild,
                         resolveMaterial: resolveMaterial)
         }
     }
@@ -418,42 +447,130 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         operators.append(WPEParityParticleOperator(kind: kind, blend: blend))
     }
 
+    private func nestedIssues(at path: [WPEParityParticlePathElement], asset: String)
+        -> [WPEParityParticleChildRejection] {
+        var issues: [WPEParityParticleChildRejection] = []
+        func reject(_ field: String, _ reason: String) {
+            issues.append(.init(path: path, asset: asset, field: field, reason: reason))
+        }
+        if flags & 1 != 0 {
+            reject("flags", "N1 requires local-space ancestors and descendants")
+        }
+        if flags & ~15 != 0 {
+            reject("flags", "N1 does not implement these system flag bits")
+        }
+        for (index, emitter) in emitters.enumerated() where emitter.periodic {
+            reject("emitter[\(index)].flags", "periodic emission and child restart remain unsupported by N1")
+        }
+        for (index, point) in controlPoints.enumerated() {
+            if point.flags != 0 {
+                reject("controlpoint[\(index)].flags", "N1 requires ordinary local control points")
+            }
+            if !Self.finite(point.offset) {
+                reject("controlpoint[\(index)].offset", "non-finite control point")
+            }
+        }
+        for (index, op) in operators.enumerated() {
+            switch op.kind {
+            case .maintainDistance, .maintainDistanceBetween:
+                reject("operator[\(index)]", "control point history consumers remain unsupported by N1")
+            default: break
+            }
+        }
+        for diagnostic in diagnostics {
+            reject("component", diagnostic)
+        }
+        return issues
+    }
+
+    private static func finite(_ value: SIMD3<Float>) -> Bool {
+        value.x.isFinite && value.y.isFinite && value.z.isFinite
+    }
+
     private mutating func appendChild(
-        _ entry: WPESceneJSONValue, ancestors: [String], eventChild: Bool, is3D: Bool,
+        _ entry: WPESceneJSONValue, context: WPEParityParticleParseContext, is3D: Bool,
         resolveChild: (String) -> WPESceneJSONValue?, resolveMaterial: (String) -> WPEParityParticleMaterial?
     ) {
         typealias JSON = WPEParityParticleJSON
         let path = JSON.string(entry["name"]) ?? JSON.string(entry["particle"]) ?? ""
-        let kind = WPEParticleChildEventKind(
-            authoredType: JSON.string(entry["type"]),
-            flags: JSON.number(entry["flags"]).map { Int($0) }
-        )
+        let kind = WPEParticleChildEventKind(authoredType: JSON.string(entry["type"]),
+                                             flags: JSON.number(entry["flags"]).map { Int($0) })
         let trigger: WPEParityParticleChildConfig.Trigger
         switch kind {
         case .staticSystem: trigger = .always
         case .spawn: trigger = .spawn
         case .death: trigger = .death
         case .follow, .unsupported:
-            diagnostics.append("child \(path) (\(JSON.string(entry["type"]) ?? "eventfollow")) skipped")
+            let reason = "child \(path) (\(JSON.string(entry["type"]) ?? "eventfollow")) skipped"
+            diagnostics.append(reason)
+            if context.underEventAncestor {
+                unsupportedChildren.append(.init(path: context.path + [.eventGroup(children.filter { $0.trigger != .always }.count)],
+                                                 asset: path, field: "type", reason: reason))
+            }
             return
         }
-        guard !eventChild, !ancestors.contains(path),
-              ancestors.count < WPEParityProgramScene.particleChildDepthLimit else {
+        let index = children.filter { ($0.trigger == .always) == (trigger == .always) }.count
+        let childPath = context.path + [trigger == .always ? .staticChild(index) : .eventGroup(index)]
+        if context.underEventAncestor, trigger != .always {
+            unsupportedChildren.append(.init(path: childPath, asset: path, field: "type",
+                                             reason: "N1 permits only static descendants of an event instance"))
+            return
+        }
+        // Depth/cycle remain the existing product policy; native permits depth 0...10.
+        guard !context.ancestors.contains(path),
+              context.ancestors.count < WPEParityProgramScene.particleChildDepthLimit else {
             diagnostics.append("child \(path) omitted")
             omittedChildPaths.append(path)
             return
         }
         guard let json = resolveChild(path) else {
             diagnostics.append("child \(path) unresolved")
+            if context.underEventAncestor {
+                unsupportedChildren.append(.init(path: childPath, asset: path, field: "name", reason: "unresolved child asset"))
+            }
+            return
+        }
+        let origin = JSON.vector(entry["origin"]) ?? .zero
+        let angles = JSON.vector(entry["angles"]) ?? .zero
+        let scale = JSON.vector(entry["scale"]) ?? SIMD3<Float>(repeating: 1)
+        let flags = WPEParityParticleEntry(entry).integer("flags", 0)
+        var next = context
+        next.ancestors.append(path)
+        next.path = childPath
+        next.underEventAncestor = context.underEventAncestor || trigger != .always
+        func edgeIssue(_ field: String, _ reason: String) -> WPEParityParticleChildRejection {
+            .init(path: childPath, asset: path, field: field, reason: reason)
+        }
+        for key in ["origin", "angles", "scale"] where entry[key] != nil && JSON.vector(entry[key]) == nil {
+            next.issues.append(edgeIssue(key, "unparsed child TRS field cannot enter N1"))
+        }
+        if !Self.finite(origin) {
+            next.issues.append(edgeIssue("origin", "non-finite child origin"))
+        }
+        if angles != .zero {
+            next.issues.append(edgeIssue("angles", "nonzero child TRS angles remain unsupported by N1"))
+        }
+        if scale != SIMD3<Float>(repeating: 1) {
+            next.issues.append(edgeIssue("scale", "non-unit child TRS scale remains unsupported by N1"))
+        }
+        if flags != 0 {
+            next.issues.append(edgeIssue("child.flags", "bulk CP and parent-period child restart remain unsupported by N1"))
+        }
+        let child = WPEParityParticleConfig(json: json, context: next, is3D: is3D, resolveChild: resolveChild,
+                                            resolveMaterial: resolveMaterial)
+        if context.underEventAncestor, !child.nestedEligibilityIssues.isEmpty {
+            // Reject this ineligible edge. Already-pruned descendants do not disqualify a healthy ancestor.
+            unsupportedChildren += child.nestedEligibilityIssues.map {
+                .init(path: childPath, asset: path, field: $0.field, reason: "\($0.asset) \($0.path): \($0.reason)")
+            }
+            unsupportedChildren += child.unsupportedChildren
             return
         }
         children.append(WPEParityParticleChildConfig(
-            trigger: trigger,
-            origin: JSON.vector(entry["origin"]) ?? .zero,
+            trigger: trigger, origin: origin, anglesRadians: angles, scale: scale, flags: flags,
+            controlPointStartIndex: WPEParityParticleEntry(entry).integer("controlpointstartindex", 0),
             probability: JSON.number(entry["probability"]) ?? 1,
-            maxCount: WPEParityParticleEntry(entry).integer("maxcount", 10),
-            config: WPEParityParticleConfig(json: json, ancestors: ancestors + [path], eventChild: trigger != .always,
-                                            is3D: is3D, resolveChild: resolveChild, resolveMaterial: resolveMaterial)
+            maxCount: WPEParityParticleEntry(entry).integer("maxcount", 10), config: child
         ))
     }
 }

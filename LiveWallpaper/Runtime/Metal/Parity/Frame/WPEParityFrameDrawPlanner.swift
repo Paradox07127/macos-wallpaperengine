@@ -887,6 +887,9 @@ struct WPEParityFrameDrawPlanner {
             info = assetImages.values.first { $0.texture === texture }?.info
         }
         guard let info else { return .wpe(filter: .linear, address: .clamp) }
+        if let point = WPEParitySamplerState.wpePointTexture(flags: info.flags) {
+            return point
+        }
         return .wpe(filter: info.noInterpolation ? .point : .linear, address: info.clampUVs ? .clamp : .wrap)
     }
 

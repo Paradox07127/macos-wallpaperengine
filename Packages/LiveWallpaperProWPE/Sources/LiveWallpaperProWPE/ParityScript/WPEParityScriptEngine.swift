@@ -75,6 +75,8 @@ public final class WPEParityScriptEngine {
         /// Called at the deferred deletion phase, after that layer's destroy events.
         public var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
+        /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
+        public var pauseVideoTexture: ((String) -> Bool)?
         /// Level 0 log, 1 warn, 2 error.
         public var log: (Int, String) -> Void
         public var openUserShortcut: (String) -> Bool
@@ -88,6 +90,7 @@ public final class WPEParityScriptEngine {
                     createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
                     destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
+                    pauseVideoTexture: ((String) -> Bool)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
             self.assets = assets
@@ -103,6 +106,7 @@ public final class WPEParityScriptEngine {
             self.createLayer = createLayer
             self.destroyLayer = destroyLayer
             self.sortLayer = sortLayer
+            self.pauseVideoTexture = pauseVideoTexture
             self.log = log
             self.openUserShortcut = openUserShortcut
         }
@@ -743,6 +747,12 @@ public final class WPEParityScriptEngine {
 
     // MARK: Host
 
+    /// Host indices originate in JS; conversion must not trap before checking an existing wrapper's bounds.
+    static func checkedLayerIndex(_ value: Double, count: Int) -> Int? {
+        guard let index = Int(exactly: value), index >= 0, index < count else { return nil }
+        return index
+    }
+
     private func installHost(document _: WPESceneDocument) {
         let host = JSValue(newObjectIn: context)!
         func set(_ key: String, _ value: Any) {
@@ -781,12 +791,12 @@ public final class WPEParityScriptEngine {
         }
         let canDestroy: @convention(block) (Double) -> Bool = { [weak self] index in
             guard let self else { return false }
-            return layers.indices.contains(Int(index)) && configuration.destroyLayer != nil
+            return Self.checkedLayerIndex(index, count: layers.count) != nil && configuration.destroyLayer != nil
         }
         let destroyed: @convention(block) (Double) -> Bool = { [weak self] index in
-            guard let self, layers.indices.contains(Int(index)), let state = activeState,
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count), let state = activeState,
                   let destroy = configuration.destroyLayer else { return false }
-            let id = layers[Int(index)].id
+            let id = layers[index].id
             flushWrites(to: &state.pointee)
             guard destroy(id, &state.pointee) else {
                 record("destroyLayer transaction failed for \(id)")
@@ -796,18 +806,31 @@ public final class WPEParityScriptEngine {
             return true
         }
         let sort: @convention(block) (Double, Double) -> Bool = { [weak self] index, position in
-            guard let self, layers.indices.contains(Int(index)), let state = activeState,
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
+                  let position = Int(exactly: position), let state = activeState,
                   let sort = configuration.sortLayer else { return false }
             flushWrites(to: &state.pointee)
-            return sort(layers[Int(index)].id, Int(position), &state.pointee)
+            return sort(layers[index].id, position, &state.pointee)
         }
         let registerAudio: @convention(block) (Double) -> Void = { [weak self] resolution in
             self?.audioResolutions.insert(Int(resolution))
         }
         let initialConfig: @convention(block) (Double) -> String? = { [weak self] index in
-            guard let self, case var .object(entries) = layers[Int(index)].config else { return nil }
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
+                  case var .object(entries) = layers[index].config else { return nil }
             entries["id"] = nil
             return Self.jsonText(.object(entries))
+        }
+        let pauseVideo: @convention(block) (Double) -> Void = { [weak self] index in
+            guard let self else { return }
+            guard let index = Self.checkedLayerIndex(index, count: layers.count), layers[index].hasVideo else {
+                configuration.log(1, "video.pause is unsupported for an invalid video owner")
+                return
+            }
+            guard let pause = configuration.pauseVideoTexture, pause(layers[index].id) else {
+                configuration.log(1, "video.pause is unsupported without an existing product video consumer")
+                return
+            }
         }
         let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
@@ -825,6 +848,7 @@ public final class WPEParityScriptEngine {
         set("sortLayer", sort)
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
+        set("pauseVideoTexture", pauseVideo)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
         set("storageEnabled", configuration.storage != nil)

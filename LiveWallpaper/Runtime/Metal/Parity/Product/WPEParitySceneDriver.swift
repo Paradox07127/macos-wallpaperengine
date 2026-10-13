@@ -267,13 +267,15 @@ final class WPEParitySceneDriver {
             scriptUserProperties = scriptHost.userPropertiesJSON
             if WPEParitySceneScript.hasScripts(document) {
                 do {
+                    var connectedHost = scriptHost
+                    connectedHost.pauseVideoTexture = renderer.scriptVideoPause
                     // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
                     try renderer.attachScript(WPEParitySceneScript(
                         document: document, state: renderer.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
                         screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
                         materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
-                        fieldDefaults: renderer.scriptFieldDefaults, host: scriptHost
+                        fieldDefaults: renderer.scriptFieldDefaults, host: connectedHost
                     ))
                 } catch {
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)

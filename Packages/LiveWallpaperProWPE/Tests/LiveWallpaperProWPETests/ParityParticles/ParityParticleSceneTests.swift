@@ -460,12 +460,12 @@ final class ParityParticleSceneTests: XCTestCase {
             .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
             .init(objectID: "5", path: [.eventGroup(0)], renderer: 1),
         ])
-        XCTAssertEqual(actual.map { Support.float($0.vertices.bytes, at: 0) }, [-20, -20, 20, 20])
+        XCTAssertEqual(actual.map { Support.float($0.vertices.bytes, at: 0) }, [0, 0, 0, 0])
+        XCTAssertEqual(actual.map(\.localTransform.columns.3.x), [-20, -20, 20, 20])
         XCTAssertEqual(actual.map(\.vertices.count), [1, 1, 1, 1])
         XCTAssertEqual(actual.map(\.vertices.renderVar0), [
             .init(), .init(x: 0.05, y: 10, z: 0), .init(), .init(x: 0.05, y: 10, z: 0),
         ])
-        XCTAssertTrue(actual.allSatisfy { $0.localTransform == matrix_identity_float4x4 })
         let key = WPEParityParticleDrawKey(objectID: "5", renderer: 0, eventGroup: 0)
         XCTAssertEqual(scene.batches(for: key), actual.filter { $0.key == key }.map(\.vertices))
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next(),
@@ -602,6 +602,141 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.1, frames: [:])
         XCTAssertEqual(Self.root(scene)?.liveCount, 0)
         XCTAssertEqual(Self.root(scene)?.age[0], 0)
+    }
+
+    func testFreshNestedStaticPrewarmReceivesTheExistingHotSnapshot() throws {
+        let parent = Self.burst(1, lifetime: 0.005,
+                                extra: #", "children": [{"name": "event", "type": "eventdeath"}]"#)
+        let event = Self.burst(1, extra: #", "starttime": 0.05, "children": [{"name": "leaf"}]"#)
+        let leaf = Self.burst(1, extra: #", "starttime": 0.05"#)
+        var flags = WPEEngineComboFlags()
+        flags.hdr = true
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "event": event, "leaf": leaf],
+                                   flags: flags)
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        var state = try Self.state(hdr: true)
+        for (name, value) in [("alpha", Float(0.25)), ("brightness", 3), ("lifetime", 2)] {
+            state.setScriptField("instance.\(name)", of: "5", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .particleInstance)
+        }
+        state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)), invalidating: .particleInstance)
+        state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(4, 5, 6, 0)), invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        let spawned = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first)
+        let staticLeaf = try XCTUnwrap(spawned.children.first)
+        for system in [spawned, staticLeaf] {
+            XCTAssertEqual(system.initialAlpha[0], 0.25, "the existing hot snapshot must apply before the prewarm birth")
+            XCTAssertEqual(system.initialColor[0], SIMD3(0, 0, 3))
+            XCTAssertEqual(system.lifetime[0], 20)
+            XCTAssertEqual(system.controlPointTranslation(0), SIMD3(4, 5, 6))
+            XCTAssertEqual(system.age[0], 0.01, accuracy: 1e-6)
+        }
+        let batches = scene.drawBatches(for: "5")
+        XCTAssertEqual(batches.map(\.key.path), [[.eventGroup(0)], [.eventGroup(0), .staticChild(0)]])
+    }
+
+    func testN1QualificationRejectsNewBranchesWithoutChangingHealthySiblings() throws {
+        let plain = Self.burst(1)
+        let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
+        let cases: [(text: String, edge: String, field: String)] = [
+            (Self.burst(1, extra: #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#), "", "operator"),
+            (Self.burst(1, extra: #", "operator": [{"name": "maintaindistancebetweencontrolpoints"}]"#), "", "operator"),
+            (periodic, "", "emitter"),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 1}]"#), "", "controlpoint"),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 2}]"#), "", "controlpoint"),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 4}]"#), "", "controlpoint"),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), "", "controlpoint"),
+            (plain.replacingOccurrences(of: "lifetimerandom", with: "inheritcontrolpointvelocity"), "", "component"),
+            (plain, #", "angles": "0 0 1""#, "angles"),
+            (plain, #", "angles": "invalid""#, "angles"),
+            (plain, #", "scale": "2 1 1""#, "scale"),
+            (plain, #", "flags": 1"#, "child.flags"),
+            (plain, #", "type": "static", "flags": 2"#, "child.flags"),
+        ]
+        for (bad, edge, field) in cases {
+            let parent = Self.burst(1, lifetime: 0.005, extra: #", "children": [{"name": "legacy"}, {"name": "event", "type": "eventdeath"}]"#)
+            let event = Self.burst(0, renderer: "", extra: """
+            , "children": [{"name": "bad"\(edge)}, {"name": "good", "controlpointstartindex": 7}]
+            """)
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
+                                                              "event": event, "bad": bad, "good": plain, "leaf": plain])
+            let root = try XCTUnwrap(Self.root(scene))
+            let eventConfig = try XCTUnwrap(root.config.children.first { $0.trigger == .death }?.config)
+            XCTAssertEqual(root.children.count, 1)
+            XCTAssertEqual(eventConfig.children.count, 1, field)
+            XCTAssertEqual(eventConfig.children[0].controlPointStartIndex, 7, "flags0 does not read startindex")
+            XCTAssertTrue(eventConfig.unsupportedChildren.contains { $0.field.contains(field) && !$0.reason.isEmpty }, field)
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+                           [[.staticChild(0)], [.eventGroup(0), .staticChild(0)]], field)
+        }
+        // A rejected grandchild is already absent: retain its healthy static ancestor and that ancestor's sibling.
+        for rejectedType in ["eventspawn", "eventfollow"] {
+            let parent = Self.burst(1, lifetime: 0.005, extra: #", "children": [{"name": "event", "type": "eventdeath"}]"#)
+            let event = Self.burst(0, renderer: "", extra: #", "children": [{"name": "ancestor"}, {"name": "sibling"}]"#)
+            let ancestor = Self.burst(1, extra: """
+            , "children": [{"name": "leaf", "type": "\(rejectedType)"}, {"name": "leaf"}]
+            """)
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "event": event,
+                                                              "ancestor": ancestor, "sibling": plain, "leaf": plain])
+            let eventConfig = try XCTUnwrap(Self.root(scene)?.config.children.first?.config)
+            XCTAssertEqual(eventConfig.children.count, 2)
+            XCTAssertEqual(eventConfig.children[0].config.children.count, 1)
+            XCTAssertTrue(eventConfig.children[0].config.unsupportedChildren.contains { $0.field == "type" })
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+                           [[.eventGroup(0), .staticChild(0)], [.eventGroup(0), .staticChild(0), .staticChild(0)],
+                            [.eventGroup(0), .staticChild(1)]])
+        }
+        // An ancestor qualification failure rejects only the new edge, leaving the old owner/static sibling.
+        for ancestorExtra in [#", "flags": 1"#,
+                              #", "controlpoint": [{"flags": 4}]"#,
+                              #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#] {
+            let parent = Self.burst(1, lifetime: 0.005, extra: ancestorExtra + #", "children": [{"name": "legacy"}, {"name": "event", "type": "eventdeath"}]"#)
+            let event = Self.burst(0, extra: #", "children": [{"name": "good"}]"#)
+            let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
+                                                              "event": event, "good": plain])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.children.count, 1)
+            let eventConfig = try XCTUnwrap(root.config.children.first { $0.trigger == .death }?.config)
+            XCTAssertTrue(eventConfig.children.isEmpty)
+            XCTAssertFalse(eventConfig.unsupportedChildren.isEmpty)
+        }
+    }
+
+    func testHotZeroCountLetsTheNestedTreeFinishAfterLiveSlotsAndDurationExpire() throws {
+        let parent = Self.burst(1, lifetime: 0.005, extra: #", "children": [{"name": "event", "type": "eventdeath"}]"#)
+        let event = Self.burst(0, renderer: "", extra: #", "children": [{"name": "leaf"}]"#)
+        let leaf = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "boxrandom", "rate": 100, "duration": 0.045, "distancemax": "0 0 0"}],
+         "initializer": [{"name": "lifetimerandom", "min": 0.015, "max": 0.015}]}
+        """
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "event": event, "leaf": leaf])
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        let oldLeaf = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first?.children.first)
+        XCTAssertEqual(oldLeaf.liveCount, 1)
+        var state = try Self.state()
+        state.setScriptField("instance.count", of: "5", to: .vector(.zero), invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        let applied = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first?.children.first)
+        XCTAssertEqual(applied.capacity, oldLeaf.capacity)
+        XCTAssertEqual(applied.position, oldLeaf.position)
+        XCTAssertEqual(applied.liveCount, 1, "count=0 must not kill the existing slot")
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        let pending = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first)
+        XCTAssertEqual(pending.children[0].liveCount, 0)
+        XCTAssertGreaterThan(pending.children[0].emitterStates[0].durationLeft, 0)
+        XCTAssertFalse(pending.isFinished, "native active emitter remains until its duration ends")
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        let finished = try XCTUnwrap(Self.root(scene))
+        XCTAssertTrue(finished.eventChildren[0].isEmpty)
+        XCTAssertEqual(finished.finishedEventChildren[0].count, 1)
     }
 
     func testOverrideColorNeedsNoHasColorAndBrightnessNeedsHDR() throws {
