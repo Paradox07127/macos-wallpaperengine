@@ -89,8 +89,7 @@ final class WPEParityRealSceneTests: XCTestCase {
                 continue
             }
             switch skip {
-            // Text draws are not encoded yet.
-            case .modelMesh, .textLayer:
+            case .modelMesh:
                 print("scene \(sceneID) operation \(index) skipped: \(skip)")
             default:
                 XCTFail("\(sceneID) operation \(index): \(skip)")
@@ -106,7 +105,8 @@ final class WPEParityRealSceneTests: XCTestCase {
                 guard case let .scene(draw)? = plan.frames[0].draws[index] else { return true }
                 return plan.state.isVisible(draw.objectID)
             }
-            XCTAssertEqual(visible, 7)
+            // 7 image and particle draws and 24 text draws, as the package matches 31/31.
+            XCTAssertEqual(visible, 31)
         }
 
         // Declared constants outside the binding description and the engine uniform set stay zero.

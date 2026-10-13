@@ -76,6 +76,7 @@ struct WPEParityFrameDrawPlan {
         let objectID: String
         let kind: WPEParityLayerDrawKind
         let compositeOwnerID: String?
+        var text: TextPlacement?
 
         func draw(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
                   layers live: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
@@ -83,8 +84,41 @@ struct WPEParityFrameDrawPlan {
             if let camera {
                 layers.camera = camera
             }
-            return layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
+            var placed = layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
+            guard let text else { return placed }
+            if case let .compositeFill(size) = kind {
+                placed.matrices = WPEParityTextMatrices.fbo(size: SIMD2(Int(size.x), Int(size.y)),
+                                                            translation: text.translation ?? .zero)
+                return placed
+            }
+            let layerModel = WPEParityTextMatrices.layerModel(layers.model(objectID), anchorOffset: text.anchorOffset,
+                                                              blockOffset: text.blockOffset)
+            let model = text.translation.map { WPEParityTextMatrices.direct(layerModel: layerModel, translation: $0) }
+                ?? layerModel
+            var matrices = WPEParityUniformMatrices(model: model, view: layers.view(objectID, parallax: parallax),
+                                                    projection: layers.projection(objectID))
+            if let ownerID = compositeOwnerID, let owner = layers.layers[ownerID] {
+                matrices = WPEParityLayerTransform.compositeMatrices(parentModel: layers.model(ownerID),
+                                                                     parentSize: owner.size, childModel: model)
+            }
+            placed.effectPass = WPEParityUniformEffectPass(
+                layerModel: matrices.model, layerModelViewProjection: matrices.modelViewProjection,
+                size: layers.layers[objectID]?.size ?? .zero, isLastPass: kind == .layer
+            )
+            if kind == .layer {
+                placed.matrices = matrices
+            }
+            return placed
         }
+    }
+
+    /// A text layer draw's model terms (R23 Q6): every draw but the FBO glyphs moves with slot16, the layer model
+    /// between T(anchor) and T(block offset).
+    struct TextPlacement {
+        let anchorOffset: SIMD2<Float>
+        let blockOffset: SIMD2<Float>
+        /// The glyph or background translation; nil for the clearalpha quad, effect passes and the final composite.
+        let translation: SIMD2<Float>?
     }
 
     /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame; `camera` is the frame's shaken camera.
@@ -303,6 +337,8 @@ struct WPEParityFrameDrawPlanner {
     private var pipelines: [PipelineKey: WPEParityPipeline] = [:]
     /// Pipeline states built, over the planner's life; draws with the same program and state share one.
     private(set) var pipelineCreations = 0
+    /// The text layers' atlas textures, uploaded at load.
+    private(set) var textAtlases: WPEParityTextAtlasTextures
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan) {
         self.device = device
@@ -315,7 +351,10 @@ struct WPEParityFrameDrawPlanner {
         // No camera path or camera object zoom yet.
         layers = WPEParityLayerTransformSet(document: plan.document,
                                             renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
-                                            alignment: plan.alignment, cameraZoom: 1)
+                                            alignment: plan.alignment, cameraZoom: 1,
+                                            textSizes: plan.scene.textSizes)
+        textAtlases = WPEParityTextAtlasTextures(atlases: plan.scene.textAtlases)
+        textAtlases.upload(device: device)
     }
 
     /// Plans later draws from `layout`; loaded images and built pipelines carry over.
@@ -438,6 +477,13 @@ struct WPEParityFrameDrawPlanner {
             }
         }
 
+        let text: WPEParitySceneText? = if case let .scene(draw) = description,
+                                           let object = plan.scene.scene.objects.first(where: { $0.id == draw.objectID }),
+                                           case let .text(sceneText) = object.kind {
+            sceneText
+        } else {
+            nil
+        }
         // Post-process draws have no layer and keep the effect-pass matrices; particle draws place themselves per frame.
         let placement: WPEParityFrameDrawPlan.Placement? = switch description {
         case .scene where particleKey != nil: nil
@@ -446,7 +492,8 @@ struct WPEParityFrameDrawPlanner {
                 layers: layers, objectID: draw.objectID,
                 kind: draw.fillsComposite ? .compositeFill(size: SIMD2(Float(color.width), Float(color.height)))
                     : draw.geometry == .fullscreenQuad ? .effectPass : .layer,
-                compositeOwnerID: draw.compositeOwnerID
+                compositeOwnerID: draw.compositeOwnerID,
+                text: text.map { textPlacement($0, draw) }
             )
         case .post: nil
         }
@@ -484,6 +531,8 @@ struct WPEParityFrameDrawPlanner {
             let buffers = if let puppet {
                 // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
                 Self.puppetGeometry(puppet, uvMax: uvMax, inputs: inputs, device: device)
+            } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
+                Self.geometry(mesh.vertices, indices: mesh.indices, inputs: inputs, device: device)
             } else {
                 Self.geometry(quad.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
                               indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
@@ -566,6 +615,29 @@ struct WPEParityFrameDrawPlanner {
         )
     }
 
+    /// The anchor from the crop margins (orthographic scenes only), the block offset, and the translation of a glyph
+    /// list (direct, or into the text FBO) or of the background quad (140258050, 140257d70).
+    private func textPlacement(_ text: WPEParitySceneText,
+                               _ draw: WPEParitySceneDraw) -> WPEParityFrameDrawPlan.TextPlacement {
+        let translation: SIMD2<Float>? = text.layout.mesh.flatMap { mesh in
+            switch draw.geometry {
+            case .textGlyphs where draw.fillsComposite:
+                WPEParityTextMatrices.fboGlyphTranslation(mesh, padding: text.padding)
+            case .textGlyphs:
+                WPEParityTextMatrices.glyphTranslation(mesh)
+            case .textBackground:
+                WPEParityTextMatrices.backgroundTranslation(mesh, padding: text.padding)
+            default:
+                nil
+            }
+        }
+        return WPEParityFrameDrawPlan.TextPlacement(
+            anchorOffset: WPEParityTextMatrices.anchorOffset(text.object.anchor, margins: layers.camera.cropMargins,
+                                                             orthographic: text.orthographic),
+            blockOffset: text.layout.blockOffset, translation: translation
+        )
+    }
+
     /// Gives every imported resource without an image, such as a skipped draw's layer, a transparent texel.
     mutating func fillImportedImages() throws(WPEParityFrameSkip) {
         for resource in layout.frames.flatMap(\.resources) where resource.lifetime == .imported {
@@ -590,8 +662,11 @@ struct WPEParityFrameDrawPlanner {
             return .resource(id)
         case let .asset(name)?:
             return try .image(assetImage(name).texture)
-        case let .textAtlas(key, _)?:
-            throw .texture("\(shader) slot \(slot) samples text atlas \(key), which is not uploaded")
+        case let .textAtlas(key, atlas)?:
+            guard let texture = textAtlases.textures[WPEParityTextAtlasTextures.Key(atlasKey: key, atlas: atlas)] else {
+                throw .texture("\(shader) slot \(slot) samples text atlas \(key) \(atlas), which has no texture")
+            }
+            return .image(texture)
         }
     }
 
@@ -823,6 +898,26 @@ struct WPEParityFrameDrawPlanner {
             Vertex(position: $0.position, texcoord: $0.uv * uvMax,
                    blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices), blendWeights: $0.skinBlendWeights)
         }, indices: puppet.indices, inputs: inputs, device: device)
+    }
+
+    /// One glyph list of a text layer, or its background quad from (0, 0) to the FBO size with the glyph quads'
+    /// corner order and indices (R23 Q5).
+    private static func textMesh(_ text: WPEParitySceneText,
+                                 _ geometry: WPEParitySceneDraw.Geometry) -> (vertices: [Vertex], indices: [UInt16])? {
+        switch geometry {
+        case let .textGlyphs(list):
+            guard let mesh = text.layout.mesh else { return nil }
+            let glyphs = list == .mono ? mesh.mono : mesh.color
+            return (glyphs.vertices.map { Vertex(position: SIMD3($0.x, $0.y, $0.z), texcoord: SIMD2($0.u, $0.v)) },
+                    glyphs.indices)
+        case .textBackground:
+            let size = SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y))
+            let corners: [SIMD2<Float>] = [SIMD2(0, 1), SIMD2(1, 1), SIMD2(0, 0), SIMD2(1, 0)]
+            return (corners.map { Vertex(position: SIMD3($0 * size, 0), texcoord: SIMD2($0.x, 1 - $0.y)) },
+                    [0, 2, 1, 1, 2, 3])
+        default:
+            return nil
+        }
     }
 
     private static func geometry(_ vertices: [Vertex], indices: [UInt16], inputs: [WPEStageReflection.StageAttribute],

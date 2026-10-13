@@ -205,6 +205,11 @@ final class WPEParityFrameRenderer {
         videos.textures
     }
 
+    /// The text layers' glyph atlases as last uploaded.
+    var textAtlases: [String: WPEParityGlyphAtlasInstance] {
+        planner.textAtlases.atlases
+    }
+
     /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
     /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
     /// particle batches, up to `maxParticleShare`. `workshopID` keys the video disk cache; nil uses the scene
