@@ -25,6 +25,10 @@ enum WPEParityParticleNoise {
         SIMD3(0, 1, 1), SIMD3(0, -1, 1), SIMD3(0, 1, -1), SIMD3(0, -1, -1),
     ]
 
+    static func permutationValue(_ index: Int) -> Int {
+        Int(permutation[index])
+    }
+
     private static func hash(_ index: Int) -> Int {
         Int(permutation[index & 255])
     }

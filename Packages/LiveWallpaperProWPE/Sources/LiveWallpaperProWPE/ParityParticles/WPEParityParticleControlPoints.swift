@@ -11,6 +11,8 @@ public struct WPEParityParticleFrameContext: Sendable {
     public var objectMatrix: simd_float4x4
     /// Particles simulate in world space rather than in the object's space.
     public var worldSpace: Bool
+    /// ctx+0x140, the remap "timeofday" input; nothing supplies it yet.
+    public var timeOfDay: Float = 0
 
     public init(
         time: Float = 0,

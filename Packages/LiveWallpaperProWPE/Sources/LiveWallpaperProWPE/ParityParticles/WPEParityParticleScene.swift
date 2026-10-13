@@ -44,12 +44,12 @@ public struct WPEParityParticleScene {
         UInt32(truncatingIfNeeded: Int64(now.timeIntervalSince1970 * 1000))
     }
 
-    /// Steps every object in `objects` order. An object without a context is hidden: it is not stepped, and while it
-    /// holds live particles it is reset (R24 Q2). `worldSpace` is taken from the particle flags.
+    /// Steps every object in `objects` order. An object without a context is hidden: it is not stepped, and while its
+    /// root system holds live particles it is reset (140230650.c:19). `worldSpace` is taken from the particle flags.
     public mutating func advance(dt: Float, frames: [String: WPEParityParticleFrameContext]) {
         for index in objects.indices {
             guard var frame = frames[objects[index].id] else {
-                if objects[index].system.hasLiveParticles {
+                if objects[index].system.liveCount > 0 {
                     objects[index].system.reset()
                 }
                 continue

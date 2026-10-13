@@ -51,6 +51,7 @@ public struct WPEParityParticleSystem {
     struct PendingEvent {
         var child: Int
         var position: SIMD3<Float>
+        var slot: Int
     }
 
     let config: WPEParityParticleConfig
@@ -137,6 +138,15 @@ public struct WPEParityParticleSystem {
     var boidsFrame = 0
     /// Event-child systems this system has constructed, for tests.
     var eventChildConstructions = 0
+    /// The emitter state `init` built; a hidden reset restores it without drawing (D/14022f6c0.c).
+    var builtEmitterStates: [EmitterState] = []
+    /// inst+0x3f0, advanced by every step, prewarm included [I]; remapinitialvalue's particlesystemtime.
+    var simulationTime: Float = 0
+    /// Object +0x770: rate-scaled time while shown, zeroed by a hidden reset (140230650.c:21, 64-67); layertime.
+    public internal(set) var objectTime: Float = 0
+    /// The parent slot of an event child (inst+0x478) and what the parent holds there now.
+    var parentSlot = -1
+    var parentSample: WPEParityParticleParentSample?
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
     /// `crt` is the scene's CRT `rand()` state, shared like `rng`. Brightness overrides need an HDR scene, which
@@ -159,8 +169,11 @@ public struct WPEParityParticleSystem {
     init(
         config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
         eventOrigin: SIMD3<Float>? = nil, localTransform: simd_float4x4 = matrix_identity_float4x4,
-        context: WPEParityParticleFrameContext = .init()
+        context: WPEParityParticleFrameContext = .init(), parentSlot: Int = -1,
+        parentSample: WPEParityParticleParentSample? = nil
     ) {
+        self.parentSlot = parentSlot
+        self.parentSample = parentSample
         self.config = config
         self.instance = instance
         self.rng = rng
@@ -191,6 +204,7 @@ public struct WPEParityParticleSystem {
         birthNext = Array(repeating: -1, count: capacity)
         birthPrevious = birthNext
         emitterStates = config.emitters.map { Self.emitterState($0, rng: rng) }
+        builtEmitterStates = config.emitters.indices.map { emitterStates[$0] }
         if let trail = config.renderers.first(where: { $0.kind == .ropeTrail }) {
             trailSegments = trail.segments
             trailInterval = trail.length / Float(trail.segments)
@@ -233,18 +247,23 @@ public struct WPEParityParticleSystem {
     /// Turns a finished event child into the system `init` would build for a new event, with the same RNG draws,
     /// clearing its slot arrays in place. Event children have no children of their own.
     private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
-                                        context: WPEParityParticleFrameContext) {
+                                        context: WPEParityParticleFrameContext, parentSlot: Int,
+                                        parentSample: WPEParityParticleParentSample) {
         self.origin = origin
         self.localTransform = localTransform
+        self.parentSlot = parentSlot
+        self.parentSample = parentSample
         frameContext = context
-        restart()
+        restart(redraw: true)
         prewarm()
     }
 
-    /// A hidden object with live particles starts over at time 0: no particles, emitters as built, static children
-    /// reset and event children destroyed (140230650.c:16-67). It is not prewarmed again.
+    /// A hidden object with live particles starts over at time 0: no particles, emitters restored as built without
+    /// new draws, sequence positions to 0, static children reset, event children destroyed (140230650.c:16-67,
+    /// D/14022f6c0.c). Nothing calls the starttime prewarm again.
     mutating func reset() {
-        restart()
+        objectTime = 0
+        restart(redraw: false)
         for index in children.indices {
             children[index].reset()
         }
@@ -264,8 +283,8 @@ public struct WPEParityParticleSystem {
             + eventChildren.joined().reduce(0) { $0 + $1.totalLiveCount }
     }
 
-    /// Clears the slot arrays in place and rebuilds the emitter state with the same RNG draws `init` makes.
-    private mutating func restart() {
+    /// Clears the slot arrays in place; `redraw` rebuilds the emitter state with the RNG draws `init` makes.
+    private mutating func restart(redraw: Bool) {
         func clear<Element>(_ array: inout [Element], to value: Element) {
             array.withUnsafeMutableBufferPointer { $0.update(repeating: value) }
         }
@@ -294,11 +313,22 @@ public struct WPEParityParticleSystem {
         freeHint = 0
         highWater = 0
         pendingEvents.removeAll(keepingCapacity: true)
+        simulationTime = 0
         for index in sequenceStates.indices {
-            sequenceStates[index] = Self.sequenceState(config.initializers[index])
+            if redraw {
+                sequenceStates[index] = Self.sequenceState(config.initializers[index])
+            } else {
+                sequenceStates[index].t = 0
+            }
         }
+        // Element-wise, so neither array shares or reallocates storage.
         for index in emitterStates.indices {
-            emitterStates[index] = Self.emitterState(config.emitters[index], rng: rng)
+            if redraw {
+                emitterStates[index] = Self.emitterState(config.emitters[index], rng: rng)
+                builtEmitterStates[index] = emitterStates[index]
+            } else {
+                emitterStates[index] = builtEmitterStates[index]
+            }
         }
         trailTimer = trailInterval
         clear(&trailPoints, to: .zero)
@@ -313,6 +343,7 @@ public struct WPEParityParticleSystem {
     /// One object update: dt × instance rate (D/140230650.c:55-64).
     public mutating func advance(dt: Float, frame: WPEParityParticleFrameContext = .init()) {
         frameContext = frame
+        objectTime += dt * instance.rate
         step(dt: dt * instance.rate)
     }
 
@@ -332,6 +363,7 @@ public struct WPEParityParticleSystem {
     /// (D/140236cd0.c:54-79, 360; D/1402308a0.c:2734-2767).
     mutating func step(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
         guard dt > 0 else { return }
+        simulationTime += dt
         for slot in 0 ..< highWater where lifetime[slot] != 0 {
             age[slot] += dt
             if age[slot] > lifetime[slot] {
@@ -349,15 +381,18 @@ public struct WPEParityParticleSystem {
             let child = config.children[event.child]
             let group = childGroup[event.child]
             let origin = event.position + child.origin
+            let sample = parentSample(slot: event.slot)
             if let last = finishedEventChildren[group].indices.last {
-                finishedEventChildren[group][last].reuseForEvent(origin: origin, localTransform: localTransform,
-                                                                 context: frameContext)
+                finishedEventChildren[group][last].reuseForEvent(
+                    origin: origin, localTransform: localTransform, context: frameContext, parentSlot: event.slot,
+                    parentSample: sample
+                )
                 eventChildren[group].append(finishedEventChildren[group].removeLast())
             } else {
                 eventChildConstructions += 1
                 eventChildren[group].append(WPEParityParticleSystem(
-                    config: child.config, instance: Instance(), rng: rng, crt: crt,
-                    eventOrigin: origin, localTransform: localTransform, context: frameContext
+                    config: child.config, instance: Instance(), rng: rng, crt: crt, eventOrigin: origin,
+                    localTransform: localTransform, context: frameContext, parentSlot: event.slot, parentSample: sample
                 ))
             }
         }
@@ -368,6 +403,7 @@ public struct WPEParityParticleSystem {
         }
         for group in eventChildren.indices {
             for index in eventChildren[group].indices {
+                eventChildren[group][index].parentSample = parentSample(slot: eventChildren[group][index].parentSlot)
                 eventChildren[group][index].frameContext = frameContext
                 eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
             }
@@ -412,7 +448,7 @@ public struct WPEParityParticleSystem {
         // eventdeath fires when U ≤ probability (D/140236cd0.c:203-251).
         for (index, child) in config.children.enumerated() where child.trigger == .death {
             if rng.unit() <= child.probability {
-                pendingEvents.append(PendingEvent(child: index, position: position[slot]))
+                pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
             }
         }
     }
@@ -509,7 +545,7 @@ public struct WPEParityParticleSystem {
             trailCount[slot] = 0
         }
         for (index, child) in config.children.enumerated() where child.trigger == .spawn {
-            pendingEvents.append(PendingEvent(child: index, position: position[slot]))
+            pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
     }
 
@@ -535,8 +571,15 @@ public struct WPEParityParticleSystem {
             initializeSequenceAround(field, index: index, slot: slot)
         case let .sequenceBetween(field):
             initializeSequenceBetween(field, index: index, slot: slot)
-        case let .alpha(low, high):
-            initialAlpha[slot] *= rng.draw(low, high)
+        case let .alpha(low, high, exponent):
+            // (U^exp·Δ + min)·alpha, powf only for exp ≠ 1 (D/14023b340.c:524-539).
+            initialAlpha[slot] *= shaped(rng.unit(), exponent) * (high - low) + low
+        case let .remap(field):
+            applyRemap(field, slot: slot, initializer: true)
+        case let .inheritInitial(field):
+            if let parentSample {
+                applyInitialInherit(field, slot: slot, parent: parentSample)
+            }
         case let .velocity(low, high):
             // Sampled z, y, x (D/1401bac50.c:16-25).
             let z = rng.draw(low.z, high.z)
@@ -651,6 +694,13 @@ public struct WPEParityParticleSystem {
             applyCollisionPlane(field, slot: slot, weight: weight)
         case let .collisionSphere(field):
             applyCollisionSphere(field, slot: slot, weight: weight)
+        case let .remap(field):
+            // [U] The blended variant (type 0x29) is not read; the weight is not applied.
+            applyRemap(field, slot: slot, initializer: false)
+        case let .inherit(field):
+            if let parentSample, parentSample.alive {
+                applyInherit(field, slot: slot, parent: parentSample)
+            }
         }
     }
 

@@ -125,12 +125,15 @@ final class ParityParticleSimulationTests: XCTestCase {
          "operator": [{"name": "remapvalue"}, {"name": "inheritvaluefromevent"}, {"name": "collisionquad"},
                       {"name": "collisionplane", "collisionbehavior": "slide"}, {"name": "movement"}]}
         """)
-        for name in ["remapinitialvalue", "inheritinitialvaluefromevent", "remapvalue", "inheritvaluefromevent",
-                     "collisionquad", "collisionplane (slide)"] {
+        for name in ["collisionquad", "collisionplane (slide)"] {
             XCTAssertTrue(particles.diagnostics.contains { $0.contains(name) }, name)
         }
-        XCTAssertFalse(particles.diagnostics.contains { $0.contains("movement") })
-        XCTAssertEqual(particles.config.operators.count, 1)
+        for name in ["movement", "remapinitialvalue", "inheritinitialvaluefromevent", "remapvalue",
+                     "inheritvaluefromevent"] {
+            XCTAssertFalse(particles.diagnostics.contains { $0.contains(name) }, name)
+        }
+        XCTAssertEqual(particles.config.initializers.count, 2)
+        XCTAssertEqual(particles.config.operators.count, 3)
     }
 
     func testEventDeathChildSpawnsAtTheDeathPosition() {

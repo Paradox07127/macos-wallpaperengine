@@ -34,7 +34,7 @@ enum WPEParityParticleInitializer: Equatable, Sendable {
     case hsvColor(WPEParityParticleHSVRandom)
     /// Colors as HSV (hue in turns); noise per HSV channel.
     case colorList(hsv: [SIMD3<Float>], noise: SIMD3<Float>)
-    case alpha(min: Float, max: Float)
+    case alpha(min: Float, max: Float, exponent: Float)
     case velocity(min: SIMD3<Float>, max: SIMD3<Float>)
     case rotation(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
@@ -42,6 +42,8 @@ enum WPEParityParticleInitializer: Equatable, Sendable {
     case positionOffset(WPEParityParticlePositionOffset)
     case sequenceAround(WPEParityParticleSequenceAround)
     case sequenceBetween(WPEParityParticleSequenceBetween)
+    case remap(WPEParityParticleRemap)
+    case inheritInitial(WPEParityParticleInherit)
 }
 
 struct WPEParityParticleOperator: Equatable, Sendable {
@@ -73,6 +75,8 @@ struct WPEParityParticleOperator: Equatable, Sendable {
         case reduceMovement(controlPoint: Int, inner: Float, outer: Float, reductionInner: Float, reductionDelta: Float)
         case collisionPlane(WPEParityParticleCollision)
         case collisionSphere(WPEParityParticleCollision)
+        case remap(WPEParityParticleRemap)
+        case inherit(WPEParityParticleInherit)
     }
 
     var kind: Kind
@@ -235,7 +239,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                 )
             )
         case "alpharandom":
-            initializer = .alpha(min: JSON.number(minimum) ?? 0.05, max: JSON.number(maximum) ?? 1)
+            initializer = .alpha(min: JSON.number(minimum) ?? 0.05, max: JSON.number(maximum) ?? 1, exponent: exponent)
         case "velocityrandom":
             let limit: SIMD3<Float> = is3D ? SIMD3(1, 1, 1) : SIMD3(32, 32, 0)
             initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit)
@@ -257,6 +261,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             initializer = .sequenceAround(WPEParityParticleSequenceAround(fields))
         case "mapsequencebetweencontrolpoints":
             initializer = .sequenceBetween(WPEParityParticleSequenceBetween(fields))
+        case "remapinitialvalue":
+            initializer = .remap(WPEParityParticleRemap(fields, defaultInput: .maxLifetime))
+        case "inheritinitialvaluefromevent":
+            initializer = .inheritInitial(WPEParityParticleInherit(fields, fallback: .setColor))
         default:
             diagnostics.append("initializer \(name) skipped")
             return
@@ -347,6 +355,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             }
             let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
             kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
+        case "remapvalue":
+            kind = .remap(WPEParityParticleRemap(fields, defaultInput: .lifetimeFraction))
+        case "inheritvaluefromevent":
+            kind = .inherit(WPEParityParticleInherit(fields, fallback: .setColorOpacity))
         default:
             diagnostics.append("operator \(name) skipped")
             return
