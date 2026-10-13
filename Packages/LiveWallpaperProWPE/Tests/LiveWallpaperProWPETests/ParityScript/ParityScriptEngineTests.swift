@@ -209,6 +209,131 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertTrue(scene.engine.createdLayers.isEmpty)
     }
 
+    /// Host failures must not publish their candidate value-state or manufacture a wrapper/constant owner.
+    /// This is package failure atomicity, not proof of product resource rollback or native failure returns.
+    func testInvalidCreateCandidatesPreserveLiveStateAndExistingScriptWrites() throws {
+        let valid: [String: Any] = ["id": 3, "name": "created", "image": "models/created.json", "size": "100 100"]
+        let missingBase = valid.merging(["instance": ["constantshadervalues": ["amount": 1]]]) { _, new in new }
+        let missingEffect = valid.merging(["effects": [["id": 5, "file": "effects/missing.json",
+                                                        "passes": [["constantshadervalues": ["amount": 1]]]]]]) { _, new in new }
+        var missingID = valid
+        missingID["id"] = nil
+        missingID["name"] = "3"
+        let cases: [(String, String?, [String: Any], String?, Bool)] = [
+            ("nil result", nil, valid, nil, true),
+            ("invalid JSON", "3", valid, "{", true),
+            ("nonobject JSON", "3", valid, "[]", true),
+            ("duplicate identity", "2", valid.merging(["id": 2]) { _, new in new }, nil, true),
+            ("mismatched config identity", "3", valid.merging(["id": 4]) { _, new in new }, nil, true),
+            ("missing assigned identity", "3", missingID, nil, true),
+            ("out-of-range numeric identity", "3", valid.merging(["id": 1e100]) { _, new in new }, nil, true),
+            ("fractional numeric identity", "3", valid.merging(["id": 3.5]) { _, new in new }, nil, true),
+            ("missing candidate object", "3", valid, nil, false),
+            ("missing base consumer", "3", missingBase, nil, true),
+            ("missing effect consumer", "3", missingEffect, nil, true),
+        ]
+        for (label, returnedID, config, rawJSON, append) in cases {
+            let objects = [
+                Self.layer(1, "A", ["alpha": Self.scripted(1, """
+                export function init(value) {
+                    const witness = thisScene.getLayer('B');
+                    witness.brightness = 17;
+                    const created = thisScene.createLayer({ image: 'models/created.json', name: 'created' });
+                    thisLayer.color = new Vec3(created === null ? 1 : 99, thisScene.getLayerCount(), witness.brightness);
+                    return value;
+                }
+                """)]),
+                Self.layer(2, "B"),
+            ]
+            // The host prepares a complete value-state candidate; malformed returned identity/config must still
+            // discard it. No renderer, GPU resource or product transaction is simulated by this fixture.
+            let candidateJSON: [String: Any] = [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+                "objects": objects + [config.merging(["id": 3]) { _, new in new }],
+            ]
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: candidateJSON),
+                                                            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            let prepared = WPEParitySceneState(document: document, hdr: false)
+            let encoded = try JSONSerialization.data(withJSONObject: config)
+            let configJSON = try rawJSON ?? XCTUnwrap(String(bytes: encoded, encoding: .utf8))
+            var attempts = 0
+            var diagnostics: [String] = []
+            var scene = try Self.scene(objects, assets: Self.fixedAssets(), configure: { configuration in
+                configuration.createLayer = { _, candidate in
+                    attempts += 1
+                    if append {
+                        candidate = prepared
+                    }
+                    candidate.set(.brightness, of: "2", to: SIMD4(99, 0, 0, 0))
+                    return returnedID.map { .init(id: $0, configJSON: configJSON) }
+                }
+                configuration.log = { _, message in diagnostics.append(message) }
+            })
+            scene.engine.start(state: &scene.state)
+            XCTAssertEqual(attempts, 1, label)
+            XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 2, 17), label)
+            XCTAssertEqual(scene.state.object("2")?.brightness, 17, label)
+            XCTAssertEqual(scene.state.ids, ["1", "2"], label)
+            XCTAssertNil(scene.state.index(of: "3"), label)
+            XCTAssertTrue(scene.engine.createdLayers.isEmpty, label)
+            XCTAssertEqual(scene.engine.bindings.count, 1, label)
+            XCTAssertEqual(diagnostics.filter { $0.contains("no state was committed") }.count, 1, label)
+            XCTAssertEqual(scene.engine.exceptionCount, 0, label + scene.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    /// The public state input may contain an object without an engine wrapper. Returning that existing ID while
+    /// appending a different object must not satisfy a single-object create transaction.
+    func testCreateRejectsAnExistingStateIDWithoutAnEngineWrapper() throws {
+        let objects = [Self.layer(1, "A", ["alpha": Self.scripted(1, """
+        export function init(value) {
+            thisLayer.brightness = 17;
+            const created = thisScene.createLayer({ image: 'models/created.json', name: 'created' });
+            thisLayer.color = new Vec3(created === null ? 1 : 99, thisScene.getLayerCount(), thisLayer.brightness);
+            return thisScene.getLayer('state-only') === null ? 1 : 99;
+        }
+        """)])]
+        let stateOnly = Self.layer(2, "state-only")
+        func makeState(_ objects: [[String: Any]]) throws -> WPEParitySceneState {
+            let json: [String: Any] = [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+                "objects": objects,
+            ]
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            return WPEParitySceneState(document: document, hdr: false)
+        }
+        let current = try makeState(objects + [stateOnly])
+        let prepared = try makeState(objects + [stateOnly, Self.layer(3, "unrelated")])
+        let configData = try JSONSerialization.data(withJSONObject: stateOnly)
+        let configJSON = try XCTUnwrap(String(bytes: configData, encoding: .utf8))
+        var attempts = 0
+        var diagnostics: [String] = []
+        var scene = try Self.scene(objects, assets: Self.fixedAssets(), configure: { configuration in
+            configuration.createLayer = { _, candidate in
+                attempts += 1
+                candidate = prepared
+                candidate.set(.brightness, of: "1", to: SIMD4(99, 0, 0, 0))
+                return .init(id: "2", configJSON: configJSON)
+            }
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.state = current
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 17))
+        XCTAssertEqual(scene.state.object("1")?.alpha, 1)
+        XCTAssertEqual(scene.state.object("1")?.brightness, 17)
+        XCTAssertEqual(scene.state.ids, ["1", "2"])
+        XCTAssertNil(scene.state.index(of: "3"))
+        XCTAssertTrue(scene.engine.createdLayers.isEmpty)
+        XCTAssertEqual(scene.engine.bindings.count, 1)
+        XCTAssertEqual(diagnostics.filter { $0.contains("no state was committed") }.count, 1)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// Script `Vec3(0,0,90)` on angles lands as radians; setMaterialProperty multiplies π/180 for an angle constant only.
     func testAnglesAndSetMaterialPropertyConvertDegrees() throws {
         let pass = WPEParityMaterialPassKey(objectID: "1", effectID: "5")

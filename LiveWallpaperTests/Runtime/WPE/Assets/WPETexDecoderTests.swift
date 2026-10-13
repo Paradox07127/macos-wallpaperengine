@@ -322,6 +322,77 @@ struct WPETexDecoderTests {
         }
     }
 
+    @Test("Raw volume keeps every depth mip and raw/LZ4 bits; legacy 2D callers still reject it")
+    func rawVolumePayloadPreservesThreeAxisMipChain() throws {
+        let levels: [(Int, Int, UInt32, Data)] = [
+            (1, 1, 4, Data([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])),
+            (1, 1, 2, Data([17, 18, 19, 20, 21, 22, 23, 24])),
+            (1, 1, 1, Data([25, 26, 27, 28])),
+        ]
+        for compressed in [false, true] {
+            let data = try makeRawVolume(levels: levels, compressed: compressed)
+            #expect(throws: WPETexDecodeError.unsupportedTextureDimension(depth: 4)) {
+                _ = try WPETexDecoder().extractTexturePayload(data: data).get()
+            }
+            let payload = try WPETexDecoder().extractTexturePayload(data: data, allowRawVolume: true).get()
+            #expect(payload.info.depth == 4)
+            #expect(payload.info.isVolume)
+            #expect(payload.mipmaps.map(\.depth) == [4, 2, 1])
+            #expect(payload.mipmaps.map(\.bytes) == levels.map(\.3))
+            #expect(payload.animationTrack == nil)
+            #expect(payload.videoPayload == nil)
+            #expect(payload.hasAnimationFrames == false)
+            #expect(throws: WPETexDecodeError.unsupportedTextureDimension(depth: 4)) {
+                _ = try WPETexDecoder().decode(data: data).get()
+            }
+        }
+    }
+
+    @Test("Malformed volume geometry, truncated z planes and oversized chains fail before materializing")
+    func rawVolumeRejectsInvalidGeometryAndByteBudgetsBeforeAllocation() throws {
+        let invalid: [[(Int, Int, UInt32, Data)]] = [
+            [(1, 1, 4, Data(count: 12))], // Missing the last z plane, although slice zero is complete.
+            [(1, 1, 4, Data(count: 16)), (1, 1, 1, Data(count: 4))], // Skips depth=2.
+            [(1, 1, 0, Data())],
+        ]
+        for levels in invalid {
+            let meter = WPETexInflateMeter()
+            let data = try makeRawVolume(levels: levels)
+            let result = WPETexDecoder.$inflateMeter.withValue(meter) {
+                WPETexDecoder().extractTexturePayload(data: data, allowRawVolume: true)
+            }
+            guard case .failure = result else { Issue.record("Malformed volume was accepted"); return }
+            #expect(meter.materializedMipBytes == 0)
+        }
+        // The first LZ4 mip declares exactly the existing 256 MiB budget. Its additional authored mip
+        // makes the complete chain too large. Tiny wire payloads ensure this guard never allocates it.
+        for compressed in [false, true] {
+            let levels: [(Int, Int, UInt32, Data)] = compressed
+                ? [(1024, 1024, 64, Data([1])), (512, 512, 32, Data([2]))]
+                : [(2048, 2048, 128, Data())]
+            let data = try makeRawVolume(levels: levels, compressed: compressed, declaredByteCount: UInt32.max)
+            let meter = WPETexInflateMeter()
+            let result = WPETexDecoder.$inflateMeter.withValue(meter) {
+                WPETexDecoder().extractTexturePayload(data: data, allowRawVolume: true)
+            }
+            guard case let .failure(.decodeFailed(_, detail)) = result else {
+                Issue.record("Expected the volume byte budget failure, got \(result)"); return
+            }
+            #expect(detail.contains("byte budget"))
+            #expect(meter.materializedMipBytes == 0)
+        }
+        // Independently exercise checked row, slice and total-byte multiplication without large Data.
+        for size in [(Int.max, 1, 1), (1, Int.max, 1), (1, 1, Int.max)] {
+            #expect(throws: WPETexMipValidation.Invalid.self) {
+                _ = try WPETexMipValidation.layout(format: .rgba8888, width: size.0, height: size.1, depth: size.2)
+            }
+        }
+        let mismatched = try makeRawVolume(levels: [(1, 1, 2, Data(count: 8))], declaredDepth: 4)
+        #expect(throws: WPETexDecodeError.self) {
+            _ = try WPETexDecoder().extractTexturePayload(data: mismatched, allowRawVolume: true).get()
+        }
+    }
+
     @Test("TEXI version zero omits the tail word after depth")
     func texiVersionZeroOmitsTail() throws {
         for volume in [false, true] {
@@ -349,13 +420,13 @@ struct WPETexDecoderTests {
             let info = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: data)).get()
             let rawExtension = try #require(info.flag0x40Extension, "\(url.lastPathComponent)")
             #expect(info.flags == 0x42, "\(url.lastPathComponent)")
-            #expect(info.imageWidth == 1_024, "\(url.lastPathComponent)")
+            #expect(info.imageWidth == 1024, "\(url.lastPathComponent)")
             #expect(info.imageHeight == 32, "\(url.lastPathComponent)")
             #expect(info.depth == 32, "\(url.lastPathComponent)")
             #expect(UInt32(bitPattern: info.unknownInt0) == fixture.tailBits, "\(url.lastPathComponent)")
             #expect(rawExtension.sourceRange == 42 ..< 46, "\(url.lastPathComponent)")
             // 在扩展字段之后的偏移读 TEXB magic,才是对齐的真正证据。
-            #expect(data.subdata(in: 50..<58) == Data("TEXB0004".utf8), "\(url.lastPathComponent)")
+            #expect(data.subdata(in: 50 ..< 58) == Data("TEXB0004".utf8), "\(url.lastPathComponent)")
             #expect(data[58] == 0, "\(url.lastPathComponent)")
         }
     }
@@ -400,6 +471,44 @@ struct WPETexDecoderTests {
     }
 
     // MARK: - Fixture helpers
+
+    private func makeRawVolume(levels: [(Int, Int, UInt32, Data)], compressed: Bool = false,
+                               declaredDepth: UInt32? = nil, declaredByteCount: UInt32? = nil) throws -> Data {
+        let first = levels[0]
+        var data = Data()
+        appendMagic(&data, magic: "TEXV0005")
+        appendMagic(&data, magic: "TEXI0001")
+        for word in [UInt32(0), 0x40, UInt32(first.0), UInt32(first.1), UInt32(first.0), UInt32(first.1),
+                     declaredDepth ?? first.2, 0] {
+            appendUInt32(&data, word)
+        }
+        appendMagic(&data, magic: "TEXB0003")
+        for word in [UInt32(1), UInt32.max, UInt32(levels.count)] {
+            appendUInt32(&data, word)
+        }
+        // Official LZ4 block format: the final sequence is literals only, without a match offset.
+        // These fixed tiny blocks avoid Compression's encoder declining non-compressible input.
+        // https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md (revised 2022-07-31)
+        let literalHeaders: [Int: [UInt8]] = [1: [0x10], 4: [0x40], 8: [0x80], 16: [0xF0, 0x01]]
+        for (width, height, depth, bytes) in levels {
+            let wire: Data
+            if compressed {
+                guard let header = literalHeaders[bytes.count] else {
+                    throw NSError(domain: "LZ4LiteralFixture", code: bytes.count)
+                }
+                wire = Data(header) + bytes
+            } else {
+                wire = bytes
+            }
+            let header: [UInt32] = [UInt32(width), UInt32(height), depth, compressed ? 1 : 0,
+                                    declaredByteCount ?? UInt32(bytes.count), UInt32(wire.count)]
+            for word in header {
+                appendUInt32(&data, word)
+            }
+            data.append(wire)
+        }
+        return data
+    }
 
     private func makeRGBA8888TestImage(width: Int, height: Int) -> Data {
         let pixel: [UInt8] = [0xff, 0x80, 0x33, 0xff]

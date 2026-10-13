@@ -562,7 +562,11 @@ struct WPEParityFrameDrawPlanner {
                         guard let target = layout.frames[variant].resources.first(where: { $0.id == id }) else {
                             throw .texture("\(shader) samples undeclared \(id)")
                         }
-                        type = target.sampleCount > 1 ? .type2DMultisample : .type2D
+                        if target.lifetime == .imported, let image = layerImages[id] {
+                            type = image.textureType
+                        } else {
+                            type = target.sampleCount > 1 ? .type2DMultisample : .type2D
+                        }
                     }
                     do {
                         try WPEParityDrawEncoder.validateDimension(resource, textureType: type)

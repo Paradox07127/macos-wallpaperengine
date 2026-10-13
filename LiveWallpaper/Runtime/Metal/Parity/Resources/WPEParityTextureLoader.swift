@@ -34,10 +34,10 @@ enum WPEParityTextureLoader {
     static func load(span: WPEMappedByteSpan, device: MTLDevice) throws -> Loaded {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
-        // The native depth field is known, but volume slice layout/encoded unfolding is not yet proved.
-        // Reject before any encoded image can be flattened to a successful 2D upload.
-        guard !info.isVolume else { throw WPETexDecodeError.unsupportedTextureDimension(depth: info.depth) }
-        let payload = try decoder.extractTexturePayload(span: span, scope: .fullChain).get()
+        if info.isVolume, info.width > 2048 || info.height > 2048 || info.depth > 2048 {
+            throw WPEMetalTextureLoaderError.malformedPayload("Volume dimensions exceed the Metal 3D limit")
+        }
+        let payload = try decoder.extractTexturePayload(span: span, scope: .fullChain, allowRawVolume: true).get()
         guard payload.videoPayload == nil else { throw WPETexDecodeError.unsupportedAnimation }
         guard !payload.hasConditionalVariants else { throw Failure.unsupportedConditionalVariants }
         guard let format = payload.info.format else {
@@ -55,7 +55,8 @@ enum WPEParityTextureLoader {
             if let texture = textures[imageID] {
                 return texture
             }
-            let texture = try makeTexture(mipmaps: mipmaps, format: format, mapping: mapping, device: device)
+            let texture = try makeTexture(mipmaps: mipmaps, format: format, mapping: mapping,
+                                          isVolume: payload.info.isVolume, device: device)
             textures[imageID] = texture
             return texture
         }
@@ -85,21 +86,30 @@ enum WPEParityTextureLoader {
     }
 
     private static func makeTexture(mipmaps: [WPETexTextureMipmap], format: WPETexFormat,
-                                    mapping: WPEMetalTextureFormatMapping, device: MTLDevice) throws -> MTLTexture {
+                                    mapping: WPEMetalTextureFormatMapping, isVolume: Bool,
+                                    device: MTLDevice) throws -> MTLTexture {
         try WPETexMipValidation.decoded(mipmaps, format: format)
-        guard let base = mipmaps.first, base.width <= 16384, base.height <= 16384 else {
+        // Apple's Metal feature table specifies 2048 for all three volume axes. Reject before calling
+        // Metal so malformed files cannot reach a descriptor-validation assertion.
+        let maximumDimension = isVolume ? 2048 : 16384
+        guard let base = mipmaps.first, base.width <= maximumDimension, base.height <= maximumDimension,
+              base.depth <= (isVolume ? maximumDimension : 1) else {
             throw WPEMetalTextureLoaderError.malformedPayload("Missing or oversized base mip")
         }
         let layouts = try mipmaps.map { level in
-            let layout = try WPETexMipValidation.layout(format: format, width: level.width, height: level.height)
+            let layout = try WPETexMipValidation.layout(format: format, width: level.width, height: level.height,
+                                                        depth: level.depth)
             guard level.bytes.count >= layout.byteCount else {
                 throw WPEMetalTextureLoaderError.malformedPayload("Missing or truncated mip \(level.index)")
             }
             return layout
         }
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: mapping.pixelFormat,
-                                                                  width: base.width, height: base.height,
-                                                                  mipmapped: mipmaps.count > 1)
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = isVolume ? .type3D : .type2D
+        descriptor.pixelFormat = mapping.pixelFormat
+        descriptor.width = base.width
+        descriptor.height = base.height
+        descriptor.depth = base.depth
         descriptor.mipmapLevelCount = mipmaps.count
         descriptor.usage = .shaderRead
         descriptor.storageMode = .shared
@@ -111,8 +121,15 @@ enum WPEParityTextureLoader {
                 guard let pointer = bytes.baseAddress else {
                     throw WPEMetalTextureLoaderError.malformedPayload("Empty mip \(level.index)")
                 }
-                texture.replace(region: MTLRegionMake2D(0, 0, level.width, level.height), mipmapLevel: level.index,
-                                withBytes: pointer, bytesPerRow: layout.bytesPerRow)
+                if isVolume {
+                    texture.replace(region: MTLRegionMake3D(0, 0, 0, level.width, level.height, level.depth),
+                                    mipmapLevel: level.index, slice: 0, withBytes: pointer,
+                                    bytesPerRow: layout.bytesPerRow,
+                                    bytesPerImage: level.depth > 1 ? layout.bytesPerImage : 0)
+                } else {
+                    texture.replace(region: MTLRegionMake2D(0, 0, level.width, level.height), mipmapLevel: level.index,
+                                    withBytes: pointer, bytesPerRow: layout.bytesPerRow)
+                }
             }
         }
         return texture

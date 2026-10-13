@@ -430,6 +430,7 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
     public let height: Int
+    public let depth: Int
     public let isCompressed: Bool
     /// View into the container bytes (mmap-backed when the provider maps the
     /// file); the lazy streaming source inflates directly out of the mapping.
@@ -440,6 +441,7 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
         index: Int,
         width: Int,
         height: Int,
+        depth: Int = 1,
         isCompressed: Bool,
         compressedBytes: WPEMappedByteSpan,
         decompressedByteCount: Int
@@ -447,6 +449,7 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
         self.index = index
         self.width = width
         self.height = height
+        self.depth = depth
         self.isCompressed = isCompressed
         self.compressedBytes = compressedBytes
         self.decompressedByteCount = decompressedByteCount
@@ -456,6 +459,7 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
         index: Int,
         width: Int,
         height: Int,
+        depth: Int = 1,
         isCompressed: Bool,
         compressedBytes: Data,
         decompressedByteCount: Int
@@ -464,6 +468,7 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
             index: index,
             width: width,
             height: height,
+            depth: depth,
             isCompressed: isCompressed,
             compressedBytes: WPEMappedByteSpan(data: compressedBytes),
             decompressedByteCount: decompressedByteCount
@@ -580,12 +585,14 @@ public struct WPETexTextureMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
     public let height: Int
+    public let depth: Int
     public let bytes: Data
 
-    public init(index: Int, width: Int, height: Int, bytes: Data) {
+    public init(index: Int, width: Int, height: Int, depth: Int = 1, bytes: Data) {
         self.index = index
         self.width = width
         self.height = height
+        self.depth = depth
         self.bytes = bytes
     }
 }

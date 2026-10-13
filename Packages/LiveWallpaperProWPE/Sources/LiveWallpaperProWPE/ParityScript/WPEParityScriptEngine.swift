@@ -68,7 +68,9 @@ public final class WPEParityScriptEngine {
         /// Extend/replace registered descriptors by (owner, name), including computed flag-2 fields.
         public var propertyOverrides: [WPEParityScriptProperty]
         public var storage: Storage?
-        /// A successful transaction must create the actual resources and append their live state before returning.
+        /// Prepares value-state only. The engine validates the returned config/identity before committing the
+        /// candidate; this callback must not publish external resource side effects. Product resource preparation
+        /// and retirement are not connected by this optional hook.
         public var createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)?
         /// Called at the deferred deletion phase, after that layer's destroy events.
         public var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
@@ -912,11 +914,21 @@ public final class WPEParityScriptEngine {
             return -1
         }
         flushWrites(to: &state.pointee)
-        guard let created = create(json, &state.pointee),
+        var candidate = state.pointee
+        guard let created = create(json, &candidate),
               let object = try? JSONSerialization.jsonObject(with: Data(created.configJSON.utf8)),
-              let config = WPESceneJSONValue(jsonValue: object),
-              state.pointee.index(of: created.id) != nil,
-              !layers.contains(where: { $0.id == created.id }) else { return -1 }
+              let config = WPESceneJSONValue(jsonValue: object), case .object = config,
+              !created.id.isEmpty, Self.preparedIdentity(config) == created.id,
+              state.pointee.index(of: created.id) == nil,
+              candidate.index(of: created.id) != nil,
+              candidate.ids.count == state.pointee.ids.count + 1,
+              state.pointee.ids.allSatisfy({ candidate.index(of: $0) != nil }),
+              !layers.contains(where: { $0.id == created.id }),
+              hasCreatedMaterialConsumers(id: created.id, config: config, state: candidate) else {
+            configuration.log(1, "createLayer candidate is invalid or unsupported; no state was committed")
+            return -1
+        }
+        state.pointee = candidate
         let kind: WPEParityScriptLayerKind = config["text"] != nil ? .text
             : config["particle"] != nil ? .particle : config["sound"] != nil ? .sound : .image
         let start = initialValues.count
@@ -933,6 +945,47 @@ public final class WPEParityScriptEngine {
         host.invokeMethod("init", withArguments: [firstBinding])
         createdLayers.append(created)
         return Double(index)
+    }
+
+    /// Authored constant writes may only register a real prepared pass, just like loaded layers. This validates
+    /// candidate value-state; it does not infer resources, native handles, or descriptors from authored JSON.
+    private func hasCreatedMaterialConsumers(id: String, config: WPESceneJSONValue, state: WPEParitySceneState) -> Bool {
+        func hasConstants(_ value: WPESceneJSONValue?) -> Bool {
+            if case let .object(entries)? = value {
+                return !entries.isEmpty
+            }
+            return false
+        }
+        if hasConstants(config["instance"]?["constantshadervalues"]),
+           state.passIndex(of: .init(objectID: id)) == nil {
+            return false
+        }
+        for effect in WPEParityProgramScene.array(config["effects"]) {
+            guard let effectID = Self.preparedIdentity(effect),
+                  state.effects.contains(.init(objectID: id, effectID: effectID)) else { return false }
+            let records = configuration.resolvedEffectRecords[.init(objectID: id, effectID: effectID)]
+            for (pass, value) in WPEParityProgramScene.array(effect["passes"]).enumerated() {
+                guard hasConstants(value["constantshadervalues"]) else { continue }
+                let key = WPEParityMaterialPassKey(objectID: id, effectID: effectID, pass: pass)
+                guard state.passIndex(of: key) != nil else { return false }
+                if let records, !records.contains(where: { $0.materialPass == key }) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    /// A host-prepared config carries its assigned ID. Unlike authored name lookup, this never falls back to a
+    /// name or truncates an out-of-range/fractional number while validating a candidate that may be rejected.
+    private static func preparedIdentity(_ config: WPESceneJSONValue) -> String? {
+        if case let .string(id)? = config["id"], !id.isEmpty {
+            return id
+        }
+        if case let .number(number)? = config["id"], let id = Int(exactly: number) {
+            return String(id)
+        }
+        return nil
     }
 
     // MARK: Bindings

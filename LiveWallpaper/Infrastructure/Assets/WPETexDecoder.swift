@@ -136,29 +136,44 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// `scope` narrows which mip levels get LZ4-inflated to the ones the upload will read; default is the whole chain.
+    /// `scope` narrows 2D mip inflation. `allowRawVolume` opts a 3D-capable consumer into raw, non-BC,
+    /// static volume payloads; it never enables encoded volume unfolding and volumes retain every authored mip.
     func extractTexturePayload(
         data: Data,
-        scope: WPETexMipInflateScope = .fullChain
+        scope: WPETexMipInflateScope = .fullChain,
+        allowRawVolume: Bool = false
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
-        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope)
+        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope, allowRawVolume: allowRawVolume)
     }
 
     func extractTexturePayload(
         span: WPEMappedByteSpan,
-        scope: WPETexMipInflateScope = .fullChain
+        scope: WPETexMipInflateScope = .fullChain,
+        allowRawVolume: Bool = false
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
         do {
             let parsed = try parse(span: span)
 
-            guard !parsed.info.isVolume else {
-                throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+            if parsed.info.isVolume {
+                // Existing 2D consumers keep rejecting volumes. Only the native parity uploader opts in.
+                guard allowRawVolume else {
+                    throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+                }
+                guard let format = parsed.info.format, format.bytesPerPixel != nil else {
+                    throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
+                }
+                guard (parsed.bitmap.sourceImageFormatCode ?? -1) == -1,
+                      !parsed.bitmap.isVideoPayload, parsed.info.flags & 0x24 == 0,
+                      !parsed.hasAnimationFrames, parsed.bitmap.conditionalVariants.isEmpty else {
+                    throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+                }
+                try WPETexMipValidation.rawVolume(parsed.bitmap.mipmaps, info: parsed.info, format: format)
             }
             if parsed.info.format?.requiresRawPayload == true,
                (parsed.bitmap.sourceImageFormatCode ?? -1) != -1 {
                 throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
             }
-            if let videoPayload = makeVideoPayload(from: parsed) {
+            if !parsed.info.isVolume, let videoPayload = makeVideoPayload(from: parsed) {
                 return .success(WPETexTexturePayload(
                     info: parsed.info,
                     mipmaps: [],
@@ -201,7 +216,7 @@ struct WPETexDecoder: Sendable {
         info: WPETexInfo,
         scope: WPETexMipInflateScope = .fullChain
     ) throws -> [WPETexTextureMipmap] {
-        let selected = scope.selectedLevels(
+        let selected = info.isVolume ? mipmaps.indices : scope.selectedLevels(
             levelSizes: mipmaps.map { (width: $0.width, height: $0.height) },
             noInterpolation: info.noInterpolation
         )
@@ -210,6 +225,7 @@ struct WPETexDecoder: Sendable {
                 index: mipmap.index,
                 width: mipmap.width,
                 height: mipmap.height,
+                depth: mipmap.depth,
                 bytes: selected.contains(position)
                     ? normalizedBytes(
                         for: mipmap,
@@ -330,6 +346,7 @@ struct WPETexDecoder: Sendable {
                     index: mipmap.index,
                     width: mipmap.width,
                     height: mipmap.height,
+                    depth: mipmap.depth,
                     isCompressed: mipmap.isCompressed,
                     compressedBytes: mipmap.payload,
                     decompressedByteCount: mipmap.decompressedByteCount
@@ -680,6 +697,11 @@ struct WPETexDecoder: Sendable {
         case 4:
             sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
             let conditionalImageCount = try Int(reader.readInt32(blockName: "TEXB.conditionalImageCount"))
+            // Volume selection is deliberately outside this raw-only path, including tables the legacy
+            // lookahead cannot recognize. Do not accidentally decode their first words as a base mip.
+            if info.isVolume, conditionalImageCount != 0 {
+                throw WPETexDecodeError.unsupportedTextureDimension(depth: info.depth)
+            }
             // The third v4 field counts conditional image variants, not MP4
             // payloads — video .tex files carry 0 here and are caught by
             // payload sniffing instead. Only commit to the conditional-table
@@ -762,7 +784,7 @@ struct WPETexDecoder: Sendable {
         // Encoded image/video payloads have their own decoder geometry contract.
         if !bitmap.usesEncodedImagePayload, !bitmap.isVideoPayload {
             for frame in frames {
-                try WPETexMipValidation.geometry(frame.map { ($0.index, $0.width, $0.height) })
+                try WPETexMipValidation.geometry(frame.map { ($0.index, $0.width, $0.height, $0.depth) })
             }
         }
         return bitmap
@@ -1064,11 +1086,10 @@ struct WPETexDecoder: Sendable {
                 : min(descriptor.fallbackIndex, max(parsed.bitmap.frames.count - 1, 0))
             let mipmaps = try atlas(for: sourceIndex)
             guard let mip = mipmaps.first else { throw WPETexDecodeError.missingBitmapBlock }
-            let duration: TimeInterval
-            if let frameInfo = descriptor.frameInfo, frameInfo.frameTime > 0 {
-                duration = frameInfo.frameTime
+            let duration: TimeInterval = if let frameInfo = descriptor.frameInfo, frameInfo.frameTime > 0 {
+                frameInfo.frameTime
             } else {
-                duration = defaultDuration
+                defaultDuration
             }
             let subRect = descriptor.frameInfo?.subRect(
                 textureWidth: mip.width,
@@ -1212,7 +1233,8 @@ struct WPETexDecoder: Sendable {
         }
         let bytes = try inflateIfNeeded(
             payload: mipmap.payload,
-            expectedByteCount: format.expectedByteCount(width: mipmap.width, height: mipmap.height),
+            expectedByteCount: WPETexMipValidation.layout(format: format, width: mipmap.width,
+                                                          height: mipmap.height, depth: mipmap.depth).byteCount,
             decompressedByteCount: mipmap.decompressedByteCount,
             isCompressed: mipmap.isCompressed,
             mipmap: mipmap.index
