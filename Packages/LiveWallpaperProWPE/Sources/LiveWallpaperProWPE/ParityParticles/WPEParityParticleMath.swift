@@ -134,21 +134,30 @@ enum WPEParityParticleMath {
 }
 
 extension WPEParityParticleEmitterConfig {
-    /// Offset from the emitter origin and the launch velocity of one birth.
-    func sample(rng: WPEParityMT19937) -> (offset: SIMD3<Float>, velocity: SIMD3<Float>) {
-        let offset: SIMD3<Float>
-        let direction: SIMD3<Float>
-        switch shape {
-        case .sphere:
-            offset = sphereOffset(rng: rng)
-            // |offset|² < 1e-4 launches along (2U − 1)³ ⊙ directions (D/1401b9100.c:62-155).
-            direction = simd_length_squared(offset) < 1e-4 ? fallbackDirection(rng: rng) : simd_normalize(offset)
-        case .box:
-            offset = boxOffset(rng: rng)
-            direction = simd_length(offset) < 1e-4 ? fallbackDirection(rng: rng) : simd_normalize(offset)
+    /// One native birth: shape, optional CP basis, position/fallback, then normalized direction and speed.
+    /// A nil basis is the local CP0 branch; even a rotated CP0 contributes only its translation.
+    func sample(rng: WPEParityMT19937, at center: SIMD3<Float> = .zero, basis: simd_float3x3? = nil)
+        -> (position: SIMD3<Float>, velocity: SIMD3<Float>) {
+        let localOffset: SIMD3<Float> = switch shape {
+        case .sphere: sphereOffset(rng: rng)
+        case .box: boxOffset(rng: rng)
         }
-        let speed = speedMin + (speedMax - speedMin) * rng.unit()
-        return (offset, direction * speed)
+        let offset = basis.map { $0 * localOffset } ?? localOffset
+        let position = center + offset
+        // Sphere tests its transformed offset. Box tests what survived the Float position write/subtract
+        // (2378a0:611–655, 989–1026); a large center can therefore consume three extra fallback words.
+        let candidate = shape == .box ? position - center : offset
+        let needsFallback = shape == .box ? simd_length(candidate) < 1e-4 : simd_length_squared(candidate) < 1e-4
+        let direction: SIMD3<Float>
+        if needsFallback {
+            let fallback = fallbackDirection(rng: rng)
+            direction = WPEParityParticleMath.normalizedOrZero(basis.map { $0 * fallback } ?? fallback)
+        } else {
+            direction = simd_normalize(candidate)
+        }
+        // scene+0x28/+0x2c is [1e-5, 1); birthU uses the separate [0, 1) distribution.
+        let speed = speedMin + (speedMax - speedMin) * rng.unitAboveZero()
+        return (position, direction * speed)
     }
 
     /// S 590288-590540; S/C taken as sin/cos.
@@ -169,11 +178,12 @@ extension WPEParityParticleEmitterConfig {
         return unit * (distanceMin.x + (distanceMax.x - distanceMin.x) * length)
     }
 
-    /// s_i = (2U − 1)·dir_i, offset_i = sign(s_i)·(dmin_i + |s_i|·Δd_i) (D/1402378a0.c:811-1061).
+    /// s_i = (2U − 1)·dir_i, offset_i = sign(s_i)·(dmin_i + |s_i|·Δd_i); native draws Z, Y, X
+    /// (1402385a0/5d8/610), even though the output is stored X, Y, Z.
     private func boxOffset(rng: WPEParityMT19937) -> SIMD3<Float> {
         var offset = SIMD3<Float>.zero
-        for axis in 0 ..< 3 {
-            let sample = (2 * rng.unit() - 1) * directions[axis]
+        for axis in (0 ..< 3).reversed() {
+            let sample = (2 * rng.unitAboveZero() - 1) * directions[axis]
             let magnitude = distanceMin[axis] + abs(sample) * (distanceMax[axis] - distanceMin[axis])
             offset[axis] = sample > 0 ? magnitude : (sample < 0 ? -magnitude : 0)
         }
@@ -181,9 +191,11 @@ extension WPEParityParticleEmitterConfig {
     }
 
     private func fallbackDirection(rng: WPEParityMT19937) -> SIMD3<Float> {
-        let x = 2 * rng.unit() - 1
-        let y = 2 * rng.unit() - 1
-        let z = 2 * rng.unit() - 1
-        return WPEParityParticleMath.normalizedOrZero(SIMD3(x, y, z) * directions)
+        let first = 2 * rng.unitAboveZero() - 1
+        let second = 2 * rng.unitAboveZero() - 1
+        let third = 2 * rng.unitAboveZero() - 1
+        // Sphere packs first/second/third into XYZ (238077–082); box assigns ZYX (238a43–afa).
+        let vector = shape == .box ? SIMD3(third, second, first) : SIMD3(first, second, third)
+        return vector * directions
     }
 }

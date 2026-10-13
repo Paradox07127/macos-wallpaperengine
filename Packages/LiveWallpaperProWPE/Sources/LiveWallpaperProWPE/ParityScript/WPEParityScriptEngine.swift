@@ -1170,6 +1170,9 @@ public final class WPEParityScriptEngine {
         case (.text, "spacing"): return .vector(.zero)
         case (.text, "maxwidth"): return .vector(SIMD4(500, 0, 0, 0))
         case (.text, "maxrows"): return .integer(1)
+        // 140256ae0: background scale=1; block-align bit0x20 is absent from initial flags=1.
+        case (.text, "backgroundbrightness"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.text, "blockalign"): return .vector(.zero)
         case (.text, "horizontalalign"): return .string("center")
         case (.text, "verticalalign"): return .string("middle")
         case (.text, "limitwidth"), (.text, "limitrows"), (.text, "limituseellipsis"): return .vector(.zero)

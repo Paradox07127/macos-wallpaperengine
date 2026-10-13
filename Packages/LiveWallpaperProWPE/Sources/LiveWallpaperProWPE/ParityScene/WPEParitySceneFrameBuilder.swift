@@ -436,7 +436,7 @@ private struct WPEParitySceneEmitter {
         let depth = text.depthMaterials
         var passes: [(WPEPassIdentity, String, WPEParitySceneMaterialSource, WPEParitySceneDraw.Geometry)] = []
         if text.object.opaqueBackground {
-            passes.append((WPEPassIdentity("\(object.id)/background"), "flat", .textBackground(depth: depth),
+            passes.append((text.backgroundPass, "flat", .textBackground(depth: depth),
                            .textBackground))
         }
         for atlas in mesh.drawnLists {
@@ -455,7 +455,7 @@ private struct WPEParitySceneEmitter {
     private mutating func fillTextComposite(_ object: WPEParitySceneObject, _ text: WPEParitySceneText,
                                             _ composite: WPEResourceID) {
         let opaque = text.object.opaqueBackground
-        let fill = WPEPassIdentity("\(object.id)/\(opaque ? "background" : "clearalpha")")
+        let fill = opaque ? text.backgroundPass : WPEPassIdentity("\(object.id)/clearalpha")
         bind(fill, composite, depth: nil)
         if opaque {
             let color = SIMD4<Double>(text.background)

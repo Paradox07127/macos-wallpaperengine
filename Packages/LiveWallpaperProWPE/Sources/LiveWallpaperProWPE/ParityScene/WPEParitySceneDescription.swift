@@ -126,6 +126,11 @@ public struct WPEParitySceneText: Hashable, Sendable {
     public var padding: SIMD2<Float>
     /// Background colour × (HDR ? backgroundbrightness : 1) and the layer alpha (140258050.c:106-116).
     public var background: SIMD4<Float>
+    /// The same background identity names the direct quad and the opaque composite clear.
+    public var backgroundPass: WPEPassIdentity {
+        WPEPassIdentity("\(object.id)/background")
+    }
+
     /// Scene orthographic bit (C+0x118 & 0x400): only then does the anchor move the layer.
     public var orthographic: Bool
     /// Perspective scene with depthtest enabled: the `_depth` font materials (140258050.c:119-128).

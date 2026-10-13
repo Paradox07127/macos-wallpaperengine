@@ -544,7 +544,7 @@ struct WPEParityFrameDrawPlanner {
                 }
             }
             guard let source = textures[0][name] else { continue }
-            samplers[name + "SamplerState"] = sampler(source)
+            samplers[name + "SamplerState"] = try sampler(source)
             if slot < uniformTextures.count {
                 uniformTextures[Int(slot)] = uniformTexture(source)
                 sprites[Int(slot)] = self.sprites(source)
@@ -874,7 +874,7 @@ struct WPEParityFrameDrawPlanner {
     }
 
     /// Composites use the sampler WPE creates with them; images follow their TEXI flags.
-    private func sampler(_ source: WPEParityFrameDrawPlan.TextureSource) -> WPEParitySamplerState {
+    private func sampler(_ source: WPEParityFrameDrawPlan.TextureSource) throws(WPEParityFrameSkip) -> WPEParitySamplerState {
         let info: WPETexInfo?
         switch source {
         case let .resource(id):
@@ -887,10 +887,10 @@ struct WPEParityFrameDrawPlanner {
             info = assetImages.values.first { $0.texture === texture }?.info
         }
         guard let info else { return .wpe(filter: .linear, address: .clamp) }
-        if let point = WPEParitySamplerState.wpePointTexture(flags: info.flags) {
-            return point
+        guard let sampler = WPEParitySamplerState.wpeFileTexture(flags: info.flags) else {
+            throw .texture("unsupported file texture sampler flags 0x\(String(info.flags, radix: 16))")
         }
-        return .wpe(filter: info.noInterpolation ? .point : .linear, address: info.clampUVs ? .clamp : .wrap)
+        return sampler
     }
 
     private func uniformTexture(_ source: WPEParityFrameDrawPlan.TextureSource) -> WPEParityUniformTexture? {

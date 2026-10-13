@@ -281,6 +281,34 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(42, 32))[0], 0)
     }
 
+    func testOrdinaryControlPointTranslationsReachEmitterBirthsAndProductionPixels() async throws {
+        var particle = Self.burstParticle(renderer: [["name": "sprite"]])
+        particle["maxcount"] = 2
+        particle["controlpoint"] = [["id": 0, "offset": "-8 0 0"], ["id": 1, "offset": "8 0 0"]]
+        particle["emitter"] = [0, 1].map { index in
+            ["name": "sphererandom", "controlpoint": index, "origin": "2 0 0", "rate": 0,
+             "instantaneous": 1, "distancemax": 0] as [String: Any]
+        }
+        particle["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                   ["name": "sizerandom", "min": 3, "max": 3]]
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": particle])
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.0625) else { return XCTFail("skipped") }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+        XCTAssertEqual(renderer.droppedParticleBatches, 0)
+        let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+        XCTAssertEqual(draws.count, 1)
+        let draw = try XCTUnwrap(draws.first?.draw)
+        let birthX = draw.vertexBuffer.contents().load(fromByteOffset: draw.vertexBufferOffset, as: Float.self)
+        XCTAssertEqual(birthX, -6, accuracy: 0.0001, "CP0 -8 plus emitter origin2 remains a local birth")
+        // Owner32 + CP(-8/+8) + emitter2 gives26/42; ignoring CP would collapse both sprites to34.
+        for x in [26, 42] {
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(x, 32))[0], 255)
+        }
+        XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(34, 32))[0], 0)
+    }
+
     func testLocalFollowMovesItsStaticLeafThenFreezesItWhenTheParentSlotIsReused() async throws {
         var parent = Self.burstParticle(renderer: [])
         parent["emitter"] = [

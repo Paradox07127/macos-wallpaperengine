@@ -41,11 +41,12 @@ public extension WPEParitySamplerState {
                     maxAnisotropy: filter == .anisotropic ? 8 : 1, comparisonFunc: .always)
     }
 
-    /// Native 140099980:63–94: point, noncomparison TEX sampling. Border overrides clamp on all axes.
-    /// The native producer consumes TEXI flags after decoding, so encoded 2D and raw textures use this same leaf.
-    /// Other filter/comparison branches return nil rather than guessing their additional producer inputs.
-    static func wpePointTexture(flags: UInt32) -> Self? {
-        guard flags & 1 != 0, flags & 0x0800_0000 == 0 else { return nil }
+    /// Native file creation (14009aa20 → 1400ec220) calls 140099980 with its third argument zero.
+    /// Point TEXI flags select point sampling; other file textures use anisotropic sampling with max 8.
+    /// Raw and encoded TEX payloads share this producer. Comparison sampling requires a separate consumer.
+    static func wpeFileTexture(flags: UInt32) -> Self? {
+        guard flags & 0x0800_0000 == 0 else { return nil }
+        let isPoint = flags & 1 != 0
         let address: D3D11TextureAddressMode = if flags & 0x0400_0000 != 0 {
             .border
         } else if flags & 2 != 0 {
@@ -53,7 +54,8 @@ public extension WPEParitySamplerState {
         } else {
             .wrap
         }
-        return make(filter: .minMagMipPoint, address: address, maxAnisotropy: 1, comparisonFunc: .always)
+        return make(filter: isPoint ? .minMagMipPoint : .anisotropic, address: address,
+                    maxAnisotropy: isPoint ? 1 : 8, comparisonFunc: .always)
     }
 
     /// Shadow-atlas comparison sampler. 未实测。

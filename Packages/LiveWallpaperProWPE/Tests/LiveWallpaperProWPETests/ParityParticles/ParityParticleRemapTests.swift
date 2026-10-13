@@ -91,7 +91,9 @@ final class ParityParticleRemapTests: XCTestCase {
          "outputrangemax": 0.6, "transformfunction": "simplexnoise", "transforminputscale": 10}
         """)
         let noise = Math.simplex2(seed: Int32(bitPattern: particles.birthU[0].bitPattern), 2.5, 0)
-        XCTAssertEqual(particles.alpha[0], 0.4 * (noise * 0.5 + 0.5) + 0.2)
+        // Native stores Float(max - min) via SUBPS (1401cedbb → 14005f0ac), then MULPS/ADDPS.
+        let minimum: Float = 0.2, maximum: Float = 0.6
+        XCTAssertEqual(particles.alpha[0], (maximum - minimum) * (noise * 0.5 + 0.5) + minimum)
     }
 
     /// fbm: Σ noise·amp with amp from 1/(1 + 0.5 + 0.25), seed + 1 per octave (D/1400fbc70.c).

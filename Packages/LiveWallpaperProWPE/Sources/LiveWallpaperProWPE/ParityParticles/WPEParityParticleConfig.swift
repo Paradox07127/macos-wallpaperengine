@@ -6,6 +6,8 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
 
     var shape: Shape
     var origin: SIMD3<Float>
+    /// Compiled sphere +0xf0 / box +0xa8: unsigned min(authored index, 7), default 0.
+    var controlPoint: Int
     var directions: SIMD3<Float>
     var sign: SIMD3<Float>
     /// Sphere reads `.x` only.
@@ -253,9 +255,13 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             return
         }
         let flags = Int(JSON.number(entry["flags"]) ?? 0)
+        // 1401c6008 / 1401c6910 use cmovb: negative authored integers become point 7, not point 0.
+        // Keep Entry's finite conversion protection; do not change other components' controlPoint parser.
+        let controlPoint = min(UInt32(truncatingIfNeeded: WPEParityParticleEntry(entry).integer("controlpoint", 0)), 7)
         emitters.append(WPEParityParticleEmitterConfig(
             shape: shape,
             origin: JSON.vector(entry["origin"]) ?? .zero,
+            controlPoint: Int(controlPoint),
             directions: JSON.vector(entry["directions"]) ?? defaultDirections,
             sign: JSON.vector(entry["sign"]) ?? .zero,
             distanceMin: JSON.vector(entry["distancemin"]) ?? .zero,

@@ -189,21 +189,23 @@ final class ParityParticleSimulationTests: XCTestCase {
         particles.initialColor[0] = SIMD3(1, 0, 0)
         particles.velocity[0] = SIMD3(10, 0, 0)
 
-        // Independent finite draw schedule: each box birth takes u, three offset values, speed and lifetime.
+        // Native finite draw schedule: shape Z/Y/X, speed, birthU, lifetime (238bda → 23b372).
         // Frame one parent: 6 words; death probability: 1; child prewarm birth: 6; reborn parent: 6.
         let expected = WPEParityMT19937(seed: 7)
         for _ in 0 ..< 6 {
             _ = expected.next()
         }
         _ = expected.unit()
-        let childU = expected.unit()
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< 4 {
             _ = expected.next()
         }
-        let parentU = expected.unit()
-        for _ in 0 ..< 5 {
+        let childU = expected.unit() // Global word12, the fifth word of the child birth.
+        _ = expected.next() // Child lifetime.
+        for _ in 0 ..< 4 {
             _ = expected.next()
         }
+        let parentU = expected.unit() // Global word18.
+        _ = expected.next() // Reborn parent lifetime.
         particles.advance(dt: 0.1)
         let spawned = try XCTUnwrap(particles.eventChildren[0].first)
         XCTAssertEqual(spawned.prewarmStepCount, 1)
@@ -279,10 +281,11 @@ final class ParityParticleSimulationTests: XCTestCase {
         var childU: [Float] = []
         for _ in 0 ..< 3 {
             _ = expected.unit()
-            childU.append(expected.unit())
-            for _ in 0 ..< 5 {
+            for _ in 0 ..< 4 {
                 _ = expected.next()
             }
+            childU.append(expected.unit()) // Global words18/25/32: shape3 + speed precede birthU.
+            _ = expected.next() // Lifetime.
         }
         XCTAssertEqual(particles.eventChildren[0].map { $0.birthU[0] }, Array(childU.prefix(2)))
         XCTAssertEqual(particles.eventChildren[1][0].birthU[0], childU[2])
@@ -307,10 +310,11 @@ final class ParityParticleSimulationTests: XCTestCase {
         var childU: [Float] = []
         for _ in 0 ..< 10 {
             _ = expected.unit()
-            childU.append(expected.unit())
-            for _ in 0 ..< 5 {
+            for _ in 0 ..< 4 {
                 _ = expected.next()
             }
+            childU.append(expected.unit()) // Global word90 + 7*child, not the first birth word.
+            _ = expected.next() // Lifetime.
         }
         XCTAssertEqual(particles.eventChildren[2].map { $0.birthU[0] }, childU)
         XCTAssertEqual(particles.rng.next(), expected.next())
@@ -420,15 +424,17 @@ final class ParityParticleSimulationTests: XCTestCase {
                                   childLifetime: 0.05, prewarm: false)
         let expected = WPEParityMT19937(seed: 7)
         for frame in 1 ... 5 {
-            let parentU = expected.unit()
-            for _ in 0 ..< 5 {
+            for _ in 0 ..< 4 {
                 _ = expected.next()
             }
+            let parentU = expected.unit() // Per-frame word5.
+            _ = expected.next() // Parent lifetime.
             _ = expected.unit() // Spawn probability.
-            let childU = expected.unit()
-            for _ in 0 ..< 5 {
+            for _ in 0 ..< 4 {
                 _ = expected.next()
             }
+            let childU = expected.unit() // Per-frame word12.
+            _ = expected.next() // Child lifetime.
             particles.advance(dt: 0.1)
             XCTAssertEqual(particles.birthU[0], parentU)
             XCTAssertEqual(particles.eventChildren[0].count, 1)
@@ -651,7 +657,7 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(old.children[0].position[0].x, 2)
         XCTAssertEqual(old.children[0].initialSize[0], 2, "ordinary CP distance uses local SoA, not follow placement")
         XCTAssertEqual(parent.followReferences, [0: 1])
-        // Zero-offset boxes take u + xyz + fallback xyz + speed + lifetime = nine words; parent velocity adds 3.
+        // Zero-offset boxes take shape ZYX + fallback ZYX + speed + birthU + lifetime = nine words; parent velocity adds 3.
         // Frames: parent12 + probability1 + follow9 + leaf9; follow9 + leaf9; repeat both = 98.
         let expected = WPEParityMT19937(seed: 7)
         for _ in 0 ..< 98 {
@@ -708,16 +714,18 @@ final class ParityParticleSimulationTests: XCTestCase {
         var firstGroupU: [Float] = []
         for _ in 0 ..< 2 {
             _ = expected.unit()
-            firstGroupU.append(expected.unit())
-            for _ in 0 ..< 5 {
+            for _ in 0 ..< 4 {
                 _ = expected.next()
             }
+            firstGroupU.append(expected.unit()) // Global words24/31.
+            _ = expected.next() // Lifetime.
         }
         _ = expected.unit()
-        let spawnU = expected.unit()
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< 4 {
             _ = expected.next()
         }
+        let spawnU = expected.unit() // Global word38.
+        _ = expected.next() // Lifetime.
         for _ in 0 ..< 4 {
             _ = expected.next()
         } // Three failed C probabilities, one empty instance probability.
@@ -782,10 +790,11 @@ final class ParityParticleSimulationTests: XCTestCase {
             _ = expected.next()
         } // Parent12, follow probabilities2, follow normal births12.
         _ = expected.unit()
-        let deathU = expected.unit()
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< 4 {
             _ = expected.next()
         }
+        let deathU = expected.unit() // Global word32.
+        _ = expected.next() // Lifetime.
         parent.advance(dt: 0.1)
         XCTAssertEqual(parent.eventChildren.map(\.count), [2, 1])
         XCTAssertEqual(parent.eventChildren[0].map(\.parentSlot), [-1, -1])

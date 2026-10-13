@@ -385,6 +385,311 @@ final class WPEParityTextDrawTests: XCTestCase {
         }
     }
 
+    /// Fixed NotoSans32 metrics: Hello + space + big has ink width542; the sole blank gains58 at width600.
+    /// The World suffix is the final, unwrapped line and must keep its geometry and actual pixels.
+    func testScriptBlockAlignJustifiesOnlyTheWrappedRowAndKeepsItsAtlas() async throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+        var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+        objects[0].merge(["text": "Hello big World", "pointsize": 32, "origin": "100 400 0", "padding": "0 0",
+                          "limitwidth": true, "maxwidth": 600, "horizontalalign": "left", "verticalalign": "top",
+                          "alpha": ["value": 1, "script": """
+                          let frame = 0;
+                          export function update(value) {
+                              frame += 1;
+                              thisLayer.blockalign = frame >= 2;
+                              thisLayer.backgroundbrightness = frame >= 2 ? 2.25 : 1;
+                              return value;
+                          }
+                          """]] as [String: Any]) { _, next in next }
+        json["objects"] = objects
+        let fixture = try await makeSyntheticRenderer(effect: false, scene: JSONSerialization.data(withJSONObject: json),
+                                                      scripted: true)
+        let renderer = fixture.renderer
+        XCTAssertEqual(renderer.skipped, [:])
+        try await encode(renderer, label: "unjustified wrapped row")
+        let before = try XCTUnwrap(renderer.texts[Self.textID])
+        let beforeMesh = try XCTUnwrap(before.layout.mesh)
+        XCTAssertEqual(beforeMesh.lineCount, 2)
+        XCTAssertEqual(beforeMesh.mono.glyphKeys.count, 14)
+        guard beforeMesh.mono.vertices.count == 56 else { return XCTFail("unexpected fixed glyph geometry") }
+        XCTAssertEqual(beforeMesh.mono.vertices[6 * 4].x, 366)
+        XCTAssertEqual(beforeMesh.maxX, 542)
+        let beforeDraw = try textDraw(renderer, geometry: .textGlyphs(.mono))
+        let atlasTexture = try XCTUnwrap(beforeDraw.textures["g_Texture0"])
+        let atlasGeneration = try XCTUnwrap(renderer.textAtlases[before.atlasKey]).mono.contentGeneration
+        let initialPipelines = renderer.pipelineCreations
+        let initialLayout = renderer.state.generation(.textLayout)
+        let beforePixels = try readBack(renderer.backbuffer, fixture)
+
+        try await encode(renderer, label: "justified wrapped row")
+        let after = try XCTUnwrap(renderer.texts[Self.textID])
+        let mesh = try XCTUnwrap(after.layout.mesh)
+        XCTAssertTrue(after.object.blockAlign)
+        XCTAssertEqual(after.object.backgroundBrightness, 2.25, "layout applying must read the live brightness seed")
+        XCTAssertEqual(mesh.mono.glyphKeys, beforeMesh.mono.glyphKeys)
+        guard mesh.mono.vertices.count == 56 else { return XCTFail("unexpected justified glyph geometry") }
+        XCTAssertEqual(mesh.mono.vertices[6 * 4].x, 424, "b moves by the independent58 pixel blank expansion")
+        XCTAssertEqual(mesh.mono.vertices[8 * 4 + 1].x, 600, "wrapped row reaches the authored right edge")
+        XCTAssertEqual(mesh.maxX, 600)
+        XCTAssertEqual(Array(mesh.mono.vertices[9 * 4 ..< 14 * 4]),
+                       Array(beforeMesh.mono.vertices[9 * 4 ..< 14 * 4]), "unwrapped World row cannot stretch")
+        let afterDraw = try textDraw(renderer, geometry: .textGlyphs(.mono))
+        XCTAssertFalse(afterDraw.vertexBuffer === beforeDraw.vertexBuffer, "changed positions need current geometry")
+        XCTAssertTrue(try XCTUnwrap(afterDraw.textures["g_Texture0"]) === atlasTexture)
+        XCTAssertTrue(afterDraw.pipeline.state === beforeDraw.pipeline.state)
+        XCTAssertEqual(after.atlasKey, before.atlasKey)
+        XCTAssertEqual(try XCTUnwrap(renderer.textAtlases[after.atlasKey]).mono.contentGeneration, atlasGeneration)
+        XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
+        XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout + 1)
+        let afterPixels = try readBack(renderer.backbuffer, fixture)
+        // Origin(100,400), top anchor ascender143: first row screen y153...287, final row y335...438.
+        // The old ink ends at x642. New g ink occupies x636...700; x>=701 must stay black.
+        var (oldBeyond, newBeyond, leaked) = (0, 0, 0)
+        for y in 150 ..< 290 {
+            for x in 650 ..< 700 {
+                let at = (y * Self.width + x) * 4
+                if beforePixels[at] > 0 {
+                    oldBeyond += 1
+                }
+                if afterPixels[at] > 0 {
+                    newBeyond += 1
+                }
+            }
+            for x in 701 ..< Self.width where afterPixels[(y * Self.width + x) * 4] > 0 {
+                leaked += 1
+            }
+        }
+        XCTAssertEqual(oldBeyond, 0)
+        XCTAssertGreaterThan(newBeyond, 0, "the shifted word must reach the actual GPU frame")
+        XCTAssertEqual(leaked, 0, "no ink may cross the fixed600-pixel right edge")
+        let lastRowStart = 330 * Self.width * 4
+        XCTAssertEqual(Array(afterPixels[lastRowStart...]), Array(beforePixels[lastRowStart...]),
+                       "the final unwrapped row retains its actual pixels")
+
+        try await encode(renderer, label: "same block-align value")
+        let sameDraw = try textDraw(renderer, geometry: .textGlyphs(.mono))
+        XCTAssertTrue(sameDraw.vertexBuffer === afterDraw.vertexBuffer)
+        XCTAssertTrue(try XCTUnwrap(sameDraw.indexBuffer) === XCTUnwrap(afterDraw.indexBuffer))
+        XCTAssertTrue(try XCTUnwrap(sameDraw.textures["g_Texture0"]) === atlasTexture)
+        XCTAssertTrue(sameDraw.pipeline.state === beforeDraw.pipeline.state)
+        XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout + 1)
+        XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
+        let script = try XCTUnwrap(renderer.script)
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// Native background color is scaled only in HDR, then flat/translucent blends RGB by the existing alpha.
+    /// Read combine_srgb's real rgba16Float input so gamma conversion cannot hide incorrect linear values.
+    func testScriptBackgroundBrightnessConsumesLiveHDRColorWithoutRebuildingText() async throws {
+        for hdr in [false, true] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+            var general = try XCTUnwrap(json["general"] as? [String: Any])
+            general["bloom"] = hdr
+            general["hdr"] = hdr
+            json["general"] = general
+            var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+            objects[0].merge(["pointsize": 32, "opaquebackground": true, "backgroundcolor": "0.125 0.25 0.375",
+                              "backgroundbrightness": ["value": 1.5, "script": """
+                              if (thisLayer.backgroundbrightness !== 1.5) throw Error('authored background seed');
+                              let frame = 0;
+                              export function update(value) {
+                                  frame += 1;
+                                  return frame === 1 ? 1.5 : (frame <= 3 ? 3 : 6);
+                              }
+                              """], "alpha": 0.5] as [String: Any]) { _, next in next }
+            json["objects"] = objects
+            let fixture = try await makeSyntheticRenderer(effect: false, scene: JSONSerialization.data(withJSONObject: json),
+                                                          settings: .init(bloom: false, hdrPostProcessing: hdr), scripted: true)
+            let renderer = fixture.renderer
+            XCTAssertEqual(fixture.plan.scene.engineFlags.hdr, hdr, "HDR positive must exercise the real HDR path")
+            XCTAssertEqual(renderer.skipped, [:])
+            var originalBackground: WPEParityDraw?
+            var originalGlyph: WPEParityDraw?
+            var originalAtlas: MTLTexture?
+            var originalGeneration: UInt64?
+            var initialLayout = 0, initialPipelines = 0, priorFields = 0
+            for (frame, brightness) in [Float(1.5), 3, 3, 6].enumerated() {
+                try await encode(renderer, label: "background hdr=\(hdr) frame\(frame)")
+                let background = try textDraw(renderer, geometry: .textBackground)
+                let glyph = try textDraw(renderer, geometry: .textGlyphs(.mono))
+                let text = try XCTUnwrap(renderer.texts[Self.textID])
+                let atlas = try XCTUnwrap(glyph.textures["g_Texture0"])
+                let generation = try XCTUnwrap(renderer.textAtlases[text.atlasKey]).mono.contentGeneration
+                XCTAssertEqual(renderer.state.scriptField("backgroundbrightness", of: Self.textID),
+                               .vector(SIMD4(brightness, 0, 0, 0)))
+                guard case let .float(alpha)? = background.constants[.fragment]?["g_Alpha"] else {
+                    return XCTFail("missing real background alpha constant")
+                }
+                XCTAssertEqual(alpha, 0.5)
+                var checkedForegroundColor = false
+                for (stage, layout) in [(WPEHLSLStage.vertex, glyph.pipeline.vertex), (.fragment, glyph.pipeline.fragment)] {
+                    for name in ["g_Color", "g_Color4"] where layout.cbuffers.contains(where: { $0[name] != nil }) {
+                        guard case let .vector(color)? = glyph.constants[stage]?[name] else {
+                            return XCTFail("missing real foreground \(name) constant in \(stage)")
+                        }
+                        XCTAssertEqual(color, name == "g_Color" ? [1, 1, 1] : [1, 1, 1, 0.5],
+                                       "background scale cannot change the foreground color or alpha")
+                        checkedForegroundColor = true
+                    }
+                    if layout.cbuffers.contains(where: { $0["g_Alpha"] != nil }) {
+                        guard case let .float(glyphAlpha)? = glyph.constants[stage]?["g_Alpha"] else {
+                            return XCTFail("missing real foreground alpha constant in \(stage)")
+                        }
+                        XCTAssertEqual(glyphAlpha, 0.5)
+                    }
+                }
+                XCTAssertTrue(checkedForegroundColor, "the glyph pipeline must consume a real foreground color constant")
+                let texture: MTLTexture
+                if hdr {
+                    let combine = try XCTUnwrap(renderer.lastFrameDraws.first { entry in
+                        guard case let .post(post)? = renderer.frames[0].draws[entry.operation] else { return false }
+                        return post.shader == "combine_srgb"
+                    })
+                    texture = try XCTUnwrap(combine.draw.textures["g_Texture0"])
+                    XCTAssertEqual(texture.pixelFormat, .rgba16Float)
+                } else {
+                    texture = renderer.backbuffer
+                    XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+                }
+                // NotoSans32 "Hi" width123 + padding32 puts x430 inside left background padding, outside glyphs.
+                let actual = try readPixel(texture, x: 430, y: 256, fixture: fixture)
+                let scale: Float = hdr ? brightness : 1
+                let expected = SIMD3<Float>(0.125, 0.25, 0.375) * scale * 0.5
+                let tolerance: Float = hdr ? 0.002 : 1.0 / 255
+                for lane in 0 ..< 3 {
+                    XCTAssertEqual(actual[lane], expected[lane], accuracy: tolerance)
+                }
+                if hdr, frame == 3 {
+                    XCTAssertGreaterThan(actual.z, 1, "linear HDR input must preserve overbright values")
+                }
+                if frame == 0 {
+                    originalBackground = background
+                    originalGlyph = glyph
+                    originalAtlas = atlas
+                    originalGeneration = generation
+                    initialLayout = renderer.state.generation(.textLayout)
+                    initialPipelines = renderer.pipelineCreations
+                } else {
+                    let initialBackground = try XCTUnwrap(originalBackground)
+                    let initialGlyph = try XCTUnwrap(originalGlyph)
+                    let initialAtlas = try XCTUnwrap(originalAtlas)
+                    XCTAssertTrue(background.vertexBuffer === initialBackground.vertexBuffer)
+                    XCTAssertTrue(try XCTUnwrap(background.indexBuffer) === XCTUnwrap(initialBackground.indexBuffer))
+                    XCTAssertTrue(glyph.vertexBuffer === initialGlyph.vertexBuffer)
+                    XCTAssertTrue(try XCTUnwrap(glyph.indexBuffer) === XCTUnwrap(initialGlyph.indexBuffer))
+                    XCTAssertTrue(background.pipeline.state === initialBackground.pipeline.state)
+                    XCTAssertTrue(glyph.pipeline.state === initialGlyph.pipeline.state)
+                    XCTAssertTrue(atlas === initialAtlas)
+                    XCTAssertEqual(generation, originalGeneration)
+                    XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout)
+                    XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
+                    if frame == 2 {
+                        XCTAssertEqual(renderer.state.scriptFieldsGeneration, priorFields, "same scale schedules no new work")
+                    }
+                }
+                priorFields = renderer.state.scriptFieldsGeneration
+            }
+            let script = try XCTUnwrap(renderer.script)
+            XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    /// Opaque text with an effect clears its FBO directly: RGB is not multiplied by alpha at this stage.
+    func testScriptBackgroundBrightnessAndAlphaReachTheOpaqueEffectFBOClearWithoutRebuildingText() async throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: true)) as? [String: Any])
+        var general = try XCTUnwrap(json["general"] as? [String: Any])
+        general["bloom"] = true
+        general["hdr"] = true
+        json["general"] = general
+        var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+        objects[0].merge(["pointsize": 32, "opaquebackground": true, "backgroundcolor": "0.125 0.25 0.375",
+                          "backgroundbrightness": ["value": 1.5, "script": """
+                          let frame = 0;
+                          export function update(value) {
+                              frame += 1;
+                              if (frame === 4) thisLayer.alpha = 0.25;
+                              return frame === 1 ? 1.5 : (frame <= 3 ? 3 : 6);
+                          }
+                          """], "alpha": 0.5] as [String: Any]) { _, next in next }
+        json["objects"] = objects
+        let fixture = try await makeSyntheticRenderer(effect: true, scene: JSONSerialization.data(withJSONObject: json),
+                                                      settings: .init(bloom: false, hdrPostProcessing: true), scripted: true)
+        let renderer = fixture.renderer
+        XCTAssertTrue(fixture.plan.scene.engineFlags.hdr)
+        XCTAssertEqual(renderer.skipped, [:])
+        var originalGlyph: WPEParityDraw?
+        var originalEffect: WPEParityDraw?
+        var originalAtlas: MTLTexture?
+        var originalGeneration: UInt64?
+        var initialLayout = 0, initialPipelines = 0, priorFields = 0
+        for (frame, brightness) in [Float(1.5), 3, 3, 6].enumerated() {
+            try await encode(renderer, label: "opaque text effect clear frame\(frame)")
+            let description = renderer.frames[frame % renderer.frames.count]
+            XCTAssertFalse(description.draws.values.contains { draw in
+                guard case let .scene(scene) = draw else { return false }
+                return scene.objectID == Self.textID && scene.geometry == .textBackground
+            }, "this guard must exercise the composite clear, not a direct background draw")
+            let glyphOperation = try XCTUnwrap(description.draws.first { _, draw in
+                guard case let .scene(scene) = draw else { return false }
+                return scene.objectID == Self.textID && scene.geometry == .textGlyphs(.mono) && scene.fillsComposite
+            })
+            guard case let .scene(glyphDescription) = glyphOperation.value else { return XCTFail("missing composite glyphs") }
+            let glyph = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == glyphOperation.key }?.draw)
+            let effect = try XCTUnwrap(renderer.lastFrameDraws.first { entry in
+                guard case let .scene(scene)? = description.draws[entry.operation] else { return false }
+                return scene.objectID == Self.textID && scene.source?.effectFile == "effects/tint/effect.json"
+                    && scene.source?.effectPass == 0 && scene.reads.contains(glyphDescription.target)
+            })
+            let input = try XCTUnwrap(effect.draw.textures["g_Texture0"])
+            let resource = try XCTUnwrap(description.resources.first { $0.id == glyphDescription.target })
+            let text = try XCTUnwrap(renderer.texts[Self.textID])
+            XCTAssertEqual(resource.lifetime, .pooled, "the captured input must survive its effect reader")
+            XCTAssertEqual(SIMD2(input.width, input.height), text.layout.fboSize)
+            XCTAssertEqual(input.pixelFormat, .rgba16Float)
+            guard input.width > 4, input.height > 4 else { return XCTFail("missing text FBO padding") }
+            // Glyphs start at padding32 + H bearing12; pixel(4,4) is untouched by every glyph draw.
+            let actual = try readPixel(input, x: 4, y: 4, fixture: fixture)
+            let expected = SIMD3<Float>(0.125, 0.25, 0.375) * brightness
+            for lane in 0 ..< 3 {
+                XCTAssertEqual(actual[lane], expected[lane], accuracy: 0.002)
+            }
+            XCTAssertEqual(actual.w, frame == 3 ? 0.25 : 0.5, accuracy: 0.0005)
+            if frame == 3 {
+                XCTAssertGreaterThan(actual.z, 1, "raw HDR clear cannot clamp or multiply by alpha")
+            }
+            let atlas = try XCTUnwrap(glyph.textures["g_Texture0"])
+            let generation = try XCTUnwrap(renderer.textAtlases[text.atlasKey]).mono.contentGeneration
+            if frame == 0 {
+                originalGlyph = glyph
+                originalEffect = effect.draw
+                originalAtlas = atlas
+                originalGeneration = generation
+                initialLayout = renderer.state.generation(.textLayout)
+                initialPipelines = renderer.pipelineCreations
+            } else {
+                let initialGlyph = try XCTUnwrap(originalGlyph)
+                let initialEffect = try XCTUnwrap(originalEffect)
+                let initialAtlas = try XCTUnwrap(originalAtlas)
+                XCTAssertTrue(glyph.vertexBuffer === initialGlyph.vertexBuffer)
+                XCTAssertTrue(try XCTUnwrap(glyph.indexBuffer) === XCTUnwrap(initialGlyph.indexBuffer))
+                XCTAssertTrue(glyph.pipeline.state === initialGlyph.pipeline.state)
+                XCTAssertTrue(effect.draw.vertexBuffer === initialEffect.vertexBuffer)
+                XCTAssertTrue(try XCTUnwrap(effect.draw.indexBuffer) === XCTUnwrap(initialEffect.indexBuffer))
+                XCTAssertTrue(effect.draw.pipeline.state === initialEffect.pipeline.state)
+                XCTAssertTrue(atlas === initialAtlas)
+                XCTAssertEqual(generation, originalGeneration)
+                XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout)
+                XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
+                if frame == 2 {
+                    XCTAssertEqual(renderer.state.scriptFieldsGeneration, priorFields)
+                }
+            }
+            priorFields = renderer.state.scriptFieldsGeneration
+        }
+        let script = try XCTUnwrap(renderer.script)
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     // MARK: Helpers
 
     private func sceneText(_ plan: WPEParityFramePlan) throws -> WPEParitySceneText {
@@ -460,13 +765,14 @@ final class WPEParityTextDrawTests: XCTestCase {
                                          makeTransformScriptResolver: { _, _ in TextNoScripts() })
     }
 
-    private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil) async throws -> Fixture {
+    private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil,
+                                       settings: WPEParityProgramSettings = .init(), scripted: Bool = false) async throws -> Fixture {
         let wpeAssets = try wpeAssets()
         let document = try Self.parse(scene ?? Self.syntheticScene(effect: effect))
         // The tint effect keeps its material and shaders in its own folder.
         let assets = WPEParityProgramAssets(sceneDirectory: scratch,
                                             assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")])
-        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: settings,
                                           width: Self.width, height: Self.height)
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         // Shared between the tests of this class, so only the first compiles cold.
@@ -481,6 +787,12 @@ final class WPEParityTextDrawTests: XCTestCase {
                                                 bindingABIVersion: 1),
             particleSeed: 1
         )
+        if scripted {
+            try renderer.attachScript(WPEParitySceneScript(
+                document: document, state: renderer.state, assets: assets, canvasSize: renderer.pathCamera.size,
+                screenResolution: SIMD2(Float(Self.width), Float(Self.height)), fieldDefaults: renderer.scriptFieldDefaults, host: .init()
+            ))
+        }
         return Fixture(plan: plan, renderer: renderer, device: device, queue: queue)
     }
 
@@ -523,6 +835,35 @@ final class WPEParityTextDrawTests: XCTestCase {
         return Fixture(plan: plan, renderer: renderer, device: device, queue: queue)
     }
 
+    private func textDraw(_ renderer: WPEParityFrameRenderer,
+                          geometry: WPEParitySceneDraw.Geometry) throws -> WPEParityDraw {
+        let operation = try XCTUnwrap(renderer.frames[0].draws.first { _, draw in
+            guard case let .scene(scene) = draw else { return false }
+            return scene.objectID == Self.textID && scene.geometry == geometry
+        }?.key)
+        return try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+    }
+
+    private func readPixel(_ texture: MTLTexture, x: Int, y: Int, fixture: Fixture) throws -> SIMD4<Float> {
+        let bytes = try readBack(texture, fixture)
+        if texture.pixelFormat == .rgba16Float {
+            let offset = (y * texture.width + x) * 8
+            var result = SIMD4<Float>.zero
+            for lane in 0 ..< 4 {
+                let word = UInt16(bytes[offset + lane * 2]) | UInt16(bytes[offset + lane * 2 + 1]) << 8
+                result[lane] = Float(Float16(bitPattern: word))
+            }
+            return result
+        }
+        XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+        let offset = (y * texture.width + x) * 4
+        var result = SIMD4<Float>.zero
+        for lane in 0 ..< 4 {
+            result[lane] = Float(bytes[offset + lane]) / 255
+        }
+        return result
+    }
+
     private func encode(_ renderer: WPEParityFrameRenderer, label: String) async throws {
         guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
             return XCTFail("\(label): frame skipped")
@@ -536,7 +877,7 @@ final class WPEParityTextDrawTests: XCTestCase {
     }
 
     private func readBack(_ texture: MTLTexture, device: MTLDevice, queue: MTLCommandQueue) throws -> [UInt8] {
-        let bytesPerRow = texture.width * 4
+        let bytesPerRow = texture.width * (texture.pixelFormat == .rgba16Float ? 8 : 4)
         let length = bytesPerRow * texture.height
         let buffer = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
         let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())

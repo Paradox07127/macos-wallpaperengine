@@ -19,6 +19,39 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testLiveClearUsesTheLastOperationOfTheExactSubresource() throws {
+        let harness = try makeHarness()
+        let (r, s, t) = try (makeTexture(harness, mips: 2), makeTexture(harness), makeTexture(harness))
+        let red = WPEClearColor(red: 1, green: 0, blue: 0, alpha: 1)
+        let green = WPEClearColor(red: 0, green: 1, blue: 0, alpha: 1)
+        let blue = WPEClearColor(red: 0, green: 0, blue: 1, alpha: 1)
+        let yellow = WPEClearColor(red: 1, green: 1, blue: 0, alpha: 1)
+        let owner = WPEPassIdentity("text/background")
+        let graph = try WPERenderGraphCompiler.compile(resources: [resource("R", .persistent, mips: 2), resource("S", .persistent), resource("T", .pooled)],
+                                                       operations: [
+                                                           op(.setTargets(color: [WPETextureView("R", mips: 0 ..< 1), WPETextureView("S")], depth: nil)),
+                                                           .init(pass: owner, .clearColor(WPETextureView("R", mips: 0 ..< 1), red)),
+                                                           .init(pass: "effect/other", .clearColor(WPETextureView("S"), green)),
+                                                           draw(),
+                                                           .init(pass: "effect/mip1", .clearColor(WPETextureView("R", mips: 1 ..< 2), green)),
+                                                           .init(pass: owner, .clearColor(WPETextureView("T"), red)),
+                                                           .init(pass: "effect/later", .clearColor(WPETextureView("T"), yellow)),
+                                                       ])
+        XCTAssertTrue(graph.steps.contains { $0.encoder?.colorAttachments.count == 2 },
+                      "the resource-filter counterexample needs both clears in one encoder")
+        let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                  arena: harness.arena, pixelFormats: Self.formats)
+        guard case let .committed(buffer) = try executor.encodeFrame(on: harness.queue, textures: ["R": r, "S": s, "T": t],
+                                                                     clearColor: { $0 == owner ? blue : nil },
+                                                                     visit: { _, _, _, _ in }) else { return XCTFail("frame skipped") }
+        buffer.waitUntilCompleted()
+        XCTAssertNil(buffer.error)
+        try assertEvery(readBack(harness, r), equals: [0, 0, 255, 255])
+        try assertEvery(readBack(harness, r, level: 1), equals: [0, 255, 0, 255])
+        try assertEvery(readBack(harness, s), equals: [0, 255, 0, 255])
+        try assertEvery(readBack(harness, t), equals: [255, 255, 0, 255])
+    }
+
     func testConditionalStandaloneResolvePreservesHistoryUntilNativeSnapshotBoundary() throws {
         let harness = try makeHarness()
         let history = try makeTexture(harness)

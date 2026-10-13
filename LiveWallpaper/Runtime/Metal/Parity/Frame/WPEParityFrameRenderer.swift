@@ -87,6 +87,8 @@ final class WPEParityFrameRenderer {
     /// Dropped draws of graphs no longer kept.
     private var retiredDrops = 0
     private let plan: WPEParityFramePlan
+    /// Loaded text identity metadata; mutable colors remain only in SceneState.
+    private let textBackgroundOwners: [WPEPassIdentity: String]
     /// Draws of later effect sets plan here, reusing its images and pipelines.
     private var planner: WPEParityFrameDrawPlanner
     /// Every program the plan can draw with, compiled at load.
@@ -404,6 +406,7 @@ final class WPEParityFrameRenderer {
         self.graphs = graphs
         self.plan = plan
         self.planner = planner
+        textBackgroundOwners = Dictionary(uniqueKeysWithValues: planner.texts.values.map { ($0.backgroundPass, $0.object.id) })
         lights = planner.lights
         self.artifacts = artifacts
         particleFullFrameBuffer = particleFacts
@@ -867,6 +870,10 @@ final class WPEParityFrameRenderer {
                                                                            return particleStreams[block]?.snapshotBoundary != nil
                                                                        }
                                                                        return true
+                                                                   }, clearColor: { pass in
+                                                                       guard let owner = textBackgroundOwners[pass], let color = backgroundColor(of: owner) else { return nil }
+                                                                       return WPEClearColor(red: Double(color.x), green: Double(color.y),
+                                                                                            blue: Double(color.z), alpha: Double(color.w))
                                                                    }, visit: { step, textures, arena, emit in
                                                                        func encode(_ provided: WPEParityDraw, operation: Int) throws {
                                                                            var provided = provided
@@ -909,7 +916,7 @@ final class WPEParityFrameRenderer {
                                                                                fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
                                                                            }
                                                                            plan.applyRenderVarWrites(to: &renderVars)
-                                                                           let color = plan.layerColor.map { state.layerColor(at: $0.object) }
+                                                                           let color = drawColor(operation: operation, variant: variant, plan: plan)
                                                                            let provided = try plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
                                                                                                             textureSlots: &textureSlots, puppets: puppets, layers: live,
                                                                                                             constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
@@ -921,6 +928,25 @@ final class WPEParityFrameRenderer {
                                                                    })
         resourceBindings = graphs.executors[variant].resourceBindings
         return submission
+    }
+
+    /// Text background brightness has no layout hook. Consume it here without rebuilding glyph geometry or atlases.
+    private func drawColor(operation: Int, variant: Int, plan: WPEParityFrameDrawPlan) -> SIMD4<Float>? {
+        guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
+              description.geometry == .textBackground else {
+            return plan.layerColor.map { state.layerColor(at: $0.object) }
+        }
+        return backgroundColor(of: description.objectID)
+    }
+
+    private func backgroundColor(of objectID: String) -> SIMD4<Float>? {
+        guard let text = planner.texts[objectID] else { return nil }
+        var brightness = text.object.backgroundBrightness
+        if case let .vector(value)? = state.scriptField("backgroundbrightness", of: objectID) {
+            brightness = value.x
+        }
+        return SIMD4(text.object.backgroundColor * (state.hdr ? brightness : 1),
+                     state.object(objectID)?.alpha ?? text.object.alpha)
     }
 
     /// The draw's constants, re-packed from the state only after its material pass changed (R24 Q3).

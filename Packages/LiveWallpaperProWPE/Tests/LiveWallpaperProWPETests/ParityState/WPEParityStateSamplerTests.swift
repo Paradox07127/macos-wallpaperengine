@@ -35,21 +35,43 @@ struct WPEParityStateSamplerTests {
 
     @Test("Native point TEX flags give border priority over clamp, independent of volume dimension")
     func pointTextureFlags() {
-        // Independent cases from 140099980:63–94. Full descriptors include U/V/W, zero border and LOD defaults.
+        // Independent native descriptors from 140099980. Includes U/V/W, zero border and LOD defaults.
         let cases: [(UInt32, D3D11TextureAddressMode)] = [
             (0x0000_0001, .wrap), (0x0000_0003, .clamp),
             (0x0400_0001, .border), (0x0400_0003, .border),
         ]
         for (flags, address) in cases {
             for dimension: UInt32 in [0, 0x40] {
-                #expect(WPEParitySamplerState.wpePointTexture(flags: flags | dimension)
+                #expect(WPEParitySamplerState.wpeFileTexture(flags: flags | dimension)
                     == samp(.minMagMipPoint, address, aniso: 1))
             }
         }
-        // A sampler factory returning nil here does not claim the native branches are unsupported;
-        // they need inputs/consumers outside this point, noncomparison contract.
-        for flags: UInt32 in [0, 2, 0x0400_0000, 0x0800_0001, 0x0C00_0003] {
-            #expect(WPEParitySamplerState.wpePointTexture(flags: flags) == nil)
+    }
+
+    @Test("Native ordinary file textures select anisotropic 8 with the same address priority")
+    func anisotropicFileTextureFlags() {
+        // 14015eb90 clears internal byte +0x10; 14009aa20 only ORs 8 before calling 1400ec220.
+        // That file path passes third argument zero to 140099980: filter 0x55, MaxAnisotropy 8.
+        let cases: [(UInt32, D3D11TextureAddressMode)] = [
+            (0x0000_0000, .wrap), (0x0000_0002, .clamp),
+            (0x0400_0000, .border), (0x0400_0002, .border),
+        ]
+        for (flags, address) in cases {
+            for dimension: UInt32 in [0, 0x40] {
+                #expect(WPEParitySamplerState.wpeFileTexture(flags: flags | dimension)
+                    == samp(.anisotropic, address, aniso: 8))
+            }
+        }
+    }
+
+    @Test("File texture comparison flags require a proven comparison consumer")
+    func fileTextureComparisonFlags() {
+        // Reject both filter branches and every address combination; never fall back to a color sampler.
+        for flags: UInt32 in [0x0800_0000, 0x0800_0001, 0x0800_0002, 0x0800_0003,
+                              0x0C00_0000, 0x0C00_0001, 0x0C00_0002, 0x0C00_0003] {
+            for dimension: UInt32 in [0, 0x40] {
+                #expect(WPEParitySamplerState.wpeFileTexture(flags: flags | dimension) == nil)
+            }
         }
     }
 

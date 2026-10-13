@@ -763,7 +763,8 @@ public struct WPEParityParticleSystem {
         emitterStates[index] = state
     }
 
-    /// Lowest free slot; u first, then the emitter shape, then initializers in JSON order (D/14023b340.c:281-320).
+    /// Lowest free slot; emitter shape/direction/speed precede birthU and initializers in JSON order
+    /// (140238185/238bda → 23b340:281–283 → 1f87a0).
     private mutating func spawn(_ emitter: WPEParityParticleEmitterConfig) {
         var slot = freeHint
         while lifetime[slot] != 0 {
@@ -772,10 +773,23 @@ public struct WPEParityParticleSystem {
         freeHint = slot + 1
         highWater = max(highWater, slot + 1)
         liveCount += 1
-        let u = rng.unit()
-        let launch = emitter.sample(rng: rng)
-        position[slot] = origin + emitter.origin + launch.offset
-        velocity[slot] = launch.velocity
+        if config.localSpaceChain, !frameContext.worldSpace, config.controlPoints[emitter.controlPoint].flags == 0 {
+            let point = controlPoints[emitter.controlPoint]
+            let center = SIMD3(point.columns.3.x, point.columns.3.y, point.columns.3.z) + emitter.origin
+            let basis: simd_float3x3? = emitter.controlPoint == 0 ? nil : simd_float3x3(
+                SIMD3(point.columns.0.x, point.columns.0.y, point.columns.0.z),
+                SIMD3(point.columns.1.x, point.columns.1.y, point.columns.1.z),
+                SIMD3(point.columns.2.x, point.columns.2.y, point.columns.2.z)
+            )
+            let launch = emitter.sample(rng: rng, at: center, basis: basis)
+            position[slot] = launch.position
+            velocity[slot] = launch.velocity
+        } else {
+            // World/mixed and special-CP births retain the unconverted branch pending their own native consumer.
+            let launch = emitter.sample(rng: rng)
+            position[slot] = origin + emitter.origin + launch.position
+            velocity[slot] = launch.velocity
+        }
         if emitsInWorld {
             // [I] A top-level worldspace M is I (R22 Q1), so births are placed in the world here.
             let placement = frameContext.objectMatrix * localTransform
@@ -784,6 +798,7 @@ public struct WPEParityParticleSystem {
             let moved = placement * SIMD4(velocity[slot], 0)
             velocity[slot] = SIMD3(moved.x, moved.y, moved.z)
         }
+        let u = rng.unit()
         rotation[slot] = .zero
         angularVelocity[slot] = .zero
         age[slot] = 0

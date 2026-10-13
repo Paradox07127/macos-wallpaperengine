@@ -8,13 +8,14 @@ enum WPEParityTextFields {
         ("text", \.text), ("font", \.font),
     ]
     private static let textScalars: [(String, WritableKeyPath<WPEParityTextObject, Float> & Sendable)] = [
-        ("pointsize", \.pointSize), ("maxwidth", \.maxWidth),
+        ("pointsize", \.pointSize), ("maxwidth", \.maxWidth), ("backgroundbrightness", \.backgroundBrightness),
     ]
     private static let textVectors: [(String, WritableKeyPath<WPEParityTextObject, SIMD2<Float>> & Sendable)] = [
         ("padding", \.padding), ("spacing", \.spacing),
     ]
     private static let textFlags: [(String, WritableKeyPath<WPEParityTextObject, Bool> & Sendable)] = [
         ("limitwidth", \.limitWidth), ("limitrows", \.limitRows), ("limituseellipsis", \.limitUseEllipsis),
+        ("blockalign", \.blockAlign),
     ]
 
     static func seed(_ text: WPEParityTextObject) -> [String: WPEParitySceneState.ScriptValue] {

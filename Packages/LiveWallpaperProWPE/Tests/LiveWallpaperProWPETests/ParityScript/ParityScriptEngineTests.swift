@@ -807,6 +807,58 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// Native block-align is strict Bool with a layout hook; background brightness is Float without that hook.
+    func testTextBlockAlignAndBackgroundBrightnessDefaultsTypedWritesAndDirtyBoundary() throws {
+        var scene = try Self.scene([
+            ["id": 1, "name": "Default text", "text": "Audit", "alpha": Self.scripted(1, """
+            if (thisLayer.blockalign !== false || thisLayer.backgroundbrightness !== 1)
+                throw Error('text factory defaults');
+            let frame = 0;
+            export function update(value) {
+                frame += 1;
+                if (frame === 1) {
+                    thisLayer.blockalign = 1;
+                    thisLayer.backgroundbrightness = '9';
+                } else {
+                    thisLayer.blockalign = true;
+                    thisLayer.backgroundbrightness = frame === 2 ? 2.5 : 3.5;
+                }
+                return value;
+            }
+            """)],
+            ["id": 2, "name": "Authored text", "text": "Seed", "blockalign": true, "backgroundbrightness": 0.25,
+             "alpha": Self.scripted(1, """
+             export function init(value) {
+                 if (thisLayer.blockalign !== true || thisLayer.backgroundbrightness !== 0.25)
+                     throw Error('authored text fields');
+                 return value;
+             }
+             """)],
+        ], assets: Self.fixedAssets())
+        scene.engine.start(state: &scene.state)
+        let initialLayout = scene.state.generation(.textLayout)
+        let initialFields = scene.state.scriptFieldsGeneration
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.scriptField("blockalign", of: "1"), .vector(.zero))
+        XCTAssertEqual(scene.state.scriptField("backgroundbrightness", of: "1"), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(scene.state.generation(.textLayout), initialLayout, "wrong typed writes cannot dirty layout")
+        XCTAssertEqual(scene.state.scriptFieldsGeneration, initialFields)
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.scriptField("blockalign", of: "1"), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(scene.state.scriptField("backgroundbrightness", of: "1"), .vector(SIMD4(2.5, 0, 0, 0)))
+        XCTAssertEqual(scene.state.generation(.textLayout), initialLayout + 1)
+        let changedFields = scene.state.scriptFieldsGeneration
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.scriptField("backgroundbrightness", of: "1"), .vector(SIMD4(3.5, 0, 0, 0)))
+        XCTAssertEqual(scene.state.generation(.textLayout), initialLayout + 1, "background scale has no native layout hook")
+        XCTAssertEqual(scene.state.scriptFieldsGeneration, changedFields + 1)
+        let sameFields = scene.state.scriptFieldsGeneration
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.scriptFieldsGeneration, sameFields, "same values do not schedule new work")
+        XCTAssertEqual(scene.state.generation(.textLayout), initialLayout + 1)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// H04 reads the real native defaults, including padding32 and the font identifier missing from the old slots.
     func testNativeTextDefaultsAndStringFieldMirror() throws {
         var scene = try Self.scene([

@@ -150,7 +150,8 @@ final class ParityParticleSceneTests: XCTestCase {
     }
 
     func testInstanceControlPointReachesTheOperatorWithRadiansAndSentinelPreservesAuthoredOffset() throws {
-        let particle = Self.burst(1, extra: """
+        // Native births now include CP translation. A unit z offset avoids the operator's zero-radius case.
+        let particle = Self.burst(1, origin: "0 0 1", extra: """
         , "controlpoint": [{"id": 0, "offset": "1 2 3"}, {"id": 1, "flags": 1}],
           "operator": [{"name": "maintaindistancetocontrolpoint", "controlpoint": 0, "distance": 1}]
         """)
@@ -162,7 +163,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
         scene.advance(dt: 0.1, frames: ["5": .init()])
         let before = try XCTUnwrap(Self.root(scene)).position[0]
-        let initial = SIMD3<Float>(1, 2, 3) * (1 - 1 / sqrt(Float(14)))
+        let initial = SIMD3<Float>(1, 2, 4)
         for axis in 0 ..< 3 {
             XCTAssertEqual(before[axis], initial[axis], accuracy: 1e-5)
         }
@@ -185,6 +186,53 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(root.controlPointBasis(0).columns.0.x, 0, accuracy: 1e-6)
         XCTAssertEqual(root.controlPointBasis(0).columns.0.y, 1, accuracy: 1e-6)
         XCTAssertEqual(root.controlPointTranslation(1), .zero, "cursor-following points ignore instance overrides")
+    }
+
+    func testTypedOrdinaryPointChangesOnlyTheNextBirthAndKeepsEmitterOriginUnrotated() throws {
+        for point in [0, 1] {
+            let particle = """
+            {"maxcount": 2, "material": "materials/plain.json",
+             "emitter": [{"name": "sphererandom", "rate": 10, "distancemax": 0, "origin": "2 0 0",
+                          "controlpoint": \(point), "directions": "1 0 0", "speedmin": 3, "speedmax": 3}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+             "renderer": [{"name": "sprite"}]}
+            """
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": particle])
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let before = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(before.liveCount, 1)
+            XCTAssertEqual(before.position[0], SIMD3(2, 0, 0))
+            XCTAssertEqual(abs(before.velocity[0].x), 3, accuracy: 1e-5)
+            XCTAssertEqual(before.velocity[0].y, 0)
+            var state = try Self.state()
+            state.setScriptField("instance.controlpoint\(point)", of: "5", to: .vector(SIMD4(10, 5, 0, 0)),
+                                 invalidating: .particleInstance)
+            state.setScriptField("instance.controlpointangle\(point)", of: "5", to: .vector(SIMD4(0, 0, .pi / 2, 0)),
+                                 invalidating: .particleInstance)
+            XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+            let hooked = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(hooked.position[0], before.position[0])
+            XCTAssertEqual(hooked.velocity[0], before.velocity[0])
+            XCTAssertTrue(hooked.rng === before.rng)
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let after = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(after.liveCount, 2)
+            XCTAssertEqual(after.position[0], SIMD3(2, 0, 0), "existing slots do not follow a CP without an operator")
+            XCTAssertEqual(after.velocity[0], before.velocity[0])
+            XCTAssertEqual(after.position[1], SIMD3(12, 5, 0), "origin 2 is added after CP translation, not rotated")
+            let axis = point == 0 ? 0 : 1
+            XCTAssertEqual(abs(after.velocity[1][axis]), 3, accuracy: 1e-5)
+            XCTAssertEqual(after.velocity[1][1 - axis], 0, accuracy: 1e-5)
+            XCTAssertEqual(after.velocity[1].z, 0)
+            let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+            XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 0, count: 3), [2, 0, 0])
+            XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [12, 5, 0])
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 18 {
+                _ = expected.next()
+            } // two (u + shape3 + fallback3 + speed + lifetime) births
+            XCTAssertEqual(after.rng.next(), expected.next(), "the typed hook must not draw additional words")
+        }
     }
 
     func testParticleDrawKeysAndContainerNodesAgreeOnCaptureAndWorkshopScenes() throws {
@@ -629,6 +677,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(system.initialColor[0], SIMD3(0, 0, 3))
             XCTAssertEqual(system.lifetime[0], 20)
             XCTAssertEqual(system.controlPointTranslation(0), SIMD3(4, 5, 6))
+            XCTAssertEqual(system.position[0], SIMD3(4, 5, 6), "the hot CP snapshot reaches the prewarm birth")
             XCTAssertEqual(system.age[0], 0.01, accuracy: 1e-6)
         }
         let batches = scene.drawBatches(for: "5")

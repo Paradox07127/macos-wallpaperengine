@@ -159,8 +159,9 @@ final class WPEParityGraphExecutor {
     /// the heap event are released. `prepare` encodes ahead of the graph and runs only on a buffer that is committed.
     func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
                      prepare: (MTLCommandBuffer) throws -> Void = { _ in },
+                     clearColor: (WPEPassIdentity) -> WPEClearColor? = { _ in nil },
                      draw: DrawProvider) throws -> Submission {
-        try encodeFrame(on: queue, textures: external, prepare: prepare, visit: { operation, textures, frame, emit in
+        try encodeFrame(on: queue, textures: external, prepare: prepare, clearColor: clearColor, visit: { operation, textures, frame, emit in
             for provided in try draw(operation, textures, frame) {
                 try emit(provided)
             }
@@ -170,6 +171,7 @@ final class WPEParityGraphExecutor {
     func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
                      prepare: (MTLCommandBuffer) throws -> Void = { _ in },
                      shouldTransfer: (Int) -> Bool = { _ in true },
+                     clearColor: (WPEPassIdentity) -> WPEClearColor? = { _ in nil },
                      visit: DrawVisitor) throws -> Submission {
         let physicalTextures = try frameTextures(external)
         var textures = try boundTextures(physicalTextures, bindings: resourceBindings[.frame, default: [:]])
@@ -190,7 +192,7 @@ final class WPEParityGraphExecutor {
             for index in graph.steps.indices {
                 try encodeStep(index, textures: &textures, physicalTextures: physicalTextures,
                                bindings: &bindings, scope: &scope, frame: frame,
-                               commandBuffer: commandBuffer, shouldTransfer: shouldTransfer, visit: visit)
+                               commandBuffer: commandBuffer, shouldTransfer: shouldTransfer, clearColor: clearColor, visit: visit)
             }
         } catch {
             failure = error
@@ -253,6 +255,7 @@ final class WPEParityGraphExecutor {
                             physicalTextures: [WPEResourceID: MTLTexture], bindings: inout WPEParityResourceBindings,
                             scope: inout WPEResourceBindingScope, frame: WPEParityFrameArena.Frame,
                             commandBuffer: MTLCommandBuffer, shouldTransfer: (Int) -> Bool,
+                            clearColor: (WPEPassIdentity) -> WPEClearColor?,
                             visit: DrawVisitor) throws {
         let step = graph.steps[index]
         let waitFences = waits[index, default: []].compactMap { fences[$0] }
@@ -328,6 +331,16 @@ final class WPEParityGraphExecutor {
         case let .render(group):
             for (slot, action) in group.colorAttachments.enumerated() {
                 Self.configure(pass.colorAttachments[slot], action, textures)
+                if case .clear(.color) = action.load,
+                   let operation = step.operations.reversed().first(where: { operation in
+                       guard case let .clearColor(view, _) = graph.operations[operation].kind else { return false }
+                       return view.resource == action.subresource.resource && (view.mips?.contains(action.subresource.mip) ?? true)
+                   }), let color = clearColor(graph.operations[operation].pass) {
+                    // Folded clears retain their original operation. Match the last clear of this exact view,
+                    // so an effect's later clear cannot inherit a text background's live color.
+                    pass.colorAttachments[slot].clearColor = MTLClearColor(red: color.red, green: color.green,
+                                                                           blue: color.blue, alpha: color.alpha)
+                }
             }
             if let depth = group.depthAttachment, let texture = textures[depth.subresource.resource] {
                 Self.configure(pass.depthAttachment, depth, textures)
