@@ -27,6 +27,21 @@ struct WPEParityDraw {
 struct WPEParityDrawEncoder {
     let factory: WPEParityPipelineFactory
 
+    static func validateDimension(_ resource: WPEStageReflection.Resource, textureType: MTLTextureType) throws {
+        let expected: MTLTextureType? = switch resource.dimension {
+        case .texture2D: .type2D
+        case .texture2DMS: .type2DMultisample
+        case .texture3D: .type3D
+        case .texture2DArray: .type2DArray
+        case .cube: .typeCube
+        case .none: nil
+        }
+        guard textureType == expected else {
+            throw WPEParityExecutionError.textureDimensionMismatch(resource.name,
+                                                                   expected: resource.dimension.rawValue, actual: textureType.rawValue)
+        }
+    }
+
     /// Called once when a draw plan is built, before the graph promises its writes. Sampler and depth creation
     /// can fail too; discovering that on the first encoded frame is too late for load/store and alias decisions.
     func prepare(pipeline: WPEParityPipeline, depthStencil: WPEParityDepthStencilState,
@@ -182,6 +197,7 @@ struct WPEParityDrawEncoder {
                 guard let texture = draw.textures[resource.name] else {
                     throw WPEParityExecutionError.missingTexture(resource.name)
                 }
+                try Self.validateDimension(resource, textureType: texture.textureType)
                 // Texture metadata: min LOD clamp 0.0 in the low 32 bits.
                 try plan.writeEntry(at: offset, gpuAddress: 0, resourceID: texture.gpuResourceID._impl,
                                     metadata: 0, into: &table)

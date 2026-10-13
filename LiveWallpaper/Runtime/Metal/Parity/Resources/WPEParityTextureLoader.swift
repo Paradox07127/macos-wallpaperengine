@@ -73,8 +73,8 @@ enum WPEParityTextureLoader {
             let translation = sampling.translation
             let frame = WPEParityUniformSpriteFrame(
                 x: translation.x * size.x, y: translation.y * size.y,
-                widthX: rotation.x * size.x, widthY: rotation.y * size.x,
-                heightX: rotation.z * size.y, heightY: rotation.w * size.y,
+                widthX: rotation.x * size.x, widthY: rotation.y * size.y,
+                heightX: rotation.z * size.x, heightY: rotation.w * size.y,
                 imageWidth: size.x, imageHeight: size.y
             )
             return Sprite(frame: frame, texture: texture, duration: source.duration)

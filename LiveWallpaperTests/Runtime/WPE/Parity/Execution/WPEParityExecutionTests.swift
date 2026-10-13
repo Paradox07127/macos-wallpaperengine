@@ -18,6 +18,20 @@ final class WPEParityExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testTextureDimensionValidationRejectsTwoDForOtherShaderViews() throws {
+        for dimension in [WPEStageReflection.Resource.Dimension.texture3D, .texture2DArray, .cube, .texture2DMS, .none] {
+            let resource = WPEStageReflection.Resource(name: "texture", kind: .texture, register: 0, space: 0,
+                                                       dimension: dimension, count: 1)
+            XCTAssertThrowsError(try WPEParityDrawEncoder.validateDimension(resource, textureType: .type2D))
+        }
+        for (dimension, type) in [(WPEStageReflection.Resource.Dimension.texture2D, MTLTextureType.type2D),
+                                  (.texture2DMS, .type2DMultisample), (.texture3D, .type3D),
+                                  (.texture2DArray, .type2DArray), (.cube, .typeCube)] {
+            try WPEParityDrawEncoder.validateDimension(.init(name: "texture", kind: .texture, register: 0, space: 0,
+                                                             dimension: dimension, count: 1), textureType: type)
+        }
+    }
+
     func testPassthroughCopiesInputTexture() throws {
         let harness = try makeHarness()
         let artifact = try loadProgram("shaders/passthrough")

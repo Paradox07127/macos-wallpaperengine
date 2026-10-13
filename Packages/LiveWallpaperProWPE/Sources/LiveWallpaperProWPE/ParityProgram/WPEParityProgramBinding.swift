@@ -137,12 +137,25 @@ public extension WPEParityProgramBuilder {
             WPEParityProgramConstants.resolve(uniforms, values: material.constants).merging(color) { $1 }
         }
 
+        let names = resolvedTextureNames(material, vertexSource: sources.vertex, fragmentSource: sources.fragment)
+        return (constants, names, uniforms)
+    }
+
+    /// Bound texture names and sampler defaults, shared with the native particle base-material probe.
+    internal static func resolvedTextureNames(_ material: WPEParityProgramMaterial,
+                                              assets: WPEParityProgramAssets) -> [Int32: String] {
+        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
+        return resolvedTextureNames(material, vertexSource: sources.vertex, fragmentSource: sources.fragment)
+    }
+
+    private static func resolvedTextureNames(_ material: WPEParityProgramMaterial, vertexSource: String,
+                                             fragmentSource: String) -> [Int32: String] {
         var names = material.textures
-        let annotations = WPEShaderAnnotationCombos(vertexSource: sources.vertex, fragmentSource: sources.fragment)
+        let annotations = WPEShaderAnnotationCombos(vertexSource: vertexSource, fragmentSource: fragmentSource)
         for (slot, sampler) in annotations.samplers.entries where names[slot] == nil && !sampler.defaultTexture.isEmpty {
             names[slot] = sampler.defaultTexture
         }
-        return (constants, names, uniforms)
+        return names
     }
 
     /// Effect FBO names resolve through the pass `binds`, which the frame lists after the composite in `reads`.

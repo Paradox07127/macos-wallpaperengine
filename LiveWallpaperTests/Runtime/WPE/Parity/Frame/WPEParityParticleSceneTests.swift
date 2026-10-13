@@ -200,6 +200,166 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
     }
 
+    func testEventInstancesBlendInCompleteInstanceOrderThroughProductionRenderer() async throws {
+        let parent: [String: Any] = ["maxcount": 2, "material": "materials/plain.json", "renderer": [],
+                                     "emitter": [["name": "sphererandom", "rate": 0, "instantaneous": 2, "distancemax": 0]],
+                                     "initializer": [["name": "lifetimerandom", "min": 0.03, "max": 0.03]],
+                                     "children": [["name": "particles/child.json", "type": "eventdeath", "maxcount": 2]]]
+        var child = Self.burstParticle(renderer: [["name": "sprite"], ["name": "sprite"]])
+        child["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                ["name": "sizerandom", "min": 128, "max": 128], ["name": "alpharandom", "min": 0.5, "max": 0.5],
+                                ["name": "colorrandom", "min": "0 0 0", "max": "255 0 0"]]
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": parent, "particles/child.json": child])
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        for _ in 0 ..< 6 {
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            let particleCount = renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) != nil }
+            if particleCount == 4 {
+                break
+            }
+        }
+        let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+        XCTAssertEqual(draws.count, 4)
+        guard draws.count == 4 else { return }
+        let colors = draws.map { entry in
+            entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset + 28, as: Float.self)
+        }
+        XCTAssertEqual(colors[0], colors[1])
+        XCTAssertEqual(colors[2], colors[3])
+        func blended(_ order: [Float]) -> Float {
+            order.reduce(0) { $0 * 0.5 + $1 * 0.5 }
+        }
+        let expected = blended(colors)
+        let keyMajor = blended([colors[0], colors[2], colors[1], colors[3]])
+        XCTAssertGreaterThan(abs(expected - keyMajor), 3.0 / 255, "fixture must distinguish the wrong order")
+        let pixel = try centerPixel(renderer.backbuffer, queue: queue)
+        XCTAssertEqual(Float(pixel[0]) / 255, expected, accuracy: 3.0 / 255)
+    }
+
+    func testLiveOneParticleRopeSnapshotsBeforeFollowingHealthySpriteEvenWhenArenaDropsDraws() async throws {
+        let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
+                                   "children": ["rope", "sprite", "refract"].map { ["name": "particles/\($0).json", "type": "static"] }]
+        let rope = Self.burstParticle(renderer: [["name": "rope"]], material: "materials/refract.json")
+        let sprite = Self.burstParticle(renderer: [["name": "sprite"]])
+        let refract = Self.burstParticle(renderer: [["name": "sprite"]], material: "materials/refract.json")
+        let files: [String: Any] = ["particles/root.json": root, "particles/rope.json": rope,
+                                    "particles/sprite.json": sprite, "particles/refract.json": refract]
+        for budget in [nil, 0] as [Int?] {
+            let (renderer, queue) = try await syntheticRenderer(files, clear: "0 0 1", budget: budget)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            let snapshot = try XCTUnwrap(renderer.targets[WPEParitySceneResource.fullFrameBuffer])
+            XCTAssertEqual(try centerPixel(snapshot, queue: queue), [0, 0, 255, 255])
+            if budget == nil {
+                XCTAssertGreaterThan(try centerPixel(renderer.backbuffer, queue: queue)[0], 0, "healthy sprite never drew")
+            } else {
+                XCTAssertGreaterThan(renderer.droppedParticleBatches, 0)
+            }
+        }
+    }
+
+    private static func burstParticle(renderer: [[String: Any]], material: String = "materials/plain.json") -> [String: Any] {
+        ["maxcount": 1, "material": material, "renderer": renderer,
+         "emitter": [["name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0]],
+         "initializer": [["name": "lifetimerandom", "min": 10, "max": 10],
+                         ["name": "sizerandom", "min": 128, "max": 128],
+                         ["name": "alpharandom", "min": 0.5, "max": 0.5]]]
+    }
+
+    func testCompositedParticleSnapshotsCurrentParentTargetInsteadOfSceneBackbuffer() async throws {
+        let rope = Self.burstParticle(renderer: [["name": "rope"]], material: "materials/refract.json")
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": rope], clear: "0 0 1", composited: true)
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+        let snapshot = try XCTUnwrap(renderer.targets[WPEParitySceneResource.fullFrameBuffer])
+        XCTAssertEqual(try centerPixel(snapshot, queue: queue), [255, 0, 0, 255])
+    }
+
+    func testIncompatibleParticleSnapshotIsExplicitAndKeepsHealthyParentAndHistory() async throws {
+        let rope = Self.burstParticle(renderer: [["name": "rope"]], material: "materials/refract.json")
+        let (renderer, queue) = try await syntheticRenderer(["particles/root.json": rope], clear: "0 0 1",
+                                                            composited: true, parentSize: 32)
+        XCTAssertFalse(renderer.skipped.isEmpty)
+        XCTAssertTrue(renderer.skipped.values.allSatisfy { $0.description.contains("incompatible dimensions or format") })
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.02) else { return XCTFail("skipped") }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+        XCTAssertGreaterThan(renderer.lastFrameDraws.count, 0, "healthy parent was lost")
+        let snapshot = try XCTUnwrap(renderer.targets[WPEParitySceneResource.fullFrameBuffer])
+        XCTAssertEqual(try centerPixel(snapshot, queue: queue), [0, 0, 255, 255])
+    }
+
+    private func syntheticRenderer(_ objects: [String: Any], clear: String = "0 0 0", budget: Int? = nil,
+                                   composited: Bool = false, parentSize: Int = 64) async throws
+        -> (WPEParityFrameRenderer, MTLCommandQueue) {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let engine = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        var files = try objects.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        for (path, combos) in [("materials/plain.json", [:]), ("materials/refract.json", ["REFRACT": 1])] {
+            files[path] = try JSONSerialization.data(withJSONObject: ["passes": [["shader": "genericparticle",
+                                                                                  "blending": "translucent", "textures": ["white"], "combos": combos]]])
+        }
+        var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": "32 32 0"]]
+        if composited {
+            sceneObjects = [
+                ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": "32 32 0", "color": "1 0 0",
+                 "effects": [["id": 7, "file": "effects/parent.json"]]],
+                ["id": 1, "parent": 2, "particle": "particles/root.json", "origin": "0 0 0"],
+            ]
+            for (path, value) in [
+                "models/parent.json": ["material": "materials/parent.json"],
+                "materials/parent.json": ["passes": [["shader": "genericimage4", "textures": ["white"], "blending": "normal"]]],
+                "effects/parent.json": ["passes": [["material": "materials/pass.json"]]],
+                "materials/pass.json": ["passes": [["shader": "passthrough", "blending": "normal"]]],
+            ] as [String: Any] {
+                files[path] = try JSONSerialization.data(withJSONObject: value)
+            }
+        }
+        var white = Data("TEXV0004\0".utf8)
+        for value: UInt32 in [0, 0, 1, 1, 1, 1, 1, 1, 1, 4] {
+            withUnsafeBytes(of: value.littleEndian) { white.append(contentsOf: $0) }
+        }
+        white.append(contentsOf: [255, 255, 255, 255])
+        files["materials/white.tex"] = white
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }, .directory(engine)])
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64], "clearcolor": clear],
+            "objects": sceneObjects,
+        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 64, height: 64)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "synthetic-shaderc"))
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))
+        let renderer = try await WPEParityFrameRenderer(plan: plan, device: device, queue: queue,
+                                                        shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1),
+                                                        particleSeed: 7, particleArenaBytes: budget)
+        return (renderer, queue)
+    }
+
+    private func centerPixel(_ texture: MTLTexture, queue: MTLCommandQueue) throws -> [UInt8] {
+        let data = try XCTUnwrap(queue.device.makeBuffer(length: 256, options: .storageModeShared))
+        let buffer = try XCTUnwrap(queue.makeCommandBuffer())
+        let blit = try XCTUnwrap(buffer.makeBlitCommandEncoder())
+        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0,
+                  sourceOrigin: MTLOrigin(x: texture.width / 2, y: texture.height / 2, z: 0),
+                  sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: data, destinationOffset: 0,
+                  destinationBytesPerRow: 256, destinationBytesPerImage: 256)
+        blit.endEncoding()
+        buffer.commit()
+        buffer.waitUntilCompleted()
+        XCTAssertNil(buffer.error)
+        return Array(UnsafeRawBufferPointer(start: data.contents(), count: 4))
+    }
+
     private func makeRenderer(particleArenaBytes: Int? = nil, eventChildFixture: Bool = false) async throws
         -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice) {
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
@@ -260,7 +420,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         scene["objects"] = [railing, particle]
         let material = "materials/workshop/2829005144/presets/fireworks_halo.json"
         let parent = """
-        {"maxcount": 64, "material": "\(material)",
+        {"maxcount": 64, "material": "\(material)", "renderer": [],
          "emitter": [{"name": "sphererandom", "rate": 1000, "distancemax": 0}],
          "initializer": [{"name": "lifetimerandom", "min": 0.05, "max": 0.05}],
          "children": [{"name": "particles/w35/child.json", "type": "eventdeath", "maxcount": 2000}]}

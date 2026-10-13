@@ -154,6 +154,10 @@ struct WPETexDecoder: Sendable {
             guard !parsed.info.isVolume else {
                 throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
             }
+            if parsed.info.format?.requiresRawPayload == true,
+               (parsed.bitmap.sourceImageFormatCode ?? -1) != -1 {
+                throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
+            }
             if let videoPayload = makeVideoPayload(from: parsed) {
                 return .success(WPETexTexturePayload(
                     info: parsed.info,
@@ -202,12 +206,12 @@ struct WPETexDecoder: Sendable {
             noInterpolation: info.noInterpolation
         )
         return try mipmaps.enumerated().map { position, mipmap in
-            WPETexTextureMipmap(
+            try WPETexTextureMipmap(
                 index: mipmap.index,
                 width: mipmap.width,
                 height: mipmap.height,
                 bytes: selected.contains(position)
-                    ? try normalizedBytes(
+                    ? normalizedBytes(
                         for: mipmap,
                         format: info.format,
                         textureFormatCode: info.textureFormatCode
@@ -229,17 +233,18 @@ struct WPETexDecoder: Sendable {
             let fallbackIndex: Int
             let frameInfo: WPETexFrameInfo?
         }
-        let descriptors: [Descriptor]
-        if texsFrames.isEmpty {
-            descriptors = parsed.bitmap.frames.indices.map { Descriptor(fallbackIndex: $0, frameInfo: nil) }
+        let descriptors: [Descriptor] = if texsFrames.isEmpty {
+            parsed.bitmap.frames.indices.map { Descriptor(fallbackIndex: $0, frameInfo: nil) }
         } else {
-            descriptors = texsFrames.enumerated().map { Descriptor(fallbackIndex: $0.offset, frameInfo: $0.element) }
+            texsFrames.enumerated().map { Descriptor(fallbackIndex: $0.offset, frameInfo: $0.element) }
         }
 
         // Share decompressed images across TEXS frames (avoids multi-GB OOM).
         var mipmapsByImageID: [Int: [WPETexTextureMipmap]] = firstImageMipmaps.map { [0: $0] } ?? [:]
         func mipmaps(for sourceIndex: Int) throws -> [WPETexTextureMipmap] {
-            if let cached = mipmapsByImageID[sourceIndex] { return cached }
+            if let cached = mipmapsByImageID[sourceIndex] {
+                return cached
+            }
             let materialized = try normalizedTextureMipmaps(parsed.bitmap.frames[sourceIndex], info: info)
             mipmapsByImageID[sourceIndex] = materialized
             return materialized
@@ -307,7 +312,8 @@ struct WPETexDecoder: Sendable {
         switch format {
         case .rgba8888, .r8, .rg88, .dxt1, .dxt3, .dxt5, .bc7:
             break
-        case .rgba1010102:
+        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
+             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
             throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
         }
         let texsFrames = parsed.frameInfo?.frames ?? []
@@ -339,9 +345,8 @@ struct WPETexDecoder: Sendable {
 
         let defaultDuration = 1.0 / WPETexAnimationTrack.defaultFrameRate
         let info = parsed.info
-        let frames: [WPETexStreamingFrame]
-        if texsFrames.isEmpty {
-            frames = parsed.bitmap.frames.indices.map { imageID in
+        let frames: [WPETexStreamingFrame] = if texsFrames.isEmpty {
+            parsed.bitmap.frames.indices.map { imageID in
                 WPETexStreamingFrame(
                     imageID: imageID,
                     subRect: CGRect(x: 0, y: 0, width: info.width, height: info.height),
@@ -349,7 +354,7 @@ struct WPETexDecoder: Sendable {
                 )
             }
         } else {
-            frames = texsFrames.enumerated().map { offset, frameInfo in
+            texsFrames.enumerated().map { offset, frameInfo in
                 let imageID = parsed.bitmap.frames.indices.contains(frameInfo.imageID)
                     ? frameInfo.imageID
                     : min(offset, max(parsed.bitmap.frames.count - 1, 0))
@@ -420,7 +425,7 @@ struct WPETexDecoder: Sendable {
             return CGRect(x: originX, y: originY, width: clampedW, height: clampedH)
         }
 
-        /// Translation is normalized by source width/height; both x-axis lanes divide by width and both y-axis lanes divide by height (`WPTexImageParser.cpp`).
+        /// 14015e1d0:181-192: x-coordinate lanes divide by width; y-coordinate lanes divide by height.
         func samplingDescriptor(
             textureWidth: Int,
             textureHeight: Int
@@ -430,8 +435,8 @@ struct WPETexDecoder: Sendable {
             return WPETexSpriteSamplingDescriptor(
                 rotation: SIMD4<Float>(
                     width / normalizedWidth,
-                    widthY / normalizedWidth,
-                    heightX / normalizedHeight,
+                    widthY / normalizedHeight,
+                    heightX / normalizedWidth,
                     height / normalizedHeight
                 ),
                 translation: SIMD2<Float>(
@@ -445,17 +450,15 @@ struct WPETexDecoder: Sendable {
     private func parseHeader(span: WPEMappedByteSpan) throws -> WPETexInfo {
         var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
-        guard containerMagic == "TEXV0004" || containerMagic == "TEXV0005" else {
+        guard let containerVersion = WPEParityProgramTextureHeader.containerVersion(for: containerMagic) else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
         }
-        let containerVersion = parseTrailingVersion(containerMagic)
-
         if containerVersion == 4 {
             return try parseInfoBlock(versionedMagic: "TEXI0000", containerVersion: containerVersion, reader: &reader)
         }
 
         let infoMagic = try reader.readMagic()
-        guard infoMagic.hasPrefix("TEXI") else {
+        guard WPEParityProgramTextureHeader.infoVersion(for: infoMagic) != nil else {
             throw WPETexDecodeError.unsupportedBlock(magic: infoMagic)
         }
         return try parseInfoBlock(
@@ -468,11 +471,9 @@ struct WPETexDecoder: Sendable {
     private func parse(span: WPEMappedByteSpan) throws -> ParsedTex {
         var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
-        guard containerMagic == "TEXV0004" || containerMagic == "TEXV0005" else {
+        guard let containerVersion = WPEParityProgramTextureHeader.containerVersion(for: containerMagic) else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
         }
-        let containerVersion = parseTrailingVersion(containerMagic)
-
         var info: WPETexInfo?
         var bitmap: WPETexBitmapBlock?
         var frameInfo: WPETexFrameInfoBlock?
@@ -533,16 +534,16 @@ struct WPETexDecoder: Sendable {
         reader: inout WPETexByteReader
     ) throws -> WPETexFrameInfoBlock {
         let version = parseTrailingVersion(versionedMagic)
-        let frameCount = Int(try reader.readInt32(blockName: "TEXS.frameCount"))
-        guard frameCount > 0 && frameCount <= 4_096 else {
+        let frameCount = try Int(reader.readInt32(blockName: "TEXS.frameCount"))
+        guard frameCount > 0, frameCount <= 4096 else {
             throw WPETexDecodeError.mipmapOutOfBounds(index: frameCount)
         }
 
         let gifWidth: Int?
         let gifHeight: Int?
         if version == 3 {
-            gifWidth = Int(try reader.readInt32(blockName: "TEXS.gifWidth"))
-            gifHeight = Int(try reader.readInt32(blockName: "TEXS.gifHeight"))
+            gifWidth = try Int(reader.readInt32(blockName: "TEXS.gifWidth"))
+            gifHeight = try Int(reader.readInt32(blockName: "TEXS.gifHeight"))
         } else {
             gifWidth = nil
             gifHeight = nil
@@ -551,31 +552,31 @@ struct WPETexDecoder: Sendable {
         var frames: [WPETexFrameInfo] = []
         frames.reserveCapacity(frameCount)
 
-        for _ in 0..<frameCount {
-            let imageID = Int(try reader.readInt32(blockName: "TEXS.imageID"))
-            let frameTime = TimeInterval(try reader.readFloat32(blockName: "TEXS.frameTime"))
+        for _ in 0 ..< frameCount {
+            let imageID = try Int(reader.readInt32(blockName: "TEXS.imageID"))
+            let frameTime = try TimeInterval(reader.readFloat32(blockName: "TEXS.frameTime"))
 
             if version == 1 {
-                frames.append(WPETexFrameInfo(
+                try frames.append(WPETexFrameInfo(
                     imageID: imageID,
                     frameTime: frameTime,
-                    x: Float(try reader.readInt32(blockName: "TEXS.x")),
-                    y: Float(try reader.readInt32(blockName: "TEXS.y")),
-                    width: Float(try reader.readInt32(blockName: "TEXS.width")),
-                    widthY: Float(try reader.readInt32(blockName: "TEXS.widthY")),
-                    heightX: Float(try reader.readInt32(blockName: "TEXS.heightX")),
-                    height: Float(try reader.readInt32(blockName: "TEXS.height"))
+                    x: Float(reader.readInt32(blockName: "TEXS.x")),
+                    y: Float(reader.readInt32(blockName: "TEXS.y")),
+                    width: Float(reader.readInt32(blockName: "TEXS.width")),
+                    widthY: Float(reader.readInt32(blockName: "TEXS.widthY")),
+                    heightX: Float(reader.readInt32(blockName: "TEXS.heightX")),
+                    height: Float(reader.readInt32(blockName: "TEXS.height"))
                 ))
             } else if version == 2 || version == 3 {
-                frames.append(WPETexFrameInfo(
+                try frames.append(WPETexFrameInfo(
                     imageID: imageID,
                     frameTime: frameTime,
-                    x: try reader.readFloat32(blockName: "TEXS.x"),
-                    y: try reader.readFloat32(blockName: "TEXS.y"),
-                    width: try reader.readFloat32(blockName: "TEXS.width"),
-                    widthY: try reader.readFloat32(blockName: "TEXS.widthY"),
-                    heightX: try reader.readFloat32(blockName: "TEXS.heightX"),
-                    height: try reader.readFloat32(blockName: "TEXS.height")
+                    x: reader.readFloat32(blockName: "TEXS.x"),
+                    y: reader.readFloat32(blockName: "TEXS.y"),
+                    width: reader.readFloat32(blockName: "TEXS.width"),
+                    widthY: reader.readFloat32(blockName: "TEXS.widthY"),
+                    heightX: reader.readFloat32(blockName: "TEXS.heightX"),
+                    height: reader.readFloat32(blockName: "TEXS.height")
                 ))
             } else {
                 throw WPETexDecodeError.unsupportedBlock(magic: versionedMagic)
@@ -604,21 +605,25 @@ struct WPETexDecoder: Sendable {
         containerVersion: Int,
         reader: inout WPETexByteReader
     ) throws -> WPETexInfo {
-        let infoVersion = parseTrailingVersion(versionedMagic)
-
-        let formatCode = Int(try reader.readInt32(blockName: "TEXI.format"))
-        let flags = try reader.readUInt32(blockName: "TEXI.flags")
-        let textureWidth = Int(try reader.readInt32(blockName: "TEXI.textureWidth"))
-        let textureHeight = Int(try reader.readInt32(blockName: "TEXI.textureHeight"))
-        let imageWidth = Int(try reader.readInt32(blockName: "TEXI.imageWidth"))
-        let imageHeight = Int(try reader.readInt32(blockName: "TEXI.imageHeight"))
+        guard let infoVersion = WPEParityProgramTextureHeader.infoVersion(for: versionedMagic) else {
+            throw WPETexDecodeError.unsupportedBlock(magic: versionedMagic)
+        }
+        let header = try WPEParityProgramTextureHeader(readUInt32: {
+            try reader.readUInt32(blockName: "TEXI.header")
+        })
+        let formatCode = Int(header.format)
+        let flags = header.flags
+        let textureWidth = Int(Int32(bitPattern: header.textureWidth))
+        let textureHeight = Int(Int32(bitPattern: header.textureHeight))
+        let imageWidth = Int(Int32(bitPattern: header.imageWidth))
+        let imageHeight = Int(Int32(bitPattern: header.imageHeight))
         let flag0x40Extension: WPETexFlag0x40Extension?
         if flags & WPETexInfo.rawExtensionFlag != 0 {
             let sourceStart = reader.cursor
             let rawValue = try reader.readInt32(blockName: "TEXI.depth")
             flag0x40Extension = WPETexFlag0x40Extension(
                 rawValue: rawValue,
-                sourceRange: sourceStart..<reader.cursor
+                sourceRange: sourceStart ..< reader.cursor
             )
         } else {
             flag0x40Extension = nil
@@ -659,7 +664,7 @@ struct WPETexDecoder: Sendable {
     ) throws -> WPETexBitmapBlock {
         let bitmapVersion = parseTrailingVersion(versionedMagic)
         let imageCount = try bitmapVersion == 0 ? 1 : Int(reader.readInt32(blockName: "TEXB.imageCount"))
-        guard imageCount > 0 && imageCount <= 4_096 else {
+        guard imageCount > 0, imageCount <= 4096 else {
             throw WPETexDecodeError.mipmapOutOfBounds(index: imageCount)
         }
 
@@ -671,9 +676,9 @@ struct WPETexDecoder: Sendable {
         case 0, 1, 2:
             break
         case 3:
-            sourceImageFormatCode = Int(try reader.readInt32(blockName: "TEXB.imageFormat"))
+            sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
         case 4:
-            sourceImageFormatCode = Int(try reader.readInt32(blockName: "TEXB.imageFormat"))
+            sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
             let conditionalImageCount = try Int(reader.readInt32(blockName: "TEXB.conditionalImageCount"))
             // The third v4 field counts conditional image variants, not MP4
             // payloads — video .tex files carry 0 here and are caught by
@@ -713,16 +718,16 @@ struct WPETexDecoder: Sendable {
 
         var frames: [[WPETexMipmap]] = []
         frames.reserveCapacity(imageCount)
-        for _ in 0..<imageCount {
-            let mipmapCount = Int(try reader.readInt32(blockName: "TEXB.mipCount"))
-            guard mipmapCount > 0 && mipmapCount <= 32 else {
+        for _ in 0 ..< imageCount {
+            let mipmapCount = try Int(reader.readInt32(blockName: "TEXB.mipCount"))
+            guard mipmapCount > 0, mipmapCount <= 32 else {
                 throw WPETexDecodeError.mipmapOutOfBounds(index: mipmapCount)
             }
 
             var frameMipmaps: [WPETexMipmap] = []
             frameMipmaps.reserveCapacity(mipmapCount)
-            for mipmapIndex in 0..<mipmapCount {
-                frameMipmaps.append(try parseMipmap(
+            for mipmapIndex in 0 ..< mipmapCount {
+                try frameMipmaps.append(parseMipmap(
                     version: effectiveBitmapVersion,
                     index: mipmapIndex,
                     info: info,
@@ -850,10 +855,10 @@ struct WPETexDecoder: Sendable {
             )
         }
 
-        let mipWidth = Int(try reader.readInt32(blockName: "TEXB.mipWidth"))
-        let mipHeight = Int(try reader.readInt32(blockName: "TEXB.mipHeight"))
+        let mipWidth = try Int(reader.readInt32(blockName: "TEXB.mipWidth"))
+        let mipHeight = try Int(reader.readInt32(blockName: "TEXB.mipHeight"))
         let mipDepth = try info.isVolume ? Int(reader.readUInt32(blockName: "TEXB.mipDepth")) : 1
-        guard mipWidth > 0 && mipHeight > 0 && mipWidth <= info.width && mipHeight <= info.height else {
+        guard mipWidth > 0, mipHeight > 0, mipWidth <= info.width, mipHeight <= info.height else {
             throw WPETexDecodeError.invalidDimensions(width: mipWidth, height: mipHeight)
         }
 
@@ -861,10 +866,10 @@ struct WPETexDecoder: Sendable {
         var decompressedByteCount: Int?
         if version >= 2 {
             compressedFlag = try reader.readUInt32(blockName: "TEXB.mipCompressed")
-            decompressedByteCount = Int(try reader.readUInt32(blockName: "TEXB.mipDecompressedSize"))
+            decompressedByteCount = try Int(reader.readUInt32(blockName: "TEXB.mipDecompressedSize"))
         }
 
-        let storedSize = Int(try reader.readUInt32(blockName: "TEXB.mipSize"))
+        let storedSize = try Int(reader.readUInt32(blockName: "TEXB.mipSize"))
         let payload = try reader.readSpan(count: storedSize, blockName: "TEXB.mipPayload")
 
         return WPETexMipmap(
@@ -897,6 +902,9 @@ struct WPETexDecoder: Sendable {
             throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
         }
 
+        guard !format.requiresRawPayload else {
+            throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
+        }
         if parsed.bitmap.usesEncodedImagePayload {
             let imageBytes = try inflateIfNeeded(
                 payload: mip.payload,
@@ -951,7 +959,8 @@ struct WPETexDecoder: Sendable {
                 height: mip.height,
                 mipmap: mip.index
             )
-        case .rgba1010102:
+        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
+             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
             throw WPETexDecodeError.unsupportedFormat(code: format.rawValue)
         }
         return try decoded.makeCGImage()

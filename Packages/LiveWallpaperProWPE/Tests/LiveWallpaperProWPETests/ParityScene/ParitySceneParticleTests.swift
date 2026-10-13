@@ -191,6 +191,10 @@ struct ParitySceneParticleTests {
             ])
             #expect(keys.map(\.passIdentity) == ["5/particle/r0", "5/particle/0/r0", "5/particle/0/e0/r0",
                                                  "5/particle/e0/r0"])
+            let materials = WPEParityParticleScene.materialProbes(document: document, assets: program.assets,
+                                                                  engineFlags: program.engineFlags)
+            #expect(materials.map(\.objectID) == ["5", "5", "5", "5"])
+            #expect(materials.map(\.path) == keys.map(\.path))
             let probes = keys.compactMap {
                 WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets)
             }
@@ -216,6 +220,76 @@ struct ParitySceneParticleTests {
                 for: .init(objectID: "5", path: [.staticChild(1)], renderer: 0),
                 document: document, assets: program.assets
             ) == nil)
+        }
+    }
+
+    @Test func baseMaterialProbesKeepAuthoredCombosSystemShaderAndResolvedSamplerNames() throws {
+        let objects: [[String: Any]] = [
+            ["id": 5, "name": "trail", "particle": "particles/trail.json"],
+            ["id": 6, "name": "rope", "particle": "particles/rope.json"],
+            ["id": 7, "name": "ropeTrail", "particle": "particles/rope-trail.json"],
+            ["id": 8, "name": "missing material", "particle": "particles/no-material.json"],
+            ["id": 9, "name": "missing shader", "particle": "particles/no-shader.json"],
+            ["id": 10, "name": "missing system", "particle": "particles/missing.json"],
+        ]
+        let files: [String: Any] = [
+            "particles/trail.json": ["material": "materials/custom.json", "renderer": [["name": "spritetrail"]]],
+            "particles/rope.json": ["material": "materials/custom.json", "renderer": [["name": "rope"]]],
+            "particles/rope-trail.json": ["material": "materials/custom.json", "renderer": [["name": "ropetrail"]]],
+            "particles/no-material.json": ["renderer": [["name": "sprite"]]],
+            "particles/no-shader.json": ["material": "materials/broken.json", "renderer": [["name": "sprite"]]],
+            "materials/custom.json": ["passes": [["shader": "custom", "combos": ["AUTHORED": 7, "REFRACT": 0],
+                                                  "textures": ["p/bound"]]]],
+            "materials/broken.json": ["passes": [["shader": "missing"]]],
+            "shaders/custom.vert": "void main() {\n\tgl_Position = vec4(0.0);\n}\n",
+            "shaders/custom.frag": """
+            uniform sampler2D g_Texture0; // {"default":"util/white"}
+            uniform sampler2D g_Texture3; // {"default":"_rt_FullFrameBuffer"}
+            void main() {
+                gl_FragColor = vec4(1.0);
+            }
+
+            """,
+            "shaders/genericropeparticle.vert": "void main() {\n\tgl_Position = vec4(0.0);\n}\n",
+            "shaders/genericropeparticle.frag": """
+            uniform sampler2D g_Texture0; // {"default":"rope/white"}
+            uniform sampler2D g_Texture5; // {"default":"rope/default"}
+            void main() {
+                gl_FragColor = vec4(1.0);
+            }
+
+            """,
+        ]
+        try ParticleSceneFiles.withScene(objects, files: files) { scene, document in
+            let probes = WPEParityParticleScene.materialProbes(document: document, assets: scene.assets,
+                                                               engineFlags: scene.engineFlags)
+            #expect(probes.map(\.objectID) == ["5", "6", "7", "8", "9", "10"])
+            let pathsAreRoots = probes.allSatisfy(\.path.isEmpty)
+            #expect(pathsAreRoots)
+            var shaders: [String] = []
+            var names: [[Int32: String]] = []
+            var failures: [String] = []
+            for probe in probes {
+                switch probe.material {
+                case let .ready(program, textures):
+                    shaders.append(program.shader)
+                    names.append(textures)
+                    #expect(program.combos.first { $0.name == "AUTHORED" }?.value == "7")
+                    #expect(program.combos.first { $0.name == "REFRACT" }?.value == "0")
+                    // Native base materials have no entry's THICKFORMAT/TRAIL/ORIENTATION overrides.
+                    #expect(!program.combos.contains { ["THICKFORMAT", "TRAILRENDERER", "ORIENTATION"].contains($0.name) })
+                case let .unavailable(reason):
+                    failures.append(reason)
+                }
+            }
+            #expect(shaders == ["custom", "genericropeparticle", "custom"])
+            #expect(names == [[0: "p/bound", 3: "_rt_FullFrameBuffer"],
+                              [0: "p/bound", 5: "rope/default"],
+                              [0: "p/bound", 3: "_rt_FullFrameBuffer"]])
+            #expect(failures.count == 3)
+            #expect(failures.contains { $0.contains("particle 8") && $0.contains("<missing>") })
+            #expect(failures.contains { $0.contains("particle 9") && $0.contains("materials/broken.json") })
+            #expect(failures.contains { $0.contains("particle 10") && $0.contains("particles/missing.json") })
         }
     }
 }

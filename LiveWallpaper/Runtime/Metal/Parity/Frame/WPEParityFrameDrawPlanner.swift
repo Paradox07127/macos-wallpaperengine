@@ -182,20 +182,19 @@ struct WPEParityFrameDrawPlan {
     /// One point-list draw per batch of live particles, its vertices copied into `arena`; none without live particles,
     /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched (R22 Q3). `layers` holds the live
     /// layer transforms once any moved.
-    func makeParticleDraws(frame: WPEParityUniformFrame, camera: WPEParityCamera, variant: Int,
-                           textures table: [WPEResourceID: MTLTexture], arena: WPEParityFrameArena.Frame,
-                           textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
-                           particles: inout WPEParityParticleFrame,
-                           layers live: WPEParityLayerTransformSet? = nil) throws -> [WPEParityDraw] {
+    func makeParticleDraw(_ batch: WPEParityParticleDrawBatch,
+                          frame: WPEParityUniformFrame, camera: WPEParityCamera, variant: Int,
+                          textures table: [WPEResourceID: MTLTexture], arena: WPEParityFrameArena.Frame,
+                          textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
+                          particles: inout WPEParityParticleFrame,
+                          layers live: WPEParityLayerTransformSet? = nil) throws -> WPEParityDraw? {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
-        let batches = particles.scene.batches(for: particle.key)
-        guard !batches.isEmpty else { return [] }
         var layers = live ?? particle.layers
         layers.camera = camera
         var uniforms = uniforms
         uniforms.matrices = WPEParityParticleMatrices.draw(
             layers, objectID: particle.key.objectID,
-            childLocal: particles.scene.childLocal(for: particle.key) ?? matrix_identity_float4x4,
+            childLocal: batch.localTransform,
             worldSpace: particle.worldSpace, perspective: particle.perspective,
             compositeOwnerID: particle.compositeOwnerID, parallax: frame.parallax.smoothed
         )
@@ -213,34 +212,30 @@ struct WPEParityFrameDrawPlan {
         for (name, vector) in [("Forward", vectors.forward), ("Right", vectors.right), ("Up", vectors.up)] {
             orientation["g_Orientation" + name] = .vector([vector.x, vector.y, vector.z])
         }
+        let vertices = batch.vertices
+        guard let allocation = particles.upload(vertices, argumentBytes: particle.argumentBytes, to: arena) else {
+            return nil
+        }
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
                                   textureSlots: &textureSlots, puppets: [:], constants: constants,
                                   engineExtras: orientation)
-
-        var draws: [WPEParityDraw] = []
-        for batch in batches {
-            guard let allocation = particles.upload(batch, argumentBytes: particle.argumentBytes, to: arena) else {
-                continue
-            }
-            // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
-            if let renderVar1 = particle.renderVar1 {
-                renderVars.setRV1(renderVar1)
-            }
-            renderVars.apply(batch.renderVar0)
-            let (rv0, rv1) = (renderVars.rv0, renderVars.rv1)
-            let values: [String: WPECBufferValue] = [
-                "g_RenderVar0": .vector([rv0.x, rv0.y, rv0.z, rv0.w]),
-                "g_RenderVar1": .vector([rv1.x, rv1.y, rv1.z, rv1.w]),
-            ]
-            var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                     constants: state.constants.mapValues { $0.merging(values) { $1 } },
-                                     textures: state.textures, samplers: samplers, vertexBuffer: allocation.buffer,
-                                     primitiveType: .point, vertexCount: batch.count)
-            draw.vertexBufferOffset = allocation.offset
-            draw.dropsWhenArenaIsFull = true
-            draws.append(draw)
+        // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
+        if let renderVar1 = particle.renderVar1 {
+            renderVars.setRV1(renderVar1)
         }
-        return draws
+        renderVars.apply(vertices.renderVar0)
+        let (rv0, rv1) = (renderVars.rv0, renderVars.rv1)
+        let values: [String: WPECBufferValue] = [
+            "g_RenderVar0": .vector([rv0.x, rv0.y, rv0.z, rv0.w]),
+            "g_RenderVar1": .vector([rv1.x, rv1.y, rv1.z, rv1.w]),
+        ]
+        var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
+                                 constants: state.constants.mapValues { $0.merging(values) { $1 } },
+                                 textures: state.textures, samplers: samplers, vertexBuffer: allocation.buffer,
+                                 primitiveType: .point, vertexCount: vertices.count)
+        draw.vertexBufferOffset = allocation.offset
+        draw.dropsWhenArenaIsFull = true
+        return draw
     }
 
     /// Per-stage constants (engine set, `engineExtras`, then the binding's `constants`) and the textures of `variant`.
@@ -545,7 +540,7 @@ struct WPEParityFrameDrawPlanner {
                     // D3D unbound slots read zero. A bound but corrupt, unsupported or inaccessible resource
                     // is a different readiness failure; never report its transparent replacement as success.
                     textures[variant][name] = try textureSource(source, slot: slot, shader: shader,
-                                                                reads: operation.reads.map(\.resource))
+                                                                reads: operation.reads.map(\.resource) + (particleKey == nil ? [] : [WPEParitySceneResource.fullFrameBuffer]))
                 }
             }
             guard let source = textures[0][name] else { continue }
@@ -553,6 +548,28 @@ struct WPEParityFrameDrawPlanner {
             if slot < uniformTextures.count {
                 uniformTextures[Int(slot)] = uniformTexture(source)
                 sprites[Int(slot)] = self.sprites(source)
+            }
+        }
+
+        for (_, reflection) in reflections {
+            for resource in reflection.resources where resource.kind == .texture {
+                for (variant, sources) in textures.enumerated() {
+                    guard let source = sources[resource.name] else { continue }
+                    let type: MTLTextureType
+                    switch source {
+                    case let .image(texture): type = texture.textureType
+                    case let .resource(id):
+                        guard let target = layout.frames[variant].resources.first(where: { $0.id == id }) else {
+                            throw .texture("\(shader) samples undeclared \(id)")
+                        }
+                        type = target.sampleCount > 1 ? .type2DMultisample : .type2D
+                    }
+                    do {
+                        try WPEParityDrawEncoder.validateDimension(resource, textureType: type)
+                    } catch {
+                        throw .pipeline("\(shader): \(error)")
+                    }
+                }
             }
         }
 

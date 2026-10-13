@@ -28,6 +28,10 @@ final class WPEParityGraphExecutor {
     /// `arena` is the frame's slot, for per-draw data the provider uploads itself.
     typealias DrawProvider = (_ operation: Int, _ textures: [WPEResourceID: MTLTexture],
                               _ arena: WPEParityFrameArena.Frame) throws -> [WPEParityDraw]
+    /// Emits and encodes one draw before the next batch allocates its vertices.
+    typealias DrawVisitor = (_ operation: Int, _ textures: [WPEResourceID: MTLTexture],
+                             _ arena: WPEParityFrameArena.Frame,
+                             _ emit: (WPEParityDraw) throws -> Void) throws -> Void
 
     let graph: WPECompiledRenderGraph
     let heap: MTLHeap?
@@ -156,6 +160,17 @@ final class WPEParityGraphExecutor {
     func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
                      prepare: (MTLCommandBuffer) throws -> Void = { _ in },
                      draw: DrawProvider) throws -> Submission {
+        try encodeFrame(on: queue, textures: external, prepare: prepare, visit: { operation, textures, frame, emit in
+            for provided in try draw(operation, textures, frame) {
+                try emit(provided)
+            }
+        })
+    }
+
+    func encodeFrame(on queue: MTLCommandQueue, textures external: [WPEResourceID: MTLTexture],
+                     prepare: (MTLCommandBuffer) throws -> Void = { _ in },
+                     shouldTransfer: (Int) -> Bool = { _ in true },
+                     visit: DrawVisitor) throws -> Submission {
         let physicalTextures = try frameTextures(external)
         var textures = try boundTextures(physicalTextures, bindings: resourceBindings[.frame, default: [:]])
         guard let commandBuffer = queue.makeCommandBuffer() else {
@@ -175,7 +190,7 @@ final class WPEParityGraphExecutor {
             for index in graph.steps.indices {
                 try encodeStep(index, textures: &textures, physicalTextures: physicalTextures,
                                bindings: &bindings, scope: &scope, frame: frame,
-                               commandBuffer: commandBuffer, draw: draw)
+                               commandBuffer: commandBuffer, shouldTransfer: shouldTransfer, visit: visit)
             }
         } catch {
             failure = error
@@ -237,7 +252,8 @@ final class WPEParityGraphExecutor {
     private func encodeStep(_ index: Int, textures: inout [WPEResourceID: MTLTexture],
                             physicalTextures: [WPEResourceID: MTLTexture], bindings: inout WPEParityResourceBindings,
                             scope: inout WPEResourceBindingScope, frame: WPEParityFrameArena.Frame,
-                            commandBuffer: MTLCommandBuffer, draw: DrawProvider) throws {
+                            commandBuffer: MTLCommandBuffer, shouldTransfer: (Int) -> Bool,
+                            visit: DrawVisitor) throws {
         let step = graph.steps[index]
         let waitFences = waits[index, default: []].compactMap { fences[$0] }
         let fence = fences[index]
@@ -261,6 +277,17 @@ final class WPEParityGraphExecutor {
         }
 
         let pass = MTLRenderPassDescriptor()
+        switch step.kind {
+        case .copy, .resolve:
+            if let operation = step.operations.first, !shouldTransfer(operation) {
+                // Consumers still need the graph's fence hand-over when this frame preserves old history.
+                if !waitFences.isEmpty || fence != nil {
+                    try blit { _ in }
+                }
+                return
+            }
+        default: break
+        }
         switch step.kind {
         case let .resourceScope(next, resources):
             scope = next
@@ -324,7 +351,7 @@ final class WPEParityGraphExecutor {
         }
         for operation in step.operations {
             guard case .draw = graph.operations[operation].kind else { continue }
-            for provided in try draw(operation, textures, frame) {
+            try visit(operation, textures, frame) { provided in
                 do {
                     try drawEncoder.encode(provided, frame: frame, on: encoder)
                 } catch WPEParityExecutionError.arenaExhausted where provided.dropsWhenArenaIsFull {

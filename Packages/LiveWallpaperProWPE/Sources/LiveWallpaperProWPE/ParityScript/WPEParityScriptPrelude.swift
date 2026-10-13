@@ -111,9 +111,14 @@ enum WPEParityScriptPrelude {
           host.log(1, 'getMaterial is unsupported for this argument; native string lookup is not verified');
           return null;
         }
-        const pass = this.__passes[a.value];
+        if (!this.__metadataKnown) {
+          host.log(1, 'getMaterial is unsupported without resolved effect resource metadata');
+          return null;
+        }
+        const index = this.__records[a.value];
+        const pass = index >= 0 ? this.__passes[index] : null;
         if (!pass) {
-          host.log(1, 'getMaterial has no pass metadata at this index; native failure behavior is not verified');
+          host.log(1, 'getMaterial has no resolved material at this record; native command/missing behavior is not verified');
           return null;
         }
         return pass[materialWrapper];
@@ -133,7 +138,10 @@ enum WPEParityScriptPrelude {
           else if (a.type === 0x10) { if (c.type === 1) write(c.slot, 1, false, a.value); }
         }
       },
-      getMaterialCount() { return this.__passes.length; }
+      getMaterialCount() {
+        if (!this.__metadataKnown) host.log(1, 'getMaterialCount is unsupported without resolved effect resource metadata');
+        return this.__metadataKnown ? this.__records.length : 0;
+      }
     };
     Object.defineProperty(EffectProto, 'visible', accessor(e => e.__s, { rel: 0, type: 6, angle: false }));
     const LayerProto = {
@@ -163,7 +171,8 @@ enum WPEParityScriptPrelude {
       if (hasVideo && Object.keys(p.video).length) layer.__video = hidden(Object.create(p.video), { __base: base });
       for (const f of host.kinds[kind]) owners[base + f.rel] = f.owner === 'instance' ? layer.instance : f.owner === 'video' ? layer.__video : layer;
       for (const e of effects) {
-        const effect = hidden(Object.create(EffectProto), { __s: e.slot, __passes: e.passes, name: e.name });
+        const effect = hidden(Object.create(EffectProto), { __s: e.slot, __passes: e.passes,
+          __records: e.records, __metadataKnown: e.metadataKnown, name: e.name });
         layer.__effects.push(effect);
         owners[e.slot] = effect;
         for (const pass of e.passes) material(pass);

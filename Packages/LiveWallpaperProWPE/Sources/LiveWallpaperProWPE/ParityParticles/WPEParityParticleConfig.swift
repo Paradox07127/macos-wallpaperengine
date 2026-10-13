@@ -184,7 +184,13 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         for entry in JSON.array(json["operator"]) {
             appendOperator(entry, is3D: is3D)
         }
-        for entry in JSON.array(json["renderer"]) {
+        // B/1401c5490.c:791–810 injects sprite only when renderer is not an array; [] stays empty.
+        let rendererEntries: [WPESceneJSONValue] = if case let .array(entries)? = json["renderer"] {
+            entries
+        } else {
+            [.object(["name": .string("sprite")])]
+        }
+        for entry in rendererEntries {
             let name = JSON.string(entry["name"])?.lowercased() ?? ""
             if let renderer = WPEParityParticleRenderer(name: name, json: entry) {
                 renderers.append(renderer)

@@ -77,6 +77,7 @@ struct WPEParityFramePlan {
     let post: WPEParityPostProcessConfig
     /// The program of every draw any effect set has, disabled effects included, as WPE loads them (R24 Q3).
     let programCache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>]
+    let particleMaterials: [WPEParityParticleMaterialProbe]
 
     var frames: [WPEParityFrame] {
         layout.frames
@@ -97,15 +98,24 @@ struct WPEParityFramePlan {
     /// Every program `programCache` resolved, each once.
     var loadPrograms: [WPEParityProgram] {
         var seen: Set<WPEHLSLProgram> = []
-        return programCache.values.compactMap { result in
-            guard case let .success(program) = result, seen.insert(program.hlsl).inserted else { return nil }
+        let materialPrograms = particleMaterials.compactMap { probe -> WPEParityProgram? in
+            if case let .ready(program, _) = probe.material {
+                return program
+            }
+            return nil
+        }
+        let programs = programCache.values.compactMap { result -> WPEParityProgram? in
+            guard case let .success(program) = result else { return nil }
             return program
         }
+        return (programs + materialPrograms).filter { seen.insert($0.hlsl).inserted }
     }
 
     init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
          width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop) throws {
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
+        particleMaterials = WPEParityParticleScene.materialProbes(document: document, assets: assets,
+                                                                  engineFlags: scene.engineFlags)
         var post = scene.postProcess
         (post.backbufferWidth, post.backbufferHeight) = (width, height)
         var cache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>] = [:]

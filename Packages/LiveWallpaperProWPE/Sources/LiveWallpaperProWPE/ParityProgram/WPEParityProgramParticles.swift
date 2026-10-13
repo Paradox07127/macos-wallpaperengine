@@ -57,3 +57,35 @@ extension WPEParityParticleMaterial {
                   texture0Format: header.map { Int($0.format) })
     }
 }
+
+extension WPEParityParticleConfig {
+    /// 14022c3c0:507–520 loads the system base with no entry extras and only the all-rope shader override.
+    /// 1401515b0 then derives its special-texture flags from the compiled VS/PS texture-slot list.
+    func appendMaterialProbes(objectID: String, path: [WPEParityParticlePathElement],
+                              assets: WPEParityProgramAssets, engineFlags: WPEEngineComboFlags,
+                              into probes: inout [WPEParityParticleMaterialProbe]) {
+        let material: WPEParityParticleMaterialProbe.Material
+        if let materialPath, var base = WPEParityProgramMaterial(path: materialPath, assets: assets) {
+            base.shader = WPEParityParticleSystem.shaderOverride(renderers: renderers) ?? base.shader
+            do {
+                let description = WPEParityProgramBuilder.description(base, engineFlags: engineFlags, assets: assets)
+                let program = try WPEParityProgramResolver.resolve(description, sources: assets)
+                material = .ready(program: program,
+                                  textureNames: WPEParityProgramBuilder.resolvedTextureNames(base, assets: assets))
+            } catch {
+                material = .unavailable("particle \(objectID) \(path): \(materialPath): \(error)")
+            }
+        } else {
+            material = .unavailable("particle \(objectID) \(path): material \(materialPath ?? "<missing>") unavailable")
+        }
+        probes.append(WPEParityParticleMaterialProbe(objectID: objectID, path: path, material: material))
+        for (index, child) in children.filter({ $0.trigger == .always }).enumerated() {
+            child.config.appendMaterialProbes(objectID: objectID, path: path + [.staticChild(index)],
+                                              assets: assets, engineFlags: engineFlags, into: &probes)
+        }
+        for (group, child) in children.filter({ $0.trigger != .always }).enumerated() {
+            child.config.appendMaterialProbes(objectID: objectID, path: path + [.eventGroup(group)],
+                                              assets: assets, engineFlags: engineFlags, into: &probes)
+        }
+    }
+}

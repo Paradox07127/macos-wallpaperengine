@@ -28,7 +28,8 @@ struct WPEParityParticleFrame {
     mutating func upload(_ batch: WPEParityParticleVertexBatch, argumentBytes: Int,
                          to arena: WPEParityFrameArena.Frame) -> WPEParityFrameArena.Allocation? {
         let length = WPEParityFrameArena.aligned(batch.bytes.count) + argumentBytes
-        guard !overflowed, used + length <= budget, let allocation = arena.allocate(length: batch.bytes.count) else {
+        guard !overflowed, used + length <= budget, arena.canAllocate(length: length),
+              let allocation = arena.allocate(length: batch.bytes.count) else {
             overflowed = true
             dropped += 1
             return nil

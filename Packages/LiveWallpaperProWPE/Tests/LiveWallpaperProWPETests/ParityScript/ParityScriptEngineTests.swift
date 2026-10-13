@@ -34,14 +34,15 @@ final class ParityScriptEngineTests: XCTestCase {
         let engine: WPEParityScriptEngine
     }
 
-    private static func fixedAssets() throws -> WPEParityProgramAssets {
+    private static func fixedAssets(files: [String: Any] = [:]) throws -> WPEParityProgramAssets {
         // Fixed shipped helper, SHA256 708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294.
         // Kept outside the test target's source directory; these guards need no installed Steam assets.
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
         let baseClasses = try Data(contentsOf: fixture)
+        let resources = try files.mapValues { try JSONSerialization.data(withJSONObject: $0) }
         return WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
-            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : resources[path]
         }])
     }
 
@@ -50,6 +51,7 @@ final class ParityScriptEngineTests: XCTestCase {
                               angleConstants: Set<WPEParityScriptEngine.ConstantKey> = [],
                               general: [String: Any] = [:],
                               assets: WPEParityProgramAssets? = nil,
+                              resolveEffectResources: Bool = false,
                               configure: (inout WPEParityScriptEngine.Configuration) -> Void = { _ in }) throws -> Scene {
         guard assets != nil || FileManager.default.fileExists(atPath: install.appendingPathComponent("scripts").path) else {
             throw XCTSkip("No Wallpaper Engine assets")
@@ -68,6 +70,11 @@ final class ParityScriptEngineTests: XCTestCase {
                                                      assetRoots: [install]),
             canvasSize: SIMD2(1920, 1080), screenResolution: SIMD2(1920, 1080), angleConstants: angleConstants
         )
+        if resolveEffectResources {
+            configuration.resolvedEffectRecords = WPEParityProgramScene(
+                document: document, assets: configuration.assets, settings: .init()
+            ).resolvedEffectRecords
+        }
         configure(&configuration)
         return try Scene(document: document, state: state,
                          engine: WPEParityScriptEngine(document: document, state: state, configuration: configuration))
@@ -424,7 +431,11 @@ final class ParityScriptEngineTests: XCTestCase {
                                  """),
                              ]], [:]]]],
             ]),
-        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]]], assets: Self.fixedAssets(),
+        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]]], assets: Self.fixedAssets(files: [
+            "effects/x.json": ["passes": [["material": "materials/first.json"], ["material": "materials/empty.json"]]],
+            "materials/first.json": ["passes": [["shader": "probe"]]],
+            "materials/empty.json": ["passes": [["shader": "empty"]]],
+        ]), resolveEffectResources: true,
         configure: { configuration in
             configuration.materialConstants = [
                 .init(pass: pass, name: "v2"): .init(value: .zero, components: 2, angle: true),
@@ -443,6 +454,88 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.constant("v4", of: pass)?.value, SIMD4(90, 180, 270, 360))
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.angles, SIMD3(90, 90, 90), "scalar vec3 angle branch skips conversion")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// Native count includes command/empty records after conditions; unsupported getter branches are a conservative
+    /// product policy until 1401ee0c0 is recovered, not Windows return-value expectations.
+    func testResolvedEffectRecordsOwnOnlyRealMaterialsAndRejectAuthoredPhantoms() throws {
+        var diagnostics: [String] = []
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        let later = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 3)
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init() {
+                const effect = thisLayer.getEffect(0);
+                const empty = effect.getMaterial(0), later = effect.getMaterial(2);
+                if (empty !== effect.getMaterial(0) || Object.keys(empty).length !== 0) throw Error('empty material');
+                thisLayer.color = new Vec3(effect.getMaterialCount(), later.Color, effect.visible ? 99 : 1);
+                later.Color = 8;
+                const rejected = effect.getMaterial(1) === null && effect.getMaterial(3) === null
+                    && effect.getMaterial(4) === null && effect.getMaterial(5) === null && effect.getMaterial('0') === null;
+                thisLayer.brightness = rejected ? 7 : 99;
+            }
+            """), "effects": [["id": 5, "name": "effect", "file": "effects/records.json", "visible": false,
+                               "passes": [[:], ["constantshadervalues": ["phantom": Self.scripted(2, "export function init() { return 99; }")]],
+                                          [:], ["constantshadervalues": ["Color": 3]], [:], [:],
+                                          ["constantshadervalues": ["beyond": 4]]]]]]),
+        ], constants: [first: [:], later: ["Color": [3]]], assets: Self.fixedAssets(files: [
+            "effects/records.json": ["passes": [
+                ["material": "materials/empty.json"], ["command": "copy"],
+                ["material": "materials/skipped.json", "conditions": [["ON": 1]]],
+                ["material": "materials/later.json"], ["command": "swap"],
+                ["material": "materials/missing.json"],
+            ]],
+            "materials/empty.json": ["passes": [["shader": "empty"]]],
+            "materials/later.json": ["passes": [["shader": "later"]]],
+        ]), resolveEffectResources: true, configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(5, 3, 1))
+        XCTAssertEqual(scene.state.object("1")?.brightness, 7)
+        XCTAssertEqual(scene.state.constant("Color", of: later)?.value.x, 8)
+        XCTAssertNil(scene.state.constant("phantom", of: .init(objectID: "1", effectID: "5", pass: 1)))
+        XCTAssertNil(scene.state.constant("beyond", of: .init(objectID: "1", effectID: "5", pass: 6)))
+        XCTAssertFalse(scene.engine.bindings.contains { $0.path.contains("phantom") })
+        XCTAssertEqual(diagnostics.filter { $0.contains("getMaterial") }.count, 5)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testMissingBaseMaterialDoesNotCreateTypedConstantBindings() throws {
+        var diagnostics: [String] = []
+        let base = WPEParityMaterialPassKey(objectID: "1")
+        var scene = try Self.scene([
+            Self.layer(1, "A", [
+                "alpha": Self.scripted(1, """
+                export function init(value) {
+                    // A valid query of an unresolved material remains explicitly unsupported; this null is a
+                    // conservative product policy until the native failure callback is recovered.
+                    thisLayer.brightness = thisLayer.getEffect(0).getMaterial(0) === null ? 7 : 99;
+                    return value;
+                }
+                """),
+                "instance": ["constantshadervalues": ["phantom": Self.scripted(2, """
+                export function init() { thisObject.phantom = 99; thisLayer.brightness = 99; return 99; }
+                """)]],
+                "effects": [["id": 5, "file": "effects/missing-material.json", "passes": [
+                    ["constantshadervalues": ["absent": Self.scripted(3, "export function init() { return 99; }")]],
+                ]]],
+            ]),
+        ], assets: Self.fixedAssets(files: [
+            "models/A.json": ["material": "materials/missing.json"],
+            "effects/missing-material.json": ["passes": [["material": "materials/missing.json"]]],
+        ]), resolveEffectResources: true, configure: { configuration in
+            configuration.materialConstants = [.init(pass: base, name: "phantom"): .init(value: SIMD4(2, 0, 0, 0), components: 1)]
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.brightness, 7)
+        XCTAssertNil(scene.state.passIndex(of: base))
+        XCTAssertNil(scene.state.constant("phantom", of: base))
+        XCTAssertNil(scene.state.passIndex(of: .init(objectID: "1", effectID: "5")))
+        XCTAssertEqual(scene.engine.bindings.count, 1, "only the real layer alpha script is compiled; no material typed setter exists")
+        XCTAssertEqual(diagnostics.filter { $0.contains("getMaterial has no resolved material") }.count, 1)
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 

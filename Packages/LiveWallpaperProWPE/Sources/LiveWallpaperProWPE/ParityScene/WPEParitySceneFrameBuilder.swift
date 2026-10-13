@@ -6,12 +6,14 @@ public enum WPEParitySceneFrameBuilder {
         var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex)
         emitter.renderScene()
         // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
-        let used = Set(emitter.operations.flatMap(\.kind.resources))
+        let used = Set(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
+            [$0.color, $0.snapshotSource, Resource.fullFrameBuffer] + [$0.depth].compactMap(\.self)
+        })
         return WPEParitySceneFrame(operations: emitter.operations,
                                    resources: emitter.resources.values.filter { used.contains($0.id) }
                                        .sorted { $0.id < $1.id },
                                    draws: emitter.draws, samplers: emitter.samplers, diagnostics: scene.diagnostics,
-                                   owners: emitter.owners)
+                                   owners: emitter.owners, particleBlocks: emitter.particleBlocks)
     }
 }
 
@@ -51,13 +53,14 @@ private struct WPEParitySceneEmitter {
     var draws: [WPEPassIdentity: WPEParitySceneDraw] = [:]
     var samplers: [WPEResourceID: WPEParitySceneSampler] = [:]
     var owners: [WPEPassIdentity: String] = [:]
+    var particleBlocks: [WPEParityParticleBlock] = []
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
     /// Each `_rt_imageLayerComposite_<id>_a` the scene has and the layer it belongs to, so a draw of another layer
     /// may name it in its reads before the owner renders.
     private let layerComposites: [WPEResourceID: WPEParitySceneObject]
 
-    init(_ scene: WPEParitySceneDescription, frameIndex: Int) {
+    init(_ scene: WPEParitySceneDescription, frameIndex _: Int) {
         self.scene = scene
         let ids = Set(scene.objects.map(\.id))
         // 14018aac0.c:42-81 stable sort on obj+0x124.
@@ -482,6 +485,12 @@ private struct WPEParitySceneEmitter {
     /// `_rt_FullFrameBuffer` once per frame, before its first REFRACT draw (R16 Q3).
     private mutating func renderParticles(_ object: WPEParitySceneObject, _ particle: WPEParitySceneParticle,
                                           into destination: WPEParitySceneDestination) {
+        let start = operations.count
+        defer {
+            particleBlocks.append(WPEParityParticleBlock(objectID: object.id, operations: start ..< operations.count,
+                                                         color: destination.color, depth: destination.depth,
+                                                         snapshotSource: destination.color))
+        }
         var snapshotTaken = false
         for entry in particle.draws {
             let key = entry.key

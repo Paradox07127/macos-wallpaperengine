@@ -30,6 +30,7 @@ enum WPEParityExecutionError: Error, Equatable {
     case missingTexture(String)
     case missingSampler(String)
     case resourceArrayUnsupported(String)
+    case textureDimensionMismatch(String, expected: String, actual: UInt)
     case arenaExhausted
 }
 

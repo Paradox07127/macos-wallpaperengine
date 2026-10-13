@@ -272,7 +272,8 @@ final class WPEParitySceneDriver {
                         document: document, state: renderer.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
                         screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
-                        materialConstants: plan.materialConstants, fieldDefaults: renderer.scriptFieldDefaults, host: scriptHost
+                        materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
+                        fieldDefaults: renderer.scriptFieldDefaults, host: scriptHost
                     ))
                 } catch {
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)

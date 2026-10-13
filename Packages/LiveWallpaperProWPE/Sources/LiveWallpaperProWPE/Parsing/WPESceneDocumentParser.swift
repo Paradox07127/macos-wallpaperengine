@@ -2460,8 +2460,10 @@ public enum WPESceneDocumentParser {
 
     private static func parseEffectPassOverrides(_ raw: Any?) -> [WPESceneEffectPassOverride] {
         guard let array = raw as? [Any] else { return [] }
-        return array.compactMap { entry in
-            guard let dict = entry as? [String: Any] else { return nil }
+        return array.map { entry in
+            // Effect overrides use the original resource pass index (1401e7170:441-447); a missing/invalid entry
+            // supplies no fields and must not shift the overrides of later commands or materials.
+            let dict = entry as? [String: Any] ?? [:]
             return WPESceneEffectPassOverride(
                 id: parseInt(dict["id"]),
                 combos: WPEValueParser.comboMap(dict["combos"]),

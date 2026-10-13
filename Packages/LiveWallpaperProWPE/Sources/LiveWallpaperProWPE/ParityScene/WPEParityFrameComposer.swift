@@ -21,6 +21,7 @@ public struct WPEParityFrame: Hashable, Sendable {
     public let samplers: [WPEResourceID: WPEParitySceneSampler]
     /// The object each operation renders, keyed by operation index; scene-wide and post operations are absent.
     public let owners: [Int: String]
+    public let particleBlocks: [WPEParityParticleBlock]
 }
 
 public enum WPEParityFrameComposer {
@@ -68,6 +69,6 @@ public enum WPEParityFrameComposer {
             }
         }
         return WPEParityFrame(operations: operations, resources: resources, draws: draws,
-                              samplers: sceneFrame.samplers, owners: owners)
+                              samplers: sceneFrame.samplers, owners: owners, particleBlocks: sceneFrame.particleBlocks)
     }
 }

@@ -18,7 +18,8 @@ public enum WPERenderGraphCompiler {
     public static func compile(resources: [WPELogicalResource],
                                operations: [WPERenderOperation], excludingDraws: Set<Int> = [],
                                drawReads: [Int: [WPETextureView]] = [:],
-                               discardableHistory: Set<WPEResourceID> = []) throws(WPEParityGraphError)
+                               discardableHistory: Set<WPEResourceID> = [],
+                               preservingTransfers: Set<Int> = []) throws(WPEParityGraphError)
         -> WPECompiledRenderGraph {
         var table: [WPEResourceID: WPELogicalResource] = [:]
         for resource in resources where table.updateValue(resource, forKey: resource.id) != nil {
@@ -36,7 +37,7 @@ public enum WPERenderGraphCompiler {
         let normalized = try normalize(operations, table, excludingDraws: excludingDraws)
         let versions = Versioning(normalized)
         var builders = formEncoders(normalized)
-        foldResolves(&builders, normalized, versions)
+        foldResolves(&builders, normalized, versions, preserving: preservingTransfers)
         let swapped = Set(operations.flatMap { operation -> [WPEResourceID] in
             if case let .swapResources(first, second) = operation.kind {
                 return [first, second]
@@ -307,7 +308,8 @@ private func formEncoders(_ operations: [Normalized]) -> [StepBuilder] {
 
 /// Folds a resolve into the encoder that last rendered its source when no step in between
 /// writes the source or touches the destination, so the resolve can run at encoder exit.
-private func foldResolves(_ steps: inout [StepBuilder], _ operations: [Normalized], _ versions: Versioning) {
+private func foldResolves(_ steps: inout [StepBuilder], _ operations: [Normalized], _ versions: Versioning,
+                          preserving: Set<Int>) {
     var index = 0
     while index < steps.count {
         guard case let .transfer(.resolve(_, destination)) = steps[index].kind else {
@@ -315,6 +317,10 @@ private func foldResolves(_ steps: inout [StepBuilder], _ operations: [Normalize
             continue
         }
         let operation = steps[index].operations[0]
+        guard !preserving.contains(operation) else {
+            index += 1
+            continue
+        }
         let read = versions.accesses[operation].reads[0]
         let source = read.subresource
         let target = WPESubresource(destination)

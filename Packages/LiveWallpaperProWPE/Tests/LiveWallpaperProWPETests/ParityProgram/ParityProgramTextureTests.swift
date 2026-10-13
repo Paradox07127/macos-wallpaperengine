@@ -3,8 +3,8 @@ import Foundation
 import XCTest
 
 final class ParityProgramTextureTests: XCTestCase {
-    private static func header(format: UInt32, flags: UInt32) -> Data {
-        var bytes = Array("TEXV0005\0TEXI0001\0".utf8)
+    private static func header(format: UInt32, flags: UInt32, containerVersion: Int = 5) -> Data {
+        var bytes = Array((containerVersion == 4 ? "TEXV0004\0" : "TEXV0005\0TEXI0001\0").utf8)
         for value in [format, flags, 64, 32, 48, 20] {
             withUnsafeBytes(of: value.littleEndian) { bytes.append(contentsOf: $0) }
         }
@@ -12,13 +12,48 @@ final class ParityProgramTextureTests: XCTestCase {
     }
 
     func testSyntheticHeaderReadsFormatFlagsAndSizes() {
-        let header = WPEParityProgramTextureHeader(bytes: Array(Self.header(format: 9, flags: 0x0080_0002)))
-        XCTAssertEqual(header, WPEParityProgramTextureHeader(format: 9, flags: 0x0080_0002, textureWidth: 64,
-                                                             textureHeight: 32, imageWidth: 48, imageHeight: 20))
+        for version in [4, 5] {
+            let bytes = Array(Self.header(format: 9, flags: 0x0080_0002, containerVersion: version))
+            let header = WPEParityProgramTextureHeader(bytes: bytes)
+            XCTAssertEqual(header, WPEParityProgramTextureHeader(format: 9, flags: 0x0080_0002, textureWidth: 64,
+                                                                 textureHeight: 32, imageWidth: 48, imageHeight: 20))
+            XCTAssertNil(WPEParityProgramTextureHeader(bytes: Array(bytes.dropLast())))
+        }
         var wrongMagic = Array(Self.header(format: 9, flags: 0))
         wrongMagic[9] = UInt8(ascii: "X")
         XCTAssertNil(WPEParityProgramTextureHeader(bytes: wrongMagic))
         XCTAssertNil(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: 9, flags: 0).prefix(41))))
+        for magic in ["TEXV0006", "TEXVxxxx"] {
+            var bytes = Array(Self.header(format: 9, flags: 0))
+            bytes.replaceSubrange(0 ..< 8, with: magic.utf8)
+            XCTAssertNil(WPEParityProgramTextureHeader(bytes: bytes))
+        }
+        var unknownInfo = Array(Self.header(format: 9, flags: 0))
+        unknownInfo.replaceSubrange(9 ..< 17, with: "TEXI0002".utf8)
+        XCTAssertNil(WPEParityProgramTextureHeader(bytes: unknownInfo))
+        XCTAssertEqual(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: .max, flags: .max)))?.format, -1)
+        XCTAssertEqual(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: .max, flags: .max)))?.flags, .max)
+    }
+
+    func testVersionFourRG8AndR8ReachProductionFormatCombos() {
+        let files = [
+            "shaders/probe.vert": Data("void main() {}".utf8),
+            "shaders/probe.frag": Data("""
+            uniform sampler2D g_Texture0; // {"formatcombo":true}
+            uniform sampler2D g_Texture1; // {"formatcombo":true}
+            """.utf8),
+            "materials/rg.tex": Self.header(format: 8, flags: 0x0080_0002, containerVersion: 4),
+            "materials/r.tex": Self.header(format: 9, flags: 2, containerVersion: 4),
+        ]
+        let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/tex-v4-fixture")) { files[$0] }])
+        let material = WPEParityProgramMaterial(shader: "probe", textures: [0: "rg", 1: "r"])
+        let description = WPEParityProgramBuilder.description(material, engineFlags: WPEEngineComboFlags(), assets: assets)
+        XCTAssertEqual(description.engineFlags.textureFormats, [0: 8, 1: 9])
+        XCTAssertEqual(description.boundTextures[0]?.flags, 0x0080_0002)
+        let defines = WPEComboResolver.resolve(passJSONCombos: [], blendingMode: 0, vertexSource: "",
+                                               fragmentSource: Latin1.string(assets.shaderSource(named: "shaders/probe.frag") ?? []),
+                                               engineFlags: description.engineFlags, boundTextures: description.boundTextures)
+        XCTAssertEqual(Set(defines.map { "\($0.name)=\($0.value)" }), Set(["REVERSEDEPTH=1", "TEX0FORMAT=8", "TEX1FORMAT=9"]))
     }
 
     func testRealMaskTextureFlagsEmissiveComponent() throws {

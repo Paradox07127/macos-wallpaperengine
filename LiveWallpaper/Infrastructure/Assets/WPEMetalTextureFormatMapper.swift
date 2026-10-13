@@ -119,6 +119,18 @@ enum WPEMetalTextureFormatMapper {
             )
         case .rgba1010102:
             return WPEMetalTextureFormatMapping(pixelFormat: .rgb10a2Unorm, bytesPerPixel: 4, bytesPerBlock: nil)
+        case .rg16Float:
+            return WPEMetalTextureFormatMapping(pixelFormat: .rg16Float, bytesPerPixel: 4, bytesPerBlock: nil)
+        case .r16Float:
+            return WPEMetalTextureFormatMapping(pixelFormat: .r16Float, bytesPerPixel: 2, bytesPerBlock: nil)
+        case .rgba16Float, .rgba16Float15:
+            return WPEMetalTextureFormatMapping(pixelFormat: .rgba16Float, bytesPerPixel: 8, bytesPerBlock: nil)
+        case .r32Float:
+            return WPEMetalTextureFormatMapping(pixelFormat: .r32Float, bytesPerPixel: 4, bytesPerBlock: nil)
+        case .rgba16Unorm, .rgba16Unorm18:
+            return WPEMetalTextureFormatMapping(pixelFormat: .rgba16Unorm, bytesPerPixel: 8, bytesPerBlock: nil)
+        case .rgba16Snorm, .rgba16Snorm20:
+            return WPEMetalTextureFormatMapping(pixelFormat: .rgba16Snorm, bytesPerPixel: 8, bytesPerBlock: nil)
         }
     }
 }

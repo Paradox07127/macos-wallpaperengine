@@ -117,6 +117,16 @@ public struct WPEParitySceneSampler: Hashable, Sendable {
     }
 }
 
+/// One particle object's authored position and targets. The runtime projects its live instance stream here.
+public struct WPEParityParticleBlock: Hashable, Sendable {
+    public let objectID: String
+    public let operations: Range<Int>
+    public let color: WPEResourceID
+    public let depth: WPEResourceID?
+    /// Current render-target stack top: a parent's composite while drawing its children.
+    public let snapshotSource: WPEResourceID
+}
+
 public struct WPEParitySceneFrame: Hashable, Sendable {
     public let operations: [WPERenderOperation]
     /// Sorted by id.
@@ -129,6 +139,7 @@ public struct WPEParitySceneFrame: Hashable, Sendable {
     /// The object each pass renders. Scene-wide passes are absent, and so are the passes filling a
     /// `dependencyTarget` layer's composites, which run while the layer is hidden.
     public let owners: [WPEPassIdentity: String]
+    public let particleBlocks: [WPEParityParticleBlock]
 }
 
 public enum WPEParitySceneResource {

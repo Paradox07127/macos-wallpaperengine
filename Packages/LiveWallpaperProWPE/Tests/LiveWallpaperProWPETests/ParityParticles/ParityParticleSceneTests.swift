@@ -474,6 +474,113 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertTrue(scene.drawBatches(for: "missing").isEmpty)
     }
 
+    /// 1402366f0 snapshots at a live system before renderer dispatch; one rope particle cannot draw but still
+    /// captures before the non-FFB child B. The callback is the external compiled base-material fact boundary.
+    func testSnapshotBoundaryPrecedesChildrenWhenTheTriggeringRopeCannotDraw() throws {
+        let children = #", "children": [{"name": "B"}, {"name": "C"}]"#
+        let files = ["particles/fx.json": Self.burst(1, renderer: #"{"name": "rope"}"#, extra: children),
+                     "B": Self.burst(1, origin: "10 0 0"), "C": Self.burst(1, origin: "20 0 0")]
+        let objects: [[String: Any]] = Self.five + [["id": 6, "name": "other owner", "particle": "particles/fx.json"]]
+        var scene = try Self.scene(objects, particles: files)
+        var control = try Self.scene(objects, particles: files)
+        let frames: [String: WPEParityParticleFrameContext] = ["5": .init(), "6": .init()]
+        scene.advance(dt: 0.1, frames: frames)
+        control.advance(dt: 0.1, frames: frames)
+        var visited: [[WPEParityParticlePathElement]] = []
+        let stream = scene.drawStream(for: "5") { path in
+            visited.append(path)
+            return path.isEmpty || path == [.staticChild(1)]
+        }
+        XCTAssertEqual(stream.snapshotBoundary, 0)
+        XCTAssertEqual(stream.batches.map(\.key.path), [[.staticChild(0)], [.staticChild(1)]])
+        XCTAssertEqual(stream.batches.map { Support.float($0.vertices.bytes, at: 0) }, [10, 20])
+        XCTAssertEqual(visited, [[], [.staticChild(0)], [.staticChild(1)]],
+                       "the first trigger fixes the boundary, but every later system still checks material availability")
+        XCTAssertEqual(scene.drawStream(for: "6", needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
+                       "the preceding owner does not consume this owner's snapshot")
+        XCTAssertEqual(scene.drawStream(for: "5", needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
+                       "the next owner draw entry resets the one-shot condition")
+        XCTAssertEqual(scene.drawBatches(for: "5").map(\.vertices), stream.batches.map(\.vertices))
+        XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next())
+        XCTAssertEqual(scene.drawStream(for: "missing", needsFullFrameBuffer: { _ in
+            XCTFail("an unknown owner has no systems to inspect")
+            return true
+        }).snapshotBoundary, nil)
+    }
+
+    func testSnapshotBoundaryUsesOwnLiveCountAndCanFollowEveryBatch() throws {
+        let children = #", "children": [{"name": "B"}, {"name": "C"}]"#
+        var scene = try Self.scene(Self.five, particles: [
+            "particles/fx.json": Self.burst(0, extra: children), "B": Self.burst(1), "C": Self.burst(1),
+        ])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        var visited: [[WPEParityParticlePathElement]] = []
+        let stream = scene.drawStream(for: "5") { path in
+            visited.append(path)
+            return path.isEmpty || path == [.staticChild(1)]
+        }
+        XCTAssertEqual(visited, [[], [.staticChild(0)], [.staticChild(1)]],
+                       "an empty ready root passes the material gate but cannot trigger the snapshot")
+        XCTAssertEqual(stream.snapshotBoundary, 1)
+        XCTAssertEqual(stream.batches.count, 2)
+        XCTAssertNil(scene.drawStream(for: "5", needsFullFrameBuffer: { _ in false }).snapshotBoundary)
+
+        var tail = try Self.scene(Self.five, particles: [
+            "particles/fx.json": Self.burst(1, extra: #", "children": [{"name": "rope"}]"#),
+            "rope": Self.burst(1, renderer: #"{"name": "rope"}"#),
+        ])
+        tail.advance(dt: 0.1, frames: ["5": .init()])
+        let late = tail.drawStream(for: "5", needsFullFrameBuffer: { $0 == [.staticChild(0)] })
+        XCTAssertEqual(late.batches.count, 1)
+        XCTAssertEqual(late.snapshotBoundary, 1, "a late live rope triggers even with no following actual batch")
+
+        enum MissingFact: Error { case material }
+        XCTAssertThrowsError(try tail.drawStream(for: "5", needsFullFrameBuffer: { _ in throw MissingFact.material }))
+    }
+
+    /// 1402366f0's outer material gate prunes just that recursive system, even after the owner's snapshot fired.
+    func testUnavailableChildMaterialPrunesItsSubtreeWhileParentAndSiblingDraw() throws {
+        var scene = try Self.scene(Self.five, particles: [
+            "particles/fx.json": Self.burst(1, origin: "1 0 0",
+                                            extra: #", "children": [{"name": "bad"}, {"name": "healthy"}]"#),
+            "bad": Self.burst(1, origin: "10 0 0", extra: #", "children": [{"name": "grandchild"}]"#),
+            "grandchild": Self.burst(1, origin: "11 0 0"),
+            "healthy": Self.burst(1, origin: "20 0 0"),
+        ])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(scene.liveCount("5"), 4)
+        var visited: [[WPEParityParticlePathElement]] = []
+        let stream = scene.drawStream(for: "5") { path -> Bool? in
+            visited.append(path)
+            return path == [.staticChild(0)] ? nil : true
+        }
+        XCTAssertEqual(visited, [[], [.staticChild(0)], [.staticChild(1)]])
+        XCTAssertEqual(stream.snapshotBoundary, 0)
+        XCTAssertEqual(stream.batches.map(\.key.path), [[], [.staticChild(1)]])
+        XCTAssertEqual(stream.batches.map { Support.float($0.vertices.bytes, at: 0) }, [1, 20])
+        XCTAssertEqual(scene.liveCount("5"), 4, "a render material failure does not reset simulation")
+    }
+
+    func testEmptyUnavailableParentPrunesLiveChildrenBeforeInspectingTheirMaterials() throws {
+        var scene = try Self.scene(Self.five, particles: [
+            "particles/fx.json": Self.burst(0, extra: #", "children": [{"name": "child"}]"#),
+            "child": Self.burst(1),
+        ])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(scene)?.liveCount, 0)
+        XCTAssertEqual(scene.liveCount("5"), 1)
+        var visited: [[WPEParityParticlePathElement]] = []
+        let stream = scene.drawStream(for: "5") { path -> Bool? in
+            visited.append(path)
+            return nil
+        }
+        XCTAssertEqual(visited, [[]])
+        XCTAssertTrue(stream.batches.isEmpty)
+        XCTAssertNil(stream.snapshotBoundary)
+        XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path), [[.staticChild(0)]],
+                       "the compatibility API assumes ready materials, proving the child is drawable")
+    }
+
     func testNoLiveParticlesOrALoneRopeParticleYieldNoBatch() throws {
         let empty = Self.burst(0)
         let rope = Self.burst(1, renderer: #"{"name": "rope"}"#)

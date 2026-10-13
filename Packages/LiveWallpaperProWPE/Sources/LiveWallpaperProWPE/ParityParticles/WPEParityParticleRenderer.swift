@@ -104,6 +104,28 @@ public struct WPEParityParticleDrawBatch: Sendable {
     public let localTransform: simd_float4x4
 }
 
+/// An owner's native snapshot boundary in the unfiltered actual draw order. Zero and `batches.count` are valid:
+/// a live system whose base material needs FFB can trigger even when its own rope entry cannot draw.
+/// Systems with unavailable base materials are pruned with their descendants before any batch is packed.
+public struct WPEParityParticleDrawStream: Sendable {
+    public let batches: [WPEParityParticleDrawBatch]
+    public let snapshotBoundary: Int?
+}
+
+/// One accepted system's real base material, before entry-specific combos. The caller compiles `program` once,
+/// intersects its VS/PS reflected texture slots with `textureNames`, and caches the native FFB requirement.
+public struct WPEParityParticleMaterialProbe: Sendable {
+    public enum Material: Sendable {
+        case ready(program: WPEParityProgram, textureNames: [Int32: String])
+        /// Missing material or source/rewriter failure. This is not a successfully compiled false FFB fact.
+        case unavailable(String)
+    }
+
+    public let objectID: String
+    public let path: [WPEParityParticlePathElement]
+    public let material: Material
+}
+
 /// Initialization facts for a renderer prototype; obtaining them does not allocate slots or consume RNG.
 public struct WPEParityParticlePrototype: Sendable {
     public let renderers: [WPEParityParticleRenderer]

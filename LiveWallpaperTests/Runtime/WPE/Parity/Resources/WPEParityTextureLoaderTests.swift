@@ -80,6 +80,73 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
+    func testRawFloatAndNormalizedSixteenBitFormatsPreserveBitsAndMipsThroughGPU() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        func halfBytes(_ words: [UInt16]) -> Data {
+            Data(words.flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] })
+        }
+        func floatBytes(_ words: [UInt32]) -> Data {
+            Data(words.flatMap { word in (0 ..< 4).map { UInt8(truncatingIfNeeded: word >> ($0 * 8)) } })
+        }
+        var cases: [(UInt32, MTLPixelFormat, [Mip], [SIMD4<Float>])] = [
+            (10, .rg16Float, [
+                Mip(width: 2, height: 1, bytes: halfBytes([0xC000, 0x4300, 0x7E35, 0x8000])),
+                Mip(width: 1, height: 1, bytes: halfBytes([0x3800, 0xC400])),
+            ], [SIMD4(-2, 3.5, 0, 1), SIMD4(0.5, -4, 0, 1)]),
+            (11, .r16Float, [
+                Mip(width: 2, height: 1, bytes: halfBytes([0xC000, 0x7E35])),
+                Mip(width: 1, height: 1, bytes: halfBytes([0x4300])),
+            ], [SIMD4(-2, 0, 0, 1), SIMD4(3.5, 0, 0, 1)]),
+            (16, .r32Float, [
+                Mip(width: 4, height: 1, bytes: floatBytes([0xC050_0000, 0x422A_0000, 0x7FC0_1234, 0x8000_0000])),
+                Mip(width: 2, height: 1, bytes: floatBytes([0x40F8_0000, 0xC100_0000])),
+                Mip(width: 1, height: 1, bytes: floatBytes([0x4480_0000])),
+            ], [SIMD4(-3.25, 0, 0, 1), SIMD4(7.75, 0, 0, 1), SIMD4(1024, 0, 0, 1)]),
+        ]
+        for code: UInt32 in [14, 15] {
+            cases.append((code, .rgba16Float, [
+                Mip(width: 2, height: 1, bytes: halfBytes([0xC000, 0x4300, 0x3800, 0xB400, 0x8000, 0x7E35, 0x7C00, 0xFC00])),
+                Mip(width: 1, height: 1, bytes: halfBytes([0x4400, 0xC400, 0x3C00, 0])),
+            ], [SIMD4<Float>(-2, 3.5, 0.5, -0.25), SIMD4<Float>(4, -4, 1, 0)]))
+        }
+        for code: UInt32 in [17, 18] {
+            cases.append((code, .rgba16Unorm, [
+                Mip(width: 2, height: 1, bytes: halfBytes([0, 32768, 65535, 16384, 1, 3, 5, 7])),
+                Mip(width: 1, height: 1, bytes: halfBytes([65535, 0, 32768, 65535])),
+            ], [SIMD4<Float>(0, 32768.0 / 65535, 1, 16384.0 / 65535), SIMD4<Float>(1, 0, 32768.0 / 65535, 1)]))
+        }
+        for code: UInt32 in [19, 20] {
+            cases.append((code, .rgba16Snorm, [
+                Mip(width: 2, height: 1, bytes: halfBytes([0x8000, 0x7FFF, 0, 0xC000, 1, 3, 5, 7])),
+                Mip(width: 1, height: 1, bytes: halfBytes([0x8001, 0x2000, 0xE000, 0])),
+            ], [SIMD4<Float>(-1, 1, 0, -16384.0 / 32767), SIMD4<Float>(-1, 8192.0 / 32767, -8192.0 / 32767, 0)]))
+        }
+        for (code, pixelFormat, mipmaps, expected) in cases {
+            let loaded = try load(tex(format: code, images: [mipmaps]), device)
+            XCTAssertEqual(loaded.info.textureFormatCode, Int(code))
+            XCTAssertEqual(loaded.texture.pixelFormat, pixelFormat)
+            XCTAssertEqual(loaded.texture.mipmapLevelCount, mipmaps.count)
+            let values = try read(loaded.texture, levels: mipmaps.indices.map(UInt32.init), device: device)
+            for index in values.indices {
+                assertPixel(values[index], expected[index])
+                // Sampling can canonicalize NaNs. Raw texture readback independently proves every payload bit,
+                // including NaN payloads, negative zero, signed normalized minimum and all authored mips.
+                let mip = mipmaps[index]
+                var copied = Data(count: mip.bytes.count)
+                copied.withUnsafeMutableBytes {
+                    loaded.texture.getBytes($0.baseAddress!, bytesPerRow: mip.bytes.count / mip.height,
+                                            from: MTLRegionMake2D(0, 0, mip.width, mip.height), mipmapLevel: index)
+                }
+                XCTAssertEqual(copied, mip.bytes)
+            }
+            // No evidence supports these extended formats through the encoded-image bridge.
+            let png = try XCTUnwrap(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="))
+            XCTAssertThrowsError(try load(tex(format: code, images: [[Mip(width: 1, height: 1, bytes: png)]], encoded: true), device)) {
+                XCTAssertEqual($0 as? WPETexDecodeError, .unsupportedFormat(code: Int(code)))
+            }
+        }
+    }
+
     func testEncodedImagesPreserveTheirAuthoredMipChain() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         // Fixed RGBA PNG bitstreams, independently packed with PNG/zlib; each authored level has a different colour.
@@ -102,16 +169,20 @@ final class WPEParityTextureLoaderTests: XCTestCase {
 
     func testSpriteImageIDsShareUploadsAndKeepMipChainsAndAffineFrames() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let atlas = Mip(width: 4, height: 2, bytes: Data([
+            0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+            0, 255, 0, 255, 0, 255, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255,
+        ]))
         let images = [
-            [solid(2, 2, [255, 0, 0, 255]), solid(1, 1, [0, 255, 0, 255])],
-            [solid(2, 2, [0, 0, 255, 255]), solid(1, 1, [255, 255, 255, 255])],
+            [solid(4, 2, [255, 0, 0, 255]), solid(2, 1, [0, 255, 0, 255]), solid(1, 1, [255, 255, 255, 255])],
+            [atlas, solid(2, 1, [0, 255, 255, 255]), solid(1, 1, [255, 255, 255, 255])],
         ]
         var data = tex(format: 0, images: images, flags: 4)
         magic("TEXS0002", to: &data)
         append(3, to: &data)
         for id: UInt32 in [1, 0, 1] {
             append(id, to: &data)
-            for value: Float in [0.125, 1, 0, 1, 1, -1, 1] {
+            for value: Float in [0.125, 1, 0, 2, 1, -1, 1] {
                 append(value.bitPattern, to: &data)
             }
         }
@@ -121,14 +192,23 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         XCTAssertTrue(loaded.texture === loaded.sprites[1].texture)
         XCTAssertFalse(loaded.sprites[0].texture === loaded.texture)
         for sprite in loaded.sprites {
-            XCTAssertEqual(sprite.texture.mipmapLevelCount, 2)
+            XCTAssertEqual(sprite.texture.mipmapLevelCount, 3)
             XCTAssertEqual(sprite.duration, 0.125)
-            XCTAssertEqual(sprite.frame.rotation, SIMD4(0.5, 0.5, -0.5, 0.5))
-            XCTAssertEqual(sprite.frame.translation, SIMD2(0.5, 0))
+            XCTAssertEqual(sprite.frame.rotation, SIMD4(0.5, 0.5, -0.25, 0.5))
+            XCTAssertEqual(sprite.frame.translation, SIMD2(0.25, 0))
         }
-        let values = try read(loaded.sprites[0].texture, levels: [0, 1], device: device)
+        let values = try read(loaded.sprites[0].texture, levels: [0, 1, 2], device: device)
         assertPixel(values[0], SIMD4(0, 0, 1, 1))
-        assertPixel(values[1], .one)
+        assertPixel(values[1], SIMD4(0, 1, 1, 1))
+        assertPixel(values[2], .one)
+        // At uv=(0.6,0.5), native rotation selects the green second row. The old swapped denominators
+        // select blue in row zero, so this observes the affine error through actual GPU sampling.
+        try assertPixel(sample(loaded.sprites[0], uv: SIMD2(0.6, 0.5), device: device), SIMD4(0, 1, 0, 1))
+        // At uv=(0.3,0.5), correct reconstruction selects blue row zero. Multiplying normalized widthY
+        // by width instead of height makes the GPU select green row one.
+        try assertPixel(sample(loaded.sprites[0], uv: SIMD2(0.3, 0.5), device: device), SIMD4(0, 0, 1, 1))
+        // Independently catch heightX multiplied by height: x moves from column one to the red column two.
+        try assertPixel(sample(loaded.sprites[0], uv: SIMD2(0.65, 0.4), device: device), SIMD4(0, 1, 0, 1))
     }
 
     func testUnsupportedAndMalformedResourcesDoNotBecomeSuccessful2DImages() throws {
@@ -137,9 +217,9 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         XCTAssertThrowsError(try load(volume, device)) {
             XCTAssertEqual($0 as? WPETexDecodeError, .unsupportedTextureDimension(depth: 32))
         }
-        let float = tex(format: 14, images: [[solid(1, 1, [0, 0, 0, 0, 0, 0, 0, 0])]])
-        XCTAssertThrowsError(try load(float, device)) {
-            XCTAssertEqual($0 as? WPETexDecodeError, .unsupportedFormat(code: 14))
+        let typeless = tex(format: 23, images: [[solid(1, 1, [0, 0, 0, 0])]])
+        XCTAssertThrowsError(try load(typeless, device)) {
+            XCTAssertEqual($0 as? WPETexDecodeError, .unsupportedFormat(code: 23))
         }
         let truncated = tex(format: 0, images: [[solid(1, 1, [1, 2, 3])]])
         XCTAssertThrowsError(try load(truncated, device))
@@ -236,6 +316,43 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         for lane in 0 ..< 4 {
             XCTAssertEqual(actual[lane], expected[lane], accuracy: 0.00001, file: file, line: line)
         }
+    }
+
+    private func sample(_ sprite: WPEParityTextureLoader.Sprite, uv: SIMD2<Float>,
+                        device: MTLDevice) throws -> SIMD4<Float> {
+        let library = try device.makeLibrary(source: """
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void sample_sprite(texture2d<float> source [[texture(0)]],
+            const device float4 *frame [[buffer(0)]], device float4 *value [[buffer(1)]]) {
+            constexpr sampler point(coord::normalized, address::clamp_to_edge, filter::nearest);
+            float2 uv = frame[1].xy + frame[1].z * frame[0].xy + frame[1].w * frame[0].zw;
+            value[0] = source.sample(point, uv, level(0.0f));
+        }
+        """, options: nil)
+        let function = try XCTUnwrap(library.makeFunction(name: "sample_sprite"))
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let translation = sprite.frame.translation
+        let frame = [sprite.frame.rotation, SIMD4(translation.x, translation.y, uv.x, uv.y)]
+        let input = try XCTUnwrap(device.makeBuffer(bytes: frame, length: 32, options: .storageModeShared))
+        let output = try XCTUnwrap(device.makeBuffer(length: 16, options: .storageModeShared))
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let command = try XCTUnwrap(queue.makeCommandBuffer())
+        let encoder = try XCTUnwrap(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(sprite.texture, index: 0)
+        encoder.setBuffer(input, offset: 0, index: 0)
+        encoder.setBuffer(output, offset: 0, index: 1)
+        encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1),
+                                threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        XCTAssertEqual(command.status, .completed)
+        if let error = command.error {
+            throw error
+        }
+        return output.contents().load(as: SIMD4<Float>.self)
     }
 
     private func read(_ texture: MTLTexture, levels: [UInt32], device: MTLDevice) throws -> [SIMD4<Float>] {

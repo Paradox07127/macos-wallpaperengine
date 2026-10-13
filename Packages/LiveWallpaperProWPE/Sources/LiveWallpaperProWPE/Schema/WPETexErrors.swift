@@ -9,24 +9,34 @@ public enum WPETexFormat: Int, Sendable, Equatable {
     case dxt1 = 7   // BC1
     case rg88 = 8
     case r8 = 9
+    case rg16Float = 10
+    case r16Float = 11
     case bc7 = 12
     case rgba1010102 = 13
+    case rgba16Float = 14
+    case rgba16Float15 = 15
+    case r32Float = 16
+    case rgba16Unorm = 17
+    case rgba16Unorm18 = 18
+    case rgba16Snorm = 19
+    case rgba16Snorm20 = 20
 
     /// nil for block-compressed (BC) formats where the unit is a 4×4 block.
     public var bytesPerPixel: Int? {
         switch self {
-        case .rgba8888, .rgba1010102: return 4
-        case .r8: return 1
-        case .rg88: return 2
-        case .dxt1, .dxt3, .dxt5, .bc7: return nil
+        case .rgba8888, .rgba1010102, .rg16Float, .r32Float: 4
+        case .r8: 1
+        case .rg88, .r16Float: 2
+        case .rgba16Float, .rgba16Float15, .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20: 8
+        case .dxt1, .dxt3, .dxt5, .bc7: nil
         }
     }
 
     public var bytesPerBlock: Int? {
         switch self {
-        case .dxt1: return 8
-        case .dxt3, .dxt5, .bc7: return 16
-        default: return nil
+        case .dxt1: 8
+        case .dxt3, .dxt5, .bc7: 16
+        default: nil
         }
     }
 
@@ -42,25 +52,42 @@ public enum WPETexFormat: Int, Sendable, Equatable {
 
     public var debugLabel: String {
         switch self {
-        case .rgba8888:    return "RGBA8888"
-        case .dxt5:        return "DXT5 (BC3)"
-        case .dxt3:        return "DXT3 (BC2)"
-        case .dxt1:        return "DXT1 (BC1)"
-        case .r8:          return "R8"
-        case .rg88:        return "RG88"
-        case .rgba1010102: return "RGBA1010102"
-        case .bc7:         return "BC7"
+        case .rgba8888: "RGBA8888"
+        case .dxt5: "DXT5 (BC3)"
+        case .dxt3: "DXT3 (BC2)"
+        case .dxt1: "DXT1 (BC1)"
+        case .r8: "R8"
+        case .rg88: "RG88"
+        case .rgba1010102: "RGBA1010102"
+        case .bc7: "BC7"
+        case .rg16Float: "RG16 FLOAT"
+        case .r16Float: "R16 FLOAT"
+        case .rgba16Float, .rgba16Float15: "RGBA16 FLOAT"
+        case .r32Float: "R32 FLOAT"
+        case .rgba16Unorm, .rgba16Unorm18: "RGBA16 UNORM"
+        case .rgba16Snorm, .rgba16Snorm20: "RGBA16 SNORM"
+        }
+    }
+
+    /// These native formats are supported only as raw TEXB bytes. Their encoded-image interpretation is unproved.
+    /// Numeric suffixes retain distinct authored codes that share a native DXGI resource format.
+    public var requiresRawPayload: Bool {
+        switch self {
+        case .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
+             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20: true
+        default: false
         }
     }
 
     public var isPhase21Decodable: Bool {
         switch self {
         case .rgba8888, .r8, .rg88:
-            return true
+            true
         case .dxt1, .dxt3, .dxt5, .bc7:
-            return false
-        case .rgba1010102:
-            return false
+            false
+        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
+             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
+            false
         }
     }
 }

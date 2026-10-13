@@ -81,12 +81,14 @@ final class WPEParitySceneScript {
     init(document: WPESceneDocument, state: WPEParitySceneState, assets: WPEParityProgramAssets,
          canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
          materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:],
+         resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
          fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:], host: Host) throws {
         storage = host.storage
         let defaults = Self.generalFields(document.resolvedGeneralJSON).merging(fieldDefaults) { _, value in value }
         engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
             userPropertiesJSON: host.userPropertiesJSON, materialConstants: materialConstants,
+            resolvedEffectRecords: resolvedEffectRecords,
             fieldDefaults: defaults, storage: host.storage.provider,
             createLayer: host.createLayer, destroyLayer: host.destroyLayer, sortLayer: host.sortLayer,
             log: { level, message in

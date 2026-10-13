@@ -62,7 +62,9 @@ final class WPEParityFrameRenderer {
         let hidden: [Bool]
         let executors: [WPEParityGraphExecutor]
         /// Per executor, graph operation index → layout operation index.
-        let operations: [[Int]]
+        let operations: [[WPEParityGraphDrawSource]]
+        let particleDraws: [WPEParityParticleDrawKey: Int]
+        let particleSnapshotSkips: [String: WPEParityFrameSkip]
     }
 
     let backbuffer: MTLTexture
@@ -130,6 +132,10 @@ final class WPEParityFrameRenderer {
     /// One bone animator per skinned puppet layer, keyed by object id.
     private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
     private var particles: WPEParityParticleFrame
+    private let particleFullFrameBuffer: [String: [[WPEParityParticlePathElement]: Bool]]
+    private let particleBaseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]]
+    private let particleSnapshotObjects: Set<String>
+    private(set) var particleMaterialSkips: [String: WPEParityFrameSkip]
     private let arena: WPEParityFrameArena
     /// Arena bytes outside the particle share, for the other draws' cbuffers and tables.
     private let baseArenaBytes: Int
@@ -153,7 +159,20 @@ final class WPEParityFrameRenderer {
     }
 
     var skipped: [Int: WPEParityFrameSkip] {
-        graphs.layout.skipped
+        var result = graphs.layout.skipped
+        for (index, description) in graphs.layout.frames[0].draws {
+            if case let .scene(draw) = description, case .particles = draw.geometry,
+               let failure = graphs.particleSnapshotSkips[draw.objectID] {
+                result[index] = failure
+                continue
+            }
+            if case let .scene(draw) = description, case let .particles(key) = draw.geometry,
+               let failures = particleBaseFailures[draw.objectID],
+               let failure = failures.first(where: { key.path.starts(with: $0.key) })?.value {
+                result[index] = failure
+            }
+        }
+        return result
     }
 
     var drawCount: Int {
@@ -273,7 +292,7 @@ final class WPEParityFrameRenderer {
     /// particle batches, up to `maxParticleShare`. `workshopID` keys the video disk cache; nil uses the scene
     /// directory's name.
     nonisolated(nonsending) init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
-         particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
+                                 particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
                                  workshopID: String? = nil, continuing previous: WPEParityFrameRenderer? = nil) async throws {
         let factory = WPEParityPipelineFactory(device: device)
         let encoder = WPEParityDrawEncoder(factory: factory)
@@ -296,6 +315,33 @@ final class WPEParityFrameRenderer {
         }
         let layout = Self.makeLayout(plan.layout, effects: plan.state.effectVisibility, artifacts: artifacts,
                                      planner: &planner, encoder: encoder, reusing: nil)
+        var particleFacts: [String: [[WPEParityParticlePathElement]: Bool]] = [:]
+        var particleFailures: [String: WPEParityFrameSkip] = [:]
+        var baseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]] = [:]
+        for probe in plan.particleMaterials {
+            switch probe.material {
+            case let .unavailable(reason):
+                particleFailures[probe.objectID] = .program(reason)
+                baseFailures[probe.objectID, default: [:]][probe.path] = .program(reason)
+            case let .ready(program, names):
+                guard case let .success(artifact)? = artifacts[program.hlsl] else {
+                    particleFailures[probe.objectID] = artifacts[program.hlsl].flatMap {
+                        if case let .failure(failure) = $0 {
+                            return failure
+                        }
+                        return nil
+                    } ?? .noShader("particle base material: \(program.shader)")
+                    baseFailures[probe.objectID, default: [:]][probe.path] = particleFailures[probe.objectID]
+                    continue
+                }
+                // Native material+0x1fc uses only active VS/PS Texture slots, not GS or entry overrides.
+                let active = (artifact.vertex.reflection.resources + artifact.fragment.reflection.resources)
+                    .filter { $0.kind == .texture }
+                particleFacts[probe.objectID, default: [:]][probe.path] = active.contains {
+                    names[Int32($0.register)] == WPEParitySceneResource.fullFrameBuffer.rawValue
+                }
+            }
+        }
         let probes = try plan.probeFrames()
         for probe in probes {
             for (index, program) in probe.programs {
@@ -340,8 +386,9 @@ final class WPEParityFrameRenderer {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         var targets: [WPEResourceID: MTLTexture] = [:]
+        let snapshotObjects = Set(particleFacts.filter { $0.value.values.contains(true) }.map(\.key))
         let graphs = try Self.makeGraphs(layout: layout, state: plan.state, device: device, encoder: encoder,
-                                         arena: arena, targets: &targets)
+                                         arena: arena, targets: &targets, snapshotObjects: snapshotObjects)
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
         }
@@ -353,6 +400,10 @@ final class WPEParityFrameRenderer {
         self.planner = planner
         lights = planner.lights
         self.artifacts = artifacts
+        particleFullFrameBuffer = particleFacts
+        particleBaseFailures = baseFailures
+        particleSnapshotObjects = snapshotObjects
+        particleMaterialSkips = particleFailures
         bloom = plan.post.bloomSettings
         self.device = device
         drawEncoder = encoder
@@ -693,7 +744,8 @@ final class WPEParityFrameRenderer {
             try installGraphs(layout, cachePrevious: false)
         } else {
             graphs = Graphs(layout: layout, hidden: graphs.hidden, executors: graphs.executors,
-                            operations: graphs.operations)
+                            operations: graphs.operations, particleDraws: graphs.particleDraws,
+                            particleSnapshotSkips: graphs.particleSnapshotSkips)
             retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
             previousGraphs = nil
         }
@@ -782,45 +834,85 @@ final class WPEParityFrameRenderer {
         }
         lastFrameDraws.removeAll(keepingCapacity: true)
         graphs.executors[variant].restoreResourceBindings(resourceBindings)
-        let submission = try graphs.executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
-                                                         prepare: videos.encode) { step, textures, arena in
-            let operation = graphs.operations[variant][step]
-            guard let plan = draws[operation] else { return [] }
-            let fade = operation == graphs.layout.fade
-            if fade {
-                // 14017fa70.c:766
-                guard fadeAlpha > 0 else { return [] }
-                if fadeConstants.isEmpty {
-                    fadeConstants = plan.constants
+        var particleStreams: [Int: WPEParityParticleDrawStream] = [:]
+        let blocks = graphs.layout.frames[variant].particleBlocks
+        func stream(for block: Int) throws -> WPEParityParticleDrawStream? {
+            if let cached = particleStreams[block] {
+                return cached
+            }
+            let objectID = blocks[block].objectID
+            let facts = particleFullFrameBuffer[objectID, default: [:]]
+            let failures = particleBaseFailures[objectID, default: [:]]
+            let stream = try particles.scene.drawStream(for: objectID) { path in
+                if failures[path] != nil {
+                    return nil
                 }
-                fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
-            }
-            var provided: [WPEParityDraw]
-            if case .particles = plan.geometry {
-                provided = try plan.makeParticleDraws(frame: uniforms, camera: camera, variant: variant,
-                                                      textures: textures, arena: arena, textureSlots: &textureSlots,
-                                                      renderVars: &renderVars, particles: &particles, layers: live)
-            } else {
-                plan.applyRenderVarWrites(to: &renderVars)
-                // A colour equal to the loaded one is already in the planned constants.
-                let color = plan.layerColor.map { state.layerColor(at: $0.object) }
-                provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
-                                              textureSlots: &textureSlots, puppets: puppets, layers: live,
-                                              constants: fade ? fadeConstants
-                                                  : postConstants[operation] ?? materialConstants(operation, plan),
-                                              layerColor: color == plan.layerColor?.loaded ? nil : color,
-                                              renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0)]
-            }
-            for index in provided.indices {
-                for (name, texture) in provided[index].textures {
-                    if let sampler = targetSamplers[ObjectIdentifier(texture)] {
-                        provided[index].samplers[name + "SamplerState"] = sampler
-                    }
+                guard let fact = facts[path] else {
+                    throw WPEParityFrameSkip.program("missing particle base-material fact: \(objectID) \(path)")
                 }
+                return fact
             }
-            lastFrameDraws += provided.map { (operation, $0) }
-            return provided
+            particleStreams[block] = stream
+            return stream
         }
+        let submission = try graphs.executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
+                                                                   prepare: videos.encode, shouldTransfer: { step in
+                                                                       if case let .particleSnapshot(block) = graphs.operations[variant][step] {
+                                                                           return particleStreams[block]?.snapshotBoundary != nil
+                                                                       }
+                                                                       return true
+                                                                   }, visit: { step, textures, arena, emit in
+                                                                       func encode(_ provided: WPEParityDraw, operation: Int) throws {
+                                                                           var provided = provided
+                                                                           for (name, texture) in provided.textures {
+                                                                               if let sampler = targetSamplers[ObjectIdentifier(texture)] {
+                                                                                   provided.samplers[name + "SamplerState"] = sampler
+                                                                               }
+                                                                           }
+                                                                           lastFrameDraws.append((operation, provided))
+                                                                           try emit(provided)
+                                                                       }
+                                                                       let source = graphs.operations[variant][step]
+                                                                       switch source {
+                                                                       case let .particlePrefix(block), let .particleSuffix(block):
+                                                                           guard let stream = try stream(for: block) else { return }
+                                                                           let boundary = stream.snapshotBoundary ?? stream.batches.count
+                                                                           let range: Range<Int> = if case .particlePrefix = source {
+                                                                               0 ..< boundary
+                                                                           } else {
+                                                                               boundary ..< stream.batches.count
+                                                                           }
+                                                                           for index in range {
+                                                                               let batch = stream.batches[index]
+                                                                               guard let operation = graphs.particleDraws[batch.key], let plan = draws[operation] else { continue }
+                                                                               if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: camera, variant: variant,
+                                                                                                                           textures: textures, arena: arena, textureSlots: &textureSlots,
+                                                                                                                           renderVars: &renderVars, particles: &particles, layers: live) {
+                                                                                   // Encode argument tables before the next batch reserves any vertex bytes.
+                                                                                   try encode(provided, operation: operation)
+                                                                               }
+                                                                           }
+                                                                       case let .layout(operation):
+                                                                           guard let plan = draws[operation] else { return }
+                                                                           let fade = operation == graphs.layout.fade
+                                                                           if fade {
+                                                                               guard fadeAlpha > 0 else { return }
+                                                                               if fadeConstants.isEmpty {
+                                                                                   fadeConstants = plan.constants
+                                                                               }
+                                                                               fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
+                                                                           }
+                                                                           plan.applyRenderVarWrites(to: &renderVars)
+                                                                           let color = plan.layerColor.map { state.layerColor(at: $0.object) }
+                                                                           let provided = try plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
+                                                                                                            textureSlots: &textureSlots, puppets: puppets, layers: live,
+                                                                                                            constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
+                                                                                                            layerColor: color == plan.layerColor?.loaded ? nil : color,
+                                                                                                            renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0)
+                                                                           try encode(provided, operation: operation)
+                                                                       case .particleSnapshot, .state: break
+                                                                       }
+                                                                   })
         resourceBindings = graphs.executors[variant].resourceBindings
         return submission
     }
@@ -903,7 +995,8 @@ final class WPEParityFrameRenderer {
     private func installGraphs(_ layout: Layout, cachePrevious: Bool) throws {
         var candidateTargets = targets
         let made = try Self.makeGraphs(layout: layout, state: state, device: device, encoder: drawEncoder,
-                                       arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings)
+                                       arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings,
+                                       snapshotObjects: particleSnapshotObjects)
         let added = candidateTargets.filter { id, texture in
             targets[id].map { ObjectIdentifier($0) != ObjectIdentifier(texture) } ?? true
         }
@@ -1067,40 +1160,23 @@ final class WPEParityFrameRenderer {
     private static func makeGraphs(layout: Layout, state: WPEParitySceneState, device: MTLDevice,
                                    encoder: WPEParityDrawEncoder, arena: WPEParityFrameArena,
                                    targets: inout [WPEResourceID: MTLTexture],
-                                   resourceBindings: WPEParityResourceBindings = [:]) throws -> Graphs {
+                                   resourceBindings: WPEParityResourceBindings = [:], snapshotObjects: Set<String>) throws -> Graphs {
         var executors: [WPEParityGraphExecutor] = []
-        var operations: [[Int]] = []
+        var operations: [[WPEParityGraphDrawSource]] = []
+        var particleDraws: [WPEParityParticleDrawKey: Int] = [:]
+        var snapshotSkips: [String: WPEParityFrameSkip] = [:]
+        for (index, description) in layout.frames[0].draws {
+            if case let .scene(draw) = description, case let .particles(key) = draw.geometry {
+                particleDraws[key] = index
+            }
+        }
         for (variant, frame) in layout.frames.enumerated() {
-            let kept = frame.operations.indices.filter { index in
-                frame.owners[index].flatMap(state.index(of:)).map(state.isVisible(at:)) ?? true
-            }
-            let excluded = Set(kept.indices.filter { index in
-                if case .draw = frame.operations[kept[index]].kind {
-                    return layout.draws[kept[index]] == nil
-                }
-                return false
-            })
-            var reads: [Int: [WPETextureView]] = [:]
-            for index in kept.indices {
-                guard let draw = layout.draws[kept[index]] else { continue }
-                reads[index] = draw.textures[variant].values.compactMap { source in
-                    if case let .resource(id) = source {
-                        return WPETextureView(id)
-                    }
-                    return nil
-                }
-            }
-            let executable = kept.map { index -> WPERenderOperation in
-                let operation = frame.operations[index]
-                guard case let .draw(draw) = operation.kind else { return operation }
-                return WPERenderOperation(pass: operation.pass, .draw(WPEDrawOperation(
-                    reads: draw.reads, readsDestination: draw.readsDestination, overwritesTargets: false,
-                    depthTest: draw.depthTest, depthWrite: draw.depthWrite, state: draw.state
-                )))
-            }
+            let projected = WPEParityParticleGraph(frame: frame, state: state, draws: layout.draws, variant: variant,
+                                                   snapshotObjects: snapshotObjects)
+            snapshotSkips.merge(projected.snapshotSkips) { first, _ in first }
             let graph = try WPERenderGraphCompiler.compile(resources: frame.resources,
-                                                           operations: executable,
-                                                           excludingDraws: excluded, drawReads: reads)
+                                                           operations: projected.operations,
+                                                           preservingTransfers: projected.preservingTransfers)
             let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
                                                       pixelFormats: WPEParityFrameDrawPlanner.pixelFormats,
                                                       resourceBindings: resourceBindings)
@@ -1112,10 +1188,11 @@ final class WPEParityFrameRenderer {
                 targets[id] = try makeTarget(resource, device: device)
             }
             executors.append(executor)
-            operations.append(kept)
+            operations.append(projected.sources)
         }
         return Graphs(layout: layout, hidden: state.objects.indices.map { !state.isVisible(at: $0) },
-                      executors: executors, operations: operations)
+                      executors: executors, operations: operations, particleDraws: particleDraws,
+                      particleSnapshotSkips: snapshotSkips)
     }
 
     /// One context per visible particle object: scene time, cursor in [0, 1]² y down, the scene camera's

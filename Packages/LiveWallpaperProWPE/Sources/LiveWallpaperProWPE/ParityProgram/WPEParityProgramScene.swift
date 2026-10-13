@@ -43,6 +43,9 @@ public struct WPEParityProgramScene: Sendable {
     public let models: [String: WPEPuppetModel]
     /// The glyph atlases of the text layers as planning left them, keyed by `WPEParitySceneText.atlasKey`.
     public let textAtlases: [String: WPEParityGlyphAtlasInstance]
+    /// Condition-accepted resource pass records, including commands and empty/failed materials, even when the
+    /// effect is disabled. An absent key means the effect resource did not load; an empty array is a known zero.
+    public let resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]]
     let materials: [MaterialKey: WPEParityProgramMaterial]
     /// Index of each effect material among its effect's scene `passes` overrides; albedo materials are absent.
     let overridePasses: [MaterialKey: Int]
@@ -92,6 +95,7 @@ public struct WPEParityProgramScene: Sendable {
         }
         var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
         var overridePasses: [MaterialKey: Int] = [:]
+        var resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:]
         var layerColors: [String: SIMD4<Float>] = [:]
         var puppetModels: [String: WPEPuppetModel] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
@@ -126,7 +130,8 @@ public struct WPEParityProgramScene: Sendable {
             let objectWidth = fullscreen ? width : image.size.map { Int($0.width.rounded()) } ?? width
             let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
-                                       materials: &materials, overridePasses: &overridePasses, authored: authored)
+                                       materials: &materials, overridePasses: &overridePasses,
+                                       records: &resolvedEffectRecords, authored: authored)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
@@ -209,6 +214,7 @@ public struct WPEParityProgramScene: Sendable {
                 let schema = schemas[text.id]
                 let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
                                            materials: &materials, overridePasses: &overridePasses,
+                                           records: &resolvedEffectRecords,
                                            authored: authoredByID[text.id])
                 pipeline.add(text, effectCount: effects.count(where: \.enabled))
                 guard let sceneText = pipeline.texts[text.id] else { continue }
@@ -246,6 +252,7 @@ public struct WPEParityProgramScene: Sendable {
         }
         self.materials = materials
         self.overridePasses = overridePasses
+        self.resolvedEffectRecords = resolvedEffectRecords
         self.layerColors = layerColors
         self.puppetModels = puppetModels
         self.models = models
@@ -313,6 +320,7 @@ public struct WPEParityProgramScene: Sendable {
     private static func effects(_ effects: [WPESceneImageEffect], objectID: String, assets: WPEParityProgramAssets,
                                 materials: inout [MaterialKey: WPEParityProgramMaterial],
                                 overridePasses: inout [MaterialKey: Int],
+                                records: inout [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]],
                                 authored: WPESceneJSONValue? = nil) -> [WPEParityAuthoredEffect] {
         var loaded: [WPEParityAuthoredEffect] = []
         for effect in effects {
@@ -320,7 +328,9 @@ public struct WPEParityProgramScene: Sendable {
             let configuration = Self.array(authored?["effects"]).first {
                 (Self.string($0["id"]) ?? Self.number($0["id"]).map { String(Int($0)) }) == effect.id
             }
-            let result = Self.effect(effect, file: file, assets: assets, combos: configuration?["combos"])
+            let result = Self.effect(effect, objectID: objectID, file: file, assets: assets,
+                                     combos: configuration?["combos"])
+            records[.init(objectID: objectID, effectID: effect.id)] = result.records
             loaded.append(result.effect)
             for (source, material, pass) in result.materials {
                 let key = MaterialKey(objectID: objectID, effectID: effect.id, source: source)
@@ -460,10 +470,12 @@ public struct WPEParityProgramScene: Sendable {
         return true
     }
 
-    private static func effect(_ effect: WPESceneImageEffect, file: WPESceneJSONValue, assets: WPEParityProgramAssets,
+    private static func effect(_ effect: WPESceneImageEffect, objectID: String,
+                               file: WPESceneJSONValue, assets: WPEParityProgramAssets,
                                combos: WPESceneJSONValue?)
         -> (effect: WPEParityAuthoredEffect,
-            materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)]) {
+            materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)],
+            records: [WPEParityEffectPassRecord]) {
         let filePasses = array(file["passes"])
         var swapPartners: [String: String] = [:]
         for pass in filePasses where string(pass["command"]) == "swap"
@@ -485,9 +497,13 @@ public struct WPEParityProgramScene: Sendable {
         }
         var passes: [WPEParityAuthoredPass] = []
         var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)] = []
-        var materialIndex = 0
+        var records: [WPEParityEffectPassRecord] = []
         for (passIndex, pass) in filePasses.enumerated() {
             guard WPEParityAuthoredFBO.conditionsMatch(pass["conditions"], combos: combos) else { continue }
+            // 1401e7170:434-447,673-679: every accepted file pass enters the native 0x30-byte record array;
+            // scene overrides still use the original file index, including commands and rejected conditions.
+            let recordIndex = records.count
+            records.append(.init(filePassIndex: passIndex, materialPass: nil))
             if let command = string(pass["command"]) {
                 if command == "swap", let first = string(pass["source"]), let second = string(pass["target"]) {
                     passes.append(WPEParityAuthoredPass(kind: .swap(first: first, second: second),
@@ -503,12 +519,10 @@ public struct WPEParityProgramScene: Sendable {
             }
             guard let path = string(pass["material"]),
                   var material = WPEParityProgramMaterial(path: path, assets: assets) else { continue }
-            // Scene overrides line up with the effect's material passes.
-            if materialIndex < effect.passOverrides.count {
-                let override = effect.passOverrides[materialIndex]
+            if passIndex < effect.passOverrides.count {
+                let override = effect.passOverrides[passIndex]
                 material.merge(combos: override.combos, textures: override.textures, constants: override.constants)
             }
-            materialIndex += 1
             for case let .object(bind) in array(pass["bind"]) {
                 guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos) else { continue }
                 guard let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
@@ -527,9 +541,11 @@ public struct WPEParityProgramScene: Sendable {
                 textures: material.textures.sorted { $0.key < $1.key }.map(\.value),
                 compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source
             ))
-            materials.append((source, material, materialIndex - 1))
+            materials.append((source, material, passIndex))
+            records[recordIndex] = .init(filePassIndex: passIndex,
+                                         materialPass: .init(objectID: objectID, effectID: effect.id, pass: passIndex))
         }
-        return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials)
+        return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials, records)
     }
 
     private static func fboNumber(_ value: WPESceneJSONValue?) -> Double? {

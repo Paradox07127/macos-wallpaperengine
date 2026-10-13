@@ -234,6 +234,23 @@ struct WPETexDecoderTests {
         #expect(track.frames[0].mipmaps.first?.bytes == track.frames[1].mipmaps.first?.bytes)
     }
 
+    @Test("Non-square TEXS cross-axis components use the coordinate axis dimension")
+    func nonSquareTEXSUsesCoordinateAxisDimensions() throws {
+        var buffer = makeImageWithTEXIImageDimensions(textureWidth: 4, textureHeight: 2,
+                                                      imageWidth: 4, imageHeight: 2, unknownInt0: 0, flags: 4)
+        appendMagic(&buffer, magic: "TEXS0002")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 0)
+        for value: Float in [0.125, 1, 0, 2, 1, -1, 1] {
+            appendFloat32(&buffer, value)
+        }
+        let payload = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        let frame = try #require(payload.animationTrack?.frames.first)
+        #expect(frame.samplingDescriptor == WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.5, -0.25, 0.5), translation: SIMD2<Float>(0.25, 0)
+        ))
+    }
+
     @Test("TEXI imageWidth/imageHeight/unkInt0 surface into WPETexInfo")
     func texiUnknownFieldsAreRetained() throws {
         let buffer = makeImageWithTEXIImageDimensions(
@@ -254,6 +271,20 @@ struct WPETexDecoderTests {
         #expect(info.unknownInt0 == 7)
         #expect(info.flags == WPETexInfo.clampUVsFlag)
         #expect(info.flag0x40Extension == nil)
+    }
+
+    @Test("Shared TEX header rejects unknown versions and keeps bounded decoder errors typed")
+    func sharedHeaderRetainsTypedDecoderErrors() throws {
+        let bytes = makeImageWithTEXIImageDimensions(textureWidth: 4, textureHeight: 2,
+                                                     imageWidth: 4, imageHeight: 2, unknownInt0: 0)
+        #expect(throws: WPETexDecodeError.truncatedBlock(block: "TEXI.header", offset: 26)) {
+            _ = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: Data(bytes.prefix(26)))).get()
+        }
+        var unknown = bytes
+        unknown.replaceSubrange(9 ..< 17, with: Data("TEXI0002".utf8))
+        #expect(throws: WPETexDecodeError.unsupportedBlock(magic: "TEXI0002")) {
+            _ = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: unknown)).get()
+        }
     }
 
     @Test("TEXI depth precedes the versioned tail word and every volume mip retains depth")

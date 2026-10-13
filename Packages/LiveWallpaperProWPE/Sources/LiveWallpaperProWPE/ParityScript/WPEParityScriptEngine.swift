@@ -60,6 +60,9 @@ public final class WPEParityScriptEngine {
         /// Constants whose shader annotation sets the angle flag (constant flags +0xac bit 0x20).
         public var angleConstants: Set<ConstantKey>
         public var materialConstants: [ConstantKey: MaterialConstant]
+        /// Resource records from the existing ProgramScene parser. Missing metadata does not imply zero native
+        /// passes and must never be reconstructed from authored overrides or the constants a shader exposes.
+        public var resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]]
         /// Native/parsed field seeds; scene fields have objectID "", video fields use "video.name".
         public var fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue]
         /// Extend/replace registered descriptors by (owner, name), including computed flag-2 fields.
@@ -77,6 +80,7 @@ public final class WPEParityScriptEngine {
         public init(assets: WPEParityProgramAssets, canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
                     userPropertiesJSON: String = "{}", angleConstants: Set<ConstantKey> = [],
                     materialConstants: [ConstantKey: MaterialConstant] = [:],
+                    resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
                     fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:],
                     propertyOverrides: [WPEParityScriptProperty] = [], storage: Storage? = nil,
                     createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
@@ -90,6 +94,7 @@ public final class WPEParityScriptEngine {
             self.userPropertiesJSON = userPropertiesJSON
             self.angleConstants = angleConstants
             self.materialConstants = materialConstants
+            self.resolvedEffectRecords = resolvedEffectRecords
             self.fieldDefaults = fieldDefaults
             self.propertyOverrides = propertyOverrides
             self.storage = storage
@@ -649,6 +654,13 @@ public final class WPEParityScriptEngine {
 
     private func addConstants(_ values: WPESceneJSONValue?, layer: Int32, pass key: WPEParityMaterialPassKey,
                               state: WPEParitySceneState) {
+        guard state.passIndex(of: key) != nil else { return }
+        if let effectID = key.effectID {
+            if let records = configuration.resolvedEffectRecords[.init(objectID: key.objectID, effectID: effectID)],
+               !records.contains(where: { $0.materialPass == key }) {
+                return
+            }
+        }
         let entries: [String: WPESceneJSONValue] = if case let .object(raw)? = values {
             raw
         } else {
@@ -867,14 +879,17 @@ public final class WPEParityScriptEngine {
             guard let effect = effectJSON.first(where: { WPEParitySceneAnimations.id($0) == effectID }) else {
                 continue
             }
-            let passCount = max(WPEParityProgramScene.array(effect["passes"]).count,
-                                (constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == effectID }.map(\.pass).max() ?? -1) + 1)
-            let passes = (0 ..< passCount).map { pass -> [String: Any] in
-                let key = WPEParityMaterialPassKey(objectID: layer.id, effectID: effectID, pass: pass)
-                return materialInfo(key)
-            }
+            let records = configuration.resolvedEffectRecords[.init(objectID: layer.id, effectID: effectID)]
+            let materialKeys = (records.map { Set($0.compactMap(\.materialPass)) }
+                ?? Set(constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == effectID }))
+                .sorted { $0.pass < $1.pass }
+            let passes = materialKeys.map(materialInfo)
+            let recordMaterials = records?.map { record in
+                record.materialPass.flatMap { materialKeys.firstIndex(of: $0) } ?? -1
+            } ?? []
             effects.append(["slot": slot, "name": WPEParityProgramScene.string(effect["name"]) ?? effectID,
-                            "passes": passes])
+                            "passes": passes, "records": recordMaterials,
+                            "metadataKnown": records != nil])
         }
         let baseMaterials = constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == nil }
             .sorted { $0.pass < $1.pass }.map(materialInfo)

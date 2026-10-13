@@ -1,7 +1,7 @@
 import Foundation
 
-/// The `.tex` fields WPE's combo pass reads: after `TEXVnnnn\0` and `TEXInnnn\0` come the format, the flags and the
-/// texture and image sizes (LE uint32), stored at Texture+0x18, +0x1c, +0x20/+0x24 and +0x2c/+0x30 by FUN_14015c760.
+/// The six TEX info words used by both program combos and image decoding (14015c760).
+/// TEXV4 embeds them after its container magic; TEXV5 precedes them with a TEXI magic (14015e580).
 public struct WPEParityProgramTextureHeader: Sendable, Equatable {
     static let byteCount = 42
 
@@ -24,14 +24,53 @@ public struct WPEParityProgramTextureHeader: Sendable, Equatable {
         self.imageHeight = imageHeight
     }
 
-    public init?(bytes: [UInt8]) {
-        guard bytes.count >= Self.byteCount, bytes[0 ..< 4].elementsEqual("TEXV".utf8), bytes[8] == 0,
-              bytes[9 ..< 13].elementsEqual("TEXI".utf8), bytes[17] == 0 else { return nil }
-        func uint32(at offset: Int) -> UInt32 {
-            (0 ..< 4).reduce(0) { $0 | UInt32(bytes[offset + $1]) << (8 * $1) }
+    /// One field order for the package's header probe and the app's bounded TEX reader. The latter retains its
+    /// typed truncation errors and reads conditional depth/versioned tail fields after these six words.
+    public init(readUInt32: () throws -> UInt32) rethrows {
+        let format = try readUInt32()
+        let flags = try readUInt32()
+        let textureWidth = try readUInt32()
+        let textureHeight = try readUInt32()
+        let imageWidth = try readUInt32()
+        let imageHeight = try readUInt32()
+        self.init(format: Int32(bitPattern: format), flags: flags, textureWidth: textureWidth,
+                  textureHeight: textureHeight, imageWidth: imageWidth, imageHeight: imageHeight)
+    }
+
+    public static func containerVersion(for magic: String) -> Int? {
+        switch magic {
+        case "TEXV0004": 4
+        case "TEXV0005": 5
+        default: nil
         }
-        self.init(format: Int32(bitPattern: uint32(at: 18)), flags: uint32(at: 22), textureWidth: uint32(at: 26),
-                  textureHeight: uint32(at: 30), imageWidth: uint32(at: 34), imageHeight: uint32(at: 38))
+    }
+
+    public static func infoVersion(for magic: String) -> Int? {
+        switch magic {
+        case "TEXI0000": 0
+        case "TEXI0001": 1
+        default: nil
+        }
+    }
+
+    public init?(bytes: [UInt8]) {
+        guard bytes.count >= 9, bytes[8] == 0,
+              let magic = String(bytes: bytes[0 ..< 8], encoding: .utf8),
+              let container = Self.containerVersion(for: magic)
+        else { return nil }
+        var cursor = 9
+        if container == 5 {
+            guard bytes.count >= 18, bytes[17] == 0,
+                  let infoMagic = String(bytes: bytes[9 ..< 17], encoding: .utf8),
+                  Self.infoVersion(for: infoMagic) != nil
+            else { return nil }
+            cursor = 18
+        }
+        guard bytes.count >= cursor + 24 else { return nil }
+        self.init(readUInt32: {
+            defer { cursor += 4 }
+            return (0 ..< 4).reduce(0) { $0 | UInt32(bytes[cursor + $1]) << (8 * $1) }
+        })
     }
 }
 

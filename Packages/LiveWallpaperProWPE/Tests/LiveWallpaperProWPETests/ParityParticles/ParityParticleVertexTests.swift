@@ -32,6 +32,51 @@ final class ParityParticleVertexTests: XCTestCase {
         [value.x, value.y, value.z, w]
     }
 
+    private func rendererCaseSystem(_ renderer: String?) -> WPEParityParticleSystem {
+        let field = renderer.map { ", \"renderer\": \($0)" } ?? ""
+        var system = WPEParityParticleSystem(
+            json: Support.json("""
+            {"maxcount": 1,
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}]\(field)}
+            """), rng: WPEParityMT19937()
+        )
+        system.advance(dt: 0.1)
+        return system
+    }
+
+    func testMissingRendererDrawsOneDefaultSprite() throws {
+        var system = rendererCaseSystem(nil)
+        XCTAssertEqual(system.liveCount, 1)
+        XCTAssertEqual(system.renderers.map(\.kind), [.sprite])
+        let batches = system.drawBatches(objectID: "owner")
+        XCTAssertEqual(batches.count, 1)
+        let batch = try XCTUnwrap(batches.first)
+        XCTAssertEqual(batch.vertices.count, 1)
+        XCTAssertEqual(batch.vertices.stride, 44)
+        XCTAssertEqual(batch.vertices.bytes.count, 44)
+    }
+
+    func testNonArrayRendererDrawsTheDefaultSprite() throws {
+        for renderer in ["null", "false", "5", #""rope""#, #"{"name": "rope"}"#] {
+            var system = rendererCaseSystem(renderer)
+            XCTAssertEqual(system.liveCount, 1, renderer)
+            XCTAssertEqual(system.renderers.map(\.kind), [.sprite], renderer)
+            let batches = system.drawBatches(objectID: "owner")
+            XCTAssertEqual(batches.count, 1, renderer)
+            let batch = try XCTUnwrap(batches.first, renderer)
+            XCTAssertEqual(batch.vertices.count, 1, renderer)
+            XCTAssertEqual(batch.vertices.stride, 44, renderer)
+        }
+    }
+
+    func testExplicitEmptyRendererKeepsLiveParticlesWithoutAnyDraw() {
+        var system = rendererCaseSystem("[]")
+        XCTAssertEqual(system.liveCount, 1)
+        XCTAssertTrue(system.renderers.isEmpty)
+        XCTAssertTrue(system.drawBatches(objectID: "owner").isEmpty)
+    }
+
     func testSpriteVertexIs44BytesPerLiveSlot() {
         var particles = threeParticles(renderers: #"{"name": "sprite"}"#)
         let batch = particles.vertices(for: particles.renderers[0])

@@ -134,6 +134,68 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertNil(WPEParityProgramConstants.components(WPESceneShaderConstantValue.string("util/noise")))
     }
 
+    /// 1401ee1a0 counts accepted 0x30-byte records, including commands and a failed material. 1401e7170 uses the
+    /// original resource index for overrides even after a copy command and a rejected conditional pass.
+    func testEffectRecordsPreserveNativeCountAndRawOverrideIndices() throws {
+        let resources: [String: Any] = [
+            "models/probe.json": ["material": "materials/base.json"],
+            "materials/base.json": ["passes": [["shader": "probe"]]],
+            "materials/empty.json": ["passes": [["shader": "empty"]]],
+            "materials/later.json": ["passes": [["shader": "probe", "constantshadervalues": ["value": 1]]]],
+            "effects/records.json": ["passes": [
+                ["material": "materials/empty.json"], ["command": "copy"],
+                ["material": "materials/skipped.json", "conditions": [["ON": 1]]],
+                ["material": "materials/later.json"], ["command": "swap"],
+                ["material": "materials/missing.json"], [:],
+            ]],
+            "effects/empty.json": ["passes": []],
+        ]
+        var bytes = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        bytes["shaders/probe.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/probe.frag"] = Data("""
+        uniform float g_Value; // {"material":"value","default":1}
+        void main() {}
+        """.utf8)
+        bytes["shaders/empty.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/empty.frag"] = Data("void main() {}".utf8)
+        let files = bytes
+        let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 200, "height": 100]],
+            "objects": [["id": 7, "image": "models/probe.json", "size": "200 100", "effects": [
+                ["id": 9, "file": "effects/records.json", "visible": false,
+                 "passes": [[:], NSNull(), ["constantshadervalues": ["value": 22]],
+                            ["constantshadervalues": ["value": 33]], [:], [:],
+                            ["constantshadervalues": ["phantom": 99]]]],
+                ["id": 10, "file": "effects/absent.json"],
+                ["id": 11, "file": "effects/empty.json"],
+            ]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
+        let later = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 3)
+        let records = try XCTUnwrap(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")])
+        XCTAssertEqual(records.map(\.filePassIndex), [0, 1, 3, 4, 5, 6])
+        XCTAssertEqual(records.map(\.materialPass), [.init(objectID: "7", effectID: "9", pass: 0), nil, later, nil, nil, nil])
+        XCTAssertNil(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "10")], "failed effect load is not known zero")
+        XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "11")], [], "empty resource is known zero")
+        let state = WPEParitySceneState(scene: scene, document: document)
+        XCTAssertNotNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 0)), "empty material keeps its identity")
+        XCTAssertEqual(state.constant("value", of: later)?.value.x, 33)
+        XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 1)))
+        XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 6)))
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene(effectVisible: { _, _ in true }),
+                                                       post: scene.postProcess, frameIndex: 0)
+        let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
+            $0.materialPass == later
+        })
+        XCTAssertEqual(Self.floats(binding.constants[.fragment]?["g_Value"]), [33])
+        XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")]?.count, 6,
+                       "disabled effects retain native records; enabling draws must not redefine the count")
+    }
+
     /// Scene 3815666789's foliagesway pass: every material uniform gets the scene value or its default.
     func testRealSceneEffectPassBindsSceneConstantsAndTextures() throws {
         guard let directory = ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"], !directory.isEmpty else {

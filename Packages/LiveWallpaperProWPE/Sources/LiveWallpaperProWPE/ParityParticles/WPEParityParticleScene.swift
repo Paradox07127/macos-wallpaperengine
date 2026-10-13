@@ -82,11 +82,43 @@ public struct WPEParityParticleScene {
                                           slotCount: Int((Float(config.maxCount) * instance.count).rounded()))
     }
 
+    /// Each accepted system's base program and resolved bound/default texture names, without simulation or RNG.
+    /// The caller must retain compile failures as diagnostics rather than manufacture a false snapshot fact.
+    public static func materialProbes(document: WPESceneDocument, assets: WPEParityProgramAssets,
+                                      engineFlags: WPEEngineComboFlags) -> [WPEParityParticleMaterialProbe] {
+        var probes: [WPEParityParticleMaterialProbe] = []
+        for particle in document.particleObjects {
+            guard let config = WPEParityParticleConfig(path: particle.particleRelativePath, assets: assets,
+                                                       is3D: !engineFlags.orthographicProjection) else {
+                probes.append(WPEParityParticleMaterialProbe(
+                    objectID: particle.id, path: [],
+                    material: .unavailable("particle \(particle.id): \(particle.particleRelativePath) unavailable")
+                ))
+                continue
+            }
+            config.appendMaterialProbes(objectID: particle.id, path: [], assets: assets, engineFlags: engineFlags,
+                                        into: &probes)
+        }
+        return probes
+    }
+
+    /// 1402366f0: a live system triggers once per owner before its renderer entries, including a one-particle rope
+    /// that yields no batch. The callback reads cached base-material facts: nil prunes this system and its children,
+    /// just as a nil native material does; unknown facts may throw. Even empty systems must pass this material gate.
+    /// The boundary refers to unfiltered batches and must not move when the caller drops or filters draws.
+    public mutating func drawStream(for objectID: String,
+                                    needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
+        -> WPEParityParticleDrawStream {
+        guard let index = indexByID[objectID] else {
+            return WPEParityParticleDrawStream(batches: [], snapshotBoundary: nil)
+        }
+        return try objects[index].system.drawStream(objectID: objectID, needsFullFrameBuffer: needsFullFrameBuffer)
+    }
+
     /// Native draw order (1402366f0): own entries, each static child's complete subtree, then each event group's
     /// instances, completing an instance's subtree before the next. Each actual entry is packed once here.
     public mutating func drawBatches(for objectID: String) -> [WPEParityParticleDrawBatch] {
-        guard let index = indexByID[objectID] else { return [] }
-        return objects[index].system.drawBatches(objectID: objectID)
+        drawStream(for: objectID, needsFullFrameBuffer: { _ in false }).batches
     }
 
     /// Compatibility lookup for a prototype key. Uses the same traversal/packing as `drawBatches(for:)`, packing
@@ -112,15 +144,30 @@ public struct WPEParityParticleScene {
 extension WPEParityParticleSystem {
     mutating func drawBatches(objectID: String, matching: WPEParityParticleDrawKey? = nil)
         -> [WPEParityParticleDrawBatch] {
-        var batches: [WPEParityParticleDrawBatch] = []
-        appendDrawBatches(at: WPEParityParticleDrawKey(objectID: objectID, path: [], renderer: 0),
-                          matching: matching, into: &batches)
-        return batches
+        drawStream(objectID: objectID, matching: matching, needsFullFrameBuffer: { _ in false }).batches
     }
 
-    private mutating func appendDrawBatches(at node: WPEParityParticleDrawKey,
-                                            matching: WPEParityParticleDrawKey?,
-                                            into batches: inout [WPEParityParticleDrawBatch]) {
+    mutating func drawStream(objectID: String, matching: WPEParityParticleDrawKey? = nil,
+                             needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
+        -> WPEParityParticleDrawStream {
+        var batches: [WPEParityParticleDrawBatch] = []
+        var snapshotBoundary: Int?
+        try appendDrawStream(at: WPEParityParticleDrawKey(objectID: objectID, path: [], renderer: 0),
+                             matching: matching, needsFullFrameBuffer: needsFullFrameBuffer,
+                             into: &batches, snapshotBoundary: &snapshotBoundary)
+        return WPEParityParticleDrawStream(batches: batches, snapshotBoundary: snapshotBoundary)
+    }
+
+    private mutating func appendDrawStream(at node: WPEParityParticleDrawKey,
+                                           matching: WPEParityParticleDrawKey?,
+                                           needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?,
+                                           into batches: inout [WPEParityParticleDrawBatch],
+                                           snapshotBoundary: inout Int?) rethrows {
+        // 1402366f0.c:26–259: the material gate encloses own rendering and both child loops.
+        guard let needsSnapshot = try needsFullFrameBuffer(node.path) else { return }
+        if snapshotBoundary == nil, liveCount != 0, needsSnapshot {
+            snapshotBoundary = batches.count
+        }
         var mainBatch: WPEParityParticleVertexBatch?
         for renderer in renderers.indices {
             var key = node
@@ -132,13 +179,17 @@ extension WPEParityParticleSystem {
         for index in children.indices {
             var key = node
             key.path.append(.staticChild(index))
-            children[index].appendDrawBatches(at: key, matching: matching, into: &batches)
+            try children[index].appendDrawStream(at: key, matching: matching,
+                                                 needsFullFrameBuffer: needsFullFrameBuffer,
+                                                 into: &batches, snapshotBoundary: &snapshotBoundary)
         }
         for group in eventChildren.indices {
             var key = node
             key.path.append(.eventGroup(group))
             for index in eventChildren[group].indices {
-                eventChildren[group][index].appendDrawBatches(at: key, matching: matching, into: &batches)
+                try eventChildren[group][index].appendDrawStream(at: key, matching: matching,
+                                                                 needsFullFrameBuffer: needsFullFrameBuffer,
+                                                                 into: &batches, snapshotBoundary: &snapshotBoundary)
             }
         }
     }

@@ -19,6 +19,40 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testConditionalStandaloneResolvePreservesHistoryUntilNativeSnapshotBoundary() throws {
+        let harness = try makeHarness()
+        let history = try makeTexture(harness)
+        let output = try makeTexture(harness)
+        try execute(harness, WPERenderGraphCompiler.compile(resources: [resource("R", .pooled)],
+                                                            operations: [clear("R", .init(red: 0, green: 0, blue: 1, alpha: 1))]),
+                    external: ["R": history], draws: [:])
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [resource("M", .frameTransient, samples: 4), resource("R", .pooled), resource("O", .persistent)],
+            operations: [bind("M"), clear("M", .init(red: 1, green: 0, blue: 0, alpha: 1)),
+                         op(.resolve(source: "M", destination: "R")), op(.copy(source: "R", destination: "O"))],
+            preservingTransfers: [2]
+        )
+        XCTAssertTrue(graph.steps.contains {
+            if case .resolve = $0.kind {
+                true
+            } else {
+                false
+            }
+        })
+        XCTAssertNotEqual(graph.storage["M"], .memoryless)
+        let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                  arena: harness.arena, pixelFormats: Self.formats)
+        for (enabled, expected) in [(false, [UInt8](arrayLiteral: 0, 0, 255, 255)),
+                                    (true, [255, 0, 0, 255]), (false, [255, 0, 0, 255])] {
+            guard case let .committed(buffer) = try executor.encodeFrame(on: harness.queue,
+                                                                         textures: ["R": history, "O": output], shouldTransfer: { $0 != 2 || enabled },
+                                                                         visit: { _, _, _, _ in }) else { return XCTFail("frame was skipped") }
+            buffer.waitUntilCompleted()
+            XCTAssertNil(buffer.error)
+            try assertEvery(readBack(harness, output), equals: expected)
+        }
+    }
+
     func testRendererKeepsAuthoredClearAndSwapHistoryAcrossVisibilityAndEffectCaches() async throws {
         let harness = try makeHarness()
         let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-renderer-\(UUID().uuidString)")
