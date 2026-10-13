@@ -48,7 +48,22 @@ public enum WPEParityPostProcessBuilder {
         }
         if config.colorCorrectionEnabled {
             stream.snapshot()
-            stream.draw("ccsimple", reads: ["_rt_FullFrameBuffer"])
+            let correction = config.colorCorrection
+            var constants: [String: [Float]] = [:]
+            var combos: [String: Int32] = [:]
+            var textures: [Int32: String] = [:]
+            // 140181f30.c:265-275, 409-413, 499-512
+            if correction.adjustsColor {
+                combos["COL"] = 1
+                constants["g_Params"] = correction.params
+            }
+            if correction.appliesLUT {
+                combos["LUT"] = 1
+                constants["g_LutParams"] = [correction.lutAmount]
+                textures[1] = "lut/" + correction.lut
+            }
+            stream.draw("ccsimple", reads: ["_rt_FullFrameBuffer"], constants: constants, combos: combos,
+                        textures: textures)
         }
         if config.fadeActive {
             stream.draw("fade", blend: .translucent)
@@ -116,7 +131,7 @@ private struct WPEParityPostProcessStream {
     /// `material` defaults to `materials/util/<shader>.json`.
     mutating func draw(_ shader: String, material: String? = nil, reads: [WPEResourceID] = [],
                        blend: WPEParityPostProcessDraw.Blend = .normal, constants: [String: [Float]] = [:],
-                       outputAlpha: Float? = nil) {
+                       outputAlpha: Float? = nil, combos: [String: Int32] = [:], textures: [Int32: String] = [:]) {
         let texels = reads.map { id in
             let resource = resources.first { $0.id == id }!
             return SIMD2<Float>(1 / Float(resource.width), 1 / Float(resource.height))
@@ -126,7 +141,8 @@ private struct WPEParityPostProcessStream {
                                                    reads: reads, blend: blend,
                                                    geometry: .fullScreenQuad,
                                                    constants: constants,
-                                                   texelSizes: texels, outputAlpha: outputAlpha)
+                                                   texelSizes: texels, outputAlpha: outputAlpha,
+                                                   combos: combos, textures: textures)
         draws.append(description)
         renderVar0 = constants["g_RenderVar0"] ?? renderVar0
         append(shader, .draw(WPEDrawOperation(reads: reads.map { WPETextureView($0) },

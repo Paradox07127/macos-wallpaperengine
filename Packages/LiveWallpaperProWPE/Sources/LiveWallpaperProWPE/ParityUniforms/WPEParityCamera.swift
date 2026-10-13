@@ -65,6 +65,15 @@ public struct WPEParityCamera: Sendable, Equatable {
                   shake: WPEParityCameraShake(general: general))
     }
 
+    /// The camera on a path pose, which comes before the shake (1401891a0.c:253-255); the projection zooms by
+    /// general zoom × pose zoom (14017fa70.c:229).
+    public func posed(_ pose: WPEParityCameraPose, generalZoom: Float) -> WPEParityCamera {
+        var camera = self
+        (camera.eye, camera.center, camera.up) = (pose.eye, pose.center, pose.up)
+        camera.zoom = generalZoom * pose.zoom
+        return camera
+    }
+
     /// The camera at g_Time `time`; the shake comes before parallax and lookAt (1401891a0.c:288-363).
     public func shaken(time: Float) -> WPEParityCamera {
         guard let shake else { return self }

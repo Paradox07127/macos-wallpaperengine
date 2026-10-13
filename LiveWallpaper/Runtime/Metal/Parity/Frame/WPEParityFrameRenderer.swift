@@ -45,6 +45,8 @@ final class WPEParityFrameRenderer {
         let frames: [WPEParityFrame]
         let draws: [Int: WPEParityFrameDrawPlan]
         let skipped: [Int: WPEParityFrameSkip]
+        /// The camerafade draw's operation index.
+        let fade: Int?
     }
 
     /// A draw named by its pass and the draws of that pass before it, which holds across effect sets.
@@ -96,7 +98,13 @@ final class WPEParityFrameRenderer {
     private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
     private let screen: WPEParityUniformScreen
+    /// The scene camera; a camera path pose replaces it for the frame.
     private let camera: WPEParityCamera
+    private let generalZoom: Float
+    private var cameraPaths: WPEParityCameraPaths
+    private var cameraPose: WPEParityCameraPose?
+    /// The fade draw's planned constants with this frame's g_Alpha.
+    private var fadeConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
     /// Only delay and mouse influence change after load; enabling or the amount is baked into the camera.
     private var cameraParallax: WPESceneCameraParallaxSettings
     private(set) var clock = WPEParityClock()
@@ -188,8 +196,13 @@ final class WPEParityFrameRenderer {
 
     /// The engine matrices draw `operation` packs for the current frame.
     func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
-        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: camera.shaken(time: clock.timeUniform),
+        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera.shaken(time: clock.timeUniform),
                                         layers: layersMoved ? layers : nil)
+    }
+
+    /// The camera before the shake: the last frame's path pose, or the scene camera.
+    private var pathCamera: WPEParityCamera {
+        cameraPose.map { camera.posed($0, generalZoom: generalZoom) } ?? camera
     }
 
     var heapBytes: Int {
@@ -200,8 +213,8 @@ final class WPEParityFrameRenderer {
         arena.capacity * WPEParityFrameArena.slotCount
     }
 
-    /// Nothing the scene loaded changes its frame: no keyframe animation, particle, video, puppet, camera shake or
-    /// parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
+    /// Nothing the scene loaded changes its frame: no keyframe animation, particle, video, puppet, camera path,
+    /// camera shake or parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
     let isStatic: Bool
 
     var dedicatedTextureBytes: Int {
@@ -307,6 +320,8 @@ final class WPEParityFrameRenderer {
         growsParticleShare = particleArenaBytes == nil
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         camera = planner.layers.camera
+        generalZoom = Float(plan.document.general.zoom)
+        cameraPaths = plan.scene.cameraPaths
         layers = planner.layers
         cameraParallax = plan.document.general.cameraParallax
         let particleObjects = plan.scene.scene.objects.compactMap { object -> (id: String, index: Int?)? in
@@ -330,7 +345,7 @@ final class WPEParityFrameRenderer {
         let document = plan.document
         isStatic = animations.isEmpty && particleObjects.isEmpty
             && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
-            && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
+            && plan.scene.cameraPaths.paths.isEmpty && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
             && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
             && !([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: Self.hasScript)
@@ -363,6 +378,8 @@ final class WPEParityFrameRenderer {
         clock = previous.clock
         pointer = previous.pointer
         parallax = previous.parallax
+        cameraPaths = previous.cameraPaths
+        cameraPose = previous.cameraPose
         audio = previous.audio
         textureSlots = previous.textureSlots
         renderVars = previous.renderVars
@@ -402,7 +419,9 @@ final class WPEParityFrameRenderer {
             puppets[id]?.advance(dt: clock.time - sceneTime)
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
-        let camera = camera.shaken(time: clock.timeUniform)
+        cameraPose = cameraPaths.advance(dt: clock.frametime)
+        let fadeAlpha = cameraPaths.fadeAlpha
+        let camera = pathCamera.shaken(time: clock.timeUniform)
         particles.beginFrame()
         particles.scene.advance(dt: clock.frametime, frames: Self.particleFrames(
             particleObjects, state: state, layers: layers, camera: camera, time: clock.timeUniform,
@@ -446,6 +465,15 @@ final class WPEParityFrameRenderer {
                                                          prepare: videos.encode) { step, textures, arena in
             let operation = graphs.operations[variant][step]
             guard let plan = draws[operation] else { return [] }
+            let fade = operation == graphs.layout.fade
+            if fade {
+                // 14017fa70.c:766
+                guard fadeAlpha > 0 else { return [] }
+                if fadeConstants.isEmpty {
+                    fadeConstants = plan.constants
+                }
+                fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
+            }
             let provided: [WPEParityDraw]
             if case .particles = plan.geometry {
                 provided = try plan.makeParticleDraws(frame: uniforms, camera: camera, variant: variant,
@@ -458,7 +486,8 @@ final class WPEParityFrameRenderer {
                 let color = plan.layerColor.map { state.layerColor(at: $0.object) }
                 provided = try [plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
                                               textureSlots: &textureSlots, puppets: puppets, layers: live,
-                                              constants: postConstants[operation] ?? materialConstants(operation, plan),
+                                              constants: fade ? fadeConstants
+                                                  : postConstants[operation] ?? materialConstants(operation, plan),
                                               layerColor: color == plan.layerColor?.loaded ? nil : color)]
             }
             lastFrameDraws += provided.map { (operation, $0) }
@@ -515,6 +544,7 @@ final class WPEParityFrameRenderer {
         // Packs are keyed by operation, and a new layout renumbers them.
         if effects != graphs.layout.effects {
             packedConstants.removeAll()
+            fadeConstants = [:]
         }
         defer { repackBloom() }
         if let previous = previousGraphs, previous.hidden == hidden, previous.layout.effects == effects {
@@ -591,7 +621,14 @@ final class WPEParityFrameRenderer {
                 skipped[index] = error
             }
         }
-        return Layout(effects: effects, frames: planned.frames, draws: draws, skipped: skipped)
+        let fade = planned.frames[0].draws.first { _, draw in
+            if case let .post(post) = draw {
+                post.shader == "fade"
+            } else {
+                false
+            }
+        }?.key
+        return Layout(effects: effects, frames: planned.frames, draws: draws, skipped: skipped, fade: fade)
     }
 
     private static func drawNames(_ frame: WPEParityFrame) -> [Int: DrawName] {

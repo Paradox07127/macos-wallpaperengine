@@ -8,11 +8,15 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var hdrPostProcessing: Bool
     /// User MSAA x2/x4/x8 that the device supports.
     public var msaa: Bool
+    /// The wallpaper's `wec_*` / `wcc_*` settings; the product has no UI for them and keeps the defaults.
+    public var colorCorrection: WPEParityColorCorrection
 
-    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false) {
+    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
+                colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection()) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
         self.msaa = msaa
+        self.colorCorrection = colorCorrection
     }
 }
 
@@ -30,6 +34,8 @@ public struct WPEParityProgramScene: Sendable {
     public let postProcess: WPEParityPostProcessConfig
     public let engineFlags: WPEEngineComboFlags
     public let assets: WPEParityProgramAssets
+    /// `camera.paths` as loaded, at the start of the first path.
+    public let cameraPaths: WPEParityCameraPaths
     /// The `.mdl` of each layer with a `WPEParityScenePuppet`, keyed by object id; the bone animator needs it.
     public let puppetModels: [String: WPEPuppetModel]
     /// The glyph atlases of the text layers as planning left them, keyed by `WPEParitySceneText.atlasKey`.
@@ -195,11 +201,19 @@ public struct WPEParityProgramScene: Sendable {
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
                                           forcesLayerComposite: flags.fogDistance || flags.fogHeight,
                                           objects: sceneObjects, diagnostics: diagnostics)
-        postProcess = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
-                                                 objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
-                                                 bloomSettings: Self.bloomSettings(bloomGeneral),
-                                                 backbufferWidth: width, backbufferHeight: height,
-                                                 backbufferFormat: format)
+        let cameraPaths = WPEParityCameraPaths(camera: document.sourceJSON["camera"], assets: assets)
+        self.cameraPaths = cameraPaths
+        // camerafade is e0 bit2, on from 0x26; fade.json loads only with camera paths (140181af0.c:37-42).
+        let cameraFade = bloomGeneral["camerafade"].map { Self.flag($0) } ?? true
+        var post = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
+                                              objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
+                                              bloomSettings: Self.bloomSettings(bloomGeneral),
+                                              colorCorrectionEnabled: settings.colorCorrection.drawn,
+                                              fadeActive: cameraFade && !cameraPaths.paths.isEmpty,
+                                              backbufferWidth: width, backbufferHeight: height,
+                                              backbufferFormat: format)
+        post.colorCorrection = settings.colorCorrection
+        postProcess = post
     }
 
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
@@ -294,9 +308,14 @@ public struct WPEParityProgramScene: Sendable {
         return WPEParityMaterialPassKey(objectID: draw.objectID, effectID: draw.effectID, pass: overridePasses[key] ?? 0)
     }
 
-    /// A post-process draw's material file, or its own name as the shader when the file is missing.
+    /// A post-process draw's material file, or its own name as the shader when the file is missing, with the
+    /// draw's combos and asset textures.
     func engineMaterial(_ draw: WPEParityPostProcessDraw) -> WPEParityProgramMaterial {
-        WPEParityProgramMaterial(path: draw.material, assets: assets) ?? WPEParityProgramMaterial(shader: draw.shader)
+        var material = WPEParityProgramMaterial(path: draw.material, assets: assets)
+            ?? WPEParityProgramMaterial(shader: draw.shader)
+        material.combos.merge(draw.combos) { $1 }
+        material.textures.merge(draw.textures) { $1 }
+        return material
     }
 
     /// 0x14020744c: the material's own combos, shader defaults included, decide whether its composite keeps FOG.

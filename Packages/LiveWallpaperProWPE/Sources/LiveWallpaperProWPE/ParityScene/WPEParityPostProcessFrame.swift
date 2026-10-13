@@ -19,6 +19,10 @@ public struct WPEParityPostProcessDraw: Hashable, Sendable {
     public let texelSizes: [SIMD2<Float>]
     /// The LDR combine writes alpha 1.
     public let outputAlpha: Float?
+    /// Combos the engine sets on the material.
+    public let combos: [String: Int32]
+    /// Asset textures in slots that `reads` leaves free, named like a material's textures.
+    public let textures: [Int32: String]
 }
 
 /// Appended after the object loop; present is a marker after the last operation.

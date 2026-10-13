@@ -1,3 +1,5 @@
+import Foundation
+
 /// Switches and raw uniform values for the tail of FUN_14017fa70.
 public struct WPEParityPostProcessConfig: Sendable {
     public var sceneBloomEnabled: Bool
@@ -11,7 +13,11 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var sceneMipMappedFrameBufferEnabled: Bool
     public var qualityMipMappedFrameBufferEnabled: Bool
     public var bloomSettings: WPEParityBloomSettings
+    /// ccsimple.json is loaded (`WPEParityColorCorrection.drawn`); `colorCorrection` gives its combos and values.
     public var colorCorrectionEnabled: Bool
+    public var colorCorrection = WPEParityColorCorrection()
+    /// fade.json is loaded: camerafade on and camera paths present. The draw runs only on frames whose
+    /// `WPEParityCameraPaths.fadeAlpha` is above 0.
     public var fadeActive: Bool
     public var backbufferWidth: Int
     public var backbufferHeight: Int
@@ -73,4 +79,57 @@ public struct WPEParityBloomSettings: Hashable, Sendable {
     public var tint = SIMD3<Float>(1, 1, 1)
 
     public init() {}
+}
+
+/// WPE's per-wallpaper colour-correction user settings as it stores them (140181f30.c:196-248), with the defaults
+/// of 14012b890.c:28-40.
+public struct WPEParityColorCorrection: Hashable, Sendable {
+    /// `wec_e`
+    public var enabled = false
+    /// `wec_con` ÷ 50
+    public var contrast: Float = 1
+    /// `wec_brs` ÷ 50
+    public var brightness: Float = 1
+    /// `wec_sa` ÷ 50
+    public var saturation: Float = 1
+    /// `wec_hue` ÷ 100 − 0.5
+    public var hue: Float = 0
+    /// `wcc_v`, the LUT file under `lut/`.
+    public var lut = ""
+    /// `wcc_amt` ÷ 100
+    public var lutAmount: Float = 1
+
+    public init() {}
+
+    /// Raw setting values; nil keeps the default.
+    public init(wecE: Bool? = nil, wecCon: Double? = nil, wecBrs: Double? = nil, wecSa: Double? = nil,
+                wecHue: Double? = nil, wccV: String? = nil, wccAmt: Double? = nil) {
+        enabled = wecE ?? enabled
+        contrast = wecCon.map { Float($0) / 50 } ?? contrast
+        brightness = wecBrs.map { Float($0) / 50 } ?? brightness
+        saturation = wecSa.map { Float($0) / 50 } ?? saturation
+        hue = wecHue.map { Float($0) / 100 - 0.5 } ?? hue
+        lut = wccV ?? lut
+        lutAmount = wccAmt.map { Float($0) / 100 } ?? lutAmount
+    }
+
+    /// Combo COL: `wec_e` with any value off neutral.
+    public var adjustsColor: Bool {
+        enabled && !(contrast == 1 && brightness == 1 && saturation == 1 && hue == 0)
+    }
+
+    /// Combo LUT.
+    public var appliesLUT: Bool {
+        !lut.isEmpty && lutAmount > 0
+    }
+
+    /// 14017fa70.c:737: ccsimple is drawn only when either combo is on.
+    public var drawn: Bool {
+        adjustsColor || appliesLUT
+    }
+
+    /// g_Params (140181f30.c:409-413), written only with COL.
+    public var params: [Float] {
+        [pow(brightness, 2), pow(contrast, 0.5), pow(saturation, 0.5), hue]
+    }
 }
