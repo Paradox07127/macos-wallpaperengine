@@ -10,7 +10,7 @@ import XCTest
 
 extension WPEParitySceneDriverTests {
     /// Original genericimage4 samples MDLA bone alpha through the real loader, frame owner, packer and present.
-    /// The three independent expectations distinguish replacement blend, bounded additive and skipped tracks.
+    /// Three blend expectations exercise one float4 and a second float4 through a vertex bound to bone four.
     @objc func testNativePuppetAlphaTracksReachOriginalShaderAndPresent() async throws {
         let original: WPEParityProgramAssets
         do {
@@ -54,6 +54,14 @@ extension WPEParitySceneDriverTests {
             else { defaults.removeObject(forKey: scaleKey) }
         }
         defaults.set(1.0, forKey: scaleKey)
+        for boneCount in [1, 5] {
+            try await checkPuppetAlpha(boneCount: boneCount, original: original, compiler: compiler)
+        }
+    }
+
+    private func checkPuppetAlpha(
+        boneCount: Int, original: WPEParityProgramAssets, compiler: WPEParityHelperShaderCompiler
+    ) async throws {
         func write(_ json: Any, _ path: String) throws {
             let url = scratch.appending(path: path)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -65,10 +73,10 @@ extension WPEParitySceneDriverTests {
                                 "blending": "translucent"]]], "materials/alpha.json")
         var objects: [[String: Any]] = []
         for (index, flags): (Int, UInt32) in [(0, 0), (1, 0), (2, 1)] {
-            let name = "alpha\(index)"
+            let name = "alpha\(boneCount)_\(index)"
             let url = scratch.appending(path: "models/\(name).mdl")
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Self.puppetAlphaMDL(secondTrackFlags: flags).write(to: url)
+            try Self.puppetAlphaMDL(secondTrackFlags: flags, boneCount: boneCount).write(to: url)
             try write(["material": "materials/alpha.json", "puppet": "models/\(name).mdl"], "models/\(name).json")
             objects.append(["id": index + 1, "image": "models/\(name).json", "size": "64 64",
                             "origin": "\(32 + index * 64) 32 0", "scale": "1 1 1", "angles": "0 0 0",
@@ -101,7 +109,7 @@ extension WPEParitySceneDriverTests {
         layer.drawableSize = CGSize(width: 192, height: 64)
         layer.framebufferOnly = false
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
-        try await present(driver, layer: layer, label: "native bone alpha")
+        try await present(driver, layer: layer, label: "native bone alpha BONECOUNT=\(boneCount)")
         XCTAssertEqual(renderer.skipped, [:])
         let backbuffer = try readBack(renderer.backbuffer, device: device)
         let shown = try readBack(XCTUnwrap(layer.lastTexture), device: device)
@@ -115,11 +123,39 @@ extension WPEParitySceneDriverTests {
             }?.key)
             let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == drawIndex }?.draw)
             XCTAssertGreaterThan(draw.indexCount, 0)
-            if case let .array(values)? = draw.constants[.vertex]?["g_BonesAlpha"],
-               case let .float(actual)? = values.first {
-                XCTAssertEqual(actual, alpha, accuracy: 0.000001)
-            } else {
+            let reflected = try XCTUnwrap(draw.pipeline.vertex.reflection.cbuffers.flatMap(\.variables)
+                .first { $0.name == "g_BonesAlpha" })
+            let groupCount = (boneCount + 3) / 4
+            XCTAssertEqual(reflected.baseType, .float)
+            XCTAssertEqual(reflected.class, .vector)
+            XCTAssertEqual(reflected.rows, 1)
+            XCTAssertEqual(reflected.columns, 4)
+            XCTAssertEqual(reflected.elements, groupCount)
+            XCTAssertEqual(reflected.size, groupCount * 16)
+            XCTAssertTrue(reflected.used)
+            print("puppet-alpha BONECOUNT=\(boneCount) object=\(index) reflection=\(reflected)")
+            guard case let .array(values)? = draw.constants[.vertex]?["g_BonesAlpha"] else {
                 XCTFail("the encoded original shader must consume bone alpha for \(index)")
+                continue
+            }
+            let expected: [Float] = if boneCount == 1 {
+                [alpha]
+            } else if index == 1 {
+                [0.1, 0.2, 0.3, 0.4, 0.5]
+            } else {
+                [0.5, 0.5, 0.5, 0.5, alpha]
+            }
+            XCTAssertEqual(values.count, groupCount)
+            for (group, value) in values.enumerated() {
+                guard case let .vector(lanes) = value else {
+                    XCTFail("g_BonesAlpha group \(group) must match the actual float4 reflection")
+                    continue
+                }
+                XCTAssertEqual(lanes.count, 4)
+                for (lane, actual) in lanes.enumerated() {
+                    let bone = group * 4 + lane
+                    XCTAssertEqual(actual, bone < expected.count ? expected[bone] : 0, accuracy: 0.000001)
+                }
             }
             let offset = (32 * 192 + 32 + index * 64) * 4
             for channel in 0 ..< 3 {
@@ -129,8 +165,8 @@ extension WPEParitySceneDriverTests {
         }
     }
 
-    /// Native MDLV20 skinned rectangle, one MDLS1 identity bone, two MDLA3 animations with alpha curves.
-    private static func puppetAlphaMDL(secondTrackFlags: UInt32) -> Data {
+    /// Native MDLV20 rectangle bound to the last MDLS1 bone; two MDLA3 animations supply every bone's curve.
+    private static func puppetAlphaMDL(secondTrackFlags: UInt32, boneCount: Int) -> Data {
         var writer = PuppetAlphaMDLWriter()
         writer.string("MDLV0020")
         writer.words([0x0180_000B, 1, 1])
@@ -141,33 +177,47 @@ extension WPEParitySceneDriverTests {
         for (x, y, u, v): (Float, Float, Float, Float) in [(-32, 32, 0, 0), (32, 32, 1, 0),
                                                           (-32, -32, 0, 1), (32, -32, 1, 1)] {
             writer.floats([x, y, 0, 0, 0, 1])
-            writer.words([0, 0, 0, 0])
+            writer.words([UInt32(boneCount - 1), 0, 0, 0])
             writer.floats([1, 0, 0, 0, u, v])
         }
         writer.words([12])
         for index: UInt16 in [0, 2, 1, 1, 2, 3] { writer.uint16(index) }
         writer.string("MDLS0001")
         let skeletonEnd = writer.data.count
-        writer.words([0, 1])
-        writer.string("root")
-        writer.words([0, .max, 64])
-        writer.floats([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
-        writer.string("")
+        writer.words([0, UInt32(boneCount)])
+        for bone in 0 ..< boneCount {
+            writer.string("root\(bone)")
+            writer.words([0, .max, 64])
+            writer.floats([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+            writer.string("")
+        }
         writer.end(at: skeletonEnd)
         writer.string("MDLA0003")
         let animationEnd = writer.data.count
         writer.words([0, 2])
-        for (id, flags, alpha): (UInt32, UInt32, Float) in [(7, 0, 0.8), (8, secondTrackFlags, 0.4)] {
+        for id: UInt32 in [7, 8] {
             writer.words([id, 0])
             writer.string("a\(id)")
             writer.string("loop")
             writer.floats([2])
-            writer.words([1, 0, 1, flags, 72])
-            for _ in 0 ..< 2 { writer.floats([0, 0, 0, 0, 0, 0, 1, 1, 1]) }
+            writer.words([1, 0, UInt32(boneCount)])
+            for bone in 0 ..< boneCount {
+                writer.words([id == 8 && bone == boneCount - 1 ? secondTrackFlags : 0, 72])
+                for _ in 0 ..< 2 {
+                    writer.floats([0, 0, 0, 0, 0, 0, 1, 1, 1])
+                }
+            }
             writer.words([0]) // no additional scalar tracks before per-bone alpha curves
             writer.data.append(1)
-            writer.words([0, 8])
-            writer.floats([alpha, alpha])
+            let alphas: [Float] = if boneCount == 1 {
+                [id == 7 ? 0.8 : 0.4]
+            } else {
+                id == 7 ? [0.1, 0.2, 0.3, 0.4, 0.8] : [0.9, 0.8, 0.7, 0.6, 0.4]
+            }
+            for alpha in alphas {
+                writer.words([0, 8])
+                writer.floats([alpha, alpha])
+            }
             writer.words([0]) // no animation events
         }
         writer.end(at: animationEnd)
