@@ -696,9 +696,12 @@ final class ParityParticleSceneTests: XCTestCase {
             (Self.burst(1, extra: #", "controlpoint": [{"flags": 4}]"#), "", "controlpoint"),
             (Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), "", "controlpoint"),
             (plain.replacingOccurrences(of: "lifetimerandom", with: "inheritcontrolpointvelocity"), "", "component"),
-            (plain, #", "angles": "0 0 1""#, "angles"),
             (plain, #", "angles": "invalid""#, "angles"),
-            (plain, #", "scale": "2 1 1""#, "scale"),
+            (plain, #", "angles": "1e40 0 0""#, "angles"),
+            (plain, #", "origin": "1e40 0 0""#, "origin"),
+            (plain, #", "scale": "2 0 1""#, "scale"),
+            (plain, #", "scale": "1e40 1 1""#, "scale"),
+            (plain, #", "scale": "invalid""#, "scale"),
             (plain, #", "flags": 1"#, "child.flags"),
             (plain, #", "type": "static", "flags": 2"#, "child.flags"),
         ]
@@ -856,8 +859,8 @@ final class ParityParticleSceneTests: XCTestCase {
              #""type": "eventfollow""#, "flags"),
             ("", periodic, #""type": "eventfollow""#, "emitter"),
             ("", Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), #""type": "eventfollow""#, "controlpoint"),
-            ("", plain, #""type": "eventfollow", "angles": "0 0 1""#, "angles"),
-            ("", plain, #""type": "eventfollow", "scale": "2 1 1""#, "scale"),
+            ("", plain, #""type": "eventfollow", "angles": "invalid""#, "angles"),
+            ("", plain, #""type": "eventfollow", "scale": "2 0 1""#, "scale"),
             ("", plain, #""type": "eventfollow", "flags": 2"#, "child.flags"),
             ("", plain, #""flags": 2"#, "type"),
         ]
@@ -875,7 +878,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 $0.path == [.eventGroup(0)] && $0.asset == "bad" && $0.field.contains(field) && !$0.reason.isEmpty
             }, field)
         }
-        // Existing static TRS is retained; only its new follow edge is ineligible because of that ancestor.
+        // A finite nonsingular local TRS ancestor now admits the follow branch as well as its healthy sibling.
         let parent = Self.burst(1, extra: #", "children": [{"name": "ancestor", "angles": "0 0 1"}, {"name": "good"}]"#)
         let ancestor = Self.burst(1, extra: #", "children": [{"name": "bad", "type": "eventfollow"}, {"name": "good"}]"#)
         let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "ancestor": ancestor,
@@ -883,8 +886,8 @@ final class ParityParticleSceneTests: XCTestCase {
         let root = try XCTUnwrap(Self.root(scene))
         XCTAssertEqual(root.children.count, 2)
         XCTAssertEqual(root.children[0].children.count, 1)
-        XCTAssertTrue(root.children[0].eventChildren.isEmpty)
-        XCTAssertTrue(root.children[0].config.unsupportedChildren.contains { $0.field == "angles" })
+        XCTAssertEqual(root.children[0].eventChildren.count, 1)
+        XCTAssertFalse(root.children[0].config.unsupportedChildren.contains { $0.field == "angles" })
         let periodicParent = Self.burst(1, extra: #", "children": [{"name": "bad", "type": "eventfollow"}, {"name": "good"}]"#)
             .replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let periodicScene = try Self.scene(Self.five, particles: ["particles/fx.json": periodicParent,
@@ -893,6 +896,63 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(periodicRoot.children.count, 1)
         XCTAssertTrue(periodicRoot.eventChildren.isEmpty)
         XCTAssertTrue(periodicRoot.config.unsupportedChildren.contains { $0.field == "emitter[0].flags" })
+    }
+
+    func testLocalStaticChildUsesRadianXYZRotationAndNegativeScaleOnlyInItsBatchModel() throws {
+        let parent = Self.burst(0, renderer: "", extra: """
+        , "children": [{"name": "leaf", "origin": "5 7 11", "angles": "1.5707963267948966 1.5707963267948966 1.5707963267948966",
+                        "scale": "-2 3 4"}]
+        """)
+        let leaf = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0, "origin": "2 1 3"}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                         {"name": "velocityrandom", "min": "4 5 6", "max": "4 5 6"}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "leaf": leaf])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let root = try XCTUnwrap(Self.root(scene))
+        let child = try XCTUnwrap(root.children.first)
+        XCTAssertEqual(child.position[0], SIMD3(2, 1, 3))
+        XCTAssertEqual(child.velocity[0], SIMD3(4, 5, 6), "TRS must not rotate raw SoA velocity a second time")
+        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        XCTAssertEqual(batch.key.path, [.staticChild(0)])
+        // Rx90 -> Ry90 -> Rz90 maps (x,y,z) to (z,y,-x); scale applies first.
+        let expected = simd_float4x4(SIMD4(0, 0, 2, 0), SIMD4(0, 3, 0, 0), SIMD4(4, 0, 0, 0), SIMD4(5, 7, 11, 1))
+        for column in 0 ..< 4 {
+            for row in 0 ..< 4 {
+                XCTAssertEqual(batch.localTransform[column][row], expected[column][row], accuracy: 2e-6)
+            }
+        }
+        let placed = batch.localTransform * SIMD4<Float>(2, 1, 3, 1)
+        for axis in 0 ..< 3 {
+            XCTAssertEqual(placed[axis], SIMD3<Float>(17, 10, 15)[axis], accuracy: 5e-6)
+        }
+        let oracle = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 12 {
+            _ = oracle.next()
+        } // shape3/fallback3/speed/birthU/life/velocity3; TRS adds no words.
+        XCTAssertEqual(root.rng.next(), oracle.next())
+    }
+
+    func testUnsafeStaticTRSEdgeReportsItsPathWithoutPruningHealthySiblings() throws {
+        for (edge, field) in [(#""angles": "invalid""#, "angles"),
+                              (#""scale": "1 0 1""#, "scale"),
+                              (#""origin": "1e40 0 0""#, "origin")] {
+            let parent = Self.burst(0, renderer: "", extra: """
+            , "children": [{"name": "bad", \(edge)}, {"name": "good", "scale": "-1 1 1"}]
+            """)
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent,
+                                                              "bad": Self.burst(1), "good": Self.burst(1)])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.children.count, 1)
+            XCTAssertTrue(root.config.unsupportedChildren.contains {
+                $0.path == [.staticChild(0)] && $0.asset == "bad" && $0.field == field && !$0.reason.isEmpty
+            })
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path), [[.staticChild(0)]])
+        }
     }
 
     func testOverrideColorNeedsNoHasColorAndBrightnessNeedsHDR() throws {

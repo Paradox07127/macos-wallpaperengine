@@ -503,7 +503,9 @@ public struct WPEParityProgramScene: Sendable {
             // 1401e7170:434-447,673-679: every accepted file pass enters the native 0x30-byte record array;
             // scene overrides still use the original file index, including commands and rejected conditions.
             let recordIndex = records.count
-            records.append(.init(filePassIndex: passIndex, materialPass: nil))
+            // Native reads material before command (1401e7170:449–476), even when the draw consumer is unavailable.
+            let path = string(pass["material"])
+            records.append(.init(filePassIndex: passIndex, materialPass: nil, materialPath: path))
             if let command = string(pass["command"]) {
                 if command == "swap", let first = string(pass["source"]), let second = string(pass["target"]) {
                     passes.append(WPEParityAuthoredPass(kind: .swap(first: first, second: second),
@@ -517,7 +519,7 @@ public struct WPEParityProgramScene: Sendable {
                 }
                 continue
             }
-            guard let path = string(pass["material"]),
+            guard let path,
                   var material = WPEParityProgramMaterial(path: path, assets: assets) else { continue }
             if passIndex < effect.passOverrides.count {
                 let override = effect.passOverrides[passIndex]
@@ -543,7 +545,8 @@ public struct WPEParityProgramScene: Sendable {
             ))
             materials.append((source, material, passIndex))
             records[recordIndex] = .init(filePassIndex: passIndex,
-                                         materialPass: .init(objectID: objectID, effectID: effect.id, pass: passIndex))
+                                         materialPass: .init(objectID: objectID, effectID: effect.id, pass: passIndex),
+                                         materialPath: path)
         }
         return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials, records)
     }

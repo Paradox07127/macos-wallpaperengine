@@ -46,6 +46,10 @@ final class WPEParityScriptWiringTests: XCTestCase {
 
     func testScriptCameraFovShowsOneFrameLater() async throws {
         let fixture = try await makeFixture("3815666789") { json in
+            // Object fov controls the perspective scene, not an ortho layer's perspectiveoverridefov.
+            var general = json["general"] as? [String: Any] ?? [:]
+            general["orthogonalprojection"] = NSNull()
+            json["general"] = general
             var objects = json["objects"] as? [[String: Any]] ?? []
             objects.append(["id": 901, "name": "camera", "camera": "camera", "origin": "0 0 0", "angles": "0 0 0",
                             "scale": "1 1 1", "fov": ["value": 50, "script": String(format: Self.counter, "10 + n")]])
@@ -53,12 +57,17 @@ final class WPEParityScriptWiringTests: XCTestCase {
         }
         let script = try attachScript(fixture)
         XCTAssertEqual(script.cameraIDs, ["901"])
-        let loaded = fixture.renderer.pathCamera.perspectiveFOV
+        let loaded = try XCTUnwrap(fixture.renderer.pathCamera.scenePerspective).fov
+        let layerOverride = fixture.renderer.pathCamera.perspectiveFOV
         var seen: [Float] = []
         for frame in 1 ... 4 {
             try await encode(fixture.renderer)
             XCTAssertEqual(fixture.renderer.state.scriptField("fov", of: "901"), .vector(SIMD4(10 + Float(frame), 0, 0, 0)))
-            seen.append(fixture.renderer.pathCamera.perspectiveFOV)
+            let camera = fixture.renderer.pathCamera
+            let fov = try XCTUnwrap(camera.scenePerspective).fov
+            seen.append(fov)
+            XCTAssertEqual(camera.perspectiveFOV, layerOverride)
+            XCTAssertEqual(camera.projection.columns.1.y, 1 / tan(fov * Float.pi / 360), accuracy: 0.00001)
         }
         XCTAssertEqual(seen, [loaded, 11, 12, 13])
     }
@@ -111,6 +120,49 @@ final class WPEParityScriptWiringTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testMaterialPathSelectsTheLastRealPassAndUpdatesItsProductionPixels() async throws {
+        let (fixture, queue) = try await materialQueryFixture()
+        let script = try attachScript(fixture)
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "7", pass: 0)
+        let last = WPEParityMaterialPassKey(objectID: "1", effectID: "7", pass: 1)
+        var pipelines: [Int: MTLRenderPipelineState] = [:]
+        // Both authored passes use the same material path. First=(.5,1,1), last=(1,.5,1); path lookup writes
+        // only last=(1,1,.25) on f2, so the multiplied output changes from(.5,.5,1) to(.5,1,.25).
+        for frame in 1 ... 3 {
+            try await encode(fixture.renderer)
+            XCTAssertTrue(fixture.renderer.skipped.isEmpty, "\(fixture.renderer.skipped)")
+            XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+            XCTAssertEqual(fixture.renderer.state.constant("querycolor", of: first)?.value, SIMD4(0.5, 1, 1, 0))
+            XCTAssertEqual(fixture.renderer.state.constant("querycolor", of: last)?.value,
+                           frame == 1 ? SIMD4(1, 0.5, 1, 0) : SIMD4(1, 1, 0.25, 0))
+            for entry in fixture.renderer.lastFrameDraws {
+                if let pipeline = pipelines[entry.operation] {
+                    XCTAssertTrue(entry.draw.pipeline.state === pipeline, "constant writes must retain the pipeline")
+                } else {
+                    pipelines[entry.operation] = entry.draw.pipeline.state
+                }
+            }
+            let texture = fixture.renderer.backbuffer
+            XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+            let bytes = try XCTUnwrap(queue.device.makeBuffer(length: 256, options: .storageModeShared))
+            let command = try XCTUnwrap(queue.makeCommandBuffer())
+            let blit = try XCTUnwrap(command.makeBlitCommandEncoder())
+            blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 8, y: 8, z: 0),
+                      sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: bytes, destinationOffset: 0,
+                      destinationBytesPerRow: 256, destinationBytesPerImage: 256)
+            blit.endEncoding()
+            command.commit()
+            await command.completed()
+            XCTAssertNil(command.error)
+            let pixel = Array(UnsafeRawBufferPointer(start: bytes.contents(), count: 4))
+            let expected = frame == 1 ? [128, 128, 255] : [128, 255, 64]
+            for channel in 0 ..< 3 {
+                XCTAssertLessThanOrEqual(abs(Int(pixel[channel]) - expected[channel]), 2,
+                                         "frame \(frame), channel \(channel), pixel \(pixel)")
+            }
+        }
+    }
+
     /// 120 frames of workshop 3660962877 with its 252 scripts; prints the encodeFrame CPU mean with and without them.
     func testRealSceneRendersWithItsScripts() async throws {
         var means: [Bool: Double] = [:]
@@ -151,7 +203,9 @@ final class WPEParityScriptWiringTests: XCTestCase {
         let script = try WPEParitySceneScript(
             document: fixture.plan.document, state: renderer.state, assets: fixture.plan.scene.assets,
             canvasSize: renderer.pathCamera.size,
-            screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)), host: host
+            screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+            materialConstants: fixture.plan.materialConstants, resolvedEffectRecords: fixture.plan.scene.resolvedEffectRecords,
+            host: host
         )
         renderer.attachScript(script)
         return script
@@ -191,6 +245,65 @@ final class WPEParityScriptWiringTests: XCTestCase {
         } else {
             nil
         }
+    }
+
+    private func materialQueryFixture() async throws -> (Fixture, MTLCommandQueue) {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let engine = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 16, "height": 16], "clearcolor": "0 0 0"],
+            "objects": [["id": 1, "image": "models/query.json", "size": "16 16", "origin": "8 8 0",
+                         "alpha": ["value": 1, "script": """
+                         let frame = 0;
+                         export function update(value) {
+                           const effect = thisLayer.getEffect('query');
+                           const first = effect.getMaterial(0), last = effect.getMaterial(1);
+                           const byPath = effect.getMaterial('MATERIALS/QUERY.JSON');
+                           if (!first || !last || first === last || byPath !== last) throw new Error('material identity mismatch');
+                           if (++frame === 2) byPath.querycolor = new Vec3(1, 1, 0.25);
+                           return value;
+                         }
+                         """],
+                         "effects": [["id": 7, "name": "query", "file": "effects/query.json", "passes": [
+                             ["constantshadervalues": ["querycolor": "0.5 1 1"]],
+                             ["constantshadervalues": ["querycolor": "1 0.5 1"]],
+                         ]]]]],
+        ]
+        let resources: [String: Any] = [
+            "models/query.json": ["material": "materials/base.json"],
+            "materials/base.json": ["passes": [["shader": "genericimage4", "textures": ["white"], "blending": "normal"]]],
+            "materials/query.json": ["passes": [["shader": "query", "blending": "normal"]]],
+            "effects/query.json": ["passes": [["material": "materials/query.json", "compose": true],
+                                              ["material": "materials/query.json"]]],
+        ]
+        var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        files["shaders/query.vert"] = try Data(contentsOf: engine.appending(path: "shaders/passthrough.vert"))
+        files["shaders/query.frag"] = Data("""
+        varying vec2 v_TexCoord;
+        uniform sampler2D g_Texture0;
+        uniform vec3 g_QueryColor; // {"material":"querycolor","default":"1 1 1"}
+        void main() { gl_FragColor = texSample2D(g_Texture0, v_TexCoord) * vec4(g_QueryColor, 1.0); }
+        """.utf8)
+        var white = Data("TEXV0004\0".utf8)
+        for value: UInt32 in [0, 0, 1, 1, 1, 1, 1, 1, 1, 4] {
+            withUnsafeBytes(of: value.littleEndian) { white.append(contentsOf: $0) }
+        }
+        white.append(contentsOf: [255, 255, 255, 255])
+        files["materials/white.tex"] = white
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }, .directory(engine)])
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoTransformScripts() })
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 16, height: 16)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "query-shaderc"))
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))
+        let renderer = try await WPEParityFrameRenderer(plan: plan, device: device, queue: queue,
+                                                        shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity,
+                                                                       bindingABIVersion: 1))
+        return (Fixture(plan: plan, renderer: renderer), queue)
     }
 
     /// A capture scene with its scene JSON edited by `edit`.

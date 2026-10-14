@@ -235,7 +235,7 @@ public struct WPEParityParticleSystem {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
                     config: child.config, instance: Instance(), rng: rng, crt: crt,
-                    localTransform: localTransform * Self.translation(child.origin), context: context,
+                    localTransform: localTransform * Self.childTransform(child), context: context,
                     ownerTime: ownerTime, scriptInstance: scriptInstance
                 ))
             } else {
@@ -286,11 +286,22 @@ public struct WPEParityParticleSystem {
     private mutating func rebaseStaticChildren(context: WPEParityParticleFrameContext, ownerTime: Float) {
         for (index, child) in config.children.enumerated() where child.trigger == .always {
             let group = childGroup[index]
-            children[group].localTransform = localTransform * Self.translation(child.origin)
+            children[group].localTransform = localTransform * Self.childTransform(child)
             children[group].frameContext = context
             children[group].objectTime = ownerTime
             children[group].rebaseStaticChildren(context: context, ownerTime: ownerTime)
         }
+    }
+
+    /// The authored child base is T * Rz * Ry * Rx * S, with angles already in radians
+    /// (1401d0ce3...1401d120b). World/mixed instances retain their existing unconverted path.
+    private static func childTransform(_ child: WPEParityParticleChildConfig) -> simd_float4x4 {
+        guard child.config.localSpaceChain else { return translation(child.origin) }
+        var base = instanceControlPointTransform(offset: child.origin, angles: child.anglesRadians)
+        base.columns.0 *= child.scale.x
+        base.columns.1 *= child.scale.y
+        base.columns.2 *= child.scale.z
+        return base
     }
 
     mutating func resetFinishedEventThroughStaticChildren() {
@@ -517,7 +528,7 @@ public struct WPEParityParticleSystem {
                 if child.trigger == .follow, sample != nil {
                     // 2308a0:2763–2767: follow relocation is after the parent's operators, before child update.
                     eventChildren[group][index].localTransform = localTransform
-                        * Self.translation(position[slot]) * Self.translation(child.origin)
+                        * Self.translation(position[slot]) * Self.childTransform(child)
                     eventChildren[group][index].rebaseStaticChildren(context: frameContext, ownerTime: objectTime)
                 }
                 eventChildren[group][index].parentSample = sample
@@ -621,7 +632,7 @@ public struct WPEParityParticleSystem {
         let local = child.config.localSpaceChain
         let origin = local ? SIMD3<Float>.zero : event.position + child.origin
         let placement = local
-            ? localTransform * Self.translation(event.position) * Self.translation(child.origin)
+            ? localTransform * Self.translation(event.position) * Self.childTransform(child)
             : localTransform
         let sample = parentSample(slot: event.slot)
         if let last = finishedEventChildren[group].indices.last {

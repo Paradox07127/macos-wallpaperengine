@@ -147,6 +147,7 @@ final class ParityProgramBindingTests: XCTestCase {
                 ["material": "materials/skipped.json", "conditions": [["ON": 1]]],
                 ["material": "materials/later.json"], ["command": "swap"],
                 ["material": "materials/missing.json"], [:],
+                ["command": "copy", "material": "materials/later.json"],
             ]],
             "effects/empty.json": ["passes": []],
         ]
@@ -177,8 +178,10 @@ final class ParityProgramBindingTests: XCTestCase {
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         let later = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 3)
         let records = try XCTUnwrap(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")])
-        XCTAssertEqual(records.map(\.filePassIndex), [0, 1, 3, 4, 5, 6])
-        XCTAssertEqual(records.map(\.materialPass), [.init(objectID: "7", effectID: "9", pass: 0), nil, later, nil, nil, nil])
+        XCTAssertEqual(records.map(\.filePassIndex), [0, 1, 3, 4, 5, 6, 7])
+        XCTAssertEqual(records.map(\.materialPass), [.init(objectID: "7", effectID: "9", pass: 0), nil, later, nil, nil, nil, nil])
+        XCTAssertEqual(records.map(\.materialPath), ["materials/empty.json", nil, "materials/later.json", nil,
+                                                     "materials/missing.json", nil, "materials/later.json"])
         XCTAssertNil(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "10")], "failed effect load is not known zero")
         XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "11")], [], "empty resource is known zero")
         let state = WPEParitySceneState(scene: scene, document: document)
@@ -186,13 +189,15 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertEqual(state.constant("value", of: later)?.value.x, 33)
         XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 1)))
         XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 6)))
+        XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 7)),
+                     "a material-bearing command keeps its declared path without inventing a draw consumer")
         let frame = try WPEParityFrameComposer.compose(scene: scene.scene(effectVisible: { _, _ in true }),
                                                        post: scene.postProcess, frameIndex: 0)
         let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
             $0.materialPass == later
         })
         XCTAssertEqual(Self.floats(binding.constants[.fragment]?["g_Value"]), [33])
-        XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")]?.count, 6,
+        XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")]?.count, 7,
                        "disabled effects retain native records; enabling draws must not redefine the count")
     }
 

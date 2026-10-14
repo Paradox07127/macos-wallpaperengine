@@ -238,7 +238,7 @@ public final class WPEParityScriptEngine {
         context.evaluateScript(String(bytes: baseClasses, encoding: .utf8) ?? "",
                                withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
         layout(document: document, state: state)
-        installHost(document: document)
+        installHost(state: state)
         // Module bodies run here and may read their layer.
         mirror(state)
         compileBindings(document: document, state: state)
@@ -753,7 +753,7 @@ public final class WPEParityScriptEngine {
         return index
     }
 
-    private func installHost(document _: WPESceneDocument) {
+    private func installHost(state: WPEParitySceneState) {
         let host = JSValue(newObjectIn: context)!
         func set(_ key: String, _ value: Any) {
             host.setObject(value, forKeyedSubscript: key as NSString)
@@ -873,7 +873,7 @@ public final class WPEParityScriptEngine {
         self.host = host
         tickFunction = host.forProperty("tick")
         for (index, layer) in layers.enumerated() {
-            addHostLayer(index, layer)
+            addHostLayer(index, layer, state: state)
         }
         for (slot, value) in initialValues {
             if case let .string(string) = value {
@@ -893,7 +893,7 @@ public final class WPEParityScriptEngine {
                 "readonly": field.flags.contains(.notFromJSON), "rel": rel, "owner": owner]
     }
 
-    private func addHostLayer(_ index: Int, _ layer: Layer) {
+    private func addHostLayer(_ index: Int, _ layer: Layer, state: WPEParitySceneState) {
         let parent = WPEParityProgramScene.string(layer.config["parent"]).flatMap { id in
             layers.firstIndex { $0.id == id }
         } ?? (WPEParityProgramScene.number(layer.config["parent"]).flatMap { number in
@@ -906,18 +906,29 @@ public final class WPEParityScriptEngine {
                 continue
             }
             let records = configuration.resolvedEffectRecords[.init(objectID: layer.id, effectID: effectID)]
-            let materialKeys = (records.map { Set($0.compactMap(\.materialPass)) }
+            func resolvedMaterialKey(_ record: WPEParityEffectPassRecord) -> WPEParityMaterialPassKey? {
+                guard let key = record.materialPass, record.filePassIndex >= 0,
+                      key.objectID == layer.id, key.effectID == effectID, key.pass == record.filePassIndex,
+                      state.passIndex(of: key) != nil else { return nil }
+                return key
+            }
+            let materialKeys = (records.map { Set($0.compactMap(resolvedMaterialKey)) }
                 ?? Set(constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == effectID }))
+                .filter { state.passIndex(of: $0) != nil }
                 .sorted { $0.pass < $1.pass }
             let passes = materialKeys.map(materialInfo)
-            let recordMaterials = records?.map { record in
-                record.materialPass.flatMap { materialKeys.firstIndex(of: $0) } ?? -1
+            let recordMaterials: [[String: Any]] = records?.map { record in
+                ["pass": resolvedMaterialKey(record).flatMap { materialKeys.firstIndex(of: $0) } ?? -1,
+                 "path": record.materialPath.map { $0 as Any } ?? NSNull(),
+                 "hasMaterial": record.materialPass != nil || record.materialPath != nil]
             } ?? []
             effects.append(["slot": slot, "name": WPEParityProgramScene.string(effect["name"]) ?? effectID,
                             "passes": passes, "records": recordMaterials,
                             "metadataKnown": records != nil])
         }
-        let baseMaterials = constantSlots.keys.filter { $0.objectID == layer.id && $0.effectID == nil }
+        let baseMaterials = constantSlots.keys.filter {
+            $0.objectID == layer.id && $0.effectID == nil && state.passIndex(of: $0) != nil
+        }
             .sorted { $0.pass < $1.pass }.map(materialInfo)
         host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials, layer.hasVideo])
     }
@@ -964,7 +975,7 @@ public final class WPEParityScriptEngine {
         }
         seedMissingFields(state: &state.pointee, first: start)
         mirror(state.pointee)
-        addHostLayer(index, layers[index])
+        addHostLayer(index, layers[index], state: state.pointee)
         compileLayerBindings(index, source: config)
         host.invokeMethod("init", withArguments: [firstBinding])
         createdLayers.append(created)

@@ -398,6 +398,68 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
     }
 
+    func testLocalChildTRSReachesFollowMatricesPixelsAndReflectedCulling() async throws {
+        // T(40,20)*T(4,0)*Rz90*S(2,1)*T(P,0)*T(5,0)*Rz-90*S(sx,3)*T(0,2)
+        // gives translation(44, 2P+42), basis diag(sx,6); the unchanged local birth(2,0) lands at44+2sx.
+        for (sx, cull) in [(Float(1), "normal"), (-1, "nocull"), (-1, "normal")] {
+            let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
+                                       "children": [["name": "particles/parent.json", "origin": "4 0 0",
+                                                     "angles": "0 0 \(Float.pi / 2)", "scale": "2 1 1"]]]
+            var parent = Self.burstParticle(renderer: [])
+            parent["emitter"] = [
+                ["name": "sphererandom", "origin": "3 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0],
+                ["name": "sphererandom", "origin": "7 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0, "delay": 0.25],
+            ]
+            parent["initializer"] = [["name": "lifetimerandom", "min": 0.1, "max": 0.1],
+                                     ["name": "velocityrandom", "min": "8 0 0", "max": "8 0 0"]]
+            parent["operator"] = [["name": "movement"]]
+            parent["children"] = [["name": "particles/follow.json", "type": "eventfollow", "origin": "5 0 0",
+                                   "angles": "0 0 \(-Float.pi / 2)", "scale": "\(sx) 3 1", "maxcount": 2]]
+            var follow = Self.burstParticle(renderer: [])
+            follow["children"] = [["name": "particles/leaf.json", "origin": "0 2 0"]]
+            var leaf = Self.burstParticle(renderer: [["name": "sprite"]])
+            leaf["emitter"] = [["name": "sphererandom", "origin": "2 0 0", "rate": 0, "instantaneous": 1, "distancemax": 0]]
+            leaf["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                   ["name": "sizerandom", "min": 3, "max": 3]]
+            let (renderer, queue) = try await syntheticRenderer(["particles/root.json": root, "particles/parent.json": parent,
+                                                                 "particles/follow.json": follow, "particles/leaf.json": leaf],
+                                                                budget: 1 << 20, ownerOrigin: "40 20 0", particleCullMode: cull)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            // Raw parent moves by .5 before each follow refresh; death on f3 freezes f2. Its slot is reused on f5.
+            let expectedYs: [[Float]] = [[49], [50], [50], [50], [50, 57], [50, 58]]
+            for (frame, ys) in expectedYs.enumerated() {
+                guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.0625) else { return XCTFail("skipped") }
+                await buffer.completed()
+                XCTAssertNil(buffer.error)
+                XCTAssertEqual(renderer.droppedParticleBatches, 0)
+                let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+                XCTAssertEqual(draws.count, ys.count, "frame \(frame + 1)")
+                guard draws.count == ys.count else { return }
+                for (entry, y) in zip(draws, ys) {
+                    let bytes = entry.draw.vertexBuffer.contents().advanced(by: entry.draw.vertexBufferOffset)
+                    XCTAssertEqual(bytes.load(as: Float.self), 2, accuracy: 0.0001)
+                    XCTAssertEqual(bytes.load(fromByteOffset: 4, as: Float.self), 0, accuracy: 0.0001)
+                    guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+                        return XCTFail("missing model matrix")
+                    }
+                    XCTAssertEqual(model.columns[0][0], sx, accuracy: 0.0001)
+                    XCTAssertEqual(model.columns[1][1], 6, accuracy: 0.0001)
+                    XCTAssertEqual(model.columns[0][1], 0, accuracy: 0.0001)
+                    XCTAssertEqual(model.columns[1][0], 0, accuracy: 0.0001)
+                    XCTAssertEqual(model.columns[0][3], 44, accuracy: 0.0001)
+                    XCTAssertEqual(model.columns[1][3], y, accuracy: 0.0001)
+                    XCTAssertEqual(entry.draw.rasterizer.cullMode, cull == "nocull" ? .none : .back)
+                    // Default orientation keeps right=X/up=Y here; negative model X reverses the GS strip winding.
+                    let visible = sx > 0 || cull == "nocull"
+                    let x = sx > 0 ? 46 : 42
+                    let row = 64 - Int(y)
+                    XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(x, row))[0], visible ? 255 : 0)
+                    XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(sx > 0 ? 42 : 46, row))[0], 0)
+                }
+            }
+        }
+    }
+
     func testLiveOneParticleRopeSnapshotsBeforeFollowingHealthySpriteEvenWhenArenaDropsDraws() async throws {
         let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
                                    "children": ["rope", "sprite", "refract"].map { ["name": "particles/\($0).json", "type": "static"] }]
@@ -456,16 +518,20 @@ final class WPEParityParticleSceneTests: XCTestCase {
     }
 
     private func syntheticRenderer(_ objects: [String: Any], clear: String = "0 0 0", budget: Int? = nil,
-                                   composited: Bool = false, parentSize: Int = 64) async throws
+                                   composited: Bool = false, parentSize: Int = 64, ownerOrigin: String = "32 32 0",
+                                   particleCullMode: String? = nil) async throws
         -> (WPEParityFrameRenderer, MTLCommandQueue) {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let engine = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
         var files = try objects.mapValues { try JSONSerialization.data(withJSONObject: $0) }
         for (path, combos) in [("materials/plain.json", [:]), ("materials/refract.json", ["REFRACT": 1])] {
-            files[path] = try JSONSerialization.data(withJSONObject: ["passes": [["shader": "genericparticle",
-                                                                                  "blending": "translucent", "textures": ["white"], "combos": combos]]])
+            var pass: [String: Any] = ["shader": "genericparticle", "blending": "translucent", "textures": ["white"], "combos": combos]
+            if let particleCullMode {
+                pass["cullmode"] = particleCullMode
+            }
+            files[path] = try JSONSerialization.data(withJSONObject: ["passes": [pass]])
         }
-        var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": "32 32 0"]]
+        var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": ownerOrigin]]
         if composited {
             sceneObjects = [
                 ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": "32 32 0", "color": "1 0 0",

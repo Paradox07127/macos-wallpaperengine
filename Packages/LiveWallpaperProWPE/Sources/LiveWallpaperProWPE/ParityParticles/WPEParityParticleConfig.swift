@@ -556,17 +556,24 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         func edgeIssue(_ field: String, _ reason: String) -> WPEParityParticleChildRejection {
             .init(path: childPath, asset: path, field: field, reason: reason)
         }
+        var placementIssues: [WPEParityParticleChildRejection] = []
         for key in ["origin", "angles", "scale"] where entry[key] != nil && JSON.vector(entry[key]) == nil {
-            next.issues.append(edgeIssue(key, "unparsed child TRS field cannot enter N1"))
+            placementIssues.append(edgeIssue(key, "unparsed child TRS field"))
         }
         if !Self.finite(origin) {
-            next.issues.append(edgeIssue("origin", "non-finite child origin"))
+            placementIssues.append(edgeIssue("origin", "non-finite child origin"))
         }
-        if angles != .zero {
-            next.issues.append(edgeIssue("angles", "nonzero child TRS angles remain unsupported by N1"))
+        if !Self.finite(angles) {
+            placementIssues.append(edgeIssue("angles", "non-finite child TRS angles"))
         }
-        if scale != SIMD3<Float>(repeating: 1) {
-            next.issues.append(edgeIssue("scale", "non-unit child TRS scale remains unsupported by N1"))
+        if !Self.finite(scale) {
+            placementIssues.append(edgeIssue("scale", "non-finite child TRS scale"))
+        } else if scale.x == 0 || scale.y == 0 || scale.z == 0 {
+            placementIssues.append(edgeIssue("scale", "singular child TRS scale remains unsupported by Mac policy"))
+        }
+        if !placementIssues.isEmpty {
+            unsupportedChildren += placementIssues
+            return
         }
         if flags != 0 {
             next.issues.append(edgeIssue("child.flags", "bulk CP and parent-period child restart remain unsupported by N1"))

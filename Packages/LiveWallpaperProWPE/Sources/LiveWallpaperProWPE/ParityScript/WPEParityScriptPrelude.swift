@@ -106,21 +106,64 @@ enum WPEParityScriptPrelude {
       }
       return wrapper;
     }
+    // The material callback compares ASCII paths without slash/dot normalization. Locale/NUL behavior
+    // is not covered by H09; do not replace it with Unicode case conversion or object coercion.
+    function materialPathSupported(path) {
+      if (typeof path !== 'string') return false;
+      for (let i = 0; i < path.length; i++) {
+        const c = path.charCodeAt(i);
+        if (c === 0 || c > 127) return false;
+      }
+      return true;
+    }
+    function materialPathEqual(left, right) {
+      if (left.length !== right.length) return false;
+      for (let i = 0; i < left.length; i++) {
+        let a = left.charCodeAt(i), b = right.charCodeAt(i);
+        if (a >= 65 && a <= 90) a += 32;
+        if (b >= 65 && b <= 90) b += 32;
+        if (a !== b) return false;
+      }
+      return true;
+    }
     const EffectProto = {
       getMaterial(key) {
-        const a = argument(key, 8 | 0x200);
-        if (!a || a.type !== 8) {
-          host.log(1, 'getMaterial is unsupported for this argument; native string lookup is not verified');
-          return null;
-        }
         if (!this.__metadataKnown) {
           host.log(1, 'getMaterial is unsupported without resolved effect resource metadata');
           return null;
         }
-        const index = this.__records[a.value];
-        const pass = index >= 0 ? this.__passes[index] : null;
+        const a = argument(key, 8 | 0x200);
+        let record;
+        if (a && a.type === 8) {
+          record = this.__records[a.value];
+        } else {
+          if (typeof key === 'symbol' || typeof key === 'bigint' || typeof key === 'function') {
+            host.log(1, 'getMaterial is unsupported for an unverified argument type');
+            return null;
+          }
+          // H09b/c and the binder's default 0x200 slot: non-int32 inputs select the empty-path
+          // default, including missing/null/bool/nonintegral/nonfinite/object inputs. Never String(key).
+          const path = a && a.type === 0x200 ? a.value : '';
+          if (!materialPathSupported(path)) {
+            host.log(1, 'getMaterial is unsupported for NUL or non-ASCII material paths');
+            return null;
+          }
+          for (const candidate of this.__records) {
+            if (!candidate.hasMaterial) continue;
+            if (path.length === 0) { record = candidate; continue; }
+            if (!materialPathSupported(candidate.path)) {
+              host.log(1, 'getMaterial is unsupported without verified material path metadata');
+              return null;
+            }
+            if (materialPathEqual(path, candidate.path)) record = candidate;
+          }
+        }
+        // Pure command and out-of-range records return null. A declared missing material is a
+        // different case: Windows has a real fallback wrapper, whose state/render consumer is absent here.
+        if (!record || !record.hasMaterial) return null;
+        const pass = record.pass >= 0 ? this.__passes[record.pass] : null;
         if (!pass) {
-          host.log(1, 'getMaterial has no resolved material at this record; native command/missing behavior is not verified');
+          host.log(1, 'getMaterial has no resolved material state consumer; this candidate is unsupported');
           return null;
         }
         return pass[materialWrapper];
@@ -391,6 +434,12 @@ enum WPEParityScriptPrelude {
         return null;
       },
       getLayerIndex(key) {
+        // H09/H10: this overload keeps Double precision, truncates and wraps as ToInt32, then
+        // checks the shared layer order. It is independent of getMaterial's strict-int32 binder branch.
+        if (typeof key === 'number') {
+          const index = key | 0;
+          return index >= 0 && index < order.length ? index : -1;
+        }
         const a = argument(key, 0x200 | 0x800);
         if (!a) {
           host.log(1, 'getLayerIndex requires a layer name or a scene layer wrapper');

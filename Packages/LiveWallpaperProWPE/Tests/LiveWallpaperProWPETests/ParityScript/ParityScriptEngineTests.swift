@@ -638,7 +638,8 @@ final class ParityScriptEngineTests: XCTestCase {
                                  """),
                              ]], [:]]]],
             ]),
-        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]]], assets: Self.fixedAssets(files: [
+        ], constants: [pass: ["v2": [0, 0], "v4": [0, 0, 0, 0], "extra": [7]],
+                       .init(objectID: "1", effectID: "5", pass: 1): [:]], assets: Self.fixedAssets(files: [
             "effects/x.json": ["passes": [["material": "materials/first.json"], ["material": "materials/empty.json"]]],
             "materials/first.json": ["passes": [["shader": "probe"]]],
             "materials/empty.json": ["passes": [["shader": "empty"]]],
@@ -656,6 +657,8 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.object("1")?.origin, .one)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 2))
         XCTAssertEqual(scene.state.object("1")?.alpha, 0.5)
+        XCTAssertNotNil(scene.state.passIndex(of: .init(objectID: "1", effectID: "5", pass: 1)),
+                        "the empty wrapper belongs to a real empty material pass")
         XCTAssertEqual(scene.state.constant("extra", of: pass)?.value.x, 8)
         XCTAssertEqual(scene.state.constant("v2", of: pass)?.value, SIMD4(90, 180, 0, 0))
         XCTAssertEqual(scene.state.constant("v4", of: pass)?.value, SIMD4(90, 180, 270, 360))
@@ -664,8 +667,8 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
-    /// Native count includes command/empty records after conditions; unsupported getter branches are a conservative
-    /// product policy until 1401ee0c0 is recovered, not Windows return-value expectations.
+    /// H09c: count includes condition-accepted command/missing records. Pure commands and out-of-range indices
+    /// return null; missing-material null remains an explicit Mac limitation until its fallback consumer exists.
     func testResolvedEffectRecordsOwnOnlyRealMaterialsAndRejectAuthoredPhantoms() throws {
         var diagnostics: [String] = []
         let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
@@ -705,7 +708,252 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertNil(scene.state.constant("phantom", of: .init(objectID: "1", effectID: "5", pass: 1)))
         XCTAssertNil(scene.state.constant("beyond", of: .init(objectID: "1", effectID: "5", pass: 6)))
         XCTAssertFalse(scene.engine.bindings.contains { $0.path.contains("phantom") })
-        XCTAssertEqual(diagnostics.filter { $0.contains("getMaterial") }.count, 5)
+        XCTAssertEqual(diagnostics.filter { $0.contains("getMaterial") }.count, 1,
+                       "only the declared missing material is unsupported; command/out-of-range/path misses are known nulls")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// H09b/c: strict signed-int32 selects a compact record; other measured inputs use the empty path default.
+    /// Path matching folds ASCII only and chooses the last duplicate, without merging pass wrappers/state.
+    func testMaterialPathAndDefaultQueriesReuseLastMatchingRealPass() throws {
+        var diagnostics: [String] = []
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        let second = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 3)
+        let last = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 4)
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init() {
+                const effect = thisLayer.getEffect(0);
+                const first = effect.getMaterial(0), second = effect.getMaterial(2), last = effect.getMaterial(3);
+                if (!first || !second || !last || first === second || second === last) throw Error('separate material owners');
+                if (effect.getMaterial('materials/shared.json') !== second
+                    || effect.getMaterial('MATERIALS/SHARED.JSON') !== second
+                    || effect.getMaterial('materials/shared.json') !== effect.getMaterial(2)) throw Error('last duplicate path');
+                const defaults = [undefined, null, false, true, 1.5, -0.5, 2.5, NaN, Infinity, -Infinity,
+                    2147483648, -2147483649, 4294967296, 4294967297, -4294967295,
+                    {}, [], new Number(1), {toString(){throw Error('must not coerce');}}];
+                if (!defaults.every(input => effect.getMaterial(input) === last)
+                    || effect.getMaterial() !== last || effect.getMaterial('') !== last) throw Error('empty default path');
+                if (effect.getMaterial(-0) !== first || effect.getMaterial(-1) !== null
+                    || effect.getMaterial(-2147483648) !== null || effect.getMaterial(2147483647) !== null
+                    || effect.getMaterial(1) !== null || effect.getMaterial(4) !== null) throw Error('strict compact index');
+                const misses = ['0', 'materials/missing.json', './materials/shared.json',
+                    'materials/./shared.json', 'materials\\\\shared.json'];
+                if (!misses.every(path => effect.getMaterial(path) === null)) throw Error('path must not normalize');
+                shared.selectedMaterial = second;
+                second.Value = 8;
+                last.Value = 9;
+                thisLayer.color = new Vec3(effect.getMaterialCount(), first.Value, second.Value);
+                thisLayer.brightness = 7;
+            }
+            """), "effects": [["id": 5, "file": "effects/query.json", "passes": [
+                ["constantshadervalues": ["Value": 1]], [:], [:],
+                ["constantshadervalues": ["Value": Self.scripted(3, """
+                export function init(value) {
+                    if (thisObject !== shared.selectedMaterial || thisObject !== thisLayer.getEffect(0).getMaterial(2))
+                        throw Error('query must retain actual script owner identity');
+                    return value;
+                }
+                """)]], ["constantshadervalues": ["Value": 5]],
+            ]]]]),
+        ], constants: [first: ["Value": [1]], second: ["Value": [3]], last: ["Value": [5]]],
+        assets: Self.fixedAssets(files: [
+            "effects/query.json": ["passes": [
+                ["material": "materials/shared.json"], ["command": "copy"],
+                ["material": "materials/skipped.json", "conditions": [["ON": 1]]],
+                ["material": "materials/shared.json"], ["material": "materials/last.json"],
+            ]],
+            "materials/shared.json": ["passes": [["shader": "probe"]]],
+            "materials/last.json": ["passes": [["shader": "probe"]]],
+        ]), resolveEffectResources: true, configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(4, 1, 8))
+        XCTAssertEqual(scene.state.object("1")?.brightness, 7)
+        XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 1)
+        XCTAssertEqual(scene.state.constant("Value", of: second)?.value.x, 8)
+        XCTAssertEqual(scene.state.constant("Value", of: last)?.value.x, 9)
+        XCTAssertTrue(diagnostics.isEmpty, diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// Windows H09d returned a real fallback wrapper. These nulls deliberately report missing consumers;
+    /// they must not be treated as native success or replaced by an earlier ready duplicate/default candidate.
+    func testUnresolvedAndMaterialBearingCommandQueriesDoNotSkipToEarlierPass() throws {
+        var diagnostics: [String] = []
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init() {
+                const effect = thisLayer.getEffect(0), first = effect.getMaterial(0);
+                if (!first || first.Value !== 1) throw Error('real first material');
+                const unsupported = effect.getMaterial(1) === null
+                    && effect.getMaterial('materials/missing.json') === null
+                    && effect.getMaterial('materials/first.json') === null
+                    && effect.getMaterial() === null && effect.getMaterial(2) === null;
+                thisLayer.color = new Vec3(effect.getMaterialCount(), first.Value, unsupported ? 1 : 99);
+                first.Value = 7;
+            }
+            """), "effects": [["id": 5, "file": "effects/unresolved.json", "passes": [
+                ["constantshadervalues": ["Value": 1]], [:], [:],
+            ]]]]),
+        ], constants: [first: ["Value": [1]]], assets: Self.fixedAssets(files: [
+            "effects/unresolved.json": ["passes": [
+                ["material": "materials/first.json"], ["material": "materials/missing.json"],
+                ["command": "copy", "material": "materials/first.json"],
+            ]],
+            "materials/first.json": ["passes": [["shader": "probe"]]],
+        ]), resolveEffectResources: true, configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(3, 1, 1))
+        XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 7)
+        XCTAssertNil(scene.state.passIndex(of: .init(objectID: "1", effectID: "5", pass: 1)))
+        XCTAssertNil(scene.state.passIndex(of: .init(objectID: "1", effectID: "5", pass: 2)))
+        XCTAssertEqual(diagnostics.filter { $0.contains("material state consumer; this candidate is unsupported") }.count, 5)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testResolvedMetadataCannotManufactureAWrapperWithoutMaterialState() throws {
+        // A legacy resolved key may also lack path metadata; it must still block the last default candidate.
+        for preserveLastPath in [true, false] {
+            var diagnostics: [String] = []
+            let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+            let absent = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 1)
+            var scene = try Self.scene([
+                Self.layer(1, "A", ["alpha": Self.scripted(1, """
+                export function init() {
+                    const effect = thisLayer.getEffect(0), first = effect.getMaterial(0);
+                    const unsupported = effect.getMaterial(1) === null
+                        && effect.getMaterial('materials/second.json') === null && effect.getMaterial() === null;
+                    effect.setMaterialProperty('phantom', 99);
+                    first.Value = 7;
+                    thisLayer.color = new Vec3(effect.getMaterialCount(), first.Value, unsupported ? 1 : 99);
+                }
+                """), "effects": [["id": 5, "file": "effects/malformed.json", "passes": [
+                    ["constantshadervalues": ["Value": 1]],
+                    ["constantshadervalues": ["phantom": Self.scripted(2, "export function init() { return 99; }")]],
+                ]]]]),
+            ], constants: [first: ["Value": [1]]], assets: Self.fixedAssets(files: [
+                // The real asset resolves both keys, but the caller's supplied state contains only the first.
+                "effects/malformed.json": ["passes": [
+                    ["material": "materials/first.json"], ["material": "materials/second.json"],
+                ]],
+                "materials/first.json": ["passes": [["shader": "probe"]]],
+                "materials/second.json": ["passes": [["shader": "probe"]]],
+            ]), resolveEffectResources: true, configure: { configuration in
+                if !preserveLastPath,
+                   let records = configuration.resolvedEffectRecords[.init(objectID: "1", effectID: "5")] {
+                    configuration.resolvedEffectRecords[.init(objectID: "1", effectID: "5")] = records.map { record in
+                        record.filePassIndex == 1
+                            ? .init(filePassIndex: record.filePassIndex, materialPass: record.materialPass)
+                            : record
+                    }
+                }
+                configuration.log = { _, message in diagnostics.append(message) }
+            })
+            scene.engine.start(state: &scene.state)
+            XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
+            XCTAssertNil(scene.state.passIndex(of: absent))
+            XCTAssertNil(scene.state.constant("phantom", of: absent))
+            XCTAssertFalse(scene.engine.bindings.contains { $0.path.contains("phantom") })
+            XCTAssertEqual(diagnostics.filter { $0.contains("material state consumer; this candidate is unsupported") }.count, preserveLastPath ? 3 : 2)
+            XCTAssertEqual(diagnostics.filter { $0.contains("without verified material path metadata") }.count, preserveLastPath ? 0 : 1)
+            XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    /// A pass belonging to another layer, or the wrong raw file index, is not this record's consumer even
+    /// when that key exists in state. Rejected metadata must block the final candidate, never alias a wrapper.
+    func testMaterialMetadataCannotAliasAnotherOwnerOrRawFileIndex() throws {
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        let second = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 1)
+        let foreign = WPEParityMaterialPassKey(objectID: "2", effectID: "5", pass: 1)
+        for useForeignOwner in [true, false] {
+            var diagnostics: [String] = []
+            var scene = try Self.scene([
+                Self.layer(1, "A", ["alpha": Self.scripted(1, """
+                export function init() {
+                    const effect = thisLayer.getEffect(0), first = effect.getMaterial(0), wrong = effect.getMaterial(1);
+                    if (wrong) wrong.Value = 99;
+                    const blocked = wrong === null && effect.getMaterial('materials/shared.json') === null
+                        && effect.getMaterial() === null;
+                    first.Value = 7;
+                    thisLayer.color = new Vec3(effect.getMaterialCount(), first.Value, blocked ? 1 : 99);
+                }
+                """), "effects": [["id": 5, "file": "effects/owners.json", "passes": [
+                    ["constantshadervalues": ["Value": 1]], ["constantshadervalues": ["Value": 2]],
+                ]]]]),
+                Self.layer(2, "B", ["effects": [["id": 5, "file": "effects/owners.json", "passes": [
+                    [:], ["constantshadervalues": ["Value": 33]],
+                ]]]]),
+            ], constants: [first: ["Value": [1]], second: ["Value": [2]], foreign: ["Value": [33]]],
+            assets: Self.fixedAssets(files: [
+                "effects/owners.json": ["passes": [
+                    ["material": "materials/shared.json"], ["material": "materials/shared.json"],
+                ]],
+                "materials/shared.json": ["passes": [["shader": "probe"]]],
+            ]), resolveEffectResources: true, configure: { configuration in
+                if let records = configuration.resolvedEffectRecords[.init(objectID: "1", effectID: "5")] {
+                    configuration.resolvedEffectRecords[.init(objectID: "1", effectID: "5")] = records.map { record in
+                        record.filePassIndex == 1
+                            ? .init(filePassIndex: 1, materialPass: useForeignOwner ? foreign : first,
+                                    materialPath: record.materialPath)
+                            : record
+                    }
+                }
+                configuration.log = { _, message in diagnostics.append(message) }
+            })
+            scene.engine.start(state: &scene.state)
+            XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
+            XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 7)
+            XCTAssertEqual(scene.state.constant("Value", of: second)?.value.x, 2)
+            XCTAssertEqual(scene.state.constant("Value", of: foreign)?.value.x, 33)
+            XCTAssertEqual(diagnostics.filter { $0.contains("material state consumer; this candidate is unsupported") }.count, 3)
+            XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    /// Legacy injected records can retain real pass identity without paths, but cannot promise string lookup.
+    /// The empty final pass below is present in real state; its wrapper is not a fallback DTO.
+    func testLegacyMaterialMetadataKeepsRealEmptyIdentityAndReportsUnknownPathProtocol() throws {
+        var diagnostics: [String] = []
+        let first = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        let empty = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 1)
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init() {
+                const effect = thisLayer.getEffect(0), first = effect.getMaterial(0), empty = effect.getMaterial(1);
+                if (!first || !empty || first === empty || Object.keys(empty).length !== 0
+                    || empty !== effect.getMaterial(1) || empty !== effect.getMaterial()) throw Error('real empty identity');
+                const partial = effect.getMaterial('materials/first.json') === null
+                    && effect.getMaterial('materials/é.json') === null
+                    && effect.getMaterial('materials/' + String.fromCharCode(0) + 'first.json') === null;
+                first.Value = 7;
+                thisLayer.color = new Vec3(effect.getMaterialCount(), first.Value, partial ? 1 : 99);
+            }
+            """), "effects": [["id": 5, "file": "effects/legacy.json", "passes": [
+                ["constantshadervalues": ["Value": 1]], [:],
+            ]]]]),
+        ], constants: [first: ["Value": [1]], empty: [:]], assets: Self.fixedAssets(files: [
+            "effects/legacy.json": ["passes": [
+                ["material": "materials/first.json"], ["material": "materials/empty.json"],
+            ]],
+            "materials/first.json": ["passes": [["shader": "probe"]]],
+            "materials/empty.json": ["passes": [["shader": "empty"]]],
+        ]), resolveEffectResources: true, configure: { configuration in
+            configuration.resolvedEffectRecords = configuration.resolvedEffectRecords.mapValues { records in
+                records.map { .init(filePassIndex: $0.filePassIndex, materialPass: $0.materialPass) }
+            }
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
+        XCTAssertNotNil(scene.state.passIndex(of: empty))
+        XCTAssertEqual(diagnostics.filter { $0.contains("without verified material path metadata") }.count, 1)
+        XCTAssertEqual(diagnostics.filter { $0.contains("NUL or non-ASCII material paths") }.count, 2)
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
@@ -716,8 +964,8 @@ final class ParityScriptEngineTests: XCTestCase {
             Self.layer(1, "A", [
                 "alpha": Self.scripted(1, """
                 export function init(value) {
-                    // A valid query of an unresolved material remains explicitly unsupported; this null is a
-                    // conservative product policy until the native failure callback is recovered.
+                    // H09d has a real native fallback wrapper. This null remains an explicit Mac limitation
+                    // until the fallback material state/render consumer is implemented.
                     thisLayer.brightness = thisLayer.getEffect(0).getMaterial(0) === null ? 7 : 99;
                     return value;
                 }
@@ -758,12 +1006,12 @@ final class ParityScriptEngineTests: XCTestCase {
                 third.name = 'Renamed';
                 thisLayer.origin = new Vec3(thisScene.getLayerIndex('Renamed'),
                     thisScene.getLayerIndex('Other'), thisScene.getLayerIndex(second));
-                const invalid = thisScene.getLayerIndex(0) === -1
-                    && thisScene.getLayerIndex({__index: 0}) === -1
+                const numeric = thisScene.getLayerIndex(0) === 0;
+                const invalid = thisScene.getLayerIndex({__index: 0}) === -1
                     && thisScene.getLayerIndex(thisScene) === -1;
                 // These rejected branches are an explicit bounded product policy, not native failure expectations.
                 const unsupported = thisScene.getLayerByID(2) === null && thisScene.getLayerByID('missing') === null;
-                thisLayer.brightness = invalid && unsupported ? 7 : 99;
+                thisLayer.brightness = numeric && invalid && unsupported ? 7 : 99;
             }
             """)]),
             Self.layer(2, "Shared"),
@@ -775,7 +1023,80 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 0, 1))
         XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(2, -1, 1))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
-        XCTAssertEqual(diagnostics.count, 5, "unsupported arguments must be observable without fabricating a wrapper")
+        XCTAssertEqual(diagnostics.count, 4, "unsupported arguments must be observable without fabricating a wrapper")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    /// Literal expected pairs are the 42 actual H10 Windows rows (ss-3e240afac388431f), not output from
+    /// the product's converter. Small decimals rule out Float32 rounding; +/-2^32 rule out reject/clamp.
+    func testLayerIndexNumericProtocolMatchesWindowsH10WithoutChangingMaterialCoercion() throws {
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "Witness"),
+            Self.layer(2, "Driver", ["alpha": Self.scripted(1, """
+            export function init() {
+                const cases = [
+                    [0, 0],
+                    [1, 1],
+                    [2, -1],
+                    [0.99999999, 0],
+                    [1.00000001, 1],
+                    [1.99999999, 1],
+                    [2.00000001, -1],
+                    [0.999999940395355224609375, 0],
+                    [1.00000011920928955078125, 1],
+                    [1.99999988079071044921875, 1],
+                    [2.0000002384185791015625, -1],
+                    [2147483647, -1],
+                    [2147483648, -1],
+                    [2147483649, -1],
+                    [4294967295, -1],
+                    [4294967296, 0],
+                    [4294967297, 1],
+                    [-2147483649, -1],
+                    [-2147483648, -1],
+                    [-2147483647, -1],
+                    [-4294967297, -1],
+                    [-4294967296, 0],
+                    [-4294967295, 1],
+                    [-0, 0],
+                    [-0.5, 0],
+                    [-1, -1],
+                    [-1.5, -1],
+                    [-0.99999999, 0],
+                    [-1.00000001, -1],
+                    [-1.99999999, -1],
+                    [-2.00000001, -1],
+                    [NaN, 0],
+                    [Infinity, 0],
+                    [-Infinity, 0],
+                    [2147483520, -1],
+                    [2147483904, -1],
+                    [4294967040, -1],
+                    [4294967808, -1],
+                    [-2147483904, -1],
+                    [-2147483520, -1],
+                    [-4294967808, -1],
+                    [-4294967040, -1],
+                ];
+                for (const pair of cases) {
+                    const actual = thisScene.getLayerIndex(pair[0]);
+                    if (actual !== pair[1]) throw Error('H10 numeric ' + String(pair[0]) + ': ' + actual + ' vs ' + pair[1]);
+                }
+                if (![undefined, null, false, true].every(input => thisScene.getLayerIndex(input) === -1)
+                    || thisScene.getLayerIndex() !== -1) throw Error('non-number must not use numeric conversion');
+                thisLayer.color = new Vec3(cases.length, thisScene.getLayerIndex(thisLayer),
+                    thisScene.getLayerIndex(thisScene.getLayer('Witness')));
+                thisLayer.brightness = 7;
+            }
+            """)]),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("2")?.color, SIMD3(42, 1, 0))
+        XCTAssertEqual(scene.state.object("2")?.brightness, 7)
+        XCTAssertEqual(diagnostics.count, 5, "the five measured non-number cases keep the existing bounded diagnostic path")
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
