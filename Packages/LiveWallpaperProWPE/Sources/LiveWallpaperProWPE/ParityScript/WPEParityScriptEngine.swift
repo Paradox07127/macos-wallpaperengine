@@ -878,6 +878,14 @@ public final class WPEParityScriptEngine {
         let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
         }
+        let lookAtAngles: @convention(block) (Double, Double, Double, Double, Double, Double,
+                                              Double, Double, Double, Bool, Bool) -> NSArray? = { ox, oy, oz, tx, ty, tz, ux, uy, uz, camera, yawOnly in
+            guard let angles = WPEParityLayerTransform.lookAtAngles(
+                origin: SIMD3(Float(ox), Float(oy), Float(oz)), target: SIMD3(Float(tx), Float(ty), Float(tz)),
+                up: SIMD3(Float(ux), Float(uy), Float(uz)), camera: camera, yawOnly: yawOnly
+            ) else { return nil }
+            return [NSNumber(value: angles.x), NSNumber(value: angles.y), NSNumber(value: angles.z)] as NSArray
+        }
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
@@ -893,6 +901,8 @@ public final class WPEParityScriptEngine {
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
         set("executeMaterialFunction", executeMaterialFunction)
+        set("lookAtAngles", lookAtAngles)
+        set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
         set("storageEnabled", configuration.storage != nil)

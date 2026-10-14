@@ -138,7 +138,8 @@ public final class WPEParityCameraQueue {
         } else {
             items[index].fov = item.channels[10]?.value?.x ?? 50
         }
-        return Output(origin: origin, angles: Self.angles(eye: origin, center: center, up: up),
+        let angles = WPEParityLayerTransform.angles(fromLookAt: WPEParityCamera.lookAt(eye: origin, center: center, up: up))
+        return Output(origin: origin, angles: angles,
                       zoom: items[index].zoom, fov: items[index].fov)
     }
 
@@ -163,19 +164,6 @@ public final class WPEParityCameraQueue {
         }
         selectedIndex = remaining.remove(at: position)
         previousRandom = selectedIndex
-    }
-
-    /// 1401f2ad0:31f2–3306 extracts local XYZ radians from the native lookAt matrix, then rebuilds local TRS.
-    private static func angles(eye: SIMD3<Float>, center: SIMD3<Float>, up: SIMD3<Float>) -> SIMD3<Float> {
-        let matrix = WPEParityCamera.lookAt(eye: eye, center: center, up: up)
-        let roll = atan2(matrix.columns.1.x, matrix.columns.0.x)
-        let sine = sin(roll)
-        let cosine = cos(roll)
-        let pitch = atan2(-matrix.columns.2.x, sqrt(matrix.columns.2.z * matrix.columns.2.z
-                + matrix.columns.2.y * matrix.columns.2.y))
-        let yaw = atan2(sine * matrix.columns.0.z - cosine * matrix.columns.1.z,
-                        cosine * matrix.columns.1.y - sine * matrix.columns.0.y)
-        return SIMD3(yaw, pitch, roll)
     }
 
     private static func hasScript(_ value: WPESceneJSONValue) -> Bool {
