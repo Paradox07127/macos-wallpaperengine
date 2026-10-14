@@ -91,7 +91,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(parent.drawBatches(objectID: "5").first).vertices.count, 1)
         parent.advance(dt: 0.125)
         XCTAssertEqual(parent.liveCount, 0)
-        let spawned = try XCTUnwrap(parent.eventChildren.first?.first)
+        var spawned = try XCTUnwrap(parent.eventChildren.first?.first)
         XCTAssertEqual(spawned.liveCount, 1)
         assertEqual(spawned.velocity[0], SIMD3(1, -4, 3))
         let batch = try XCTUnwrap(spawned.drawBatches(objectID: "5").first)

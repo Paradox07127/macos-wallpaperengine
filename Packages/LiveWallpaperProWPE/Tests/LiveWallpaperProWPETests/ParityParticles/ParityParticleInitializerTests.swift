@@ -45,7 +45,7 @@ final class ParityParticleInitializerTests: XCTestCase {
     func testInheritedControlPointVelocityReachesBirthAndPackedTrailWithOneSharedDraw() throws {
         let document = try WPESceneDocumentParser.parse(
             data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":5,"name":"fx","particle":"fx"}]}"#.utf8),
-            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() }
+            userValues: [:], makeTransformScriptResolver: { _, _ in Support.NoScripts() }
         )
         let owner = simd_float4x4(SIMD4(0, 2, 0, 0), SIMD4(-3, 0, 0, 0),
                                   SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1))
@@ -75,7 +75,7 @@ final class ParityParticleInitializerTests: XCTestCase {
                                  invalidating: .particleInstance)
             if sample.rotate {
                 state.setScriptField("instance.controlpointangle\(sample.point)", of: "5",
-                                     to: .vector(SIMD4(0, 0, Float.pi / 2, 0)), invalidating: .particleInstance)
+                                     to: .vector(SIMD4<Float>(0, 0, Float.pi / 2, 0)), invalidating: .particleInstance)
             }
             XCTAssertTrue(particles.applyScriptInstanceFields(state: state, objectID: "5"))
             particles.advance(dt: 0.5, frame: .init(objectMatrix: owner, worldSpace: sample.world))

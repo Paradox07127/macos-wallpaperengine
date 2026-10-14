@@ -50,7 +50,7 @@ final class ParityParticleNestedTests: XCTestCase {
             let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/")) { files[$0] }])
             let document = try WPESceneDocumentParser.parse(
                 data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":5,"name":"fx","particle":"particles/repeated.json"}]}"#.utf8),
-                userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() }
+                userValues: [:], makeTransformScriptResolver: { _, _ in ParityParticleTestSupport.NoScripts() }
             )
             var diagnostics: [WPEParitySceneDiagnostic] = []
             let prototypes = WPEParityProgramScene.particleDraws(objectID: "5", path: "particles/repeated.json",
@@ -61,9 +61,9 @@ final class ParityParticleNestedTests: XCTestCase {
 
             var scene = WPEParityParticleScene(document: document, assets: assets,
                                                engineFlags: WPEEngineComboFlags(), seed: 7)
-            scene.advance(dt: 0.1, frames: ["5": .init()])
+            scene.advance(dt: 0.1, frames: ["5": WPEParityParticleFrameContext()])
             XCTAssertEqual(scene.liveCount("5"), 11)
-            let batches = scene.drawBatches(for: "5")
+            let batches: [WPEParityParticleDrawBatch] = scene.drawBatches(for: "5")
             XCTAssertEqual(batches.map(\.key.path), expected)
             for batch in batches {
                 let prototype = try XCTUnwrap(WPEParityParticleScene.prototype(for: batch.key,

@@ -2,6 +2,13 @@ import Foundation
 @testable import LiveWallpaperProWPE
 
 enum ParityParticleTestSupport {
+    struct NoScripts: WPESceneTransformScriptResolving {
+        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
+                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
+            nil
+        }
+    }
+
     static func json(_ text: String) -> WPESceneJSONValue {
         let object = try? JSONSerialization.jsonObject(with: Data(text.utf8))
         return object.flatMap { WPESceneJSONValue(jsonValue: $0) } ?? .null
