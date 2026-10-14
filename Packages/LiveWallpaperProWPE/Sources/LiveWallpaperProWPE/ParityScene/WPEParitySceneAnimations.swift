@@ -24,6 +24,7 @@ public struct WPEParitySceneAnimations {
     public struct FiredEvent: Sendable, Equatable {
         public let objectID: String
         public let name: String
+        public let payloadJSON: String
         /// The authored frame of the event.
         public let frame: Float
     }
@@ -98,7 +99,8 @@ public struct WPEParitySceneAnimations {
         for binding in bindings {
             binding.animation.advance(dt: dt, frameStamp: frameStamp)
             for event in binding.animation.firedEvents {
-                firedEvents.append(FiredEvent(objectID: binding.objectID, name: event.name, frame: event.frame))
+                firedEvents.append(FiredEvent(objectID: binding.objectID, name: event.name,
+                                               payloadJSON: event.payloadJSON, frame: event.frame))
             }
             guard let value = binding.animation.value else { continue }
             switch binding.target {

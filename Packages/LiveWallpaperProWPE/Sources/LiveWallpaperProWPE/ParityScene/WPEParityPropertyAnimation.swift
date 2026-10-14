@@ -57,6 +57,8 @@ public final class WPEParityPropertyAnimation {
     /// An authored `options.events` entry; WPE sends each crossing to the scripts as event 6 (140171440.c:857-883).
     public struct Event: Sendable, Equatable {
         public let name: String
+        /// Original event 6 carries the complete authored event object, including extension fields.
+        public let payloadJSON: String
         /// The authored frame; it fires at `frame / fps` seconds.
         public let frame: Float
         let time: Float
@@ -164,7 +166,9 @@ public final class WPEParityPropertyAnimation {
             for entry in entries {
                 guard let frame = Self.number(entry["frame"]),
                       let name = Self.string(entry["name"]) else { continue }
-                parsedEvents.append(Event(name: name, frame: frame, time: frame / fps))
+                // 1401a9410: serialize the complete entry; its time is frame * stored frameDuration.
+                parsedEvents.append(Event(name: name, payloadJSON: WPEParityScriptEngine.jsonText(entry),
+                                          frame: frame, time: frame * (1 / fps)))
             }
         }
         events = parsedEvents
