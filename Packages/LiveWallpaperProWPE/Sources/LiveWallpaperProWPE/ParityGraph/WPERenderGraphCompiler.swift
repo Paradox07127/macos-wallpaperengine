@@ -194,7 +194,8 @@ private func normalize(_ operations: [WPERenderOperation],
         case let .resolve(sourceID, destinationID):
             let (source, destination) = try (resource(sourceID), resource(destinationID))
             guard source.sampleCount > 1, destination.sampleCount == 1,
-                  source.width == destination.width, source.height == destination.height
+                  source.width == destination.width, source.height == destination.height,
+                  source.format == destination.format, source.mipCount == 1
             else { throw .invalidResolve(operation: index) }
             result.append(.transfer(.resolve(source: sourceID, destination: destinationID),
                                     reads: [WPESubresource(sourceID)], writes: [WPESubresource(destinationID)]))

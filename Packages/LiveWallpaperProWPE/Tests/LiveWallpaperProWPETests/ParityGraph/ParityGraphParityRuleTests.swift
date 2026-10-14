@@ -153,3 +153,26 @@ struct ParityGraphMipCopyTests {
         }
     }
 }
+
+struct ParityGraphResolveCompatibilityTests {
+    @Test func incompatibleFormatsAndMultisampleMipChainsAreRejected() {
+        for (source, destination) in [
+            (S.transient("M", samples: 4), S.persistent("R", format: "rgba16float")),
+            (S.transient("M", mips: 2, samples: 4), S.persistent("R")),
+        ] {
+            #expect(throws: WPEParityGraphError.invalidResolve(operation: 0)) {
+                try S.compile([source, destination], [S.resolve("M", "R")])
+            }
+        }
+    }
+
+    @Test func resolvingToMipZeroKeepsTheRemainingDestinationMipsIndependent() throws {
+        let graph = try S.compile([S.transient("M", samples: 4), S.transient("R", mips: 4)], [
+            S.bind("M"), S.clear("M"), S.draw(), S.resolve("M", "R"), S.generateMips("R"),
+        ])
+        let resolveWrites = graph.accesses[3].writes.map(\.subresource)
+        #expect(resolveWrites == [WPESubresource("R", mip: 0)])
+        #expect(graph.accesses[4].reads.map(\.subresource) == resolveWrites)
+        #expect(graph.accesses[4].writes.map(\.subresource) == (1 ..< 4).map { WPESubresource("R", mip: $0) })
+    }
+}
