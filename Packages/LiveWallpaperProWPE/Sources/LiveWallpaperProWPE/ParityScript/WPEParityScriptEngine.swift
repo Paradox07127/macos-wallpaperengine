@@ -201,6 +201,10 @@ public final class WPEParityScriptEngine {
     /// Rebound when a renderer takes over this engine; accepted calls belong to that consumer's queue.
     public var materialFunctionHandler: ((WPEParitySceneState.EffectKey, String) -> Void)?
 
+    /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
+    public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
+        -> (any WPEParityModelDataPreparedShape)?)?
+
     private let context: JSContext
     private let configuration: Configuration
     private var host: JSValue!
@@ -231,6 +235,7 @@ public final class WPEParityScriptEngine {
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
         materialFunctionHandler = configuration.executeMaterialFunction
+        modelDataAdmissionHandler = configuration.modelData?.admitShape
         context = JSContext()
         sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         capacity = 0
@@ -996,7 +1001,7 @@ public final class WPEParityScriptEngine {
     }
 
     private func modelData(_ input: JSValue, token: UInt32?, replacing: Bool, path: String) -> JSValue? {
-        guard let provider = configuration.modelData, let state = activeState else {
+        guard let provider = configuration.modelData, let admitShape = modelDataAdmissionHandler, let state = activeState else {
             configuration.log(1, "ModelData is unsupported without the product resource owner")
             return nil
         }
@@ -1010,10 +1015,10 @@ public final class WPEParityScriptEngine {
                                              provider: provider) { patch in
             // No State inout borrow spans VM getters/material conversion; the owned patch is now complete.
             if let token {
-                try state.pointee.updateModelData(token, patch: patch, replacing: replacing, admitShape: provider.admitShape)
+                try state.pointee.updateModelData(token, patch: patch, replacing: replacing, admitShape: admitShape)
                 return nil
             }
-            return try state.pointee.createModelData(patch, admitShape: provider.admitShape)
+            return try state.pointee.createModelData(patch, admitShape: admitShape)
         }
     }
 
