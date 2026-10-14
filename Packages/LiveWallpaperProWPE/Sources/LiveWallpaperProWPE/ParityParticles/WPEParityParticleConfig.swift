@@ -445,12 +445,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                 reductionDelta: reductionInner == reductionOuter ? 1 : reductionOuter - reductionInner
             )
         case "collisionplane", "collisionsphere":
-            let behavior = JSON.string(entry["collisionbehavior"])?.lowercased() ?? "bounce"
-            guard behavior == "bounce" else {
-                diagnostics.append("operator \(name) (\(behavior)) skipped")
+            let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
+            let hasBlend = ["blendinstart", "blendinend", "blendoutstart", "blendoutend"].contains { entry[$0] != nil }
+            if collision.behavior != .bounce, name == "collisionsphere" || hasBlend {
+                diagnostics.append("operator \(name) (\(collision.behavior.rawValue)\(hasBlend ? ", blended" : "")) skipped")
                 return
             }
-            let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
             kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
         case "collisionbox":
             kind = .collisionBox

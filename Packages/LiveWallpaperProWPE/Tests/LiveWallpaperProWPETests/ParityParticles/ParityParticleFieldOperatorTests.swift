@@ -6,6 +6,74 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
     private typealias System = WPEParityParticleSystem
 
+    func testNativePlaneSlideStopAndDeletePreserveTheirDistinctWrites() throws {
+        let cases: [(name: String, position: SIMD3<Float>, velocity: SIMD3<Float>, deletes: Bool)] = [
+            ("slide", .zero, SIMD3(1, 0, 3), false),
+            ("stop", .zero, .zero, false),
+            ("delete", SIMD3(0, -2, 0), SIMD3(1, -4, 3), true),
+            ("unknown", .zero, SIMD3(1, 2, 3), false),
+            ("SLIDE", .zero, SIMD3(1, 2, 3), false),
+        ]
+        for sample in cases {
+            for flags in [0, 2] {
+                var system = System(json: Support.json("""
+                {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,
+                  "distancemax":0,"origin":"0 -2 0"}],
+                 "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+                   {"name":"velocityrandom","min":"1 -4 3","max":"1 -4 3"},
+                   {"name":"angularvelocityrandom","min":"2 4 6","max":"2 4 6"}],
+                 "operator":[{"name":"collisionplane","plane":"0 1 0","distance":0,
+                   "bouncefactor":0.5,"collisionbehavior":"\(sample.name)","flags":\(flags)}],
+                 "renderer":[{"name":"spritetrail"}]}
+                """), rng: WPEParityMT19937(seed: 7), is3D: true)
+                system.advance(dt: 0.25)
+                XCTAssertEqual(system.liveCount, 1, "Delete only writes age in this frame")
+                assertEqual(system.position[0], sample.position)
+                assertEqual(system.velocity[0], sample.velocity)
+                assertEqual(system.angularVelocity[0], flags == 2 ? .zero : SIMD3(2, 4, 6))
+                XCTAssertEqual(system.age[0], sample.deletes ? system.lifetime[0] : 0)
+                let batch = try XCTUnwrap(system.drawBatches(objectID: "5").first)
+                for axis in 0 ..< 3 {
+                    XCTAssertEqual(Support.float(batch.vertices.bytes, at: axis * 4), sample.position[axis],
+                                   accuracy: 1e-6)
+                    XCTAssertEqual(Support.float(batch.vertices.bytes, at: 28 + axis * 4), sample.velocity[axis],
+                                   accuracy: 1e-6)
+                }
+                XCTAssertTrue(system.diagnostics.isEmpty)
+            }
+        }
+    }
+
+    /// Native delete keeps this frame's draw and lets the next ordinary age pass generate real death events.
+    func testCollisionDeleteStaysPackedUntilNextExpiryThenSpawnsDeathChild() throws {
+        let child = Support.json("""
+        {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,"distancemax":0}],
+         "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+           {"name":"inheritinitialvaluefromevent","input":"setvelocity"}],
+         "renderer":[{"name":"spritetrail"}]}
+        """)
+        var parent = System(json: Support.json("""
+        {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,
+          "distancemax":0,"origin":"0 -2 0"}],
+         "initializer":[{"name":"lifetimerandom","min":1,"max":1},
+           {"name":"velocityrandom","min":"1 -4 3","max":"1 -4 3"}],
+         "operator":[{"name":"collisionplane","plane":"0 1 0","distance":0,"collisionbehavior":"delete"}],
+         "children":[{"name":"child.json","type":"eventdeath"}],"renderer":[{"name":"spritetrail"}]}
+        """), rng: WPEParityMT19937(seed: 7), is3D: true, resolveChild: { _ in child })
+        parent.advance(dt: 0.25)
+        XCTAssertEqual(parent.liveCount, 1)
+        XCTAssertEqual(parent.age[0], parent.lifetime[0])
+        XCTAssertTrue(try XCTUnwrap(parent.eventChildren.first).isEmpty)
+        XCTAssertEqual(try XCTUnwrap(parent.drawBatches(objectID: "5").first).vertices.count, 1)
+        parent.advance(dt: 0.125)
+        XCTAssertEqual(parent.liveCount, 0)
+        let spawned = try XCTUnwrap(parent.eventChildren.first?.first)
+        XCTAssertEqual(spawned.liveCount, 1)
+        assertEqual(spawned.velocity[0], SIMD3(1, -4, 3))
+        let batch = try XCTUnwrap(spawned.drawBatches(objectID: "5").first)
+        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 28, count: 3), [1, -4, 3])
+    }
+
     /// The original strict contact mask clears angular velocity only for flags2, before the next operator.
     func testCollisionPlaneFlagTwoClearsOnlyAngularVelocityOnStrictContactBeforePacking() throws {
         let cases: [(flags: Int, originY: Int, angular: SIMD3<Float>, velocity: SIMD3<Float>)] = [
