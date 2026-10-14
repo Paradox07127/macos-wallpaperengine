@@ -84,7 +84,7 @@ extension WPEParitySceneDriverTests {
         let resources: [String: Any] = [
             "models/event.json": ["material": "materials/event.json"],
             "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["util/white"],
-                                                  "blending": "normal"]]],
+                                                  "blending": "translucent"]]],
         ]
         let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
@@ -94,11 +94,11 @@ extension WPEParitySceneDriverTests {
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false, hdrPostProcessing: false),
-                              drawableSize: CGSize(width: 16, height: 16), pixelFormat: .rgba8Unorm, compiler: compiler,
+                              drawableSize: CGSize(width: 16, height: 16), pixelFormat: .bgra8Unorm_srgb, compiler: compiler,
                               diskCache: .init(cachesURL: scratch.appending(path: "event-cache")))
         let layer = RecordingLayer()
         layer.device = device
-        layer.pixelFormat = .rgba8Unorm
+        layer.pixelFormat = .bgra8Unorm_srgb
         layer.drawableSize = CGSize(width: 16, height: 16)
         layer.framebufferOnly = false
         for (frame, expectedAlpha, expectedEvents): (Int, Float, Float) in [(0, 0.5, 1), (1, 0.25, 2), (2, 1, 2)] {

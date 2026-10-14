@@ -72,7 +72,8 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                                    ["frame": 2, "value": 1], ["frame": 3, "value": 0]],
                             "options": ["fps": 4, "length": 4],
                         ]]],
-            "objects": [],
+            // Native bloom requires a nonempty object table. A camera is a real object with no color draw.
+            "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
         ])
         let plan = try WPEParityFramePlan(document: document,
                                           assets: .init(sceneDirectory: scratch, assetRoots: [engine]),
