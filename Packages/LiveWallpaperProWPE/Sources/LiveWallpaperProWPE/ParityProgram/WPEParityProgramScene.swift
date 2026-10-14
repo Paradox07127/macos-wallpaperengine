@@ -490,7 +490,7 @@ public struct WPEParityProgramScene: Sendable {
                                           skinned: mesh.vertexFormat & 0x800000 != 0 && !model.bones.isEmpty,
                                           blendMeshIndex: model.meshes.firstIndex { $0.flags & 2 != 0 },
                                           parts: mesh.parts, clipGroups: WPEParityPuppetClipGroup.groups(of: mesh),
-                                          vertexStream: mesh.vertexStream)
+                                          vertexStream: mesh.vertexStream, skinningAlpha: mesh.flags & 4 != 0)
         return (puppet, model)
     }
 

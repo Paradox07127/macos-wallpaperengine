@@ -118,7 +118,7 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         assertEqual(animator.palette[1], held[1])
         XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(1.5)))
         XCTAssertEqual(animator.layers[0].frame, 1.5)
-        assertEqual(animator.palette[1], held[1], "host writes wait for object evaluation")
+        assertEqual(animator.palette[1], held[1]) // Host writes wait for object evaluation.
         animator.advance(dt: 0)
         XCTAssertEqual(animator.layers[0].frame, 1.5)
         XCTAssertTrue(animator.endedLayers.isEmpty)

@@ -340,10 +340,13 @@ public struct WPEPuppetAnimChannel: Equatable, Sendable {
     /// Channel index == skin-blend index; no explicit id in the file. Channels stay usable if `bones` is empty/malformed. Keyframe 0 is the bind pose.
     public let boneIndex: Int
     public let keyframes: [WPEPuppetAnimKey]
+    /// MDLA track header. Native scalar consumers skip the track only when `flags & 3 == 1`.
+    public let flags: UInt32
 
-    public init(boneIndex: Int, keyframes: [WPEPuppetAnimKey]) {
+    public init(boneIndex: Int, keyframes: [WPEPuppetAnimKey], flags: UInt32 = 0) {
         self.boneIndex = boneIndex
         self.keyframes = keyframes
+        self.flags = flags
     }
 }
 
@@ -2049,7 +2052,7 @@ public enum WPEMdlParser {
             let reserved0 = try reader.readUInt32()
             let channelCount = try reader.readUInt32()
             // Leading word of the first bone track's `(unk, byteCount)` header, not a reserved zero.
-            _ = try reader.readUInt32()
+            var channelFlags = try reader.readUInt32()
             let channelByteCount = try reader.readUInt32()
 
             guard reservedID == 0, reserved0 == 0,
@@ -2101,7 +2104,7 @@ public enum WPEMdlParser {
                         scale: scale
                     ))
                 }
-                channels.append(WPEPuppetAnimChannel(boneIndex: channelIndex, keyframes: keyframes))
+                channels.append(WPEPuppetAnimChannel(boneIndex: channelIndex, keyframes: keyframes, flags: channelFlags))
 
                 if channelIndex + 1 < channelCountInt {
                     // `(unk, byteCount)` header of the next bone track. Only the byte count is
@@ -2117,6 +2120,7 @@ public enum WPEMdlParser {
                             expected: channelByteCount
                         )
                     }
+                    channelFlags = delimiterMarker
                 }
             }
 
