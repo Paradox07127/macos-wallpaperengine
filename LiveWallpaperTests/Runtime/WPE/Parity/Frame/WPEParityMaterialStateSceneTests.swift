@@ -101,6 +101,10 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         let root = scratch.appending(path: UUID().uuidString)
         var files: [String: Data] = ["materials/red.tex": Self.texture([255, 0, 0, 255]),
                                      "materials/blue.tex": Self.texture([0, 0, 255, 255])]
+        XCTAssertEqual(try Self.sha256(XCTUnwrap(files["materials/red.tex"])),
+                       "9e441ee114603c6004c2f599e900ab89f93c3821dcbb227a58018cf38b9a4aea")
+        XCTAssertEqual(try Self.sha256(XCTUnwrap(files["materials/blue.tex"])),
+                       "7415de08c5065e8087d0ec98616f92bd19ec494370a2ae810af4885897d014db")
         func json(_ name: String, _ value: Any) throws {
             files[name] = try JSONSerialization.data(withJSONObject: value, options: .sortedKeys)
         }
