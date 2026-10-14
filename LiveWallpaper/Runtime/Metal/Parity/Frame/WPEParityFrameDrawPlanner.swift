@@ -538,6 +538,11 @@ struct WPEParityFrameDrawPlanner {
         targets = Self.targets(frame)
     }
 
+    /// Keep the existing operation view current when draw versions change without rebuilding the graph.
+    mutating func refreshModelDataShapes(_ shapes: [Int: WPEParitySceneModelData.Shape]) {
+        layout.modelDataShapes = shapes
+    }
+
     mutating func adoptModelDataTransforms(_ layers: WPEParityLayerTransformSet) {
         self.layers = layers
     }

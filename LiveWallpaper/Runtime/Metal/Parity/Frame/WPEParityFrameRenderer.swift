@@ -1404,6 +1404,7 @@ final class WPEParityFrameRenderer {
     private func refreshModelDataDrawVersions() -> Bool {
         let layout = graphs.layout
         var draws = layout.draws
+        var shapes: [Int: WPEParitySceneModelData.Shape] = [:]
         var indices: [String: Set<Int>] = [:]
         for (operation, description) in layout.frames[0].draws {
             guard case let .scene(description) = description,
@@ -1425,6 +1426,7 @@ final class WPEParityFrameRenderer {
             indices[description.objectID, default: []].insert(index)
             draw.geometry = .modelData(prepared)
             draws[operation] = draw
+            shapes[operation] = model.shapes[index]
         }
         for id in state.commonOrder {
             guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
@@ -1434,6 +1436,7 @@ final class WPEParityFrameRenderer {
                               skipped: layout.skipped, fade: layout.fade)
         retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
         previousGraphs = nil
+        planner.refreshModelDataShapes(shapes)
         graphs = Graphs(layout: replaced, hidden: graphs.hidden, executors: graphs.executors,
                         operations: graphs.operations, particleDraws: graphs.particleDraws,
                         particleSnapshotSkips: graphs.particleSnapshotSkips)
