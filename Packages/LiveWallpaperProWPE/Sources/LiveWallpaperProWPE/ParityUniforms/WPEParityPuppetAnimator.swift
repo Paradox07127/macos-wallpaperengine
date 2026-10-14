@@ -251,7 +251,15 @@ public struct WPEParityPuppetAnimator: Sendable {
         var result: [String: WPECBufferValue] = ["g_Bones": .array(stride(from: 0, to: rows.count, by: 3).map {
             .matrix(WPEFloatMatrix(columns: Array(rows[$0 ..< $0 + 3])))
         })]
-        if !bonesAlpha.isEmpty { result["g_BonesAlpha"] = .array(bonesAlpha.map(WPECBufferValue.float)) }
+        if !bonesAlpha.isEmpty {
+            // The stage rewriter packs native float[BONECOUNT] into float4[ceil(BONECOUNT / 4)].
+            // Padding is outside the valid bone indices; the strict cbuffer packer keeps the reflected shape.
+            result["g_BonesAlpha"] = .array(stride(from: 0, to: bonesAlpha.count, by: 4).map { start in
+                .vector((0 ..< 4).map { lane in
+                    start + lane < bonesAlpha.count ? bonesAlpha[start + lane] : 0
+                })
+            })
+        }
         return result
     }
 
