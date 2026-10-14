@@ -30,14 +30,16 @@ public struct WPEParityProgramMaterial: Sendable, Equatable {
     }
 }
 
-/// The three authored `usertextures` fields before an unproven array-merge policy can discard a declaration.
+/// Authored `usertextures` provenance and the selected material pass after its instance override.
 /// The typed views are built once with the material, never by the per-frame texture consumer.
 public struct WPEParityProgramUserTextures: Sendable, Equatable {
     public let material: WPESceneJSONValue?
     public let pass: WPESceneJSONValue?
     public let override: WPESceneJSONValue?
     public let bindings: WPERenderUserTextureBindings
-    /// Single-locus or identical declarations only. Different arrays retain their loci and diagnose the unknown merge.
+    /// The selected pass after the native recursive instance merge; unverified root/pass conflicts remain nil.
+    public let resolved: WPESceneJSONValue?
+    /// Slots retain authored ordinals and still require an authored texture fallback.
     public let slots: [Int32: WPESceneUserTextureBinding]
     /// Native reads a Boolean; missing or other shapes do not enable the flag. Its aspect transform is still unverified.
     public let keepAspect: [Int32: Bool]
@@ -61,19 +63,32 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
         var diagnostics: [String] = []
         var slots: [Int32: WPESceneUserTextureBinding] = [:]
         var keepAspect: [Int32: Bool] = [:]
+        var resolved: WPESceneJSONValue?
         if override == nil, let overrideBindings, !overrideBindings.isEmpty {
             diagnostics.append("usertextures override has typed bindings without raw array/keepaspect provenance")
         } else if let first = authored.first, authored.allSatisfy({ $0.1 == first.1 }) {
-            for entry in first.2 {
-                guard let slot = entry.binding.slot, let key = Int32(exactly: slot) else { continue }
-                slots[key] = entry.binding
-                keepAspect[key] = entry.keepAspect
-                if entry.keepAspect {
-                    diagnostics.append("usertextures keepaspect transform is unverified at slot \(slot)")
+            resolved = first.1
+        } else if let pass, material == nil || material == pass {
+            // 1515b0/150d60 select passes[0], then 153200 merges the material instance. A null
+            // usertextures child is skipped by its containing object merge, preserving this pass.
+            if let override, override != .null {
+                resolved = Self.mergeSelectedPass(pass, with: override)
+                if resolved == nil {
+                    diagnostics.append("usertextures instance array extension is unverified; authored fallback retained")
                 }
+            } else {
+                resolved = pass
             }
         } else if !authored.isEmpty {
             diagnostics.append("usertextures array merge is unverified across \(authored.map(\.0).joined(separator: "/")); authored fallback retained")
+        }
+        for entry in Self.entries(resolved) {
+            guard let slot = entry.binding.slot, let key = Int32(exactly: slot) else { continue }
+            slots[key] = entry.binding
+            keepAspect[key] = entry.keepAspect
+            if entry.keepAspect {
+                diagnostics.append("usertextures keepaspect transform is unverified at slot \(slot)")
+            }
         }
         for (locus, raw, _) in authored {
             if case .array? = raw {
@@ -84,9 +99,44 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
             }
             diagnostics.append("usertextures \(locus) has an unsupported non-array declaration")
         }
+        self.resolved = resolved
         self.slots = slots
         self.keepAspect = keepAspect
         self.diagnostics = diagnostics
+    }
+
+    /// 153200: copy the base, recursively replace non-null object/array children, replace scalars.
+    /// New non-null array indices need the still-unverified 086540 growth contract; do not guess its holes/count.
+    private static func mergeSelectedPass(_ base: WPESceneJSONValue, with override: WPESceneJSONValue)
+        -> WPESceneJSONValue? {
+        switch (base, override) {
+        case let (.object(baseValues), .object(overrides)):
+            var values = baseValues
+            for (key, value) in overrides where value != .null {
+                if let existing = baseValues[key] {
+                    guard let merged = mergeSelectedPass(existing, with: value) else { return nil }
+                    values[key] = merged
+                } else {
+                    values[key] = value
+                }
+            }
+            return .object(values)
+        case let (.array(baseValues), .array(overrides)):
+            var values = baseValues
+            for (index, value) in overrides.enumerated() where value != .null {
+                guard values.indices.contains(index),
+                      let merged = mergeSelectedPass(baseValues[index], with: value) else { return nil }
+                values[index] = merged
+            }
+            return .array(values)
+        case let (_, .object(overrides)):
+            // A type change copies non-null children into an empty container rather than retaining the old type.
+            return .object(overrides.filter { $0.value != .null })
+        case (_, .array):
+            return nil
+        default:
+            return override
+        }
     }
 
     private struct Entry {
