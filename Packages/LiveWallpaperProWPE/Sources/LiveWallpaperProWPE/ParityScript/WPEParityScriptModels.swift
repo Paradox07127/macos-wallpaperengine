@@ -5,14 +5,17 @@ import JavaScriptCore
 public struct WPEParityScriptModelDataProvider {
     public var maximumArrayEntries: Int
     public var maximumBufferBytes: Int
+    /// Per-buffer device admission, distinct from the aggregate owned-copy budget.
+    public var maximumSingleBufferBytes: Int?
     public var resolveMaterial: (JSValue, WPEParityScriptEngine.AssetContext?) throws -> Data
     public var admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?
 
-    public init(maximumArrayEntries: Int, maximumBufferBytes: Int,
+    public init(maximumArrayEntries: Int, maximumBufferBytes: Int, maximumSingleBufferBytes: Int? = nil,
                 resolveMaterial: @escaping (JSValue, WPEParityScriptEngine.AssetContext?) throws -> Data,
                 admitShape: @escaping (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?) {
         self.maximumArrayEntries = maximumArrayEntries
         self.maximumBufferBytes = maximumBufferBytes
+        self.maximumSingleBufferBytes = maximumSingleBufferBytes
         self.resolveMaterial = resolveMaterial
         self.admitShape = admitShape
     }
@@ -26,7 +29,7 @@ enum WPEParityScriptModels {
         do {
             let patch = try WPEModelDataConverter.convert(
                 input, requireFields: token == nil, maximumArrayEntries: provider.maximumArrayEntries,
-                maximumBufferBytes: provider.maximumBufferBytes,
+                maximumBufferBytes: provider.maximumBufferBytes, maximumSingleBufferBytes: provider.maximumSingleBufferBytes,
                 resolveMaterial: { try provider.resolveMaterial($0, assetContext) }
             )
             if let created = try consume(patch) {
