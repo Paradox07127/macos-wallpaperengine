@@ -60,15 +60,26 @@ public struct WPEParityParticleScene {
     /// root system holds live particles it is reset (140230650.c:19). `worldSpace` is taken from the particle flags.
     public mutating func advance(dt: Float, frames: [String: WPEParityParticleFrameContext]) {
         for index in objects.indices {
-            guard var frame = frames[objects[index].id] else {
-                if objects[index].system.liveCount > 0 {
-                    objects[index].system.reset()
-                }
-                continue
-            }
-            frame.worldSpace = objects[index].system.config.flags & 1 != 0
-            objects[index].system.advance(dt: dt, frame: frame)
+            advanceObject(at: index, dt: dt, frame: frames[objects[index].id])
         }
+    }
+
+    /// Advances one scene object in the caller's resolved object order, sharing this scene's generator.
+    /// A nil frame applies the same hidden-root reset as the whole-scene entry point.
+    public mutating func advance(objectID: String, dt: Float, frame: WPEParityParticleFrameContext?) {
+        guard let index = indexByID[objectID] else { return }
+        advanceObject(at: index, dt: dt, frame: frame)
+    }
+
+    private mutating func advanceObject(at index: Int, dt: Float, frame: WPEParityParticleFrameContext?) {
+        guard var frame else {
+            if objects[index].system.liveCount > 0 {
+                objects[index].system.reset()
+            }
+            return
+        }
+        frame.worldSpace = objects[index].system.config.flags & 1 != 0
+        objects[index].system.advance(dt: dt, frame: frame)
     }
 
     /// Renderer and slot facts from the same resolved Config tree as prototypes and simulation, without slots,
