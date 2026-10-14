@@ -21,6 +21,7 @@ struct WPEParityFrameDrawPlan {
 
     enum Geometry {
         case mesh(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)
+        case modelData(WPEParityModelDataMetalShape)
         /// Point lists the particle systems write each frame, one draw per batch.
         case particles(Particles)
     }
@@ -42,7 +43,7 @@ struct WPEParityFrameDrawPlan {
     let pipeline: WPEParityPipeline
     let depthStencil: WPEParityDepthStencilState
     let rasterizer: WPEParityRasterizerState
-    let geometry: Geometry
+    var geometry: Geometry
     /// The skinned puppet layer whose animator supplies the vertex stage's `g_Bones`.
     let puppetID: String?
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
@@ -155,7 +156,19 @@ struct WPEParityFrameDrawPlan {
                   userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
         let selectedGeometry = replacements[0] == nil ? geometry : mediaGeometry ?? geometry
-        guard case let .mesh(vertices, indices, indexCount) = selectedGeometry else {
+        let vertices: MTLBuffer
+        let indices: MTLBuffer?
+        let indexCount: Int
+        let indexType: MTLIndexType
+        let vertexCount: Int
+        switch selectedGeometry {
+        case let .mesh(buffer, indexBuffer, count):
+            (vertices, indices, indexCount, indexType, vertexCount) = (buffer, indexBuffer, count, .uint16, 4)
+        case let .modelData(shape):
+            (vertices, indices, indexCount, indexType, vertexCount) = (
+                shape.vertexBuffer, shape.indexBuffer, shape.indexCount, shape.indexType, shape.vertexCount
+            )
+        case .particles:
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
         var state = try drawState(frame: frame,
@@ -178,9 +191,10 @@ struct WPEParityFrameDrawPlan {
         }
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  constants: state.constants, textures: state.textures, samplers: samplers,
-                                 vertexBuffer: vertices, primitiveType: .triangle, vertexCount: 4)
+                                 vertexBuffer: vertices, primitiveType: .triangle, vertexCount: vertexCount)
         draw.indexBuffer = indices
         draw.indexCount = indexCount
+        draw.indexType = indexType
         return draw
     }
 
@@ -276,10 +290,8 @@ struct WPEParityFrameDrawPlan {
                            engineExtras: [String: WPECBufferValue] = [:],
                            replacementTextures: [Int: MTLTexture])
         throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
-        for (slot, failure) in mediaFormatFailures {
-            if replacementTextures[slot] != nil {
-                throw WPEParityFrameSkip.program(failure)
-            }
+        for (slot, failure) in mediaFormatFailures where replacementTextures[slot] != nil {
+            throw WPEParityFrameSkip.program(failure)
         }
         var uniforms = uniforms
         var spriteTextures: [String: MTLTexture] = [:]
@@ -524,6 +536,10 @@ struct WPEParityFrameDrawPlanner {
         frame = layout.frames[0]
         resources = Self.resources(frame)
         targets = Self.targets(frame)
+    }
+
+    mutating func adoptModelDataTransforms(_ layers: WPEParityLayerTransformSet) {
+        self.layers = layers
     }
 
     /// Builds the pipeline draw `index` of `frame` needs, so a later plan of the same draw finds it.
@@ -786,7 +802,13 @@ struct WPEParityFrameDrawPlanner {
         }
         let geometry: WPEParityFrameDrawPlan.Geometry
         var placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
-        if let particleKey, case let .scene(draw) = description {
+        if let shape = layout.modelDataShapes[index] {
+            guard let prepared = shape.prepared as? WPEParityModelDataMetalShape,
+                  prepared.program.hlsl == layout.programs[index]?.hlsl else {
+                throw .pipeline("\(shader): canonical model shape has no admitted resource version")
+            }
+            geometry = .modelData(prepared)
+        } else if let particleKey, case let .scene(draw) = description {
             let particles = try particleGeometry(particleKey, compositeOwnerID: draw.compositeOwnerID,
                                                  pipeline: pipeline, shader: shader, texture0: uniformTextures[0],
                                                  frameCount: sprites[0]?.count ?? 0)
@@ -1188,6 +1210,38 @@ struct WPEParityFrameDrawPlanner {
     /// D3D11 missing format components are zero except W=1 in the source element's interpretation.
     static func rawVertexWords(_ stream: WPEPuppetVertexStream, inputs: [WPEStageReflection.StageAttribute],
                                uvMax: SIMD2<Float> = .one) throws(WPEParityFrameSkip) -> [UInt32] {
+        let count = try rawVertexWordCount(stream, inputs: inputs)
+        var words = [UInt32](repeating: 0, count: count)
+        let failure = words.withUnsafeMutableBufferPointer { buffer -> WPEParityFrameSkip? in
+            do {
+                try writeRawVertexWords(stream, inputs: inputs, uvMax: uvMax, to: buffer)
+                return nil
+            } catch {
+                return error
+            }
+        }
+        if let failure { throw failure }
+        return words
+    }
+
+    static func rawVertexWordCount(_ stream: WPEPuppetVertexStream,
+                                   inputs: [WPEStageReflection.StageAttribute]) throws(WPEParityFrameSkip) -> Int {
+        var width = 0
+        for input in inputs {
+            guard (1 ... 4).contains(input.columns) else { throw .pipeline("invalid vertex input width") }
+            let added = width.addingReportingOverflow(input.columns)
+            guard !added.overflow else { throw .pipeline("vertex input width exceeds addressable storage") }
+            width = added.partialValue
+        }
+        let count = stream.vertexCount.multipliedReportingOverflow(by: width)
+        guard !count.overflow else { throw .pipeline("vertex input stream exceeds addressable storage") }
+        return count.partialValue
+    }
+
+    /// ModelData writes straight into its immutable Metal upload, without a second full CPU word array.
+    static func writeRawVertexWords(_ stream: WPEPuppetVertexStream, inputs: [WPEStageReflection.StageAttribute],
+                                    uvMax: SIMD2<Float> = .one,
+                                    to destination: UnsafeMutableBufferPointer<UInt32>) throws(WPEParityFrameSkip) {
         guard !stream.layout.hasSyntheticPosition else {
             throw .pipeline("MDLV vertex format is missing authored POSITION0")
         }
@@ -1215,9 +1269,11 @@ struct WPEParityFrameDrawPlanner {
             }
             resolved.append(Input(attribute: attribute, columns: input.columns))
         }
-        let wordsPerVertex = resolved.reduce(0) { $0 + $1.columns }
-        var words: [UInt32] = []
-        words.reserveCapacity(stream.vertexCount * wordsPerVertex)
+        let count = try rawVertexWordCount(stream, inputs: inputs)
+        guard destination.count >= count else {
+            throw .pipeline("vertex upload is shorter than its reflected input stream")
+        }
+        var output = 0
         stream.data.withUnsafeBytes { bytes in
             for vertex in 0 ..< stream.vertexCount {
                 for input in resolved {
@@ -1234,12 +1290,12 @@ struct WPEParityFrameDrawPlanner {
                                 word = (Float(bitPattern: word) * uvMax[lane]).bitPattern
                             }
                         }
-                        words.append(word)
+                        destination[output] = word
+                        output += 1
                     }
                 }
             }
         }
-        return words
     }
 
     private static func rawGeometry(_ stream: WPEPuppetVertexStream, indices: [UInt16],

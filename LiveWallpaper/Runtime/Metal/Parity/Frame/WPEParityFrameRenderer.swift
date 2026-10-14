@@ -96,6 +96,7 @@ final class WPEParityFrameRenderer {
     private var seenVisibility = 0
     private var seenEffects = 0
     private var seenMembership = 0
+    private var seenModelData = 0
     private var graphs: Graphs
     /// The graphs before the last visibility change, kept so toggling back does not recompile.
     private var previousGraphs: Graphs?
@@ -115,7 +116,7 @@ final class WPEParityFrameRenderer {
     /// Draws of later effect sets plan here, reusing its images and pipelines.
     private var planner: WPEParityFrameDrawPlanner
     /// Every program the plan can draw with, compiled at load.
-    private let artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
+    private var artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
     private let mipMappedFrameBufferRequested: Bool
     private var bloom: WPEParityBloomSettings
     /// Post-process draw constants for `bloom`, by draw operation, where they differ from the planned ones.
@@ -205,6 +206,11 @@ final class WPEParityFrameRenderer {
     }
 
     #if DEBUG
+    /// Actual executor identities for the ModelData immutable-version product guard; retains no resources.
+    var graphExecutorIdentities: [ObjectIdentifier] {
+        graphs.executors.map(ObjectIdentifier.init)
+    }
+
     /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
     func renderTarget(_ id: WPEResourceID, scope: WPEResourceBindingScope = .frame) -> MTLTexture? {
         let variant = max(0, frameIndex - 1) % graphs.executors.count
@@ -654,6 +660,8 @@ final class WPEParityFrameRenderer {
         puppets = previous.puppets
         particles = previous.particles
         sceneRNG = previous.sceneRNG
+        // Script registrations belong to the same scene and shader store; resizing changes draw targets only.
+        artifacts.merge(previous.artifacts) { current, _ in current }
         cameraQueues = previous.cameraQueues
         arena.capacity = baseArenaBytes + particles.budget
         frameIndex = previous.frameIndex
@@ -692,6 +700,7 @@ final class WPEParityFrameRenderer {
         seenVisibility = -1
         seenEffects = -1
         seenMembership = -1
+        seenModelData = -1
         bloom = previous.bloom
         for text in previous.planner.texts.values {
             recordTextDelta(textPipeline.relayoutWithDelta(text.object, effectCount: text.effectCount))
@@ -704,6 +713,7 @@ final class WPEParityFrameRenderer {
             try replaceConditionalProperties(changed: snapshot, merged: snapshot)
         }
         script?.engine.materialFunctionHandler = scriptMaterialFunction
+        script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
                        state: &state)
         repackBloom()
@@ -773,21 +783,57 @@ final class WPEParityFrameRenderer {
     }
 
     /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.
-    func attachScript(_ script: WPEParitySceneScript) {
+    func attachScript(_ script: WPEParitySceneScript) throws {
         self.script = script
         script.engine.materialFunctionHandler = scriptMaterialFunction
-        script.start(state: &state)
+        script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
+        try script.start(state: &state)
+    }
+
+    var scriptModelDataProvider: WPEParityScriptModelDataProvider {
+        WPEParityModelDataLayerAdmission.provider(plan: plan, device: device, admitShape: scriptModelDataAdmission)
+    }
+
+    /// Immutable loader inputs survive renderer resize without keeping its old graph or resource owner alive.
+    var scriptModelDataAdmission:
+        (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)? {
+        let plan = plan
+        let artifacts = artifacts
+        let device = device
+        return { shape, mutation in
+            try WPEParityModelDataMetalShape.prepare(shape, mutation: mutation, plan: plan,
+                                                     artifacts: artifacts, device: device)
+        }
+    }
+
+    /// Called by the original binding's registration load gate before its init is dispatched.
+    /// Material and shader bytes resolve through ProgramScene; the existing shader table owns the result.
+    nonisolated(nonsending) func prepareRegisteredModelDataMaterial(
+        _ path: String, shaders: WPEParityFrameShaderSource
+    ) async throws {
+        guard plan.scene.modelDataMesh(materialPath: path) != nil else {
+            throw WPEParityModelDataFailure.native(1)
+        }
+        let program = try WPEParityModelDataMetalShape.program(materialPath: path, plan: plan)
+        if case .success? = artifacts[program.hlsl] {
+            return
+        }
+        let artifact = try await shaders.artifact(for: program)
+        artifacts[program.hlsl] = .success(artifact)
     }
 
     /// Warm leaf images use the common post-update removal path. Other class destructors and dependent
     /// owners need their original resource contract before the product admits them.
-    var scriptLayerRemovalAdmission: (String) -> Bool {
+    var scriptLayerRemovalAdmission: (String, UInt32?) -> Bool {
         // The engine continues through renderer replacement. Capture immutable loaded-class metadata,
         // without keeping the old renderer/Metal owners alive or consulting a dead weak renderer.
         let objects = plan.scene.scene.objects
         let parents = plan.document.objectParentByID
         let videoIDs = objects.filter { videos.hasOwner($0.id) }.map(\.id)
-        return { id in
+        return { id, modelDataToken in
+            if modelDataToken != nil {
+                return true
+            }
             guard let object = objects.first(where: { $0.id == id }), case .image = object.kind,
                   object.puppet == nil, !videoIDs.contains(id), !parents.values.contains(id),
                   !object.dependencyTarget else { return false }
@@ -1294,7 +1340,16 @@ final class WPEParityFrameRenderer {
     /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
     /// previous set.
     private func selectGraphs() throws {
-        if state.membershipGeneration != seenMembership {
+        if state.membershipGeneration == seenMembership, state.modelDataGeneration != seenModelData,
+           refreshModelDataDrawVersions() {
+            seenModelData = state.modelDataGeneration
+        }
+        if state.membershipGeneration != seenMembership || state.modelDataGeneration != seenModelData {
+            if state.membershipGeneration != seenMembership {
+                layers = plan.modelDataTransforms(state: state, existing: layers)
+                planner.adoptModelDataTransforms(layers)
+                layersMoved = true
+            }
             let planned = try plan.layout(effects: state, texts: planner.texts,
                                           mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
             let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
@@ -1307,6 +1362,7 @@ final class WPEParityFrameRenderer {
             packedConstants.removeAll()
             fadeConstants.removeAll()
             seenMembership = state.membershipGeneration
+            seenModelData = state.modelDataGeneration
             repackBloom()
         }
         guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects else {
@@ -1341,6 +1397,47 @@ final class WPEParityFrameRenderer {
         }
         seenVisibility = state.visibilityGeneration
         seenEffects = state.effectVisibilityGeneration
+    }
+
+    /// Equal-layout buffer writes replace only the existing draw's immutable resource version. Membership,
+    /// shape count, placement or material/program/layout changes take the ordinary graph transaction above.
+    private func refreshModelDataDrawVersions() -> Bool {
+        let layout = graphs.layout
+        var draws = layout.draws
+        var indices: [String: Set<Int>] = [:]
+        for (operation, description) in layout.frames[0].draws {
+            guard case let .scene(description) = description,
+                  let token = state.object(description.objectID)?.modelDataToken else { continue }
+            guard description.geometry == .modelMesh, let model = state.modelData(token),
+                  let index = WPEParitySceneModel.meshIndex(description.pass, objectID: description.objectID),
+                  model.shapes.indices.contains(index),
+                  let prepared = model.shapes[index].prepared as? WPEParityModelDataMetalShape,
+                  var draw = draws[operation], case let .modelData(previous) = draw.geometry,
+                  prepared.canReplaceDrawVersion(previous),
+                  let placement = draw.placement, placement.objectID == description.objectID,
+                  placement.kind == .layer, placement.compositeOwnerID == nil, placement.text == nil,
+                  let transform = layers.layers[description.objectID], transform.parentID == nil,
+                  layout.frames.allSatisfy({ frame in
+                      guard case let .scene(other)? = frame.draws[operation] else { return false }
+                      return other.pass == description.pass && other.objectID == description.objectID
+                          && other.geometry == .modelMesh && other.compositeOwnerID == nil
+                  }) else { return false }
+            indices[description.objectID, default: []].insert(index)
+            draw.geometry = .modelData(prepared)
+            draws[operation] = draw
+        }
+        for id in state.commonOrder {
+            guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
+            guard indices[id] == Set(model.shapes.indices) else { return false }
+        }
+        let replaced = Layout(effects: layout.effects, frames: layout.frames, draws: draws,
+                              skipped: layout.skipped, fade: layout.fade)
+        retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
+        previousGraphs = nil
+        graphs = Graphs(layout: replaced, hidden: graphs.hidden, executors: graphs.executors,
+                        operations: graphs.operations, particleDraws: graphs.particleDraws,
+                        particleSnapshotSkips: graphs.particleSnapshotSkips)
+        return true
     }
 
     /// Allocation and initialization form one transaction; a failed attempt leaves the previous graphs retryable.
@@ -1444,6 +1541,7 @@ final class WPEParityFrameRenderer {
         for (index, program) in planned.programs.sorted(by: { $0.key < $1.key }) {
             if let previous, previous.frames.count == planned.frames.count,
                let match = names[index].flatMap({ earlier[$0] }), let plan = previous.draws[match],
+               Self.sameModelDataVersion(planned.modelDataShapes[index], geometry: plan.geometry),
                planned.frames.indices.allSatisfy({
                    planned.frames[$0].draws[index] == previous.frames[$0].draws[match]
                        && Self.resourcesMatch(planned.frames[$0], previous.frames[$0], draw: index)
@@ -1487,6 +1585,17 @@ final class WPEParityFrameRenderer {
             }
         }?.key
         return Layout(effects: effects, frames: planned.frames, draws: draws, skipped: skipped, fade: fade)
+    }
+
+    private static func sameModelDataVersion(_ shape: WPEParitySceneModelData.Shape?,
+                                             geometry: WPEParityFrameDrawPlan.Geometry) -> Bool {
+        switch (shape, geometry) {
+        case let (shape?, .modelData(previous)):
+            (shape.prepared as? WPEParityModelDataMetalShape) === previous
+        case (nil, .modelData): false
+        case (nil, _): true
+        default: false
+        }
     }
 
     /// Resource and sampler creation is validated before the graph promises a draw's writes.

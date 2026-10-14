@@ -60,7 +60,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
                 return true
             })
         )
-        script.start(state: &state)
+        try script.start(state: &state)
         XCTAssertEqual(state.object("1")?.color, .one)
         XCTAssertEqual(observations.map(\.0), ["1"])
         let first = try XCTUnwrap(observations.first)

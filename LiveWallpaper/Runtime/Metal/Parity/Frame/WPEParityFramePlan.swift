@@ -44,6 +44,8 @@ struct WPEParityFrameLayout {
     /// One table per entry of `frames`, keyed like `programs`.
     let bindings: [[Int: WPEParityProgramBinding]]
     let skipped: [Int: WPEParityFrameSkip]
+    /// A projection of canonical State shapes onto this frame's existing draw operations, never another model owner.
+    var modelDataShapes: [Int: WPEParitySceneModelData.Shape] = [:]
 }
 
 /// What fixes a draw's program: a scene draw's material, or a post-process draw's material file and shader. Effect
@@ -235,6 +237,29 @@ struct WPEParityFramePlan {
             visible[.init(objectID: $0, effectID: $1)] ?? true
         }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
         description.objects.removeAll { !state.isAlive($0.id) }
+        for id in state.commonOrder {
+            guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
+            let previous = description.objects.first { $0.id == id }
+            let meshes = model.shapes.map { shape in
+                (shape.prepared as? WPEParityModelDataMetalShape)?.mesh
+                    ?? WPEParitySceneModelMesh(material: nil, shader: "", blend: .normal)
+            }
+            let frameReads = model.shapes.reduce(into: [String: [WPEResourceID]]()) { result, shape in
+                guard let prepared = shape.prepared as? WPEParityModelDataMetalShape,
+                      let path = prepared.mesh.material?.materialPath else { return }
+                result[path] = prepared.frameReads
+            }
+            let object = WPEParitySceneObject(
+                id: id, kind: .model(.init(meshes: meshes)), sortKey: previous?.sortKey ?? 0,
+                visible: state.isVisible(id), width: previous?.width ?? 1, height: previous?.height ?? 1,
+                parentID: previous?.parentID, materialFrameReads: frameReads
+            )
+            if let index = description.objects.firstIndex(where: { $0.id == id }) {
+                description.objects[index] = object
+            } else {
+                description.objects.append(object)
+            }
+        }
         let commonRanks = Dictionary(uniqueKeysWithValues: state.commonOrder.enumerated().map { ($0.element, $0.offset) })
         for index in description.objects.indices {
             if let rank = commonRanks[description.objects[index].id] {
@@ -248,9 +273,33 @@ struct WPEParityFramePlan {
             updated.materialFrameReads = previous.materialFrameReads
             description.objects[index] = updated
         }
-        return try Self.layout(Self.loaded(description),
-                               post: post, scene: scene, physicalBackbufferSize: physicalBackbufferSize,
-                               physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
+        var layout = try Self.layout(Self.loaded(description),
+                                     post: post, scene: scene, physicalBackbufferSize: physicalBackbufferSize,
+                                     physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
+        for (operation, draw) in layout.frames[0].draws {
+            guard case let .scene(draw) = draw, draw.geometry == .modelMesh,
+                  let token = state.object(draw.objectID)?.modelDataToken, let model = state.modelData(token),
+                  let index = WPEParitySceneModel.meshIndex(draw.pass, objectID: draw.objectID),
+                  model.shapes.indices.contains(index) else { continue }
+            layout.modelDataShapes[operation] = model.shapes[index]
+        }
+        return layout
+    }
+
+    /// New admitted model layers join the existing transform tree. Their own live fields remain in State.
+    /// The product create transaction only admits configuration whose parent/placement metadata it prepared.
+    func modelDataTransforms(state: WPEParitySceneState, existing: WPEParityLayerTransformSet)
+        -> WPEParityLayerTransformSet {
+        var transforms = Array(existing.layers.values)
+        let loaded = Set(transforms.map(\.id))
+        for id in state.commonOrder where !loaded.contains(id) {
+            guard let object = state.object(id), object.modelDataToken != nil else { continue }
+            transforms.append(WPEParityLayerTransform(
+                id: id, origin: object.origin, angles: object.angles, scale: object.scale
+            ))
+        }
+        return WPEParityLayerTransformSet(camera: existing.camera, layers: transforms,
+                                          puppetModels: scene.puppetModels)
     }
 
     /// Resolve a function's own declaration through the same physical sizing and identity rules as draws.

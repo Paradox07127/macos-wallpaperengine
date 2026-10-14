@@ -429,6 +429,23 @@ public struct WPEParityProgramScene: Sendable {
         return material
     }
 
+    /// Script ModelData uses the same first material pass, blend and depth/cull parsing as file model meshes.
+    public func modelDataMesh(materialPath: String) -> WPEParitySceneModelMesh? {
+        guard let material = WPEParityProgramMaterial(path: materialPath, assets: assets) else { return nil }
+        return WPEParitySceneModelMesh(
+            material: .init(materialPath: materialPath), shader: material.shader,
+            blend: WPEParitySceneBlend(material.blending),
+            materialState: Self.materialState(assets.json(materialPath)?["passes"]?[0])
+        )
+    }
+
+    public func modelDataFrameReads(materialPath: String) -> [WPEResourceID] {
+        guard let material = WPEParityProgramMaterial(path: materialPath, assets: assets) else { return [] }
+        return WPEParityAuthoredPass.frameReads(
+            WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets)
+        )
+    }
+
     /// The scene material pass whose constants `draw` uses; nil for engine materials, which the scene cannot set.
     func passKey(for draw: WPEParitySceneDraw) -> WPEParityMaterialPassKey? {
         guard var stored = draw.source else { return nil }

@@ -42,7 +42,7 @@ final class WPEParitySceneScript {
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
         var canDestroyLayer: ((String, UInt32?) -> Bool)?
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
-        var pauseVideoTexture: ((String, UInt32?) -> Bool)?
+        var pauseVideoTexture: ((String) -> Bool)?
         var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         var modelData: WPEParityScriptModelDataProvider?
     }

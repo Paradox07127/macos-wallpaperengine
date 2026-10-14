@@ -75,6 +75,20 @@ final class ModelDataConverterTests: XCTestCase {
                                                                maximumBufferBytes: 4, resolveMaterial: { _ in Data() })) {
             XCTAssertEqual($0 as? WPEModelDataConverter.Failure, .bufferLimitExceeded)
         }
+        let pair = try XCTUnwrap(context.evaluateScript("({vertexBuffer:new Float32Array(4),indexBuffer:new Uint32Array(4)})"))
+        let admitted = try WPEModelDataConverter.convert(pair, requireFields: false, maximumArrayEntries: 16,
+                                                         maximumBufferBytes: Int.max, maximumSingleBufferBytes: 16,
+                                                         resolveMaterial: { _ in Data() })
+        XCTAssertEqual(admitted.shapes.first?.vertices?.count, 16)
+        guard case let .buffer(indices)? = admitted.shapes.first?.indices else {
+            return XCTFail("two separately admitted buffers must not become one aggregate device cap")
+        }
+        XCTAssertEqual(indices.data.count, 16)
+        XCTAssertThrowsError(try WPEModelDataConverter.convert(pair, requireFields: false, maximumArrayEntries: 16,
+                                                               maximumBufferBytes: Int.max, maximumSingleBufferBytes: 15,
+                                                               resolveMaterial: { _ in Data() })) {
+            XCTAssertEqual($0 as? WPEModelDataConverter.Failure, .singleBufferLimitExceeded)
+        }
     }
 
     private func convert(_ value: JSValue, required: Bool) throws -> WPEParityModelDataPatch {

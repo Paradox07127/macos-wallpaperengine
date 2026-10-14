@@ -882,7 +882,6 @@ public enum WPESceneDocumentParser {
                     includeNestedScriptProperties: false
                 )
                 appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
-                break
             }
         }
         return result
