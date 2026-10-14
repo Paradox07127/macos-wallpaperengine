@@ -265,6 +265,7 @@ final class WPESoundRuntime: Sendable {
                     needsReschedule: true,
                     epoch: 0,
                     randomDelay: sound.randomDelay,
+                    scheduledRandomDelay: nil,
                     delayRemaining: nil
                 ))
 
@@ -435,10 +436,12 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Runs the completion path for the track's oldest queued segment, as if it had finished playing.
+    /// Simulates a queued file starting and finishing; real completions capture their wait in the play path.
     func debugCompleteHeadSegment(forSoundID id: String) {
         let key = state.withLock { state in
-            state.tracks.first { $0.id == id }.map { (token: $0.token, epoch: $0.epoch) }
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return nil as (token: UInt64, epoch: UInt64)? }
+            captureRandomDelay(in: &state, trackIndex: index)
+            return (token: state.tracks[index].token, epoch: state.tracks[index].epoch)
         }
         guard let key else { return }
         handleScheduledFileCompletion(token: key.token, epoch: key.epoch)
@@ -484,9 +487,20 @@ final class WPESoundRuntime: Sendable {
                 return
             }
         }
-        for track in state.tracks where track.enabled && !track.player.isPlaying {
-            track.player.play()
+        for index in state.tracks.indices where state.tracks[index].enabled {
+            captureRandomDelay(in: &state, trackIndex: index)
+            if !state.tracks[index].player.isPlaying { state.tracks[index].player.play() }
         }
+    }
+
+    private func captureRandomDelay(in state: inout State, trackIndex: Int) {
+        guard state.tracks[trackIndex].waitsBetweenPlays,
+              !state.tracks[trackIndex].scheduledFiles.isEmpty,
+              state.tracks[trackIndex].delayRemaining == nil,
+              state.tracks[trackIndex].scheduledRandomDelay == nil else { return }
+        let bounds = state.tracks[trackIndex].randomDelay
+        state.tracks[trackIndex].scheduledRandomDelay = state.tracks[trackIndex].scheduler
+            .randomDelay(minTime: bounds.minTime, maxTime: bounds.maxTime)
     }
 
     /// Returns whether anything is queued: `single` stopping at one is success; empty queue is failure.
@@ -519,6 +533,9 @@ final class WPESoundRuntime: Sendable {
             state.tracks[trackIndex].scheduledFiles.append(file)
             state.tracks[trackIndex].lastScheduledPathIndex = pathIndex
             state.tracks[trackIndex].needsReschedule = false
+            if state.engine.isRunning, player.isPlaying {
+                captureRandomDelay(in: &state, trackIndex: trackIndex)
+            }
             player.scheduleFile(
                 file,
                 at: nil,
@@ -548,9 +565,8 @@ final class WPESoundRuntime: Sendable {
             }
             guard state.tracks[index].enabled else { return }
             if state.tracks[index].waitsBetweenPlays {
-                let delay = state.tracks[index].randomDelay
-                state.tracks[index].delayRemaining = state.tracks[index].scheduler
-                    .randomDelay(minTime: delay.minTime, maxTime: delay.maxTime)
+                state.tracks[index].delayRemaining = state.tracks[index].scheduledRandomDelay
+                state.tracks[index].scheduledRandomDelay = nil
                 state.tracks[index].needsReschedule = true
                 return
             }
@@ -603,6 +619,7 @@ final class WPESoundRuntime: Sendable {
         state.tracks[index].scheduledFiles.removeAll(keepingCapacity: false)
         state.tracks[index].scheduler.reset()
         state.tracks[index].needsReschedule = true
+        state.tracks[index].scheduledRandomDelay = nil
         state.tracks[index].delayRemaining = nil
     }
 

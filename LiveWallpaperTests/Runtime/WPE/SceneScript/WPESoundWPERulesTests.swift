@@ -183,7 +183,7 @@ struct WPESoundWPERulesTests {
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 4)
     }
 
-    @Test("New random bounds affect the next wait without restarting the current one")
+    @Test("Random bounds are captured when a file starts, preserving its already selected wait")
     func changingRandomBoundsAffectsNextPlayOnly() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
@@ -191,21 +191,24 @@ struct WPESoundWPERulesTests {
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
-        runtime.debugCompleteHeadSegment(forSoundID: "s")
         runtime.setRandomDelay(minTime: 2, maxTime: 2, forSoundID: "s")
-        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 1)
         runtime.setMuted(false)
-        runtime.advance(by: 1)
+        #expect(try #require(runtime.play()), "This consumer guard requires a working audio output")
+        runtime.setRandomDelay(minTime: 3, maxTime: 3, forSoundID: "s")
         runtime.debugCompleteHeadSegment(forSoundID: "s")
-        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2)
-
-        // Missing fields keep the last authored/observed value rather than resetting it to zero.
-        runtime.setRandomDelay(minTime: 3, maxTime: nil, forSoundID: "s")
-        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2)
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2,
+                "Changing bounds during playback must not change the wait selected when it started")
         runtime.advance(by: 2)
         runtime.debugCompleteHeadSegment(forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 3)
+
+        // Missing fields keep the last authored/observed value rather than resetting it to zero.
+        runtime.setRandomDelay(minTime: 4, maxTime: nil, forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 3)
+        runtime.advance(by: 3)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
         let next = try #require(runtime.debugTrackSnapshots().first?.pendingDelay)
-        #expect((2 ... 3).contains(next))
+        #expect((3 ... 4).contains(next))
         runtime.setRandomDelay(minTime: nil, maxTime: nil, forSoundID: "missing-owner")
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == next)
     }
