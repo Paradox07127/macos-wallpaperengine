@@ -99,20 +99,32 @@ extension WPEParitySceneDriverTests {
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
-                              drawableSize: CGSize(width: 192, height: 64), pixelFormat: .rgba8Unorm,
+                              drawableSize: CGSize(width: 192, height: 64), pixelFormat: .bgra8Unorm_srgb,
                               compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch.appending(path: "cache")))
         let renderer = try XCTUnwrap(driver.renderer)
         XCTAssertEqual(renderer.skipped, [:])
         let layer = RecordingLayer()
         layer.device = device
-        layer.pixelFormat = .rgba8Unorm
+        layer.pixelFormat = .bgra8Unorm_srgb
         layer.drawableSize = CGSize(width: 192, height: 64)
         layer.framebufferOnly = false
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         try await present(driver, layer: layer, label: "native bone alpha BONECOUNT=\(boneCount)")
         XCTAssertEqual(renderer.skipped, [:])
         let backbuffer = try readBack(renderer.backbuffer, device: device)
-        let shown = try readBack(XCTUnwrap(layer.lastTexture), device: device)
+        let shownTexture = try XCTUnwrap(layer.lastTexture)
+        let pass = try XCTUnwrap(driver.executor.lastPresentPass)
+        XCTAssertEqual(renderer.backbuffer.pixelFormat, .rgba8Unorm)
+        XCTAssertEqual(layer.pixelFormat, .bgra8Unorm_srgb)
+        XCTAssertEqual(shownTexture.pixelFormat, .bgra8Unorm_srgb)
+        XCTAssertEqual(pass.targetPixelFormat, .bgra8Unorm_srgb)
+        XCTAssertEqual(pass.source.pixelFormat, .rgba8Unorm)
+        XCTAssertTrue(pass.source === renderer.backbuffer)
+        XCTAssertEqual(pass.colorTransfer, .authored)
+        XCTAssertFalse(pass.usedMetalFX)
+        // Original authored gray is terminal-decoded once; the sRGB display attachment encodes it back.
+        // Readback therefore compares the original gray bytes, using the unchanged one-byte RGB budget.
+        let shown = try readBack(shownTexture, device: device)
         XCTAssertEqual(backbuffer.count, 192 * 64 * 4)
         XCTAssertEqual(shown.count, 192 * 64 * 4)
         for (index, alpha, byte): (Int, Float, UInt8) in [(0, 0.6, 153), (1, 0.5, 128), (2, 0.8, 204)] {
