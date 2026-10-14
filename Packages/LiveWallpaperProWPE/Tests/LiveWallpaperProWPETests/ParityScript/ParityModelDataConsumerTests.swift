@@ -59,7 +59,7 @@ final class ParityModelDataConsumerTests: XCTestCase {
           const patch = new Float32Array(vertices);
           new Uint32Array(patch.buffer)[8] = 0x7fc12345;
           model.replaceData({vertexBuffer:patch,vertexFormat:[IModelData.POSITION],indexBuffer:null,
-            material:'materials/model.json',boundingBoxMins:{x:0},boundingBoxMaxs:{x:0}});
+            material:'',boundingBoxMins:{x:0},boundingBoxMaxs:{x:0}});
         }
         export function destroy() { model.replaceData({shapes:[null]}); thisScene.destroyModelData(1); }
         """#
@@ -121,6 +121,7 @@ final class ParityModelDataConsumerTests: XCTestCase {
         XCTAssertNil(replaced.shapes[0].indices)
         XCTAssertFalse(replaced.shapes[0].isVertexBufferDynamic)
         XCTAssertFalse(replaced.shapes[0].isIndexBufferDynamic)
+        XCTAssertEqual(replaced.shapes[0].material, Data("materials/model.json".utf8))
         XCTAssertEqual(Self.word(replaced.shapes[0].vertices.data, 8), 0x7FC1_2345)
         XCTAssertEqual(replaced.bounds, initial.bounds, "replacement does not recompute the initial MDL bounds")
         try state.retainModelData(1, for: "1")

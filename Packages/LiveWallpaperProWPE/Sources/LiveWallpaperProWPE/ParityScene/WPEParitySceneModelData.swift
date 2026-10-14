@@ -212,7 +212,7 @@ public extension WPEParitySceneState {
 
     private static func modelShape(_ patch: WPEParityModelDataShapePatch, material: Data? = nil,
                                    validateSize: Bool = true) throws -> WPEParitySceneModelData.Shape {
-        guard !patch.remove, let stream = patch.vertexStream, let name = patch.material ?? material,
+        guard !patch.remove, let stream = patch.vertexStream, let name = material ?? patch.material,
               stream.layout.stride > 0 else {
             throw WPEParityModelDataFailure.safety("incomplete descriptor cannot rebuild a native model buffer safely")
         }
