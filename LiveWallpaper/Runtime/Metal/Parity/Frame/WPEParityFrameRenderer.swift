@@ -183,6 +183,13 @@ final class WPEParityFrameRenderer {
     private var resourceBindings: WPEParityResourceBindings = [:]
     private var seenScriptText = 0
     private var textsNeedFrameRebuild = false
+    private struct MaterialClear {
+        let texture: MTLTexture
+        let color: WPEClearColor
+    }
+    /// Calls retain the actual texture version and order until its clear has been encoded on a committed buffer.
+    private var materialClears: [MaterialClear] = []
+    private(set) var materialFunctionFailure: (any Error)?
 
     /// The frames of the effects the state shows; draw operation indices refer to them.
     var frames: [WPEParityFrame] {
@@ -305,6 +312,60 @@ final class WPEParityFrameRenderer {
     /// calling the old renderer through a SceneScript engine that continues into the new frame plan.
     var scriptVideoPause: (String) -> Bool {
         { [weak videos] ownerID in videos?.pause(ownerID: ownerID) ?? false }
+    }
+
+    var scriptMaterialFunction: (WPEParitySceneState.EffectKey, String) -> Void {
+        { [weak self] key, name in self?.executeMaterialFunction(key, name: name) }
+    }
+
+    private func executeMaterialFunction(_ key: WPEParitySceneState.EffectKey, name: String) {
+        guard let metadata = plan.scene.resolvedMaterialFunctions[key] else { return }
+        do {
+            let requested = try metadata.clearTargets(named: name)
+            guard !requested.isEmpty else { return }
+            let scope = WPEResourceBindingScope.effect(objectID: key.objectID, effectID: key.effectID)
+            let bound = try WPEParityGraphExecutor.scopedTextures(targets, bindings: resourceBindings, scope: scope)
+            var accepted: [MaterialClear] = []
+            for target in requested {
+                guard let logical = plan.materialFunctionResource(key, name: target.name, texts: planner.texts) else {
+                    throw WPEParityGraphExecutionError.missingTexture(WPEResourceID(target.name))
+                }
+                guard let texture = bound[logical] else {
+                    throw WPEParityGraphExecutionError.missingTexture(logical)
+                }
+                accepted.append(MaterialClear(texture: texture, color: target.clearColor))
+            }
+            materialClears += accepted
+        } catch {
+            materialFunctionFailure = error
+            Logger.warning("Parity material function \(key.objectID)/\(key.effectID)/\(name) unavailable: \(error)",
+                           category: .wpeRender)
+        }
+    }
+
+    /// GraphExecutor only invokes prepare on a buffer it will commit, including an encoded prefix on failure.
+    /// Drop each successfully encoded request, retaining the failing request and all later requests for retry.
+    private func encodeMaterialClears(on commandBuffer: MTLCommandBuffer) throws {
+        var encoded = 0
+        defer { materialClears.removeFirst(encoded) }
+        for request in materialClears {
+            try WPEParityGraphExecutor.encodeColorClear(request.texture, color: request.color, on: commandBuffer)
+            encoded += 1
+        }
+    }
+
+    /// Resize initialization must follow previously accepted calls on the same queue. No arena slot is needed
+    /// for these color-only commands; normal frames still consume their commands through GraphExecutor.prepare.
+    private func submitMaterialClears() throws {
+        guard !materialClears.isEmpty else { return }
+        guard let commandBuffer = queue.makeCommandBuffer() else { throw WPEParityFrameRenderError.encoderUnavailable }
+        do {
+            try encodeMaterialClears(on: commandBuffer)
+        } catch {
+            commandBuffer.commit()
+            throw error
+        }
+        commandBuffer.commit()
     }
 
     /// The text layers' glyph atlases as last uploaded.
@@ -542,6 +603,7 @@ final class WPEParityFrameRenderer {
 
     /// Picks up `previous`'s scene where it stopped, for the same document planned at another size.
     func continueScene(from previous: WPEParityFrameRenderer) throws {
+        try previous.submitMaterialClears()
         clock = previous.clock
         pointer = previous.pointer
         parallax = previous.parallax
@@ -573,6 +635,8 @@ final class WPEParityFrameRenderer {
         camera.perspectiveFOV = previous.camera.perspectiveFOV
         camera.zoom = previous.camera.zoom
         script = previous.script
+        script?.engine.materialFunctionHandler = scriptMaterialFunction
+        materialFunctionFailure = previous.materialFunctionFailure
         media = previous.media
         mediaGeneration = previous.mediaGeneration
         mediaTextures = previous.mediaTextures
@@ -618,6 +682,7 @@ final class WPEParityFrameRenderer {
     /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.
     func attachScript(_ script: WPEParitySceneScript) {
         self.script = script
+        script.engine.materialFunctionHandler = scriptMaterialFunction
         script.start(state: &state)
     }
 
@@ -960,7 +1025,10 @@ final class WPEParityFrameRenderer {
             return stream
         }
         return try executor.encodeFrame(on: queue, textures: targets.merging(images) { $1 },
-                                        prepare: videos.encode, shouldTransfer: { step in
+                                        prepare: { commandBuffer in
+                                            try encodeMaterialClears(on: commandBuffer)
+                                            try videos.encode(commandBuffer)
+                                        }, shouldTransfer: { step in
                                             if case let .particleSnapshot(block) = graphs.operations[variant][step] {
                                                 return particleStreams[block]?.snapshotBoundary != nil
                                             }
@@ -1343,8 +1411,11 @@ final class WPEParityFrameRenderer {
             let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
                                                       pixelFormats: WPEParityFrameDrawPlanner.pixelFormats,
                                                       resourceBindings: resourceBindings)
-            for id in graph.lifetimes.keys where executor.transientTextures[id] == nil {
-                guard let resource = graph.resources[id], resource.lifetime != .imported else { continue }
+            // Script functions can use persistent FBOs without any graph draw/read lifetime. They must be
+            // allocated before module-global/init execution, while ordinary graph transients remain unchanged.
+            let prepared = Set(graph.lifetimes.keys).union(frame.resources.filter { $0.lifetime == .persistent }.map(\.id))
+            for id in prepared where executor.transientTextures[id] == nil {
+                guard let resource = frame.resources.first(where: { $0.id == id }), resource.lifetime != .imported else { continue }
                 if let texture = targets[id], Self.matches(texture, resource: resource) {
                     continue
                 }
@@ -1424,12 +1495,9 @@ final class WPEParityFrameRenderer {
                 pass.depthAttachment.clearDepth = 0
                 pass.depthAttachment.storeAction = .store
             } else {
-                pass.colorAttachments[0].texture = texture
-                pass.colorAttachments[0].loadAction = .clear
                 let color = colors[ObjectIdentifier(texture)] ?? .init(red: 0, green: 0, blue: 0, alpha: 0)
-                pass.colorAttachments[0].clearColor = MTLClearColor(red: color.red, green: color.green,
-                                                                    blue: color.blue, alpha: color.alpha)
-                pass.colorAttachments[0].storeAction = .store
+                try WPEParityGraphExecutor.encodeColorClear(texture, color: color, on: commandBuffer)
+                continue
             }
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
                 throw WPEParityFrameRenderError.encoderUnavailable

@@ -57,6 +57,8 @@ public struct WPEParityProgramScene: Sendable {
     /// Condition-accepted resource pass records, including commands and empty/failed materials, even when the
     /// effect is disabled. An absent key means the effect resource did not load; an empty array is a known zero.
     public let resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]]
+    /// Original effect-local functions and compact declaration order, including disabled effects.
+    public let resolvedMaterialFunctions: [WPEParitySceneState.EffectKey: WPEParityMaterialFunctions]
     let materials: [MaterialKey: WPEParityProgramMaterial]
     /// Index of each effect material among its effect's scene `passes` overrides; albedo materials are absent.
     let overridePasses: [MaterialKey: Int]
@@ -110,6 +112,7 @@ public struct WPEParityProgramScene: Sendable {
         var materials: [MaterialKey: WPEParityProgramMaterial] = [:]
         var overridePasses: [MaterialKey: Int] = [:]
         var resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:]
+        var resolvedMaterialFunctions: [WPEParitySceneState.EffectKey: WPEParityMaterialFunctions] = [:]
         var layerColors: [String: SIMD4<Float>] = [:]
         var puppetModels: [String: WPEPuppetModel] = [:]
         var authoredObjects: [WPEParityAuthoredObject] = []
@@ -147,7 +150,7 @@ public struct WPEParityProgramScene: Sendable {
             let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
                                        materials: &materials, overridePasses: &overridePasses,
-                                       records: &resolvedEffectRecords, authored: authored)
+                                       records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
@@ -234,7 +237,7 @@ public struct WPEParityProgramScene: Sendable {
                 let schema = schemas[text.id]
                 let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
                                            materials: &materials, overridePasses: &overridePasses,
-                                           records: &resolvedEffectRecords,
+                                           records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions,
                                            authored: authoredByID[text.id])
                 pipeline.add(text, effectCount: effects.count(where: \.enabled))
                 guard let sceneText = pipeline.texts[text.id] else { continue }
@@ -273,6 +276,7 @@ public struct WPEParityProgramScene: Sendable {
         self.materials = materials
         self.overridePasses = overridePasses
         self.resolvedEffectRecords = resolvedEffectRecords
+        self.resolvedMaterialFunctions = resolvedMaterialFunctions
         self.layerColors = layerColors
         self.puppetModels = puppetModels
         self.models = models
@@ -355,6 +359,7 @@ public struct WPEParityProgramScene: Sendable {
                                 materials: inout [MaterialKey: WPEParityProgramMaterial],
                                 overridePasses: inout [MaterialKey: Int],
                                 records: inout [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]],
+                                functions: inout [WPEParitySceneState.EffectKey: WPEParityMaterialFunctions],
                                 authored: WPESceneJSONValue? = nil) -> [WPEParityAuthoredEffect] {
         var loaded: [WPEParityAuthoredEffect] = []
         for effect in effects {
@@ -368,6 +373,7 @@ public struct WPEParityProgramScene: Sendable {
             let result = Self.effect(effect, objectID: objectID, file: file, assets: assets,
                                      combos: configuration?["combos"], userTextureConfiguration: userTextureConfiguration)
             records[.init(objectID: objectID, effectID: effect.id)] = result.records
+            functions[.init(objectID: objectID, effectID: effect.id)] = result.effect.materialFunctions
             loaded.append(result.effect)
             for (source, material, pass) in result.materials {
                 let key = MaterialKey(objectID: objectID, effectID: effect.id, source: source)
@@ -524,13 +530,14 @@ public struct WPEParityProgramScene: Sendable {
         var fbos: [WPEParityAuthoredFBO] = []
         for case let .object(fbo) in array(file["fbos"]) {
             guard WPEParityAuthoredFBO.conditionsMatch(fbo["conditions"], combos: combos) else { continue }
-            guard let name = string(fbo["name"]) else { continue }
+            guard let name = string(fbo["name"]), let format = string(fbo["format"]) else { continue }
+            let clear = fboClear(fbo["clear"])
             fbos.append(WPEParityAuthoredFBO(name: name, scale: fboNumber(fbo["scale"]) ?? 1, fit: fboNumber(fbo["fit"]),
-                                             format: string(fbo["format"]) ?? "rgba8888",
+                                             format: format,
                                              swapPartner: swapPartners[name],
                                              unique: fbo["unique"] == .bool(true),
                                              explicitWidth: fboNumber(fbo["width"]), explicitHeight: fboNumber(fbo["height"]),
-                                             initialClear: fboClear(fbo["clear"]), repeats: string(fbo["uvs"]) == "repeat"))
+                                             initialClear: clear.initial, scriptClear: clear.stored, repeats: string(fbo["uvs"]) == "repeat"))
         }
         var passes: [WPEParityAuthoredPass] = []
         var materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)] = []
@@ -587,7 +594,23 @@ public struct WPEParityProgramScene: Sendable {
                                          materialPass: .init(objectID: objectID, effectID: effect.id, pass: passIndex),
                                          materialPath: path)
         }
-        return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes), materials, records)
+        let targets = fbos.map { WPEParityMaterialFunctions.Target(name: $0.name, clearColor: $0.scriptClear) }
+        var functions: [WPEParityMaterialFunctions.Function] = []
+        if case let .object(entries)? = file["functions"] {
+            for (name, value) in entries where !name.isEmpty {
+                guard case .object = value, case let .string(action)? = value["action"],
+                      action.utf8.elementsEqual("clear".utf8), case let .array(names)? = value["fbos"] else { continue }
+                let count = names.reduce(0) { count, value in
+                    guard case let .string(name) = value, !name.isEmpty,
+                          targets.contains(where: { $0.name.utf8.elementsEqual(name.utf8) }) else { return count }
+                    return count + 1
+                }
+                if count > 0 { functions.append(.init(name: name, clearCount: count)) }
+            }
+        }
+        let metadata = WPEParityMaterialFunctions(functions: functions, targets: targets)
+        return (WPEParityAuthoredEffect(id: effect.id, enabled: effect.visible, fbos: fbos, passes: passes,
+                                        materialFunctions: metadata), materials, records)
     }
 
     private static func fboNumber(_ value: WPESceneJSONValue?) -> Double? {
@@ -595,29 +618,29 @@ public struct WPEParityProgramScene: Sendable {
         return number
     }
 
-    /// 1401e7170:245-324: four atof floats separated by ASCII spaces. Arrays are not a clear declaration, and a
-    /// nonempty string without all three separators does not set the native clear flag.
-    private static func fboClear(_ value: WPESceneJSONValue?) -> WPEClearColor? {
-        guard case let .string(text)? = value else { return nil }
+    /// 1401e7170:245-324: atof writes each channel before checking its following ASCII-space separator.
+    /// Partial strings retain written channels even though only a complete (or empty) string enables initial clear.
+    private static func fboClear(_ value: WPESceneJSONValue?) -> (stored: WPEClearColor, initial: WPEClearColor?) {
+        let zero = WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        guard case let .string(text)? = value else { return (zero, nil) }
         return text.withCString { start in
-            if start.pointee == 0 {
-                return WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-            }
+            if start.pointee == 0 { return (zero, zero) }
             var cursor = start
-            var channels: [Double] = []
+            var channels = [Double](repeating: 0, count: 4)
+            var complete = true
             for index in 0 ..< 4 {
-                channels.append(Double(Float(atof(cursor))))
+                channels[index] = Double(Float(atof(cursor)))
                 if index < 3 {
-                    while cursor.pointee != 0, cursor.pointee != 32 {
-                        cursor += 1
+                    while cursor.pointee != 0, cursor.pointee != 32 { cursor += 1 }
+                    guard cursor.pointee != 0 else {
+                        complete = false
+                        break
                     }
-                    guard cursor.pointee != 0 else { return nil }
-                    while cursor.pointee == 32 {
-                        cursor += 1
-                    }
+                    while cursor.pointee == 32 { cursor += 1 }
                 }
             }
-            return WPEClearColor(red: channels[0], green: channels[1], blue: channels[2], alpha: channels[3])
+            let stored = WPEClearColor(red: channels[0], green: channels[1], blue: channels[2], alpha: channels[3])
+            return (stored, complete ? stored : nil)
         }
     }
 

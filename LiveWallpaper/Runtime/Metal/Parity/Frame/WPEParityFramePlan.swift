@@ -249,6 +249,24 @@ struct WPEParityFramePlan {
                                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
     }
 
+    /// Resolve a function's own declaration through the same physical sizing and identity rules as draws.
+    /// This uses immutable plan metadata, so a host callback does not re-borrow the live SceneState inout.
+    func materialFunctionResource(_ key: WPEParitySceneState.EffectKey, name: String,
+                                  texts: [String: WPEParitySceneText]) -> WPEResourceID? {
+        let description = scene.scene(textSizes: texts.mapValues { $0.layout.fboSize },
+                                      logicalViewport: SIMD2(width, height))
+        guard var object = description.objects.first(where: { $0.id == key.objectID }),
+              let index = object.effects.firstIndex(where: { $0.id == key.effectID }) else { return nil }
+        for fbo in object.effects[index].fbos.indices {
+            let declaration = object.effects[index].fbos[fbo]
+            let size = declaration.sizing?.layerSize ?? SIMD2(object.width, object.height)
+            object.effects[index].fbos[fbo] = declaration.resized(layerWidth: size.x, layerHeight: size.y,
+                                                                physicalCanvasSize: physicalCanvasSize,
+                                                                pixelScale: pixelScale)
+        }
+        return WPEParitySceneResource.resolvedFBO(object: object, effect: object.effects[index], name: name)
+    }
+
     /// Resolve requests before draw readiness: an undeclared target must not make its own reader disappear.
     /// All resident effect sets participate; optimized-out slots and failed programs request nothing.
     func requestsMipMappedFrameBuffer(

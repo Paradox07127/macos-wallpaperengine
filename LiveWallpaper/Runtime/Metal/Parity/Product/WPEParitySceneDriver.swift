@@ -302,6 +302,7 @@ final class WPEParitySceneDriver {
                     var connectedHost = scriptHost
                     connectedHost.mediaGeneration = generation
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
+                    connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
                     connectedHost.destroyLayer = { id, state in state.removeObject(id) }
                     // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).

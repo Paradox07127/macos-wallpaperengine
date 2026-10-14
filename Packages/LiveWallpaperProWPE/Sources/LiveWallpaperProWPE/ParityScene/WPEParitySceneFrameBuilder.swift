@@ -13,7 +13,7 @@ public enum WPEParitySceneFrameBuilder {
                                             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)
         emitter.renderScene()
         // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
-        let used = Set(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
+        let used = emitter.scriptClearResources.union(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
             [$0.color, $0.snapshotSource, Resource.fullFrameBuffer] + [$0.depth].compactMap(\.self)
         })
         return WPEParitySceneFrame(operations: emitter.operations,
@@ -65,6 +65,7 @@ private struct WPEParitySceneEmitter {
     var samplers: [WPEResourceID: WPEParitySceneSampler] = [:]
     var owners: [WPEPassIdentity: String] = [:]
     var particleBlocks: [WPEParityParticleBlock] = []
+    var scriptClearResources: Set<WPEResourceID> = []
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
     /// Each `_rt_imageLayerComposite_<id>_a` the scene has and the layer it belongs to, so a draw of another layer
@@ -132,7 +133,8 @@ private struct WPEParitySceneEmitter {
         for object in scene.objects {
             for effect in object.effects {
                 for fbo in effect.fbos {
-                    guard fbo.swapPartner != nil else { continue }
+                    guard fbo.swapPartner != nil || fbo.scriptClearable else { continue }
+                    if fbo.scriptClearable { scriptClearResources.insert(Self.fboID(object, effect, fbo.name)) }
                     registerFBO(fbo, object: object, effect: effect, lifetime: .persistent)
                 }
             }
@@ -664,19 +666,9 @@ private struct WPEParitySceneEmitter {
         }
     }
 
-    /// A name `effect` does not declare resolves to the first enabled effect of the layer that does.
     private static func fboID(_ object: WPEParitySceneObject, _ effect: WPEParitySceneEffect,
                               _ name: String) -> WPEResourceID {
-        func declaration(_ candidate: WPEParitySceneEffect) -> WPEParitySceneFBO? {
-            candidate.fbos.first { $0.name == name }
-        }
-        let owner = declaration(effect) != nil ? effect
-            : object.effects.first { $0.enabled && declaration($0) != nil } ?? effect
-        guard let fbo = declaration(owner) else {
-            return Resource.effectFBO(objectID: object.id, effectID: owner.id, name: name)
-        }
-        return fbo.shared ? Resource.sharedFBO(name)
-            : Resource.effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
+        Resource.resolvedFBO(object: object, effect: effect, name: name)
     }
 
     private mutating func snapshot(_ identity: WPEPassIdentity) {
@@ -788,5 +780,22 @@ private extension WPERenderOperation.Kind {
         case let .resourceScope(_, resources): resources
         case let .generateMips(id): [id]
         }
+    }
+}
+
+public extension WPEParitySceneResource {
+    /// The single FBO identity resolver for draws and script functions. A foreign local name resolves to the
+    /// first enabled declaring effect, while shared and pool/unique identities retain their existing rules.
+    static func resolvedFBO(object: WPEParitySceneObject, effect: WPEParitySceneEffect,
+                            name: String) -> WPEResourceID {
+        func declaration(_ candidate: WPEParitySceneEffect) -> WPEParitySceneFBO? {
+            candidate.fbos.first { $0.name.utf8.elementsEqual(name.utf8) }
+        }
+        let owner = declaration(effect) != nil ? effect
+            : object.effects.first { $0.enabled && declaration($0) != nil } ?? effect
+        guard let fbo = declaration(owner) else {
+            return effectFBO(objectID: object.id, effectID: owner.id, name: name)
+        }
+        return fbo.shared ? sharedFBO(name) : effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
     }
 }
