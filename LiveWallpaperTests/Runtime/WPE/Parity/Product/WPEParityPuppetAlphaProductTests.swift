@@ -1,5 +1,6 @@
 #if !LITE_BUILD && DEBUG
 import CoreGraphics
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
@@ -19,19 +20,31 @@ extension WPEParitySceneDriverTests {
             throw NSError(domain: "WPEParityPuppetAlphaProductTests.RequiredInputs", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"])
         }
-        for path in ["shaders/genericimage4.vert", "shaders/genericimage4.frag", "materials/util/white.tex"] {
-            _ = try XCTUnwrap(original.data(path), "required original \(path)")
+        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        for (path, expected) in [
+            ("shaders/genericimage4.vert", "7cc66038ea106b213ae2b9103d0b3c6646e3b4d08f9821afbb24aa32f6186672"),
+            ("shaders/genericimage4.frag", "6b5344953054ae853ff8a7942f716dd9eb67f61cc1526bd8b6bc67df92c76e1f"),
+            ("shaders/common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
+            ("shaders/common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
+            ("shaders/common_fog.h", "a10116adc59b2232e24e06f9c01079393901c45cf47d45ecd17baa2583146201"),
+            ("shaders/common_pbr_2.h", "c6c7cc0a57e8621c00b940aaacdcfffa7eaf7d2b84af6a8feb4a9ed597772634"),
+            ("shaders/common_vertex.h", "cd4a005c0726603d613f97c8ebf9ff0a10d80f4f183de255f70bdecdb2d17ef9"),
+            ("materials/util/white.tex", "ac8a6c0726bf5744e816300278cf42bbe660ea885088e77bbbfb136725a26bdd"),
+        ] {
+            let bytes = try XCTUnwrap(original.data(path), "required original \(path)")
+            _ = try XCTUnwrap(digest(bytes) == expected ? true : nil, "required original SHA256 \(path)")
         }
-        let contents = Bundle.main.bundleURL.appending(path: "Contents")
-        for path in ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"] {
-            _ = try XCTUnwrap(FileManager.default.fileExists(atPath: contents.appending(path: path).path) ? path : nil,
-                              "required app-bundle compiler \(path)")
+        let contents = Bundle.main.bundleURL.appending(path: "Contents").standardizedFileURL.resolvingSymlinksInPath()
+        let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"].map { path in
+            let url = contents.appending(path: path).standardizedFileURL.resolvingSymlinksInPath()
+            _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil, "compiler escaped current bundle: \(path)")
+            return url
         }
-        let compiler: WPEParityHelperShaderCompiler
-        switch WPEParityShaderToolchain.makeCompiler() {
-        case let .success(value): compiler = value
-        case let .failure(reason): throw reason
-        }
+        let expectedIdentity = try "wpe-shaderc " + tools.map { digest(try Data(contentsOf: $0)) }.joined(separator: " ")
+        let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
+                                                         workDirectory: scratch.appending(path: "shaderc"))
+        _ = try XCTUnwrap(compiler.compilerIdentity == expectedIdentity ? compiler : nil, "actual bundle compiler byte identity")
+        print("puppet-alpha compilerOrigin=current-app-bundle compilerIdentity=\(compiler.compilerIdentity)")
         let defaults = UserDefaults.appScoped()
         _ = try XCTUnwrap(defaults !== UserDefaults.standard ? defaults : nil, "required isolated defaults")
         let scaleKey = WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey
@@ -111,7 +124,7 @@ extension WPEParitySceneDriverTests {
             let offset = (32 * 192 + 32 + index * 64) * 4
             for channel in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs(Int(backbuffer[offset + channel]) - Int(byte)), 1)
-                XCTAssertLessThanOrEqual(abs(Int(shown[offset + channel]) - Int(byte)), 2)
+                XCTAssertLessThanOrEqual(abs(Int(shown[offset + channel]) - Int(byte)), 1)
             }
         }
     }
