@@ -797,12 +797,12 @@ public struct WPEParityParticleSystem {
             }
         case let .inheritControlPointVelocity(point, low, high):
             initializeControlPointVelocity(point, minimum: low, maximum: high, slot: slot, birthBasis: birthBasis)
-        case let .velocity(low, high):
-            // Sampled z, y, x (D/1401bac50.c:16-25).
-            let z = rng.draw(low.z, high.z)
-            let y = rng.draw(low.y, high.y)
-            let x = rng.draw(low.x, high.x)
-            velocity[slot] += SIMD3(x, y, z)
+        case let .velocity(low, high, exponent):
+            // 23bac6..23bc2d: three independent words in ZYX order, exponent before the emitter birth basis.
+            let z = low.z + shaped(rng.unit(), exponent) * (high.z - low.z)
+            let y = low.y + shaped(rng.unit(), exponent) * (high.y - low.y)
+            let x = low.x + shaped(rng.unit(), exponent) * (high.x - low.x)
+            velocity[slot] += Self.transformVelocity(SIMD3(x, y, z), by: birthBasis)
         case let .rotation(low, high, exponent):
             rotation[slot] += draw(low, high, exponent)
         case let .angularVelocity(low, high, exponent):

@@ -6,6 +6,40 @@ import XCTest
 final class ParityParticleInitializerTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
 
+    /// Case7's native words are Z,Y,X, independently exponentiated, then multiplied by the birth CP basis.
+    func testVelocityRandomExponentAndBirthBasisReachThePackedTrail() throws {
+        for exponent in [1, 2] {
+            let config = WPEParityParticleConfig(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,"controlpoint":1,
+              "distancemin":"1 1 1","distancemax":"1 1 1"}],
+             "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+               {"name":"velocityrandom","min":"1 2 3","max":"5 8 11","exponent":\(exponent)}],
+             "renderer":[{"name":"spritetrail"}]}
+            """), is3D: true, resolveChild: { _ in nil })
+            var instance = WPEParityParticleSystem.Instance()
+            instance.controlPointAngles[1] = SIMD3(0, 0, Float.pi / 2)
+            var particles = WPEParityParticleSystem(config: config, instance: instance,
+                                                    rng: WPEParityMT19937(seed: 7), crt: WPEParityCRTRandom())
+            particles.advance(dt: 0.1)
+            XCTAssertEqual(particles.liveCount, 1)
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 6 {
+                _ = expected.next()
+            }
+            func shapedWord() -> Float {
+                let u = Float(expected.next() >> 8) * 0x1p-24
+                return exponent == 1 ? u : u * u
+            }
+            let z = 3 + 8 * shapedWord(), y = 2 + 6 * shapedWord(), x = 1 + 4 * shapedWord()
+            let velocity = SIMD3(-y, x, z)
+            assertEqual(particles.velocity[0], velocity)
+            let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)
+            let packed = Support.floats(batch.vertices.bytes, at: 28, count: 3)
+            assertEqual(SIMD3(packed[0], packed[1], packed[2]), velocity)
+            XCTAssertEqual(particles.rng.next(), expected.next())
+        }
+    }
+
     /// Original case8 reads the previous GLOBAL interval, then the emitter basis. The instance's rate-scaled
     /// update interval differs here; literal axis expectations also distinguish local CP0, CP1 and world flags2.
     func testInheritedControlPointVelocityReachesBirthAndPackedTrailWithOneSharedDraw() throws {

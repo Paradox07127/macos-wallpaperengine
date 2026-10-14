@@ -39,7 +39,7 @@ enum WPEParityParticleInitializer: Equatable, Sendable {
     /// Colors as HSV (hue in turns); noise per HSV channel.
     case colorList(hsv: [SIMD3<Float>], noise: SIMD3<Float>)
     case alpha(min: Float, max: Float, exponent: Float)
-    case velocity(min: SIMD3<Float>, max: SIMD3<Float>)
+    case velocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case inheritControlPointVelocity(controlPoint: Int, min: Float, max: Float)
     case rotation(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
@@ -323,7 +323,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             initializer = .alpha(min: JSON.number(minimum) ?? 0.05, max: JSON.number(maximum) ?? 1, exponent: exponent)
         case "velocityrandom":
             let limit: SIMD3<Float> = is3D ? SIMD3(1, 1, 1) : SIMD3(32, 32, 0)
-            initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit)
+            initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit,
+                                    exponent: exponent)
         case "inheritcontrolpointvelocity":
             let point = Int(UInt32(truncatingIfNeeded: fields.integer("controlpoint", 0)))
             guard controlPoints.indices.contains(point) else {
