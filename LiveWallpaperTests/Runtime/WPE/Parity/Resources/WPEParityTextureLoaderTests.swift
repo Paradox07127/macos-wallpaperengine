@@ -398,6 +398,150 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
+    func testConditionalGroupsSelectRawPatchesAcrossMipsAndReachGPU() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let table: [(UInt32, UInt32, UInt32, String)] = [
+            (7, 9000, 0, #"{"condition":"enabled"}"#),
+            (7, 5, 0, #"{"condition":"enabled"}"#),
+            (9, 60000, 0, #"{"condition":{"name":"mode","condition":"ON"}}"#),
+        ]
+        let data = conditionalTex(format: 0, images: [[solid(4, 2, [10, 20, 30, 40]),
+                                                       solid(2, 1, [50, 60, 70, 80]), solid(1, 1, [90, 100, 110, 120])]],
+                                  table: table, records: [0: [
+                                      [ConditionalRecord(id: 5, x: 0, y: 0, width: 1, height: 1, bytes: Data([255, 0, 0, 255])),
+                                       ConditionalRecord(id: 9000, x: 1, y: 1, width: 2, height: 1, bytes: Data([100, 110, 120, 130, 140, 150, 160, 170]))],
+                                      [ConditionalRecord(id: 9000, x: 0, y: 0, width: 1, height: 1, bytes: Data([200, 210, 220, 230]), word: 37)],
+                                  ], 1: [[ConditionalRecord(id: 9000, x: 0, y: 0, width: 1, height: 1, bytes: Data([15, 25, 35, 45]))]]])
+        let metadata = try WPETexDecoder().extractRawMetadata(data: data).get()
+        XCTAssertEqual(metadata.bitmap.conditionalVariants.map(\.groupKey), [7, 7, 9])
+        XCTAssertEqual(metadata.bitmap.conditionalVariants.map(\.variantID), [9000, 5, 60000])
+        XCTAssertEqual(metadata.bitmap.conditionalRecords.map(\.leadingWord), [1, 1, 37, 1])
+        XCTAssertEqual(metadata.bitmap.conditionalRecords.map(\.mipIndex), [0, 0, 0, 1])
+        XCTAssertThrowsError(try load(data, device)) {
+            guard let failure = $0 as? WPEParityTextureLoader.Failure,
+                  case .unsupportedConditionalVariants = failure else {
+                return XCTFail("Unexpected no-context error: \($0)")
+            }
+        }
+        let properties: WPESceneJSONValue = .object(["enabled": .object(["value": .bool(true)]),
+                                                     "mode": .object(["value": .string("OFF")])])
+        let loaded = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device, userProperties: properties)
+        let values = try read(loaded.texture, levels: [0, 1, 2], device: device)
+        assertPixel(values[0], SIMD4(200, 210, 220, 230) / 255)
+        assertPixel(values[1], SIMD4(15, 25, 35, 45) / 255)
+        assertPixel(values[2], SIMD4(90, 100, 110, 120) / 255)
+        var copied = Data(count: 32)
+        copied.withUnsafeMutableBytes {
+            loaded.texture.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 2), mipmapLevel: 0)
+        }
+        XCTAssertEqual(copied, Data([200, 210, 220, 230, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40,
+                                     10, 20, 30, 40, 100, 110, 120, 130, 140, 150, 160, 170, 10, 20, 30, 40]))
+        XCTAssertEqual(loaded.conditionalSelection?.observations[Data("mode".utf8)], Data("$__default".utf8))
+        let numeric: WPESceneJSONValue = .object(["enabled": .object(["value": .number(1)])])
+        let base = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device, userProperties: numeric)
+        try assertPixel(read(base.texture, levels: [0], device: device)[0], SIMD4(10, 20, 30, 40) / 255)
+    }
+
+    func testConditionalReplacementPrefixAndPackedBlendReachGPUWithoutAlphaConversion() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let table: [(UInt32, UInt32, UInt32, String)] = [(1, 1, 2, #"{"condition":"on"}"#), (2, 2, 2, #"{"condition":"on"}"#)]
+        // Adjacent replacements: original trim keeps the predecessor and stops at it; ID 1 wins.
+        // Its deliberately irrelevant rectangle ensures full-size geometry does not decide replacement.
+        let packet = conditionalTex(format: 0, images: [[solid(1, 1, [10, 20, 30, 40])]], table: table,
+                                    records: [0: [[ConditionalRecord(id: 1, x: 999, y: 999, width: 0, height: 0, bytes: Data([70, 80, 90, 100])),
+                                                   ConditionalRecord(id: 2, x: 0, y: 0, width: 1, height: 1, bytes: Data([170, 180, 190, 200]))]]])
+        let properties: WPESceneJSONValue = .object(["on": .object(["value": .bool(true)])])
+        let replaced = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: packet), device: device, userProperties: properties)
+        try assertPixel(read(replaced.texture, levels: [0], device: device)[0], SIMD4(70, 80, 90, 100) / 255)
+        let blended = conditionalTex(format: 0, images: [[Mip(width: 4, height: 1,
+                                                              bytes: Data([200, 100, 50, 20, 200, 100, 50, 20, 200, 100, 50, 20, 200, 100, 50, 20]))]],
+        table: [(1, 55, 1, #"{"condition":"on"}"#)],
+        records: [0: [[ConditionalRecord(id: 55, x: 0, y: 0, width: 4, height: 1,
+                                         bytes: Data([20, 180, 250, 0, 20, 180, 250, 1, 20, 180, 250, 128, 20, 180, 250, 255]))]]])
+        let result = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: blended), device: device, userProperties: properties)
+        var bytes = Data(count: 16)
+        bytes.withUnsafeMutableBytes {
+            result.texture.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 1), mipmapLevel: 0)
+        }
+        // Independent signed per-channel floor(src-dst)*a/256 plus max-alpha; no /255 or premultiplication.
+        XCTAssertEqual(bytes, Data([200, 100, 50, 20, 199, 100, 50, 20, 110, 140, 150, 128, 20, 179, 249, 255]))
+        try assertPixel(read(result.texture, levels: [0], device: device)[0], SIMD4(200, 100, 50, 20) / 255)
+    }
+
+    func testConditionalRAndRGPatchChannelsAndFailureBoundaries() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let properties: WPESceneJSONValue = .object(["on": .object(["value": .bool(true)])])
+        for (code, base, patch, expected) in [
+            (UInt32(9), [UInt8(10)], [UInt8(73)], SIMD4<Float>(73.0 / 255, 0, 0, 1)),
+            (UInt32(8), [UInt8(10), 20], [UInt8(73), 149], SIMD4<Float>(73.0 / 255, 149.0 / 255, 0, 1)),
+        ] {
+            let packet = conditionalTex(format: code, images: [[solid(2, 1, base)]],
+                                        table: [(1, 8, 0, #"{"condition":"on"}"#), (2, 9, 1, #"{"condition":"on"}"#)],
+                                        records: [0: [[
+                                            ConditionalRecord(id: 8, x: 0, y: 0, width: 1, height: 1, bytes: Data(patch)),
+                                            // Non-RGBA flags1 and out-of-bounds patches are native no-ops, not decode errors.
+                                            ConditionalRecord(id: 9, x: 0, y: 0, width: 1, height: 1, bytes: Data()),
+                                            ConditionalRecord(id: 8, x: 2, y: 0, width: 1, height: 1, bytes: Data()),
+                                        ]]])
+            let loaded = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: packet), device: device, userProperties: properties)
+            XCTAssertEqual(loaded.texture.pixelFormat, code == 9 ? .r8Unorm : .rg8Unorm)
+            try assertPixel(read(loaded.texture, levels: [0], device: device)[0], expected)
+        }
+        let truncated = conditionalTex(format: 0, images: [[solid(1, 1, [10, 20, 30, 40])]],
+                                       table: [(1, 8, 0, #"{"condition":"on"}"#)],
+                                       records: [0: [[ConditionalRecord(id: 8, x: 0, y: 0, width: 1, height: 1, bytes: Data([1, 2]))]]])
+        XCTAssertThrowsError(try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: truncated), device: device, userProperties: properties))
+    }
+
+    private struct ConditionalRecord {
+        let id: UInt32
+        let x: UInt32
+        let y: UInt32
+        let width: UInt32
+        let height: UInt32
+        let bytes: Data
+        var word: UInt32 = 1
+    }
+
+    private func conditionalTex(format: UInt32, images: [[Mip]], table: [(UInt32, UInt32, UInt32, String)],
+                                records: [Int: [[ConditionalRecord]]]) -> Data {
+        let base = images[0][0]
+        var data = Data()
+        magic("TEXV0005", to: &data); magic("TEXI0001", to: &data)
+        for word in [format, 0, UInt32(base.width), UInt32(base.height), UInt32(base.width), UInt32(base.height), 0] {
+            append(word, to: &data)
+        }
+        magic("TEXB0004", to: &data)
+        append(UInt32(images.count), to: &data); append(.max, to: &data); append(UInt32(table.count), to: &data)
+        for (group, id, flags, condition) in table {
+            for word in [group, id, flags] {
+                append(word, to: &data)
+            }
+            data.append(contentsOf: condition.utf8); data.append(0)
+        }
+        for (imageIndex, levels) in images.enumerated() {
+            append(UInt32(levels.count), to: &data)
+            for (level, mip) in levels.enumerated() {
+                for word in [UInt32(mip.width), UInt32(mip.height), 0, UInt32(mip.bytes.count), UInt32(mip.bytes.count)] {
+                    append(word, to: &data)
+                }
+                data.append(mip.bytes)
+                let groups = records[imageIndex * 32 + level] ?? []
+                append(UInt32(groups.count), to: &data)
+                for group in groups {
+                    append(UInt32(group.count), to: &data)
+                    for record in group {
+                        for word in [record.word, record.id, record.x, record.y, record.width, record.height, UInt32.max, UInt32(record.bytes.count)] {
+                            append(word, to: &data)
+                        }
+                        data.append(record.bytes)
+                    }
+                }
+            }
+        }
+        return data
+    }
+
     private func solid(_ width: Int, _ height: Int, _ pixel: [UInt8]) -> Mip {
         Mip(width: width, height: height, bytes: Data((0 ..< width * height).flatMap { _ in pixel }))
     }
