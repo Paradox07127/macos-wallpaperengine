@@ -1,5 +1,9 @@
 #if !LITE_BUILD && DEBUG
+import CoreGraphics
+import CryptoKit
+import Darwin
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
@@ -599,6 +603,218 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try assertPixels(readBack(outputs[2], device: device, queue: queue), equal: Self.texels)
     }
 
+    /// Exercises the caller's bindings defer, rather than injecting a throw into GraphExecutor's visitor.
+    /// A valid authored volume loads first; an actual uploaded media image then fails the real 3D sampler check.
+    @MainActor
+    func testRendererCarriesCommittedPrefixBindingsAfterMediaDimensionFailure() async throws {
+        let harness = try makeHarness()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-caller-prefix-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let environment = ProcessInfo.processInfo.environment
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let engine = environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        for (file, expected) in [
+            ("ccsimple.frag", "0cb10ceff0b7fe6e14576928ee09e4d2fed7fb405dc6ff38d94970687e46ed3b"),
+            ("ccsimple.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
+            ("passthrough.frag", "db8586701eeda50c731af880411451be673180049ede8def28932d7180052109"),
+            ("passthrough.vert", "ff6cd2bb166ce427c73058f3f77f338442d83fab9883f302e31bbffd81fa5317"),
+        ] {
+            let bytes = try Data(contentsOf: engine.appending(path: "shaders/\(file)"))
+            let actual = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            _ = try XCTUnwrap(actual == expected ? true : nil, "Required original shader identity: \(file)")
+        }
+        func write(_ path: String, _ data: Data) throws {
+            let url = directory.appending(path: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+        }
+        func json(_ path: String, _ value: [String: Any]) throws {
+            try write(path, JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
+        }
+        try write("materials/input/black.tex", callerTexture(volume: false))
+        try write("materials/input/volume.tex", callerTexture(volume: true))
+        try json("models/history.json", ["material": "materials/albedo.json"])
+        try json("models/late.json", ["material": "materials/albedo.json"])
+        try json("materials/albedo.json", ["passes": [[
+            "shader": "passthrough", "textures": ["input/black"], "blending": "normal",
+            "depthtest": "disabled", "depthwrite": "disabled", "cullmode": "nocull",
+        ]]])
+        try json("effects/history.json", [
+            "fbos": ["A", "B", "O"].map { ["name": $0, "format": "rgba8888", "unique": true, "width": 4, "height": 4] as [String: Any] },
+            "passes": [["command": "copy", "source": "A", "target": "O"],
+                       ["command": "swap", "source": "A", "target": "B"]],
+        ])
+        try json("effects/late.json", ["passes": [["material": "materials/late.json"]]])
+        try json("materials/late.json", ["passes": [[
+            "shader": "ccsimple", "combos": ["LUT": 1, "COL": 0],
+            "textures": ["previous", "input/volume"],
+            "usertextures": [NSNull(), ["name": "$mediaThumbnail", "type": "system"]],
+            "blending": "normal", "depthtest": "disabled", "depthwrite": "disabled", "cullmode": "nocull",
+        ]]])
+        let scene: [String: Any] = [
+            "camera": ["eye": "0 0 1", "center": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 4, "height": 4], "bloom": false, "hdr": false],
+            "objects": [
+                ["id": 1, "name": "history", "image": "models/history.json", "size": "4 4", "origin": "2 2 0",
+                 "effects": [["id": 7, "file": "effects/history.json"]]],
+                ["id": 2, "name": "late", "image": "models/late.json", "size": "4 4", "origin": "2 2 0",
+                 "effects": [["id": 8, "file": "effects/late.json"]]],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
+        let plan = try WPEParityFramePlan(document: document,
+                                          assets: .init(sceneDirectory: directory, assetRoots: [engine]),
+                                          settings: .init(bloom: false), width: 4, height: 4)
+        _ = try XCTUnwrap(plan.skipped.isEmpty ? true : nil, "All real caller programs must prepare: \(plan.skipped)")
+        let late = try XCTUnwrap(plan.layout.programs.first { $0.value.shader == "ccsimple" }?.key)
+        let swap = try XCTUnwrap(plan.layout.frames[0].operations.firstIndex {
+            if case .swapResources = $0.kind {
+                true
+            } else {
+                false
+            }
+        })
+        XCTAssertLessThan(swap, late, "The real failure must be after the history swap")
+        let compiler: WPEParityHelperShaderCompiler
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
+        if keys.contains(where: { environment[$0] != nil }) {
+            let urls = try keys.map { key in
+                try URL(fileURLWithPath: XCTUnwrap(environment[key].flatMap { $0.isEmpty ? nil : $0 },
+                                                   "Required current source-built toolchain path: \(key)"))
+            }
+            compiler = try WPEParityHelperShaderCompiler(helper: urls[0], dxcompiler: urls[1], metalIRConverter: urls[2],
+                                                         workDirectory: directory.appending(path: "shaderc"))
+        } else {
+            compiler = try WPEParityShaderToolchain.makeCompiler().get()
+        }
+        print("caller prefix compilerIdentity=\(compiler.compilerIdentity)")
+        let store = WPEParityShaderStore(compiler: compiler,
+                                         diskCache: WPEParityShaderDiskCache(cachesURL: directory.appending(path: "cache")))
+        let renderer = try await WPEParityFrameRenderer(
+            plan: plan, device: harness.device, queue: harness.queue,
+            shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1)
+        )
+        @MainActor func complete(_ command: MTLCommandBuffer) async throws {
+            let deadline = Date().addingTimeInterval(10)
+            while command.status != .completed, command.status != .error, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            _ = try XCTUnwrap(command.status == .completed && command.error == nil ? true : nil,
+                              "Required caller GPU completion: \(String(describing: command.error))")
+        }
+        @MainActor func submitCaller() async throws {
+            guard case let .committed(command) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+                XCTFail("Required caller frame was skipped")
+                throw WPEParityExecutionError.arenaExhausted
+            }
+            try await complete(command)
+        }
+        _ = try XCTUnwrap(renderer.skipped.isEmpty && renderer.fallbackTextures.isEmpty ? true : nil,
+                          "Required caller draws: \(renderer.skipped), fallback: \(renderer.fallbackTextures)")
+        let (a, b, output) = try (XCTUnwrap(renderer.targets["A_7"]), XCTUnwrap(renderer.targets["B_7"]),
+                                  XCTUnwrap(renderer.targets["O_7"]))
+        try seedHistory(harness, a: a, b: b, first: .init(red: 1, green: 0, blue: 0, alpha: 1),
+                        second: .init(red: 0, green: 1, blue: 0, alpha: 1))
+        let source = CallerMediaSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        defer { dispatcher.stop() }
+        XCTAssertTrue(dispatcher.mailbox.beginParityGeneration(1))
+        XCTAssertTrue(dispatcher.configureParity(generation: 1, device: harness.device, textureDemand: true, onChange: {}))
+        renderer.attachMedia(dispatcher.mailbox, generation: 1)
+        try await submitCaller() // copy red, then A->physical B / B->physical A.
+        try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
+        let originalVolume = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == late }?.draw.textures["g_Texture1"])
+        XCTAssertEqual(originalVolume.textureType, .type3D)
+
+        try source.push(artwork: callerArtwork())
+        var caught: (any Error)?
+        do {
+            _ = try renderer.encodeFrame(elapsed: 1.0 / 60)
+            XCTFail("The real 2D media -> 3D LUT validation did not throw")
+        } catch {
+            caught = error
+        }
+        XCTAssertEqual(try XCTUnwrap(caught as? WPEParityExecutionError),
+                       .textureDimensionMismatch("g_Texture1", expected: "3d", actual: MTLTextureType.type2D.rawValue))
+        let media = try XCTUnwrap(renderer.mediaTextures?.current)
+        XCTAssertEqual(media.textureType, .type2D)
+        let failedDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == late }?.draw)
+        XCTAssertTrue(failedDraw.textures["g_Texture1"] === media, "The actual late emit must receive the uploaded image")
+
+        // The throwing caller returns no CB. A real same-queue blit is a marker behind its committed prefix.
+        // Green O, rather than its previous red, proves the prefix copy ran before the throw was reported.
+        let bytes = try XCTUnwrap(harness.device.makeBuffer(length: 4 * 4 * 4, options: .storageModeShared))
+        let marker = try XCTUnwrap(harness.queue.makeCommandBuffer())
+        marker.label = "caller.prefix.commit.marker"
+        let blit = try XCTUnwrap(marker.makeBlitCommandEncoder())
+        blit.copy(from: output, sourceSlice: 0, sourceLevel: 0, sourceOrigin: .init(x: 0, y: 0, z: 0),
+                  sourceSize: .init(width: 4, height: 4, depth: 1), to: bytes,
+                  destinationOffset: 0, destinationBytesPerRow: 16, destinationBytesPerImage: 64)
+        blit.endEncoding()
+        marker.commit()
+        try await complete(marker)
+        XCTAssertEqual(marker.status, .completed)
+        XCTAssertNil(marker.error)
+        try assertEvery(Array(UnsafeRawBufferPointer(start: bytes.contents(), count: 64)), equals: [0, 255, 0, 255])
+
+        // Normal visibility hides only the failed layer. Its media snapshot remains installed; no gap policy is invented.
+        XCTAssertTrue(renderer.state.set(.visible, of: "2", to: .zero))
+        try await submitCaller()
+        try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
+        XCTAssertFalse(renderer.lastFrameDraws.contains { $0.draw.textures["g_Texture1"] === media })
+        try await submitCaller()
+        try assertEvery(readBack(harness, output), equals: [0, 255, 0, 255])
+        try assertEvery(readBack(harness, a), equals: [255, 0, 0, 255])
+        try assertEvery(readBack(harness, b), equals: [0, 255, 0, 255])
+    }
+
+    private func callerTexture(volume: Bool) -> Data {
+        var pixels: [UInt8] = []
+        for index in 0 ..< (volume ? 8 : 4) {
+            if volume {
+                let red = UInt8((index >> 2) * 255)
+                let green = UInt8((index & 1) * 255)
+                let blue = UInt8(((index >> 1) & 1) * 255)
+                pixels.append(contentsOf: [red, green, blue, 255])
+            } else {
+                pixels.append(contentsOf: [0, 0, 0, 255])
+            }
+        }
+        var data = Data()
+        func magic(_ value: String) {
+            data.append(contentsOf: value.utf8); data.append(0)
+        }
+        func words(_ values: [UInt32]) {
+            for number in values {
+                var value = number.littleEndian
+                withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
+            }
+        }
+        magic("TEXV0005"); magic("TEXI0001")
+        words(volume ? [0, 0x42, 2, 2, 2, 2, 2, 0] : [0, 2, 2, 2, 2, 2, 0])
+        magic("TEXB0003")
+        words(volume ? [1, .max, 1, 2, 2, 2, 0, UInt32(pixels.count), UInt32(pixels.count)]
+            : [1, .max, 1, 2, 2, 0, UInt32(pixels.count), UInt32(pixels.count)])
+        data.append(contentsOf: pixels)
+        return data
+    }
+
+    private func callerArtwork() throws -> Data {
+        let pixel = Data([UInt8(128), 64, 192, 255])
+        let provider = try XCTUnwrap(CGDataProvider(data: pixel as CFData))
+        let image = try XCTUnwrap(CGImage(width: 1, height: 1, bitsPerComponent: 8, bitsPerPixel: 32,
+                                          bytesPerRow: 4, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
+                                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let output = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        _ = try XCTUnwrap(CGImageDestinationFinalize(destination) ? true : nil, "Required real media PNG")
+        return output as Data
+    }
+
     // MARK: Graph builders
 
     private struct UnavailableCompiler: WPEParityShaderCompiling {
@@ -874,6 +1090,26 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     private func assertEvery(_ output: [UInt8], equals pixel: [UInt8], line: UInt = #line) {
         assertPixels(output, equal: (0 ..< output.count / 4).flatMap { _ in pixel }, line: line)
+    }
+}
+
+/// Only the external now-playing input is controlled; upload, immutable packet and validation are production code.
+@MainActor
+private final class CallerMediaSource: WPENowPlayingEventSource {
+    private var handlers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
+    func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
+        handlers[id] = handler
+        handler(0, .init(phase: .awaitingFirstEvent, title: ""))
+    }
+
+    func unsubscribe(id: UUID) {
+        handlers[id] = nil
+    }
+
+    func push(artwork: Data) {
+        for handler in handlers.values {
+            handler(1, .init(phase: .paused, title: "Caller prefix", artwork: artwork))
+        }
     }
 }
 #endif
