@@ -325,11 +325,13 @@ final class WPEParityFrameRenderer {
             guard !requested.isEmpty else { return }
             let scope = WPEResourceBindingScope.effect(objectID: key.objectID, effectID: key.effectID)
             let bound = try WPEParityGraphExecutor.scopedTextures(targets, bindings: resourceBindings, scope: scope)
+            guard let resources = plan.materialFunctionResources(key, names: requested.map(\.name),
+                                                                  texts: planner.texts) else {
+                throw WPEParityGraphExecutionError.missingTexture(WPEResourceID(key.effectID))
+            }
             var accepted: [MaterialClear] = []
-            for target in requested {
-                guard let logical = plan.materialFunctionResource(key, name: target.name, texts: planner.texts) else {
-                    throw WPEParityGraphExecutionError.missingTexture(WPEResourceID(target.name))
-                }
+            accepted.reserveCapacity(requested.count)
+            for (target, logical) in zip(requested, resources) {
                 guard let texture = bound[logical] else {
                     throw WPEParityGraphExecutionError.missingTexture(logical)
                 }
