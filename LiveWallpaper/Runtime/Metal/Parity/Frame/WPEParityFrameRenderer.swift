@@ -192,6 +192,7 @@ final class WPEParityFrameRenderer {
         let texture: MTLTexture
         let color: WPEClearColor
     }
+
     /// Calls retain the actual texture version and order until its clear has been encoded on a committed buffer.
     private var materialClears: [MaterialClear] = []
     private(set) var materialFunctionFailure: (any Error)?
@@ -336,7 +337,7 @@ final class WPEParityFrameRenderer {
             let scope = WPEResourceBindingScope.effect(objectID: key.objectID, effectID: key.effectID)
             let bound = try WPEParityGraphExecutor.scopedTextures(targets, bindings: resourceBindings, scope: scope)
             guard let resources = plan.materialFunctionResources(key, names: requested.map(\.name),
-                                                                  texts: planner.texts) else {
+                                                                 texts: planner.texts) else {
                 throw WPEParityGraphExecutionError.missingTexture(WPEResourceID(key.effectID))
             }
             var accepted: [MaterialClear] = []
@@ -420,9 +421,9 @@ final class WPEParityFrameRenderer {
                                  userPropertiesJSON: String = "{}") async throws {
         let factory = WPEParityPipelineFactory(device: device)
         let encoder = WPEParityDrawEncoder(factory: factory)
-        var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan,
-                                                preservingVideoImages: previous?.planner.videoImages ?? [:],
-                                                userProperties: try Self.propertySnapshot(userPropertiesJSON))
+        var planner = try WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan,
+                                                    preservingVideoImages: previous?.planner.videoImages ?? [:],
+                                                    userProperties: Self.propertySnapshot(userPropertiesJSON))
         // Disabled effects' programs too, so a toggle compiles nothing (R24 Q3).
         let artifacts = await withTaskGroup(
             of: (WPEHLSLProgram, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self
@@ -595,7 +596,7 @@ final class WPEParityFrameRenderer {
             for object in plan.document.resolvedObjectsJSON {
                 guard case .string? = object["camera"],
                       let queue = try WPEParityCameraQueue(object: object, assets: plan.scene.assets,
-                                                          randomInteger: { sceneRNG.integer($0, $1) })
+                                                           randomInteger: { sceneRNG.integer($0, $1) })
                 else { continue }
                 queues[queue.objectID] = queue
             }
@@ -823,7 +824,9 @@ final class WPEParityFrameRenderer {
                                                state: state, generalZoom: generalZoom)
             if let queue = cameraQueues[active], queue.selectedIndex != nil {
                 selected.zoom = generalZoom * (queue.selectedZoom ?? 1)
-                if selected.scenePerspective != nil { selected.scenePerspective?.fov = queue.selectedFOV ?? 50 }
+                if selected.scenePerspective != nil {
+                    selected.scenePerspective?.fov = queue.selectedFOV ?? 50
+                }
             }
         } else {
             cameraPose = cameraPaths.advance(dt: dt)
@@ -853,8 +856,8 @@ final class WPEParityFrameRenderer {
             } else if particles.scene.liveCount(id) != nil {
                 let frame = state.isVisible(id)
                     ? WPEParityParticleFrameContext(time: clock.timeUniform, cursor: pointer.position,
-                                                   viewProjection: viewProjection, objectMatrix: layers.world(id),
-                                                   timeOfDay: timeOfDay) : nil
+                                                    viewProjection: viewProjection, objectMatrix: layers.world(id),
+                                                    timeOfDay: timeOfDay, previousFrametime: clock.previousFrametime) : nil
                 particles.scene.advance(objectID: id, dt: clock.frametime, frame: frame)
             }
         }
@@ -1036,7 +1039,7 @@ final class WPEParityFrameRenderer {
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera.shaken(time: clock.timeUniform)
-        clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused)
+        guard clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused) else { return .skipped }
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)

@@ -44,6 +44,47 @@ final class WPEParityScriptWiringTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// A fully held native pause skips object/script/render updates, retaining the last published intervals.
+    func testHeldPauseStopsScriptWritesAndGPUFramesUntilResume() async throws {
+        let fixture: Fixture
+        do {
+            fixture = try await makeFixture("3815666789") { json in
+                Self.edit(&json, object: 17) {
+                    $0["alpha"] = ["value": 1, "script": String(format: Self.counter, "n")]
+                }
+            }
+        } catch {
+            throw NSError(domain: "NativePause.RequiredFixture", code: 1, userInfo: [NSUnderlyingErrorKey: error])
+        }
+        let script = try attachScript(fixture)
+        let operation = try XCTUnwrap(Self.operation(fixture.plan, object: "17") { $0.fillsComposite })
+        var held = false
+        try await encode(fixture.renderer)
+        for _ in 0 ..< 20 {
+            switch try fixture.renderer.encodeFrame(elapsed: 0.25, paused: true) {
+            case let .committed(command):
+                await command.completed()
+                XCTAssertNil(command.error)
+            case .skipped:
+                held = true
+            }
+            if held {
+                break
+            }
+        }
+        XCTAssertTrue(held, "the pause ramp must eventually hold")
+        let alpha = try XCTUnwrap(Self.float(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw.constants[.fragment]?["g_Alpha"]))
+        for _ in 0 ..< 3 {
+            guard case .skipped = try fixture.renderer.encodeFrame(elapsed: 0.25, paused: true) else {
+                return XCTFail("a held pause must not submit GPU work")
+            }
+        }
+        try await encode(fixture.renderer)
+        let resumed = try XCTUnwrap(Self.float(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw.constants[.fragment]?["g_Alpha"]))
+        XCTAssertEqual(resumed, alpha + 1, "held frames must not execute the script counter")
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testScriptCameraFovShowsOneFrameLater() async throws {
         let fixture = try await makeFixture("3815666789") { json in
             // Object fov controls the perspective scene, not an ortho layer's perspectiveoverridefov.

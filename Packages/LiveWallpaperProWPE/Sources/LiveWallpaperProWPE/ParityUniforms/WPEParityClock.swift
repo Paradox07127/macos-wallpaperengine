@@ -7,8 +7,13 @@ public struct WPEParityClock: Sendable {
     public static let rampSnap: Float = 0.01
 
     public private(set) var frametime: Float = 0
+    /// Renderer +0x160: construction seeds 1/30; an ordinary update copies the prior +0x15c publication here.
+    public private(set) var previousFrametime: Float = .init(bitPattern: 0x3D08_8889)
     /// Public scene time is the renderer's binary32 publication (+0x140), widened for existing consumers.
-    public var time: Double { Double(timeUniform) }
+    public var time: Double {
+        Double(timeUniform)
+    }
+
     /// Renderer +0x148 retains the binary64 sum independently of the published shader/script time.
     private var accumulatedTime: Double = 0
     public private(set) var pauseRamp: Float = 1
@@ -35,10 +40,10 @@ public struct WPEParityClock: Sendable {
             pauseRamp = target
         }
         if paused, pauseRamp <= 0 {
-            // [I] WPE skips the frame and uploads no g_Frametime; a held clock advances nothing.
-            frametime = 0
+            // 110630 skips 17fa70 entirely, so both published intervals hold until the next ordinary update.
             return false
         }
+        previousFrametime = frametime
         frametime = Self.clampStep(Self.rate(percent: ratePercent) * pauseRamp * step)
         // 14017fcaf–14017fce5: widen the binary32 step, add/store binary64, then publish binary32.
         accumulatedTime += Double(frametime)
