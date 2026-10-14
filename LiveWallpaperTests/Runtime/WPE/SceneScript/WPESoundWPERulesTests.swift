@@ -183,6 +183,33 @@ struct WPESoundWPERulesTests {
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 4)
     }
 
+    @Test("New random bounds affect the next wait without restarting the current one")
+    func changingRandomBoundsAffectsNextPlayOnly() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        runtime.setRandomDelay(minTime: 2, maxTime: 2, forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 1)
+        runtime.setMuted(false)
+        runtime.advance(by: 1)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2)
+
+        // Missing fields keep the last authored/observed value rather than resetting it to zero.
+        runtime.setRandomDelay(minTime: 3, maxTime: nil, forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2)
+        runtime.advance(by: 2)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        let next = try #require(runtime.debugTrackSnapshots().first?.pendingDelay)
+        #expect((2 ... 3).contains(next))
+        runtime.setRandomDelay(minTime: nil, maxTime: nil, forSoundID: "missing-owner")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == next)
+    }
+
     @Test("Master volume 0 pauses WPE playback and a later volume resumes it")
     func zeroAppVolumePausesPlayback() throws {
         let root = try Self.makeRoot(files: ["a.wav"])

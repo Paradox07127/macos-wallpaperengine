@@ -343,6 +343,17 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
+    /// Native PlayNext reads +2f4/+2f8 when scheduling the next random play (1401f5980).
+    /// A missing script field keeps the last authored/observed bound, and a pending wait keeps its deadline.
+    func setRandomDelay(minTime: Double?, maxTime: Double?, forSoundID id: String) {
+        guard rules == .wpe else { return }
+        state.withLock { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
+            if let minTime { state.tracks[index].randomDelay.minTime = minTime }
+            if let maxTime { state.tracks[index].randomDelay.maxTime = maxTime }
+        }
+    }
+
     /// Performance suspend: pause engine, retain scheduled files for resume.
     func pause() {
         state.withLock { state in
