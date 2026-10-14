@@ -166,10 +166,15 @@ final class ParityScriptEngineTests: XCTestCase {
     func testLayerCountIndexAndDeferredDestroy() throws {
         var scene = try Self.scene([
             Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            let requested = false;
             export function update(value) {
-                if (engine.runtime > 0.02) return value;
+                if (requested) return value;
+                requested = true;
                 const before = thisScene.getLayerCount();
+                if (thisScene.getLayerIndex('B') !== 1) throw Error('live name index before request');
                 thisScene.destroyLayer(thisScene.getLayer('B'));
+                if (thisScene.getLayer('B') !== null || thisScene.getInitialLayerConfig('B') !== null)
+                    throw Error('pending name must miss before flush');
                 thisLayer.color = new Vec3(before, thisScene.getLayerCount(), thisScene.getLayerIndex({}));
                 thisLayer.brightness = thisScene.getLayerIndex(thisScene.getLayer('B'));
                 return value;
@@ -180,16 +185,18 @@ final class ParityScriptEngineTests: XCTestCase {
             export function update(value) { return thisScene.getLayerCount(); }
             """)]),
         ], configure: { configuration in
-            configuration.destroyLayer = { _, _ in true }
+            configuration.destroyLayer = { id, state in state.removeObject(id) }
         })
         scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(3, 2, -1))
-        XCTAssertEqual(scene.state.object("1")?.brightness, 1)
+        XCTAssertEqual(scene.state.object("1")?.brightness, -1)
         XCTAssertEqual(scene.state.object("3")?.alpha, 2)
+        XCTAssertNil(scene.state.object("2"))
         XCTAssertEqual(scene.engine.destroyedObjectIDs, ["2"])
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("3")?.alpha, 2)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
     /// A JS-only facade cannot count as a created product layer: resources/state must be provided synchronously.
@@ -1023,7 +1030,11 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 0, 1))
         XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(2, -1, 1))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
-        XCTAssertEqual(diagnostics.count, 4, "unsupported arguments must be observable without fabricating a wrapper")
+        XCTAssertEqual(diagnostics.filter { $0.contains("scene layer ID parsing is unsupported") }.count, 1)
+        XCTAssertEqual(diagnostics.filter { $0.contains("getLayerByID is unsupported for a non-string ID") }.count, 1)
+        XCTAssertEqual(diagnostics.filter { $0.contains("getLayerByID found no exact ID") }.count, 1)
+        XCTAssertFalse(diagnostics.contains { $0.contains("getLayerIndex") },
+                       "invalid wrapper misses use the shared resolver; they are not unverified ID parsing")
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
@@ -1096,7 +1107,8 @@ final class ParityScriptEngineTests: XCTestCase {
         scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("2")?.color, SIMD3(42, 1, 0))
         XCTAssertEqual(scene.state.object("2")?.brightness, 7)
-        XCTAssertEqual(diagnostics.count, 5, "the five measured non-number cases keep the existing bounded diagnostic path")
+        XCTAssertTrue(diagnostics.isEmpty,
+                      "non-number misses follow the shared resolver without numeric conversion or unsupported warnings")
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 

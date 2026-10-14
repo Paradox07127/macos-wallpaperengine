@@ -38,6 +38,8 @@ public struct WPEParitySceneState: Sendable {
         public var brightness: Float
         /// The object's own bit; `isVisible` also reads every ancestor's.
         public var visible: Bool
+        /// Stable descriptor slots survive removal; the object no longer participates in the live scene.
+        public fileprivate(set) var alive = true
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
@@ -125,6 +127,8 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var transformGeneration = 0
     /// Bumped by every visible change.
     public private(set) var visibilityGeneration = 0
+    /// Common-scene membership changes require composition again, independently of visibility.
+    public private(set) var membershipGeneration = 0
     /// Every image layer effect in scene order, then every text layer effect.
     public let effects: [EffectKey]
     /// The visible bit of each entry of `effects` (effect+0x118 bit0, R24 Q2).
@@ -244,11 +248,27 @@ public struct WPEParitySceneState: Sendable {
     }
 
     public func index(of id: String) -> Int? {
-        indexByID[id]
+        indexByID[id].flatMap { objects[$0].alive ? $0 : nil }
     }
 
     public func object(_ id: String) -> Object? {
-        indexByID[id].map { objects[$0] }
+        index(of: id).map { objects[$0] }
+    }
+
+    /// Unmodelled IDs keep their previous admission; known removed objects never re-enter a later layout.
+    public func isAlive(_ id: String) -> Bool {
+        indexByID[id].map { objects[$0].alive } ?? true
+    }
+
+    /// Removes membership without shifting slots already held by compiled draws and descriptor bindings.
+    /// Resource owners consume the new membership at the native post-update composition boundary.
+    @discardableResult
+    public mutating func removeObject(_ id: String) -> Bool {
+        guard let index = index(of: id) else { return false }
+        objects[index].alive = false
+        scriptFields = scriptFields.filter { $0.key.objectID != id }
+        membershipGeneration += 1
+        return true
     }
 
     /// The property's components in the leading lanes; `visible` reads 1 or 0.
@@ -269,12 +289,13 @@ public struct WPEParitySceneState: Sendable {
     /// unknown object.
     @discardableResult
     public mutating func set(_ property: Property, of id: String, to value: SIMD4<Float>) -> Bool {
-        guard let index = indexByID[id] else { return false }
+        guard let index = index(of: id) else { return false }
         set(property, at: index, to: value)
         return true
     }
 
     public mutating func set(_ property: Property, at index: Int, to value: SIMD4<Float>) {
+        guard objects[index].alive else { return }
         let xyz = SIMD3(value.x, value.y, value.z)
         switch property {
         case .origin where objects[index].origin != xyz:
@@ -312,7 +333,7 @@ public struct WPEParitySceneState: Sendable {
         var current: Int? = index
         var steps = 0
         while let object = current, steps <= objects.count {
-            if !objects[object].visible {
+            if !objects[object].alive || !objects[object].visible {
                 return false
             }
             current = parents[object]
@@ -369,6 +390,7 @@ public struct WPEParitySceneState: Sendable {
     /// A changed value bumps `generation(invalidation)`.
     public mutating func setScriptField(_ name: String, of objectID: String, to value: ScriptValue,
                                         invalidating invalidation: Invalidation) {
+        guard objectID.isEmpty || isAlive(objectID) else { return }
         let key = ScriptFieldKey(objectID: objectID, name: name)
         guard scriptFields[key] != value else { return }
         scriptFields[key] = value

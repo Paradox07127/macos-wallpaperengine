@@ -74,6 +74,8 @@ public final class WPEParityScriptEngine {
         public var createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)?
         /// Called at the deferred deletion phase, after that layer's destroy events.
         public var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
+        /// Product admission for classes whose resource consumer can currently remove them.
+        public var canDestroyLayer: ((String) -> Bool)?
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
         public var pauseVideoTexture: ((String) -> Bool)?
@@ -89,6 +91,7 @@ public final class WPEParityScriptEngine {
                     propertyOverrides: [WPEParityScriptProperty] = [], storage: Storage? = nil,
                     createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
                     destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
+                    canDestroyLayer: ((String) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
                     pauseVideoTexture: ((String) -> Bool)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
@@ -105,6 +108,7 @@ public final class WPEParityScriptEngine {
             self.storage = storage
             self.createLayer = createLayer
             self.destroyLayer = destroyLayer
+            self.canDestroyLayer = canDestroyLayer
             self.sortLayer = sortLayer
             self.pauseVideoTexture = pauseVideoTexture
             self.log = log
@@ -356,9 +360,17 @@ public final class WPEParityScriptEngine {
     }
 
     /// The user-property path after the descriptor bindings (1401731d0.c:238-840): engine.userProperties takes
-    /// `mergedJSON`, bound scriptproperties take the changed values, then event 4 carries `changedJSON`.
+    /// `mergedJSON`, bound scriptproperties take the changed values, then event 4 projects only typed entries.
     public func applyUserProperties(changedJSON: String, mergedJSON: String, state: inout WPEParitySceneState) {
         let changed = (try? JSONSerialization.jsonObject(with: Data(changedJSON.utf8))) as? [String: Any] ?? [:]
+        // 1401731d0 requires both members. System thumbnail changes deliberately have only `value`;
+        // they still reach the merged engine properties and bound observers before the media callback.
+        let typed = changed.filter { _, entry in
+            guard let property = entry as? [String: Any] else { return false }
+            return property["value"] != nil && property["type"] != nil
+        }
+        let eventJSON = (try? JSONSerialization.data(withJSONObject: typed, options: .sortedKeys))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         run(state: &state) {
             host.invokeMethod("setUserProperties", withArguments: [mergedJSON])
             for binding in bindings where binding.script >= 0 {
@@ -375,7 +387,7 @@ public final class WPEParityScriptEngine {
             }
             count(.applyUserProperties)
             host.invokeMethod("dispatch", withArguments: [WPEParityScriptEvent.applyUserProperties.rawValue, -1,
-                                                          changedJSON])
+                                                          eventJSON])
         }
     }
 
@@ -493,6 +505,7 @@ public final class WPEParityScriptEngine {
         let base = floats + index * 4
         let value = SIMD4(base[0], base[1], base[2], base[3])
         let layer = slot.layer >= 0 ? layers[Int(slot.layer)] : nil
+        guard layer.map({ state.isAlive($0.id) }) ?? true else { return }
         switch descriptor.target {
         case let .object(property):
             if let id = layer?.id, let stateIndex = state.index(of: id) {
@@ -790,8 +803,13 @@ public final class WPEParityScriptEngine {
             self?.configuration.openUserShortcut(name) ?? false
         }
         let canDestroy: @convention(block) (Double) -> Bool = { [weak self] index in
-            guard let self else { return false }
-            return Self.checkedLayerIndex(index, count: layers.count) != nil && configuration.destroyLayer != nil
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
+                  configuration.destroyLayer != nil else { return false }
+            let admitted = configuration.canDestroyLayer?(layers[index].id) ?? true
+            if !admitted {
+                configuration.log(1, "destroyLayer is unsupported for this product resource consumer")
+            }
+            return admitted
         }
         let destroyed: @convention(block) (Double) -> Bool = { [weak self] index in
             guard let self, let index = Self.checkedLayerIndex(index, count: layers.count), let state = activeState,

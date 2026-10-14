@@ -2,6 +2,22 @@ import LiveWallpaperProWPE
 import Testing
 
 struct ParityPostProcessTests {
+    @Test func nativeMipCountUsesTheSmallerCeilingExtentAndIncludesBase() throws {
+        // Independent original d2c60/d3500 instruction oracles; no production count helper computes them.
+        for (width, height, count) in [(2, 2, 1), (16, 16, 1), (32, 32, 2), (64, 64, 3),
+                                       (128, 96, 4), (384, 256, 5), (513, 385, 6), (1024, 16, 1)] {
+            let config = WPEParityPostProcessConfig(sceneMipMappedFrameBufferEnabled: true,
+                                                    qualityMipMappedFrameBufferEnabled: true,
+                                                    backbufferWidth: width, backbufferHeight: height)
+            let frame = WPEParityPostProcessBuilder.build(config)
+            let history = try #require(frame.resources.first { $0.id == "_rt_MipMappedFrameBuffer" })
+            #expect(history.mipCount == count)
+            #expect(history.width == width && history.height == height)
+            #expect(history.sampleCount == 1)
+            try verifyCompilation(frame)
+        }
+    }
+
     @Test func ldrBloomMatchesListB() throws {
         var config = bloomConfig()
         config.colorCorrectionEnabled = true
@@ -135,7 +151,7 @@ struct ParityPostProcessTests {
             : mipSequence + ["copy backbuffer -> _rt_FullFrameBuffer", "draw combine_srgb [_rt_FullFrameBuffer] normal"]
         #expect(sequence(frame) == expected + ["present backbuffer"])
         let mip = try #require(frame.resources.first { $0.id == "_rt_MipMappedFrameBuffer" })
-        #expect(mip.width == 3840 && mip.height == 2160 && mip.mipCount == 12)
+        #expect(mip.width == 3840 && mip.height == 2160 && mip.mipCount == 9)
         #expect(mip.format == config.backbufferFormat && mip.lifetime == .pooled)
         try verifyCompilation(frame)
     }

@@ -12,6 +12,87 @@ import XCTest
 /// Reuses the real Driver fixture/compiler/present/readback. The controlled fragment really samples the named
 /// mip texture; expected RGB comes from authored primary colours and the native pre-bloom copy order.
 extension WPEParitySceneDriverTests {
+    /// Fixed independent oracles from original d2c60/d3500: min ceiling exponent minus3, includes base.
+    @objc func testNativeMipCountReachesAllocationUniformsAndExplicitLODClamp() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let (baseAssets, compiler) = try requiredMipInputs()
+        try await withMipNativeScale {
+            for (width, height, count) in [(16, 16, 1), (32, 32, 2), (64, 64, 3), (128, 96, 4),
+                                           (384, 256, 5), (513, 385, 6), (1024, 16, 1)] {
+                let suite = try TestScratch.defaultsSuite(prefix: "WPEParityNativeMipCount")
+                defer { suite.discard() }
+                suite.defaults.set(false, forKey: "loomscreen.wallpapers.parityMipMappedFrameBufferQuality.v1")
+                let settings = try mipProductSettings(device: device, defaults: suite.defaults)
+                let (document, assets) = try mipDocument(baseAssets: baseAssets, explicit: true, sampleLOD: 99)
+                let driver = try WPEParitySceneDriver(device: device)
+                defer { driver.cleanup() }
+                let size = CGSize(width: width, height: height)
+                try await driver.load(document: document, assets: assets, settings: settings, drawableSize: size,
+                                      pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                                      diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+                let renderer = try XCTUnwrap(driver.renderer)
+                let texture = try XCTUnwrap(renderer.renderTarget("_rt_MipMappedFrameBuffer"))
+                let label = "native mip \(width)x\(height)"
+                XCTAssertEqual([texture.width, texture.height, texture.sampleCount], [width, height, 1], label)
+                XCTAssertEqual(texture.mipmapLevelCount, count, label)
+                try assertFreshMipBlack(texture, queue: driver.executor.textureSourceCommandQueue)
+                // Binary RGB encodes the level index's low3 bits without transfer/quantization ambiguity.
+                // The shader requests LOD99; only the fixed native final level may reach the drawable.
+                try seedNativeMipLevels(texture, queue: driver.executor.textureSourceCommandQueue)
+                let layer = try mipLayer(device: device, size: size)
+                try await present(driver, layer: layer, label: label)
+                XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+                XCTAssertTrue(renderer.fallbackTextures.isEmpty)
+                let draw = try XCTUnwrap(renderer.lastFrameDraws.first {
+                    renderer.frames[0].operations[$0.operation].pass.rawValue == "2/albedo"
+                }?.draw)
+                XCTAssertTrue(try XCTUnwrap(draw.textures["g_Texture1"]) === texture)
+                XCTAssertEqual(mipComponents(draw.constants[.fragment]?["g_Texture1MipMapInfo"]), [Float(count)], label)
+                let finalLevel = count - 1
+                let expected = [finalLevel & 1, (finalLevel >> 1) & 1, (finalLevel >> 2) & 1].map { $0 * 255 }
+                try assertMipPixel(readBack(renderer.backbuffer, device: device), width: width,
+                                   x: width / 4, y: height / 2, rgb: expected, label: "raw LOD clamp \(label)")
+                try assertMipPixel(readBack(XCTUnwrap(layer.lastTexture), device: device), width: width,
+                                   x: width / 4, y: height / 2, rgb: expected, label: "present LOD clamp \(label)")
+                XCTAssertFalse(driver.needsContinuousFrames, "no-refresh history stays static")
+            }
+        }
+    }
+
+    private func seedNativeMipLevels(_ texture: MTLTexture, queue: MTLCommandQueue) throws {
+        XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+        let command = try XCTUnwrap(queue.makeCommandBuffer())
+        let encoder = try XCTUnwrap(command.makeBlitCommandEncoder())
+        var owners: [MTLBuffer] = []
+        for level in 0 ..< texture.mipmapLevelCount {
+            let width = max(1, texture.width >> level)
+            let height = max(1, texture.height >> level)
+            let rowBytes = (width * 4 + 255) & ~255
+            let buffer = try XCTUnwrap(texture.device.makeBuffer(length: rowBytes * height, options: .storageModeShared))
+            owners.append(buffer)
+            let data = buffer.contents().bindMemory(to: UInt8.self, capacity: rowBytes * height)
+            for y in 0 ..< height {
+                for x in 0 ..< width {
+                    let offset = y * rowBytes + x * 4
+                    data[offset] = UInt8((level & 1) * 255)
+                    data[offset + 1] = UInt8(((level >> 1) & 1) * 255)
+                    data[offset + 2] = UInt8(((level >> 2) & 1) * 255)
+                    data[offset + 3] = 255
+                }
+            }
+            encoder.copy(from: buffer, sourceOffset: 0, sourceBytesPerRow: rowBytes,
+                         sourceBytesPerImage: rowBytes * height, sourceSize: MTLSize(width: width, height: height, depth: 1),
+                         to: texture, destinationSlice: 0, destinationLevel: level,
+                         destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        }
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        XCTAssertEqual(command.status, .completed)
+        XCTAssertNil(command.error)
+        withExtendedLifetime(owners) {}
+    }
+
     @objc func testMipSnapshotSamplesPreviousSceneThroughDefaultAndExplicitSlotsAndProductPolicy() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let (baseAssets, compiler) = try requiredMipInputs()
@@ -39,7 +120,7 @@ extension WPEParitySceneDriverTests {
                         let history = try XCTUnwrap(renderer.renderTarget("_rt_MipMappedFrameBuffer"))
                         XCTAssertEqual(history.pixelFormat, .rgba8Unorm)
                         XCTAssertEqual([history.width, history.height, history.sampleCount], [64, 64, 1])
-                        XCTAssertEqual(history.mipmapLevelCount, 7, "explicit Mac full-chain policy; native count remains partial")
+                        XCTAssertEqual(history.mipmapLevelCount, 3, "Native count includes the base level")
                         XCTAssertEqual(driver.needsContinuousFrames, quality,
                                        "a no-g_Time history shader still needs frames exactly when it refreshes")
                         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
@@ -64,7 +145,7 @@ extension WPEParitySceneDriverTests {
                             XCTAssertTrue(try XCTUnwrap(draw.textures["g_Texture\(historySlot)"]) === history,
                                           "the real active slot must sample the history allocation: \(label)")
                             XCTAssertEqual(draw.samplers["g_Texture\(historySlot)SamplerState"], .wpe(filter: .linear, address: .clamp))
-                            XCTAssertEqual(mipComponents(draw.constants[.fragment]?["g_Texture\(historySlot)MipMapInfo"]), [7])
+                            XCTAssertEqual(mipComponents(draw.constants[.fragment]?["g_Texture\(historySlot)MipMapInfo"]), [3])
                             let level2 = try mipBytes(history, level: 2, queue: driver.executor.textureSourceCommandQueue)
                             try assertMipPixel(level2, width: 16, x: 12, y: 8,
                                                rgb: quality ? bytes[frame] : [0, 0, 0],
@@ -298,7 +379,7 @@ extension WPEParitySceneDriverTests {
             let renderer = try XCTUnwrap(driver.renderer)
             let history = try XCTUnwrap(renderer.renderTarget("_rt_MipMappedFrameBuffer"))
             XCTAssertEqual(history.pixelFormat, .rgba16Float)
-            XCTAssertEqual([history.width, history.height, history.sampleCount, history.mipmapLevelCount], [64, 64, 1, 7])
+            XCTAssertEqual([history.width, history.height, history.sampleCount, history.mipmapLevelCount], [64, 64, 1, 3])
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             XCTAssertTrue(driver.needsContinuousFrames)
             try assertFreshMipBlack(history, queue: driver.executor.textureSourceCommandQueue)
@@ -314,7 +395,7 @@ extension WPEParitySceneDriverTests {
                 }?.draw)
                 XCTAssertTrue(try XCTUnwrap(reader.textures["g_Texture1"]) === history)
                 XCTAssertEqual(reader.samplers["g_Texture1SamplerState"], .wpe(filter: .linear, address: .clamp))
-                XCTAssertEqual(mipComponents(reader.constants[.fragment]?["g_Texture1MipMapInfo"]), [7])
+                XCTAssertEqual(mipComponents(reader.constants[.fragment]?["g_Texture1MipMapInfo"]), [3])
                 let combine = try XCTUnwrap(renderer.lastFrameDraws.first {
                     renderer.frames[0].operations[$0.operation].pass.rawValue == "combine_hdr"
                 }?.draw)
@@ -354,7 +435,7 @@ extension WPEParitySceneDriverTests {
     }
 
     private func mipDocument(baseAssets: WPEParityProgramAssets, explicit: Bool, active: Bool = true,
-                             hdr: Bool = false, lateFailure: Bool = false, hiddenEffect: Bool = false, historySlot: Int = 1)
+                             hdr: Bool = false, lateFailure: Bool = false, hiddenEffect: Bool = false, historySlot: Int = 1, sampleLOD: Int? = nil)
         throws -> (WPESceneDocument, WPEParityProgramAssets) {
         let vertex = try XCTUnwrap(baseAssets.data("shaders/passthrough.vert"))
         let hash = SHA256.hash(data: vertex).map { String(format: "%02x", $0) }.joined()
@@ -377,7 +458,7 @@ extension WPEParitySceneDriverTests {
         void main() {
         #if READMIP
             // LOD2 is real high-mip sampling. Its footprint at (.75,.5) lies entirely outside the reader panel.
-            float lod = min(2.0, max(0.0, g_Texture\(historySlot)MipMapInfo - 1.0));
+            float lod = \(sampleLOD.map { "\($0).0" } ?? "min(2.0, max(0.0, g_Texture\(historySlot)MipMapInfo - 1.0))");
             gl_FragColor = vec4(texSample2DLod(g_Texture\(historySlot), vec2(0.75, 0.5), lod).rgb, 1.0);
         #else
             gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);

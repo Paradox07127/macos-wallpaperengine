@@ -92,6 +92,7 @@ final class WPEParityFrameRenderer {
     private var layersMoved = false
     private var seenVisibility = 0
     private var seenEffects = 0
+    private var seenMembership = 0
     private var graphs: Graphs
     /// The graphs before the last visibility change, kept so toggling back does not recompile.
     private var previousGraphs: Graphs?
@@ -585,6 +586,7 @@ final class WPEParityFrameRenderer {
         seenTransforms = previous.layersMoved ? -1 : 0
         seenVisibility = -1
         seenEffects = -1
+        seenMembership = -1
         bloom = previous.bloom
         for text in previous.planner.texts.values {
             recordTextDelta(textPipeline.relayoutWithDelta(text.object, effectCount: text.effectCount))
@@ -617,6 +619,22 @@ final class WPEParityFrameRenderer {
     func attachScript(_ script: WPEParitySceneScript) {
         self.script = script
         script.start(state: &state)
+    }
+
+    /// Warm leaf images use the common post-update removal path. Other class destructors and dependent
+    /// owners need their original resource contract before the product admits them.
+    var scriptLayerRemovalAdmission: (String) -> Bool {
+        // The engine continues through renderer replacement. Capture immutable loaded-class metadata,
+        // without keeping the old renderer/Metal owners alive or consulting a dead weak renderer.
+        let objects = plan.scene.scene.objects
+        let parents = plan.document.objectParentByID
+        let videoIDs = objects.filter { videos.hasOwner($0.id) }.map(\.id)
+        return { id in
+            guard let object = objects.first(where: { $0.id == id }), case .image = object.kind,
+                  object.puppet == nil, !videoIDs.contains(id), !parents.values.contains(id),
+                  !object.dependencyTarget else { return false }
+            return true
+        }
     }
 
     func attachMedia(_ mailbox: WPESceneMediaEventMailbox?, generation: Int) {
@@ -1068,6 +1086,21 @@ final class WPEParityFrameRenderer {
     /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
     /// previous set.
     private func selectGraphs() throws {
+        if state.membershipGeneration != seenMembership {
+            let planned = try plan.layout(effects: state, texts: planner.texts,
+                                          mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
+            let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+                                             planner: &planner, encoder: drawEncoder,
+                                             requiredPresentationPass: plan.requiredPresentationPass,
+                                             reusing: graphs.layout)
+            // Removed owners cannot return through the visibility cache. Existing command buffers retain
+            // their submitted resource versions; this drops the renderer's obsolete draw/graph references.
+            try installGraphs(layout, cachePrevious: false)
+            packedConstants.removeAll()
+            fadeConstants.removeAll()
+            seenMembership = state.membershipGeneration
+            repackBloom()
+        }
         guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects else {
             return
         }

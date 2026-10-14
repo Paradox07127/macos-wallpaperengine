@@ -53,7 +53,7 @@ extension WPEParitySceneDriverTests {
         let history = try XCTUnwrap(renderer.renderTarget("_rt_MipMappedFrameBuffer"))
         XCTAssertEqual([history.width, history.height, history.sampleCount], [64, 64, 1])
         XCTAssertEqual(history.pixelFormat, .rgba8Unorm)
-        XCTAssertEqual(history.mipmapLevelCount, 7, "Mac full-chain policy, not an assertion about the native Windows count")
+        XCTAssertEqual(history.mipmapLevelCount, 3, "Native count includes the base level")
         let queue = driver.executor.textureSourceCommandQueue
         let fresh = try childMipBytes(history, level: 2, queue: queue)
         XCTAssertTrue(stride(from: 0, to: fresh.count, by: 4).allSatisfy {
@@ -105,7 +105,7 @@ extension WPEParitySceneDriverTests {
             guard case let .float(mips)? = draw.constants[.fragment]?["g_Texture1MipMapInfo"] else {
                 return XCTFail("the original uniform bridge must reach the controlled LOD fragment")
             }
-            XCTAssertEqual(mips, 7)
+            XCTAssertEqual(mips, 3)
             let expectedChild = frame == 0 ? [0, 0, 0] : rgb[frame - 1]
             // The actual child is centred at(16,32), size16. UV(.75,.5) samples a footprint around(48,32),
             // wholly outside that child. These fixed literals do not come from renderer matrices or source pixels.

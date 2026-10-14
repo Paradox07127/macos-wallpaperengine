@@ -93,16 +93,12 @@ private struct WPEParityPostProcessStream {
         ]
     }
 
-    /// Explicit Mac full-chain storage policy. Native rtFlags0x10 uses the still-unverified 14041d420 helper;
-    /// neither this count nor the corresponding shader MipMapInfo is claimed as its numerical oracle.
+    /// Native rtFlags0x10 count includes level0: min(ceilLog2(width), ceilLog2(height)) minus3, clamped1
+    /// (1400d2c60/1400d3500). Metal's valid one-pixel edge also has exactly one level.
     var mipCount: Int {
-        var size = max(config.backbufferWidth, config.backbufferHeight)
-        var count = 1
-        while size > 1 {
-            size /= 2
-            count += 1
-        }
-        return count
+        let edge = min(config.backbufferWidth, config.backbufferHeight)
+        let ceiling = Int.bitWidth - (edge - 1).leadingZeroBitCount
+        return max(1, ceiling - 3)
     }
 
     mutating func resource(_ id: WPEResourceID, divisor: Int = 1, format: String? = nil,

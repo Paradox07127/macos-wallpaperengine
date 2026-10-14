@@ -43,7 +43,7 @@ struct ParitySceneScaleTests {
         let sampled = try #require(frame.resources.first { $0.id == "_rt_FullFrameBufferMultiSampled" })
         #expect(sampled.sampleCount == 4)
         let mipmapped = try #require(frame.resources.first { $0.id == "_rt_MipMappedFrameBuffer" })
-        #expect(mipmapped.mipCount == 9)
+        #expect(mipmapped.mipCount == 5)
         for (id, expected) in [("_rt_4FrameBuffer", SIMD2(72, 40)), ("_rt_8FrameBuffer", SIMD2(36, 20)),
                                ("_rt_Bloom", SIMD2(36, 20)), ("sc.96.12.bc0", SIMD2(96, 12)),
                                ("_rt_imageLayerComposite_P_a", SIMD2(98, 26))] {

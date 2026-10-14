@@ -50,6 +50,10 @@ final class WPEParityVideoTextures {
         return true
     }
 
+    func hasOwner(_ id: String) -> Bool {
+        owners[id] != nil
+    }
+
     /// Observes the existing source; this is not a SceneScript query API or a second playback state.
     func playbackSnapshot(ownerID: String) -> WPEVideoPlaybackSnapshot? {
         guard let index = owners[ownerID] else { return nil }

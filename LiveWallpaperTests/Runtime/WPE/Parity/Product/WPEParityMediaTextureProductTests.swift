@@ -383,9 +383,14 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
     var currentName;
     var previousName;
     export function applyUserProperties(properties) {
-        if (Object.prototype.hasOwnProperty.call(properties, '$mediaThumbnail')) {
-            currentName = properties['$mediaThumbnail'];
-            previousName = properties['$mediaPreviousThumbnail'];
+        if (Object.prototype.hasOwnProperty.call(properties, '$mediaThumbnail')
+            || Object.prototype.hasOwnProperty.call(properties, '$mediaPreviousThumbnail')) {
+            stage = -1;
+            return;
+        }
+        if (typeof engine.userProperties['$mediaThumbnail'] === 'string') {
+            currentName = engine.userProperties['$mediaThumbnail'];
+            previousName = engine.userProperties['$mediaPreviousThumbnail'];
             deliveries += 1;
             stage = 1;
         }

@@ -455,7 +455,7 @@ final class WPESceneMediaEventDispatcher {
         case bytes(String)
     }
 
-    // Names and source bytes belong to the observation, including script-only consumers without GPU demand.
+    // Names follow raw observations; their upload bytes are retained only when qualified by the Mac decoder.
     private var parityArtworkIdentity: ParityArtworkIdentity?
     private var parityArtworkRevision: UInt64 = 0
     private var parityCurrentArtwork: Data?
@@ -656,20 +656,18 @@ final class WPESceneMediaEventDispatcher {
         guard identity != parityArtworkIdentity else { return false }
         parityArtworkIdentity = identity
         parityArtworkRevision &+= 1
+        // 140171440:213–387 rotates raw identities before decode, including an artwork change to an empty range.
+        parityPreviousSystemName = parityCurrentSystemName
+        parityCurrentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
+        parityPreviousArtwork = parityCurrentArtwork
         if let artwork, !artwork.isEmpty,
            thumbnail.hasThumbnail || WPEMediaTextureStore.hasDecodableParityArtwork(artwork) {
-            parityPreviousArtwork = parityCurrentArtwork
-            parityPreviousSystemName = parityCurrentSystemName
             parityCurrentArtwork = artwork
-            parityCurrentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
             parityArtworkDiagnostics = []
         } else {
-            // The native factory's empty/bad-image result is unknown. Break the qualified nonempty chain;
-            // neither transparent nor authored fallback nor the old cover is asserted to be Windows' result.
+            // This observation still has a raw name. Only its Mac upload qualification fails; the previous
+            // observation keeps its own qualified bytes/name, without claiming Windows' factory result.
             parityCurrentArtwork = nil
-            parityPreviousArtwork = nil
-            parityCurrentSystemName = nil
-            parityPreviousSystemName = nil
             let reason = switch identity {
             case .absent: "absent"
             case .empty: "empty"

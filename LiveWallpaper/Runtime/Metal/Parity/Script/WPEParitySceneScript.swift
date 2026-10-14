@@ -40,6 +40,7 @@ final class WPEParitySceneScript {
         var storage = Storage()
         var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
+        var canDestroyLayer: ((String) -> Bool)?
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         var pauseVideoTexture: ((String) -> Bool)?
     }
@@ -96,7 +97,8 @@ final class WPEParitySceneScript {
             userPropertiesJSON: host.userPropertiesJSON, materialConstants: materialConstants,
             resolvedEffectRecords: resolvedEffectRecords,
             fieldDefaults: defaults, storage: host.storage.provider,
-            createLayer: host.createLayer, destroyLayer: host.destroyLayer, sortLayer: host.sortLayer,
+            createLayer: host.createLayer, destroyLayer: host.destroyLayer, canDestroyLayer: host.canDestroyLayer,
+            sortLayer: host.sortLayer,
             pauseVideoTexture: host.pauseVideoTexture,
             log: { level, message in
                 if level >= 1 {
@@ -147,6 +149,7 @@ final class WPEParitySceneScript {
             return value.x != 0
         }
         for candidate in cursorCandidates {
+            guard state.isAlive(candidate.id) else { continue }
             // 140189e10.c:115-123 reads the live bit13 before each hit test.
             guard flag("solid", candidate, fallback: candidate.solid) else { continue }
             guard let corners = quad(candidate.id) else { continue }
@@ -186,7 +189,8 @@ final class WPEParitySceneScript {
                 var property = userProperties[name] as? [String: Any] ?? [:]
                 property["value"] = value
                 userProperties[name] = property
-                changed[name] = property
+                // Native 171440 authors a fresh value-only change, even when merged metadata has a type.
+                changed[name] = ["value": value]
             }
             engine.applyUserProperties(changedJSON: Self.json(changed), mergedJSON: Self.json(userProperties), state: &state)
         }

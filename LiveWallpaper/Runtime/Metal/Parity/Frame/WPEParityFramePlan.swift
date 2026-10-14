@@ -234,6 +234,7 @@ struct WPEParityFramePlan {
         var description = scene.scene(effectVisible: {
             visible[.init(objectID: $0, effectID: $1)] ?? true
         }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
+        description.objects.removeAll { !state.isAlive($0.id) }
         for index in description.objects.indices {
             let previous = description.objects[index]
             guard let text = texts[previous.id] else { continue }
