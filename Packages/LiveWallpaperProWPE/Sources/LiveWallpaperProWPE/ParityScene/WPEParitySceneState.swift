@@ -41,7 +41,7 @@ public struct WPEParitySceneState: Sendable {
         /// Stable descriptor slots survive removal; the object no longer participates in the live scene.
         public fileprivate(set) var alive = true
         /// One native model reference held by this admitted layer, independent of its script wrapper.
-        public internal(set) var modelDataToken: UInt32? = nil
+        public internal(set) var modelDataToken: UInt32?
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
