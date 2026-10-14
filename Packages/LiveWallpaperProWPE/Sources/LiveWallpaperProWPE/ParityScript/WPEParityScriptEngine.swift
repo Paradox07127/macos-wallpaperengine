@@ -497,7 +497,9 @@ public final class WPEParityScriptEngine {
         case let .integer(integer): integers[slot] = integer
         case let .string(string):
             if host != nil {
-                host.invokeMethod("setString", withArguments: [slot, string])
+                let descriptor = descriptors[Int(slots[slot].descriptor)]
+                let values: Any = descriptor.stringValues.map { $0 as Any } ?? NSNull()
+                host.invokeMethod("setString", withArguments: [slot, string, values])
             }
         }
     }
@@ -919,7 +921,7 @@ public final class WPEParityScriptEngine {
         }
         for (slot, value) in initialValues {
             if case let .string(string) = value {
-                host.invokeMethod("setString", withArguments: [slot, string])
+                store(.string(string), at: slot)
             }
         }
         host.invokeMethod("setUserProperties", withArguments: [configuration.userPropertiesJSON])
@@ -1211,6 +1213,7 @@ public final class WPEParityScriptEngine {
         // Camera constructor in 14018ff60.c: fov=0x42480000, zoom=0x3f800000.
         case (.camera, "fov"): return .vector(SIMD4(50, 0, 0, 0))
         case (.camera, "zoom"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.camera, "queuemode"): return .string("random")
         // Inline light constructor, 14018ff60.c:203-218, before authored descriptor values are loaded.
         case (.light, "intensity"): return .vector(.zero)
         case (.light, "radius"): return .vector(SIMD4(1, 0, 0, 0))
@@ -1251,7 +1254,7 @@ public final class WPEParityScriptEngine {
             value = inner
         }
         if descriptor.type == .string {
-            return WPEParityProgramScene.string(value).map { .string($0) }
+            return WPEParityProgramScene.string(value).map { .string(descriptor.canonicalString($0, fromJSON: true)) }
         }
         if descriptor.type == .int {
             let number: Double? = switch value {

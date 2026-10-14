@@ -177,8 +177,10 @@ enum WPEParityScriptLayers {
       order.push(layer);
       return layer;
     };
-    host.setString = function (slot, value) { S[slot] = value; };
-    host.getString = function (slot) { return S[slot]; };
+    host.setString = function (slot, value, values) {
+      S[slot] = values ? { value: values.includes(value) ? value : values[0], values } : value;
+    };
+    host.getString = function (slot) { return read(slot, 5, false); };
     host.setCommonOrder = function (indices) {
       const members = new Set();
       order.length = 0;

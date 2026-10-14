@@ -145,7 +145,20 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     public static let camera: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "fov", owner: .camera, type: .float),
         WPEParityScriptProperty(name: "zoom", owner: .camera, type: .float),
+        WPEParityScriptProperty(name: "queuemode", owner: .camera, type: .string),
     ]
+
+    /// 1401f3460's byte enum table and 1401f38c0: exact names; any unmatched UTF-8 string chooses entry zero.
+    public var stringValues: [String]? {
+        owner == .camera && name == "queuemode" ? ["random", "sequential"] : nil
+    }
+
+    public func canonicalString(_ value: String, fromJSON: Bool = false) -> String {
+        guard let stringValues else { return value }
+        // Runtime 1401f38c0 uses strlen; fromJSON 1401f3a20 compares the explicit std::string length.
+        let candidate = fromJSON ? value : String(decoding: value.utf8.prefix { $0 != 0 }, as: UTF8.self)
+        return stringValues.contains(candidate) ? candidate : stringValues[0]
+    }
 
     /// Basic shader-light fields (14025da80.c). Native fields have no setter hook; the lighting generation is the
     /// parity renderer's consumption boundary. Type/shadow/cookie changes need a real resource reclassification.
@@ -254,8 +267,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
             }
         case (.field, .vector):
             state.setScriptField(fieldName, of: objectID, to: value.map(stored(fromScript:)), invalidating: invalidation)
-        case (.field, .string):
-            state.setScriptField(fieldName, of: objectID, to: value, invalidating: invalidation)
+        case let (.field, .string(string)):
+            state.setScriptField(fieldName, of: objectID, to: .string(canonicalString(string)), invalidating: invalidation)
         case (.field, .integer):
             state.setScriptField(fieldName, of: objectID, to: value, invalidating: invalidation)
         default:

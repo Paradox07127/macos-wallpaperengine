@@ -3,6 +3,29 @@ import Foundation
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testCameraQueueEnumCanonicalizesImmediatelyWithoutChangingOrdinaryStrings() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100}},
+         "objects":[
+          {"id":1,"camera":"default","queuemode":{"value":"sequential\u0000suffix","script":"if (thisObject.queuemode !== 'random') throw new Error('initial enum'); export function init(v) { thisObject.queuemode = 'sequential\\u0000suffix'; if (thisObject.queuemode !== 'sequential') throw new Error('runtime cstring'); thisObject.queuemode = 'sequential'; if (thisObject.queuemode !== 'sequential') throw new Error('setter enum'); thisObject.queuemode = 'Sequential'; if (thisObject.queuemode !== 'random') throw new Error('case enum'); thisObject.queuemode = null; if (thisObject.queuemode !== 'random') throw new Error('nil enum'); return 'sequential'; } export function update(v) { thisObject.queuemode = 'unknown'; if (thisObject.queuemode !== 'random') throw new Error('unknown enum'); return 'SEQUENTIAL'; }"}},
+          {"id":2,"text":{"value":"seed","script":"export function init(v) { thisObject.text = 'Sequential'; if (thisObject.text !== 'Sequential') throw new Error('ordinary string'); thisObject.text = null; if (thisObject.text !== 'Sequential') throw new Error('ordinary nil'); return 'SEQUENTIAL'; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("queuemode", of: "1"), .string("sequential"))
+        XCTAssertEqual(state.scriptField("text", of: "2"), .string("SEQUENTIAL"))
+        engine.tick(dt: 0.1, state: &state)
+        XCTAssertEqual(state.scriptField("queuemode", of: "1"), .string("random"))
+        XCTAssertEqual(state.scriptField("text", of: "2"), .string("SEQUENTIAL"))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testTubeControlPointDescriptorUpdatesRealLightConstants() throws {
         let json = #"""
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
