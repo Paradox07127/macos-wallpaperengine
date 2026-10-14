@@ -84,7 +84,9 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
                 XCTAssertTrue(renderer.lastFrameDraws.isEmpty, "no HDR terminal may be silently drawn: \(label)")
                 let raw = try read(renderer.backbuffer, bytesPerPixel: 4, queue: context.queue)
                 XCTAssertEqual(raw.count, 32 * 32 * 4)
-                for channel in 0 ..< 3 { XCTAssertLessThanOrEqual(abs(Int(raw[channel]) - 128), 1, label) }
+                for channel in 0 ..< 3 {
+                    XCTAssertLessThanOrEqual(abs(Int(raw[channel]) - 128), 1, label)
+                }
             }
             let shown = try await present(renderer, context: context)
             XCTAssertEqual(shown.count, 32 * 32 * 4)
@@ -305,7 +307,7 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
             return try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil,
                                  "Compiler escaped current bundle: \(path)")
         }
-        let identity = try "wpe-shaderc " + tools.map { digest(try Data(contentsOf: $0)) }.joined(separator: " ")
+        let identity = try "wpe-shaderc " + tools.map { try digest(Data(contentsOf: $0)) }.joined(separator: " ")
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1],
                                                          metalIRConverter: tools[2],
                                                          workDirectory: scratch.appendingPathComponent("shaderc"))

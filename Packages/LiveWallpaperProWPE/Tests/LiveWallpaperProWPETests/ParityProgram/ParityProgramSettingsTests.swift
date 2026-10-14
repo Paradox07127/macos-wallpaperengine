@@ -71,7 +71,11 @@ final class ParityProgramSettingsTests: XCTestCase {
             XCTAssertFalse(scene.postProcess.hdrEnabled)
             XCTAssertEqual(scene.scene.backbufferFormat, "rgba8unorm")
             let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
-            XCTAssertFalse(frame.draws.values.contains { if case .post = $0 { return true }; return false })
+            XCTAssertFalse(frame.draws.values.contains {
+                if case .post = $0 {
+                    return true
+                }; return false
+            })
         }
         for general: [String: Any] in [
             ["bloom": ["value": true, "user": "on"], "hdr": true],

@@ -306,11 +306,15 @@ public struct WPEParityProgramScene: Sendable {
 
     /// The native HDR allocation predicate, also used before the product plans its physical render extent.
     public static func hdrEnabled(document: WPESceneDocument, settings: WPEParityProgramSettings) -> Bool {
-        // 10df40 uses10d850: an object unwraps its immediate "value", then116b90 requires bool true.
-        // This load-time getter does not read the runtime user-property override used by bloom setters.
+        /// 10df40 uses10d850: an object unwraps its immediate "value", then116b90 requires bool true.
+        /// This load-time getter does not read the runtime user-property override used by bloom setters.
         func authoredBool(_ key: String) -> Bool {
             let raw = document.sourceJSON["general"]?[key]
-            let value = if case .object? = raw { raw?["value"] } else { raw }
+            let value = if case .object? = raw {
+                raw?["value"]
+            } else {
+                raw
+            }
             return value == .bool(true)
         }
         return authoredBool("bloom") && authoredBool("hdr") && settings.hdrPostProcessing
