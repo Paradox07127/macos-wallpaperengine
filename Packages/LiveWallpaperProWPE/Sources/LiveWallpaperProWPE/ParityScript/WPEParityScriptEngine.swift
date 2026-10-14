@@ -80,7 +80,7 @@ public final class WPEParityScriptEngine {
         public var canDestroyLayer: ((String, UInt32?) -> Bool)?
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
-        public var pauseVideoTexture: ((String, UInt32?) -> Bool)?
+        public var pauseVideoTexture: ((String) -> Bool)?
         /// Executes against the current renderer's material-function resources, including module-body calls.
         public var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         /// Level 0 log, 1 warn, 2 error.
@@ -98,7 +98,7 @@ public final class WPEParityScriptEngine {
                     destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
                     canDestroyLayer: ((String, UInt32?) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
-                    pauseVideoTexture: ((String, UInt32?) -> Bool)? = nil,
+                    pauseVideoTexture: ((String) -> Bool)? = nil,
                     executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
