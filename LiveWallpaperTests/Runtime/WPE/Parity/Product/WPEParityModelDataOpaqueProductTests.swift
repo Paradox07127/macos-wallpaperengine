@@ -86,7 +86,7 @@ extension WPEParitySceneDriverTests {
         }] + original.sources)
         let scene = try JSONSerialization.data(withJSONObject: [
             "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
-            "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": true],
+            "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false],
                         "clearcolor": "0 0 0", "bloom": false],
             "objects": [["id": 1, "name": "opaque controller", "image": "models/util/solidlayer.json", "size": "1 1",
                          "brightness": 0, "alpha": ["value": 0, "script": source]]],
@@ -107,6 +107,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertEqual(renderer.pathCamera.size, SIMD2<Float>(48, 32), "explicit camera qualifies the pixel coordinates")
         let script = try XCTUnwrap(renderer.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 7)
@@ -122,15 +123,6 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 8)
         let pixels = try readBack(renderer.backbuffer, device: device)
-        for item in renderer.lastFrameDraws {
-            print("opaque model diagnostic operation=\(item.operation) indexType=\(item.draw.indexType.rawValue) indexCount=\(item.draw.indexCount) constants=\(item.draw.constants)")
-            if item.draw.indexCount == 3 {
-                let words = item.draw.vertexBuffer.contents().assumingMemoryBound(to: Float.self)
-                print("opaque model diagnostic vertices=\(Array(UnsafeBufferPointer(start: words + 65536 * 5, count: 15)))")
-            }
-        }
-        let lit = stride(from: 0, to: pixels.count, by: 4).filter { pixels[$0] > 8 || pixels[$0 + 1] > 8 || pixels[$0 + 2] > 8 }
-        print("opaque model diagnostic litCount=\(lit.count) litPixelOffsets=\(lit.prefix(32).map { $0 / 4 })")
         for (x, expected) in [(24, 255), (8, 0), (40, 0)] {
             for lane in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs(Int(pixels[(16 * 48 + x) * 4 + lane]) - expected), 1,

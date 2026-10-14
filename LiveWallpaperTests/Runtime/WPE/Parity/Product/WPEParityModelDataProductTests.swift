@@ -89,6 +89,7 @@ extension WPEParitySceneDriverTests {
         layer.framebufferOnly = false
         do {
             let renderer = try XCTUnwrap(driver.renderer)
+            XCTAssertEqual(renderer.pathCamera.size, SIMD2<Float>(48, 32), "explicit camera qualifies the pixel coordinates")
             XCTAssertNotNil(renderer.state.object("700001"))
             let event = try XCTUnwrap(device.makeSharedEvent())
             defer { event.signaledValue = 1 }
@@ -348,7 +349,7 @@ extension WPEParitySceneDriverTests {
             soundResolver = WPEMultiRootResourceResolver(primaryRootURL: directory, dependencyMounts: [])
         }
         let data = try JSONSerialization.data(withJSONObject: ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
-                                                               "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": true], "clearcolor": "0 0 0", "bloom": false],
+                                                               "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false], "clearcolor": "0 0 0", "bloom": false],
                                                                "objects": objects], options: [.sortedKeys])
         let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
