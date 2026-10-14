@@ -306,11 +306,14 @@ public struct WPEParityProgramScene: Sendable {
 
     /// The native HDR allocation predicate, also used before the product plans its physical render extent.
     public static func hdrEnabled(document: WPESceneDocument, settings: WPEParityProgramSettings) -> Bool {
-        // 10df40 tests both authored RapidJSON values' bool type and value before choosing the HDR allocation.
-        // A dynamic bloom binding may enable the ordinary bloom pass later, but does not change this load flag.
-        guard case .bool(true)? = document.sourceJSON["general"]?["bloom"],
-              case .bool(true)? = document.sourceJSON["general"]?["hdr"] else { return false }
-        return settings.hdrPostProcessing
+        // 10df40 uses10d850: an object unwraps its immediate "value", then116b90 requires bool true.
+        // This load-time getter does not read the runtime user-property override used by bloom setters.
+        func authoredBool(_ key: String) -> Bool {
+            let raw = document.sourceJSON["general"]?[key]
+            let value = if case .object? = raw { raw?["value"] } else { raw }
+            return value == .bool(true)
+        }
+        return authoredBool("bloom") && authoredBool("hdr") && settings.hdrPostProcessing
     }
 
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a

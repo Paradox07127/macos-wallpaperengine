@@ -33,13 +33,14 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
 
     func testAuthoredHDRPredicateChoosesActualTextureAndOriginalTerminal() async throws {
         let context = try makeContext()
-        let cases: [(String, Any?, Bool)] = [
-            ("literal true", true, true),
-            ("resolved binding", ["value": false, "user": "on"], false),
-            ("missing bloom", nil, false),
-            ("numeric bloom", 1, false),
+        let cases: [(String, Any?, Bool, Bool)] = [
+            ("literal true", true, true, true),
+            ("false envelope overridden true", ["value": false, "user": "on"], true, false),
+            ("true envelope overridden false", ["value": true, "user": "on"], false, true),
+            ("missing bloom", nil, true, false),
+            ("numeric bloom", 1, true, false),
         ]
-        for (label, bloom, expectedHDR) in cases {
+        for (label, bloom, userValue, expectedHDR) in cases {
             var general: [String: Any] = [
                 "orthogonalprojection": ["width": 32, "height": 32], "hdr": true,
                 "clearenabled": true, "clearcolor": "0.5 0.5 0.5",
@@ -49,14 +50,15 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
             let json: [String: Any] = ["camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
                                        "general": general, "objects": []]
             let document = try WPESceneDocumentParser.parse(
-                data: JSONSerialization.data(withJSONObject: json), userValues: ["on": .bool(true)],
+                data: JSONSerialization.data(withJSONObject: json), userValues: ["on": .bool(userValue)],
                 makeTransformScriptResolver: { _, _ in HDRBloomNoScripts() }
             )
             let plan = try WPEParityFramePlan(
                 document: document, assets: .init(sceneDirectory: scratch, assetRoots: [context.engine]),
                 settings: .init(bloom: false, hdrPostProcessing: true), width: 32, height: 32
             )
-            XCTAssertTrue(plan.post.sceneBloomEnabled, "resolved runtime bloom: \(label)")
+            XCTAssertEqual(plan.post.sceneBloomEnabled, label == "true envelope overridden false" ? false : true,
+                           "resolved runtime bloom remains independent: \(label)")
             XCTAssertEqual(plan.post.hdrEnabled, expectedHDR, label)
             XCTAssertEqual(plan.requiredPresentationPass, expectedHDR ? "combine_srgb" : nil, label)
             XCTAssertEqual(plan.colorTransfer, expectedHDR ? .linear : .authored, label)
