@@ -235,7 +235,11 @@ struct WPEParityFramePlan {
             visible[.init(objectID: $0, effectID: $1)] ?? true
         }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
         description.objects.removeAll { !state.isAlive($0.id) }
+        let commonRanks = Dictionary(uniqueKeysWithValues: state.commonOrder.enumerated().map { ($0.element, $0.offset) })
         for index in description.objects.indices {
+            if let rank = commonRanks[description.objects[index].id] {
+                description.objects[index].sortKey = rank
+            }
             let previous = description.objects[index]
             guard let text = texts[previous.id] else { continue }
             var updated = WPEParitySceneObject.text(text, sortKey: previous.sortKey, visible: previous.visible,

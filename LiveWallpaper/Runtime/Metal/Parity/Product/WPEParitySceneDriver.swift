@@ -305,6 +305,10 @@ final class WPEParitySceneDriver {
                     connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
                     connectedHost.destroyLayer = { id, state in state.removeObject(id) }
+                    connectedHost.sortLayer = { id, position, state in
+                        guard let position = Int32(exactly: position) else { return false }
+                        return state.sortObject(id, to: position)
+                    }
                     // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
                     try renderer.attachScript(WPEParitySceneScript(
                         document: document, state: renderer.state, assets: assets,
