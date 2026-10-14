@@ -781,6 +781,15 @@ static inline float3 wpe_authored_rgb_to_linear(float3 color) {
     return half4(wpe_attachment_output(float4(half4(float4(saturate(wpe_authored_rgb_to_linear(color)), 1.0)))));
 }
 
+// HDR postprocessing has already produced linear light. Keep its values through the terminal write.
+[[fragment]] float4 wpe_present_linear_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<float, access::sample> texture0 [[texture(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    return float4(texture0.sample(linearSampler, in.uv).rgb, 1.0);
+}
+
 // Full-frame 1:1 copy. Camera parallax is a geometry translation applied in
 // the vertex stage (objectQuadUniforms / pixelOffset), so this fragment never
 // offsets its sample UV — it samples the source texture straight through and

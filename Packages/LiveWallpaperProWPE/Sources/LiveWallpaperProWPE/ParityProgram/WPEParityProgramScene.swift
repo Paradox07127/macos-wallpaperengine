@@ -7,23 +7,30 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var bloom: Bool
     /// Postprocessing "ultra" or "displayhdr" (0x2000 / 0x6000).
     public var hdrPostProcessing: Bool
-    /// User MSAA x2/x4/x8 that the device supports.
-    public var msaa: Bool
-    /// The wallpaper's `wec_*` / `wcc_*` settings; the product has no UI for them and keeps the defaults.
+    /// One disables MSAA; otherwise the product has resolved a device-supported 2/4/8 sample count.
+    public var msaaSampleCount: Int
+    /// Compatibility for callers that only selected on/off. There is one stored sample count.
+    public var msaa: Bool {
+        get { msaaSampleCount > 1 }
+        set { msaaSampleCount = newValue ? max(2, msaaSampleCount) : 1 }
+    }
+
+    /// The wallpaper's raw `wec_*` / `wcc_*` preset settings.
     public var colorCorrection: WPEParityColorCorrection
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
+                msaaSampleCount: Int? = nil,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection()) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
-        self.msaa = msaa
+        self.msaaSampleCount = msaaSampleCount ?? (msaa ? 2 : 1)
         self.colorCorrection = colorCorrection
     }
 }
 
 /// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
 /// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
-/// with MSAA off and no transparent sorting.
+/// with one resolved MSAA sample count and no transparent sorting.
 public struct WPEParityProgramScene: Sendable {
     struct MaterialKey: Hashable, Sendable {
         let objectID: String
@@ -72,7 +79,10 @@ public struct WPEParityProgramScene: Sendable {
         let sceneBloom = bloomGeneral["bloom"].map { Self.flag($0) } ?? true
         // 14010df40.c:299-335, 365, 519-552
         flags.hdr = sceneBloom && Self.flag(general?["hdr"]) && settings.hdrPostProcessing
-        flags.backbufferMSAA = settings.msaa && objects.contains { $0["model"] != nil }
+        // A serialized model:null is not a model object. Match the class that actually draws MDL meshes below.
+        let hasModels = document.imageObjects.contains { $0.imageRelativePath.lowercased().hasSuffix(".mdl") }
+        let samples = hasModels && [2, 4, 8].contains(settings.msaaSampleCount) ? settings.msaaSampleCount : 1
+        flags.backbufferMSAA = samples > 1
         engineFlags = flags
         self.assets = assets
 
@@ -260,6 +270,7 @@ public struct WPEParityProgramScene: Sendable {
         scene = WPEParitySceneDescription(width: width, height: height, backbufferFormat: format,
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
+                                          msaaSamples: samples,
                                           forcesLayerComposite: flags.fogDistance || flags.fogHeight,
                                           objects: sceneObjects, diagnostics: diagnostics)
         let cameraPaths = WPEParityCameraPaths(camera: document.sourceJSON["camera"], assets: assets)
@@ -268,6 +279,7 @@ public struct WPEParityProgramScene: Sendable {
         let cameraFade = bloomGeneral["camerafade"].map { Self.flag($0) } ?? true
         var post = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                               objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
+                                              msaaSampleCount: samples,
                                               bloomSettings: Self.bloomSettings(bloomGeneral),
                                               colorCorrectionEnabled: settings.colorCorrection.drawn,
                                               fadeActive: cameraFade && !cameraPaths.paths.isEmpty,

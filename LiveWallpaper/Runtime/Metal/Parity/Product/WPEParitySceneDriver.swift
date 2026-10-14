@@ -231,7 +231,8 @@ final class WPEParitySceneDriver {
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
-                fragmentName: WPEMetalRenderExecutor.presentFragment(source: renderer.backbuffer.pixelFormat),
+                fragmentName: WPEMetalRenderExecutor.presentFragment(source: renderer.backbuffer.pixelFormat,
+                                                                     colorTransfer: renderer.colorTransfer),
                 colorPixelFormat: pixelFormat
             )
             if let soundResolver, !document.soundObjects.isEmpty {
@@ -399,6 +400,7 @@ final class WPEParitySceneDriver {
         do {
             let presented = try executor.encodePresent(
                 texture: backbuffer, layer: layer, fitMode: plannedTarget.presentFit,
+                colorTransfer: renderer.colorTransfer,
                 presentCompletion: { _, present, release in
                     release()
                     state.record(generation: generation, succeeded: present.status == .completed)
@@ -443,7 +445,7 @@ final class WPEParitySceneDriver {
         spanFrameSequence &+= 1
         let frame = WPESceneSpanFrame(texture: output, generation: loadGeneration, sequence: spanFrameSequence,
                                       sourceSize: size, fitMode: plannedTarget.presentFit,
-                                      tracker: executor.presentTracker)
+                                      colorTransfer: renderer.colorTransfer, tracker: executor.presentTracker)
         let state = presentState
         state.begin()
         commandBuffer.addCompletedHandler { commandBuffer in
@@ -497,14 +499,15 @@ final class WPEParitySceneDriver {
     /// A private copy of the presented backbuffer, encoded on the frame queue so the next frame cannot overwrite it
     /// first; nil before a frame was presented or when the GPU failed.
     nonisolated(nonsending) func copyPresentedBackbuffer() async -> WPEMetalTextureSnapshotter.SnapshotSource? {
-        guard hasPresentedFrame, let source = renderer?.backbuffer,
-              let copy = device.makeTexture(descriptor: Self.copyDescriptor(source)),
+        guard hasPresentedFrame, let renderer else { return nil }
+        let source = renderer.backbuffer
+        guard let copy = device.makeTexture(descriptor: Self.copyDescriptor(source)),
               let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer(),
               let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
         copy.label = "parity.backbufferCopy"
         blit.copy(from: source, to: copy)
         blit.endEncoding()
-        let result = WPEMetalTextureSnapshotter.SnapshotSource(texture: copy)
+        let result = WPEMetalTextureSnapshotter.SnapshotSource(texture: copy, colorTransfer: renderer.colorTransfer)
         return await withCheckedContinuation { continuation in
             commandBuffer.addCompletedHandler { commandBuffer in
                 continuation.resume(returning: commandBuffer.status == .completed ? result : nil)
@@ -536,6 +539,7 @@ final class WPEParitySceneDriver {
         do {
             try executor.encodePresentPass(source: source, target: target, fitMode: pass.fitMode,
                                            worldSourceSize: pass.worldSourceSize, uniforms: pass.uniforms,
+                                           colorTransfer: pass.colorTransfer,
                                            into: commandBuffer)
         } catch {
             completion(nil)

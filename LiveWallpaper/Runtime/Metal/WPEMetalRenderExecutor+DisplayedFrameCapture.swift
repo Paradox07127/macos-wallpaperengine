@@ -17,6 +17,7 @@ struct WPEPresentPassRecord {
     let fitMode: WPEPresentFitMode
     let worldSourceSize: CGSize?
     let uniforms: WPEPresentUniforms?
+    let colorTransfer: WPEPresentColorTransfer
     let targetWidth: Int
     let targetHeight: Int
     let targetPixelFormat: MTLPixelFormat
@@ -27,12 +28,14 @@ struct WPEPresentPassRecord {
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize?,
         uniforms: WPEPresentUniforms?,
+        colorTransfer: WPEPresentColorTransfer = .authored,
         target: MTLTexture,
         usedMetalFX: Bool
     ) {
         self.fitMode = fitMode
         self.worldSourceSize = worldSourceSize
         self.uniforms = uniforms
+        self.colorTransfer = colorTransfer
         targetWidth = target.width
         targetHeight = target.height
         targetPixelFormat = target.pixelFormat
@@ -88,6 +91,7 @@ extension WPEMetalRenderExecutor {
                 fitMode: pass.fitMode,
                 worldSourceSize: pass.worldSourceSize,
                 uniforms: pass.uniforms,
+                colorTransfer: pass.colorTransfer,
                 into: commandBuffer
             )
         } catch {

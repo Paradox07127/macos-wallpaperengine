@@ -85,7 +85,8 @@ final class WPESceneSpanPresenter {
             let completion = permit.registerSubmission()
             let state = state
             let producer = producer
-            let presented = try executor.present(texture: frame.texture, layer: layer.layer, uniforms: uniforms, presentCompletion: { _, commandBuffer, release in
+            let presented = try executor.present(texture: frame.texture, layer: layer.layer, uniforms: uniforms,
+                                                 colorTransfer: frame.colorTransfer, presentCompletion: { _, commandBuffer, release in
                 // Capturing the packet pins the producer's texture until this read finishes.
                 if commandBuffer.status == .completed, !forcedFailure {
                     state.record(key)

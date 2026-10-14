@@ -121,6 +121,7 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
     public static func isEngineReservedKey(_ key: String) -> Bool {
         key == WPEEngineAudioSettings.volumeKey
             || key.hasPrefix(WPEEngineColorCorrection.keyPrefix)
+            || key.hasPrefix("wcc_")
     }
 
     /// Values for a *new* preset snapshot. Layered like `layeredPropertyValues()`, except the

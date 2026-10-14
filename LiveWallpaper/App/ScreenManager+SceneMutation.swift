@@ -112,14 +112,14 @@ extension ScreenManager {
                 expectedSession: expectedSession,
                 for: screen
             ) else { return }
-            // Engine-level keys (`wec_*`, `volume`) are stripped by the property filter before the patch
+            // Engine-level keys (`wec_*`, `wcc_*`, `volume`) are stripped by the property filter before the patch
             // is built, so they can never reach `changedKeys`. An engine-only preset change therefore
             // produced a *successful empty patch* — persisted and shown in the inspector, while the live
             // frame kept grading and playing from the descriptor it was loaded with. The renderer holds
             // that descriptor immutably, so a remount is what re-reads them.
             let engineSettingsChanged =
-                WPEEngineColorCorrection.parse(current.presetSnapshot)
-                    != WPEEngineColorCorrection.parse(descriptor.presetSnapshot)
+                current.presetSnapshot.filter { $0.key.hasPrefix("wec_") || $0.key.hasPrefix("wcc_") }
+                    != descriptor.presetSnapshot.filter { $0.key.hasPrefix("wec_") || $0.key.hasPrefix("wcc_") }
                     || WPEEngineAudioSettings.parse(current.presetSnapshot)
                     != WPEEngineAudioSettings.parse(descriptor.presetSnapshot)
             if !bindings.isEmpty, !engineSettingsChanged {

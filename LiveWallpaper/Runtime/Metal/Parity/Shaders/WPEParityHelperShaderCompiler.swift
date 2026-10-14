@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import CryptoKit
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 
 /// Compiles each stage by running the `wpe-shaderc` helper, which loads DXC and Metal Shader Converter itself.
@@ -29,8 +30,7 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         self.metalIRConverter = metalIRConverter
         self.workDirectory = workDirectory
         compilerIdentity = try "wpe-shaderc " + [helper, dxcompiler, metalIRConverter].map { url in
-            try SHA256.hash(data: Data(contentsOf: url, options: .alwaysMapped))
-                .map { String(format: "%02x", $0) }.joined()
+            try Self.digest(Data(contentsOf: url, options: .alwaysMapped))
         }.joined(separator: " ")
         try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
     }
@@ -72,7 +72,8 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
                 try? FileManager.default.removeItem(at: url)
             }
         }
-        try Data(hlsl).write(to: input)
+        let source = Data(hlsl)
+        try source.write(to: input)
         var arguments = [
             "--stage", stage.rawValue, "--entry", "main", "--input", input.path,
             "--output-metallib", metallib.path, "--output-reflection", reflection.path,
@@ -85,18 +86,39 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         if stageIn {
             arguments += ["--output-stage-in", stageInMetallib.path]
         }
-        let status = try await run(arguments, stderr: log)
-        guard status == 0 else {
+        let result = try await run(arguments, stage: stage, stderr: log)
+        guard result.status == 0 else {
             let stderr = ((try? String(contentsOf: log, encoding: .utf8)) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            throw Failure.helperFailed(stage: stage, status: status, stderr: stderr)
+            throw Failure.helperFailed(stage: stage, status: result.status, stderr: stderr)
         }
-        return try .init(metallib: Data(contentsOf: metallib), reflectionJSON: Data(contentsOf: reflection),
-                         stageIn: stageIn ? Data(contentsOf: stageInMetallib) : nil)
+        do {
+            let output = try WPEParityCompiledStages.Stage(
+                metallib: Data(contentsOf: metallib), reflectionJSON: Data(contentsOf: reflection),
+                stageIn: stageIn ? Data(contentsOf: stageInMetallib) : nil
+            )
+            Logger.notice("WPE parity shader output appPID=\(ProcessInfo.processInfo.processIdentifier) "
+                + "childPID=\(result.pid) stage=\(stage.rawValue) minMacOS=\(options.minimumMacOS) "
+                + "boundsCheck=\(options.boundsCheck) inputSHA256=\(Self.digest(source)) "
+                + "metallibBytes=\(output.metallib.count) metallibSHA256=\(Self.digest(output.metallib)) "
+                + "reflectionBytes=\(output.reflectionJSON.count) reflectionSHA256=\(Self.digest(output.reflectionJSON)) "
+                + "stageInBytes=\(output.stageIn?.count ?? 0) stageInSHA256=\(output.stageIn.map(Self.digest) ?? "none")",
+                category: .wpeRender)
+            return output
+        } catch {
+            Logger.warning("WPE parity shader output unavailable appPID=\(ProcessInfo.processInfo.processIdentifier) "
+                + "childPID=\(result.pid) stage=\(stage.rawValue): \(error)", category: .wpeRender)
+            throw error
+        }
+    }
+
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     /// stderr goes to a file: a pipe nobody drains while waiting would stall the helper once it fills.
-    private func run(_ arguments: [String], stderr: URL) async throws -> Int32 {
+    private func run(_ arguments: [String], stage: WPEParityShaderKey.Stage,
+                     stderr: URL) async throws -> (pid: Int32, status: Int32) {
         guard FileManager.default.createFile(atPath: stderr.path, contents: nil) else {
             throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: stderr.path])
         }
@@ -107,11 +129,19 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = log
+        let appPID = ProcessInfo.processInfo.processIdentifier
         return try await withCheckedThrowingContinuation { continuation in
-            process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+            process.terminationHandler = { child in
+                Logger.notice("WPE parity shader helper appPID=\(appPID) childPID=\(child.processIdentifier) "
+                    + "stage=\(stage.rawValue) exit=\(child.terminationStatus) reason=\(child.terminationReason.rawValue)",
+                    category: .wpeRender)
+                continuation.resume(returning: (child.processIdentifier, child.terminationStatus))
+            }
             do {
                 try process.run()
             } catch {
+                Logger.warning("WPE parity shader helper appPID=\(appPID) childPID=none "
+                    + "stage=\(stage.rawValue) spawn-failed: \(error)", category: .wpeRender)
                 continuation.resume(throwing: error)
             }
         }

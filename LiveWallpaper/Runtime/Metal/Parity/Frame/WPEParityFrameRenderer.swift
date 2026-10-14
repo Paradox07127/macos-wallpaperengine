@@ -28,11 +28,22 @@ struct WPEParityFrameInput {
     var date = Date()
 }
 
-enum WPEParityFrameRenderError: Error {
+enum WPEParityFrameRenderError: Error, LocalizedError {
     case missingBackbuffer
     case arenaUnavailable
     case allocationFailed(WPEResourceID)
     case encoderUnavailable
+    case requiredPostProcessUnavailable(pass: String, reason: WPEParityFrameSkip)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingBackbuffer: "The WPE frame has no backbuffer"
+        case .arenaUnavailable: "The WPE frame arena is unavailable"
+        case let .allocationFailed(resource): "The WPE frame could not allocate \(resource)"
+        case .encoderUnavailable: "The WPE frame encoder is unavailable"
+        case let .requiredPostProcessUnavailable(pass, reason): "Required WPE postprocess \(pass) unavailable: \(reason)"
+        }
+    }
 }
 
 /// Renders a plan's frames on Metal: one compiled graph per frame variant, renderer-owned dedicated and pooled
@@ -87,6 +98,10 @@ final class WPEParityFrameRenderer {
     /// Dropped draws of graphs no longer kept.
     private var retiredDrops = 0
     private let plan: WPEParityFramePlan
+    var colorTransfer: WPEPresentColorTransfer {
+        plan.colorTransfer
+    }
+
     /// Loaded text identity metadata; mutable colors remain only in SceneState.
     private let textBackgroundOwners: [WPEPassIdentity: String]
     /// Draws of later effect sets plan here, reusing its images and pipelines.
@@ -321,8 +336,9 @@ final class WPEParityFrameRenderer {
             }
             return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
         }
-        let layout = Self.makeLayout(plan.layout, effects: plan.state.effectVisibility, artifacts: artifacts,
-                                     planner: &planner, encoder: encoder, reusing: nil)
+        let layout = try Self.makeLayout(plan.layout, effects: plan.state.effectVisibility, artifacts: artifacts,
+                                         planner: &planner, encoder: encoder,
+                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: nil)
         var particleFacts: [String: [[WPEParityParticlePathElement]: Bool]] = [:]
         var particleFailures: [String: WPEParityFrameSkip] = [:]
         var baseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]] = [:]
@@ -740,8 +756,9 @@ final class WPEParityFrameRenderer {
         }
         let reuse = Layout(effects: current.effects, frames: current.frames, draws: kept,
                            skipped: current.skipped, fade: current.fade)
-        var layout = Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
-                                     planner: &planner, encoder: drawEncoder, reusing: reuse)
+        var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+                                         planner: &planner, encoder: drawEncoder,
+                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: reuse)
         var rebound = layout.draws
         for index in rebound.keys {
             planner.refreshAtlasBindings(&rebound[index]!, operation: index)
@@ -1011,6 +1028,7 @@ final class WPEParityFrameRenderer {
                 if effects != layout.effects {
                     layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts), effects: effects,
                                                  artifacts: artifacts, planner: &planner, encoder: drawEncoder,
+                                                 requiredPresentationPass: plan.requiredPresentationPass,
                                                  reusing: layout)
                 }
                 try installGraphs(layout, cachePrevious: true)
@@ -1112,7 +1130,7 @@ final class WPEParityFrameRenderer {
     private static func makeLayout(_ planned: WPEParityFrameLayout, effects: [Bool],
                                    artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>],
                                    planner: inout WPEParityFrameDrawPlanner, encoder: WPEParityDrawEncoder,
-                                   reusing previous: Layout?) -> Layout {
+                                   requiredPresentationPass: String?, reusing previous: Layout?) throws -> Layout {
         planner.use(planned)
         let names = drawNames(planned.frames[0])
         var earlier: [DrawName: Int] = [:]
@@ -1138,6 +1156,25 @@ final class WPEParityFrameRenderer {
                 draws[index] = draw
             } catch {
                 skipped[index] = error
+            }
+        }
+        if let requiredPresentationPass {
+            let terminalIndex = planned.frames[0].draws.first { _, draw in
+                guard case let .post(post) = draw else { return false }
+                return post.shader == requiredPresentationPass
+            }?.key
+            guard let index = terminalIndex, draws[index] != nil, let program = planned.programs[index] else {
+                throw WPEParityFrameRenderError.requiredPostProcessUnavailable(
+                    pass: requiredPresentationPass, reason: terminalIndex.flatMap { skipped[$0] } ?? .noMaterial
+                )
+            }
+            let expectedShader = requiredPresentationPass == "combine_hdr" ? "combine_hdr" : "passthroughsrgb"
+            guard program.shader == expectedShader,
+                  !program.combos.contains(where: { ($0.name == "LINEAR" || $0.name == "DISPLAYHDR") && $0.value == "1" }) else {
+                throw WPEParityFrameRenderError.requiredPostProcessUnavailable(
+                    pass: requiredPresentationPass,
+                    reason: .program("Unsupported HDR presentation shader or transfer combo: \(program.shader)")
+                )
             }
         }
         let fade = planned.frames[0].draws.first { _, draw in

@@ -75,6 +75,15 @@ struct WPEParityFramePlan {
     let state: WPEParitySceneState
     let materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant]
     let post: WPEParityPostProcessConfig
+    var requiredPresentationPass: String? {
+        post.hdrEnabled ? (post.bloomEnabled ? "combine_hdr" : "combine_srgb") : nil
+    }
+
+    /// Both HDR combine paths write linear RGB; ccsimple and fade preserve that domain.
+    var colorTransfer: WPEPresentColorTransfer {
+        post.hdrEnabled ? .linear : .authored
+    }
+
     /// The program of every draw any effect set has, disabled effects included, as WPE loads them (R24 Q3).
     let programCache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>]
     let particleMaterials: [WPEParityParticleMaterialProbe]

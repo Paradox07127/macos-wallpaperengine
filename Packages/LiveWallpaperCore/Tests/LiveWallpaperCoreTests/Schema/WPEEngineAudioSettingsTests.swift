@@ -131,12 +131,15 @@ struct WPEEngineKeySourceTests {
     func saveAsPresetKeepsAuthorProperties() {
         let d = descriptor(
             presetValues: ["scale": .number(1)],
-            overrides: ["scale": .number(3), "wec_brs": .number(70)]
+            overrides: ["scale": .number(3), "wec_brs": .number(70), "wcc_v": .string("author-property")]
         )
         let saved = d.presetSnapshotForCurrentState()
         #expect(saved["scale"]?.numberValue == 3)
         // `wec_*` is engine-reserved too, for the same reason as `volume`.
         #expect(saved["wec_brs"] == nil)
+        #expect(saved["wcc_v"] == nil)
+        let existingLUT = d.withPresetLayer(id: "engine-lut", snapshot: ["wcc_v": .string("neutral")])
+        #expect(existingLUT.presetSnapshotForCurrentState()["wcc_v"] == .string("neutral"))
     }
 
     @Test("Editing an author property does not shadow the preset's engine value")

@@ -49,6 +49,7 @@ struct GeneralSettingsView: View {
     /// Unset and 1.0 both mean upscaling off.
     @AppStorage(WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey, store: .appScoped()) var metalFXRenderScale = 1.0
     @AppStorage(WPEDisplayHDROutput.defaultsKey, store: .appScoped()) var displayHDROutputEnabled = false
+    @AppStorage(WPEParityProductSettings.msaaSampleCountDefaultsKey, store: .appScoped()) var parityMSAASampleCount = WPEParityProductSettings.defaultMSAASampleCount
     @AppStorage(WPEParityRendererFlag.modeDefaultsKey, store: .appScoped()) var parityRendererMode = WPEParityRendererFlag.Mode.listed
     #endif
     @State var weatherLocation: WeatherLocationPreference

@@ -23,6 +23,7 @@ extension WPEMetalRenderExecutor {
         fitMode: WPEPresentFitMode = .stretch,
         worldSourceSize: CGSize? = nil,
         uniforms: WPEPresentUniforms? = nil,
+        colorTransfer: WPEPresentColorTransfer = .authored,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil
     ) throws -> Bool {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -35,6 +36,7 @@ extension WPEMetalRenderExecutor {
             fitMode: fitMode,
             worldSourceSize: worldSourceSize,
             uniforms: uniforms,
+            colorTransfer: colorTransfer,
             presentCompletion: presentCompletion,
             into: commandBuffer
         ) else {
@@ -52,6 +54,7 @@ extension WPEMetalRenderExecutor {
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize? = nil,
         uniforms: WPEPresentUniforms? = nil,
+        colorTransfer: WPEPresentColorTransfer = .authored,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
         into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
@@ -85,7 +88,7 @@ extension WPEMetalRenderExecutor {
         var encodedByUpscaler = false
         if uniforms == nil, let upscaler = metalFXUpscaler {
             let scalerSource = drawable.texture.pixelFormat == .rgba16Float
-                ? try encodeLinearPresentationTexture(source: source, into: commandBuffer)
+                ? try encodeLinearPresentationTexture(source: source, colorTransfer: colorTransfer, into: commandBuffer)
                 : source
             encodedByUpscaler = upscaler.encodeIfEligible(
                 source: scalerSource,
@@ -115,13 +118,14 @@ extension WPEMetalRenderExecutor {
                 target: drawable.texture,
                 fitMode: fitMode,
                 worldSourceSize: worldSourceSize,
-            uniforms: uniforms,
+                uniforms: uniforms,
+                colorTransfer: colorTransfer,
                 into: commandBuffer
             )
         }
         lastPresentPass = WPEPresentPassRecord(
             fitMode: fitMode, worldSourceSize: worldSourceSize, uniforms: uniforms,
-            target: drawable.texture, usedMetalFX: encodedByUpscaler
+            colorTransfer: colorTransfer, target: drawable.texture, usedMetalFX: encodedByUpscaler
         )
 
         commandBuffer.present(drawable)
@@ -147,16 +151,19 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    static func presentFragment(source: MTLPixelFormat) -> String {
-        switch source {
+    static func presentFragment(source: MTLPixelFormat, colorTransfer: WPEPresentColorTransfer = .authored) -> String {
+        if colorTransfer == .linear { return "wpe_present_linear_fragment" }
+        return switch source {
         case .rgba16Float, .rgba32Float: "wpe_present_hdr_fragment"
         default: "wpe_present_authored_fragment"
         }
     }
 
     private func encodeLinearPresentationTexture(
-        source: MTLTexture, into commandBuffer: MTLCommandBuffer
+        source: MTLTexture, colorTransfer: WPEPresentColorTransfer, into commandBuffer: MTLCommandBuffer
     ) throws -> MTLTexture {
+        // The parity HDR tail has already converted its RGB. The scaler can read that float texture directly.
+        if colorTransfer == .linear { return source }
         if linearPresentationTexture?.width != source.width || linearPresentationTexture?.height != source.height {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false
@@ -198,6 +205,7 @@ extension WPEMetalRenderExecutor {
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize?,
         uniforms: WPEPresentUniforms?,
+        colorTransfer: WPEPresentColorTransfer = .authored,
         into commandBuffer: MTLCommandBuffer
     ) throws {
         let descriptor = MTLRenderPassDescriptor()
@@ -208,7 +216,7 @@ extension WPEMetalRenderExecutor {
 
         let copyState = try renderPipeline(
             vertexName: "wpe_present_vertex",
-            fragmentName: Self.presentFragment(source: source.pixelFormat),
+            fragmentName: Self.presentFragment(source: source.pixelFormat, colorTransfer: colorTransfer),
             blendMode: "disabled",
             // The wallpaper window is transparent, but its wallpaper content is terminal and opaque. The fragment writes alpha=1 explicitly; do not encode that contract indirectly through a color write mask.
             alphaWritePolicy: .all,

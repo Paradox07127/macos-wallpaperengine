@@ -77,6 +77,19 @@ enum WPERenderDiagnosticReport {
             lines.append("No render diagnostics yet (scene not loaded).")
         }
 
+        if let diagnostics {
+            lines.append("")
+            if let parity = diagnostics.parity {
+                lines.append("Parity pipeline: active")
+                lines.append("Parity load generation: \(parity.loadGeneration)")
+                lines.append("Parity encoded draws (last frame): \(parity.encodedDrawCount) of \(parity.drawCount)")
+                let skipped = parity.skippedDraws.keys.sorted().map { "\($0)=\(parity.skippedDraws[$0, default: 0])" }
+                lines.append("Parity skipped draws: \(skipped.isEmpty ? "none" : skipped.joined(separator: ", "))")
+            } else {
+                lines.append("Parity pipeline: no active snapshot")
+            }
+        }
+
         if let shaders = diagnostics?.shaderErrors {
             lines.append("")
             lines.append(

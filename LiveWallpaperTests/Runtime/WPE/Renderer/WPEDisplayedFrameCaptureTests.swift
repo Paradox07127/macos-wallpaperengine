@@ -43,6 +43,78 @@ struct WPEDisplayedFrameCaptureTests {
         #expect(Array(expected[centre ..< centre + 4]) == [255, 0, 0, 255])
     }
 
+    @Test("Linear span presentation and capture preserve RGB, including extended values", .timeLimit(.minutes(1)))
+    func linearSpanCaptureKeepsOutputDomain() async throws {
+        let size = CGSize(width: 96, height: 64)
+        let stack = try CaptureStack.make(size: size)
+        defer { stack.teardown() }
+        let device = try #require(stack.layer.device)
+        let source = try Self.linearSource(device: device)
+        stack.layer.pixelFormat = .rgba16Float
+        WPEDisplayHDROutput.apply(to: stack.layer, hdrOutputEnabled: true)
+        let frames = WPESceneSpanFrames()
+        frames.reset(generation: 1)
+        let canvas = CGRect(origin: .zero, size: size)
+        let presenter = try WPESceneSpanPresenter(
+            device: device, layer: WPEPresentLayer(layer: stack.layer), frames: frames,
+            state: WPESceneSpanPresentationState(), producer: stack.actor,
+            configuration: .init(canvasFrame: canvas, screenFrame: canvas), density: 1
+        )
+        #expect(frames.publish(
+            .init(texture: source, generation: 1, sequence: 1, sourceSize: CGSize(width: 2, height: 2),
+                  fitMode: .stretch, colorTransfer: .linear, tracker: stack.renderer.executor.presentTracker),
+            generation: 1, sequence: 1
+        ))
+        presenter.present()
+        let drawable = try #require(stack.layer.lastDrawable).texture
+        #expect(presenter.executor.lastPresentPass?.colorTransfer == .linear)
+        let capture: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
+            presenter.executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+                continuation.resume(returning: $0)
+            }
+        }
+        let captured = try #require(capture)
+        #expect(captured.isEDR && captured.pixelFormat == .rgba16Float)
+        #expect(captured.colorSpace?.name == CGColorSpace.extendedLinearSRGB)
+        let presented = try stack.bytes(drawable)
+        let replayed = try stack.bytes(captured.texture)
+        #expect(replayed == presented)
+        // Independent source values: the authored HDR path would decode red,
+        // clamp green=2 to 1, and discard negative blue.
+        let centre = (captured.texture.height / 2 * captured.texture.width + captured.texture.width / 2) * 8
+        let expected: [Float] = [Float(Float16(0.214)), 2, -0.25, 1]
+        for channel in 0 ..< 4 {
+            let offset = centre + channel * 2
+            let bits = UInt16(replayed[offset]) | UInt16(replayed[offset + 1]) << 8
+            #expect(abs(Float(Float16(bitPattern: bits)) - expected[channel]) < 0.001)
+        }
+    }
+
+    @Test("Linear raw snapshots retain float RGB and source alpha", .timeLimit(.minutes(1)))
+    func linearSnapshotDoesNotRepeatAuthoredHDRTransfer() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let texture = try Self.linearSource(device: device)
+        let snapshotter = WPEMetalTextureSnapshotter()
+        let image = try #require(await snapshotter.snapshotAsync(
+            from: .init(texture: texture, colorTransfer: .linear)
+        ))
+        let linear = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        #expect(linear.colorSpace?.name == CGColorSpace.extendedLinearSRGB)
+        #expect(linear.bitsPerComponent == 32 && linear.bitsPerPixel == 128)
+        #expect(linear.bitmapInfo.contains(.floatComponents))
+        let data = try #require(linear.dataProvider?.data) as Data
+        let expected: [Float] = [Float(Float16(0.214)), 2, -0.25, 0.125]
+        for channel in 0 ..< 4 {
+            let actual = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: channel * 4, as: Float.self) }
+            #expect(actual == expected[channel])
+        }
+        // Existing callers remain authored unless their producer marks the packet.
+        let authored = try #require(snapshotter.snapshot(from: texture))
+        let oldRepresentation = try #require(authored.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        #expect(oldRepresentation.colorSpace?.name == CGColorSpace.sRGB)
+        #expect(oldRepresentation.bitsPerComponent == 8)
+    }
+
     @Test("A frame that never reached the screen yields no capture", .timeLimit(.minutes(1)))
     func nilBeforeFirstPresent() async throws {
         let stack = try CaptureStack.make(size: CGSize(width: 96, height: 64))
@@ -126,6 +198,24 @@ struct WPEDisplayedFrameCaptureTests {
             try await Task.sleep(for: .milliseconds(5))
         }
         Issue.record("Timed out waiting for: \(label)")
+    }
+
+    private static func linearSource(device: MTLDevice) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 2, height: 2, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let pixel: [Float16] = [0.214, 2, -0.25, 0.125]
+        let components = Array(repeating: pixel, count: 4).flatMap(\.self)
+        components.withUnsafeBytes {
+            texture.replace(
+                region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                withBytes: $0.baseAddress!, bytesPerRow: 2 * 8
+            )
+        }
+        return texture
     }
 }
 

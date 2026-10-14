@@ -342,6 +342,17 @@ final class AmbientWallpaperSessionBuilder {
         if WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
             switch WPEParityShaderToolchain.makeCompiler() {
             case let .success(compiler):
+                let settings: WPEParityProgramSettings
+                do {
+                    settings = try WPEParityProductSettings.make(
+                        descriptor: descriptor, device: device,
+                        bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled
+                    )
+                } catch {
+                    Logger.warning("Parity renderer rejected preset for \(descriptor.workshopID): \(error)",
+                                   category: .screenManager)
+                    return nil
+                }
                 let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
                 surface.attach(client: shim)
                 if spanFrames == nil {
@@ -369,7 +380,7 @@ final class AmbientWallpaperSessionBuilder {
                     assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,
                                                       dependencyMounts: dependencyMounts,
                                                       engineAssetsRootURL: engineAssetsRootURL),
-                    settings: WPEParityProgramSettings(),
+                    settings: settings,
                     compiler: compiler,
                     device: device,
                     presentLayer: WPEPresentLayer(layer: surface.metalLayer),

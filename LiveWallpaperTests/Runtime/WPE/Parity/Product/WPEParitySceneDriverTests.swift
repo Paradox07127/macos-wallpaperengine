@@ -28,11 +28,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
 
     func testLoadPresentPauseAndCleanup() async throws {
         let (document, assets) = try sceneInputs()
-        let compiler: WPEParityHelperShaderCompiler
-        switch WPEParityShaderToolchain.makeCompiler() {
-        case let .success(found): compiler = found
-        case let .failure(reason): throw XCTSkip("\(reason)")
-        }
+        let compiler = try makeCompiler()
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
@@ -99,11 +95,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
     func testSoundLayerStartsRuntimeAndCleanupStopsIt() async throws {
         let (document, assets) = try sceneInputs(sceneID: "3509243656")
         XCTAssertEqual(document.soundObjects.count, 1)
-        let compiler: WPEParityHelperShaderCompiler
-        switch WPEParityShaderToolchain.makeCompiler() {
-        case let .success(found): compiler = found
-        case let .failure(reason): throw XCTSkip("\(reason)")
-        }
+        let compiler = try makeCompiler()
         let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
         driver.setAudioMuted(true)
         let sceneDirectory = try XCTUnwrap(TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR"))
@@ -122,6 +114,23 @@ final class WPEParitySceneDriverTests: XCTestCase {
         driver.cleanup()
         XCTAssertNil(driver.soundRuntime)
         XCTAssertTrue(runtime.debugTrackSnapshots().isEmpty, "cleanup stops and detaches every track")
+    }
+
+    /// The unsigned Debug test host cannot provide the inherited sandbox required by the shipping helper.
+    /// Explicit test inputs use the current source build; the signed Release product gate uses its bundle.
+    private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
+        let environment = ProcessInfo.processInfo.environment
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
+        let urls = keys.compactMap { environment[$0].map { URL(fileURLWithPath: $0) } }
+        if !urls.isEmpty {
+            guard urls.count == 3 else { throw XCTSkip("Supply all three current test toolchain paths") }
+            return try WPEParityHelperShaderCompiler(helper: urls[0], dxcompiler: urls[1], metalIRConverter: urls[2],
+                                                     workDirectory: scratch.appending(path: "shaderc"))
+        }
+        switch WPEParityShaderToolchain.makeCompiler() {
+        case let .success(compiler): return compiler
+        case let .failure(reason): throw XCTSkip("\(reason)")
+        }
     }
 
     private func present(_ driver: WPEParitySceneDriver, layer: CAMetalLayer, label: String) async throws {

@@ -52,15 +52,18 @@ final class WPESceneSpanFrame: @unchecked Sendable {
     let sequence: UInt64
     let sourceSize: CGSize
     let fitMode: WPEPresentFitMode
+    let colorTransfer: WPEPresentColorTransfer
     private let tracker: WPEMetalRenderExecutor.PresentInFlightTracker
 
     init(texture: MTLTexture, generation: Int, sequence: UInt64, sourceSize: CGSize,
-         fitMode: WPEPresentFitMode, tracker: WPEMetalRenderExecutor.PresentInFlightTracker) {
+         fitMode: WPEPresentFitMode, colorTransfer: WPEPresentColorTransfer = .authored,
+         tracker: WPEMetalRenderExecutor.PresentInFlightTracker) {
         self.texture = texture
         self.generation = generation
         self.sequence = sequence
         self.sourceSize = sourceSize
         self.fitMode = fitMode
+        self.colorTransfer = colorTransfer
         self.tracker = tracker
         tracker.increment(ObjectIdentifier(texture))
     }

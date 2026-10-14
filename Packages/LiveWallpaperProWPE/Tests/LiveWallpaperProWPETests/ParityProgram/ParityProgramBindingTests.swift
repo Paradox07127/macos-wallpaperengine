@@ -84,6 +84,82 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertEqual(try speed([:]), [1])
     }
 
+    /// R15/140181f30 binds the LUT in slot 1 independently of COL. A material/default texture is not a graph read.
+    func testPostColorCorrectionBindsItsLUTAndPreservesFreeAnnotationAssets() throws {
+        let (scene, frame) = try Self.postFixture(
+            bloom: false, correction: .init(wccV: "warm", wccAmt: 50),
+            correctionTextures: ["util/material-slot-zero", "lut/material-default"]
+        )
+        let operation = try XCTUnwrap(frame.draws.first { _, draw in
+            if case let .post(post) = draw {
+                post.shader == "ccsimple"
+            } else {
+                false
+            }
+        }?.key)
+        let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[operation])
+        XCTAssertEqual(binding.textures, [0: .resource("_rt_FullFrameBuffer"),
+                                          1: .asset("lut/warm"), 2: .asset("util/annotation")])
+        XCTAssertEqual(Self.floats(binding.constants[.fragment]?["g_LutParams"]), [0.5])
+        XCTAssertFalse(binding.depthTest)
+        XCTAssertFalse(binding.depthWrite)
+    }
+
+    /// The post graph owns FFB/bloom slots. RT-looking names must remain resources so missing reads cannot
+    /// masquerade as `materials/<RT>.tex` assets at readiness.
+    func testPostGraphReadsOverrideMaterialAssetsAndRetainResourceIdentity() throws {
+        let (scene, frame) = try Self.postFixture(
+            bloom: true, combineTextures: ["util/stale-scene", "lut/stale-bloom", "_rt_NotDeclared",
+                                           "backbuffer", "previous", "util/free"]
+        )
+        let operation = try XCTUnwrap(frame.draws.first { _, draw in
+            if case let .post(post) = draw {
+                post.shader == "combine"
+            } else {
+                false
+            }
+        }?.key)
+        let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[operation])
+        XCTAssertEqual(binding.textures, [0: .resource("_rt_FullFrameBuffer"), 1: .resource("_rt_Bloom"),
+                                          2: .resource("_rt_NotDeclared"), 3: .resource("backbuffer"),
+                                          4: .resource("_rt_FullFrameBuffer"), 5: .asset("util/free")])
+        guard case let .draw(draw) = frame.operations[operation].kind else { return XCTFail("missing combine draw") }
+        XCTAssertEqual(draw.reads.map(\.resource), ["_rt_FullFrameBuffer", "_rt_Bloom"])
+        XCTAssertFalse(frame.resources.contains { $0.id == "_rt_NotDeclared" })
+    }
+
+    private static func postFixture(bloom: Bool, correction: WPEParityColorCorrection = .init(),
+                                    correctionTextures: [String] = [], combineTextures: [String] = []) throws
+        -> (WPEParityProgramScene, WPEParityFrame) {
+        let materials: [String: Any] = [
+            "materials/util/ccsimple.json": ["passes": [["shader": "ccsimple", "textures": correctionTextures]]],
+            "materials/util/combine_ldr.json": ["passes": [["shader": "combine", "textures": combineTextures]]],
+        ]
+        var bytes = try materials.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        bytes["shaders/ccsimple.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/ccsimple.frag"] = Data("""
+        uniform sampler2D g_Texture0;
+        uniform sampler3D g_Texture1;
+        uniform sampler2D g_Texture2; // {"default":"util/annotation"}
+        uniform float g_LutParams; // {"material":"lutparams","default":1}
+        void main() {}
+        """.utf8)
+        bytes["shaders/combine.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/combine.frag"] = Data("void main() {}".utf8)
+        let files = bytes
+        let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 16], "bloom": bloom],
+            "objects": [["id": 1, "name": "layer"]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let scene = WPEParityProgramScene(document: document, assets: assets,
+                                          settings: .init(colorCorrection: correction))
+        return try (scene, WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0))
+    }
+
     /// One image layer `7` whose material runs `shaders/probe.{vert,frag}`; returns its albedo draw's binding.
     private static func probeBinding(vertex: String, fragment: String, material: [String: Any],
                                      instance: [String: Any],

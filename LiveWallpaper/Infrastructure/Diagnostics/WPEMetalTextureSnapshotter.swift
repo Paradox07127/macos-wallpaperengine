@@ -12,6 +12,12 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
 
     struct SnapshotSource: @unchecked Sendable {
         let texture: MTLTexture
+        let colorTransfer: WPEPresentColorTransfer
+
+        init(texture: MTLTexture, colorTransfer: WPEPresentColorTransfer = .authored) {
+            self.texture = texture
+            self.colorTransfer = colorTransfer
+        }
     }
 
     private let queue: DispatchQueue
@@ -25,8 +31,10 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
 
     /// Full-resolution path: debug-artifacts first-frame capture
     /// (`WPEMetalSceneRenderer+Load.swift`) and format tests.
-    func snapshot(from texture: MTLTexture) -> NSImage? {
-        Self.makeImage(from: texture, maxDimension: nil)
+    func snapshot(
+        from texture: MTLTexture, colorTransfer: WPEPresentColorTransfer = .authored
+    ) -> NSImage? {
+        Self.makeImage(from: texture, colorTransfer: colorTransfer, maxDimension: nil)
     }
 
     /// Poster path (`SceneRenderer+LivePoster`): downsampled before readback.
@@ -34,13 +42,18 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         await withCheckedContinuation { continuation in
             queue.async {
                 continuation.resume(
-                    returning: Self.makeImage(from: source.texture, maxDimension: Self.posterMaxDimension)
+                    returning: Self.makeImage(
+                        from: source.texture, colorTransfer: source.colorTransfer,
+                        maxDimension: Self.posterMaxDimension
+                    )
                 )
             }
         }
     }
 
-    private static func makeImage(from texture: MTLTexture, maxDimension: Int?) -> NSImage? {
+    private static func makeImage(
+        from texture: MTLTexture, colorTransfer: WPEPresentColorTransfer, maxDimension: Int?
+    ) -> NSImage? {
         guard texture.width > 0, texture.height > 0 else {
             return nil
         }
@@ -48,6 +61,10 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         var texture = texture
         if let maxDimension,
            max(texture.width, texture.height) > maxDimension,
+           // The existing MPS path filters sRGB storage through a raw UNORM
+           // view. Keep linear sRGB sources full-size rather than averaging
+           // their encoded storage values before the linear readback.
+           !(colorTransfer == .linear && isSRGBStorage(texture.pixelFormat)),
            let scaled = downsampleOnGPU(texture, maxDimension: maxDimension) {
             texture = scaled
         }
@@ -60,6 +77,10 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             return nil
         }
         texture = readable
+
+        if colorTransfer == .linear {
+            return makeLinearImage(from: texture)
+        }
 
         let bytes: [UInt8]
         switch texture.pixelFormat {
@@ -109,6 +130,74 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             cgImage: cgImage,
             size: CGSize(width: texture.width, height: texture.height)
         )
+    }
+
+    /// Raw snapshots retain source alpha. Unlike terminal present/capture,
+    /// this API does not make the content opaque. Linear RGB stays linear and
+    /// extended; a float texture alone never opts into the authored HDR transfer.
+    private static func makeLinearImage(from texture: MTLTexture) -> NSImage? {
+        let componentCount = texture.width * texture.height * 4
+        var components: [Float]
+        switch texture.pixelFormat {
+        case .rgba16Float:
+            var halves = [UInt16](repeating: 0, count: componentCount)
+            texture.getBytes(
+                &halves, bytesPerRow: texture.width * 8,
+                from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0
+            )
+            components = halves.map { Float(Float16(bitPattern: $0)) }
+        case .rgba32Float:
+            components = [Float](repeating: 0, count: componentCount)
+            texture.getBytes(
+                &components, bytesPerRow: texture.width * 16,
+                from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0
+            )
+        case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb:
+            var bytes = readRGBA8(texture)
+            if texture.pixelFormat == .bgra8Unorm || texture.pixelFormat == .bgra8Unorm_srgb {
+                for index in stride(from: 0, to: bytes.count, by: 4) {
+                    bytes.swapAt(index, index + 2)
+                }
+            }
+            components = bytes.map { Float($0) / 255 }
+            if isSRGBStorage(texture.pixelFormat) {
+                // getBytes reads storage, while Metal sampling decodes sRGB
+                // RGB. Reproduce that format operation, without the authored
+                // HDR multiplier or clamp. Alpha has no sRGB transfer.
+                for pixel in stride(from: 0, to: components.count, by: 4) {
+                    for channel in 0 ..< 3 {
+                        let encoded = components[pixel + channel]
+                        components[pixel + channel] = encoded <= 0.04045
+                            ? encoded / 12.92 : pow((encoded + 0.055) / 1.055, 2.4)
+                    }
+                }
+            }
+        default:
+            Logger.warning(
+                "[snapshot] unsupported linear pixel format \(texture.pixelFormat.rawValue) — no poster",
+                category: .wpeRender
+            )
+            return nil
+        }
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB),
+              let provider = components.withUnsafeBytes({ CGDataProvider(data: Data($0) as CFData) }) else {
+            return nil
+        }
+        let bitmapInfo: CGBitmapInfo = [
+            .floatComponents, .byteOrder32Little,
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        ]
+        guard let image = CGImage(
+            width: texture.width, height: texture.height,
+            bitsPerComponent: 32, bitsPerPixel: 128, bytesPerRow: texture.width * 16,
+            space: colorSpace, bitmapInfo: bitmapInfo, provider: provider,
+            decode: nil, shouldInterpolate: true, intent: .defaultIntent
+        ) else { return nil }
+        return NSImage(cgImage: image, size: CGSize(width: texture.width, height: texture.height))
+    }
+
+    private static func isSRGBStorage(_ format: MTLPixelFormat) -> Bool {
+        format == .rgba8Unorm_srgb || format == .bgra8Unorm_srgb
     }
 
     /// Bilinear-scales on GPU so the CPU readback and conversion touch a pane-sized frame instead of the full render target; returns nil on any failure so the caller falls back to the full-resolution readback.

@@ -100,6 +100,25 @@ extension GeneralSettingsView {
                 }
             }
 
+            SettingRow(
+                icon: "cube.transparent",
+                iconColor: .blue,
+                title: "3D anti-aliasing",
+                subtitle: "New scene pipeline only. Changes reload wallpapers."
+            ) {
+                Picker("", selection: $parityMSAASampleCount) {
+                    Text("Off").tag(1)
+                    Text(verbatim: "2×").tag(2)
+                    Text(verbatim: "4×").tag(4)
+                    Text(verbatim: "8×").tag(8)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: parityMSAASampleCount) { _, _ in screenManager.reloadAllScreens() }
+                .accessibilityLabel(Text("3D anti-aliasing"))
+                .accessibilityHint(Text("New scene pipeline only. Changes reload wallpapers."))
+            }
+
             if WPEDisplayHDROutput.hasEDRCapableScreen {
                 SettingRow(
                     icon: "sun.max",

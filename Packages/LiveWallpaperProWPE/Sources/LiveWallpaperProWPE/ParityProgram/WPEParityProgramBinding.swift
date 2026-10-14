@@ -57,6 +57,7 @@ public extension WPEParityProgramBuilder {
     static func bindings(frame: WPEParityFrame, scene: WPEParityProgramScene,
                          description: WPEParitySceneDescription? = nil) -> [Int: WPEParityProgramBinding] {
         let imported = Set(frame.resources.filter { $0.lifetime == .imported }.map(\.id))
+        let resources = Set(frame.resources.map(\.id))
         let white = SIMD4<Float>(repeating: 1)
         var bindings: [Int: WPEParityProgramBinding] = [:]
         for (index, draw) in frame.draws {
@@ -99,12 +100,25 @@ public extension WPEParityProgramBuilder {
                 )
             case let .post(draw):
                 let material = scene.engineMaterial(draw)
-                var (constants, _, _) = resolve(material, assets: scene.assets, layerColor: white)
+                let (materialConstants, names, _) = resolve(material, assets: scene.assets, layerColor: white)
+                var constants = materialConstants
                 let engine = draw.constants.mapValues { $0.count == 1 ? WPECBufferValue.float($0[0]) : .vector($0) }
                 for stage in constants.keys {
                     constants[stage]?.merge(engine) { $1 }
                 }
                 var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
+                for (slot, name) in names where !name.isEmpty {
+                    let id = WPEResourceID(name)
+                    if name == "previous" {
+                        textures[slot] = draw.reads.first.map { .resource($0) }
+                    } else if name.hasPrefix("_rt_") || resources.contains(id) {
+                        // Undeclared RT reads must still fail the planner's graph-read check, not load an asset.
+                        textures[slot] = .resource(id)
+                    } else {
+                        textures[slot] = .asset(name)
+                    }
+                }
+                // Engine reads own these slots even when a material or annotation names an asset there.
                 for (slot, read) in draw.reads.enumerated() {
                     textures[Int32(slot)] = .resource(read)
                 }
