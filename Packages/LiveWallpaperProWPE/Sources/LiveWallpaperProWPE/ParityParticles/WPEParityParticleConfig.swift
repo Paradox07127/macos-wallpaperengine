@@ -134,7 +134,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     /// Texture facts of this system's own `material`.
     var material = WPEParityParticleMaterial()
     var materialPath: String?
-    /// Children rejected by the existing depth/cycle policy, for its compatibility diagnostic.
+    /// Children omitted at the native maximum system depth, retained for compatibility diagnostics.
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
@@ -548,14 +548,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         let index = children.filter { ($0.trigger == .always) == (trigger == .always) }.count
         let childPath = context.path + [trigger == .always ? .staticChild(index) : .eventGroup(index)]
-        if context.underEventAncestor, trigger != .always {
-            unsupportedChildren.append(.init(path: childPath, asset: path, field: "type",
-                                             reason: "N1/N2 permit only static descendants of an event instance"))
-            return
-        }
-        // Depth/cycle remain the existing product policy; native permits depth 0...10.
-        guard !context.ancestors.contains(path),
-              context.ancestors.count < WPEParityProgramScene.particleChildDepthLimit else {
+        // 22ebe0 creates children while the current system's depth is < 10; 22f890 assigns depth + 1.
+        // A repeated asset is another instance, not a cycle error. The native depth also bounds such recursion.
+        guard context.path.count < WPEParityProgramScene.particleChildDepthLimit else {
             diagnostics.append("child \(path) omitted")
             omittedChildPaths.append(path)
             return
