@@ -212,6 +212,7 @@ final class WPEParitySceneDriver {
         didLoad = false
         renderer?.destroyScript()
         renderer = nil
+        executor.lastPresentPass = nil
         planSource = nil
         plannedTarget = nil
         userPropertyBindings = [:]
@@ -509,17 +510,24 @@ final class WPEParitySceneDriver {
     /// A private copy of the presented backbuffer, encoded on the frame queue so the next frame cannot overwrite it
     /// first; nil before a frame was presented or when the GPU failed.
     nonisolated(nonsending) func copyPresentedBackbuffer() async -> WPEMetalTextureSnapshotter.SnapshotSource? {
-        guard hasPresentedFrame, let renderer else { return nil }
-        let source = renderer.backbuffer
+        guard hasPresentedFrame else { return nil }
+        let span = spanFrames?.latest()
+        let presented = span.map { WPEMetalTextureSnapshotter.SnapshotSource(texture: $0.texture,
+                                                                             colorTransfer: $0.colorTransfer) }
+            ?? executor.lastPresentPass.map { WPEMetalTextureSnapshotter.SnapshotSource(texture: $0.source,
+                                                                                        colorTransfer: $0.colorTransfer) }
+        guard let presented else { return nil }
+        let source = presented.texture
         guard let copy = device.makeTexture(descriptor: Self.copyDescriptor(source)),
               let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer(),
               let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
         copy.label = "parity.backbufferCopy"
         blit.copy(from: source, to: copy)
         blit.endEncoding()
-        let result = WPEMetalTextureSnapshotter.SnapshotSource(texture: copy, colorTransfer: renderer.colorTransfer)
+        let result = WPEMetalTextureSnapshotter.SnapshotSource(texture: copy, colorTransfer: presented.colorTransfer)
         return await withCheckedContinuation { continuation in
             commandBuffer.addCompletedHandler { commandBuffer in
+                withExtendedLifetime(span) {}
                 continuation.resume(returning: commandBuffer.status == .completed ? result : nil)
             }
             commandBuffer.commit()
@@ -530,11 +538,11 @@ final class WPEParitySceneDriver {
     /// on the frame queue that writes the backbuffer. `completion` runs on a Metal callback thread.
     func captureDisplayedFrame(colorSpace: CGColorSpace?,
                                completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void) {
-        guard hasPresentedFrame, let source = renderer?.backbuffer else {
+        guard hasPresentedFrame else {
             completion(nil)
             return
         }
-        executor.encodeDisplayedFrameCapture(source: source, colorSpace: colorSpace,
+        executor.encodeDisplayedFrameCapture(colorSpace: colorSpace,
                                              queue: executor.textureSourceCommandQueue, completion: completion)
     }
 
@@ -648,6 +656,7 @@ final class WPEParitySceneDriver {
         shaderErrorSummary = (0, [])
         soundRuntime?.stop()
         soundRuntime = nil
+        executor.lastPresentPass = nil
         executor.releaseTransientResources()
     }
 

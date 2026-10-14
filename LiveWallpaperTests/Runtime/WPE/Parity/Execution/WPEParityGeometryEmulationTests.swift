@@ -84,7 +84,7 @@ final class WPEParityGeometryEmulationTests: XCTestCase {
             let renderEncoder = try XCTUnwrap(commandBuffer.makeRenderCommandEncoder(descriptor: pass))
             var draw = draw
             draw.vertexCount = vertexCount
-            try encoder.encode(draw, frame: frame, on: renderEncoder)
+            try encoder.encode(draw, frame: frame, hasDepthAttachment: false, on: renderEncoder)
             renderEncoder.endEncoding()
 
             let side = WPEParityGeometryEmulationTests.side

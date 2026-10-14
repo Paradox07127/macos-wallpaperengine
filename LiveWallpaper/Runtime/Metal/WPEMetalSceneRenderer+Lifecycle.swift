@@ -51,6 +51,7 @@ extension WPEMetalSceneRenderer {
         failedPresentGeneration = nil
         pendingPresentRetryCount = 0
         outputTexture = nil
+        executor.lastPresentPass = nil
         outputFrameProduction = nil
         latestFrameProduction = nil
         renderGraph = nil
@@ -869,6 +870,7 @@ extension WPEMetalSceneRenderer {
         mailbox.publishInteractiveZones([])
         surfaceControl.detach()
         outputTexture = nil
+        executor.lastPresentPass = nil
         outputFrameProduction = nil
         latestFrameProduction = nil
         lastFramePipeline = nil

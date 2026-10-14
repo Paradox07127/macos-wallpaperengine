@@ -289,7 +289,7 @@ final class WPEParityExecutionTests: XCTestCase {
         pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         pass.colorAttachments[0].storeAction = .store
         let encoder = try XCTUnwrap(commandBuffer.makeRenderCommandEncoder(descriptor: pass))
-        try harness.encoder.encode(draw, frame: frame, on: encoder)
+        try harness.encoder.encode(draw, frame: frame, hasDepthAttachment: false, on: encoder)
         encoder.endEncoding()
     }
 

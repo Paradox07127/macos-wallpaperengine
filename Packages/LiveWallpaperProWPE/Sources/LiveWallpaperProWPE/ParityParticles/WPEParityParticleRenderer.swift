@@ -97,11 +97,11 @@ public struct WPEParityParticleVertexBatch: Equatable, Sendable {
     public let renderVar0: WPEParityRenderVar0
 }
 
-/// One actual renderer draw, in recursive instance order, with that instance's model contribution.
+/// One actual renderer draw, in recursive instance order, with its final native draw-stack model.
 public struct WPEParityParticleDrawBatch: Sendable {
     public let key: WPEParityParticleDrawKey
     public let vertices: WPEParityParticleVertexBatch
-    public let localTransform: simd_float4x4
+    public let modelMatrix: simd_float4x4
 }
 
 /// An owner's native snapshot boundary in the unfiltered actual draw order. Zero and `batches.count` are valid:

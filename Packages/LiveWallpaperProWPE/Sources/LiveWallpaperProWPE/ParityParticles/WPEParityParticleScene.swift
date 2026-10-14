@@ -106,13 +106,23 @@ public struct WPEParityParticleScene {
     /// that yields no batch. The callback reads cached base-material facts: nil prunes this system and its children,
     /// just as a nil native material does; unknown facts may throw. Even empty systems must pass this material gate.
     /// The boundary refers to unfiltered batches and must not move when the caller drops or filters draws.
-    public mutating func drawStream(for objectID: String,
+    public mutating func drawStream(objectID: String, ownerModel: simd_float4x4, worldModel: simd_float4x4,
                                     needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
         -> WPEParityParticleDrawStream {
         guard let index = indexByID[objectID] else {
             return WPEParityParticleDrawStream(batches: [], snapshotBoundary: nil)
         }
-        return try objects[index].system.drawStream(objectID: objectID, needsFullFrameBuffer: needsFullFrameBuffer)
+        return try objects[index].system.drawStream(objectID: objectID, ownerModel: ownerModel, worldModel: worldModel,
+                                                    needsFullFrameBuffer: needsFullFrameBuffer)
+    }
+
+    /// Top-level diagnostic convenience. Product composite drawing passes its live W/C explicitly.
+    public mutating func drawStream(for objectID: String,
+                                    needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
+        -> WPEParityParticleDrawStream {
+        let owner = indexByID[objectID].map { objects[$0].system.instanceTransform } ?? matrix_identity_float4x4
+        return try drawStream(objectID: objectID, ownerModel: owner, worldModel: matrix_identity_float4x4,
+                              needsFullFrameBuffer: needsFullFrameBuffer)
     }
 
     /// Native draw order (1402366f0): own entries, each static child's complete subtree, then each event group's
@@ -133,11 +143,11 @@ public struct WPEParityParticleScene {
         indexByID[objectID].map { objects[$0].system.totalLiveCount }
     }
 
-    /// Legacy static-path matrix; a terminal event group retains its parent's matrix even when empty. Mixed paths
-    /// through multiple event instances have no single matrix. Product draws use each actual DrawBatch's matrix.
+    /// Legacy placement-chain query, derived from E without storing cumulative L. This is not a mixed-space draw
+    /// model: terminal event groups retain the parent chain, and multiple event instances have no single matrix.
     public func childLocal(for key: WPEParityParticleDrawKey) -> simd_float4x4? {
         guard let index = indexByID[key.objectID] else { return nil }
-        return objects[index].system.localTransform(at: key.path[...])
+        return objects[index].system.localTransform(at: key.path[...], accumulated: matrix_identity_float4x4)
     }
 }
 
@@ -150,15 +160,25 @@ extension WPEParityParticleSystem {
     mutating func drawStream(objectID: String, matching: WPEParityParticleDrawKey? = nil,
                              needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
         -> WPEParityParticleDrawStream {
+        try drawStream(objectID: objectID, ownerModel: instanceTransform, worldModel: matrix_identity_float4x4,
+                       matching: matching, needsFullFrameBuffer: needsFullFrameBuffer)
+    }
+
+    mutating func drawStream(objectID: String, ownerModel: simd_float4x4, worldModel: simd_float4x4,
+                             matching: WPEParityParticleDrawKey? = nil,
+                             needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?) rethrows
+        -> WPEParityParticleDrawStream {
         var batches: [WPEParityParticleDrawBatch] = []
         var snapshotBoundary: Int?
         try appendDrawStream(at: WPEParityParticleDrawKey(objectID: objectID, path: [], renderer: 0),
+                             incomingModel: worldModel * ownerModel, worldModel: worldModel,
                              matching: matching, needsFullFrameBuffer: needsFullFrameBuffer,
                              into: &batches, snapshotBoundary: &snapshotBoundary)
         return WPEParityParticleDrawStream(batches: batches, snapshotBoundary: snapshotBoundary)
     }
 
     private mutating func appendDrawStream(at node: WPEParityParticleDrawKey,
+                                           incomingModel: simd_float4x4, worldModel: simd_float4x4,
                                            matching: WPEParityParticleDrawKey?,
                                            needsFullFrameBuffer: ([WPEParityParticlePathElement]) throws -> Bool?,
                                            into batches: inout [WPEParityParticleDrawBatch],
@@ -168,18 +188,23 @@ extension WPEParityParticleSystem {
         if snapshotBoundary == nil, liveCount != 0, needsSnapshot {
             snapshotBoundary = batches.count
         }
+        let ownModel = config.flags & 1 == 0 ? incomingModel : worldModel
         var mainBatch: WPEParityParticleVertexBatch?
         for renderer in renderers.indices {
             var key = node
             key.renderer = renderer
             if matching == nil || matching == key, let vertices = batch(renderer, mainBatch: &mainBatch) {
-                batches.append(WPEParityParticleDrawBatch(key: key, vertices: vertices, localTransform: localTransform))
+                batches.append(WPEParityParticleDrawBatch(key: key, vertices: vertices, modelMatrix: ownModel))
             }
         }
+        // World own draw uses C, but its children start from E, even with zero live particles/renderers.
+        let childModel = config.flags & 1 == 0 ? ownModel : instanceTransform
         for index in children.indices {
             var key = node
             key.path.append(.staticChild(index))
-            try children[index].appendDrawStream(at: key, matching: matching,
+            let model = children[index].config.flags & 1 == 0
+                ? childModel * children[index].instanceTransform : childModel
+            try children[index].appendDrawStream(at: key, incomingModel: model, worldModel: worldModel, matching: matching,
                                                  needsFullFrameBuffer: needsFullFrameBuffer,
                                                  into: &batches, snapshotBoundary: &snapshotBoundary)
         }
@@ -187,26 +212,30 @@ extension WPEParityParticleSystem {
             var key = node
             key.path.append(.eventGroup(group))
             for index in eventChildren[group].indices {
-                try eventChildren[group][index].appendDrawStream(at: key, matching: matching,
+                let model = eventChildren[group][index].config.flags & 1 == 0
+                    ? childModel * eventChildren[group][index].instanceTransform : childModel
+                try eventChildren[group][index].appendDrawStream(at: key, incomingModel: model,
+                                                                 worldModel: worldModel, matching: matching,
                                                                  needsFullFrameBuffer: needsFullFrameBuffer,
                                                                  into: &batches, snapshotBoundary: &snapshotBoundary)
             }
         }
     }
 
-    func localTransform(at path: ArraySlice<WPEParityParticlePathElement>) -> simd_float4x4? {
-        guard let first = path.first else { return localTransform }
+    func localTransform(at path: ArraySlice<WPEParityParticlePathElement>, accumulated: simd_float4x4) -> simd_float4x4? {
+        guard let first = path.first else { return accumulated }
         switch first {
         case let .staticChild(index):
             guard children.indices.contains(index) else { return nil }
-            return children[index].localTransform(at: path.dropFirst())
+            return children[index].localTransform(at: path.dropFirst(), accumulated: accumulated * children[index].instanceTransform)
         case let .eventGroup(group):
             guard eventChildren.indices.contains(group) else { return nil }
             if path.count == 1 {
-                return localTransform
+                return accumulated
             }
             guard eventChildren[group].count == 1 else { return nil }
-            return eventChildren[group][0].localTransform(at: path.dropFirst())
+            return eventChildren[group][0].localTransform(at: path.dropFirst(),
+                                                          accumulated: accumulated * eventChildren[group][0].instanceTransform)
         }
     }
 

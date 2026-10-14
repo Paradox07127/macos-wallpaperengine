@@ -2,16 +2,16 @@ import simd
 
 /// g_ModelMatrix, g_ViewMatrix and g_ProjectionMatrix of one particle renderer draw (R16 Q3, R22 Q1/Q5).
 public enum WPEParityParticleMatrices {
-    /// `childLocal` places a child system or event group under its parent system (R16 Q4); identity for a root system.
-    public static func draw(_ transforms: WPEParityLayerTransformSet, objectID: String, childLocal: simd_float4x4,
-                            worldSpace: Bool, perspective: Bool, compositeOwnerID: String?,
+    /// `modelMatrix` is the walker's final D, including its native world/composite resets.
+    public static func draw(_ transforms: WPEParityLayerTransformSet, objectID: String, modelMatrix: simd_float4x4,
+                            perspective: Bool, compositeOwnerID: String?,
                             parallax: SIMD2<Float>) -> WPEParityUniformMatrices {
-        let own = worldSpace ? matrix_identity_float4x4 : transforms.world(objectID) * childLocal
-        var matrices = WPEParityUniformMatrices(model: own, view: transforms.view(objectID, parallax: parallax),
+        var matrices = WPEParityUniformMatrices(model: modelMatrix, view: transforms.view(objectID, parallax: parallax),
                                                 projection: transforms.projection(objectID))
         if let ownerID = compositeOwnerID, let owner = transforms.layers[ownerID] {
-            matrices = WPEParityLayerTransform.compositeMatrices(parentModel: transforms.model(ownerID),
-                                                                 parentSize: owner.size, childModel: own)
+            matrices.view = matrix_identity_float4x4
+            matrices.projection = WPEParityUniformMatrices.ortho(halfWidth: owner.size.x / 2,
+                                                                 halfHeight: owner.size.y / 2, depth: 1000)
         }
         if perspective {
             (matrices.view, matrices.projection) = transforms.camera.pushPerspective(view: matrices.view,

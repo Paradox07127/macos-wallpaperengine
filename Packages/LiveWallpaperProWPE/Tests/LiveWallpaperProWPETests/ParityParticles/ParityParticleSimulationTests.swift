@@ -161,8 +161,8 @@ final class ParityParticleSimulationTests: XCTestCase {
         let spawned = particles.eventChildren[0][0]
         XCTAssertEqual(spawned.liveCount, 4)
         XCTAssertEqual(spawned.position[0].x, 0, accuracy: 1e-6)
-        XCTAssertEqual(spawned.localTransform.columns.3.x, 1, accuracy: 1e-6)
-        XCTAssertEqual((spawned.localTransform * SIMD4(spawned.position[0], 1)).x, 1, accuracy: 1e-6)
+        XCTAssertEqual(spawned.instanceTransform.columns.3.x, 1, accuracy: 1e-6)
+        XCTAssertEqual((spawned.instanceTransform * SIMD4(spawned.position[0], 1)).x, 1, accuracy: 1e-6)
     }
 
     func testDeathPrewarmInheritsTheOldSlotAndDrawsBeforeTheRebornParent() throws {
@@ -212,8 +212,8 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(spawned.prewarmStepCount, 1)
         XCTAssertEqual(spawned.initialColor[0], SIMD3(1, 0, 0), "Birth must read the dying slot before emit reuses it")
         XCTAssertEqual(spawned.velocity[0], SIMD3(10, 0, 0))
-        XCTAssertEqual(spawned.localTransform.columns.0.y, -2, accuracy: 2e-6)
-        XCTAssertEqual(spawned.localTransform.columns.1.x, -3, accuracy: 2e-6,
+        XCTAssertEqual(spawned.instanceTransform.columns.0.y, -2, accuracy: 2e-6)
+        XCTAssertEqual(spawned.instanceTransform.columns.1.x, -3, accuracy: 2e-6,
                        "reflected child TRS belongs to its model; inherited velocity stays in the parent raw basis")
         XCTAssertEqual(particles.initialColor[0], SIMD3(repeating: 1))
         XCTAssertEqual(particles.velocity[0], .zero)
@@ -408,8 +408,8 @@ final class ParityParticleSimulationTests: XCTestCase {
             var transform = matrix_identity_float4x4
             transform.columns.3.x = x
             var instance = WPEParityParticleSystem(config: config, instance: .init(), rng: rng, crt: crt,
-                                                   localTransform: transform)
-            instance.advance(dt: 0.1)
+                                                   instanceTransform: transform)
+            instance.advance(dt: 0.1, frame: .init(objectMatrix: transform))
             instances.append(instance)
         }
         var parent = system(#"{"maxcount": 0}"#, rng: rng)
@@ -417,7 +417,7 @@ final class ParityParticleSimulationTests: XCTestCase {
         let batches = parent.drawBatches(objectID: "5")
         XCTAssertEqual(batches.map(\.key.passIdentity), ["5/particle/e0/r0", "5/particle/e0/0/r0",
                                                          "5/particle/e0/r0", "5/particle/e0/0/r0"])
-        XCTAssertEqual(batches.map(\.localTransform.columns.3.x), [-20, -15, 20, 25])
+        XCTAssertEqual(batches.map(\.modelMatrix.columns.3.x), [-20, -15, 20, 25])
         XCTAssertEqual(batches.map(\.vertices.count), [1, 1, 1, 1])
         XCTAssertNotEqual(WPEParityParticleDrawKey(objectID: "5", path: [.eventGroup(0), .staticChild(0)], renderer: 0),
                           WPEParityParticleDrawKey(objectID: "5", node: [0], renderer: 0, eventGroup: 0))
@@ -443,8 +443,8 @@ final class ParityParticleSimulationTests: XCTestCase {
             XCTAssertEqual(particles.birthU[0], parentU)
             XCTAssertEqual(particles.eventChildren[0].count, 1)
             let child = particles.eventChildren[0][0]
-            XCTAssertEqual(child.localTransform.columns.0.y, 2, accuracy: 2e-6)
-            XCTAssertEqual(child.localTransform.columns.1.x, -3, accuracy: 2e-6,
+            XCTAssertEqual(child.instanceTransform.columns.0.y, 2, accuracy: 2e-6)
+            XCTAssertEqual(child.instanceTransform.columns.1.x, -3, accuracy: 2e-6,
                            "fresh and finished spawn reuse must both use the authored TRS once")
             XCTAssertEqual(child.birthU[0], childU, "frame \(frame)")
             XCTAssertEqual(child.color[0], SIMD3(repeating: 1))
@@ -486,11 +486,15 @@ final class ParityParticleSimulationTests: XCTestCase {
                        \(trs ? #", "angles": "0 0 -1.5707963267948966", "scale": "1 3 1""# : "")}]}
         """)
         let config = WPEParityParticleConfig(json: json, is3D: false) { $0 == "event" ? event : leaf }
-        // Independent authored ancestor T4 * Rz90 * S(2,1), with no product TRS helper in the oracle.
+        return WPEParityParticleSystem(config: config, instance: .init(), rng: WPEParityMT19937(seed: 7),
+                                       crt: WPEParityCRTRandom(), context: nestedDeathFrame(trs: trs))
+    }
+
+    private func nestedDeathFrame(trs: Bool) -> WPEParityParticleFrameContext {
+        // Independent owner W=T4*Rz90*S(2,1), supplied at every 230650 object-update boundary.
         let ancestor = simd_float4x4(SIMD4(0, 2, 0, 0), SIMD4(-1, 0, 0, 0),
                                      SIMD4(0, 0, 1, 0), SIMD4(4, 0, 0, 1))
-        return WPEParityParticleSystem(config: config, instance: .init(), rng: WPEParityMT19937(seed: 7),
-                                       crt: WPEParityCRTRandom(), localTransform: trs ? ancestor : matrix_identity_float4x4)
+        return WPEParityParticleFrameContext(objectMatrix: trs ? ancestor : matrix_identity_float4x4)
     }
 
     func testLocalNestedDeathPlacementReusePrewarmFullStepAndSharedRNG() throws {
@@ -501,21 +505,27 @@ final class ParityParticleSimulationTests: XCTestCase {
 
     private func assertLocalNestedDeathPlacementReusePrewarmFullStepAndSharedRNG(trs: Bool) throws {
         var parent = nestedDeathSystem(trs: trs)
-        parent.advance(dt: 0.01)
+        let frame = nestedDeathFrame(trs: trs)
+        parent.advance(dt: 0.01, frame: frame)
         parent.position[0] = SIMD3(trs ? 3 : -20, 0, 0)
-        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01, frame: frame)
         let first = try XCTUnwrap(parent.eventChildren[0].first)
         let leaf = try XCTUnwrap(first.children.first)
         if trs {
-            // A*T(3)*T(5)*Rz-90*S(1,3)*T(0,2): translation (4,28), basis diag(1,6).
-            XCTAssertEqual(first.localTransform.columns.3.y, 16, accuracy: 2e-6)
-            XCTAssertEqual(leaf.localTransform.columns.3.x, 4, accuracy: 2e-6)
-            XCTAssertEqual(leaf.localTransform.columns.3.y, 28, accuracy: 2e-6)
-            XCTAssertEqual(leaf.localTransform.columns.0.x, 1, accuracy: 2e-6)
-            XCTAssertEqual(leaf.localTransform.columns.1.y, 6, accuracy: 2e-6)
+            // 22a360 stores E=T(raw3)*T5*Rz-90*S(1,3); 229760 pushes U=A*E.
+            XCTAssertEqual(first.instanceTransform.columns.3.x, 8, accuracy: 2e-6)
+            XCTAssertEqual(first.instanceTransform.columns.3.y, 0, accuracy: 2e-6)
+            XCTAssertEqual(first.frameContext.objectMatrix.columns.3.y, 16, accuracy: 2e-6)
+            // Static E=T(0,2) stays authored; U=A*Eevent*Estatic has translation (4,28), basis diag(1,6).
+            XCTAssertEqual(leaf.instanceTransform.columns.3, SIMD4(0, 2, 0, 1))
+            XCTAssertEqual(leaf.frameContext.objectMatrix.columns.3.x, 4, accuracy: 2e-6)
+            XCTAssertEqual(leaf.frameContext.objectMatrix.columns.3.y, 28, accuracy: 2e-6)
+            XCTAssertEqual(leaf.frameContext.objectMatrix.columns.0.x, 1, accuracy: 2e-6)
+            XCTAssertEqual(leaf.frameContext.objectMatrix.columns.1.y, 6, accuracy: 2e-6)
         } else {
-            XCTAssertEqual(first.localTransform.columns.3.x, -17)
-            XCTAssertEqual(leaf.localTransform.columns.3.x, -12)
+            XCTAssertEqual(first.instanceTransform.columns.3.x, -17)
+            XCTAssertEqual(leaf.instanceTransform.columns.3, SIMD4(5, 0, 0, 1))
+            XCTAssertEqual(leaf.frameContext.objectMatrix.columns.3.x, -12)
         }
         XCTAssertEqual(first.position[0].x, 2.1, accuracy: 1e-5, "new event receives the full 0.01, not the 0.005 remaining after death")
         XCTAssertEqual(leaf.position[0].x, 3.1, accuracy: 1e-5, "two constructor steps then the full parent step")
@@ -524,27 +534,31 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(first.simulationTime, 0.01)
         XCTAssertEqual(leaf.simulationTime, 0.01)
         XCTAssertEqual(leaf.objectTime, 0.02)
-        parent.advance(dt: 0.01)
-        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01, frame: frame)
+        parent.advance(dt: 0.01, frame: frame)
         XCTAssertEqual(parent.eventChildren[0][0].liveCount, 0)
         XCTAssertEqual(parent.eventChildren[0][0].children[0].liveCount, 1,
                        "an empty event root stays active until its static leaf finishes")
-        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01, frame: frame)
         XCTAssertTrue(parent.eventChildren[0].isEmpty)
         XCTAssertEqual(parent.finishedEventChildren[0].count, 1)
         parent.position[0] = SIMD3(trs ? 7 : 20, 0, 0)
-        parent.advance(dt: 0.01)
+        parent.advance(dt: 0.01, frame: frame)
         let reused = try XCTUnwrap(parent.eventChildren[0].first)
         let reusedLeaf = try XCTUnwrap(reused.children.first)
         XCTAssertEqual(parent.eventChildConstructions, 1)
         if trs {
-            XCTAssertEqual(reused.localTransform.columns.3.y, 24, accuracy: 2e-6)
-            XCTAssertEqual(reusedLeaf.localTransform.columns.3.x, 4, accuracy: 2e-6)
-            XCTAssertEqual(reusedLeaf.localTransform.columns.3.y, 36, accuracy: 2e-6,
+            XCTAssertEqual(reused.instanceTransform.columns.3.x, 12, accuracy: 2e-6)
+            XCTAssertEqual(reused.instanceTransform.columns.3.y, 0, accuracy: 2e-6)
+            XCTAssertEqual(reused.frameContext.objectMatrix.columns.3.y, 24, accuracy: 2e-6)
+            XCTAssertEqual(reusedLeaf.instanceTransform.columns.3, SIMD4(0, 2, 0, 1))
+            XCTAssertEqual(reusedLeaf.frameContext.objectMatrix.columns.3.x, 4, accuracy: 2e-6)
+            XCTAssertEqual(reusedLeaf.frameContext.objectMatrix.columns.3.y, 36, accuracy: 2e-6,
                            "reuse must rebase from authored edges without compounding their TRS")
         } else {
-            XCTAssertEqual(reused.localTransform.columns.3.x, 23)
-            XCTAssertEqual(reusedLeaf.localTransform.columns.3.x, 28, "rebase every static descendant from authored edges")
+            XCTAssertEqual(reused.instanceTransform.columns.3.x, 23)
+            XCTAssertEqual(reusedLeaf.instanceTransform.columns.3, SIMD4(5, 0, 0, 1))
+            XCTAssertEqual(reusedLeaf.frameContext.objectMatrix.columns.3.x, 28, "the new U composes unchanged static E once")
         }
         XCTAssertEqual(reusedLeaf.age[0], 0, "reuse prewarms only the event root, not static descendants")
         XCTAssertEqual(reusedLeaf.position[0].x, 2.1, accuracy: 1e-5)
@@ -657,19 +671,22 @@ final class ParityParticleSimulationTests: XCTestCase {
         parent.instance.color = SIMD3(1, 0, 0)
         parent.advance(dt: 0.1)
         XCTAssertEqual(parent.position[0].x, 10)
-        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 13)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 8, accuracy: 2e-6)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.0.x, 1, accuracy: 2e-6)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.1.y, 6, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].instanceTransform.columns.3.x, 13)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].instanceTransform.columns.3, SIMD4(0, 5, 0, 1))
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].instanceTransform.columns.0.y, -1, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].instanceTransform.columns.1.x, 3, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.3.x, 8, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.0.x, 1, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.1.y, 6, accuracy: 2e-6)
         parent.advance(dt: 0.1)
-        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 23)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 18, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].instanceTransform.columns.3.x, 23)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.3.x, 18, accuracy: 2e-6)
         parent.instance.color = SIMD3(0, 0, 1)
         parent.advance(dt: 0.1)
-        XCTAssertEqual(parent.eventChildren[0][0].localTransform.columns.3.x, 23)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 18, accuracy: 2e-6)
-        XCTAssertEqual(parent.eventChildren[0][1].localTransform.columns.3.x, 13)
-        XCTAssertEqual(parent.eventChildren[0][1].children[0].localTransform.columns.3.x, 8, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].instanceTransform.columns.3.x, 23)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.3.x, 18, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][1].instanceTransform.columns.3.x, 13)
+        XCTAssertEqual(parent.eventChildren[0][1].children[0].frameContext.objectMatrix.columns.3.x, 8, accuracy: 2e-6)
         parent.advance(dt: 0.1)
         XCTAssertEqual(parent.liveCount, 1)
         XCTAssertEqual(parent.capacity, 1, "follow references do not pin the physical slot")
@@ -678,11 +695,11 @@ final class ParityParticleSimulationTests: XCTestCase {
         let old = parent.eventChildren[0][0], new = parent.eventChildren[0][1]
         XCTAssertEqual(old.parentSlot, -1)
         XCTAssertNil(old.parentSample, "old follow must never inherit from the new particle in the same slot")
-        XCTAssertEqual(old.localTransform.columns.3.x, 23)
-        XCTAssertEqual(old.children[0].localTransform.columns.3.x, 18, accuracy: 2e-6)
+        XCTAssertEqual(old.instanceTransform.columns.3.x, 23)
+        XCTAssertEqual(old.children[0].frameContext.objectMatrix.columns.3.x, 18, accuracy: 2e-6)
         XCTAssertEqual(new.parentSlot, 0)
-        XCTAssertEqual(new.localTransform.columns.3.x, 23)
-        XCTAssertEqual(new.children[0].localTransform.columns.3.x, 18, accuracy: 2e-6)
+        XCTAssertEqual(new.instanceTransform.columns.3.x, 23)
+        XCTAssertEqual(new.children[0].frameContext.objectMatrix.columns.3.x, 18, accuracy: 2e-6)
         XCTAssertEqual(old.color[0], SIMD3(1, 0, 0))
         XCTAssertEqual(new.color[0], SIMD3(0, 0, 1))
         for system in [old, old.children[0]] {
@@ -789,8 +806,8 @@ final class ParityParticleSimulationTests: XCTestCase {
         let originalBuffers = parent.eventChildren[0].map(positionAddress)
         XCTAssertEqual(parent.eventChildren[0][0].children[0].age[0], 0.15, accuracy: 1e-6)
         // Seed7 first box XYZ signs are (+,-,-); reflected follow maps leaf origin5 to (0,-10,0).
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.x, 4, accuracy: 2e-6)
-        XCTAssertEqual(parent.eventChildren[0][0].children[0].localTransform.columns.3.y, -11, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.3.x, 4, accuracy: 2e-6)
+        XCTAssertEqual(parent.eventChildren[0][0].children[0].frameContext.objectMatrix.columns.3.y, -11, accuracy: 2e-6)
         parent.advance(dt: 0.1)
         XCTAssertTrue(parent.eventChildren[0].isEmpty)
         XCTAssertTrue(parent.followReferences.isEmpty)
@@ -801,8 +818,11 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(parent.eventChildren[0].map(\.parentSlot), [0, 1])
         XCTAssertEqual(parent.followReferences, [0: 1, 1: 1])
         for child in parent.eventChildren[0] {
-            XCTAssertEqual(child.children[0].localTransform.columns.0.x, 3, accuracy: 2e-6)
-            XCTAssertEqual(child.children[0].localTransform.columns.1.y, -4, accuracy: 2e-6)
+            XCTAssertEqual(child.children[0].instanceTransform.columns.3, SIMD4(5, 0, 0, 1))
+            XCTAssertEqual(child.children[0].instanceTransform.columns.0.y, -1, accuracy: 2e-6)
+            XCTAssertEqual(child.children[0].instanceTransform.columns.1.x, 2, accuracy: 2e-6)
+            XCTAssertEqual(child.children[0].frameContext.objectMatrix.columns.0.x, 3, accuracy: 2e-6)
+            XCTAssertEqual(child.children[0].frameContext.objectMatrix.columns.1.y, -4, accuracy: 2e-6)
             XCTAssertEqual(child.prewarmStepCount, 1)
             XCTAssertEqual(child.children[0].prewarmStepCount, 0)
             XCTAssertEqual(child.children[0].age[0], 0, "finished reuse enables static emission but never constructor-prewarms it")

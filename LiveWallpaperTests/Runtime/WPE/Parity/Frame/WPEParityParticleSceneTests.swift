@@ -1,8 +1,10 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import XCTest
 
 /// Workshop 3448877775 (sprite, spritetrail, rope and ropetrail systems, eventdeath children, REFRACT) compiled by
@@ -460,6 +462,198 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
     }
 
+    func testAllEventParentChildSpacesReachOriginalGeometryShaderWithTheirActualDrawModels() async throws {
+        // 22a360 + 229760 + 2366f0: W=T(16,32), parent raw P=10 (local) or (26,32) (world), B=T3.
+        // All four end at (31,32), but local child VB=(2,0), D=T(29,32); world child VB=(31,32), D=I.
+        for parentWorld in [false, true] {
+            for childWorld in [false, true] {
+                var parent = Self.burstParticle(renderer: [])
+                parent["flags"] = parentWorld ? 1 : 0
+                parent["emitter"] = [["name": "sphererandom", "origin": "10 0 0", "rate": 0,
+                                      "instantaneous": 1, "distancemax": 0]]
+                parent["initializer"] = [["name": "lifetimerandom", "min": 0.03, "max": 0.03]]
+                parent["children"] = [["name": "particles/child.json", "type": "eventdeath", "origin": "3 0 0"]]
+                var child = Self.burstParticle(renderer: [["name": "sprite"]])
+                child["flags"] = childWorld ? 1 : 0
+                child["emitter"] = [["name": "sphererandom", "origin": "2 0 0", "rate": 0,
+                                     "instantaneous": 1, "distancemax": 0]]
+                child["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                        ["name": "sizerandom", "min": 4, "max": 4]]
+                let (renderer, queue) = try await syntheticRenderer(
+                    ["particles/root.json": parent, "particles/child.json": child], ownerOrigin: "16 32 0",
+                    requiredOriginalInputs: true
+                )
+                XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+                for _ in 0 ..< 6 {
+                    try await renderParticleFrame(renderer, elapsed: 0.02)
+                    if renderer.lastFrameDraws.contains(where: { renderer.particleRenderer($0.operation) != nil }) {
+                        break
+                    }
+                }
+                let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+                XCTAssertEqual(draws.count, 1, "parentWorld=\(parentWorld), childWorld=\(childWorld)")
+                let draw = try XCTUnwrap(draws.first?.draw)
+                let rows: [[Float]] = childWorld
+                    ? [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+                    : [[1, 0, 0, 29], [0, 1, 0, 32], [0, 0, 1, 0], [0, 0, 0, 1]]
+                try assertParticleDraw(draw, birth: childWorld ? SIMD3(31, 32, 0) : SIMD3(2, 0, 0), modelRows: rows,
+                                       right: [1, 0, 0], up: [0, 1, 0])
+                XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(31, 32)), [255, 255, 255, 255])
+                for x in [15, 47] {
+                    XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(x, 32)), [0, 0, 0, 255])
+                }
+                XCTAssertEqual(renderer.droppedParticleBatches, 0)
+            }
+        }
+    }
+
+    func testNonuniformRadianTRSSeparatesWorldBirthFromLocalDrawAndTransposedOrientationOnTheGPU() async throws {
+        // W=T(16,24)Rz(-pi/4)S(2,1), B=Rz(pi/4)S(2,1).
+        // Hand multiplication gives M=[[3,-.5],[-1,1.5]]. No production transform computes this oracle.
+        // CP0 local birth ignores M: origin(3,4)+shape(1,0)=(4,4), then D sends it to(26,26).
+        // World CP0 uses U=W*B: origin is NOT rotated; (16,24)+(3,4)+M*(1,0)=(22,27), D=I.
+        for world in [false, true] {
+            let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
+                                       "children": [["name": "particles/child.json", "angles": "0 0 \(Float.pi / 4)",
+                                                     "scale": "2 1 1"]]]
+            var child = Self.burstParticle(renderer: [["name": "sprite"]])
+            child["flags"] = world ? 1 : 0
+            // Cone1 fixes cosTheta=1; distance1 and +X directions fix the offset independently of the sampled radius.
+            child["emitter"] = [["name": "sphererandom", "origin": "3 4 0", "directions": "1 0 0", "sign": "1 0 0",
+                                 "distancemin": 1, "distancemax": 1, "speedmin": 2, "speedmax": 2,
+                                 "cone": 1, "rate": 0, "instantaneous": 1]]
+            child["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                    ["name": "sizerandom", "min": 4, "max": 4]]
+            let (renderer, queue) = try await syntheticRenderer(
+                ["particles/root.json": root, "particles/child.json": child], ownerOrigin: "16 24 0",
+                ownerAngles: "0 0 \(-Float.pi / 4)", ownerScale: "2 1 1", requiredOriginalInputs: true
+            )
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            try await renderParticleFrame(renderer, elapsed: 0.0625)
+            let draws = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+            XCTAssertEqual(draws.count, 1)
+            let draw = try XCTUnwrap(draws.first?.draw)
+            let rows: [[Float]] = world
+                ? [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+                : [[3, -0.5, 0, 16], [-1, 1.5, 0, 24], [0, 0, 1, 0], [0, 0, 0, 1]]
+            // Screen U before the final transpose is M*Y=(-.5,1.5), then M^T*U=(-3,2.5).
+            // An inverse would return Y instead; the actual GS consumes these skewed, normalized axes.
+            let root61 = Float(61).squareRoot()
+            try assertParticleDraw(draw, birth: world ? SIMD3(22, 27, 0) : SIMD3(4, 4, 0), modelRows: rows,
+                                   right: world ? [1, 0, 0] : [5 / root61, 6 / root61, 0],
+                                   up: world ? [0, 1, 0] : [-6 / root61, 5 / root61, 0])
+            let point = world ? SIMD2(22, 37) : SIMD2(26, 38) // scene Y-up → texture row = 64-Y
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: point), [255, 255, 255, 255])
+            if world {
+                // The old post-transform of the entire emitter origin would put the world particle at(26,26).
+                XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(26, 38)), [0, 0, 0, 255])
+            }
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(42, 32)), [0, 0, 0, 255])
+            XCTAssertEqual(renderer.droppedParticleBatches, 0)
+        }
+    }
+
+    func testCompositeWorldParentPostOwnModelReachesOriginalGSAndMissingBasePrunesItsSubtree() async throws {
+        // Parent image T(12,10), particle local T(8,0): W=T(20,10), C=T(-12,-10).
+        // A material-ready world root has no live particles/renderers, but post-own D=E=W still applies.
+        // Local static B=T5, VB2: D=T(25,10), position(27,10), FBO pixel(32+27,32-10)=(59,22).
+        // Uniformly applying C*W*B would instead produce FBO pixel(47,32).
+        for missingBase in [false, true] {
+            let root: [String: Any] = ["maxcount": 1, "flags": 1,
+                                       "material": missingBase ? "materials/missing.json" : "materials/plain.json",
+                                       "renderer": [], "children": [["name": "particles/leaf.json", "origin": "5 0 0"]]]
+            var leaf = Self.burstParticle(renderer: [["name": "sprite"]])
+            leaf["emitter"] = [["name": "sphererandom", "origin": "2 0 0", "rate": 0,
+                                "instantaneous": 1, "distancemax": 0]]
+            leaf["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                   ["name": "sizerandom", "min": 4, "max": 4]]
+            let (renderer, queue) = try await syntheticRenderer(
+                ["particles/root.json": root, "particles/leaf.json": leaf], composited: true,
+                parentOrigin: "12 10 0", compositeChildOrigin: "8 0 0", requiredOriginalInputs: true
+            )
+            if !missingBase {
+                XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            }
+            try await renderParticleFrame(renderer, elapsed: 0.0625)
+            let frame = renderer.frames[0]
+            var plannedParticle: WPEParitySceneDraw?
+            for index in frame.draws.keys.sorted() {
+                if case let .scene(description)? = frame.draws[index], case .particles = description.geometry {
+                    plannedParticle = description
+                    break
+                }
+            }
+            let description = try XCTUnwrap(plannedParticle)
+            XCTAssertEqual(description.compositeOwnerID, "2")
+            XCTAssertNotEqual(description.target, WPEParitySceneResource.backbuffer)
+            let composite = try XCTUnwrap(renderer.targets[description.target])
+            let resource = try XCTUnwrap(frame.resources.first { $0.id == description.target })
+            XCTAssertEqual(resource.lifetime, .pooled, "The observed parent target survives its last reader")
+            XCTAssertEqual([composite.width, composite.height], [64, 64])
+            XCTAssertTrue(renderer.lastFrameDraws.contains { entry in
+                entry.draw.textures["g_Texture0"] === composite
+            }, "The parent effect must really consume the particle's target")
+            let particles = renderer.lastFrameDraws.filter { renderer.particleRenderer($0.operation) != nil }
+            XCTAssertEqual(particles.count, missingBase ? 0 : 1)
+            if missingBase {
+                XCTAssertNotNil(renderer.particleMaterialSkips["1"], "Missing base material remains an explicit failure")
+            } else {
+                let draw = try XCTUnwrap(particles.first?.draw)
+                try assertParticleDraw(draw, birth: SIMD3(2, 0, 0),
+                                       modelRows: [[1, 0, 0, 25], [0, 1, 0, 10], [0, 0, 1, 0], [0, 0, 0, 1]],
+                                       right: [1, 0, 0], up: [0, 1, 0])
+            }
+            XCTAssertEqual(try pixel(composite, queue: queue, at: SIMD2(59, 22)),
+                           missingBase ? [255, 0, 0, 255] : [255, 255, 255, 255])
+            XCTAssertEqual(try pixel(composite, queue: queue, at: SIMD2(47, 32)), [255, 0, 0, 255])
+            XCTAssertGreaterThan(renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) == nil }, 0,
+                                 "Material prune must retain the healthy image/effect draws")
+            XCTAssertEqual(renderer.droppedParticleBatches, 0)
+        }
+    }
+
+    private func renderParticleFrame(_ renderer: WPEParityFrameRenderer, elapsed: Double) async throws {
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: elapsed) else {
+            throw NSError(domain: "WPEParityParticleSceneTests.RequiredFrame", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Required particle frame was skipped"])
+        }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+    }
+
+    private func assertParticleDraw(_ draw: WPEParityDraw, birth: SIMD3<Float>, modelRows: [[Float]],
+                                    right: [Float], up: [Float]) throws {
+        XCTAssertNotNil(draw.pipeline.geometry, "This guard must traverse the original geometry shader")
+        XCTAssertEqual(draw.primitiveType, .point)
+        XCTAssertEqual(draw.vertexCount, 1)
+        let bytes = draw.vertexBuffer.contents().advanced(by: draw.vertexBufferOffset)
+        for lane in 0 ..< 3 {
+            XCTAssertEqual(bytes.load(fromByteOffset: lane * 4, as: Float.self), birth[lane], accuracy: 0.0001)
+        }
+        guard case let .matrix(model)? = draw.constants[.vertex]?["g_ModelMatrix"] else {
+            throw NSError(domain: "WPEParityParticleSceneTests.RequiredModel", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Particle draw has no actual model uniform"])
+        }
+        guard model.columns.count == 4, model.columns.allSatisfy({ $0.count == 4 }) else {
+            throw NSError(domain: "WPEParityParticleSceneTests.RequiredModel", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Particle model uniform is not a 4x4 matrix"])
+        }
+        // WPE cbuffer matrices contain transposed rows; each SIMD column here is one mathematical D row.
+        for row in 0 ..< 4 {
+            for column in 0 ..< 4 {
+                XCTAssertEqual(model.columns[row][column], modelRows[row][column], accuracy: 0.0001)
+            }
+        }
+        for (name, expected) in [("g_OrientationForward", [Float(0), 0, 1]),
+                                 ("g_OrientationRight", right), ("g_OrientationUp", up)] {
+            let actual = try XCTUnwrap(Self.vector(draw.constants[.geometry]?[name]), name)
+            XCTAssertGreaterThanOrEqual(actual.count, 3, name)
+            for lane in 0 ..< min(actual.count, 3) {
+                XCTAssertEqual(actual[lane], expected[lane], accuracy: 0.0001, name)
+            }
+        }
+    }
+
     func testLiveOneParticleRopeSnapshotsBeforeFollowingHealthySpriteEvenWhenArenaDropsDraws() async throws {
         let root: [String: Any] = ["maxcount": 1, "material": "materials/plain.json", "renderer": [],
                                    "children": ["rope", "sprite", "refract"].map { ["name": "particles/\($0).json", "type": "static"] }]
@@ -519,10 +713,25 @@ final class WPEParityParticleSceneTests: XCTestCase {
 
     private func syntheticRenderer(_ objects: [String: Any], clear: String = "0 0 0", budget: Int? = nil,
                                    composited: Bool = false, parentSize: Int = 64, ownerOrigin: String = "32 32 0",
-                                   particleCullMode: String? = nil) async throws
+                                   particleCullMode: String? = nil, ownerAngles: String = "0 0 0", ownerScale: String = "1 1 1",
+                                   parentOrigin: String = "32 32 0", compositeChildOrigin: String = "0 0 0",
+                                   requiredOriginalInputs: Bool = false) async throws
         -> (WPEParityFrameRenderer, MTLCommandQueue) {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let engine = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        if requiredOriginalInputs {
+            for (file, expected) in [
+                ("genericparticle.vert", "43fd60ac760a57072b5e57ce93f46142c22b2f19aa0942bcf47cfd58752f6224"),
+                ("genericparticle.geom", "b0047bfbbff1da70654681a06885ea4893ca7ccd7b7647bbbe6b04ec7fd4ba13"),
+                ("genericparticle.frag", "aed28ef81a5d870c07bc6cfa6bd17b6adf388efb352bd1fd8d1fd3fc0dbf7cd5"),
+                ("common_particles.h", "a8a73e28ea5e72c7628d032a11e5f223a996f89fbe9e8318d71b483f0e5078be"),
+            ] {
+                let data = try Data(contentsOf: engine.appending(path: "shaders/\(file)"))
+                let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                XCTAssertEqual(actual, expected, "Required original shader \(file)")
+            }
+        }
         var files = try objects.mapValues { try JSONSerialization.data(withJSONObject: $0) }
         for (path, combos) in [("materials/plain.json", [:]), ("materials/refract.json", ["REFRACT": 1])] {
             var pass: [String: Any] = ["shader": "genericparticle", "blending": "translucent", "textures": ["white"], "combos": combos]
@@ -531,12 +740,14 @@ final class WPEParityParticleSceneTests: XCTestCase {
             }
             files[path] = try JSONSerialization.data(withJSONObject: ["passes": [pass]])
         }
-        var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": ownerOrigin]]
+        var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": ownerOrigin,
+                                              "angles": ownerAngles, "scale": ownerScale]]
         if composited {
             sceneObjects = [
-                ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": "32 32 0", "color": "1 0 0",
+                ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": parentOrigin, "color": "1 0 0",
                  "effects": [["id": 7, "file": "effects/parent.json"]]],
-                ["id": 1, "parent": 2, "particle": "particles/root.json", "origin": "0 0 0"],
+                ["id": 1, "parent": 2, "particle": "particles/root.json", "origin": compositeChildOrigin,
+                 "angles": ownerAngles, "scale": ownerScale],
             ]
             for (path, value) in [
                 "models/parent.json": ["material": "materials/parent.json"],
@@ -563,7 +774,14 @@ final class WPEParityParticleSceneTests: XCTestCase {
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 64, height: 64)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
-        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "synthetic-shaderc"))
+        let compiler: WPEParityHelperShaderCompiler
+        do {
+            compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "synthetic-shaderc"))
+        } catch {
+            guard requiredOriginalInputs else { throw error }
+            throw NSError(domain: "WPEParityParticleSceneTests.RequiredToolchain", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Required current particle toolchain unavailable: \(error)"])
+        }
         let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))
         let renderer = try await WPEParityFrameRenderer(plan: plan, device: device, queue: queue,
                                                         shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1),

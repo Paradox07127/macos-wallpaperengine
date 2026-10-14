@@ -899,10 +899,14 @@ final class WPEParityFrameRenderer {
             if let cached = particleStreams[block] {
                 return cached
             }
-            let objectID = blocks[block].objectID
+            let particleBlock = blocks[block]
+            let objectID = particleBlock.objectID
             let facts = particleFullFrameBuffer[objectID, default: [:]]
             let failures = particleBaseFailures[objectID, default: [:]]
-            let stream = try particles.scene.drawStream(for: objectID) { path in
+            let worldModel = particleBlock.compositeOwnerID.map { layers.model($0).inverse }
+                ?? matrix_identity_float4x4
+            let stream = try particles.scene.drawStream(objectID: objectID, ownerModel: layers.world(objectID),
+                                                        worldModel: worldModel) { path in
                 if failures[path] != nil {
                     return nil
                 }

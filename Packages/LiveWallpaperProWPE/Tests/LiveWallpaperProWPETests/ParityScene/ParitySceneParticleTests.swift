@@ -240,8 +240,9 @@ struct ParitySceneParticleTests {
             "legacy": ["maxcount": 1, "material": "materials/particle.json"],
             "event": ["maxcount": 1, "material": "materials/particle.json", "renderer": [],
                       "children": [["name": "bad"], ["name": "healthy"]]],
+            // CP history now has consumers; periodic emission still requires native verification before admission.
             "bad": ["maxcount": 1, "material": "materials/particle.json",
-                    "operator": [["name": "maintaindistancetocontrolpoint"]]],
+                    "emitter": [["name": "boxrandom", "flags": 4]]],
             "healthy": ["maxcount": 1, "material": "materials/particle.json"],
         ]
         try ParticleSceneFiles.withScene([["id": 5, "name": "fx", "particle": "particles/fx.json"]], files: files) { program, document in
@@ -250,7 +251,7 @@ struct ParitySceneParticleTests {
             #expect(program.scene.diagnostics.contains { diagnostic in
                 if case let .particleChildUnsupported(id, path, asset, field, reason) = diagnostic {
                     return id == "5" && path == [.eventGroup(0), .staticChild(0)] && asset == "bad"
-                        && field == "operator[0]" && !reason.isEmpty
+                        && field == "emitter[0].flags" && !reason.isEmpty
                 }
                 return false
             })

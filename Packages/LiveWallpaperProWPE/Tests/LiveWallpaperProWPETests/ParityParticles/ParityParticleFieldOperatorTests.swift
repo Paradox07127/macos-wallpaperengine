@@ -7,11 +7,13 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     private typealias System = WPEParityParticleSystem
 
     /// `count` particles at the origin with lifetime 100 and no operators; tests then place them by hand.
-    private func particles(count: Int = 1, maxCount: Int? = nil, extra: String = "") -> System {
+    private func particles(count: Int = 1, maxCount: Int? = nil, extra: String = "",
+                           flags: Int = 0, controlPoint: Int = 0) -> System {
         var system = System(
             json: Support.json("""
-            {"maxcount": \(maxCount ?? count),
-             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": \(count), "distancemax": 0}],
+            {"maxcount": \(maxCount ?? count), "flags": \(flags),
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": \(count), "distancemax": 0,
+                          "controlpoint": \(controlPoint)}],
              "initializer": [{"name": "lifetimerandom", "min": 100, "max": 100}]\(extra)}
             """),
             rng: WPEParityMT19937(), is3D: true
@@ -194,7 +196,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     }
 
     func testMaintainDistanceBetweenCarriesThePlaceAlongTheSegment() {
-        var system = particles()
+        var system = particles(controlPoint: 1)
         system.previousControlPoints[0] = matrix_identity_float4x4
         system.previousControlPoints[1] = System.translation(SIMD3(2, 0, 0))
         system.controlPoints[0] = System.translation(SIMD3(0, 1, 0))
@@ -236,29 +238,25 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
 
     func testCursorControlPointUnprojectsThroughViewProjectionAndObject() {
         let cp = #", "controlpoint": [{"id": 0, "flags": 1}, {"id": 1, "offset": "1 2 3"}, {"id": 2, "offset": "1 2 3", "flags": 2}]"#
-        var system = particles(extra: cp)
-        system.advance(dt: 0.01, frame: WPEParityParticleFrameContext(cursor: SIMD2(0.5, 0.5)))
-        assertEqual(system.controlPointTranslation(0), .zero)
-
         let object = System.translation(SIMD3(10, 0, 0))
-        system.advance(dt: 0.01, frame: WPEParityParticleFrameContext(cursor: SIMD2(0.75, 0.25), objectMatrix: object))
-        // NDC (0.5, 0.5) back through the inverse object matrix.
-        assertEqual(system.controlPointTranslation(0), SIMD3(-9.5, 0.5, 0))
-        assertEqual(system.previousControlPointTranslation(0), SIMD3(-9.5, 0.5, 0))
-        assertEqual(system.controlPointTranslation(1), SIMD3(1, 2, 3))
-        assertEqual(system.controlPointTranslation(2), SIMD3(-9, 2, 3))
-
-        system.advance(dt: 0.01, frame: WPEParityParticleFrameContext(
-            cursor: SIMD2(0.75, 0.25), objectMatrix: object, worldSpace: true
-        ))
-        assertEqual(system.controlPointTranslation(0), SIMD3(0.5, 0.5, 0))
-        assertEqual(system.previousControlPointTranslation(0), SIMD3(0.5, 0.5, 0))
-        assertEqual(system.controlPointTranslation(1), SIMD3(11, 2, 3))
-        assertEqual(system.controlPointTranslation(2), SIMD3(1, 2, 3))
-
-        system.advance(dt: 0.01)
-        // No cursor: the point stays where it was.
-        assertEqual(system.controlPointTranslation(0), SIMD3(0.5, 0.5, 0))
+        for world in [false, true] {
+            // 1c5490's resolved emitter CP2 reference allocates CP0...2; authored declarations alone do not.
+            var system = particles(extra: cp, flags: world ? 1 : 0, controlPoint: 2)
+            XCTAssertEqual(system.controlPointCount, 3)
+            system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.5, 0.5)))
+            assertEqual(system.controlPointTranslation(0), .zero)
+            system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.75, 0.25), objectMatrix: object))
+            // 22e3e0: NDC(.5,.5) is world-plane z0, then only local nodes apply inverse(U).
+            let cursor = SIMD3<Float>(world ? 0.5 : -9.5, 0.5, 0)
+            assertEqual(system.controlPointTranslation(0), cursor)
+            assertEqual(system.previousControlPointTranslation(0), cursor)
+            assertEqual(system.controlPointTranslation(1), SIMD3(world ? 11 : 1, 2, 3))
+            // 22a070: local flags2 uses inverse(U)*A; world nonzero index keeps authored current.
+            assertEqual(system.controlPointTranslation(2), SIMD3(world ? 1 : -9, 2, 3))
+            system.advance(dt: 0.01, frame: .init(objectMatrix: object))
+            // Mac nil-cursor policy retains the last point.
+            assertEqual(system.controlPointTranslation(0), cursor)
+        }
     }
 
     func testCursorUsesTheWorldPlaneBeforeRotatedObjectConversionAndAttract() {
@@ -269,23 +267,25 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         let object = simd_float4x4(columns: (
             SIMD4(1, 0, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, -1, 0, 0), SIMD4(10, 20, 30, 1)
         ))
-        var system = particles(extra: #", "controlpoint": [{"id": 0, "flags": 1}]"#)
-        system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.75, 0.25), viewProjection: projection,
-                                              objectMatrix: object, worldSpace: true))
-        assertEqual(system.controlPointTranslation(0), SIMD3(75, 75, 0))
+        let cp = #", "controlpoint": [{"id": 0, "flags": 1}]"#
+        let frame = WPEParityParticleFrameContext(cursor: SIMD2(0.75, 0.25), viewProjection: projection,
+                                                  objectMatrix: object)
+        var world = particles(extra: cp, flags: 1)
+        world.advance(dt: 0.01, frame: frame)
+        assertEqual(world.controlPointTranslation(0), SIMD3(75, 75, 0))
         let attract = WPEParityParticleAttract(entry(#"{"scale": 10, "threshold": 4, "flags": 0}"#), is3D: true)
-        place(&system, 0, at: SIMD3(77, 75, 0))
-        system.applyAttract(attract, slot: 0, weight: 1, dt: 0.1)
-        assertEqual(system.velocity[0], SIMD3(-0.5, 0, 0))
-        system.advance(dt: 0.01, frame: .init(cursor: SIMD2(0.75, 0.25), viewProjection: projection,
-                                              objectMatrix: object))
-        // inverse(M) * (75,75,0,1), with a 90° X rotation and nonzero object depth.
-        assertEqual(system.controlPointTranslation(0), SIMD3(65, -30, -55))
+        place(&world, 0, at: SIMD3(77, 75, 0))
+        world.applyAttract(attract, slot: 0, weight: 1, dt: 0.1)
+        assertEqual(world.velocity[0], SIMD3(-0.5, 0, 0))
+        var local = particles(extra: cp)
+        local.advance(dt: 0.01, frame: frame)
+        // inverse(U)*(75,75,0,1), with a 90° X rotation and nonzero object depth.
+        assertEqual(local.controlPointTranslation(0), SIMD3(65, -30, -55))
     }
 
     func testControlPointHistoryKeepsTheFullPreviousTransformUntilOperatorsFinish() {
         var system = System(json: Support.json("""
-        {"maxcount": 1,
+        {"maxcount": 1, "flags": 1,
          "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "origin": "0 3 0", "distancemax": 0}],
          "initializer": [{"name": "lifetimerandom", "min": 100, "max": 100}],
          "operator": [{"name": "maintaindistancetocontrolpoint", "distance": 2}]}
@@ -295,28 +295,36 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         let first = simd_float4x4(columns: (
             SIMD4(1, 0, 0, 0), SIMD4(0, 2, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(1, 0, 0, 1)
         ))
-        system.advance(dt: 0.1, frame: .init(objectMatrix: first, worldSpace: true))
+        system.advance(dt: 0.1, frame: .init(objectMatrix: first))
         // Carry by the CP delta first, then measure distance in the current scaled CP basis.
         assertEqual(system.position[0], SIMD3(1, 4, 0))
         XCTAssertTrue(simd_almost_equal_elements(system.previousControlPoints[0], first, 1e-6))
         let second = simd_float4x4(columns: (
             SIMD4(2, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(2, 0, 0, 1)
         ))
-        system.advance(dt: 0.1, frame: .init(objectMatrix: second, worldSpace: true))
+        system.advance(dt: 0.1, frame: .init(objectMatrix: second))
         assertEqual(system.position[0], SIMD3(2, 2, 0))
         XCTAssertTrue(simd_almost_equal_elements(system.previousControlPoints[0], second, 1e-6))
     }
 
-    func testChildControlPointFlagFourCopiesTheParentsPoint() {
-        let child = #"{"maxcount": 1, "controlpoint": [{"id": 0, "flags": 4, "parentcontrolpoint": 1}]}"#
-        var system = System(
-            json: Support.json("""
+    func testParentCopyUsesResolvedParentCountAndFallsBackToTheAuthoredPoint() {
+        let child = Support.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "sphererandom", "rate": 0, "controlpoint": 0}],
+         "controlpoint": [{"id": 0, "flags": 4, "parentcontrolpoint": 1, "offset": "7 8 9"}]}
+        """)
+        for referenced in [false, true] {
+            // 1c5490 raises count for component references, not for authored CP1's presence.
+            let emitter = referenced ? #", "emitter": [{"name": "sphererandom", "rate": 0, "controlpoint": 1}]"# : ""
+            var system = System(json: Support.json("""
             {"maxcount": 1, "controlpoint": [{"id": 1, "offset": "4 5 6"}],
-             "children": [{"name": "child.json", "type": "static"}]}
-            """),
-            rng: WPEParityMT19937(), resolveChild: { _ in Support.json(child) }
-        )
-        system.advance(dt: 0.01)
-        assertEqual(system.children[0].controlPointTranslation(0), SIMD3(4, 5, 6))
+             "children": [{"name": "child.json", "type": "static"}]\(emitter)}
+            """), rng: WPEParityMT19937(), resolveChild: { _ in child })
+            XCTAssertEqual(system.controlPointCount, referenced ? 2 : 0)
+            XCTAssertEqual(system.children[0].controlPointCount, 1)
+            system.advance(dt: 0.01)
+            // 22e3e0 invalid-parent path invokes ordinary; local ordinary retains authored current.
+            assertEqual(system.children[0].controlPointTranslation(0), referenced ? SIMD3(4, 5, 6) : SIMD3(7, 8, 9))
+        }
     }
 }

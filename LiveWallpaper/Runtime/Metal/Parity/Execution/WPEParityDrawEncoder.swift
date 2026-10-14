@@ -47,6 +47,7 @@ struct WPEParityDrawEncoder {
     func prepare(pipeline: WPEParityPipeline, depthStencil: WPEParityDepthStencilState,
                  textureNames: Set<String>, samplers: [String: WPEParitySamplerState]) throws {
         _ = try factory.depthStencilState(depthStencil)
+        _ = try factory.depthStencilState(.wpe(depthTest: false, depthWrite: false))
         for stage in [pipeline.vertex, pipeline.geometry?.geometry, pipeline.fragment].compactMap(\.self) {
             for resource in stage.reflection.resources {
                 guard resource.count == 1 else {
@@ -85,7 +86,7 @@ struct WPEParityDrawEncoder {
         }
     }
 
-    func encode(_ draw: WPEParityDraw, frame: WPEParityFrameArena.Frame,
+    func encode(_ draw: WPEParityDraw, frame: WPEParityFrameArena.Frame, hasDepthAttachment: Bool,
                 on encoder: MTLRenderCommandEncoder) throws {
         let emulation = draw.pipeline.geometry
         if emulation != nil, draw.primitiveType != .point || draw.indexBuffer != nil {
@@ -95,7 +96,9 @@ struct WPEParityDrawEncoder {
             throw WPEParityExecutionError.arenaExhausted
         }
         encoder.setRenderPipelineState(draw.pipeline.state)
-        try encoder.setDepthStencilState(factory.depthStencilState(draw.depthStencil))
+        // D3D11 tests always pass without a bound depth/stencil buffer. Metal requires the matching disabled state.
+        let depthStencil = hasDepthAttachment ? draw.depthStencil : .wpe(depthTest: false, depthWrite: false)
+        try encoder.setDepthStencilState(factory.depthStencilState(depthStencil))
         let raster = WPEParityMetalStateMapping.rasterSettings(draw.rasterizer)
         encoder.setTriangleFillMode(raster.fillMode)
         encoder.setCullMode(raster.cullMode)

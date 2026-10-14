@@ -50,51 +50,59 @@ final class ParityParticleUniformsTests: XCTestCase {
 
     // MARK: Matrices
 
-    func testNonWorldSpaceParticleComposesParentLocalAndChildLocal() {
+    func testDrawConsumesFinalParticleModelWithoutReapplyingTheOwnerChain() {
         let parent = WPEParityLayerTransform(id: "p", origin: SIMD3(100, 50, 0), size: SIMD2(400, 300),
                                              alignment: .left)
         let emitter = WPEParityLayerTransform(id: "e", parentID: "p", origin: SIMD3(10, 20, 0))
         let set = transforms([parent, emitter])
-        let matrices = WPEParityParticleMatrices.draw(set, objectID: "e", childLocal: translation(1, 2, 3),
-                                                      worldSpace: false, perspective: false,
-                                                      compositeOwnerID: nil, parallax: canvas / 2)
-        // Parent alignment does not reach its children: 100 + 10 + 1, 50 + 20 + 2.
+        // 236600/2366f0 already produced D: parent alignment does not reach its children.
+        let matrices = WPEParityParticleMatrices.draw(set, objectID: "e", modelMatrix: translation(111, 72, 3),
+                                                      perspective: false, compositeOwnerID: nil, parallax: canvas / 2)
         assertEqual(matrices.model, translation(111, 72, 3))
-        assertEqual(matrices.view, set.camera.view)
-        assertEqual(matrices.projection, set.camera.projection)
+        assertEqual(matrices.view, matrix_identity_float4x4)
+        let sceneProjection = simd_float4x4(SIMD4(1.0 / 960, 0, 0, 0), SIMD4(0, 1.0 / 540, 0, 0),
+                                            SIMD4(0, 0, 0.00025, 0), SIMD4(-1, -1, 0.5, 1))
+        assertEqual(matrices.projection, sceneProjection)
     }
 
     func testWorldSpaceParticleAtTopLevelUsesIdentityModel() {
         let emitter = WPEParityLayerTransform(id: "e", origin: SIMD3(10, 20, 0))
         let matrices = WPEParityParticleMatrices.draw(transforms([emitter]), objectID: "e",
-                                                      childLocal: translation(1, 2, 3), worldSpace: true,
-                                                      perspective: false, compositeOwnerID: nil, parallax: canvas / 2)
+                                                      modelMatrix: matrix_identity_float4x4, perspective: false,
+                                                      compositeOwnerID: nil, parallax: canvas / 2)
         assertEqual(matrices.model, matrix_identity_float4x4)
     }
 
     func testWorldSpaceParticleInCompositeUsesInverseOwnerModel() {
-        let owner = WPEParityLayerTransform(id: "p", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, 0.4),
+        let owner = WPEParityLayerTransform(id: "p", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, .pi / 2),
                                             size: SIMD2(400, 300), alignment: .left)
         let emitter = WPEParityLayerTransform(id: "e", parentID: "p", origin: SIMD3(10, 20, 0))
         let set = transforms([owner, emitter])
-        let matrices = WPEParityParticleMatrices.draw(set, objectID: "e", childLocal: translation(1, 2, 3),
-                                                      worldSpace: true, perspective: false, compositeOwnerID: "p",
-                                                      parallax: canvas / 2)
-        assertEqual(matrices.model, set.model("p").inverse)
+        // C=inverse(T(1000,500)*Rz90*T(200,0)): the walker supplies this final world-node D once.
+        let worldDraw = simd_float4x4(SIMD4(0, -1, 0, 0), SIMD4(1, 0, 0, 0),
+                                      SIMD4(0, 0, 1, 0), SIMD4(-700, 1000, 0, 1))
+        let matrices = WPEParityParticleMatrices.draw(set, objectID: "e", modelMatrix: worldDraw,
+                                                      perspective: false, compositeOwnerID: "p", parallax: canvas / 2)
+        assertEqual(matrices.model, worldDraw)
         assertEqual(matrices.view, matrix_identity_float4x4)
-        assertEqual(matrices.projection, WPEParityUniformMatrices.ortho(halfWidth: 200, halfHeight: 150, depth: 1000))
-        let local = WPEParityParticleMatrices.draw(set, objectID: "e", childLocal: translation(1, 2, 3),
-                                                   worldSpace: false, perspective: false, compositeOwnerID: "p",
-                                                   parallax: canvas / 2)
-        assertEqual(local.model, set.model("p").inverse * set.world("e") * translation(1, 2, 3), accuracy: 1e-3)
+        let compositeProjection = simd_float4x4(SIMD4(0.005, 0, 0, 0), SIMD4(0, 1.0 / 150, 0, 0),
+                                                SIMD4(0, 0, 0.0005, 0), SIMD4(0, 0, 0.5, 1))
+        assertEqual(matrices.projection, compositeProjection)
+        // Local D=C*Wemitter*T(1,2,3)=T(-200+10+1,20+2,3). Do not apply inverse(owner) again.
+        let local = WPEParityParticleMatrices.draw(set, objectID: "e", modelMatrix: translation(-189, 22, 3),
+                                                   perspective: false, compositeOwnerID: "p", parallax: canvas / 2)
+        assertEqual(local.model, translation(-189, 22, 3))
+        assertEqual(local.view, matrix_identity_float4x4)
+        assertEqual(local.projection, compositeProjection)
     }
 
     /// 1920×1080 canvas, V = I, fov 90°: D = (1/(2/1080))/tan 45° = 540, far = max(15000, 1540).
     func testPerspectiveAtTopLevelPushesR22Q5ViewAndProjection() {
         let emitter = WPEParityLayerTransform(id: "e", origin: .zero)
         let matrices = WPEParityParticleMatrices.draw(transforms([emitter], fov: 90), objectID: "e",
-                                                      childLocal: matrix_identity_float4x4, worldSpace: false,
-                                                      perspective: true, compositeOwnerID: nil, parallax: canvas / 2)
+                                                      modelMatrix: translation(9, 8, 7), perspective: true,
+                                                      compositeOwnerID: nil, parallax: canvas / 2)
+        assertEqual(matrices.model, translation(9, 8, 7))
         assertEqual(matrices.view, translation(-960, -540, -540))
         let expected = simd_float4x4(rows: [
             SIMD4(0.5625, 0, 0, 0), SIMD4(0, 1, 0, 0),
@@ -108,8 +116,9 @@ final class ParityParticleUniformsTests: XCTestCase {
         let owner = WPEParityLayerTransform(id: "p", origin: .zero, size: SIMD2(400, 300))
         let emitter = WPEParityLayerTransform(id: "e", parentID: "p", origin: .zero)
         let matrices = WPEParityParticleMatrices.draw(transforms([owner, emitter], fov: 90), objectID: "e",
-                                                      childLocal: matrix_identity_float4x4, worldSpace: false,
-                                                      perspective: true, compositeOwnerID: "p", parallax: canvas / 2)
+                                                      modelMatrix: translation(9, 8, 7), perspective: true,
+                                                      compositeOwnerID: "p", parallax: canvas / 2)
+        assertEqual(matrices.model, translation(9, 8, 7))
         assertEqual(matrices.view, translation(-960, -540, -150))
         XCTAssertEqual(matrices.projection.columns.2.z, 5 / Float(14995), accuracy: 1e-6)
     }

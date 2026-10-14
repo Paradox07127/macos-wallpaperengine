@@ -124,7 +124,7 @@ extension WPEMetalRenderExecutor {
             )
         }
         lastPresentPass = WPEPresentPassRecord(
-            fitMode: fitMode, worldSourceSize: worldSourceSize, uniforms: uniforms,
+            source: source, fitMode: fitMode, worldSourceSize: worldSourceSize, uniforms: uniforms,
             colorTransfer: colorTransfer, target: drawable.texture, usedMetalFX: encodedByUpscaler
         )
 

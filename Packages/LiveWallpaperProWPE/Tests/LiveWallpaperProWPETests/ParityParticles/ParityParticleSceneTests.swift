@@ -149,6 +149,116 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
     }
 
+    func testAlphaOnlyHotUpdatePreservesRemappedCurrentControlPointForTheNextBirth() throws {
+        let particle = """
+        {"maxcount": 2, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 16, "instantaneous": 0,
+                      "origin": "1 0 0", "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+         "operator": [{"name": "remapvalue", "input": "runtime", "output": "controlpoint",
+                       "outputcontrolpoint0": 0, "operation": "remap",
+                       "outputrangemin": "9 0 0", "outputrangemax": "9 0 0"}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": particle])
+        // Binary dt and rate16 emit exactly one particle per step. The genuine remap operator produces CP9.
+        scene.advance(dt: 0.0625, frames: ["5": .init(time: 0.0625)])
+        let before = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(before.liveCount, 1)
+        XCTAssertEqual(before.position[0], SIMD3(1, 0, 0), "The first birth precedes the operator's CP write")
+        XCTAssertEqual(before.controlPointTranslation(0), SIMD3(9, 0, 0))
+        XCTAssertEqual(before.previousControlPointTranslation(0), SIMD3(9, 0, 0), "Frame-end history stores the remap write")
+
+        var state = try Self.state()
+        state.setScriptField("instance.alpha", of: "5", to: .vector(SIMD4(0.5, 0, 0, 0)),
+                             invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        let hooked = try XCTUnwrap(Self.root(scene))
+        // 22bd40: absent offset AND angle overrides skip this CP, even though another instance field changed.
+        XCTAssertEqual(hooked.controlPointTranslation(0), SIMD3(9, 0, 0), "Alpha must not restore the authored CP0")
+        XCTAssertEqual(hooked.previousControlPointTranslation(0), SIMD3(9, 0, 0), "The hot hook does not commit history")
+        XCTAssertEqual(hooked.position[0], SIMD3(1, 0, 0))
+        XCTAssertEqual(hooked.liveCount, 1)
+        XCTAssertEqual(hooked.objectTime, before.objectTime)
+
+        scene.advance(dt: 0.0625, frames: ["5": .init(time: 0.125)])
+        let after = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(after.liveCount, 2)
+        XCTAssertEqual(after.position[0], SIMD3(1, 0, 0), "Existing SoA is not rebaked")
+        XCTAssertEqual(after.position[1], SIMD3(10, 0, 0), "The new birth consumes preserved current9 plus emitter origin1")
+        XCTAssertEqual(after.initialAlpha[0], 1)
+        XCTAssertEqual(after.initialAlpha[1], 0.5, "The unrelated alpha update still reaches the new birth")
+        XCTAssertEqual(after.controlPointTranslation(0), SIMD3(9, 0, 0))
+        XCTAssertEqual(after.previousControlPointTranslation(0), SIMD3(9, 0, 0))
+        // The frame-end remap would hide a lost current if only the final CP were checked. Check its real draw data too.
+        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        XCTAssertEqual(batch.vertices.count, 2)
+        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [10, 0, 0])
+        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44 + 28, count: 4), [1, 1, 1, 0.5])
+    }
+
+    func testWorldStaticBulkHotOverrideUsesConditionalStackAndRestoresNormalContextForNextBirth() throws {
+        let parent = """
+        {"maxcount": 0, "material": "materials/plain.json", "renderer": [],
+         "children": [{"name": "particles/child.json", "type": "static", "origin": "5 0 0",
+                       "flags": 1, "controlpointstartindex": 0}]}
+        """
+        let child = """
+        {"flags": 1, "maxcount": 2, "material": "materials/plain.json",
+         "controlpoint": [{"offset": "5 0 0"}],
+         "emitter": [{"name": "sphererandom", "controlpoint": 0, "rate": 16, "instantaneous": 0,
+                      "origin": "1 0 0", "cone": 1, "directions": "1 0 0",
+                      "distancemin": 1, "distancemax": 1, "speedmin": 0, "speedmax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        let owner = simd_float4x4(SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0),
+                                  SIMD4(0, 0, 1, 0), SIMD4(100, 0, 0, 1))
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "particles/child.json": child])
+        scene.advance(dt: 0.0625, frames: ["5": .init(time: 0.0625, objectMatrix: owner)])
+        let beforeRoot = try XCTUnwrap(Self.root(scene))
+        let before = try XCTUnwrap(beforeRoot.children.first)
+        XCTAssertEqual(beforeRoot.liveCount, 0, "No parent live slot may fill the child's bulk CP")
+        XCTAssertEqual(before.liveCount, 1)
+        XCTAssertEqual(before.instanceTransform.columns.3.x, 5)
+        XCTAssertEqual(before.frameContext.objectMatrix.columns.3.x, 105, "Normal static update uses Up*E")
+        // Fresh and normal bulk suppression preserve the explicit authored CP5, not a private injected matrix.
+        XCTAssertEqual(before.controlPointTranslation(0), SIMD3(5, 0, 0))
+        XCTAssertEqual(before.previousControlPointTranslation(0), SIMD3(5, 0, 0))
+        XCTAssertEqual(before.position[0], SIMD3(7, 0, 0))
+
+        var state = try Self.state()
+        state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(2, 0, 0, 0)),
+                             invalidating: .particleInstance)
+        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        let hooked = try XCTUnwrap(Self.root(scene)?.children.first)
+        // 22bd40 pushes conditional229760: world U=E5, so current=E5*offset2=7, not normalU105*2=107.
+        XCTAssertEqual(hooked.controlPointBase(0).columns.3.x, 2)
+        XCTAssertEqual(hooked.controlPointTranslation(0), SIMD3(7, 0, 0))
+        XCTAssertEqual(hooked.previousControlPointTranslation(0), SIMD3(5, 0, 0), "Hot writes do not commit history")
+        XCTAssertEqual(hooked.frameContext.objectMatrix.columns.3.x, 105, "The temporary hot stack must be restored")
+        XCTAssertEqual(hooked.position[0], SIMD3(7, 0, 0), "Existing world SoA is not rebaked")
+        XCTAssertEqual(hooked.liveCount, 1)
+        XCTAssertEqual(hooked.objectTime, before.objectTime)
+
+        scene.advance(dt: 0.0625, frames: ["5": .init(time: 0.125, objectMatrix: owner)])
+        let after = try XCTUnwrap(Self.root(scene)?.children.first)
+        XCTAssertEqual(after.liveCount, 2)
+        XCTAssertEqual(after.frameContext.objectMatrix.columns.3.x, 105)
+        XCTAssertEqual(after.position[0], SIMD3(7, 0, 0))
+        XCTAssertEqual(after.position[1], SIMD3(9, 0, 0), "No bulk source or ordinary overwrite hides the hot CP7")
+        XCTAssertEqual(after.controlPointTranslation(0), SIMD3(7, 0, 0))
+        XCTAssertEqual(after.previousControlPointTranslation(0), SIMD3(7, 0, 0))
+        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        XCTAssertEqual(batch.vertices.count, 2)
+        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [9, 0, 0])
+        let expected = WPEParityMT19937(seed: 7)
+        for _ in 0 ..< 12 {
+            _ = expected.next()
+        } // Two sphere births: shape3 + speed + birthU + lifetime.
+        XCTAssertEqual(after.rng.next(), expected.next(), "A hot transform push consumes no RNG words")
+    }
+
     func testInstanceControlPointReachesTheOperatorWithRadiansAndSentinelPreservesAuthoredOffset() throws {
         // Native births now include CP translation. A unit z offset avoids the operator's zero-radius case.
         let particle = Self.burst(1, origin: "0 0 1", extra: """
@@ -191,7 +301,7 @@ final class ParityParticleSceneTests: XCTestCase {
     func testTypedOrdinaryPointChangesOnlyTheNextBirthAndKeepsEmitterOriginUnrotated() throws {
         for point in [0, 1] {
             let particle = """
-            {"maxcount": 2, "material": "materials/plain.json",
+            {"maxcount": 3, "material": "materials/plain.json",
              "emitter": [{"name": "sphererandom", "rate": 10, "distancemax": 0, "origin": "2 0 0",
                           "controlpoint": \(point), "directions": "1 0 0", "speedmin": 3, "speedmax": 3}],
              "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
@@ -227,11 +337,27 @@ final class ParityParticleSceneTests: XCTestCase {
             let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
             XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 0, count: 3), [2, 0, 0])
             XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [12, 5, 0])
+            // 22bd40 writes only supplied base fields: an offset with angle sentinel keeps the existing basis.
+            let sentinel = Float.greatestFiniteMagnitude
+            state.setScriptField("instance.controlpoint\(point)", of: "5", to: .vector(SIMD4(20, 15, 0, 0)),
+                                 invalidating: .particleInstance)
+            state.setScriptField("instance.controlpointangle\(point)", of: "5",
+                                 to: .vector(SIMD4(sentinel, sentinel, sentinel, 0)), invalidating: .particleInstance)
+            XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let partial = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(partial.liveCount, 3)
+            XCTAssertEqual(partial.position[2], SIMD3(22, 15, 0))
+            XCTAssertEqual(abs(partial.velocity[2][axis]), 3, accuracy: 1e-5)
+            XCTAssertEqual(partial.velocity[2][1 - axis], 0, accuracy: 1e-5)
+            XCTAssertEqual(partial.controlPointBasis(point).columns.0.y, 1, accuracy: 1e-6)
+            let partialBatch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+            XCTAssertEqual(Support.floats(partialBatch.vertices.bytes, at: 88, count: 3), [22, 15, 0])
             let expected = WPEParityMT19937(seed: 7)
-            for _ in 0 ..< 18 {
+            for _ in 0 ..< 27 {
                 _ = expected.next()
-            } // two (u + shape3 + fallback3 + speed + lifetime) births
-            XCTAssertEqual(after.rng.next(), expected.next(), "the typed hook must not draw additional words")
+            } // three (u + shape3 + fallback3 + speed + lifetime) births
+            XCTAssertEqual(partial.rng.next(), expected.next(), "the typed hooks must not draw additional words")
         }
     }
 
@@ -509,7 +635,7 @@ final class ParityParticleSceneTests: XCTestCase {
             .init(objectID: "5", path: [.eventGroup(0)], renderer: 1),
         ])
         XCTAssertEqual(actual.map { Support.float($0.vertices.bytes, at: 0) }, [0, 0, 0, 0])
-        XCTAssertEqual(actual.map(\.localTransform.columns.3.x), [-20, -20, 20, 20])
+        XCTAssertEqual(actual.map(\.modelMatrix.columns.3.x), [-20, -20, 20, 20])
         XCTAssertEqual(actual.map(\.vertices.count), [1, 1, 1, 1])
         XCTAssertEqual(actual.map(\.vertices.renderVar0), [
             .init(), .init(x: 0.05, y: 10, z: 0), .init(), .init(x: 0.05, y: 10, z: 0),
@@ -535,7 +661,8 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.1, frames: frames)
         control.advance(dt: 0.1, frames: frames)
         var visited: [[WPEParityParticlePathElement]] = []
-        let stream = scene.drawStream(for: "5") { path in
+        let stream = scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                      worldModel: matrix_identity_float4x4) { path in
             visited.append(path)
             return path.isEmpty || path == [.staticChild(1)]
         }
@@ -544,13 +671,18 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(stream.batches.map { Support.float($0.vertices.bytes, at: 0) }, [10, 20])
         XCTAssertEqual(visited, [[], [.staticChild(0)], [.staticChild(1)]],
                        "the first trigger fixes the boundary, but every later system still checks material availability")
-        XCTAssertEqual(scene.drawStream(for: "6", needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
+        XCTAssertEqual(scene.drawStream(objectID: "6", ownerModel: matrix_identity_float4x4,
+                                        worldModel: matrix_identity_float4x4,
+                                        needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
                        "the preceding owner does not consume this owner's snapshot")
-        XCTAssertEqual(scene.drawStream(for: "5", needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
+        XCTAssertEqual(scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                        worldModel: matrix_identity_float4x4,
+                                        needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
                        "the next owner draw entry resets the one-shot condition")
         XCTAssertEqual(scene.drawBatches(for: "5").map(\.vertices), stream.batches.map(\.vertices))
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next())
-        XCTAssertEqual(scene.drawStream(for: "missing", needsFullFrameBuffer: { _ in
+        XCTAssertEqual(scene.drawStream(objectID: "missing", ownerModel: matrix_identity_float4x4,
+                                        worldModel: matrix_identity_float4x4, needsFullFrameBuffer: { _ in
             XCTFail("an unknown owner has no systems to inspect")
             return true
         }).snapshotBoundary, nil)
@@ -563,7 +695,8 @@ final class ParityParticleSceneTests: XCTestCase {
         ])
         scene.advance(dt: 0.1, frames: ["5": .init()])
         var visited: [[WPEParityParticlePathElement]] = []
-        let stream = scene.drawStream(for: "5") { path in
+        let stream = scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                      worldModel: matrix_identity_float4x4) { path in
             visited.append(path)
             return path.isEmpty || path == [.staticChild(1)]
         }
@@ -571,19 +704,25 @@ final class ParityParticleSceneTests: XCTestCase {
                        "an empty ready root passes the material gate but cannot trigger the snapshot")
         XCTAssertEqual(stream.snapshotBoundary, 1)
         XCTAssertEqual(stream.batches.count, 2)
-        XCTAssertNil(scene.drawStream(for: "5", needsFullFrameBuffer: { _ in false }).snapshotBoundary)
+        XCTAssertNil(scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                      worldModel: matrix_identity_float4x4,
+                                      needsFullFrameBuffer: { _ in false }).snapshotBoundary)
 
         var tail = try Self.scene(Self.five, particles: [
             "particles/fx.json": Self.burst(1, extra: #", "children": [{"name": "rope"}]"#),
             "rope": Self.burst(1, renderer: #"{"name": "rope"}"#),
         ])
         tail.advance(dt: 0.1, frames: ["5": .init()])
-        let late = tail.drawStream(for: "5", needsFullFrameBuffer: { $0 == [.staticChild(0)] })
+        let late = tail.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                   worldModel: matrix_identity_float4x4,
+                                   needsFullFrameBuffer: { $0 == [.staticChild(0)] })
         XCTAssertEqual(late.batches.count, 1)
         XCTAssertEqual(late.snapshotBoundary, 1, "a late live rope triggers even with no following actual batch")
 
         enum MissingFact: Error { case material }
-        XCTAssertThrowsError(try tail.drawStream(for: "5", needsFullFrameBuffer: { _ in throw MissingFact.material }))
+        XCTAssertThrowsError(try tail.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                                 worldModel: matrix_identity_float4x4,
+                                                 needsFullFrameBuffer: { _ in throw MissingFact.material }))
     }
 
     /// 1402366f0's outer material gate prunes just that recursive system, even after the owner's snapshot fired.
@@ -598,7 +737,8 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.1, frames: ["5": .init()])
         XCTAssertEqual(scene.liveCount("5"), 4)
         var visited: [[WPEParityParticlePathElement]] = []
-        let stream = scene.drawStream(for: "5") { path -> Bool? in
+        let stream = scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                      worldModel: matrix_identity_float4x4) { path -> Bool? in
             visited.append(path)
             return path == [.staticChild(0)] ? nil : true
         }
@@ -618,7 +758,8 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(Self.root(scene)?.liveCount, 0)
         XCTAssertEqual(scene.liveCount("5"), 1)
         var visited: [[WPEParityParticlePathElement]] = []
-        let stream = scene.drawStream(for: "5") { path -> Bool? in
+        let stream = scene.drawStream(objectID: "5", ownerModel: matrix_identity_float4x4,
+                                      worldModel: matrix_identity_float4x4) { path -> Bool? in
             visited.append(path)
             return nil
         }
@@ -688,13 +829,7 @@ final class ParityParticleSceneTests: XCTestCase {
         let plain = Self.burst(1)
         let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let cases: [(text: String, edge: String, field: String)] = [
-            (Self.burst(1, extra: #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#), "", "operator"),
-            (Self.burst(1, extra: #", "operator": [{"name": "maintaindistancebetweencontrolpoints"}]"#), "", "operator"),
             (periodic, "", "emitter"),
-            (Self.burst(1, extra: #", "controlpoint": [{"flags": 1}]"#), "", "controlpoint"),
-            (Self.burst(1, extra: #", "controlpoint": [{"flags": 2}]"#), "", "controlpoint"),
-            (Self.burst(1, extra: #", "controlpoint": [{"flags": 4}]"#), "", "controlpoint"),
-            (Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), "", "controlpoint"),
             (plain.replacingOccurrences(of: "lifetimerandom", with: "inheritcontrolpointvelocity"), "", "component"),
             (plain, #", "angles": "invalid""#, "angles"),
             (plain, #", "angles": "1e40 0 0""#, "angles"),
@@ -702,7 +837,6 @@ final class ParityParticleSceneTests: XCTestCase {
             (plain, #", "scale": "2 0 1""#, "scale"),
             (plain, #", "scale": "1e40 1 1""#, "scale"),
             (plain, #", "scale": "invalid""#, "scale"),
-            (plain, #", "flags": 1"#, "child.flags"),
             (plain, #", "type": "static", "flags": 2"#, "child.flags"),
         ]
         for (bad, edge, field) in cases {
@@ -742,19 +876,71 @@ final class ParityParticleSceneTests: XCTestCase {
                            [[.eventGroup(0), .staticChild(0)], [.eventGroup(0), .staticChild(0), .staticChild(0)],
                             [.eventGroup(0), .staticChild(1)]])
         }
-        // An ancestor qualification failure rejects only the new edge, leaving the old owner/static sibling.
+        // 22a360/229760/22e3e0/236cd0 close world, parent-copy and CP-history ancestry.
         for ancestorExtra in [#", "flags": 1"#,
                               #", "controlpoint": [{"flags": 4}]"#,
                               #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#] {
-            let parent = Self.burst(1, lifetime: 0.005, extra: ancestorExtra + #", "children": [{"name": "legacy"}, {"name": "event", "type": "eventdeath"}]"#)
+            let parent = Self.burst(1, lifetime: 0.005, origin: "0 0 1", extra: ancestorExtra + #", "children": [{"name": "legacy"}, {"name": "event", "type": "eventdeath"}]"#)
             let event = Self.burst(0, extra: #", "children": [{"name": "good"}]"#)
-            let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
                                                               "event": event, "good": plain])
             let root = try XCTUnwrap(Self.root(scene))
             XCTAssertEqual(root.children.count, 1)
             let eventConfig = try XCTUnwrap(root.config.children.first { $0.trigger == .death }?.config)
-            XCTAssertTrue(eventConfig.children.isEmpty)
-            XCTAssertFalse(eventConfig.unsupportedChildren.isEmpty)
+            XCTAssertEqual(eventConfig.children.count, 1)
+            XCTAssertTrue(eventConfig.unsupportedChildren.isEmpty)
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+                           [[.staticChild(0)], [.eventGroup(0), .staticChild(0)]])
+        }
+    }
+
+    /// These fields used to reject the new nested edge. Native 22a360/229760/22e3e0/22a580/236cd0
+    /// now have consumers; both death and follow must instantiate and draw their accepted static subtree.
+    func testProvedSpaceCPHistoryAndBulkFieldsReachDeathAndFollowDescendants() throws {
+        let plain = Self.burst(1)
+        let candidates: [(String, String)] = [
+            (Self.burst(1, extra: #", "flags": 1"#), ""),
+            (Self.burst(1, origin: "0 0 1", extra: #", "operator": [{"name": "maintaindistancetocontrolpoint", "distance": 1}]"#), ""),
+            (Self.burst(1, origin: "0 0 1", extra: """
+            , "controlpoint": [{"id": 1, "offset": "4 0 0"}],
+              "operator": [{"name": "maintaindistancebetweencontrolpoints"}]
+            """), ""),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 1}]"#), ""),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 2}]"#), ""),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 4}]"#), ""),
+            (Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), ""),
+            (plain, #", "flags": 1"#),
+        ]
+        for trigger in ["eventdeath", "eventfollow"] {
+            for (candidate, edge) in candidates {
+                let parent = Self.burst(1, lifetime: trigger == "eventdeath" ? 0.005 : 10, renderer: "", extra: """
+                , "children": [{"name": "event", "type": "\(trigger)"}]
+                """)
+                let event = Self.burst(0, renderer: "", extra: """
+                , "children": [{"name": "candidate"\(edge)}, {"name": "good"}]
+                """)
+                var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent,
+                                                                  "event": event, "candidate": candidate, "good": plain])
+                let config = try XCTUnwrap(Self.root(scene)?.config.children.first?.config)
+                XCTAssertEqual(config.children.count, 2, "\(trigger): \(candidate) \(edge)")
+                XCTAssertTrue(config.unsupportedChildren.isEmpty)
+                let frame = WPEParityParticleFrameContext(cursor: SIMD2(0.5, 0.5))
+                scene.advance(dt: 0.01, frames: ["5": frame])
+                if trigger == "eventdeath" {
+                    scene.advance(dt: 0.01, frames: ["5": frame])
+                }
+                let batches = scene.drawBatches(for: "5")
+                XCTAssertEqual(batches.map(\.key.path), [[.eventGroup(0), .staticChild(0)],
+                                                         [.eventGroup(0), .staticChild(1)]])
+                XCTAssertEqual(batches.map(\.vertices.count), [1, 1])
+                XCTAssertTrue(batches.allSatisfy { Support.floats($0.vertices.bytes, at: 0, count: 3).allSatisfy(\.isFinite) })
+                let spawned = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first)
+                if !edge.isEmpty {
+                    XCTAssertEqual(spawned.children[0].controlPointCount, 8, "22c3c0 bulk flag forces eight CP slots")
+                }
+            }
         }
     }
 
@@ -820,10 +1006,12 @@ final class ParityParticleSceneTests: XCTestCase {
         let old = root.eventChildren[0][0], new = root.eventChildren[0][1]
         XCTAssertEqual(old.parentSlot, -1)
         XCTAssertNil(old.parentSample)
-        XCTAssertEqual(old.localTransform.columns.3.x, 23)
-        XCTAssertEqual(old.children[0].localTransform.columns.3.x, 28)
-        XCTAssertEqual(new.localTransform.columns.3.x, 13)
-        XCTAssertEqual(new.children[0].localTransform.columns.3.x, 18)
+        XCTAssertEqual(old.instanceTransform.columns.3.x, 23)
+        XCTAssertEqual(old.children[0].instanceTransform.columns.3.x, 5)
+        XCTAssertEqual(new.instanceTransform.columns.3.x, 13)
+        XCTAssertEqual(new.children[0].instanceTransform.columns.3.x, 5)
+        XCTAssertEqual(old.children[0].frameContext.objectMatrix.columns.3.x, 28)
+        XCTAssertEqual(new.children[0].frameContext.objectMatrix.columns.3.x, 18)
         for child in [old, old.children[0]] {
             XCTAssertEqual(child.initialColor[0], SIMD3(1, 0, 0))
             XCTAssertEqual(child.color[0], SIMD3(1, 0, 0), "detached live cannot inherit the reborn blue raw slot")
@@ -851,21 +1039,15 @@ final class ParityParticleSceneTests: XCTestCase {
     func testN2RejectsAnUnprovedFollowEdgeWithFieldReasonsWithoutPruningHealthySiblings() throws {
         let plain = Self.burst(1)
         let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
-        let cases: [(ancestor: String, child: String, edge: String, field: String)] = [
-            (#", "flags": 1"#, plain, #""type": "eventfollow""#, "flags"),
-            (#", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#, plain, #""type": "eventfollow""#, "operator"),
-            (#", "controlpoint": [{"flags": 4}]"#, plain, #""type": "eventfollow""#, "controlpoint"),
-            ("", plain.replacingOccurrences(of: #""maxcount": 1"#, with: #""maxcount": 1, "flags": 1"#),
-             #""type": "eventfollow""#, "flags"),
-            ("", periodic, #""type": "eventfollow""#, "emitter"),
-            ("", Self.burst(1, extra: #", "controlpoint": [{"flags": 65536}]"#), #""type": "eventfollow""#, "controlpoint"),
-            ("", plain, #""type": "eventfollow", "angles": "invalid""#, "angles"),
-            ("", plain, #""type": "eventfollow", "scale": "2 0 1""#, "scale"),
-            ("", plain, #""type": "eventfollow", "flags": 2"#, "child.flags"),
-            ("", plain, #""flags": 2"#, "type"),
+        let cases: [(child: String, edge: String, field: String)] = [
+            (periodic, #""type": "eventfollow""#, "emitter"),
+            (plain, #""type": "eventfollow", "angles": "invalid""#, "angles"),
+            (plain, #""type": "eventfollow", "scale": "2 0 1""#, "scale"),
+            (plain, #""type": "eventfollow", "flags": 2"#, "child.flags"),
+            (plain, #""flags": 2"#, "type"),
         ]
-        for (ancestor, bad, edge, field) in cases {
-            let parent = Self.burst(1, extra: ancestor + """
+        for (bad, edge, field) in cases {
+            let parent = Self.burst(1, extra: """
             , "children": [{"name": "legacy"}, {"name": "bad", \(edge)}, {"name": "good", "type": "eventspawn"}]
             """)
             let scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
@@ -877,6 +1059,23 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertTrue(root.config.unsupportedChildren.contains {
                 $0.path == [.eventGroup(0)] && $0.asset == "bad" && $0.field.contains(field) && !$0.reason.isEmpty
             }, field)
+        }
+        // Closed native world/history/parent-copy ancestry must not retain the old N2 rejection.
+        for ancestor in [#", "flags": 1"#,
+                         #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#,
+                         #", "controlpoint": [{"flags": 4}]"#] {
+            let parent = Self.burst(1, origin: "0 0 1", extra: ancestor + """
+            , "children": [{"name": "legacy"}, {"name": "follow", "type": "eventfollow"},
+                           {"name": "good", "type": "eventspawn"}]
+            """)
+            var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "legacy": plain,
+                                                              "follow": plain, "good": plain])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.config.children.map(\.trigger), [.always, .follow, .spawn])
+            XCTAssertTrue(root.config.unsupportedChildren.isEmpty)
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+                           [[], [.staticChild(0)], [.eventGroup(0)], [.eventGroup(1)]])
         }
         // A finite nonsingular local TRS ancestor now admits the follow branch as well as its healthy sibling.
         let parent = Self.burst(1, extra: #", "children": [{"name": "ancestor", "angles": "0 0 1"}, {"name": "good"}]"#)
@@ -922,10 +1121,10 @@ final class ParityParticleSceneTests: XCTestCase {
         let expected = simd_float4x4(SIMD4(0, 0, 2, 0), SIMD4(0, 3, 0, 0), SIMD4(4, 0, 0, 0), SIMD4(5, 7, 11, 1))
         for column in 0 ..< 4 {
             for row in 0 ..< 4 {
-                XCTAssertEqual(batch.localTransform[column][row], expected[column][row], accuracy: 2e-6)
+                XCTAssertEqual(batch.modelMatrix[column][row], expected[column][row], accuracy: 2e-6)
             }
         }
-        let placed = batch.localTransform * SIMD4<Float>(2, 1, 3, 1)
+        let placed = batch.modelMatrix * SIMD4<Float>(2, 1, 3, 1)
         for axis in 0 ..< 3 {
             XCTAssertEqual(placed[axis], SIMD3<Float>(17, 10, 15)[axis], accuracy: 5e-6)
         }

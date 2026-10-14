@@ -323,8 +323,7 @@ extension WPEParityParticleSystem {
             let lengthSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z
             return lengthSquared > 0 ? delta / lengthSquared.squareRoot() : .zero
         case .layerOrigin:
-            let column = frameContext.objectMatrix.columns.3
-            return SIMD3(column.x, column.y, column.z)
+            return frameContext.layerOrigin
         case .unknown: return .zero
         }
     }

@@ -487,7 +487,9 @@ private struct WPEParitySceneEmitter {
                                           into destination: WPEParitySceneDestination) {
         let start = operations.count
         defer {
-            particleBlocks.append(WPEParityParticleBlock(objectID: object.id, operations: start ..< operations.count,
+            particleBlocks.append(WPEParityParticleBlock(objectID: object.id,
+                                                         compositeOwnerID: destination.compositeOwnerID,
+                                                         operations: start ..< operations.count,
                                                          color: destination.color, depth: destination.depth,
                                                          snapshotSource: destination.color))
         }

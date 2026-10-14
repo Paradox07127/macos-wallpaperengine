@@ -270,7 +270,7 @@ final class WPEParityPuppetDrawTests: XCTestCase {
             pass.colorAttachments[0].storeAction = .store
             pass.colorAttachments[0].clearColor = MTLClearColorMake(inverted ? 1 : 0, 0, 0, 1)
             let encoder = try XCTUnwrap(command.makeRenderCommandEncoder(descriptor: pass))
-            try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, on: encoder)
+            try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, hasDepthAttachment: false, on: encoder)
             encoder.endEncoding()
             command.commit()
             await command.completed()

@@ -62,12 +62,9 @@ public struct WPEParityParticleSystem {
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
-    /// Legacy world/mixed-event offset only. Local event placement belongs solely to localTransform.
-    private(set) var origin: SIMD3<Float>
-    /// Owner-relative placement of this instance and its static ancestry, including local event placement.
-    private(set) var localTransform: simd_float4x4
-    /// A worldspace root or static child: its model matrix is I, so births go through the object matrix.
-    let emitsInWorld: Bool
+    /// Native inst+0x3a0: the unique per-instance placement E, not a cumulative ancestor transform.
+    private(set) var instanceTransform: simd_float4x4
+    let bulkControlPointStart: Int?
     let capacity: Int
 
     public var renderers: [WPEParityParticleRenderer] {
@@ -131,9 +128,9 @@ public struct WPEParityParticleSystem {
     var frameContext = WPEParityParticleFrameContext()
     /// Control point transforms (translation in column 3) and the previous operator pass's full transforms.
     var controlPoints = Array(repeating: matrix_identity_float4x4, count: WPEParityParticleControlPoint.count)
-    /// Local instance bases are rebuilt by the property hook, not by every simulation step.
-    var instanceControlPointRotations = Array(repeating: matrix_identity_float4x4,
-                                              count: WPEParityParticleControlPoint.count)
+    /// Native CP+0x80 bases are rebuilt by the property hook, not by every simulation step.
+    var controlPointBases = Array(repeating: matrix_identity_float4x4,
+                                  count: WPEParityParticleControlPoint.count)
     var previousControlPoints = Array(repeating: matrix_identity_float4x4,
                                       count: WPEParityParticleControlPoint.count)
     var controlPointsSeeded = false
@@ -175,13 +172,15 @@ public struct WPEParityParticleSystem {
         self.init(config: config, instance: Instance(instanceOverride, hdr: false), rng: rng, crt: crt)
     }
 
-    /// `context` is what prewarm steps with; an event child (`eventOrigin` set) uses its parent's space.
+    /// Fresh/root/event push is conditional on this node's own world-space flag (229760).
     init(
         config: WPEParityParticleConfig, instance: Instance, rng: WPEParityMT19937, crt: WPEParityCRTRandom,
-        eventOrigin: SIMD3<Float>? = nil, localTransform: simd_float4x4 = matrix_identity_float4x4,
+        instanceTransform: simd_float4x4? = nil,
         context: WPEParityParticleFrameContext = .init(), parentSlot: Int = -1,
         parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0,
-        scriptInstance: Instance? = nil
+        scriptInstance: Instance? = nil, parentControlPoints: [simd_float4x4]? = nil,
+        parentControlPointCount: Int = 0, parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
+        parentWorldSpace: Bool = false, bulkControlPointStart: Int? = nil
     ) {
         self.parentSlot = parentSlot
         self.parentSample = parentSample
@@ -190,16 +189,15 @@ public struct WPEParityParticleSystem {
         let birthInstance = scriptInstance ?? instance
         self.instance = birthInstance
         hasScriptInstanceChanges = scriptInstance != nil
-        instanceControlPointRotations = birthInstance.controlPointAngles.map {
-            Self.instanceControlPointTransform(offset: .zero, angles: $0 ?? .zero)
-        }
         self.rng = rng
         self.crt = crt
         material = config.material
-        origin = eventOrigin ?? .zero
-        self.localTransform = localTransform
-        emitsInWorld = eventOrigin == nil && config.flags & 1 != 0
+        self.instanceTransform = instanceTransform ?? context.objectMatrix
+        self.bulkControlPointStart = bulkControlPointStart
         frameContext = context
+        frameContext.worldSpace = config.flags & 1 != 0
+        frameContext.objectMatrix = frameContext.worldSpace
+            ? self.instanceTransform : parentUpdateMatrix * self.instanceTransform
         let capacity = Int((Float(config.maxCount) * instance.count).rounded())
         self.capacity = capacity
         position = Array(repeating: .zero, count: capacity)
@@ -230,13 +228,17 @@ public struct WPEParityParticleSystem {
             trailCount = Array(repeating: 0, count: capacity)
             trailHead = trailCount
         }
+        initializeControlPoints()
         for child in config.children {
             if child.trigger == .always {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
                     config: child.config, instance: Instance(), rng: rng, crt: crt,
-                    localTransform: localTransform * Self.childTransform(child), context: context,
-                    ownerTime: ownerTime, scriptInstance: scriptInstance
+                    instanceTransform: Self.childTransform(child), context: frameContext,
+                    ownerTime: ownerTime, scriptInstance: scriptInstance, parentControlPoints: controlPoints,
+                    parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
+                    parentWorldSpace: frameContext.worldSpace,
+                    bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -244,7 +246,11 @@ public struct WPEParityParticleSystem {
                 finishedEventChildren.append([])
             }
         }
-        prewarm()
+        updateControlPoints(parent: parentControlPoints, parentCount: parentControlPointCount,
+                            parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
+        commitControlPointHistory()
+        prewarm(parent: parentControlPoints, parentCount: parentControlPointCount,
+                parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
     }
 
     private static func sequenceState(_ initializer: WPEParityParticleInitializer) -> WPEParityParticleSequenceState {
@@ -264,44 +270,18 @@ public struct WPEParityParticleSystem {
 
     /// Reuses the finished instance in place. Native reset/enable visits only static descendants and never
     /// clears their slots or CP/history (22f6c0/22f5b0). Only this event root prewarms again (22f430).
-    private mutating func reuseForEvent(origin: SIMD3<Float>, localTransform: simd_float4x4,
+    private mutating func reuseForEvent(instanceTransform: simd_float4x4,
                                         context: WPEParityParticleFrameContext, parentSlot: Int,
-                                        parentSample: WPEParityParticleParentSample?, ownerTime: Float) {
-        self.origin = origin
-        self.localTransform = localTransform
+                                        parentSample: WPEParityParticleParentSample?, ownerTime: Float,
+                                        parentControlPoints: [simd_float4x4], parentCount: Int) {
+        self.instanceTransform = instanceTransform
         self.parentSlot = parentSlot
         self.parentSample = parentSample
-        frameContext = context
         objectTime = ownerTime
-        if config.localSpaceChain {
-            rebaseStaticChildren(context: context, ownerTime: ownerTime)
-            resetFinishedEventThroughStaticChildren()
-        } else {
-            // N1 does not change the legacy world/mixed-event branch.
-            restart(redraw: true)
-        }
-        prewarm()
-    }
-
-    private mutating func rebaseStaticChildren(context: WPEParityParticleFrameContext, ownerTime: Float) {
-        for (index, child) in config.children.enumerated() where child.trigger == .always {
-            let group = childGroup[index]
-            children[group].localTransform = localTransform * Self.childTransform(child)
-            children[group].frameContext = context
-            children[group].objectTime = ownerTime
-            children[group].rebaseStaticChildren(context: context, ownerTime: ownerTime)
-        }
-    }
-
-    /// The authored child base is T * Rz * Ry * Rx * S, with angles already in radians
-    /// (1401d0ce3...1401d120b). World/mixed instances retain their existing unconverted path.
-    private static func childTransform(_ child: WPEParityParticleChildConfig) -> simd_float4x4 {
-        guard child.config.localSpaceChain else { return translation(child.origin) }
-        var base = instanceControlPointTransform(offset: child.origin, angles: child.anglesRadians)
-        base.columns.0 *= child.scale.x
-        base.columns.1 *= child.scale.y
-        base.columns.2 *= child.scale.z
-        return base
+        setUpdateFrame(context, parentUpdateMatrix: context.objectMatrix, conditional: true)
+        resetFinishedEventThroughStaticChildren()
+        prewarm(parent: parentControlPoints, parentCount: parentCount,
+                parentUpdateMatrix: context.objectMatrix, parentWorldSpace: context.worldSpace)
     }
 
     mutating func resetFinishedEventThroughStaticChildren() {
@@ -332,7 +312,7 @@ public struct WPEParityParticleSystem {
     /// D/14022f6c0.c). Nothing calls the starttime prewarm again.
     mutating func reset() {
         objectTime = 0
-        restart(redraw: false)
+        restart()
         for index in children.indices {
             children[index].reset()
         }
@@ -353,8 +333,8 @@ public struct WPEParityParticleSystem {
             + eventChildren.joined().reduce(0) { $0 + $1.totalLiveCount }
     }
 
-    /// Clears the slot arrays in place; `redraw` rebuilds the emitter state with the RNG draws `init` makes.
-    private mutating func restart(redraw: Bool) {
+    /// Hidden reset clears slots in place and restores emitter state without RNG or construction prewarm.
+    private mutating func restart() {
         func clear<Element>(_ array: inout [Element], to value: Element) {
             array.withUnsafeMutableBufferPointer { $0.update(repeating: value) }
         }
@@ -385,34 +365,23 @@ public struct WPEParityParticleSystem {
         pendingEvents.removeAll(keepingCapacity: true)
         simulationTime = 0
         for index in sequenceStates.indices {
-            if redraw {
-                sequenceStates[index] = Self.sequenceState(config.initializers[index])
-            } else {
-                sequenceStates[index].t = 0
-            }
+            sequenceStates[index].t = 0
         }
-        // Element-wise, so neither array shares or reallocates storage.
         for index in emitterStates.indices {
-            if redraw {
-                emitterStates[index] = Self.emitterState(config.emitters[index], rng: rng)
-                builtEmitterStates[index] = emitterStates[index]
-            } else {
-                emitterStates[index] = builtEmitterStates[index]
-            }
+            emitterStates[index] = builtEmitterStates[index]
         }
         trailTimer = trailInterval
         clear(&trailPoints, to: .zero)
         clear(&trailCount, to: 0)
         clear(&trailHead, to: 0)
-        clear(&controlPoints, to: matrix_identity_float4x4)
-        clear(&previousControlPoints, to: matrix_identity_float4x4)
-        controlPointsSeeded = false
+        // 230650/22fd90 clear live storage, not CP base/current/previous.
         boidsFrame = 0
     }
 
     /// One object update: dt × instance rate (D/140230650.c:55-64).
     public mutating func advance(dt: Float, frame: WPEParityParticleFrameContext = .init()) {
-        frameContext = frame
+        instanceTransform = frame.objectMatrix
+        setUpdateFrame(frame, parentUpdateMatrix: matrix_identity_float4x4, conditional: true)
         objectTime += dt * instance.rate
         step(dt: dt * instance.rate)
     }
@@ -475,49 +444,58 @@ public struct WPEParityParticleSystem {
     }
 
     /// The native hook walks static children and both active/finished event pools with their shared owner.
-    private mutating func useScriptInstance(_ next: Instance) {
-        for index in instanceControlPointRotations.indices
-            where instance.controlPointAngles[index] != next.controlPointAngles[index] {
-            instanceControlPointRotations[index] = Self.instanceControlPointTransform(
-                offset: .zero, angles: next.controlPointAngles[index] ?? .zero
-            )
-        }
+    private mutating func useScriptInstance(_ next: Instance,
+                                            parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4) {
+        let previousFrame = frameContext
+        // 22bd40 pushes with 229760 even for a world static child, then pops after the recursive hook.
+        setUpdateFrame(previousFrame, parentUpdateMatrix: parentUpdateMatrix, conditional: true)
+        defer { frameContext = previousFrame }
         instance = next
+        applyControlPointInstance()
         hasScriptInstanceChanges = true
         for index in children.indices {
-            children[index].useScriptInstance(next)
+            children[index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
         }
         for group in eventChildren.indices {
             for index in eventChildren[group].indices {
-                eventChildren[group][index].useScriptInstance(next)
+                eventChildren[group][index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
             }
             for index in finishedEventChildren[group].indices {
-                finishedEventChildren[group][index].useScriptInstance(next)
+                finishedEventChildren[group][index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
             }
         }
     }
 
     /// Fixed 0.05 s steps, 0.2 s at maxcount ≥ 500, until starttime is covered (D/14022ebe0.c:349-367).
-    private mutating func prewarm() {
+    private mutating func prewarm(parent: [simd_float4x4]?, parentCount: Int,
+                                  parentUpdateMatrix: simd_float4x4, parentWorldSpace: Bool) {
         guard config.startTime > 0 else { return }
         prewarmStep = capacity < 500 ? 0.05 : 0.2
         var elapsed: Float = 0
         while elapsed < config.startTime {
-            simulate(dt: prewarmStep)
+            simulate(dt: prewarmStep, parentControlPoints: parent, parentCount: parentCount,
+                     parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
             elapsed += prewarmStep
             prewarmStepCount += 1
         }
     }
 
     /// The normal update wrapper advances this system's elapsed time and then its children (1402308a0).
-    mutating func step(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
+    mutating func step(dt: Float, parentControlPoints: [simd_float4x4]? = nil, parentCount: Int = 0,
+                       parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
+                       parentWorldSpace: Bool = false) {
         guard dt > 0 else { return }
         simulationTime += dt
-        simulate(dt: dt, parentControlPoints: parentControlPoints)
+        simulate(dt: dt, parentControlPoints: parentControlPoints, parentCount: parentCount,
+                 parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
         for index in children.indices {
-            children[index].frameContext = frameContext
+            children[index].copyBulkControlPoints(positions: position, lifetimes: lifetime, highWater: highWater,
+                                                  parentUpdateMatrix: frameContext.objectMatrix,
+                                                  parentWorldSpace: frameContext.worldSpace)
+            children[index].setUpdateFrame(frameContext, parentUpdateMatrix: frameContext.objectMatrix, conditional: false)
             children[index].objectTime = objectTime
-            children[index].step(dt: dt, parentControlPoints: controlPoints)
+            children[index].step(dt: dt, parentControlPoints: controlPoints, parentCount: controlPointCount,
+                                 parentUpdateMatrix: frameContext.objectMatrix, parentWorldSpace: frameContext.worldSpace)
         }
         for (childIndex, child) in config.children.enumerated() where child.trigger != .always {
             let group = childGroup[childIndex]
@@ -527,14 +505,19 @@ public struct WPEParityParticleSystem {
                 let sample = parentSample(slot: slot)
                 if child.trigger == .follow, sample != nil {
                     // 2308a0:2763–2767: follow relocation is after the parent's operators, before child update.
-                    eventChildren[group][index].localTransform = localTransform
-                        * Self.translation(position[slot]) * Self.childTransform(child)
-                    eventChildren[group][index].rebaseStaticChildren(context: frameContext, ownerTime: objectTime)
+                    eventChildren[group][index].instanceTransform = eventTransform(child, position: position[slot])
                 }
+                eventChildren[group][index].copyBulkControlPoints(
+                    positions: position, lifetimes: lifetime, highWater: highWater,
+                    parentUpdateMatrix: frameContext.objectMatrix, parentWorldSpace: frameContext.worldSpace
+                )
                 eventChildren[group][index].parentSample = sample
-                eventChildren[group][index].frameContext = frameContext
+                eventChildren[group][index].setUpdateFrame(frameContext, parentUpdateMatrix: frameContext.objectMatrix,
+                                                           conditional: true)
                 eventChildren[group][index].objectTime = objectTime
-                eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints)
+                eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints, parentCount: controlPointCount,
+                                                 parentUpdateMatrix: frameContext.objectMatrix,
+                                                 parentWorldSpace: frameContext.worldSpace)
                 if eventChildren[group][index].isFinished {
                     if child.trigger == .follow, slot != -1 {
                         releaseFollowReference(parentSlot: slot)
@@ -549,7 +532,9 @@ public struct WPEParityParticleSystem {
 
     /// Construction prewarm calls only this inner simulation: it neither advances system elapsed nor recursively
     /// updates existing children (14022ebe0:363 → 140236cd0). Death children prewarm before the parent's emit.
-    private mutating func simulate(dt: Float, parentControlPoints: [simd_float4x4]? = nil) {
+    private mutating func simulate(dt: Float, parentControlPoints: [simd_float4x4]? = nil, parentCount: Int = 0,
+                                   parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
+                                   parentWorldSpace: Bool = false) {
         guard dt > 0 else { return }
         for slot in 0 ..< highWater where lifetime[slot] != 0 {
             age[slot] += dt
@@ -558,7 +543,8 @@ public struct WPEParityParticleSystem {
             }
         }
         processDeathEvents()
-        updateControlPoints(parent: parentControlPoints)
+        updateControlPoints(parent: parentControlPoints, parentCount: parentCount,
+                            parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
         for index in config.emitters.indices {
             emit(index, dt: dt)
         }
@@ -627,27 +613,25 @@ public struct WPEParityParticleSystem {
         guard let childIndex = event.child else { return }
         let child = config.children[childIndex]
         let group = childGroup[childIndex]
-        // 22a360 local/local: T(parent raw position) * child base. Keep local positions local even when
-        // initializers/operators read CP or position; the batch model is their only event placement.
-        let local = child.config.localSpaceChain
-        let origin = local ? SIMD3<Float>.zero : event.position + child.origin
-        let placement = local
-            ? localTransform * Self.translation(event.position) * Self.childTransform(child)
-            : localTransform
+        let placement = eventTransform(child, position: event.position)
         let sample = parentSample(slot: event.slot)
         if let last = finishedEventChildren[group].indices.last {
             finishedEventChildren[group][last].reuseForEvent(
-                origin: origin, localTransform: placement, context: frameContext, parentSlot: event.slot,
-                parentSample: sample, ownerTime: objectTime
+                instanceTransform: placement, context: frameContext, parentSlot: event.slot,
+                parentSample: sample, ownerTime: objectTime, parentControlPoints: controlPoints,
+                parentCount: controlPointCount
             )
             eventChildren[group].append(finishedEventChildren[group].removeLast())
         } else {
             eventChildConstructions += 1
             eventChildren[group].append(WPEParityParticleSystem(
                 config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
-                rng: rng, crt: crt, eventOrigin: origin, localTransform: placement, context: frameContext,
+                rng: rng, crt: crt, instanceTransform: placement, context: frameContext,
                 parentSlot: event.slot, parentSample: sample, ownerTime: objectTime,
-                scriptInstance: hasScriptInstanceChanges ? instance : nil
+                scriptInstance: hasScriptInstanceChanges ? instance : nil, parentControlPoints: controlPoints,
+                parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
+                parentWorldSpace: frameContext.worldSpace,
+                bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex
             ))
         }
         if child.trigger == .follow {
@@ -784,31 +768,12 @@ public struct WPEParityParticleSystem {
         freeHint = slot + 1
         highWater = max(highWater, slot + 1)
         liveCount += 1
-        if config.localSpaceChain, !frameContext.worldSpace, config.controlPoints[emitter.controlPoint].flags == 0 {
-            let point = controlPoints[emitter.controlPoint]
-            let center = SIMD3(point.columns.3.x, point.columns.3.y, point.columns.3.z) + emitter.origin
-            let basis: simd_float3x3? = emitter.controlPoint == 0 ? nil : simd_float3x3(
-                SIMD3(point.columns.0.x, point.columns.0.y, point.columns.0.z),
-                SIMD3(point.columns.1.x, point.columns.1.y, point.columns.1.z),
-                SIMD3(point.columns.2.x, point.columns.2.y, point.columns.2.z)
-            )
-            let launch = emitter.sample(rng: rng, at: center, basis: basis)
-            position[slot] = launch.position
-            velocity[slot] = launch.velocity
-        } else {
-            // World/mixed and special-CP births retain the unconverted branch pending their own native consumer.
-            let launch = emitter.sample(rng: rng)
-            position[slot] = origin + emitter.origin + launch.position
-            velocity[slot] = launch.velocity
-        }
-        if emitsInWorld {
-            // [I] A top-level worldspace M is I (R22 Q1), so births are placed in the world here.
-            let placement = frameContext.objectMatrix * localTransform
-            let world = placement * SIMD4(position[slot], 1)
-            position[slot] = SIMD3(world.x, world.y, world.z)
-            let moved = placement * SIMD4(velocity[slot], 0)
-            velocity[slot] = SIMD3(moved.x, moved.y, moved.z)
-        }
+        let point = controlPoints[emitter.controlPoint]
+        let center = SIMD3(point.columns.3.x, point.columns.3.y, point.columns.3.z) + emitter.origin
+        let basis = frameContext.worldSpace || emitter.controlPoint != 0 ? controlPointBasis(emitter.controlPoint) : nil
+        let launch = emitter.sample(rng: rng, at: center, basis: basis)
+        position[slot] = launch.position
+        velocity[slot] = launch.velocity
         let u = rng.unit()
         rotation[slot] = .zero
         angularVelocity[slot] = .zero

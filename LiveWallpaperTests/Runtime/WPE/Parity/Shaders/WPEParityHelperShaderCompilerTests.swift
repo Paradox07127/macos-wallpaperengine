@@ -126,7 +126,7 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
             primitiveType: .triangle, vertexCount: 3
         )
         draw.textures = ["tex": input]
-        try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, on: encoder)
+        try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, hasDepthAttachment: false, on: encoder)
         encoder.endEncoding()
         command.commit()
         await command.completed()

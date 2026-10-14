@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
@@ -91,6 +92,91 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertFalse(driver.hasPresentedFrame)
     }
 
+    func testCaptureKeepsLastPresentedFrameAcrossUnpresentedReplan() async throws {
+        let document: WPESceneDocument
+        let assets: WPEParityProgramAssets
+        let compiler: WPEParityHelperShaderCompiler
+        do {
+            (document, assets) = try sceneInputs()
+            compiler = try makeCompiler()
+        } catch {
+            // This is a required product gate: an unavailable external fixture/toolchain is a failure, not a skip.
+            throw NSError(domain: "WPEParitySceneDriverTests.RequiredCaptureInputs", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Required capture inputs unavailable: \(error)"])
+        }
+        XCTAssertEqual(WPEMetalFXSpatialUpscaler.renderScale, 1, "The required native gate uses isolated defaults")
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
+                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertNil(driver.loadDiagnostics)
+        XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
+
+        let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .rgba8Unorm_srgb
+        layer.colorspace = colorSpace
+        layer.drawableSize = Self.size
+        layer.framebufferOnly = false
+        try await present(driver, layer: layer, label: "A before replan")
+        XCTAssertTrue(driver.hasPresentedFrame)
+        let drawableA = try XCTUnwrap(layer.lastTexture)
+        let expectedA = try readBack(drawableA, device: device)
+        XCTAssertEqual([drawableA.width, drawableA.height], [1920, 1080])
+        let firstA = Array(expectedA.prefix(4))
+        XCTAssertTrue(stride(from: 0, to: expectedA.count, by: 4).contains {
+            Array(expectedA[$0 ..< $0 + 4]) != firstA
+        }, "A must contain real scene pixels, not the cleared backbuffer's flat colour")
+
+        // IDs do not retain A's renderer or its backbuffer. The recorded drawable is a distinct present target.
+        let rendererAID = try ObjectIdentifier(XCTUnwrap(driver.renderer))
+        let backbufferAID = try ObjectIdentifier(XCTUnwrap(driver.renderer).backbuffer)
+        let rawFormatA = try XCTUnwrap(driver.renderer).backbuffer.pixelFormat
+        let expectedRawA = try readBack(XCTUnwrap(driver.renderer).backbuffer, device: device)
+        XCTAssertNotEqual(ObjectIdentifier(drawableA), backbufferAID)
+        let resized = CGSize(width: 1280, height: 720)
+        driver.updateSurfaceGeometry(drawableSize: resized)
+        XCTAssertTrue(driver.needsReplan)
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        XCTAssertFalse(driver.needsReplan)
+        XCTAssertNotEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), rendererAID)
+        XCTAssertNotEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer).backbuffer), backbufferAID)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).backbuffer.width, 1280)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).backbuffer.height, 720)
+
+        // B exists, but no B frame has rendered or presented. Capture must still replay the completed A present.
+        let afterReplan = await capture(driver, colorSpace: colorSpace)
+        try assertCapture(XCTUnwrap(afterReplan), matches: drawableA, expected: expectedA,
+                          device: device, colorSpace: colorSpace, label: "A after unpresented B replan")
+        let rawAfterReplan = await driver.copyPresentedBackbuffer()
+        let rawA = try XCTUnwrap(rawAfterReplan)
+        XCTAssertEqual([rawA.texture.width, rawA.texture.height], [1920, 1080])
+        XCTAssertEqual(rawA.texture.pixelFormat, rawFormatA)
+        let actualRawA = try readBack(rawA.texture, device: device)
+        XCTAssertEqual(actualRawA.count, expectedRawA.count)
+        let rawDifference = zip(actualRawA, expectedRawA).reduce(0) { max($0, abs(Int($1.0) - Int($1.1))) }
+        XCTAssertEqual(rawDifference, 0, "Raw poster copy must also retain A across an unpresented B replan")
+
+        layer.drawableSize = resized
+        try await present(driver, layer: layer, label: "B after replan")
+        XCTAssertTrue(driver.hasPresentedFrame)
+        let drawableB = try XCTUnwrap(layer.lastTexture)
+        XCTAssertEqual([drawableB.width, drawableB.height], [1280, 720])
+        let expectedB = try readBack(drawableB, device: device)
+        let afterPresent = await capture(driver, colorSpace: colorSpace)
+        try assertCapture(XCTUnwrap(afterPresent), matches: drawableB, expected: expectedB,
+                          device: device, colorSpace: colorSpace, label: "B after B present")
+
+        driver.cleanup()
+        let afterCleanup = await capture(driver, colorSpace: colorSpace)
+        XCTAssertNil(afterCleanup, "Cleanup revokes the last presented frame's capture eligibility")
+    }
+
     /// Scene 3509243656 has one sound layer; the driver plays it with WPE's rules and stops it on cleanup.
     func testSoundLayerStartsRuntimeAndCleanupStopsIt() async throws {
         let (document, assets) = try sceneInputs(sceneID: "3509243656")
@@ -140,6 +226,26 @@ final class WPEParitySceneDriverTests: XCTestCase {
         await commandBuffer.completed()
         XCTAssertNil(commandBuffer.error, label)
         try await settle(driver, label: label)
+    }
+
+    private func capture(_ driver: WPEParitySceneDriver, colorSpace: CGColorSpace) async -> WPEDisplayedFrameCapture? {
+        await withCheckedContinuation { continuation in
+            driver.captureDisplayedFrame(colorSpace: colorSpace) { continuation.resume(returning: $0) }
+        }
+    }
+
+    private func assertCapture(_ capture: WPEDisplayedFrameCapture, matches drawable: MTLTexture, expected: [UInt8],
+                               device: MTLDevice, colorSpace: CGColorSpace, label: String) throws {
+        XCTAssertEqual(capture.texture.width, drawable.width, label)
+        XCTAssertEqual(capture.texture.height, drawable.height, label)
+        XCTAssertEqual(capture.pixelFormat, drawable.pixelFormat, label)
+        XCTAssertEqual(capture.texture.pixelFormat, drawable.pixelFormat, label)
+        XCTAssertEqual(capture.colorSpace?.name, colorSpace.name, label)
+        XCTAssertFalse(capture.isEDR, label)
+        let actual = try readBack(capture.texture, device: device)
+        XCTAssertEqual(actual.count, expected.count, label)
+        let worst = zip(actual, expected).map { abs(Int($0) - Int($1)) }.max() ?? .max
+        XCTAssertLessThanOrEqual(worst, 1, label)
     }
 
     /// `completed()` can resume before the completion handlers that record readiness have run.

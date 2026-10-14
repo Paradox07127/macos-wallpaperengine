@@ -112,7 +112,6 @@ private struct WPEParityParticleParseContext {
     var ancestors: [String]
     var path: [WPEParityParticlePathElement] = []
     var underEventAncestor = false
-    var localSpaceChain = true
     var issues: [WPEParityParticleChildRejection] = []
 }
 
@@ -139,8 +138,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
-    /// Only local/local events migrate placement; the legacy world/mixed path is unchanged.
-    var localSpaceChain = true
+    /// Effective native CP allocation is the highest referenced index + 1, not the authored array length.
+    var controlPointCount = 0
     private var nestedEligibilityIssues: [WPEParityParticleChildRejection] = []
 
     /// Program prototypes, probes and runtime systems share this resolved tree and its accepted-child indexes.
@@ -197,7 +196,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             }
             controlPoints[id] = WPEParityParticleControlPoint(
                 offset: entry.vector("offset", .zero), flags: entry.integer("flags", 0),
-                parent: entry.controlPoint("parentcontrolpoint")
+                parent: Int(UInt32(truncatingIfNeeded: entry.integer("parentcontrolpoint", 0)))
             )
         }
         for entry in JSON.array(json["emitter"]) {
@@ -223,11 +222,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                 diagnostics.append("renderer \(name) skipped")
             }
         }
-        localSpaceChain = context.localSpaceChain && flags & 1 == 0
         let asset = context.ancestors.last.flatMap { $0.isEmpty ? nil : $0 } ?? "<root>"
         nestedEligibilityIssues = context.issues + nestedIssues(at: context.path, asset: asset)
         var descendants = context
-        descendants.localSpaceChain = localSpaceChain
         descendants.issues = nestedEligibilityIssues
         for entry in JSON.array(json["children"]) {
             appendChild(entry, context: descendants, is3D: is3D, resolveChild: resolveChild,
@@ -258,6 +255,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         // 1401c6008 / 1401c6910 use cmovb: negative authored integers become point 7, not point 0.
         // Keep Entry's finite conversion protection; do not change other components' controlPoint parser.
         let controlPoint = min(UInt32(truncatingIfNeeded: WPEParityParticleEntry(entry).integer("controlpoint", 0)), 7)
+        controlPointCount = max(controlPointCount, Int(controlPoint) + 1)
         emitters.append(WPEParityParticleEmitterConfig(
             shape: shape,
             origin: JSON.vector(entry["origin"]) ?? .zero,
@@ -343,6 +341,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         default:
             diagnostics.append("initializer \(name) skipped")
             return
+        }
+        switch initializer {
+        case let .sequenceAround(field): useControlPoints(field.controlPoint)
+        case let .sequenceBetween(field): useControlPoints(field.start, field.end)
+        case let .remap(field): useRemapControlPoints(field, entry: fields)
+        default: break
         }
         initializers.append(initializer)
     }
@@ -450,7 +454,35 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             blend?.outStart = number("blendoutstart", 1)
             blend?.outEnd = number("blendoutend", 1)
         }
+        switch kind {
+        case let .controlPointAttract(field): useControlPoints(field.controlPoint)
+        case let .vortex(field): useControlPoints(field.controlPoint)
+        case let .vortexRing(field): useControlPoints(field.controlPoint)
+        case let .maintainDistance(point, _, _), let .reduceMovement(point, _, _, _, _): useControlPoints(point)
+        case let .maintainDistanceBetween(start, end): useControlPoints(start, end)
+        case let .collisionPlane(field), let .collisionSphere(field): useControlPoints(field.controlPoint)
+        case let .remap(field): useRemapControlPoints(field, entry: fields)
+        default: break
+        }
         operators.append(WPEParityParticleOperator(kind: kind, blend: blend))
+    }
+
+    private mutating func useControlPoints(_ indexes: Int...) {
+        for index in indexes {
+            controlPointCount = max(controlPointCount, index + 1)
+        }
+    }
+
+    /// Native remap compiler reserves both input/output CP0, and both CP1 only for the between-points value.
+    private mutating func useRemapControlPoints(_ field: WPEParityParticleRemap, entry: WPEParityParticleEntry) {
+        let values = [field.input, field.output]
+        if values.contains(where: { [.distanceToControlPoint, .positionBetweenControlPoints, .controlPoint,
+                                     .deltaToControlPoint, .directionToControlPoint].contains($0) }) {
+            useControlPoints(field.inputControlPoint, field.outputControlPoint0)
+        }
+        if values.contains(.positionBetweenControlPoints) {
+            useControlPoints(entry.controlPoint("inputcontrolpoint1", 1), field.outputControlPoint1)
+        }
     }
 
     private func nestedIssues(at path: [WPEParityParticlePathElement], asset: String)
@@ -459,9 +491,6 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         func reject(_ field: String, _ reason: String) {
             issues.append(.init(path: path, asset: asset, field: field, reason: reason))
         }
-        if flags & 1 != 0 {
-            reject("flags", "N1 requires local-space ancestors and descendants")
-        }
         if flags & ~15 != 0 {
             reject("flags", "N1 does not implement these system flag bits")
         }
@@ -469,18 +498,11 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             reject("emitter[\(index)].flags", "periodic emission and child restart remain unsupported by N1")
         }
         for (index, point) in controlPoints.enumerated() {
-            if point.flags != 0 {
-                reject("controlpoint[\(index)].flags", "N1 requires ordinary local control points")
+            if point.flags & ~0x1000F != 0 {
+                reject("controlpoint[\(index)].flags", "unknown control point flag bits")
             }
             if !Self.finite(point.offset) {
                 reject("controlpoint[\(index)].offset", "non-finite control point")
-            }
-        }
-        for (index, op) in operators.enumerated() {
-            switch op.kind {
-            case .maintainDistance, .maintainDistanceBetween:
-                reject("operator[\(index)]", "control point history consumers remain unsupported by N1")
-            default: break
             }
         }
         for diagnostic in diagnostics {
@@ -575,8 +597,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             unsupportedChildren += placementIssues
             return
         }
-        if flags != 0 {
-            next.issues.append(edgeIssue("child.flags", "bulk CP and parent-period child restart remain unsupported by N1"))
+        if flags & ~1 != 0 {
+            next.issues.append(edgeIssue("child.flags", "parent-period restart and unknown child flag bits remain unsupported"))
         }
         let child = WPEParityParticleConfig(json: json, context: next, is3D: is3D, resolveChild: resolveChild,
                                             resolveMaterial: resolveMaterial)
@@ -590,7 +612,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         children.append(WPEParityParticleChildConfig(
             trigger: trigger, origin: origin, anglesRadians: angles, scale: scale, flags: flags,
-            controlPointStartIndex: WPEParityParticleEntry(entry).integer("controlpointstartindex", 0),
+            controlPointStartIndex: Int(UInt8(truncatingIfNeeded: WPEParityParticleEntry(entry).integer("controlpointstartindex", 0))),
             probability: JSON.number(entry["probability"]) ?? 1,
             maxCount: WPEParityParticleEntry(entry).integer("maxcount", 10), config: child
         ))

@@ -70,7 +70,7 @@ struct WPEDisplayedFrameCaptureTests {
         let drawable = try #require(stack.layer.lastDrawable).texture
         #expect(presenter.executor.lastPresentPass?.colorTransfer == .linear)
         let capture: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
-            presenter.executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+            presenter.executor.encodeDisplayedFrameCapture(colorSpace: stack.layer.colorspace) {
                 continuation.resume(returning: $0)
             }
         }
@@ -201,7 +201,7 @@ struct WPEDisplayedFrameCaptureTests {
         _ = try stack.bytes(#require(stack.layer.lastDrawable).texture)
         executor.metalFXUpscaler = nil
         let result: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
-            executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+            executor.encodeDisplayedFrameCapture(colorSpace: stack.layer.colorspace) {
                 continuation.resume(returning: $0)
             }
         }
@@ -307,7 +307,7 @@ struct WPEDisplayedFrameCaptureTests {
         let drawable = try #require(stack.layer.lastDrawable).texture
         let presented = try stack.bytes(drawable)
         let result: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
-            executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+            executor.encodeDisplayedFrameCapture(colorSpace: stack.layer.colorspace) {
                 continuation.resume(returning: $0)
             }
         }

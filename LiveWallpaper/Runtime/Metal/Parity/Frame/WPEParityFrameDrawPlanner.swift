@@ -28,7 +28,6 @@ struct WPEParityFrameDrawPlan {
     struct Particles {
         let key: WPEParityParticleDrawKey
         let layers: WPEParityLayerTransformSet
-        let worldSpace: Bool
         let perspective: Bool
         let compositeOwnerID: String?
         let renderer: WPEParityParticleRenderer
@@ -209,8 +208,7 @@ struct WPEParityFrameDrawPlan {
         var uniforms = uniforms
         uniforms.matrices = WPEParityParticleMatrices.draw(
             layers, objectID: particle.key.objectID,
-            childLocal: batch.localTransform,
-            worldSpace: particle.worldSpace, perspective: particle.perspective,
+            modelMatrix: batch.modelMatrix, perspective: particle.perspective,
             compositeOwnerID: particle.compositeOwnerID, parallax: frame.parallax.smoothed
         )
         let model = uniforms.matrices.model
@@ -699,11 +697,7 @@ struct WPEParityFrameDrawPlanner {
                                                  pipeline: pipeline, shader: shader, texture0: uniformTextures[0],
                                                  frameCount: sprites[0]?.count ?? 0)
             geometry = .particles(particles)
-            placed.matrices = WPEParityParticleMatrices.draw(
-                layers, objectID: particleKey.objectID, childLocal: matrix_identity_float4x4,
-                worldSpace: particles.worldSpace, perspective: particles.perspective,
-                compositeOwnerID: particles.compositeOwnerID, parallax: .zero
-            )
+            // A live batch supplies its final native D and current V/P in makeParticleDraw.
         } else {
             let inputs = artifact.vertex.reflection.vertexInputs
             let buffers = if let modelMesh {
@@ -833,7 +827,7 @@ struct WPEParityFrameDrawPlanner {
         let renderVar1 = entry.source.combos["SPRITESHEET", default: 0] != 0
             ? texture0.flatMap { WPEParityRenderVarState.spriteSheetRV1(texture: $0, frameCount: frameCount) } : nil
         return WPEParityFrameDrawPlan.Particles(
-            key: key, layers: layers, worldSpace: entry.worldSpace, perspective: entry.perspective,
+            key: key, layers: layers, perspective: entry.perspective,
             compositeOwnerID: compositeOwnerID, renderer: renderer, renderVar1: renderVar1,
             maxBytes: vertices * emulation.vertexStride, argumentBytes: WPEParityDrawEncoder.argumentBytes(pipeline)
         )

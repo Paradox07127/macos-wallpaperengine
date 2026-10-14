@@ -120,6 +120,8 @@ public struct WPEParitySceneSampler: Hashable, Sendable {
 /// One particle object's authored position and targets. The runtime projects its live instance stream here.
 public struct WPEParityParticleBlock: Hashable, Sendable {
     public let objectID: String
+    /// The draw context whose model inverse is the native world-space stack C; nil at scene level.
+    public let compositeOwnerID: String?
     public let operations: Range<Int>
     public let color: WPEResourceID
     public let depth: WPEResourceID?

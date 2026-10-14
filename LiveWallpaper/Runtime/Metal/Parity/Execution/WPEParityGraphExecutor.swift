@@ -366,7 +366,8 @@ final class WPEParityGraphExecutor {
             guard case .draw = graph.operations[operation].kind else { continue }
             try visit(operation, textures, frame) { provided in
                 do {
-                    try drawEncoder.encode(provided, frame: frame, on: encoder)
+                    try drawEncoder.encode(provided, frame: frame,
+                                           hasDepthAttachment: pass.depthAttachment.texture != nil, on: encoder)
                 } catch WPEParityExecutionError.arenaExhausted where provided.dropsWhenArenaIsFull {
                     droppedDraws += 1
                 }

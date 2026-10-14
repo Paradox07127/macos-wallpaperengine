@@ -8,8 +8,10 @@ public struct WPEParityParticleFrameContext: Sendable {
     /// Cursor in [0, 1]², y down; nil leaves cursor-following control points where they are.
     public var cursor: SIMD2<Float>?
     public var viewProjection: simd_float4x4
-    /// The particle object's model matrix.
+    /// Owner W at the public frame boundary; each System resolves its own update-stack U before simulation.
     public var objectMatrix: simd_float4x4
+    /// Owner layer world translation, unchanged when a child resolves its update-stack U (native layerorigin).
+    public var layerOrigin: SIMD3<Float>
     /// Particles simulate in world space rather than in the object's space.
     public var worldSpace: Bool
     /// ctx+0x140, the remap "timeofday" input, supplied from the same frame clock as `time`.
@@ -21,12 +23,14 @@ public struct WPEParityParticleFrameContext: Sendable {
         viewProjection: simd_float4x4 = matrix_identity_float4x4,
         objectMatrix: simd_float4x4 = matrix_identity_float4x4,
         worldSpace: Bool = false,
-        timeOfDay: Float = 0
+        timeOfDay: Float = 0,
+        layerOrigin: SIMD3<Float>? = nil
     ) {
         self.time = time
         self.cursor = cursor
         self.viewProjection = viewProjection
         self.objectMatrix = objectMatrix
+        self.layerOrigin = layerOrigin ?? SIMD3(objectMatrix.columns.3.x, objectMatrix.columns.3.y, objectMatrix.columns.3.z)
         self.worldSpace = worldSpace
         self.timeOfDay = timeOfDay
     }
@@ -60,51 +64,163 @@ extension WPEParityParticleSystem {
         return SIMD3(column.x, column.y, column.z)
     }
 
-    /// Native CP+0x40 stores all four columns after operators, not just a translation during CP update.
-    mutating func commitControlPointHistory() {
+    var controlPointCount: Int {
+        bulkControlPointStart == nil ? config.controlPointCount : 8
+    }
+
+    func controlPointBase(_ index: Int) -> simd_float4x4 {
+        controlPointBases[index]
+    }
+
+    /// 22c3c0 initializes authored current/base before constructing children; 22ebe0 seeds history later.
+    mutating func initializeControlPoints() {
         for index in controlPoints.indices {
+            let point = config.controlPoints[index]
+            controlPointBases[index] = Self.translation(point.offset)
+            if point.flags & 0x10005 == 0 {
+                rebuildControlPointBase(index)
+            }
+            controlPoints[index] = controlPointBases[index]
+            previousControlPoints[index] = controlPoints[index]
+        }
+        controlPointsSeeded = false
+    }
+
+    /// Native CP+0x40 stores all four columns only after operators (or the explicit fresh seed).
+    mutating func commitControlPointHistory() {
+        for index in 0 ..< controlPointCount {
             previousControlPoints[index] = controlPoints[index]
         }
         controlPointsSeeded = true
     }
 
-    /// R19 控制点: 0x10000 frozen, 1 follows the cursor, 4 copies the parent system's point, else the offset
-    /// (flags 2: a world-space offset). Operators read history until the simulation commits it.
-    mutating func updateControlPoints(parent: [simd_float4x4]?) {
-        let frame = frameContext
-        let objectInverse = frame.objectMatrix.inverse
-        for (index, point) in config.controlPoints.enumerated() {
-            if point.flags & 0x10000 != 0 {
-                // Frozen.
-            } else if point.flags & 1 != 0 {
-                if let cursor = frame.cursor {
-                    let ndc = SIMD4<Float>(2 * cursor.x - 1, 1 - 2 * cursor.y, 0, 1)
-                    var world = frame.viewProjection.inverse * ndc
-                    world /= world.w
-                    // Native unprojection retains only x/y; z=0 precedes the object-space conversion.
-                    world.z = 0
-                    if !frame.worldSpace {
-                        world = objectInverse * world
+    /// The property hook writes base/current for ordinary points without committing the previous matrix.
+    mutating func applyControlPointInstance() {
+        for index in 0 ..< controlPointCount where config.controlPoints[index].flags & 0x10005 == 0 {
+            let offset = instance.controlPointOffsets[index]
+            let angles = instance.controlPointAngles[index]
+            // 22bd40: both sentinel means no write, including a current changed by a remap operator.
+            guard offset != nil || angles != nil else { continue }
+            if let angles {
+                let rotation = Self.instanceControlPointTransform(offset: .zero, angles: angles)
+                for column in 0 ..< 3 {
+                    for row in 0 ..< 3 {
+                        controlPointBases[index][column][row] = rotation[column][row]
                     }
-                    controlPoints[index] = Self.translation(SIMD3(world.x, world.y, world.z))
-                }
-            } else if point.flags & 4 != 0 {
-                if let parent, parent.indices.contains(point.parent) {
-                    controlPoints[index] = parent[point.parent]
-                }
-            } else {
-                // The instance hook only overrides ordinary points, not frozen/cursor/parent-copy points.
-                // Angles are radians with no descriptor degree conversion (14024d940; 14022bd40:120–149).
-                var base = instanceControlPointRotations[index]
-                base.columns.3 = SIMD4(instance.controlPointOffsets[index] ?? point.offset, 1)
-                if point.flags & 2 != 0 {
-                    controlPoints[index] = frame.worldSpace ? base : objectInverse * base
-                } else {
-                    controlPoints[index] = frame.worldSpace ? frame.objectMatrix * base : base
                 }
             }
+            if let offset {
+                controlPointBases[index].columns.3 = SIMD4(offset, controlPointBases[index].columns.3.w)
+            }
+            controlPoints[index] = controlPointBase(index)
+            updateOrdinaryControlPoint(index)
         }
-        if !controlPointsSeeded { commitControlPointHistory() }
+    }
+
+    private mutating func rebuildControlPointBase(_ index: Int) {
+        controlPointBases[index] = Self.instanceControlPointTransform(
+            offset: instance.controlPointOffsets[index] ?? config.controlPoints[index].offset,
+            angles: instance.controlPointAngles[index] ?? .zero
+        )
+    }
+
+    private mutating func updateOrdinaryControlPoint(_ index: Int) {
+        let flags = config.controlPoints[index].flags
+        if frameContext.worldSpace {
+            if flags & 2 == 0 || index == 0 {
+                controlPoints[index] = frameContext.objectMatrix * controlPointBase(index)
+            }
+        } else if flags & 2 != 0 {
+            controlPoints[index] = frameContext.objectMatrix.inverse * controlPointBase(index)
+        }
+    }
+
+    /// 22e3e0: frozen > cursor > parent-copy > ordinary. Up is the stack entry before this child's push.
+    mutating func updateControlPoints(parent: [simd_float4x4]?, parentCount: Int = 0,
+                                      parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
+                                      parentWorldSpace: Bool = false) {
+        let frame = frameContext
+        for index in 0 ..< controlPointCount {
+            let point = config.controlPoints[index]
+            if point.flags & 0x10000 != 0 {
+                continue
+            }
+            if point.flags & 1 != 0 {
+                guard let cursor = frame.cursor else { continue }
+                var world = frame.viewProjection.inverse * SIMD4<Float>(2 * cursor.x - 1, 1 - 2 * cursor.y, 0, 1)
+                world /= world.w
+                world.z = 0
+                if !frame.worldSpace {
+                    world = frame.objectMatrix.inverse * world
+                }
+                var current = controlPointBase(index)
+                current.columns.3.x = world.x
+                current.columns.3.y = world.y
+                current.columns.3.z = world.z
+                controlPoints[index] = current
+            } else if point.flags & 4 != 0 {
+                guard let parent, point.parent < parentCount, parent.indices.contains(point.parent) else {
+                    updateOrdinaryControlPoint(index)
+                    continue
+                }
+                let source = parent[point.parent]
+                if point.flags & 8 != 0 || frame.worldSpace && parentWorldSpace {
+                    controlPoints[index] = source
+                } else if frame.worldSpace {
+                    controlPoints[index] = parentUpdateMatrix * source
+                } else {
+                    controlPoints[index] = frame.objectMatrix.inverse
+                        * (parentWorldSpace ? source : parentUpdateMatrix * source)
+                }
+            } else if bulkControlPointStart.map({ index >= $0 }) != true {
+                updateOrdinaryControlPoint(index)
+            }
+        }
+    }
+
+    /// 22a580 runs under the parent U before a child update push. A special target does not advance the index.
+    mutating func copyBulkControlPoints(positions: [SIMD3<Float>], lifetimes: [Float], highWater: Int,
+                                        parentUpdateMatrix: simd_float4x4, parentWorldSpace: Bool) {
+        guard var target = bulkControlPointStart else { return }
+        let world = config.flags & 1 != 0
+        let mapping = parentWorldSpace == world ? matrix_identity_float4x4
+            : (world ? parentUpdateMatrix : parentUpdateMatrix.inverse)
+        for slot in 0 ..< highWater where lifetimes[slot] != 0 {
+            guard target < 8 else { break }
+            guard config.controlPoints[target].flags & 0x10005 == 0 else { continue }
+            let point = mapping * SIMD4(positions[slot], 1)
+            controlPoints[target].columns.3.x = point.x
+            controlPoints[target].columns.3.y = point.y
+            controlPoints[target].columns.3.z = point.z
+            target += 1
+        }
+    }
+
+    /// Conditional 229760 for fresh/event, unconditional 229810 for normal static descendants.
+    mutating func setUpdateFrame(_ frame: WPEParityParticleFrameContext,
+                                 parentUpdateMatrix: simd_float4x4, conditional: Bool) {
+        frameContext = frame
+        frameContext.worldSpace = config.flags & 1 != 0
+        frameContext.objectMatrix = conditional && frameContext.worldSpace
+            ? instanceTransform : parentUpdateMatrix * instanceTransform
+    }
+
+    func eventTransform(_ child: WPEParityParticleChildConfig, position: SIMD3<Float>) -> simd_float4x4 {
+        let base = Self.translation(position) * Self.childTransform(child)
+        let parentWorld = config.flags & 1 != 0, childWorld = child.config.flags & 1 != 0
+        if parentWorld == childWorld {
+            return base
+        }
+        return (childWorld ? frameContext.objectMatrix : frameContext.objectMatrix.inverse) * base
+    }
+
+    /// Authored child angles are radians; B = T * Rz * Ry * Rx * S.
+    static func childTransform(_ child: WPEParityParticleChildConfig) -> simd_float4x4 {
+        var base = instanceControlPointTransform(offset: child.origin, angles: child.anglesRadians)
+        base.columns.0 *= child.scale.x
+        base.columns.1 *= child.scale.y
+        base.columns.2 *= child.scale.z
+        return base
     }
 
     static func translation(_ offset: SIMD3<Float>) -> simd_float4x4 {

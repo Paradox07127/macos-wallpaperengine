@@ -805,12 +805,11 @@ actor WPEDisplayRenderActor {
                     }
                     return
                 }
-                guard !Task.isCancelled, let renderer = self.renderer, let source = renderer.outputTexture else {
+                guard !Task.isCancelled, let renderer = self.renderer, renderer.outputTexture != nil else {
                     resumer.resume(returning: nil)
                     return
                 }
                 renderer.executor.encodeDisplayedFrameCapture(
-                    source: source,
                     colorSpace: renderer.metalLayer.layer.colorspace
                 ) { capture in
                     resumer.resume(returning: capture)

@@ -14,6 +14,8 @@ struct WPEDisplayedFrameCapture: @unchecked Sendable { // MTLTexture lacks the S
 
 /// Inputs of the last present that reached a drawable, so a capture can replay that exact pass.
 struct WPEPresentPassRecord {
+    /// The exact producer texture bound to this pass; keeps a retired renderer's pixels available across replan.
+    let source: MTLTexture
     let fitMode: WPEPresentFitMode
     let worldSourceSize: CGSize?
     let uniforms: WPEPresentUniforms?
@@ -25,6 +27,7 @@ struct WPEPresentPassRecord {
     let usedMetalFX: Bool
 
     init(
+        source: MTLTexture,
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize?,
         uniforms: WPEPresentUniforms?,
@@ -32,6 +35,7 @@ struct WPEPresentPassRecord {
         target: MTLTexture,
         usedMetalFX: Bool
     ) {
+        self.source = source
         self.fitMode = fitMode
         self.worldSourceSize = worldSourceSize
         self.uniforms = uniforms
@@ -65,7 +69,6 @@ final class WPEDisplayedFrameCaptureResumer: Sendable {
 extension WPEMetalRenderExecutor {
     /// `completion` runs on a Metal callback thread, with nil when nothing reproducible was presented or the GPU failed.
     func encodeDisplayedFrameCapture(
-        source: MTLTexture,
         colorSpace: CGColorSpace?,
         queue: MTLCommandQueue? = nil,
         completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void
@@ -74,6 +77,7 @@ extension WPEMetalRenderExecutor {
             completion(nil)
             return
         }
+        let source = pass.source
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pass.targetPixelFormat, width: pass.targetWidth, height: pass.targetHeight, mipmapped: false
         )
