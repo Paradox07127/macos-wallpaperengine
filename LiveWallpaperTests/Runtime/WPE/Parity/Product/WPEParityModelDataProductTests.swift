@@ -239,10 +239,11 @@ extension WPEParitySceneDriverTests {
         let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
         defer { driver.cleanup() }
         driver.setAudioMuted(true)
+        let cacheURL = scratch.appending(path: "cancel-cache")
         let loading = Task {
             try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
                                   drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
-                                  compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "cancel-cache")),
+                                  compiler: fixture.compiler, diskCache: .init(cachesURL: cacheURL),
                                   soundResolver: fixture.soundResolver)
         }
         cancellation.install(loading)
