@@ -12,25 +12,47 @@ extension WPEParitySceneDriverTests {
     func testAuthoredAnimationEventKeepsFullPayloadAndWritesSameFrame() async throws {
         let forbidden = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
                          "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
-        XCTAssertTrue(forbidden.allSatisfy { ProcessInfo.processInfo.environment[$0] == nil })
+        guard forbidden.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {
+            throw NSError(domain: "S06.ToolOverride", code: 1)
+        }
+        let original: WPEParityProgramAssets
+        do {
+            (_, original) = try sceneInputs()
+        } catch {
+            throw NSError(domain: "S06.RequiredOriginalInputs", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: String(describing: error)])
+        }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
         let tools = ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
             .map { contents.appending(path: $0).resolvingSymlinksInPath() }
+        var toolHashes: [String] = []
         for tool in tools {
-            XCTAssertTrue(tool.path.hasPrefix(contents.path + "/"), tool.path)
+            _ = try XCTUnwrap(tool.path.hasPrefix(contents.path + "/") ? tool : nil, tool.path)
             let bytes = try Data(contentsOf: tool)
-            XCTAssertFalse(bytes.isEmpty)
-            print("S06 app-bundle \(tool.path) SHA256=\(SHA256.hash(data: bytes))")
+            _ = try XCTUnwrap(bytes.isEmpty ? nil : true)
+            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            toolHashes.append(hash)
+            print("S06 app-bundle \(tool.path) SHA256=\(hash)")
         }
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1],
                                                          metalIRConverter: tools[2],
                                                          workDirectory: scratch.appending(path: "event-shaderc"))
+        _ = try XCTUnwrap(compiler.compilerIdentity == "wpe-shaderc " + toolHashes.joined(separator: " ") ? true : nil)
         print("S06 compilerIdentity=\(compiler.compilerIdentity)")
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let engine = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        for file in ["shaders/genericimage4.vert", "shaders/genericimage4.frag", "shaders/common.h",
-                     "scripts/jsclasses/baseclasses.js"] {
-            print("S06 original asset \(file) SHA256=\(SHA256.hash(data: try Data(contentsOf: engine.appending(path: file))))")
+        for (path, expected) in [
+            ("shaders/genericimage4.vert", "7cc66038ea106b213ae2b9103d0b3c6646e3b4d08f9821afbb24aa32f6186672"),
+            ("shaders/genericimage4.frag", "6b5344953054ae853ff8a7942f716dd9eb67f61cc1526bd8b6bc67df92c76e1f"),
+            ("shaders/common_vertex.h", "cd4a005c0726603d613f97c8ebf9ff0a10d80f4f183de255f70bdecdb2d17ef9"),
+            ("shaders/common_pbr_2.h", "c6c7cc0a57e8621c00b940aaacdcfffa7eaf7d2b84af6a8feb4a9ed597772634"),
+            ("shaders/common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
+            ("shaders/common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
+            ("shaders/common_fog.h", "a10116adc59b2232e24e06f9c01079393901c45cf47d45ecd17baa2583146201"),
+            ("scripts/jsclasses/baseclasses.js", "708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294"),
+            ("materials/util/white.tex", "ac8a6c0726bf5744e816300278cf42bbe660ea885088e77bbbfb136725a26bdd"),
+        ] {
+            let bytes = try XCTUnwrap(original.data(path), "required original input \(path)")
+            let actual = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            _ = try XCTUnwrap(actual == expected ? true : nil, "required pinned input \(path): \(actual)")
         }
         let script = """
         let events = 0;
@@ -61,18 +83,11 @@ extension WPEParitySceneDriverTests {
         ]
         let resources: [String: Any] = [
             "models/event.json": ["material": "materials/event.json"],
-            "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["white"],
+            "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["util/white"],
                                                   "blending": "normal"]]],
         ]
-        var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
-        var white = Data("TEXV0004\0".utf8)
-        for value: UInt32 in [0, 0, 1, 1, 1, 1, 1, 1, 1, 4] {
-            withUnsafeBytes(of: value.littleEndian) { white.append(contentsOf: $0) }
-        }
-        white.append(contentsOf: [255, 255, 255, 255])
-        files["materials/white.tex"] = white
-        let snapshot = files
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }, .directory(engine)])
+        let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
