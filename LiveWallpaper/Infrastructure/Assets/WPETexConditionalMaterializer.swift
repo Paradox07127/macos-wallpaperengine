@@ -9,9 +9,8 @@ enum WPETexConditionalMaterializer {
                        decode: (WPETexMipmap) throws -> Data,
                        inflatePatch: (WPETexConditionalVariantMipmap, WPETexMipmap) throws -> Data) throws -> [[WPETexTextureMipmap]] {
         guard !info.isVolume, !bitmap.isVideoPayload, !bitmap.usesEncodedImagePayload,
-              let format = info.format, [.rgba8888, .rg88, .r8].contains(format),
-              selection.flagsByVariantID.values.allSatisfy({ $0 & ~3 == 0 }) else {
-            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Unsupported conditional texture format or flags")
+              let format = info.format, [.rgba8888, .rg88, .r8].contains(format) else {
+            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Unsupported conditional texture format")
         }
         guard let bpp = format.bytesPerPixel else {
             throw WPETexDecodeError.unsupportedFormat(code: info.textureFormatCode)
@@ -36,6 +35,8 @@ enum WPETexConditionalMaterializer {
                 let selected = (recordsByMip[mip.index] ?? []).compactMap { record -> (record: WPETexConditionalVariantMipmap, flags: UInt32)? in
                     selection.flagsByVariantID[record.variantID].map { (record, $0) }
                 }
+                // Native replacement checks byte&2 and the raw patch primitive byte&1. Preserve the
+                // complete authored flags; higher bits do not reject an otherwise supported raw patch.
                 // Native 15d824..15d875 trims to one record before the last replacement, then its
                 // forward loop stops at the first replacement in that suffix. Adjacent replacements
                 // therefore do not have simple last-wins semantics.

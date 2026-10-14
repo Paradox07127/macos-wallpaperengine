@@ -493,6 +493,31 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         XCTAssertThrowsError(try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: truncated), device: device, userProperties: properties))
     }
 
+    func testConditionalRawPatchHighFlagsPreserveCopyBlendAndReplacementBytesOnGPU() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let properties: WPESceneJSONValue = .object(["on": .object(["value": .bool(true)])])
+        for (flags, expected): (UInt32, [UInt8]) in [
+            (0x8000_0000, [20, 180, 250, 128]),
+            (0x8000_0001, [110, 140, 150, 128]),
+            (0x8000_0002, [20, 180, 250, 128]),
+            (0xFFFF_FFFF, [20, 180, 250, 128]),
+        ] {
+            let replacement = flags & 2 != 0
+            let packet = conditionalTex(format: 0, images: [[solid(1, 1, [200, 100, 50, 20])]],
+                                        table: [(1, 8, flags, #"{"condition":"on"}"#)],
+                                        records: [0: [[ConditionalRecord(id: 8, x: replacement ? .max : 0, y: 0,
+                                                                         width: replacement ? 0 : 1, height: 1,
+                                                                         bytes: Data([20, 180, 250, 128]))]]])
+            let loaded = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: packet), device: device, userProperties: properties)
+            XCTAssertEqual(loaded.conditionalSelection?.flagsByVariantID[8], flags)
+            var bytes = Data(count: 4)
+            bytes.withUnsafeMutableBytes {
+                loaded.texture.getBytes($0.baseAddress!, bytesPerRow: 4, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
+            }
+            XCTAssertEqual(bytes, Data(expected), "Authored high flags \(flags) must not change the native low-bit operation")
+        }
+    }
+
     private struct ConditionalRecord {
         let id: UInt32
         let x: UInt32
