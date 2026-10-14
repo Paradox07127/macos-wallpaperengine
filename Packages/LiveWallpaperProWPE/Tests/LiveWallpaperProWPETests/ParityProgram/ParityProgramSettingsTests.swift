@@ -53,6 +53,24 @@ final class ParityProgramSettingsTests: XCTestCase {
                 }
             }
         }
+        // Original10df40 requires authored bool true twice. Truthy numbers/strings and resolved bindings
+        // must not silently choose HDR targets or a terminal transfer, even with HDR quality enabled.
+        for general: [String: Any] in [
+            ["hdr": true], ["bloom": true], ["bloom": 1, "hdr": true], ["bloom": true, "hdr": 1],
+            ["bloom": "true", "hdr": true], ["bloom": true, "hdr": "true"],
+            ["bloom": ["value": true, "user": "on"], "hdr": true],
+            ["bloom": true, "hdr": ["value": true]],
+        ] {
+            let scene = try ParitySceneDocuments.programScene(
+                [ParitySceneDocuments.layer()], general: general,
+                settings: .init(bloom: false, hdrPostProcessing: true)
+            )
+            XCTAssertFalse(scene.engineFlags.hdr, "authored HDR predicate: \(general)")
+            XCTAssertFalse(scene.postProcess.hdrEnabled)
+            XCTAssertEqual(scene.scene.backbufferFormat, "rgba8unorm")
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            XCTAssertFalse(frame.draws.values.contains { if case .post = $0 { return true }; return false })
+        }
     }
 
     func testLegacyMSAASwitchMutatesTheStoredSampleCount() {

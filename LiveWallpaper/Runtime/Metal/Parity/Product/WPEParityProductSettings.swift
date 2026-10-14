@@ -11,7 +11,8 @@ enum WPEParityProductSettings {
     /// A Mac resource policy, not Wallpaper Engine's Windows default.
     static let defaultMSAASampleCount = 1
     static let mipMappedFrameBufferDefaultsKey = "loomscreen.wallpapers.parityMipMappedFrameBufferQuality.v1"
-    /// Refresh only snapshots requested by active shader slots. This is a Mac policy, not the unknown Windows default.
+    /// Native046f20 normalises missing/non-bool general.reflection to true;1154c0/115a90 publish bit7.
+    /// The Mac preference retains that default and refreshes only snapshots requested by active shader slots.
     static let defaultMipMappedFrameBufferEnabled = true
 
     static func make(descriptor: SceneDescriptor, device: MTLDevice,

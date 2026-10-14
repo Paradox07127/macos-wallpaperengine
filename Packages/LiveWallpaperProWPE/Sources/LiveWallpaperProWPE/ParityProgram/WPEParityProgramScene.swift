@@ -9,8 +9,8 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var hdrPostProcessing: Bool
     /// One disables MSAA; otherwise the product has resolved a device-supported 2/4/8 sample count.
     public var msaaSampleCount: Int
-    /// Whether a requested mipmapped scene snapshot refreshes each frame. This is an independent Mac policy;
-    /// the native Main+0x128 bit7 setting/default has not been established. Actual shader slots own the request.
+    /// Native `general.reflection` controls Main+0x128 bit7 and refreshes requested scene snapshots.
+    /// The product resolves its preference/default once; actual shader slots independently own the request.
     public var mipMappedFrameBufferEnabled: Bool
     /// Compatibility for callers that only selected on/off. There is one stored sample count.
     public var msaa: Bool {
@@ -306,8 +306,11 @@ public struct WPEParityProgramScene: Sendable {
 
     /// The native HDR allocation predicate, also used before the product plans its physical render extent.
     public static func hdrEnabled(document: WPESceneDocument, settings: WPEParityProgramSettings) -> Bool {
-        let sceneBloom = document.resolvedGeneralJSON["bloom"].map { Self.flag($0) } ?? true
-        return sceneBloom && Self.flag(document.sourceJSON["general"]?["hdr"]) && settings.hdrPostProcessing
+        // 10df40 tests both authored RapidJSON values' bool type and value before choosing the HDR allocation.
+        // A dynamic bloom binding may enable the ordinary bloom pass later, but does not change this load flag.
+        guard case .bool(true)? = document.sourceJSON["general"]?["bloom"],
+              case .bool(true)? = document.sourceJSON["general"]?["hdr"] else { return false }
+        return settings.hdrPostProcessing
     }
 
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a

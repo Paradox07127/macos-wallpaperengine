@@ -31,6 +31,68 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         }
     }
 
+    func testAuthoredHDRPredicateChoosesActualTextureAndOriginalTerminal() async throws {
+        let context = try makeContext()
+        let cases: [(String, Any?, Bool)] = [
+            ("literal true", true, true),
+            ("resolved binding", ["value": false, "user": "on"], false),
+            ("missing bloom", nil, false),
+            ("numeric bloom", 1, false),
+        ]
+        for (label, bloom, expectedHDR) in cases {
+            var general: [String: Any] = [
+                "orthogonalprojection": ["width": 32, "height": 32], "hdr": true,
+                "clearenabled": true, "clearcolor": "0.5 0.5 0.5",
+                "camerashake": false, "cameraparallax": false,
+            ]
+            general["bloom"] = bloom
+            let json: [String: Any] = ["camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                                       "general": general, "objects": []]
+            let document = try WPESceneDocumentParser.parse(
+                data: JSONSerialization.data(withJSONObject: json), userValues: ["on": .bool(true)],
+                makeTransformScriptResolver: { _, _ in HDRBloomNoScripts() }
+            )
+            let plan = try WPEParityFramePlan(
+                document: document, assets: .init(sceneDirectory: scratch, assetRoots: [context.engine]),
+                settings: .init(bloom: false, hdrPostProcessing: true), width: 32, height: 32
+            )
+            XCTAssertTrue(plan.post.sceneBloomEnabled, "resolved runtime bloom: \(label)")
+            XCTAssertEqual(plan.post.hdrEnabled, expectedHDR, label)
+            XCTAssertEqual(plan.requiredPresentationPass, expectedHDR ? "combine_srgb" : nil, label)
+            XCTAssertEqual(plan.colorTransfer, expectedHDR ? .linear : .authored, label)
+            let renderer = try await WPEParityFrameRenderer(plan: plan, device: context.device, queue: context.queue,
+                                                            shaders: context.shaders)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(label): \(renderer.skipped)")
+            XCTAssertTrue(renderer.fallbackTextures.isEmpty, label)
+            guard case let .committed(command) = try renderer.encodeFrame(elapsed: 0) else {
+                return XCTFail("HDR predicate case was not committed: \(label)")
+            }
+            await command.completed()
+            try requireCompleted(command)
+            XCTAssertEqual(renderer.backbuffer.pixelFormat, expectedHDR ? .rgba16Float : .rgba8Unorm, label)
+            if expectedHDR {
+                let terminal = try XCTUnwrap(plan.programs.values.first { $0.shader == "passthroughsrgb" })
+                XCTAssertTrue(renderer.lastFrameDraws.contains { plan.programs[$0.operation]?.shader == terminal.shader })
+                let expected = WPEParityHDRBloomReference.Image(
+                    width: 32, height: 32, storageRounding: context.storageRounding
+                ) { _, _ in SIMD3(repeating: 0.21404114048223255) }
+                try assertFloatImage(renderer.backbuffer, expected, context: context, label: label,
+                                     diagnosticCase: "authored-hdr-predicate")
+            } else {
+                XCTAssertTrue(renderer.lastFrameDraws.isEmpty, "no HDR terminal may be silently drawn: \(label)")
+                let raw = try read(renderer.backbuffer, bytesPerPixel: 4, queue: context.queue)
+                XCTAssertEqual(raw.count, 32 * 32 * 4)
+                for channel in 0 ..< 3 { XCTAssertLessThanOrEqual(abs(Int(raw[channel]) - 128), 1, label) }
+            }
+            let shown = try await present(renderer, context: context)
+            XCTAssertEqual(shown.count, 32 * 32 * 4)
+            for channel in 0 ..< 3 {
+                XCTAssertLessThanOrEqual(abs(Int(shown[channel]) - 128), 2, "terminal display gray: \(label)")
+            }
+            XCTAssertEqual(shown[3], 255, label)
+        }
+    }
+
     func testOriginalHDRBloomOddSizeGradientUsesLogicalOffsetsAndCubicPixels() async throws {
         let context = try makeContext()
         // Pre-GPU sensitivity review: both cubic replacement and physical-size substitution
@@ -212,10 +274,13 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
             ("materials/util/hdr_upsample_cubic.json", "70e6751ef097672998991213b9715182b9e4734119a3c9c742b73f42bb0603bd"),
             ("materials/util/hdr_upsample.json", "05d5ab7aa51b0b006ec69d80c5e668d977ad8fb6ea6c782c2997626635f03d12"),
             ("materials/util/combine_hdr_upsample.json", "844d885484c09908882065d7663b8d39c415e194c638bc0ea7ff706c14549ce1"),
+            ("materials/util/combine_srgb.json", "e6a64f1790250830837e8a0960d698c5890d2be54b062eaf3df06cdff163b99a"),
             ("shaders/hdr_downsample.vert", "8a1ffaa2cbf79f3be3faa3e1aac5670d66711ec656cfdb1d5a89d8b6614e80b0"),
             ("shaders/hdr_downsample.frag", "f702cc282d08b6c618646ee78305991139185e626e454ab8a2e40600bb41c874"),
             ("shaders/combine_hdr.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
             ("shaders/combine_hdr.frag", "755db6efba18303898c9a7fb2cb892f57fcddd11888d840e1be826d535ed83f2"),
+            ("shaders/passthroughsrgb.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
+            ("shaders/passthroughsrgb.frag", "2f2e05eb25ad355bdf15b65de27950d5231e7cc31ede8bd82f0589623c712ee0"),
             ("shaders/common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
             ("shaders/common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
             ("shaders/common_fog.h", "a10116adc59b2232e24e06f9c01079393901c45cf47d45ecd17baa2583146201"),
