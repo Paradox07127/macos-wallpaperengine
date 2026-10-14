@@ -1,5 +1,14 @@
 import Foundation
 
+/// One immutable prepared version owned by its canonical shape and any submitted frame that still reads it.
+/// The app implements the exact Metal buffers/program; package code never stores untyped resource bags.
+public protocol WPEParityModelDataPreparedShape: AnyObject, Sendable {
+    var vertexFormat: UInt32 { get }
+    var vertexCount: Int { get }
+    var indexElementWidth: WPEPuppetIndexElementWidth? { get }
+    var indexCount: Int { get }
+}
+
 /// The canonical value owned by SceneState. Submitted GPU work retains its exact Data/resource versions separately.
 public struct WPEParitySceneModelData: Sendable {
     public struct Shape: Equatable, Sendable {
@@ -8,6 +17,14 @@ public struct WPEParitySceneModelData: Sendable {
         public internal(set) var material: Data
         public internal(set) var isVertexBufferDynamic: Bool
         public internal(set) var isIndexBufferDynamic: Bool
+        /// Nil explicitly means this shape has no admitted draw resource (for example a CPU-only provider).
+        public internal(set) var prepared: (any WPEParityModelDataPreparedShape)?
+
+        public static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.vertices == rhs.vertices && lhs.indices == rhs.indices && lhs.material == rhs.material
+                && lhs.isVertexBufferDynamic == rhs.isVertexBufferDynamic
+                && lhs.isIndexBufferDynamic == rhs.isIndexBufferDynamic && lhs.prepared === rhs.prepared
+        }
     }
 
     public internal(set) var shapes: [Shape]
@@ -20,6 +37,8 @@ public enum WPEParityModelDataMutation: Sendable {
     case rebuild(token: UInt32, shape: Int)
     case vertices(token: UInt32, shape: Int)
     case indices(token: UInt32, shape: Int)
+    /// The original tail observer consumes changed material after earlier field writes, including error prefixes.
+    case material(token: UInt32, shape: Int)
 }
 
 public enum WPEParityModelDataFailure: Error, Equatable {
@@ -60,20 +79,20 @@ public extension WPEParitySceneState {
     /// All VM shapes have already converted successfully. Creation publishes no model on resource admission failure.
     mutating func createModelData(
         _ patch: WPEParityModelDataPatch,
-        admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> Void
+        admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?
     ) throws -> UInt32 {
         guard lastModelDataToken < UInt32.max else { throw WPEParityModelDataFailure.safety("model token space exhausted") }
         let token = lastModelDataToken + 1
         var shapes: [WPEParitySceneModelData.Shape] = []
         var lastFailure: WPEParityModelDataFailure?
         for (index, value) in patch.shapes.enumerated() {
-            let shape = try Self.modelShape(value, validateSize: false)
+            var shape = try Self.modelShape(value, validateSize: false)
             if shape.vertices.data.count % shape.vertices.layout.stride != 0 {
                 lastFailure = .native(3)
             }
             // The constructor continues later material/shape validation; a later native error replaces its code.
             do {
-                try admitShape(shape, .create(token: token, shape: index))
+                shape.prepared = try admitShape(shape, .create(token: token, shape: index))
             } catch let failure as WPEParityModelDataFailure {
                 if case .native = failure {
                     lastFailure = failure
@@ -97,7 +116,7 @@ public extension WPEParitySceneState {
     /// Deferred null-shape compaction happens only after the main loop completes normally.
     mutating func updateModelData(
         _ token: UInt32, patch: WPEParityModelDataPatch, replacing: Bool,
-        admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> Void
+        admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?
     ) throws {
         guard var model = modelDataValues[token] else { throw WPEParityModelDataFailure.native(4) }
         if !replacing, patch.shapes.count > model.shapes.count {
@@ -112,89 +131,120 @@ public extension WPEParitySceneState {
         }
         var lastLockFailure: WPEParityModelDataFailure?
         var removals: [Int] = []
-        for (index, value) in patch.shapes.enumerated() {
-            if value.remove || value.indices == .remove {
-                if !replacing {
-                    throw WPEParityModelDataFailure.native(11)
+        var materialUpdates: [Int] = []
+        var compacted = false
+        var mutationFailure: (any Error)?
+        do {
+            for (index, value) in patch.shapes.enumerated() {
+                if value.remove || value.indices == .remove {
+                    if !replacing {
+                        throw WPEParityModelDataFailure.native(11)
+                    }
+                    if value.remove {
+                        guard index < model.shapes.count else { throw WPEParityModelDataFailure.safety("null shape exceeds existing shape range") }
+                        removals.append(index)
+                        continue
+                    }
                 }
-                if value.remove {
-                    guard index < model.shapes.count else { throw WPEParityModelDataFailure.safety("null shape exceeds existing shape range") }
-                    removals.append(index)
+                if index == model.shapes.count {
+                    let shape = try Self.modelShape(value)
+                    model.shapes.append(shape)
+                    changed = true
+                    model.shapes[index].prepared = try admitShape(shape, .rebuild(token: token, shape: index))
                     continue
                 }
+                if let material = value.material, !material.isEmpty, material != model.shapes[index].material {
+                    if !replacing {
+                        throw WPEParityModelDataFailure.native(12)
+                    }
+                    model.shapes[index].material = material
+                    materialUpdates.append(index)
+                    changed = true
+                }
+                var shape = model.shapes[index]
+                let formatChanged = value.vertexFormat != 0 && value.vertexFormat != shape.vertices.layout.format
+                if formatChanged, !replacing {
+                    throw WPEParityModelDataFailure.native(13)
+                }
+                let incomingIndices: WPEParityModelDataIndices? = if case let .buffer(buffer) = value.indices {
+                    buffer
+                } else {
+                    nil
+                }
+                let rebuild = formatChanged
+                    || value.vertices.map { $0.count > shape.vertices.data.count || !shape.isVertexBufferDynamic } == true
+                    || incomingIndices.map { $0.count > (shape.indices?.count ?? 0) || !shape.isIndexBufferDynamic } == true
+                    || (value.indices == .remove && shape.indices != nil)
+                if rebuild {
+                    if !replacing {
+                        throw WPEParityModelDataFailure.native(7)
+                    }
+                    // The original rebuild reads the new descriptor directly. Do not invent omitted old bytes/format.
+                    shape = try Self.modelShape(value, material: shape.material)
+                    model.shapes[index] = shape
+                    changed = true
+                    model.shapes[index].prepared = try admitShape(shape, .rebuild(token: token, shape: index))
+                    continue
+                }
+                if let vertices = value.vertices {
+                    guard vertices.count >= shape.vertices.data.count else {
+                        throw WPEParityModelDataFailure.safety("vertex view is shorter than the original copy length")
+                    }
+                    shape.vertices = WPEPuppetVertexStream(data: vertices, layout: shape.vertices.layout)
+                    do {
+                        shape.prepared = try admitShape(shape, .vertices(token: token, shape: index))
+                        model.shapes[index].vertices = shape.vertices
+                        model.shapes[index].prepared = shape.prepared
+                        changed = true
+                    } catch WPEParityModelDataFailure.native(8) { lastLockFailure = .native(8) }
+                }
+                if let indices = incomingIndices {
+                    guard indices.elementWidth == model.shapes[index].indices?.elementWidth else {
+                        throw WPEParityModelDataFailure.native(9)
+                    }
+                    guard indices.data.count >= (model.shapes[index].indices?.data.count ?? 0) else {
+                        throw WPEParityModelDataFailure.safety("index view is shorter than the original copy length")
+                    }
+                    shape = model.shapes[index]
+                    shape.indices = indices
+                    do {
+                        shape.prepared = try admitShape(shape, .indices(token: token, shape: index))
+                        model.shapes[index].indices = indices
+                        model.shapes[index].prepared = shape.prepared
+                        changed = true
+                    } catch WPEParityModelDataFailure.native(8) { lastLockFailure = .native(8) }
+                }
             }
-            if index == model.shapes.count {
-                let shape = try Self.modelShape(value)
-                model.shapes.append(shape)
+            compacted = true
+            for index in removals.reversed() {
+                model.shapes.remove(at: index)
                 changed = true
-                try admitShape(shape, .rebuild(token: token, shape: index))
+            }
+            if let lastLockFailure {
+                throw lastLockFailure
+            }
+        } catch {
+            mutationFailure = error
+        }
+        // 1401d6400's bVar11 tail observer runs even after a later field's terminal error. It is not a rollback.
+        for originalIndex in materialUpdates {
+            if compacted, removals.contains(originalIndex) {
                 continue
             }
-            if let material = value.material, !material.isEmpty, material != model.shapes[index].material {
-                if !replacing {
-                    throw WPEParityModelDataFailure.native(12)
+            let index = originalIndex - (compacted ? removals.filter { $0 < originalIndex }.count : 0)
+            let shape = model.shapes[index]
+            model.shapes[index].prepared = nil
+            do {
+                model.shapes[index].prepared = try admitShape(shape, .material(token: token, shape: index))
+            } catch {
+                // Product preparation cannot erase the already visible native mutation error or its prefix.
+                if mutationFailure == nil {
+                    mutationFailure = error
                 }
-                model.shapes[index].material = material
-                changed = true
-            }
-            var shape = model.shapes[index]
-            let formatChanged = value.vertexFormat != 0 && value.vertexFormat != shape.vertices.layout.format
-            if formatChanged, !replacing {
-                throw WPEParityModelDataFailure.native(13)
-            }
-            let incomingIndices: WPEParityModelDataIndices? = if case let .buffer(buffer) = value.indices {
-                buffer
-            } else {
-                nil
-            }
-            let rebuild = formatChanged
-                || value.vertices.map { $0.count > shape.vertices.data.count || !shape.isVertexBufferDynamic } == true
-                || incomingIndices.map { $0.count > (shape.indices?.count ?? 0) || !shape.isIndexBufferDynamic } == true
-                || (value.indices == .remove && shape.indices != nil)
-            if rebuild {
-                if !replacing {
-                    throw WPEParityModelDataFailure.native(7)
-                }
-                // The original rebuild reads the new descriptor directly. Do not invent omitted old bytes/format.
-                shape = try Self.modelShape(value, material: shape.material)
-                model.shapes[index] = shape
-                changed = true
-                try admitShape(shape, .rebuild(token: token, shape: index))
-                continue
-            }
-            if let vertices = value.vertices {
-                guard vertices.count >= shape.vertices.data.count else {
-                    throw WPEParityModelDataFailure.safety("vertex view is shorter than the original copy length")
-                }
-                shape.vertices = WPEPuppetVertexStream(data: vertices, layout: shape.vertices.layout)
-                do {
-                    try admitShape(shape, .vertices(token: token, shape: index))
-                    model.shapes[index].vertices = shape.vertices
-                    changed = true
-                } catch WPEParityModelDataFailure.native(8) { lastLockFailure = .native(8) }
-            }
-            if let indices = incomingIndices {
-                guard indices.elementWidth == model.shapes[index].indices?.elementWidth else {
-                    throw WPEParityModelDataFailure.native(9)
-                }
-                guard indices.data.count >= (model.shapes[index].indices?.data.count ?? 0) else {
-                    throw WPEParityModelDataFailure.safety("index view is shorter than the original copy length")
-                }
-                shape = model.shapes[index]
-                shape.indices = indices
-                do {
-                    try admitShape(shape, .indices(token: token, shape: index))
-                    model.shapes[index].indices = indices
-                    changed = true
-                } catch WPEParityModelDataFailure.native(8) { lastLockFailure = .native(8) }
             }
         }
-        for index in removals.reversed() {
-            model.shapes.remove(at: index)
-            changed = true
-        }
-        if let lastLockFailure {
-            throw lastLockFailure
+        if let mutationFailure {
+            throw mutationFailure
         }
     }
 

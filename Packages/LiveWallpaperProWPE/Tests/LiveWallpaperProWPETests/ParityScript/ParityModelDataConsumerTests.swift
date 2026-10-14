@@ -92,6 +92,7 @@ final class ParityModelDataConsumerTests: XCTestCase {
                 guard shape.material == Data("materials/model.json".utf8) else { throw WPEParityModelDataFailure.native(1) }
                 guard shape.vertices.layout.format & 1 != 0 else { throw WPEParityModelDataFailure.native(2) }
                 XCTAssertEqual(shape.vertices.data.count % shape.vertices.layout.stride, 0)
+                return nil // This guard deliberately admits only CPU values, not a Metal draw resource.
             }
         )
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(

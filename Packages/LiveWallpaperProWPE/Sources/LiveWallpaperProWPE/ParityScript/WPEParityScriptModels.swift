@@ -6,11 +6,11 @@ public struct WPEParityScriptModelDataProvider {
     public var maximumArrayEntries: Int
     public var maximumBufferBytes: Int
     public var resolveMaterial: (JSValue, String) throws -> Data
-    public var admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> Void
+    public var admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?
 
     public init(maximumArrayEntries: Int, maximumBufferBytes: Int,
                 resolveMaterial: @escaping (JSValue, String) throws -> Data,
-                admitShape: @escaping (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> Void) {
+                admitShape: @escaping (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?) {
         self.maximumArrayEntries = maximumArrayEntries
         self.maximumBufferBytes = maximumBufferBytes
         self.resolveMaterial = resolveMaterial
