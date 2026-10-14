@@ -171,6 +171,8 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var boneCount: Int
     /// FUN_1402076e0: mesh0's format has bone indices (0x800000) and the model has bones.
     public var skinned: Bool
+    /// Mesh0 flag bit 2 enables the native g_BonesAlpha path, independently of MORPHING.
+    public var skinningAlpha: Bool
     /// puppet+0x390, the first mesh with flag & 2 (1401fbae0.c:237-238); WPE builds a second mesh from it.
     public var blendMeshIndex: Int?
     /// Texture 0 of the layer material, which the clip mask draws sample (14020d6a0.c:44).
@@ -184,7 +186,8 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
 
     public init(vertices: [WPEPuppetVertex], indices: [UInt16], boneCount: Int, skinned: Bool,
                 blendMeshIndex: Int? = nil, parts: [WPEPuppetMeshPart] = [],
-                clipGroups: [WPEParityPuppetClipGroup] = [], vertexStream: WPEPuppetVertexStream? = nil) {
+                clipGroups: [WPEParityPuppetClipGroup] = [], vertexStream: WPEPuppetVertexStream? = nil,
+                skinningAlpha: Bool = false) {
         self.vertices = vertices
         self.vertexStream = vertexStream
         self.indices = indices
@@ -192,6 +195,7 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         partOrder = Array(parts.indices)
         self.boneCount = boneCount
         self.skinned = skinned
+        self.skinningAlpha = skinningAlpha
         self.blendMeshIndex = blendMeshIndex
         self.clipGroups = clipGroups
         (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices)
@@ -380,7 +384,10 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
 
     /// FUN_140207710.
     public var skinningCombos: [String: Int] {
-        skinned ? ["SKINNING": 1, "BONECOUNT": boneCount] : [:]
+        guard skinned else { return [:] }
+        var combos = ["SKINNING": 1, "BONECOUNT": boneCount]
+        if skinningAlpha { combos["SKINNING_ALPHA"] = 1 }
+        return combos
     }
 }
 

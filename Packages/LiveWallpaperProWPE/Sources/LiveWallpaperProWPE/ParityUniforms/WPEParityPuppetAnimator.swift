@@ -156,6 +156,8 @@ public struct WPEParityPuppetAnimator: Sendable {
     public private(set) var palette: [simd_float4x4] = []
     /// This frame's world matrix per MDLS bone (puppet+0x2c8), the parent matrix attachments compose with.
     public private(set) var boneWorld: [simd_float4x4] = []
+    /// MDLA +f0 curves, reset to one each update and consumed by the native SKINNING_ALPHA vertex path.
+    public private(set) var bonesAlpha: [Float] = []
     /// Authored layer identities whose native ended condition fired in the last object update, in layer order.
     public private(set) var endedLayers: [Int] = []
     private let parents: [Int?]
@@ -190,6 +192,9 @@ public struct WPEParityPuppetAnimator: Sendable {
         inverseBindWorld = bindWorld.map(\.inverse)
         boneWorld = bindWorld
         palette = bindWorld
+        if model.meshes.first.map({ $0.flags & 4 != 0 }) == true {
+            bonesAlpha = [Float](repeating: 1, count: restLocal.count)
+        }
         poses = [Pose?](repeating: nil, count: restLocal.count)
         evaluate()
     }
@@ -243,9 +248,11 @@ public struct WPEParityPuppetAnimator: Sendable {
 
     public var values: [String: WPECBufferValue] {
         let rows = bones
-        return ["g_Bones": .array(stride(from: 0, to: rows.count, by: 3).map {
+        var result: [String: WPECBufferValue] = ["g_Bones": .array(stride(from: 0, to: rows.count, by: 3).map {
             .matrix(WPEFloatMatrix(columns: Array(rows[$0 ..< $0 + 3])))
         })]
+        if !bonesAlpha.isEmpty { result["g_BonesAlpha"] = .array(bonesAlpha.map(WPECBufferValue.float)) }
+        return result
     }
 
     static func packedRows(_ palette: [simd_float4x4]) -> [SIMD4<Float>] {
@@ -276,9 +283,11 @@ public struct WPEParityPuppetAnimator: Sendable {
         for bone in poses.indices {
             poses[bone] = nil
         }
+        for bone in bonesAlpha.indices { bonesAlpha[bone] = 1 }
         for layer in layers where layer.enabled {
             let frame = Self.frame(time: layer.time, frameDuration: layer.frameDuration,
                                    frameCount: layer.animation.frameCount)
+            evaluateAlpha(layer, frame: frame)
             for channel in layer.animation.channels where poses.indices.contains(channel.boneIndex) {
                 let bone = channel.boneIndex
                 let sample = Self.interpolate(channel.keyframes[frame.a], channel.keyframes[frame.b], t: frame.t)
@@ -297,6 +306,25 @@ public struct WPEParityPuppetAnimator: Sendable {
             let local = poses[bone]?.matrix ?? restLocal[bone]
             boneWorld[bone] = parents[bone].map { boneWorld[$0] * local } ?? local
             palette[bone] = boneWorld[bone] * inverseBindWorld[bone]
+        }
+    }
+
+    private mutating func evaluateAlpha(_ layer: Layer, frame: (a: Int, b: Int, t: Float)) {
+        guard !bonesAlpha.isEmpty, let block = layer.animation.tail?.blendCurves, block.hasCurves else { return }
+        for (bone, curve) in block.curves.enumerated() where bonesAlpha.indices.contains(bone) {
+            guard layer.animation.channels.indices.contains(bone), layer.animation.channels[bone].flags & 3 != 1,
+                  curve.values.indices.contains(frame.a), curve.values.indices.contains(frame.b) else { continue }
+            let sample = curve.values[frame.a] * (1 - frame.t) + curve.values[frame.b] * frame.t
+            let previous = bonesAlpha[bone]
+            if layer.additive {
+                // 1401ffcb1..fff35: add the delta from one, bounded by the previous value and sampled value.
+                bonesAlpha[bone] = min(max(previous + (sample - 1) * layer.weight, min(previous, sample)),
+                                       max(previous, sample))
+            } else if layer.weight == 1 {
+                bonesAlpha[bone] = sample
+            } else {
+                bonesAlpha[bone] = previous * (1 - layer.weight) + sample * layer.weight
+            }
         }
     }
 
