@@ -115,15 +115,32 @@ public enum WPEModelDataConverter {
     }
 
     private static func property(_ value: JSValue, _ key: String) throws -> JSValue? {
-        let result = value.objectForKeyedSubscript(key)
-        guard let context = value.context, context.exception == nil else { throw Failure.javascriptException }
-        return result
+        guard let context = value.context, let ref = context.jsGlobalContextRef else { throw Failure.javascriptException }
+        var exception: JSValueRef?
+        let object = JSValueToObject(ref, value.jsValueRef, &exception)
+        try check(exception, context)
+        guard let object else { throw Failure.javascriptException }
+        let name = JSStringCreateWithUTF8CString(key)
+        defer { JSStringRelease(name) }
+        let result = JSObjectGetProperty(ref, object, name, &exception)
+        try check(exception, context)
+        guard let result else { throw Failure.javascriptException }
+        return JSValue(jsValueRef: result, in: context)
     }
 
     private static func element(_ value: JSValue, _ index: Int) throws -> JSValue {
-        let result = value.atIndex(index)
-        guard let context = value.context, context.exception == nil, let result else { throw Failure.javascriptException }
-        return result
+        guard let context = value.context, let ref = context.jsGlobalContextRef,
+              let arrayIndex = UInt32(exactly: index) else { throw Failure.javascriptException }
+        var exception: JSValueRef?
+        let object = JSValueToObject(ref, value.jsValueRef, &exception)
+        try check(exception, context)
+        guard let object else { throw Failure.javascriptException }
+        let result = JSObjectGetPropertyAtIndex(ref, object, arrayIndex, &exception)
+        try check(exception, context)
+        guard let result, let element = JSValue(jsValueRef: result, in: context) else {
+            throw Failure.javascriptException
+        }
+        return element
     }
 
     private static func vector(_ value: JSValue) throws -> SIMD3<Float> {
