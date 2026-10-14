@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Darwin
 import Foundation
 @testable import LiveWallpaper
@@ -19,6 +20,85 @@ final class WPEParityPostProcessProductTests: XCTestCase {
     override func tearDown() {
         try? FileManager.default.removeItem(at: scratch)
         super.tearDown()
+    }
+
+    /// General descriptor -> authored timeline -> bloom invalidation -> original four-pass LDR bloom -> present.
+    func testRegisteredGeneralAnimationUpdatesOriginalBloomAndPresentedPixels() async throws {
+        let engine: URL
+        do { engine = try engineAssets() }
+        catch { throw NSError(domain: "S06.RequiredBloomInputs", code: 1) }
+        for (path, expected) in [
+            ("materials/util/downsample_quarter_bloom.json", "bc240ebf7d1c74e7280d9c9101a274a0281f1bf65ab6c229c093b01827afd4a0"),
+            ("shaders/downsample_quarter_bloom.vert", "024d1f44853a78087aeed4c402d1f3b69549eaaf26c48d71baf551b91332802d"),
+            ("shaders/downsample_quarter_bloom.frag", "c0b118ac84ea53bfa244596b0844c7dd286f00abe95aae8578a0d129a03ceb19"),
+            ("materials/util/downsample_eighth_blur_v.json", "b303a8f31240dbd9c1355faaa98ebb7e1bacd9762b84f430ad25c7fef1f76940"),
+            ("shaders/downsample_eighth_blur_v.vert", "0b15d66239b4caec801de17349d3975bc76a277a7f3d123e28983190ea7c2d84"),
+            ("shaders/downsample_eighth_blur_v.frag", "703e2837db811b4a1366813225eace1499f01d7be933308e8e3d7e62f39086eb"),
+            ("materials/util/blur_h_bloom.json", "f55d402c333d792c53aa7ec4e61e8c3df79331da9a1c231f0c3a0ae5b0d73e32"),
+            ("shaders/blur_h_bloom.vert", "33072940f29ccd8f3b9b5dbc8708cff23d3a041d3f35119fbeb9662543840e24"),
+            ("shaders/blur_h_bloom.frag", "703e2837db811b4a1366813225eace1499f01d7be933308e8e3d7e62f39086eb"),
+            ("materials/util/combine_ldr.json", "71b211e2501b6c6d815d8509a49b98baa97aa9397db2193d57a3378807692b4b"),
+            ("shaders/combine.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
+            ("shaders/combine.frag", "94fdbeb77d365f330e538db4493b0b8374b48d2d95fd460f6dc34036d6868ddf"),
+        ] {
+            let bytes = try Data(contentsOf: engine.appendingPathComponent(path))
+            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            _ = try XCTUnwrap(hash == expected ? true : nil, "pinned original input \(path): \(hash)")
+        }
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
+                    "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
+        guard keys.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {
+            throw NSError(domain: "S06.BloomToolOverride", code: 1)
+        }
+        let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
+        let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
+            .map { path in
+                let url = contents.appending(path: path).resolvingSymlinksInPath()
+                return try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil)
+            }
+        let hashes = try tools.map { url in
+            SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        }
+        let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
+                                                         workDirectory: scratch.appending(path: "scene-animation-shaderc"))
+        _ = try XCTUnwrap(compiler.compilerIdentity == "wpe-shaderc " + hashes.joined(separator: " ") ? true : nil)
+        print("S06 general animation toolchain origin=app-bundle compilerIdentity=\(compiler.compilerIdentity)")
+        let document = try parse([
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0.5 0.5 0.5",
+                        "clearenabled": true, "bloom": true, "hdr": false, "camerafade": false, "bloomthreshold": 0,
+                        "bloomstrength": ["value": 0, "animation": [
+                            "c0": [["frame": 0, "value": 0], ["frame": 1, "value": 0],
+                                   ["frame": 2, "value": 1], ["frame": 3, "value": 0]],
+                            "options": ["fps": 4, "length": 4],
+                        ]]],
+            "objects": [],
+        ])
+        let plan = try WPEParityFramePlan(document: document,
+                                          assets: .init(sceneDirectory: scratch, assetRoots: [engine]),
+                                          settings: .init(bloom: true, hdrPostProcessing: false), width: 32, height: 32)
+        let operation = try postIndex("downsample_quarter_bloom", in: plan)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))
+        let renderer = try await WPEParityFrameRenderer(plan: plan, device: device, queue: queue,
+                                                        shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity,
+                                                                       bindingABIVersion: 1))
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        for (strength, expected): (Float, Int) in [(0, 128), (1, 192), (0, 128)] {
+            guard case let .committed(command) = try renderer.encodeFrame(elapsed: 0.25) else {
+                return XCTFail("authored general animation frame was not committed")
+            }
+            await command.completed()
+            XCTAssertNil(command.error)
+            let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+            XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"]), [strength])
+            let pixels = try await present(renderer, device: device, queue: queue)
+            let pixel = centerRGBA(pixels, width: 32, height: 32)
+            // Original bloom source: constant 128/255 squared, then contrast/saturation -> byte64;
+            // the two normalized blurs preserve it and combine adds 128+64. Zero strength removes it.
+            for channel in pixel.prefix(3) { XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1) }
+        }
     }
 
     func testOriginalHDRTerminalDecodesGrayOnceBeforeSRGBPresent() async throws {
