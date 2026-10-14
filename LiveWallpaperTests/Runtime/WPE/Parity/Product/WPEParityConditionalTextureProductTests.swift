@@ -65,7 +65,8 @@ extension WPEParitySceneDriverTests {
         }
         // The latest committed value is false, different from the original true snapshot.
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 128, height: 32))
-        _ = try await XCTUnwrap(driver.replan() ? true : nil, "Real product resize")
+        let resized = await driver.replan()
+        _ = try XCTUnwrap(resized ? true : nil, "Real product resize")
         layer.drawableSize = CGSize(width: 128, height: 32)
         try await present(driver, layer: layer, label: "conditional false after resize")
         _ = try conditionalTextureReading(driver, layer: layer, rgb: [255, 0, 0])
