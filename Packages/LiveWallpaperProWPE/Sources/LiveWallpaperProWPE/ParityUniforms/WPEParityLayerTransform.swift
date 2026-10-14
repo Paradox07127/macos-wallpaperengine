@@ -87,6 +87,12 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
                  angles: SIMD3(group.localAngles), scale: SIMD3(group.localScale),
                  parallaxDepth: SIMD2(group.parallaxDepth))
         }
+        layers += document.modelDataObjects.map { model in
+            Self(id: model.id, parentID: model.parentObjectID, origin: SIMD3(model.localOrigin),
+                 angles: SIMD3(model.localAngles), scale: SIMD3(model.localScale),
+                 parallaxDepth: SIMD2(model.parallaxDepth), perspective: model.usesPerspectiveProjection,
+                 attachment: model.attachment)
+        }
         layers += document.particleObjects.map { particle in
             Self(id: particle.id, parentID: particle.parentObjectID, origin: SIMD3(particle.localOrigin),
                  angles: SIMD3(particle.localAngles), scale: SIMD3(particle.localScale),
