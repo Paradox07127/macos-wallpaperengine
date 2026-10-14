@@ -88,6 +88,8 @@ enum WPEParityScriptPrelude {
     const NAMES = host.eventNames;
     const bindings = [];
     let current = null;
+    let compilingBinding = -1;
+    function assetBinding() { return current ? current.index : compilingBinding; }
     let currentEvent = -1;
     function report(b, e) { host.error(b ? b.name : '', String(e && e.stack ? e + '\n' + e.stack : e)); }
     const modules = new Map();
@@ -104,18 +106,20 @@ enum WPEParityScriptPrelude {
         return namespace;
       };
     }
-    host.addBinding = function (fn, name, path, layerIndex, slot, type, angle, readonly, vars) {
+    host.addBinding = function (fn, name, path, index, layerIndex, slot, type, angle, readonly, vars) {
       const owner = owners[slot];
       const targetLayer = layerIndex < 0 ? null : table[layerIndex];
       const layer = layerIndex < 0 ? owner : targetLayer;
       const exports = Object.create(null);
-      const previous = current;
+      const previous = current, previousCompile = compilingBinding, previousEvent = currentEvent;
       current = null;
+      compilingBinding = index;
+      currentEvent = -1;
       try {
         fn(importer(path), (n, get) => Object.defineProperty(exports, n, { get, enumerable: true }), layer, owner);
       } catch (e) { report({ name }, e); return -1; }
-      finally { current = previous; }
-      const b = { name, path, layer, targetLayer, owner, slot, type, angle, readonly, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
+      finally { current = previous; compilingBinding = previousCompile; currentEvent = previousEvent; }
+      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
       for (let id = 0; id < NAMES.length; id++) {
         const f = NAMES[id] && exports[NAMES[id]];
         if (typeof f === 'function') { b.fns[id] = f; b.bits |= 1 << id; }
@@ -243,6 +247,11 @@ enum WPEParityScriptPrelude {
       get canvasSize() { return new Vec2(G[3], G[4]); },
       get screenResolution() { return new Vec2(G[5], G[6]); },
       userProperties: {},
+      registerAsset(path, flag) {
+        if (current) throw new Error('registerAsset can only be called from global scope.');
+        if (typeof path !== 'string' || compilingBinding < 0) return undefined;
+        return host.registerAsset(compilingBinding, path, typeof flag === 'boolean' ? flag : false) ? path : undefined;
+      },
       registerAudioBuffers(resolution) {
         if (!argument(resolution, 8)) return null;
         const start = resolution === 16 ? 0 : resolution === 32 ? 48 : resolution === 64 ? 144 : -1;

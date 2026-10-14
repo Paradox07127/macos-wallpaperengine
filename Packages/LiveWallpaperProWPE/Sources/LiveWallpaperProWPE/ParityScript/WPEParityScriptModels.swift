@@ -5,11 +5,11 @@ import JavaScriptCore
 public struct WPEParityScriptModelDataProvider {
     public var maximumArrayEntries: Int
     public var maximumBufferBytes: Int
-    public var resolveMaterial: (JSValue, String) throws -> Data
+    public var resolveMaterial: (JSValue, WPEParityScriptEngine.AssetContext?) throws -> Data
     public var admitShape: (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?
 
     public init(maximumArrayEntries: Int, maximumBufferBytes: Int,
-                resolveMaterial: @escaping (JSValue, String) throws -> Data,
+                resolveMaterial: @escaping (JSValue, WPEParityScriptEngine.AssetContext?) throws -> Data,
                 admitShape: @escaping (WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws -> (any WPEParityModelDataPreparedShape)?) {
         self.maximumArrayEntries = maximumArrayEntries
         self.maximumBufferBytes = maximumBufferBytes
@@ -19,7 +19,7 @@ public struct WPEParityScriptModelDataProvider {
 }
 
 enum WPEParityScriptModels {
-    static func perform(_ input: JSValue, token: UInt32?, path: String,
+    static func perform(_ input: JSValue, token: UInt32?, assetContext: WPEParityScriptEngine.AssetContext?,
                         provider: WPEParityScriptModelDataProvider,
                         consume: (WPEParityModelDataPatch) throws -> UInt32?) -> JSValue? {
         guard let context = input.context, let result = JSValue(newObjectIn: context) else { return nil }
@@ -27,7 +27,7 @@ enum WPEParityScriptModels {
             let patch = try WPEModelDataConverter.convert(
                 input, requireFields: token == nil, maximumArrayEntries: provider.maximumArrayEntries,
                 maximumBufferBytes: provider.maximumBufferBytes,
-                resolveMaterial: { try provider.resolveMaterial($0, path) }
+                resolveMaterial: { try provider.resolveMaterial($0, assetContext) }
             )
             if let created = try consume(patch) {
                 result.setObject(created, forKeyedSubscript: "value" as NSString)
@@ -59,7 +59,7 @@ enum WPEParityScriptModels {
       sceneScope('createModelData');
       if (arguments.length === 0 || config === null
           || (typeof config !== 'object' && typeof config !== 'function')) return undefined;
-      const token = modelResult(host.createModelData(config, current.path));
+      const token = modelResult(host.createModelData(config, assetBinding()));
       if (token === undefined) return undefined;
       const model = Object.create(IModelData.prototype);
       Object.defineProperty(model, '__modelDataToken', { value: token, writable: true, enumerable: true, configurable: true });
@@ -75,13 +75,13 @@ enum WPEParityScriptModels {
       applyData: { value: function(config) {
         const token = modelOwners.get(this);
         if (token === undefined || arguments.length === 0) return;
-        modelResult(host.updateModelData(token, config, false, current ? current.path : ''));
+        modelResult(host.updateModelData(token, config, false, assetBinding()));
       }, writable: true, configurable: true },
       replaceData: { value: function(config) {
         const token = modelOwners.get(this);
         if (token === undefined || arguments.length === 0) return;
         if (currentEvent === 1) throw new Error('IModelData.replace cannot be called in update.');
-        modelResult(host.updateModelData(token, config, true, current ? current.path : ''));
+        modelResult(host.updateModelData(token, config, true, assetBinding()));
       }, writable: true, configurable: true }
     });
     """#

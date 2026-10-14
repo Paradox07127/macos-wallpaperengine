@@ -40,9 +40,9 @@ final class WPEParitySceneScript {
         var storage = Storage()
         var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
-        var canDestroyLayer: ((String) -> Bool)?
+        var canDestroyLayer: ((String, UInt32?) -> Bool)?
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
-        var pauseVideoTexture: ((String) -> Bool)?
+        var pauseVideoTexture: ((String, UInt32?) -> Bool)?
         var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         var modelData: WPEParityScriptModelDataProvider?
     }
@@ -134,8 +134,10 @@ final class WPEParitySceneScript {
     }
 
     /// Event 0 once every object loaded, then the current media state to the media handlers (140172830.c:82-288).
-    func start(state: inout WPEParitySceneState) {
-        engine.start(state: &state)
+    func start(state: inout WPEParitySceneState) throws {
+        if let failure = engine.start(state: &state) {
+            throw failure
+        }
         guard handlesMedia, hasMediaSource else { return }
         engine.dispatch(.mediaStatusChanged, payloadJSON: #"{"enabled":true}"#, state: &state)
         dispatchMedia(state: &state)

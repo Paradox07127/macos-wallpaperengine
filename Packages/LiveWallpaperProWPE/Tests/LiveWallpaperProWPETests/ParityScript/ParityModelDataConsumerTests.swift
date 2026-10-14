@@ -84,8 +84,8 @@ final class ParityModelDataConsumerTests: XCTestCase {
         var paths: [String] = []
         let provider = WPEParityScriptModelDataProvider(
             maximumArrayEntries: 16, maximumBufferBytes: 4096,
-            resolveMaterial: { value, path in
-                paths.append(path)
+            resolveMaterial: { value, context in
+                paths.append(context?.modulePath ?? "")
                 return try Data(XCTUnwrap(value.toString()).utf8)
             },
             admitShape: { shape, _ in
