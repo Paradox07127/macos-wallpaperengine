@@ -7,7 +7,10 @@ public struct WPEParityClock: Sendable {
     public static let rampSnap: Float = 0.01
 
     public private(set) var frametime: Float = 0
-    public private(set) var time: Double = 0
+    /// Public scene time is the renderer's binary32 publication (+0x140), widened for existing consumers.
+    public var time: Double { Double(timeUniform) }
+    /// Renderer +0x148 retains the binary64 sum independently of the published shader/script time.
+    private var accumulatedTime: Double = 0
     public private(set) var pauseRamp: Float = 1
 
     public init() {}
@@ -37,15 +40,16 @@ public struct WPEParityClock: Sendable {
             return false
         }
         frametime = Self.clampStep(Self.rate(percent: ratePercent) * pauseRamp * step)
-        time = Double(Float(time) + frametime)
-        if Float(time) > Self.wrapTime {
-            time = 0
+        // 14017fcaf–14017fce5: widen the binary32 step, add/store binary64, then publish binary32.
+        accumulatedTime += Double(frametime)
+        if timeUniform > Self.wrapTime {
+            accumulatedTime = 0
         }
         return true
     }
 
     public var timeUniform: Float {
-        Float(time)
+        Float(accumulatedTime)
     }
 
     private static func clampStep(_ value: Float) -> Float {
