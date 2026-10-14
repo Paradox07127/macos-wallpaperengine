@@ -1001,8 +1001,20 @@ public final class WPEParityScriptEngine {
             return nil
         }
         flushWrites(to: &state.pointee)
-        return WPEParityScriptModels.perform(input, token: token, replacing: replacing, path: path,
-                                             provider: provider, state: &state.pointee)
+        // Getter failures remain ordinary catchable JS values; the converter must not count them as uncaught.
+        let exceptionHandler = context.exceptionHandler
+        context.exception = nil
+        context.exceptionHandler = { context, exception in context?.exception = exception }
+        defer { context.exceptionHandler = exceptionHandler }
+        return WPEParityScriptModels.perform(input, token: token, path: path,
+                                             provider: provider) { patch in
+            // No State inout borrow spans VM getters/material conversion; the owned patch is now complete.
+            if let token {
+                try state.pointee.updateModelData(token, patch: patch, replacing: replacing, admitShape: provider.admitShape)
+                return nil
+            }
+            return try state.pointee.createModelData(patch, admitShape: provider.admitShape)
+        }
     }
 
     private func createLayer(json: String) -> Double {

@@ -36,6 +36,10 @@ final class ParityModelDataConsumerTests: XCTestCase {
           try { model.applyData({shapes:[{vertexBuffer:patch},{material:'materials/other.json'}]}); }
           catch(e) { prefix = e.message === 'Material cannot be changed in IModelData.update'; }
           if (!prefix) throw Error('ordered prefix');
+          model.applyData({get vertexBuffer() {
+            if (!thisScene.sortLayer(thisLayer,0)) throw Error('reentrant scene mutation');
+            return patch;
+          }});
           const marker = {tag:'getter-identity'};
           patch[0] = 9;
           let exact = false;
@@ -102,6 +106,10 @@ final class ParityModelDataConsumerTests: XCTestCase {
                     }
                 } catch { XCTFail("Invalid serialized model configuration: \(error)") }
                 return nil
+            },
+            sortLayer: { id, position, state in
+                guard let position = Int32(exactly: position) else { return false }
+                return state.sortObject(id, to: position)
             }
         ))
         engine.start(state: &state)

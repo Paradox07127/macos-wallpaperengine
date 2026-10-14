@@ -19,8 +19,9 @@ public struct WPEParityScriptModelDataProvider {
 }
 
 enum WPEParityScriptModels {
-    static func perform(_ input: JSValue, token: UInt32?, replacing: Bool, path: String,
-                        provider: WPEParityScriptModelDataProvider, state: inout WPEParitySceneState) -> JSValue? {
+    static func perform(_ input: JSValue, token: UInt32?, path: String,
+                        provider: WPEParityScriptModelDataProvider,
+                        consume: (WPEParityModelDataPatch) throws -> UInt32?) -> JSValue? {
         guard let context = input.context, let result = JSValue(newObjectIn: context) else { return nil }
         do {
             let patch = try WPEModelDataConverter.convert(
@@ -28,10 +29,7 @@ enum WPEParityScriptModels {
                 maximumBufferBytes: provider.maximumBufferBytes,
                 resolveMaterial: { try provider.resolveMaterial($0, path) }
             )
-            if let token {
-                try state.updateModelData(token, patch: patch, replacing: replacing, admitShape: provider.admitShape)
-            } else {
-                let created = try state.createModelData(patch, admitShape: provider.admitShape)
+            if let created = try consume(patch) {
                 result.setObject(created, forKeyedSubscript: "value" as NSString)
             }
         } catch {
