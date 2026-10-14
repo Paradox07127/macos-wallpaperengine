@@ -136,8 +136,7 @@ extension WPEParitySceneDriverTests {
     }
 
     private func tubeLightInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {
-        let root = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let (_, original) = try XCTUnwrap(try? sceneInputs(), "required captured scene and original WPE asset sources")
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath().standardizedFileURL
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
                     "TEST_RUNNER_WPE_SHADERC", "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"] {
@@ -161,7 +160,7 @@ extension WPEParitySceneDriverTests {
                                                      "constants": ["roughness": 1, "metallic": 0]]]],
         ]
         let json = try files.mapValues { try JSONSerialization.data(withJSONObject: $0) }
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { json[$0] }, .directory(root)])
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { json[$0] }] + original.sources)
         for (path, expected) in tubeLightOriginalHashes {
             let data = try XCTUnwrap(assets.data(path), "required original shader input \(path)")
             XCTAssertEqual(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), expected, path)
