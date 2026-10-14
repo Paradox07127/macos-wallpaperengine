@@ -88,6 +88,7 @@ enum WPEParityScriptPrelude {
     const NAMES = host.eventNames;
     const bindings = [];
     let current = null;
+    let currentEvent = -1;
     function report(b, e) { host.error(b ? b.name : '', String(e && e.stack ? e + '\n' + e.stack : e)); }
     const modules = new Map();
     function importer(path) {
@@ -114,7 +115,7 @@ enum WPEParityScriptPrelude {
         fn(importer(path), (n, get) => Object.defineProperty(exports, n, { get, enumerable: true }), layer, owner);
       } catch (e) { report({ name }, e); return -1; }
       finally { current = previous; }
-      const b = { name, layer, targetLayer, owner, slot, type, angle, readonly, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
+      const b = { name, path, layer, targetLayer, owner, slot, type, angle, readonly, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
       for (let id = 0; id < NAMES.length; id++) {
         const f = NAMES[id] && exports[NAMES[id]];
         if (typeof f === 'function') { b.fns[id] = f; b.bits |= 1 << id; }
@@ -125,10 +126,12 @@ enum WPEParityScriptPrelude {
     };
     function call(b, id, args) {
       const previous = current;
+      const previousEvent = currentEvent;
       current = b;
+      currentEvent = id;
       try { return b.fns[id].apply(undefined, args); }
       catch (e) { b.disabled |= 1 << id; report(b, e); return undefined; }
-      finally { current = previous; }
+      finally { current = previous; currentEvent = previousEvent; }
     }
     function valueEvent(b, id) {
       const r = call(b, id, [read(b.slot, b.type, b.angle)]);
@@ -265,7 +268,7 @@ enum WPEParityScriptPrelude {
       get cursorWorldPosition() { return new Vec3(G[9], G[10], G[11]); },
       get cursorLeftDown() { return G[12] !== 0; }
     };
-    """# + WPEParityScriptLayers.scene + "\n" + #"""
+    """# + WPEParityScriptLayers.scene + "\n" + WPEParityScriptModels.source + "\n" + #"""
     const general = Object.create(null);
     for (const f of host.sceneFields) {
       Object.defineProperty(scene, f.name, accessor(() => host.sceneBase, f));

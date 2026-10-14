@@ -68,6 +68,7 @@ public final class WPEParityScriptEngine {
         /// Extend/replace registered descriptors by (owner, name), including computed flag-2 fields.
         public var propertyOverrides: [WPEParityScriptProperty]
         public var storage: Storage?
+        public var modelData: WPEParityScriptModelDataProvider?
         /// Prepares value-state only. The engine validates the returned config/identity before committing the
         /// candidate; this callback must not publish external resource side effects. Product resource preparation
         /// and retirement are not connected by this optional hook.
@@ -91,6 +92,7 @@ public final class WPEParityScriptEngine {
                     resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
                     fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:],
                     propertyOverrides: [WPEParityScriptProperty] = [], storage: Storage? = nil,
+                    modelData: WPEParityScriptModelDataProvider? = nil,
                     createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
                     destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
                     canDestroyLayer: ((String) -> Bool)? = nil,
@@ -109,6 +111,7 @@ public final class WPEParityScriptEngine {
             self.fieldDefaults = fieldDefaults
             self.propertyOverrides = propertyOverrides
             self.storage = storage
+            self.modelData = modelData
             self.createLayer = createLayer
             self.destroyLayer = destroyLayer
             self.canDestroyLayer = canDestroyLayer
@@ -870,6 +873,17 @@ public final class WPEParityScriptEngine {
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
+        let createModel: @convention(block) (JSValue, String) -> JSValue? = { [weak self] input, path in
+            self?.modelData(input, token: nil, replacing: false, path: path)
+        }
+        let updateModel: @convention(block) (Double, JSValue, Bool, String) -> JSValue? = { [weak self] token, input, replacing, path in
+            guard let token = UInt32(exactly: token) else { return nil }
+            return self?.modelData(input, token: token, replacing: replacing, path: path)
+        }
+        let releaseModel: @convention(block) (Double) -> Void = { [weak self] token in
+            guard let self, let token = UInt32(exactly: token), let state = activeState else { return }
+            state.pointee.releaseModelData(token)
+        }
         set("resolve", resolve)
         set("load", load)
         set("error", error)
@@ -886,6 +900,9 @@ public final class WPEParityScriptEngine {
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
+        set("createModelData", createModel)
+        set("updateModelData", updateModel)
+        set("releaseModelData", releaseModel)
         set("storageEnabled", configuration.storage != nil)
         let storageGet: @convention(block) (String, Double) -> String? = { [weak self] key, location in
             self?.configuration.storage?.get(key, location == 0 ? .global : .screen)
@@ -978,6 +995,16 @@ public final class WPEParityScriptEngine {
         return constants
     }
 
+    private func modelData(_ input: JSValue, token: UInt32?, replacing: Bool, path: String) -> JSValue? {
+        guard let provider = configuration.modelData, let state = activeState else {
+            configuration.log(1, "ModelData is unsupported without the product resource owner")
+            return nil
+        }
+        flushWrites(to: &state.pointee)
+        return WPEParityScriptModels.perform(input, token: token, replacing: replacing, path: path,
+                                             provider: provider, state: &state.pointee)
+    }
+
     private func createLayer(json: String) -> Double {
         guard let create = configuration.createLayer, let state = activeState else {
             configuration.log(1, "createLayer is unsupported without a product resource transaction")
@@ -997,6 +1024,16 @@ public final class WPEParityScriptEngine {
               hasCreatedMaterialConsumers(id: created.id, config: config, state: candidate) else {
             configuration.log(1, "createLayer candidate is invalid or unsupported; no state was committed")
             return -1
+        }
+        if case let .number(number)? = config["model"] {
+            guard let token = UInt32(exactly: number), candidate.modelData(token) != nil else {
+                configuration.log(1, "createLayer numeric model has no canonical prepared State consumer")
+                return -1
+            }
+            do { try candidate.retainModelData(token, for: created.id) } catch {
+                configuration.log(1, "createLayer could not retain its canonical ModelData")
+                return -1
+            }
         }
         state.pointee = candidate
         let kind: WPEParityScriptLayerKind = config["text"] != nil ? .text

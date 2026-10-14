@@ -44,6 +44,7 @@ final class WPEParitySceneScript {
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         var pauseVideoTexture: ((String) -> Bool)?
         var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
+        var modelData: WPEParityScriptModelDataProvider?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -97,7 +98,7 @@ final class WPEParitySceneScript {
             assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
             userPropertiesJSON: host.userPropertiesJSON, materialConstants: materialConstants,
             resolvedEffectRecords: resolvedEffectRecords,
-            fieldDefaults: defaults, storage: host.storage.provider,
+            fieldDefaults: defaults, storage: host.storage.provider, modelData: host.modelData,
             createLayer: host.createLayer, destroyLayer: host.destroyLayer, canDestroyLayer: host.canDestroyLayer,
             sortLayer: host.sortLayer,
             pauseVideoTexture: host.pauseVideoTexture,

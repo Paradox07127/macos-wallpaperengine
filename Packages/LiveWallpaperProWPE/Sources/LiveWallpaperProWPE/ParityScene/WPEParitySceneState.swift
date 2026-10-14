@@ -40,6 +40,8 @@ public struct WPEParitySceneState: Sendable {
         public var visible: Bool
         /// Stable descriptor slots survive removal; the object no longer participates in the live scene.
         public fileprivate(set) var alive = true
+        /// One native model reference held by this admitted layer, independent of its script wrapper.
+        public internal(set) var modelDataToken: UInt32? = nil
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
@@ -150,6 +152,26 @@ public struct WPEParitySceneState: Sendable {
     private var passes: [Pass]
     private var passIndexByKey: [WPEParityMaterialPassKey: Int]
     private let effectIndexByKey: [EffectKey: Int]
+    var modelDataValues: [UInt32: WPEParitySceneModelData] = [:]
+    var lastModelDataToken: UInt32 = 0
+    var modelDataRevision = 0
+
+    /// Called only after the existing layer transaction admits its referencing model layer.
+    public mutating func retainModelData(_ token: UInt32, for objectID: String) throws {
+        guard let index = index(of: objectID), objects[index].modelDataToken == nil,
+              var model = modelDataValues[token] else { throw WPEParityModelDataFailure.native(4) }
+        guard model.references < UInt32.max else { throw WPEParityModelDataFailure.safety("reference count overflow") }
+        model.references += 1
+        modelDataValues[token] = model
+        objects[index].modelDataToken = token
+    }
+
+    /// The actual class destructor/last-reader owner chooses this boundary; common removal alone does not.
+    public mutating func releaseLayerModelData(_ objectID: String) {
+        guard let index = indexByID[objectID], let token = objects[index].modelDataToken else { return }
+        objects[index].modelDataToken = nil
+        releaseModelData(token)
+    }
 
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
     /// object the parent chain names holds only its visible bit. `constants` seeds each material pass.
