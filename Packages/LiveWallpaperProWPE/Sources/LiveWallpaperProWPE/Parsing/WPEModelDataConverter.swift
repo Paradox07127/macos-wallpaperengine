@@ -7,6 +7,7 @@ public enum WPEModelDataConverter {
     public enum Failure: Error, Equatable {
         case vertexBufferMissing, vertexFormatMissing, materialMissing, shapesMissing
         case shapeLimitExceeded, bufferLimitExceeded, invalidBufferView, javascriptException
+        case singleBufferLimitExceeded
 
         public var nativeMessage: String? {
             switch self {
@@ -23,6 +24,7 @@ public enum WPEModelDataConverter {
     /// bounded string conversion. It has no identity fallback: registering/resolving assets is host-owned.
     public static func convert(
         _ input: JSValue, requireFields: Bool, maximumArrayEntries: Int, maximumBufferBytes: Int,
+        maximumSingleBufferBytes: Int? = nil,
         resolveMaterial: (JSValue) throws -> Data
     ) throws -> WPEParityModelDataPatch {
         let array = try property(input, "shapes")
@@ -36,7 +38,8 @@ public enum WPEModelDataConverter {
         for index in 0 ..< count {
             let value = try shapeArray.map { try element($0, index) } ?? input
             try shapes.append(shape(value, requireFields: requireFields, maximumArrayEntries: maximumArrayEntries,
-                                    remaining: &remaining, resolveMaterial: resolveMaterial))
+                                    remaining: &remaining, maximumSingleBufferBytes: maximumSingleBufferBytes,
+                                    resolveMaterial: resolveMaterial))
         }
         let minimum = try property(input, "boundingBoxMins")
         // The native outer converter does not read maxs unless mins is an object.
@@ -51,6 +54,7 @@ public enum WPEModelDataConverter {
 
     private static func shape(
         _ value: JSValue, requireFields: Bool, maximumArrayEntries: Int, remaining: inout Int,
+        maximumSingleBufferBytes: Int?,
         resolveMaterial: (JSValue) throws -> Data
     ) throws -> WPEParityModelDataShapePatch {
         var result = WPEParityModelDataShapePatch()
@@ -59,15 +63,18 @@ public enum WPEModelDataConverter {
             return result
         }
         if let buffer = try property(value, "vertexBuffer") {
-            result.vertices = try bytes(buffer, type: kJSTypedArrayTypeFloat32Array, width: 4, remaining: &remaining)
+            result.vertices = try bytes(buffer, type: kJSTypedArrayTypeFloat32Array, width: 4, remaining: &remaining,
+                                        maximumSingleBufferBytes: maximumSingleBufferBytes)
         }
         if requireFields, result.vertices == nil {
             throw Failure.vertexBufferMissing
         }
         if let buffer = try property(value, "indexBuffer") {
-            if let data = try bytes(buffer, type: kJSTypedArrayTypeUint16Array, width: 2, remaining: &remaining) {
+            if let data = try bytes(buffer, type: kJSTypedArrayTypeUint16Array, width: 2, remaining: &remaining,
+                                    maximumSingleBufferBytes: maximumSingleBufferBytes) {
                 result.indices = .buffer(.init(data: data, elementWidth: .uint16))
-            } else if let data = try bytes(buffer, type: kJSTypedArrayTypeUint32Array, width: 4, remaining: &remaining) {
+            } else if let data = try bytes(buffer, type: kJSTypedArrayTypeUint32Array, width: 4, remaining: &remaining,
+                                           maximumSingleBufferBytes: maximumSingleBufferBytes) {
                 result.indices = .buffer(.init(data: data, elementWidth: .uint32))
             } else if buffer.isNull {
                 result.indices = .remove
@@ -130,7 +137,8 @@ public enum WPEModelDataConverter {
     }
 
     private static func bytes(
-        _ value: JSValue, type: JSTypedArrayType, width: Int, remaining: inout Int
+        _ value: JSValue, type: JSTypedArrayType, width: Int, remaining: inout Int,
+        maximumSingleBufferBytes: Int?
     ) throws -> Data? {
         guard let context = value.context, let ref = context.jsGlobalContextRef else { throw Failure.javascriptException }
         var exception: JSValueRef?
@@ -146,6 +154,9 @@ public enum WPEModelDataConverter {
         try check(exception, context)
         let (length, overflow) = count.multipliedReportingOverflow(by: width)
         guard !overflow, length <= remaining else { throw Failure.bufferLimitExceeded }
+        if let maximumSingleBufferBytes, length > maximumSingleBufferBytes {
+            throw Failure.singleBufferLimitExceeded
+        }
         let buffer = JSObjectGetTypedArrayBuffer(ref, object, &exception)
         try check(exception, context)
         guard let buffer else { throw Failure.invalidBufferView }
