@@ -101,7 +101,8 @@ extension WPEParitySceneDriverTests {
         let white = solidTexture([255, 255, 255, 255])
         XCTAssertEqual(SHA256.hash(data: white).map { String(format: "%02x", $0) }.joined(), "69a03565ff1e6ec0c468d27e1faff5cff7d00f0fb6a97cd34c053cb5d49f8f3c")
         files["materials/event-witness.tex"] = white
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())

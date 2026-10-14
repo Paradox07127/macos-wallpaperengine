@@ -76,7 +76,8 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(SHA256.hash(data: black).map { String(format: "%02x", $0) }.joined(), "12bb09f8d804b7bc680b12fe8be942cd2870213357a9db7ea5b4ff2f899df86a")
         files["materials/queue-red.tex"] = red
         files["materials/queue-black.tex"] = black
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 16, "height": 16], "clearcolor": "0 0 0"],
