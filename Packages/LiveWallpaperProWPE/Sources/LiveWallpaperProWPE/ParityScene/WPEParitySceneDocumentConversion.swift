@@ -74,6 +74,7 @@ struct WPEParityAuthoredPass: Sendable {
     let compose: Bool
     let blend: WPEParitySceneBlend
     let source: WPEParitySceneMaterialSource?
+    var materialState: WPEParitySceneMaterialState = .init()
 
     var references: [String] {
         var names = textures + [target].compactMap(\.self)
@@ -309,7 +310,7 @@ private extension WPEParityAuthoredPass {
         let frameReads = Self.frameReads(textures.filter { visible[$0] == nil })
         return WPEParityScenePass(shader: shader, target: target, binds: binds, compose: compose,
                                   readsFullFrameBuffer: textures.contains(WPESceneAliasName.fullFrameBuffer),
-                                  blend: blend, source: source, frameReads: frameReads)
+                                  blend: blend, source: source, frameReads: frameReads, materialState: materialState)
     }
 }
 

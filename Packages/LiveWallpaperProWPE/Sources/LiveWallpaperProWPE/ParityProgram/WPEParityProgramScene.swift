@@ -587,7 +587,8 @@ public struct WPEParityProgramScene: Sendable {
             passes.append(WPEParityAuthoredPass(
                 kind: .draw, shader: material.shader, target: string(pass["target"]),
                 textures: WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets),
-                compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source
+                compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source,
+                materialState: Self.materialState(assets.json(path)?["passes"]?[0])
             ))
             materials.append((source, material, passIndex))
             records[recordIndex] = .init(filePassIndex: passIndex,

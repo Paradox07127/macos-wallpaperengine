@@ -256,6 +256,7 @@ private struct WPEParitySceneEmitter {
                 let target: WPEResourceID
                 var depth: WPEResourceID?
                 var blend = pass.blend
+                var materialState = pass.materialState
                 var alphaMax = false
                 var compositeOwnerID: String?
                 var mask = WPEParitySceneWriteMask.rgba
@@ -274,6 +275,15 @@ private struct WPEParitySceneEmitter {
                 }
                 if lastSegment, passIndex == finalPass {
                     blend = object.blend
+                    // Image virtual +0x108 (140209160) copies only blend/depth from the albedo material;
+                    // culling stays with this effect material. Text's 140258580 forces translucent instead.
+                    if case .text = object.kind {
+                        blend = .translucent
+                        materialState.depthTest = object.materialState.depthTest
+                    } else {
+                        materialState.depthTest = object.materialState.depthTest
+                        materialState.depthWrite = object.materialState.depthWrite
+                    }
                     mask = destination.writeMask
                     geometry = object.layerGeometry
                 }
@@ -287,6 +297,9 @@ private struct WPEParitySceneEmitter {
                                         passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
                                         target: target, blend: blend, alphaMax: alphaMax,
                                         compositeOwnerID: compositeOwnerID, writeMask: mask, geometry: geometry,
+                                        depthTest: materialState.depthTest,
+                                        depthWrite: materialState.depthWrite && blend.permitsDepthWrite,
+                                        cullsBackFaces: materialState.cullsBackFaces,
                                         layerMatrices: lastSegment && geometry == .fullscreenQuad))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
@@ -316,7 +329,10 @@ private struct WPEParitySceneEmitter {
                                               compositeOwnerID: destination.compositeOwnerID,
                                               writeMask: destination.writeMask, geometry: object.layerGeometry,
                                               depthTest: object.materialState.depthTest,
-                                              depthWrite: object.materialState.depthWrite, colorRole: .compositePublish),
+                                              depthWrite: object.materialState.depthWrite
+                                                  && (object.colorBlendMode == 31 ? WPEParitySceneBlend.additive
+                                                      : object.blend).permitsDepthWrite,
+                                              colorRole: .compositePublish),
                    depth: destination.depth)
     }
 
@@ -364,6 +380,11 @@ private struct WPEParitySceneEmitter {
                                                   alphaMax: destination.alphaMax,
                                                   compositeOwnerID: destination.compositeOwnerID,
                                                   writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                                  // A passthrough uses composelayer, whose material disables depth.
+                                                  depthTest: !object.passthrough && object.materialState.depthTest,
+                                                  depthWrite: !object.passthrough && object.materialState.depthWrite
+                                                      && object.blend.permitsDepthWrite,
+                                                  cullsBackFaces: !object.passthrough && object.materialState.cullsBackFaces,
                                                   colorRole: object.passthrough ? .none : .albedo),
                        depth: destination.depth)
         }
@@ -595,6 +616,7 @@ private struct WPEParitySceneEmitter {
                 continue
             }
             let final = passIndex == finalPass
+            let blend: WPEParitySceneBlend = final ? .additive : pass.blend
             let target = pass.target.map(fbo) ?? destination.color
             bind(identity, target, depth: pass.target == nil ? destination.depth : nil)
             if passIndex == 0, readsFullFrame {
@@ -606,11 +628,15 @@ private struct WPEParitySceneEmitter {
                 + frameReads(pass.frameReads)
             draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id, passIndex: passIndex,
                                     shader: pass.shader, source: source, reads: reads, target: target,
-                                    blend: final ? .additive : pass.blend,
+                                    blend: blend,
                                     alphaMax: pass.target == nil && destination.alphaMax,
                                     compositeOwnerID: destination.compositeOwnerID,
                                     writeMask: final ? destination.writeMask : .rgba,
-                                    geometry: final ? .shapeQuad : .fullscreenQuad, layerMatrices: !final))
+                                    geometry: final ? .shapeQuad : .fullscreenQuad,
+                                    // Shape virtual +0x108 (140260790) changes only blend, never depth or cull.
+                                    depthTest: pass.materialState.depthTest,
+                                    depthWrite: pass.materialState.depthWrite && blend.permitsDepthWrite,
+                                    cullsBackFaces: pass.materialState.cullsBackFaces, layerMatrices: !final))
         }
         if !scoped.isEmpty {
             emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.end"),

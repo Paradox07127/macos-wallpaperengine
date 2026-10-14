@@ -742,10 +742,13 @@ public struct WPEParityScenePass: Hashable, Sendable {
     public var source: WPEParitySceneMaterialSource?
     /// `_rt_*` textures besides the effect's FBOs and `_rt_FullFrameBuffer`, such as another layer's composite.
     public var frameReads: [WPEResourceID]
+    /// State of this pass's material before the layer's final-pass override (1401ebf60 / virtual +0x108).
+    public var materialState: WPEParitySceneMaterialState
 
     public init(shader: String, target: String? = nil, binds: [String] = [], compose: Bool = false,
                 readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw,
-                source: WPEParitySceneMaterialSource? = nil, frameReads: [WPEResourceID] = []) {
+                source: WPEParitySceneMaterialSource? = nil, frameReads: [WPEResourceID] = [],
+                materialState: WPEParitySceneMaterialState = .init()) {
         self.shader = shader
         self.target = target
         self.binds = binds
@@ -755,6 +758,7 @@ public struct WPEParityScenePass: Hashable, Sendable {
         self.kind = kind
         self.source = source
         self.frameReads = frameReads
+        self.materialState = materialState
     }
 }
 
