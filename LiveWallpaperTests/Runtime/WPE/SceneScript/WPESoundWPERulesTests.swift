@@ -124,6 +124,42 @@ struct WPESoundWPERulesTests {
         #expect(snapshot.scheduledSegmentCount == 1)
     }
 
+    @Test("Sub-milliscale WPE master-gain changes reach streams and the zero-gain timer gate")
+    func subMilligainChangesStillReachWPEStreams() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        runtime.setMasterVolume(0.0005)
+        runtime.setMuted(false)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == Float(0.0005))
+        runtime.advance(by: 0.25)
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 0.75)
+
+        runtime.setMasterVolume(0)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0)
+        runtime.advance(by: 10)
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 0.75)
+
+        runtime.setMasterVolume(0.0005)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == Float(0.0005))
+        runtime.advance(by: 0.75)
+        let resumed = try #require(runtime.debugTrackSnapshots().first)
+        #expect(resumed.pendingDelay == nil)
+        #expect(resumed.scheduledSegmentCount == 1)
+
+        let legacy = WPESoundRuntime(resolver: Self.resolver(root))
+        defer { legacy.stop() }
+        #expect(legacy.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
+        legacy.setMasterVolume(0.0005)
+        legacy.setMasterVolume(0)
+        #expect(try #require(legacy.debugTrackSnapshots().first).playerVolume == Float(0.0005),
+                "legacy retains its existing gain-coalescing behavior")
+    }
+
     @Test("A random track waits for the user-resolved mintime/maxtime, not the authored default")
     func randomWaitUsesUserResolvedBounds() throws {
         let json = #"""

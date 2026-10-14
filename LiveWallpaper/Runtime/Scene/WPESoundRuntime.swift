@@ -370,7 +370,9 @@ final class WPESoundRuntime: Sendable {
     func setMasterVolume(_ volume: Double) {
         state.withLock { state in
             let clamped = Float(min(max(volume, 0), 1))
-            guard abs(state.masterVolume - clamped) > 0.001 else { return }
+            // Native 1816d0 compares the stored Float exactly. A small positive gain crossing zero
+            // must still pause/resume WPE streams; retain the legacy caller's coalescing policy.
+            guard rules == .wpe ? state.masterVolume != clamped : abs(state.masterVolume - clamped) > 0.001 else { return }
             let crossesZero = (state.masterVolume > 0) != (clamped > 0)
             state.masterVolume = clamped
             applyAudioState(to: &state)
