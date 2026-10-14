@@ -112,6 +112,7 @@ final class WPEParityFrameRenderer {
     private var planner: WPEParityFrameDrawPlanner
     /// Every program the plan can draw with, compiled at load.
     private let artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
+    private let mipMappedFrameBufferRequested: Bool
     private var bloom: WPEParityBloomSettings
     /// Post-process draw constants for `bloom`, by draw operation, where they differ from the planned ones.
     private var postConstants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] = [:]
@@ -357,9 +358,8 @@ final class WPEParityFrameRenderer {
             }
             return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
         }
-        let layout = try Self.makeLayout(plan.layout, effects: plan.state.effectVisibility, artifacts: artifacts,
-                                         planner: &planner, encoder: encoder,
-                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: nil)
+        let probes = try plan.probeFrames()
+        var mipRequested = plan.requestsMipMappedFrameBuffer(in: probes, artifacts: artifacts)
         var particleFacts: [String: [[WPEParityParticlePathElement]: Bool]] = [:]
         var particleFailures: [String: WPEParityFrameSkip] = [:]
         var baseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]] = [:]
@@ -385,9 +385,15 @@ final class WPEParityFrameRenderer {
                 particleFacts[probe.objectID, default: [:]][probe.path] = active.contains {
                     names[Int32($0.register)] == WPEParitySceneResource.fullFrameBuffer.rawValue
                 }
+                mipRequested = mipRequested || active.contains {
+                    names[Int32($0.register)] == "_rt_MipMappedFrameBuffer"
+                }
             }
         }
-        let probes = try plan.probeFrames()
+        let planned = mipRequested ? try plan.layout(effects: plan.state, mipMappedFrameBufferRequested: true) : plan.layout
+        let layout = try Self.makeLayout(planned, effects: plan.state.effectVisibility, artifacts: artifacts,
+                                         planner: &planner, encoder: encoder,
+                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: nil)
         for probe in probes {
             for (index, program) in probe.programs {
                 guard case let .success(artifact)? = artifacts[program.hlsl] else { continue }
@@ -446,6 +452,7 @@ final class WPEParityFrameRenderer {
         textBackgroundOwners = Dictionary(uniqueKeysWithValues: planner.texts.values.map { ($0.backgroundPass, $0.object.id) })
         lights = planner.lights
         self.artifacts = artifacts
+        mipMappedFrameBufferRequested = mipRequested
         particleFullFrameBuffer = particleFacts
         particleBaseFailures = baseFailures
         particleSnapshotObjects = snapshotObjects
@@ -502,6 +509,7 @@ final class WPEParityFrameRenderer {
         }
         let document = plan.document
         isStatic = animations.isEmpty && particleObjects.isEmpty
+            && !(mipRequested && plan.post.qualityMipMappedFrameBufferEnabled)
             && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
             && plan.scene.cameraPaths.paths.isEmpty && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
@@ -791,7 +799,8 @@ final class WPEParityFrameRenderer {
         }
         layersMoved = true
         let current = graphs.layout
-        let planned = try plan.layout(effects: state, texts: pipeline.texts)
+        let planned = try plan.layout(effects: state, texts: pipeline.texts,
+                                      mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let kept = current.draws.filter { index, _ in
             guard case let .scene(draw)? = current.frames[0].draws[index] else { return true }
             return !relaidTexts.contains(draw.objectID)
@@ -1077,7 +1086,8 @@ final class WPEParityFrameRenderer {
             } else {
                 var layout = graphs.layout
                 if effects != layout.effects {
-                    layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts), effects: effects,
+                    layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts,
+                                                             mipMappedFrameBufferRequested: mipMappedFrameBufferRequested), effects: effects,
                                                  artifacts: artifacts, planner: &planner, encoder: drawEncoder,
                                                  requiredPresentationPass: plan.requiredPresentationPass,
                                                  reusing: layout)
@@ -1367,7 +1377,8 @@ final class WPEParityFrameRenderer {
         return colors
     }
 
-    /// Pooled targets can be read before their first write; start them from zero instead of stale memory.
+    /// Pooled targets can be read before their first write. Initialize every readable mip as a Mac safety policy;
+    /// the original quality-enabled first-frame contents remain an evidence boundary.
     private static func clear(_ textures: [MTLTexture], queue: MTLCommandQueue,
                               colors: [ObjectIdentifier: WPEClearColor] = [:]) throws {
         guard !textures.isEmpty else { return }
@@ -1391,6 +1402,16 @@ final class WPEParityFrameRenderer {
                 throw WPEParityFrameRenderError.encoderUnavailable
             }
             encoder.endEncoding()
+        }
+        let mipmapped = textures.filter { $0.mipmapLevelCount > 1 && $0.pixelFormat != .depth32Float }
+        if !mipmapped.isEmpty {
+            guard let blit = commandBuffer.makeBlitCommandEncoder() else {
+                throw WPEParityFrameRenderError.encoderUnavailable
+            }
+            for texture in mipmapped {
+                blit.generateMipmaps(for: texture)
+            }
+            blit.endEncoding()
         }
         commandBuffer.commit()
     }

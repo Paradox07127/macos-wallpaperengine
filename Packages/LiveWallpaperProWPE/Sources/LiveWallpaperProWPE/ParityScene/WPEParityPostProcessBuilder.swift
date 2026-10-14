@@ -11,6 +11,8 @@ public enum WPEParityPostProcessBuilder {
         }
         if config.mipMappedFrameBufferRequested {
             stream.resource("_rt_MipMappedFrameBuffer", mips: stream.mipCount, lifetime: .pooled)
+        }
+        if config.mipMappedFrameBufferRefreshEnabled {
             stream.append("mipCopy", .copy(source: "backbuffer", destination: "_rt_MipMappedFrameBuffer"))
             stream.append("generateMips", .generateMips("_rt_MipMappedFrameBuffer"))
         }
@@ -91,6 +93,8 @@ private struct WPEParityPostProcessStream {
         ]
     }
 
+    /// Explicit Mac full-chain storage policy. Native rtFlags0x10 uses the still-unverified 14041d420 helper;
+    /// neither this count nor the corresponding shader MipMapInfo is claimed as its numerical oracle.
     var mipCount: Int {
         var size = max(config.backbufferWidth, config.backbufferHeight)
         var count = 1

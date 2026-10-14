@@ -10,7 +10,9 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var displayHDREnabled: Bool
     /// One disables MSAA; otherwise this is the scene target's sample count.
     public var msaaSampleCount: Int
+    /// A prepared material's actual active slot requests the resource, independently of quality.
     public var sceneMipMappedFrameBufferEnabled: Bool
+    /// Refresh policy; native bit7's setting/default remains unverified.
     public var qualityMipMappedFrameBufferEnabled: Bool
     public var bloomSettings: WPEParityBloomSettings
     /// ccsimple.json is loaded (`WPEParityColorCorrection.drawn`); `colorCorrection` gives its combos and values.
@@ -51,6 +53,11 @@ public struct WPEParityPostProcessConfig: Sendable {
     }
 
     public var mipMappedFrameBufferRequested: Bool {
+        sceneMipMappedFrameBufferEnabled
+    }
+
+    /// 14017fa70:699–701/713–715: a requested resource is updated only with Main+0x128 bit7.
+    public var mipMappedFrameBufferRefreshEnabled: Bool {
         sceneMipMappedFrameBufferEnabled && qualityMipMappedFrameBufferEnabled
     }
 

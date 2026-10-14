@@ -224,9 +224,12 @@ struct WPEParityFramePlan {
     }
 
     /// The layout of the effects `state` shows.
-    func layout(effects state: WPEParitySceneState, texts: [String: WPEParitySceneText] = [:]) throws
+    func layout(effects state: WPEParitySceneState, texts: [String: WPEParitySceneText] = [:],
+                mipMappedFrameBufferRequested: Bool = false) throws
         -> WPEParityFrameLayout {
         var cache = programCache
+        var post = post
+        post.sceneMipMappedFrameBufferEnabled = mipMappedFrameBufferRequested
         let visible = Dictionary(zip(state.effects, state.effectVisibility)) { first, _ in first }
         var description = scene.scene(effectVisible: {
             visible[.init(objectID: $0, effectID: $1)] ?? true
@@ -243,6 +246,29 @@ struct WPEParityFramePlan {
         return try Self.layout(Self.loaded(description),
                                post: post, scene: scene, physicalBackbufferSize: physicalBackbufferSize,
                                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
+    }
+
+    /// Resolve requests before draw readiness: an undeclared target must not make its own reader disappear.
+    /// All resident effect sets participate; optimized-out slots and failed programs request nothing.
+    func requestsMipMappedFrameBuffer(
+        in probes: [(frame: WPEParityFrame, programs: [Int: WPEParityProgram])],
+        artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
+    ) -> Bool {
+        let mip = WPEResourceID("_rt_MipMappedFrameBuffer")
+        for probe in probes {
+            let bindings = WPEParityProgramBuilder.bindings(frame: probe.frame, scene: scene)
+            for (index, program) in probe.programs {
+                guard case .scene? = probe.frame.draws[index], let binding = bindings[index],
+                      case let .success(artifact)? = artifacts[program.hlsl] else { continue }
+                let resources = artifact.vertex.reflection.resources + artifact.fragment.reflection.resources
+                if resources.contains(where: {
+                    $0.kind == .texture && binding.textures[Int32($0.register)] == .resource(mip)
+                }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Frame 0 of effect sets that between them put every effect pass in each place it can draw to: every effect

@@ -172,7 +172,13 @@ final class ParitySceneUniqueFBOWorkshopTests: XCTestCase {
         print("3808922316: \(checked) motion-blur FBOs, \(frame.draws.values.count(where: \.layerMatrices)) "
             + "last-segment quads with layer matrices")
         XCTAssertGreaterThan(checked, 0)
-        _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+        // A raw scene keeps possible sampler reads; post owns the declaration after shader preparation.
+        // Supply that preparation fact here without inferring activity from a source annotation.
+        var post = scene.postProcess
+        post.sceneMipMappedFrameBufferEnabled = true
+        let composed = try WPEParityFrameComposer.compose(scene: scene.scene, post: post, frameIndex: 0)
+        XCTAssertTrue(composed.resources.contains { $0.id == "_rt_MipMappedFrameBuffer" })
+        _ = try WPERenderGraphCompiler.compile(resources: composed.resources, operations: composed.operations)
     }
 }
 

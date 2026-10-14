@@ -9,6 +9,9 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var hdrPostProcessing: Bool
     /// One disables MSAA; otherwise the product has resolved a device-supported 2/4/8 sample count.
     public var msaaSampleCount: Int
+    /// Whether a requested mipmapped scene snapshot refreshes each frame. This is an independent Mac policy;
+    /// the native Main+0x128 bit7 setting/default has not been established. Actual shader slots own the request.
+    public var mipMappedFrameBufferEnabled: Bool
     /// Compatibility for callers that only selected on/off. There is one stored sample count.
     public var msaa: Bool {
         get { msaaSampleCount > 1 }
@@ -19,11 +22,12 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var colorCorrection: WPEParityColorCorrection
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
-                msaaSampleCount: Int? = nil,
+                msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection()) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
         self.msaaSampleCount = msaaSampleCount ?? (msaa ? 2 : 1)
+        self.mipMappedFrameBufferEnabled = mipMappedFrameBufferEnabled
         self.colorCorrection = colorCorrection
     }
 }
@@ -165,7 +169,9 @@ public struct WPEParityProgramScene: Sendable {
             var kind = WPEParitySceneObject.Kind.image
             var frameReads: [String: [WPEResourceID]] = [:]
             if let materialPath, let material {
-                frameReads[materialPath] = WPEParityAuthoredPass.frameReads(material.textureNames)
+                frameReads[materialPath] = WPEParityAuthoredPass.frameReads(
+                    WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets)
+                )
             }
             if image.isShapeQuad {
                 kind = .shape(WPEParitySceneShape(points: Self.shapePoints(effects.first, objectID: image.id,
@@ -179,7 +185,9 @@ public struct WPEParityProgramScene: Sendable {
                         : WPEParityProgramMaterial(path: mesh.materialPath, assets: assets)
                     if let meshMaterial {
                         materials[MaterialKey(objectID: image.id, effectID: nil, source: source)] = meshMaterial
-                        frameReads[mesh.materialPath] = WPEParityAuthoredPass.frameReads(meshMaterial.textureNames)
+                        frameReads[mesh.materialPath] = WPEParityAuthoredPass.frameReads(
+                            WPEParityProgramBuilder.resolvedFrameTextureNames(meshMaterial, assets: assets)
+                        )
                     }
                     meshes.append(WPEParitySceneModelMesh(
                         material: meshMaterial == nil ? nil : source,
@@ -282,6 +290,7 @@ public struct WPEParityProgramScene: Sendable {
         var post = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                               objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
                                               msaaSampleCount: samples,
+                                              qualityMipMappedFrameBufferEnabled: settings.mipMappedFrameBufferEnabled,
                                               bloomSettings: Self.bloomSettings(bloomGeneral),
                                               colorCorrectionEnabled: settings.colorCorrection.drawn,
                                               fadeActive: cameraFade && !cameraPaths.paths.isEmpty,
@@ -570,7 +579,7 @@ public struct WPEParityProgramScene: Sendable {
                                                       effectPass: passIndex)
             passes.append(WPEParityAuthoredPass(
                 kind: .draw, shader: material.shader, target: string(pass["target"]),
-                textures: material.textures.sorted { $0.key < $1.key }.map(\.value),
+                textures: WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets),
                 compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source
             ))
             materials.append((source, material, passIndex))

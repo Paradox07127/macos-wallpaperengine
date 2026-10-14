@@ -648,15 +648,15 @@ private struct WPEParitySceneEmitter {
         samplers[id] = WPEParitySceneSampler(filter: .linear, address: fbo.repeats ? .wrap : .clamp)
     }
 
-    /// The material names the frame has: `_rt_FullFrameBuffer` and every layer's `_a`. Any other name stays out,
-    /// and the draw that samples it is skipped downstream.
+    /// Layer composites and known engine snapshots. Post declares the mipmapped resource after actual shader
+    /// preparation requests it; an active read without that declaration still fails downstream readiness.
     private mutating func frameReads(_ names: [WPEResourceID]) -> [WPEResourceID] {
         names.filter { name in
             if let owner = layerComposites[name] {
                 registerComposite(name, of: owner)
                 return true
             }
-            return name == Resource.fullFrameBuffer
+            return name == Resource.fullFrameBuffer || name.rawValue == "_rt_MipMappedFrameBuffer"
         }
     }
 

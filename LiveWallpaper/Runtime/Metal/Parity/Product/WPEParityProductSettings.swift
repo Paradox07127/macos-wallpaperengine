@@ -10,6 +10,9 @@ enum WPEParityProductSettings {
     static let msaaSampleCountDefaultsKey = "loomscreen.wallpapers.parityMSAASampleCount.v1"
     /// A Mac resource policy, not Wallpaper Engine's Windows default.
     static let defaultMSAASampleCount = 1
+    static let mipMappedFrameBufferDefaultsKey = "loomscreen.wallpapers.parityMipMappedFrameBufferQuality.v1"
+    /// Refresh only snapshots requested by active shader slots. This is a Mac policy, not the unknown Windows default.
+    static let defaultMipMappedFrameBufferEnabled = true
 
     static func make(descriptor: SceneDescriptor, device: MTLDevice,
                      defaults: UserDefaults = .appScoped(), bloomEnabled: Bool = true) throws -> WPEParityProgramSettings {
@@ -17,7 +20,9 @@ enum WPEParityProductSettings {
         let samples = resolveMSAASampleCount(requested: requestedMSAASampleCount(defaults: defaults),
                                              supports: { device.supportsTextureSampleCount($0) })
         return WPEParityProgramSettings(bloom: bloomEnabled, hdrPostProcessing: true,
-                                        msaaSampleCount: samples, colorCorrection: correction)
+                                        msaaSampleCount: samples,
+                                        mipMappedFrameBufferEnabled: requestedMipMappedFrameBuffer(defaults: defaults),
+                                        colorCorrection: correction)
     }
 
     /// The picker offers only 1/2/4/8. Never increase a request to match a device capability.
@@ -34,6 +39,12 @@ enum WPEParityProductSettings {
               CFGetTypeID(number) != CFBooleanGetTypeID(),
               let count = Int(exactly: number.doubleValue) else { return defaultMSAASampleCount }
         return count
+    }
+
+    private static func requestedMipMappedFrameBuffer(defaults: UserDefaults) -> Bool {
+        guard let number = defaults.object(forKey: mipMappedFrameBufferDefaultsKey) as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else { return defaultMipMappedFrameBufferEnabled }
+        return number.boolValue
     }
 }
 #endif

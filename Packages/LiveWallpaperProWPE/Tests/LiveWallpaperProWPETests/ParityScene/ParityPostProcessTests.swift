@@ -151,6 +151,16 @@ struct ParityPostProcessTests {
             config.qualityMipMappedFrameBufferEnabled = false
         }
         let disabled = WPEParityPostProcessBuilder.build(config)
+        let resource = disabled.resources.first { $0.id == "_rt_MipMappedFrameBuffer" }
+        if gate == 0 {
+            #expect(resource == nil, "no active request means no history allocation")
+        } else {
+            #expect(resource == enabled.resources.first { $0.id == "_rt_MipMappedFrameBuffer" },
+                    "quality suppresses refresh, not the requested resource")
+            #expect(resource?.initialClear == nil, "compatible replans must retain history; allocation initializes it")
+        }
+        #expect(config.mipMappedFrameBufferRequested == (gate == 1))
+        #expect(!config.mipMappedFrameBufferRefreshEnabled)
         #expect(sequence(enabled) == [ldrSequence[0], "copy backbuffer -> _rt_MipMappedFrameBuffer",
                                       "mips _rt_MipMappedFrameBuffer"] + Array(ldrSequence.dropFirst()) + ["present backbuffer"])
         #expect(sequence(disabled) == ldrSequence + ["present backbuffer"])

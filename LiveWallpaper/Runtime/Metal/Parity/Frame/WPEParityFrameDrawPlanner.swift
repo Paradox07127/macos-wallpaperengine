@@ -607,8 +607,11 @@ struct WPEParityFrameDrawPlanner {
                 } else {
                     // D3D unbound slots read zero. A bound but corrupt, unsupported or inaccessible resource
                     // is a different readiness failure; never report its transparent replacement as success.
+                    let particleSnapshots: [WPEResourceID] = particleKey == nil ? [] : [
+                        WPEParitySceneResource.fullFrameBuffer, WPEResourceID("_rt_MipMappedFrameBuffer"),
+                    ]
                     textures[variant][name] = try textureSource(source, slot: slot, shader: shader,
-                                                                reads: operation.reads.map(\.resource) + (particleKey == nil ? [] : [WPEParitySceneResource.fullFrameBuffer]))
+                                                                reads: operation.reads.map(\.resource) + particleSnapshots)
                 }
             }
             guard let source = textures[0][name] else { continue }
@@ -654,6 +657,7 @@ struct WPEParityFrameDrawPlanner {
                 kind: draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
                     SIMD2(Float($0.x), Float($0.y))
                 } ?? SIMD2(Float(color.width), Float(color.height)))
+                    : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
                 compositeOwnerID: draw.compositeOwnerID,

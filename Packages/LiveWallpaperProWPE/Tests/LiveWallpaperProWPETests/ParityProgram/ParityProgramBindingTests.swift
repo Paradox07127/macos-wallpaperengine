@@ -4,6 +4,83 @@ import LiveWallpaperCore
 import XCTest
 
 final class ParityProgramBindingTests: XCTestCase {
+    /// Material and annotation names reach the same real RT binding/read; compiled activity is the app's separate
+    /// request fact. An unknown RT retains its identity and does not become an asset.
+    func testMipSnapshotDefaultsAndExplicitSlotsKeepTheSameDeclaredHistoryRead() throws {
+        for effectPass in [false, true] {
+            for explicit in [false, true] {
+                let name = "_rt_MipMappedFrameBuffer"
+                let material: [String: Any] = ["passes": [[
+                    "shader": "mip-reader", "blending": "normal",
+                    "textures": explicit ? ["previous", name, "_rt_Unknown"] : ["previous"],
+                ]]]
+                var layer = ParitySceneDocuments.layer(effects: effectPass ? [
+                    .init(id: "1", passes: [ParitySceneDocuments.pass("mip-reader")]),
+                ] : [])
+                if !effectPass {
+                    layer.model = ["material": "materials/mip-reader.json"]
+                }
+                var object = layer.json
+                object["effects"] = effectPass ? [["id": 1, "file": "effects/mip-reader.json"]] : []
+                var files = try [
+                    "models/7.json": JSONSerialization.data(withJSONObject: layer.model),
+                    "materials/genericimage2.json": JSONSerialization.data(withJSONObject: [
+                        "passes": [["shader": "genericimage2", "blending": "translucent"]],
+                    ]),
+                    "materials/mip-reader.json": JSONSerialization.data(withJSONObject: material),
+                    "effects/mip-reader.json": JSONSerialization.data(withJSONObject: [
+                        "passes": [ParitySceneDocuments.pass("mip-reader")],
+                    ]),
+                ]
+                files["shaders/mip-reader.vert"] = Data("void main() {}".utf8)
+                files["shaders/mip-reader.frag"] = Data("""
+                uniform sampler2D g_Texture1; // {"default":"_rt_MipMappedFrameBuffer"}
+                uniform sampler2D g_Texture2; // {"default":"_rt_Unknown"}
+                void main() {}
+                """.utf8)
+                let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                    "camera": ["center": "0 0 0"],
+                    "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+                    "objects": [object],
+                ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                // Binding resolves annotations after scene conversion; retain the same shader bytes for both.
+                let snapshot = files
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent("mip-binding-\(UUID().uuidString)")
+                let scene = WPEParityProgramScene(document: document,
+                                                  assets: WPEParityProgramAssets(sources: [.lookup(root) { snapshot[$0] }]),
+                                                  settings: .init(mipMappedFrameBufferEnabled: false))
+                var post = scene.postProcess
+                post.sceneMipMappedFrameBufferEnabled = true // A supplied preparation fact, not annotation inference.
+                let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: post, frameIndex: 0)
+                let operation = try XCTUnwrap(frame.draws.first { _, draw in
+                    guard case let .scene(draw) = draw else { return false }
+                    return draw.shader == "mip-reader"
+                }?.key)
+                guard case let .scene(draw)? = frame.draws[operation] else { return XCTFail("missing scene draw") }
+                let label = "effect=\(effectPass), explicit=\(explicit)"
+                XCTAssertTrue(draw.reads.contains(WPEResourceID(name)), label)
+                XCTAssertFalse(draw.reads.contains("_rt_Unknown"), "unknown producer stays unsupported: \(label)")
+                let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[operation])
+                XCTAssertEqual(binding.textures[1], .resource(WPEResourceID(name)), label)
+                XCTAssertEqual(binding.textures[2], .resource("_rt_Unknown"), label)
+                let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+                let read = try XCTUnwrap(graph.accesses[operation].reads.first {
+                    $0.subresource.resource == WPEResourceID(name)
+                })
+                XCTAssertEqual(read.revision, 0, "before tail copy, this is frame-entry history: \(label)")
+                XCTAssertNil(read.producer, label)
+                XCTAssertEqual(graph.storage[WPEResourceID(name)], .dedicated, label)
+                XCTAssertFalse(frame.operations.contains {
+                    if case .generateMips = $0.kind {
+                        true
+                    } else {
+                        false
+                    }
+                }, label)
+            }
+        }
+    }
+
     private static func floats(_ value: WPECBufferValue?) -> [Float]? {
         switch value {
         case let .float(number)?: [number]

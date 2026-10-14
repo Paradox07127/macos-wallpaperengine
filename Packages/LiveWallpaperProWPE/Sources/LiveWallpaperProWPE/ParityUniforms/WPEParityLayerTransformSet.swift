@@ -7,6 +7,8 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
     case compositeFill(size: SIMD2<Float>)
     /// An intermediate effect pass on the 2×2 quad.
     case effectPass
+    /// Ancestor clip-mask multiplication uses a 2×2 quad with identity M/V/P (14020d6a0.c:80-165).
+    case clipMaskMerge
     /// A pass of the last effect after its last flip: the 2×2 quad with the layer's matrices (1401e8aa0.c:951-1075).
     case lastEffectPass
 }
@@ -205,6 +207,9 @@ public struct WPEParityLayerTransformSet: Sendable {
         case .layer, .lastEffectPass: matrices
         case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
         case .effectPass: WPEParityUniformMatrices.effectPass
+        case .clipMaskMerge: WPEParityUniformMatrices(model: matrix_identity_float4x4,
+                                                      view: matrix_identity_float4x4,
+                                                      projection: matrix_identity_float4x4)
         }
         return WPEParityUniformDraw(matrices: drawn, effectPass: effectPass)
     }
@@ -213,7 +218,7 @@ public struct WPEParityLayerTransformSet: Sendable {
         switch kind {
         case .layer: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
         case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
-        case .effectPass, .lastEffectPass: .effectPass
+        case .effectPass, .clipMaskMerge, .lastEffectPass: .effectPass
         }
     }
 }

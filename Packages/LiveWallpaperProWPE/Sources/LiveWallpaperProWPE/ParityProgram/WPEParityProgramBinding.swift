@@ -179,6 +179,18 @@ public extension WPEParityProgramBuilder {
         return resolvedTextureNames(material, vertexSource: sources.vertex, fragmentSource: sources.fragment)
     }
 
+    /// Preserve authored FBO/previous ordering and include engine RT defaults in the same candidate read chain.
+    /// Annotation presence is not an allocation request: compiled active slots determine that before readiness.
+    internal static func resolvedFrameTextureNames(_ material: WPEParityProgramMaterial,
+                                                   assets: WPEParityProgramAssets) -> [String] {
+        var names = material.textureNames
+        for (_, name) in resolvedTextureNames(material, assets: assets).sorted(by: { $0.key < $1.key })
+            where name.hasPrefix("_rt_") && !names.contains(name) {
+            names.append(name)
+        }
+        return names
+    }
+
     private static func resolvedTextureNames(_ material: WPEParityProgramMaterial, vertexSource: String,
                                              fragmentSource: String) -> [Int32: String] {
         var names = material.textures
@@ -201,7 +213,11 @@ public extension WPEParityProgramBuilder {
         default: false
         }
         if !materialSlotsOnly, draw.effectID == nil, let first = draw.reads.first {
-            textures[0] = imported.contains(first) ? .imported(first, asset: names[0]) : .resource(first)
+            if imported.contains(first), let name = names[0], name.hasPrefix("_rt_") {
+                textures[0] = .resource(WPEResourceID(name))
+            } else {
+                textures[0] = imported.contains(first) ? .imported(first, asset: names[0]) : .resource(first)
+            }
         }
         let effect = object?.effects.first { $0.id == draw.effectID }
         let binds = draw.passIndex.flatMap { index in effect.map { $0.passes[index].binds } } ?? []
