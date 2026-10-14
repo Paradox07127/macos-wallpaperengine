@@ -248,7 +248,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
             materialConstants: fixture.plan.materialConstants, resolvedEffectRecords: fixture.plan.scene.resolvedEffectRecords,
             host: host
         )
-        renderer.attachScript(script)
+        try renderer.attachScript(script)
         return script
     }
 

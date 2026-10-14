@@ -241,6 +241,7 @@ final class WPEParitySceneDriver {
         soundRuntime = nil
         self.audioPreset = audioPreset
         updateSurfaceGeometry(drawableSize: drawableSize)
+        var preparedSound: WPESoundRuntime?
         do {
             let sceneSize = WPEParityCamera(document: document, renderTargetSize: SIMD2(1, 1)).size
             let renderScale = WPEMetalFXSpatialUpscaler.renderScale
@@ -267,6 +268,7 @@ final class WPEParitySceneDriver {
             )
             if let soundResolver, !document.soundObjects.isEmpty {
                 let runtime = WPESoundRuntime(resolver: soundResolver, rules: .wpe)
+                preparedSound = runtime
                 await Self.prepareSound(runtime, sounds: document.soundObjects)
                 guard generation == loadGeneration else {
                     runtime.stop()
@@ -301,26 +303,53 @@ final class WPEParitySceneDriver {
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
+                var hasRegisteredAssets = false
                 do {
                     var connectedHost = scriptHost
                     connectedHost.mediaGeneration = generation
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
                     connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
-                    connectedHost.destroyLayer = { id, state in state.removeObject(id) }
+                    connectedHost.createLayer = WPEParityModelDataLayerAdmission.create
+                    connectedHost.destroyLayer = { id, state in
+                        guard state.removeObject(id) else { return false }
+                        state.releaseLayerModelData(id)
+                        return true
+                    }
                     connectedHost.sortLayer = { id, position, state in
                         guard let position = Int32(exactly: position) else { return false }
                         return state.sortObject(id, to: position)
                     }
-                    // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
-                    try renderer.attachScript(WPEParitySceneScript(
+                    if var modelData = connectedHost.modelData {
+                        modelData.admitShape = renderer.scriptModelDataAdmission
+                        connectedHost.modelData = modelData
+                    } else {
+                        connectedHost.modelData = renderer.scriptModelDataProvider
+                    }
+                    let script = try WPEParitySceneScript(
                         document: document, state: renderer.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
                         screenResolution: SIMD2(Float(target.width), Float(target.height)),
                         materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
                         fieldDefaults: renderer.scriptFieldDefaults, host: connectedHost
-                    ))
+                    )
+                    hasRegisteredAssets = script.engine.bindings.contains { !$0.registeredAssets.isEmpty }
+                    try await script.engine.prepareRegisteredAssets { _, declarations in
+                        for declaration in declarations {
+                            guard declaration.flag else {
+                                throw WPEParityModelDataFailure.safety("registered asset flag consumer is not qualified: \(declaration.path)")
+                            }
+                            try await renderer.prepareRegisteredModelDataMaterial(declaration.path, shaders: shaders)
+                            guard generation == loadGeneration else { throw CancellationError() }
+                        }
+                    }
+                    guard generation == loadGeneration else { throw CancellationError() }
+                    // Init waits for the actual registered material/shader preparation (140186c90/172830).
+                    try renderer.attachScript(script)
                 } catch {
+                    if hasRegisteredAssets || error is CancellationError {
+                        throw error
+                    }
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)
                 }
             }
@@ -328,6 +357,12 @@ final class WPEParitySceneDriver {
             lastTimestamp = nil
             didLoad = true
         } catch {
+            if let preparedSound {
+                preparedSound.stop()
+                if soundRuntime === preparedSound {
+                    soundRuntime = nil
+                }
+            }
             if generation == loadGeneration, !(error is CancellationError) {
                 loadDiagnostics = .other(layer: "scene", message: String(describing: error))
                 Logger.warning("Parity scene load failed: \(error)", category: .wpeRender)

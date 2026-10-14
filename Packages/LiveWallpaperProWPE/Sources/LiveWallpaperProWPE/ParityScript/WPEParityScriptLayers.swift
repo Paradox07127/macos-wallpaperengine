@@ -282,6 +282,7 @@ enum WPEParityScriptLayers {
         sceneScope('createLayer');
         // 14018ba00.c:25-27: null once the common scene holds 2048 objects, including pending.
         if (order.length > 2047) return null;
+        if (modelOwners.has(config)) config = { model: config };
         const a = argument(config, 0x200 | 0x400);
         if (!a) return null;
         const index = host.createLayer(a.type === 0x200 ? JSON.stringify({ image: a.value }) : a.value);

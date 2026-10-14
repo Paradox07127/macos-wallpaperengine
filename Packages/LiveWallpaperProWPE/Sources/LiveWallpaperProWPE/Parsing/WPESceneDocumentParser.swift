@@ -1,3 +1,4 @@
+import CoreFoundation
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
@@ -289,6 +290,7 @@ public enum WPESceneDocumentParser {
         let (objectParentByID, ownVisibilityByID) = objectHierarchy(from: objectsByID)
         let inheritedAttachments = inheritedGroupAttachments(from: objectsByID)
         var imageObjects: [WPESceneImageObject] = []
+        var modelDataObjects: [WPESceneModelDataObject] = []
         var scriptHostObjects: [WPESceneScriptHostObject] = []
         var transformHostObjects: [WPESceneTransformHostObject] = []
         var particleObjects: [WPESceneParticleObject] = []
@@ -314,6 +316,12 @@ public enum WPESceneDocumentParser {
             }
 
             if resolution.primary == .image,
+               !hasValue(entry, "image"),
+               let object = parseModelDataObject(entry, transform: transform,
+                                                 scriptOrigins: scriptResolvedOrigins,
+                                                 effectiveVisible: effectiveVisible) {
+                modelDataObjects.append(object)
+            } else if resolution.primary == .image,
                let object = parseImageObject(
                    entry,
                    transform: transform,
@@ -455,6 +463,7 @@ public enum WPESceneDocumentParser {
             cameraMotion: parseCameraMotion(rawObjects, scriptOrigins: scriptResolvedOrigins),
             general: general,
             imageObjects: imageObjects,
+            modelDataObjects: modelDataObjects,
             scriptHostObjects: scriptHostObjects,
             transformHostObjects: transformHostObjects,
             particleObjects: particleObjects,
@@ -873,7 +882,6 @@ public enum WPESceneDocumentParser {
                     includeNestedScriptProperties: false
                 )
                 appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
-                break
             }
         }
         return result
@@ -2101,6 +2109,33 @@ public enum WPESceneDocumentParser {
     }
 
     // MARK: - Image objects
+
+    /// Parses an already admitted literal createLayer object through the same numeric model/TRS path.
+    /// A layer configuration is not a scene document and has no camera/general envelope of its own.
+    public static func parseModelDataLayerConfiguration(_ object: [String: Any]) -> WPESceneModelDataObject? {
+        guard objectKindResolution(for: object).primary == .image, !hasValue(object, "image") else { return nil }
+        let transform = localTransform(in: object, scriptOrigins: [:])
+        return parseModelDataObject(object, transform: transform, scriptOrigins: [:], effectiveVisible: nil)
+    }
+
+    private static func parseModelDataObject(
+        _ dict: [String: Any], transform: SceneObjectTransform,
+        scriptOrigins: [String: SIMD3<Double>], effectiveVisible: Bool?
+    ) -> WPESceneModelDataObject? {
+        guard let number = dict["model"] as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let token = UInt32(exactly: number.doubleValue), let id = objectID(in: dict) else { return nil }
+        let local = localTransform(in: dict, scriptOrigins: scriptOrigins)
+        return WPESceneModelDataObject(
+            id: id, name: nonEmptyString(dict["name"]) ?? id, modelDataToken: token,
+            parentObjectID: parentID(in: dict), origin: transform.origin, scale: transform.scale,
+            angles: transform.angles, localOrigin: local.origin, localScale: local.scale, localAngles: local.angles,
+            visible: effectiveVisible ?? parseBool(dict["visible"]) ?? true,
+            parallaxDepth: parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"]),
+            usesPerspectiveProjection: parseBool(dict["perspective"]) ?? false,
+            attachment: nonEmptyString(dict["attachment"])
+        )
+    }
 
     private static func parseImageObject(
         _ dict: [String: Any],

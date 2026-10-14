@@ -31,9 +31,9 @@ public struct WPEPuppetVertexLayout: Hashable, Sendable {
         format & ~0x03FF_FFFF
     }
 
-    public init(format: UInt32) {
+    public init(format: UInt32, synthesizesMissingPosition: Bool = true) {
         self.format = format
-        hasSyntheticPosition = format & 0x10001 == 0
+        hasSyntheticPosition = synthesizesMissingPosition && format & 0x10001 == 0
         let effective = hasSyntheticPosition ? format | 1 : format
         var attributes: [WPEPuppetVertexAttribute] = []
         var offset = 0

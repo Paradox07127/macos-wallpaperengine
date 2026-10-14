@@ -17,6 +17,7 @@ public struct WPESceneDocument: Equatable, Sendable {
     public let general: WPESceneGeneral
     /// `var` so the renderer can append synthetic image layers from `textObjects` before the graph is built; nothing else mutates a parsed document.
     public var imageObjects: [WPESceneImageObject]
+    public let modelDataObjects: [WPESceneModelDataObject]
     public let scriptHostObjects: [WPESceneScriptHostObject]
     public let transformHostObjects: [WPESceneTransformHostObject]
     public let particleObjects: [WPESceneParticleObject]
@@ -44,6 +45,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         cameraMotion: WPESceneCameraMotion? = nil,
         general: WPESceneGeneral,
         imageObjects: [WPESceneImageObject],
+        modelDataObjects: [WPESceneModelDataObject] = [],
         scriptHostObjects: [WPESceneScriptHostObject] = [],
         transformHostObjects: [WPESceneTransformHostObject] = [],
         particleObjects: [WPESceneParticleObject] = [],
@@ -66,6 +68,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         self.cameraMotion = cameraMotion
         self.general = general
         self.imageObjects = imageObjects
+        self.modelDataObjects = modelDataObjects
         self.scriptHostObjects = scriptHostObjects
         self.transformHostObjects = transformHostObjects
         self.particleObjects = particleObjects

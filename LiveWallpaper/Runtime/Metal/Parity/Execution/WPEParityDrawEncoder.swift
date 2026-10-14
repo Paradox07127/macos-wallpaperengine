@@ -2,7 +2,7 @@
 import LiveWallpaperProWPE
 import Metal
 
-/// One draw, indexed with 16-bit indices when `indexBuffer` is set. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
+/// One draw, with its explicit native index width when `indexBuffer` is set. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
 /// material keys; textures and samplers are shared. Each stage packs only the names its own reflection declares.
 /// With a geometry-emulation pipeline the draw is a non-indexed point list, one vertex per particle.
 struct WPEParityDraw {
@@ -19,6 +19,8 @@ struct WPEParityDraw {
     var vertexCount: Int
     var indexBuffer: MTLBuffer?
     var indexCount = 0
+    /// Puppet/file MDLV remains R16; script ModelData can independently supply R32.
+    var indexType: MTLIndexType = .uint16
     /// The executor skips and counts this draw when the frame arena cannot hold its arguments, instead of failing
     /// the frame.
     var dropsWhenArenaIsFull = false
@@ -149,12 +151,12 @@ struct WPEParityDrawEncoder {
         }
         // IRMetalIndexToIRIndex: the Metal index type plus one.
         let indexType = draw.indexBuffer == nil
-            ? WPEParityMSCRuntime.nonIndexedDraw : UInt16(MTLIndexType.uint16.rawValue + 1)
+            ? WPEParityMSCRuntime.nonIndexedDraw : UInt16(draw.indexType.rawValue + 1)
         withUnsafeBytes(of: indexType) {
             encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: WPEParityMSCRuntime.uniformsBindPoint)
         }
         if let indexBuffer = draw.indexBuffer {
-            encoder.drawIndexedPrimitives(type: draw.primitiveType, indexCount: draw.indexCount, indexType: .uint16,
+            encoder.drawIndexedPrimitives(type: draw.primitiveType, indexCount: draw.indexCount, indexType: draw.indexType,
                                           indexBuffer: indexBuffer, indexBufferOffset: 0)
         } else {
             encoder.drawPrimitives(type: draw.primitiveType, vertexStart: draw.vertexStart,

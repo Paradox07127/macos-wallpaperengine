@@ -6,6 +6,7 @@ import JavaScriptCore
 public final class WPEParityScriptEngine {
     public enum Failure: Error, Equatable {
         case missingBaseClasses
+        case registeredAssetsNotPrepared([String])
     }
 
     public struct ConstantKey: Hashable, Sendable {
@@ -68,6 +69,7 @@ public final class WPEParityScriptEngine {
         /// Extend/replace registered descriptors by (owner, name), including computed flag-2 fields.
         public var propertyOverrides: [WPEParityScriptProperty]
         public var storage: Storage?
+        public var modelData: WPEParityScriptModelDataProvider?
         /// Prepares value-state only. The engine validates the returned config/identity before committing the
         /// candidate; this callback must not publish external resource side effects. Product resource preparation
         /// and retirement are not connected by this optional hook.
@@ -75,7 +77,7 @@ public final class WPEParityScriptEngine {
         /// Called at the deferred deletion phase, after that layer's destroy events.
         public var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
         /// Product admission for classes whose resource consumer can currently remove them.
-        public var canDestroyLayer: ((String) -> Bool)?
+        public var canDestroyLayer: ((String, UInt32?) -> Bool)?
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
         public var pauseVideoTexture: ((String) -> Bool)?
@@ -91,9 +93,10 @@ public final class WPEParityScriptEngine {
                     resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
                     fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:],
                     propertyOverrides: [WPEParityScriptProperty] = [], storage: Storage? = nil,
+                    modelData: WPEParityScriptModelDataProvider? = nil,
                     createLayer: ((String, inout WPEParitySceneState) -> CreatedLayer?)? = nil,
                     destroyLayer: ((String, inout WPEParitySceneState) -> Bool)? = nil,
-                    canDestroyLayer: ((String) -> Bool)? = nil,
+                    canDestroyLayer: ((String, UInt32?) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
                     pauseVideoTexture: ((String) -> Bool)? = nil,
                     executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
@@ -109,6 +112,7 @@ public final class WPEParityScriptEngine {
             self.fieldDefaults = fieldDefaults
             self.propertyOverrides = propertyOverrides
             self.storage = storage
+            self.modelData = modelData
             self.createLayer = createLayer
             self.destroyLayer = destroyLayer
             self.canDestroyLayer = canDestroyLayer
@@ -136,6 +140,23 @@ public final class WPEParityScriptEngine {
         }
     }
 
+    /// Actual binding identity, distinct from a reusable module filename shared by several objects.
+    public struct AssetContext: Equatable, Sendable {
+        public let bindingIndex: Int
+        public let objectID: String
+        public let propertyPath: String
+        public let modulePath: String
+        /// Temporary projection of the one Binding array, not an asset cache or additional owner.
+        public let registeredAssets: [RegisteredAsset]
+        public let assetsPrepared: Bool
+    }
+
+    public struct RegisteredAsset: Equatable, Sendable {
+        public let path: String
+        /// Strict native boolean byte. Its downstream meaning remains a separately verified loader contract.
+        public let flag: Bool
+    }
+
     /// A property script in binding order. A failed compile keeps its place with no exports (140175880.c:366-382).
     public struct Binding: Sendable {
         public let objectID: String
@@ -145,6 +166,15 @@ public final class WPEParityScriptEngine {
         public let name: String
         public let compiled: Bool
         public let exportBits: Int
+
+        public var assetContext: AssetContext {
+            AssetContext(bindingIndex: bindingIndex, objectID: objectID, propertyPath: path,
+                         modulePath: "scripts/\(name).js", registeredAssets: registeredAssets, assetsPrepared: assetsPrepared)
+        }
+
+        fileprivate let bindingIndex: Int
+        public fileprivate(set) var registeredAssets: [RegisteredAsset] = []
+        fileprivate var assetsPrepared = true
         fileprivate let script: Int
         fileprivate let userKeys: [String: [String]]
     }
@@ -198,6 +228,10 @@ public final class WPEParityScriptEngine {
     /// Rebound when a renderer takes over this engine; accepted calls belong to that consumer's queue.
     public var materialFunctionHandler: ((WPEParitySceneState.EffectKey, String) -> Void)?
 
+    /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
+    public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
+        -> (any WPEParityModelDataPreparedShape)?)?
+
     private let context: JSContext
     private let configuration: Configuration
     private var host: JSValue!
@@ -228,6 +262,7 @@ public final class WPEParityScriptEngine {
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
         materialFunctionHandler = configuration.executeMaterialFunction
+        modelDataAdmissionHandler = configuration.modelData?.admitShape
         context = JSContext()
         sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         capacity = 0
@@ -279,15 +314,35 @@ public final class WPEParityScriptEngine {
         return UnsafeMutableBufferPointer(start: audio + start, count: 3 * resolution)
     }
 
+    /// Runs the existing product loader once per unprepared binding. No VM or mutable State borrow spans await.
+    /// The caller keeps this engine on its owning actor and validates its existing load generation before attach.
+    public nonisolated(nonsending) func prepareRegisteredAssets(
+        using prepare: (AssetContext, [RegisteredAsset]) async throws -> Void
+    ) async throws {
+        for index in bindings.indices where bindings[index].compiled && !bindings[index].assetsPrepared {
+            try Task.checkCancellation()
+            try await prepare(bindings[index].assetContext, bindings[index].registeredAssets)
+            try Task.checkCancellation()
+            bindings[index].assetsPrepared = true
+        }
+    }
+
     /// Event 0 to every binding that exports `init`, once, after all objects loaded (140186c90.c:689-738).
-    public func start(state: inout WPEParitySceneState) {
-        guard !started else { return }
+    @discardableResult
+    public func start(state: inout WPEParitySceneState) -> Failure? {
+        guard !started else { return nil }
+        let pending = bindings.filter { $0.compiled && !$0.assetsPrepared }.flatMap { $0.registeredAssets.map(\.path) }
+        guard pending.isEmpty else {
+            configuration.log(2, "SceneScript dependencies were not prepared before init: \(pending.joined(separator: ", "))")
+            return .registeredAssetsNotPrepared(pending)
+        }
         started = true
         seedMissingFields(state: &state)
         run(state: &state) {
             count(.initialize)
             host.invokeMethod("init", withArguments: [0])
         }
+        return nil
     }
 
     /// One frame of the manager tick's script step (140171440.c:888-896): timers, then event 1 in binding order.
@@ -802,7 +857,9 @@ public final class WPEParityScriptEngine {
         let canDestroy: @convention(block) (Double) -> Bool = { [weak self] index in
             guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
                   configuration.destroyLayer != nil else { return false }
-            let admitted = configuration.canDestroyLayer?(layers[index].id) ?? true
+            let id = layers[index].id
+            let token = activeState?.pointee.object(id)?.modelDataToken
+            let admitted = configuration.canDestroyLayer?(id, token) ?? true
             if !admitted {
                 configuration.log(1, "destroyLayer is unsupported for this product resource consumer")
             }
@@ -870,6 +927,17 @@ public final class WPEParityScriptEngine {
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
+        let createModel: @convention(block) (JSValue, Double) -> JSValue? = { [weak self] input, binding in
+            self?.modelData(input, token: nil, replacing: false, bindingIndex: binding)
+        }
+        let updateModel: @convention(block) (Double, JSValue, Bool, Double) -> JSValue? = { [weak self] token, input, replacing, binding in
+            guard let token = UInt32(exactly: token) else { return nil }
+            return self?.modelData(input, token: token, replacing: replacing, bindingIndex: binding)
+        }
+        let releaseModel: @convention(block) (Double) -> Void = { [weak self] token in
+            guard let self, let token = UInt32(exactly: token), let state = activeState else { return }
+            state.pointee.releaseModelData(token)
+        }
         set("resolve", resolve)
         set("load", load)
         set("error", error)
@@ -878,6 +946,14 @@ public final class WPEParityScriptEngine {
         set("destroyed", destroyed)
         set("canDestroyLayer", canDestroy)
         set("sortLayer", sort)
+        let registerAsset: @convention(block) (Double, String, Bool) -> Bool = { [weak self] binding, path, flag in
+            guard let self, let index = Int(exactly: binding), bindings.indices.contains(index) else { return false }
+            guard !bindings[index].registeredAssets.contains(where: { $0.path.utf8.elementsEqual(path.utf8) }) else { return false }
+            bindings[index].registeredAssets.append(.init(path: path, flag: flag))
+            bindings[index].assetsPrepared = false
+            return true
+        }
+        set("registerAsset", registerAsset)
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
@@ -886,6 +962,9 @@ public final class WPEParityScriptEngine {
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
+        set("createModelData", createModel)
+        set("updateModelData", updateModel)
+        set("releaseModelData", releaseModel)
         set("storageEnabled", configuration.storage != nil)
         let storageGet: @convention(block) (String, Double) -> String? = { [weak self] key, location in
             self?.configuration.storage?.get(key, location == 0 ? .global : .screen)
@@ -978,6 +1057,29 @@ public final class WPEParityScriptEngine {
         return constants
     }
 
+    private func modelData(_ input: JSValue, token: UInt32?, replacing: Bool, bindingIndex: Double) -> JSValue? {
+        guard let provider = configuration.modelData, let admitShape = modelDataAdmissionHandler, let state = activeState else {
+            configuration.log(1, "ModelData is unsupported without the product resource owner")
+            return nil
+        }
+        flushWrites(to: &state.pointee)
+        // Getter failures remain ordinary catchable JS values; the converter must not count them as uncaught.
+        let exceptionHandler = context.exceptionHandler
+        context.exception = nil
+        context.exceptionHandler = { context, exception in context?.exception = exception }
+        defer { context.exceptionHandler = exceptionHandler }
+        let assetContext = Int(exactly: bindingIndex).flatMap { bindings.indices.contains($0) ? bindings[$0].assetContext : nil }
+        return WPEParityScriptModels.perform(input, token: token, assetContext: assetContext,
+                                             provider: provider) { patch in
+            // No State inout borrow spans VM getters/material conversion; the owned patch is now complete.
+            if let token {
+                try state.pointee.updateModelData(token, patch: patch, replacing: replacing, admitShape: admitShape)
+                return nil
+            }
+            return try state.pointee.createModelData(patch, admitShape: admitShape)
+        }
+    }
+
     private func createLayer(json: String) -> Double {
         guard let create = configuration.createLayer, let state = activeState else {
             configuration.log(1, "createLayer is unsupported without a product resource transaction")
@@ -992,11 +1094,28 @@ public final class WPEParityScriptEngine {
               state.pointee.index(of: created.id) == nil,
               candidate.index(of: created.id) != nil,
               candidate.ids.count == state.pointee.ids.count + 1,
-              state.pointee.ids.allSatisfy({ candidate.index(of: $0) != nil }),
+              Array(candidate.ids.dropLast()) == state.pointee.ids,
+              Array(candidate.objects.dropLast()) == state.pointee.objects,
+              Array(candidate.commonOrder.dropLast()) == state.pointee.commonOrder,
               !layers.contains(where: { $0.id == created.id }),
               hasCreatedMaterialConsumers(id: created.id, config: config, state: candidate) else {
             configuration.log(1, "createLayer candidate is invalid or unsupported; no state was committed")
             return -1
+        }
+        if case let .number(number)? = config["model"] {
+            guard let token = UInt32(exactly: number), candidate.modelData(token) != nil else {
+                configuration.log(1, "createLayer numeric model has no canonical prepared State consumer")
+                return -1
+            }
+            if candidate.object(created.id)?.modelDataToken == nil {
+                do { try candidate.retainModelData(token, for: created.id) } catch {
+                    configuration.log(1, "createLayer could not retain its canonical ModelData")
+                    return -1
+                }
+            } else if candidate.object(created.id)?.modelDataToken != token {
+                configuration.log(1, "createLayer candidate retained a different ModelData token")
+                return -1
+            }
         }
         state.pointee = candidate
         let kind: WPEParityScriptLayerKind = config["text"] != nil ? .text
@@ -1138,6 +1257,11 @@ public final class WPEParityScriptEngine {
         }
         let name = "\(className)_\(components.last ?? path)"
         let vars = resolved?["scriptproperties"].map(Self.jsonText) ?? NSNull() as Any
+        let bindingIndex = bindings.count
+        let assetContext = AssetContext(bindingIndex: bindingIndex, objectID: layerIndex < 0 ? "" : layers[layerIndex].id,
+                                        propertyPath: path, modulePath: "scripts/\(name).js", registeredAssets: [], assetsPrepared: true)
+        bindings.append(Binding(objectID: assetContext.objectID, path: path, name: name, compiled: false,
+                                exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
         let function = context.evaluateScript(WPEParityScriptModule.lower(script),
                                               withSourceURL: URL(string: "scripts/\(name).js"))
@@ -1145,15 +1269,18 @@ public final class WPEParityScriptEngine {
         var handle = -1
         if exceptionCount == before, let function, function.isObject {
             bits = Int(host.invokeMethod("addBinding", withArguments: [
-                function, name, "scripts/\(name).js", layerIndex, slot, descriptor.type.rawValue,
+                function, name, assetContext.modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
                 descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars,
             ]).toInt32())
             if bits >= 0 {
                 handle = bindings.filter { $0.script >= 0 }.count
             }
         }
-        bindings.append(Binding(objectID: layerIndex < 0 ? "" : layers[layerIndex].id, path: path, name: name, compiled: handle >= 0,
-                                exportBits: max(bits, 0), script: handle, userKeys: userKeys))
+        let registered = bindings[bindingIndex]
+        bindings[bindingIndex] = Binding(objectID: assetContext.objectID, path: path, name: name, compiled: handle >= 0,
+                                         exportBits: max(bits, 0), bindingIndex: bindingIndex,
+                                         registeredAssets: registered.registeredAssets, assetsPrepared: registered.assetsPrepared,
+                                         script: handle, userKeys: userKeys)
     }
 
     // MARK: JSON

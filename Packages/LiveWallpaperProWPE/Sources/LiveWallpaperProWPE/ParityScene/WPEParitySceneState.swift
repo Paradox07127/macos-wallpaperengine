@@ -40,6 +40,8 @@ public struct WPEParitySceneState: Sendable {
         public var visible: Bool
         /// Stable descriptor slots survive removal; the object no longer participates in the live scene.
         public fileprivate(set) var alive = true
+        /// One native model reference held by this admitted layer, independent of its script wrapper.
+        public internal(set) var modelDataToken: UInt32?
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
@@ -119,7 +121,7 @@ public struct WPEParitySceneState: Sendable {
         case string(String)
     }
 
-    public let ids: [String]
+    public private(set) var ids: [String]
     public private(set) var objects: [Object]
     /// Actual common-scene members in current order; transform-only parent placeholders are not members.
     /// Stable object/descriptor slots in `ids` never move when this order changes.
@@ -145,11 +147,61 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var scriptFieldsGeneration = 0
     private var scriptFieldGenerations = [Int](repeating: 0, count: Invalidation.allCases.count)
     private let lightIDs: Set<String>
-    private let indexByID: [String: Int]
-    private let parents: [Int?]
+    private var indexByID: [String: Int]
+    private var parents: [Int?]
     private var passes: [Pass]
     private var passIndexByKey: [WPEParityMaterialPassKey: Int]
     private let effectIndexByKey: [EffectKey: Int]
+    var modelDataValues: [UInt32: WPEParitySceneModelData] = [:]
+    var lastModelDataToken: UInt32 = 0
+    var modelDataRevision = 0
+
+    /// Appends one already parsed, admitted ModelData layer to a private candidate; all previous slots, values
+    /// and retirements survive. The existing Engine transaction publishes the candidate and config together.
+    /// Automatic identity, parent/placement/effect resources remain explicit product admission boundaries.
+    public mutating func appendModelDataLayer(_ descriptor: WPESceneModelDataObject) throws {
+        guard let number = UInt32(descriptor.id), number > 0, String(number) == descriptor.id else {
+            throw WPEParityModelDataFailure.safety("dynamic model layer requires an explicit positive UInt32 id")
+        }
+        guard indexByID[descriptor.id] == nil else {
+            throw WPEParityModelDataFailure.safety("dynamic model layer reuses a reserved stable id")
+        }
+        guard descriptor.parentObjectID == nil else {
+            throw WPEParityModelDataFailure.safety("dynamic ModelData parent adoption is not qualified")
+        }
+        guard var model = modelDataValues[descriptor.modelDataToken] else { throw WPEParityModelDataFailure.native(4) }
+        guard model.references < UInt32.max else { throw WPEParityModelDataFailure.safety("reference count overflow") }
+        let object = Object(origin: SIMD3(descriptor.localOrigin), scale: SIMD3(descriptor.localScale),
+                            angles: SIMD3(descriptor.localAngles), alpha: 1, color: .one, brightness: 1,
+                            visible: descriptor.visible, modelDataToken: descriptor.modelDataToken)
+        model.references += 1
+        modelDataValues[descriptor.modelDataToken] = model
+        indexByID[descriptor.id] = ids.count
+        ids.append(descriptor.id)
+        objects.append(object)
+        parents.append(nil)
+        commonOrder.append(descriptor.id)
+        membershipGeneration += 1
+        transformGeneration += 1
+        visibilityGeneration += 1
+    }
+
+    /// Called only after the existing layer transaction admits its referencing model layer.
+    public mutating func retainModelData(_ token: UInt32, for objectID: String) throws {
+        guard let index = index(of: objectID), objects[index].modelDataToken == nil,
+              var model = modelDataValues[token] else { throw WPEParityModelDataFailure.native(4) }
+        guard model.references < UInt32.max else { throw WPEParityModelDataFailure.safety("reference count overflow") }
+        model.references += 1
+        modelDataValues[token] = model
+        objects[index].modelDataToken = token
+    }
+
+    /// The actual class destructor/last-reader owner chooses this boundary; common removal alone does not.
+    public mutating func releaseLayerModelData(_ objectID: String) {
+        guard let index = indexByID[objectID], let token = objects[index].modelDataToken else { return }
+        objects[index].modelDataToken = nil
+        releaseModelData(token)
+    }
 
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
     /// object the parent chain names holds only its visible bit. `constants` seeds each material pass.
