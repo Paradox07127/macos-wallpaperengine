@@ -130,6 +130,8 @@ final class WPEParityFrameRenderer {
     private let rootCamera: WPEParityCamera
     private var camera: WPEParityCamera
     private var activeCameraID: String?
+    private var sceneRNG: WPEParityMT19937
+    private var cameraQueues: [String: WPEParityCameraQueue]
     /// The scene's SceneScript engine; nil for a scene without property scripts.
     private(set) var script: WPEParitySceneScript?
     private var media: WPESceneMediaEventMailbox?
@@ -300,7 +302,12 @@ final class WPEParityFrameRenderer {
 
     /// Nothing the scene loaded changes its frame: no keyframe animation, particle, video, puppet, camera path,
     /// camera shake or parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
-    let isStatic: Bool
+    private let hasStaticBase: Bool
+    var isStatic: Bool {
+        hasStaticBase && !cameraQueues.values.contains {
+            $0.hasEligibleItems && state.isAlive($0.objectID) && state.isVisible($0.objectID)
+        }
+    }
 
     var dedicatedTextureBytes: Int {
         targets.values.reduce(0) { $0 + $1.allocatedSize }
@@ -572,16 +579,33 @@ final class WPEParityFrameRenderer {
         self.particleObjects = particleObjects
         let prewarm = Self.particleFrames(particleObjects, state: plan.state, layers: planner.layers,
                                           camera: planner.layers.camera, time: 0, cursor: nil)
-        particles = WPEParityParticleFrame(
-            scene: WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
-                                          engineFlags: plan.scene.engineFlags, seed: particleSeed, frames: prewarm),
-            budget: particleBytes
-        )
+        let sceneRNG = previous?.sceneRNG ?? WPEParityMT19937(seed: particleSeed)
+        self.sceneRNG = sceneRNG
+        if let previous {
+            // Replanning must not prewarm new systems or consume the continuing scene random stream.
+            particles = previous.particles
+            cameraQueues = previous.cameraQueues
+        } else {
+            particles = WPEParityParticleFrame(
+                scene: WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
+                                              engineFlags: plan.scene.engineFlags, seed: particleSeed,
+                                              frames: prewarm, rng: sceneRNG), budget: particleBytes
+            )
+            var queues: [String: WPEParityCameraQueue] = [:]
+            for object in plan.document.resolvedObjectsJSON {
+                guard case .string? = object["camera"],
+                      let queue = try WPEParityCameraQueue(object: object, assets: plan.scene.assets,
+                                                          randomInteger: { sceneRNG.integer($0, $1) })
+                else { continue }
+                queues[queue.objectID] = queue
+            }
+            cameraQueues = queues
+        }
         let skinned = plan.scene.scene.objects.filter {
             $0.puppet?.skinned == true && plan.scene.puppetModels[$0.id] != nil
         }
         let document = plan.document
-        isStatic = animations.isEmpty && particleObjects.isEmpty
+        hasStaticBase = animations.isEmpty && particleObjects.isEmpty
             && !(mipRequested && plan.post.qualityMipMappedFrameBufferEnabled)
             && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
             && plan.scene.cameraPaths.paths.isEmpty && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
@@ -626,6 +650,8 @@ final class WPEParityFrameRenderer {
         renderVars = previous.renderVars
         puppets = previous.puppets
         particles = previous.particles
+        sceneRNG = previous.sceneRNG
+        cameraQueues = previous.cameraQueues
         arena.capacity = baseArenaBytes + particles.budget
         frameIndex = previous.frameIndex
         resourceBindings = try migratedBindings(from: previous)
@@ -795,6 +821,10 @@ final class WPEParityFrameRenderer {
         if let active {
             selected = selected.applyingObject(world: layers.world(active), objectID: active, document: plan.document,
                                                state: state, generalZoom: generalZoom)
+            if let queue = cameraQueues[active], queue.selectedIndex != nil {
+                selected.zoom = generalZoom * (queue.selectedZoom ?? 1)
+                if selected.scenePerspective != nil { selected.scenePerspective?.fov = queue.selectedFOV ?? 50 }
+            }
         } else {
             cameraPose = cameraPaths.advance(dt: dt)
             if let pose = cameraPose {
@@ -806,6 +836,28 @@ final class WPEParityFrameRenderer {
         }
         camera = selected
         activeCameraID = active
+    }
+
+    /// One common-scene sweep shares the native scene RNG across particle and camera queue consumers.
+    private func updateSceneObjects(camera: WPEParityCamera, timeOfDay: Float) {
+        particles.beginFrame()
+        _ = particles.scene.applyScriptInstanceFields(state: state)
+        let viewProjection = camera.projection * camera.view
+        for id in state.commonOrder {
+            if let queue = cameraQueues[id],
+               let output = queue.advance(dt: clock.frametime, world: layers.world(id),
+                                          orthographic: plan.scene.engineFlags.orthographicProjection, state: state) {
+                state.set(.origin, of: id, to: SIMD4(output.origin, 0))
+                state.set(.angles, of: id, to: SIMD4(output.angles, 0))
+                applyTransforms()
+            } else if particles.scene.liveCount(id) != nil {
+                let frame = state.isVisible(id)
+                    ? WPEParityParticleFrameContext(time: clock.timeUniform, cursor: pointer.position,
+                                                   viewProjection: viewProjection, objectMatrix: layers.world(id),
+                                                   timeOfDay: timeOfDay) : nil
+                particles.scene.advance(objectID: id, dt: clock.frametime, frame: frame)
+            }
+        }
     }
 
     private func applyLayerFields() {
@@ -982,6 +1034,8 @@ final class WPEParityFrameRenderer {
     /// `paused` ramps scene time down to a hold, and back up once it is false again.
     func encodeFrame(elapsed: Double, paused: Bool = false,
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
+        // Native object updates precede this frame's camera selection and matrix-stack publication.
+        let objectCamera = pathCamera.shaken(time: clock.timeUniform)
         clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused)
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
@@ -994,15 +1048,10 @@ final class WPEParityFrameRenderer {
         let scriptCursor = input.cursor * logicalSize / SIMD2(Float(backbuffer.width), Float(backbuffer.height))
         applyTransforms()
         applyLayerFields()
+        updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
         selectCamera(dt: clock.frametime)
         let fadeAlpha = cameraPaths.fadeAlpha
         let camera = pathCamera.shaken(time: clock.timeUniform)
-        particles.beginFrame()
-        _ = particles.scene.applyScriptInstanceFields(state: state)
-        particles.scene.advance(dt: clock.frametime, frames: Self.particleFrames(
-            particleObjects, state: state, layers: layers, camera: camera, time: clock.timeUniform,
-            cursor: pointer.position, timeOfDay: daytime
-        ))
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         if cameraParallax.enabled {
             parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
