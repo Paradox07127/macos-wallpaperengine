@@ -194,6 +194,8 @@ public enum WPEScenePropertyBindingTarget: Equatable, Sendable {
     case shaderUniform(objectID: String, effectID: String?, passID: Int?, name: String)
     case shaderCombo(objectID: String, effectID: String?, passID: Int?, name: String)
     case textureSlot(objectID: String, effectID: String?, passID: Int?, index: Int)
+    /// A TEXB condition observes the resource itself, independently of the draw or JSON material override.
+    case conditionalTexture(asset: String)
     case objectResource(objectID: String, field: String)
     /// User property injected into a SceneScript's `scriptProperties`. Keeping name + role prevents mistaking it for a direct visible/alpha binding.
     case scriptProperty(WPESceneScriptPropertyTarget)

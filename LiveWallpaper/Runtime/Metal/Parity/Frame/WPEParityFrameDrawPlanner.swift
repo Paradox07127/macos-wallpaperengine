@@ -346,6 +346,7 @@ struct WPEParityFrameDrawPlanner {
         let texture: MTLTexture
         let info: WPETexInfo?
         var sprites: [WPEParityFrameDrawPlan.SpriteStep] = []
+        var conditionalSelection: WPETexConditionalSelection?
     }
 
     /// TEXI flag 0x20: the first mip is a video stream (1400ec220.c:851).
@@ -371,6 +372,8 @@ struct WPEParityFrameDrawPlanner {
     /// The scene camera and every layer's world matrix.
     private(set) var layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
+    /// The same committed typed snapshot the Driver supplies, also used for assets first loaded by a later layout.
+    private var userProperties: WPESceneJSONValue
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
@@ -388,11 +391,12 @@ struct WPEParityFrameDrawPlanner {
     private(set) var texts: [String: WPEParitySceneText] = [:]
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan,
-         preservingVideoImages: [String: Image] = [:]) {
+         preservingVideoImages: [String: Image] = [:], userProperties: WPESceneJSONValue = .object([:])) {
         self.device = device
         self.factory = factory
         self.plan = plan
         assetImages = preservingVideoImages
+        self.userProperties = userProperties
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -414,6 +418,64 @@ struct WPEParityFrameDrawPlanner {
 
     var videoImages: [String: Image] {
         assetImages.filter { $0.value.info.map { $0.flags & Self.videoFlag != 0 } == true }
+    }
+
+    /// Derived from final observations on the existing asset owners. This is a view, not another watch registry.
+    var conditionalPropertyBindings: [String: [WPEScenePropertyBinding]] {
+        var result: [String: [WPEScenePropertyBinding]] = [:]
+        for asset in assetImages.keys.sorted() {
+            guard let selection = assetImages[asset]?.conditionalSelection else { continue }
+            for key in selection.observations.keys {
+                if let name = String(data: key, encoding: .utf8) {
+                    result[name, default: []].append(WPEScenePropertyBinding(
+                        propertyKey: name, target: .conditionalTexture(asset: asset), kind: .texture, action: .incremental
+                    ))
+                }
+            }
+        }
+        return result
+    }
+
+    /// Prepare immutable replacements against the new committed snapshot in a value copy. The renderer can
+    /// rebuild affected draws and adopt this planner plus imported bindings together, or keep its old valid
+    /// cohort on failure. That failure policy is a Mac boundary, not a claim about native late-load errors.
+    func preparingConditionalProperties(changed: WPESceneJSONValue, merged: WPESceneJSONValue)
+        throws(WPEParityFrameSkip) -> (planner: Self, affectedOperations: Set<Int>) {
+        var candidate = self
+        candidate.userProperties = merged
+        let names = Set(assetImages.compactMap { name, image in
+            image.conditionalSelection?.requiresReload(changedProperties: changed) == true ? name : nil
+        })
+        guard !names.isEmpty else { return (candidate, []) }
+        var replacements: [ObjectIdentifier: Image] = [:]
+        for name in names.sorted() {
+            guard let previous = assetImages[name] else { continue }
+            candidate.assetImages.removeValue(forKey: name)
+            let replacement = try candidate.assetImage(name)
+            replacements[ObjectIdentifier(previous.texture)] = replacement
+        }
+        var imported: Set<WPEResourceID> = []
+        for (id, old) in layerImageAssets {
+            if let replacement = replacements[ObjectIdentifier(old.texture)] {
+                candidate.layerImageAssets[id] = replacement
+                candidate.layerImages[id] = replacement.texture
+                imported.insert(id)
+            }
+        }
+        var affected: Set<Int> = []
+        for bindings in layout.bindings {
+            for (operation, binding) in bindings where binding.textures.values.contains(where: { source in
+                switch source {
+                case let .asset(name): names.contains(name)
+                case let .imported(id, name): imported.contains(id) || name.map(names.contains) == true
+                case let .resource(id): imported.contains(id)
+                case .textAtlas: false
+                }
+            }) {
+                affected.insert(operation)
+            }
+        }
+        return (candidate, affected)
     }
 
     /// Takes re-laid text layers and their atlases, uploading the atlases that changed; later plans of their draws
@@ -656,8 +718,8 @@ struct WPEParityFrameDrawPlanner {
                 layers: layers, objectID: draw.objectID,
                 kind: draw.source == .textClearAlpha ? .textClearAlpha
                     : draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
-                    SIMD2(Float($0.x), Float($0.y))
-                } ?? SIMD2(Float(color.width), Float(color.height)))
+                        SIMD2(Float($0.x), Float($0.y))
+                    } ?? SIMD2(Float(color.width), Float(color.height)))
                     : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
@@ -934,7 +996,7 @@ struct WPEParityFrameDrawPlanner {
             image = try videoImage(span, info: info, path: path)
         } else {
             do {
-                image = try Self.image(span, device: device)
+                image = try Self.image(span, device: device, userProperties: userProperties)
             } catch WPETexDecodeError.unsupportedAnimation {
                 throw .videoTexture(path)
             } catch {
@@ -967,11 +1029,12 @@ struct WPEParityFrameDrawPlanner {
 
     /// Keeps the authored channels, compression and mip chain. The loader owns the one-time TEX upload;
     /// this planner owns resource-key caching and turns its sprite metadata into draw steps.
-    static func image(_ span: WPEMappedByteSpan, device: MTLDevice) throws -> Image {
-        let loaded = try WPEParityTextureLoader.load(span: span, device: device)
+    static func image(_ span: WPEMappedByteSpan, device: MTLDevice,
+                      userProperties: WPESceneJSONValue? = nil) throws -> Image {
+        let loaded = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties)
         return Image(texture: loaded.texture, info: loaded.info, sprites: loaded.sprites.map {
             WPEParityFrameDrawPlan.SpriteStep(frame: $0.frame, texture: $0.texture, duration: $0.duration)
-        })
+        }, conditionalSelection: loaded.conditionalSelection)
     }
 
     /// Composites use the sampler WPE creates with them; images follow their TEXI flags.
