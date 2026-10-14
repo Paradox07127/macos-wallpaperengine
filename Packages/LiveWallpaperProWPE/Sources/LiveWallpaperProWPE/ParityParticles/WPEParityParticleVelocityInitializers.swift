@@ -12,13 +12,16 @@ extension WPEParityParticleSystem {
             delta = SIMD3(transformed.x, transformed.y, transformed.z)
         }
         let scale = rng.unit() * (maximum - minimum) + minimum
-        let value = delta * scale
+        velocity[slot] += Self.transformVelocity(delta * scale, by: birthBasis)
+    }
+
+    static func transformVelocity(_ value: SIMD3<Float>, by birthBasis: simd_float3x3) -> SIMD3<Float> {
         // 184440's actual ADDSS/ADDPS order, avoiding a second matrix or a guessed blend helper.
         let first = birthBasis.columns.0 * value.x
         let second = birthBasis.columns.1 * value.y
         let third = birthBasis.columns.2 * value.z
-        velocity[slot] += SIMD3((second.x + first.x) + third.x,
-                                (first.y + second.y) + third.y,
-                                (first.z + second.z) + third.z)
+        return SIMD3((second.x + first.x) + third.x,
+                     (first.y + second.y) + third.y,
+                     (first.z + second.z) + third.z)
     }
 }
