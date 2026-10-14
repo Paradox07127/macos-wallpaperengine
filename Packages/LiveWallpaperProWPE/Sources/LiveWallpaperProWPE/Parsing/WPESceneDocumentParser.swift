@@ -2555,14 +2555,15 @@ public enum WPESceneDocumentParser {
             }
             layers.append(WPESceneAnimationLayer(
                 id: id,
-                rate: parseDouble(dict["rate"]) ?? 0,
+                rate: parseDouble(dict["rate"]) ?? 1,
                 visible: parseBool(dict["visible"]) ?? true,
                 blend: parseDouble(dict["blend"]) ?? 1,
                 animation: animation,
                 additive: parseBool(dict["additive"]) ?? false,
                 blendIn: parseBool(dict["blendin"]) ?? false,
                 blendOut: parseBool(dict["blendout"]) ?? false,
-                blendTime: parseDouble(dict["blendtime"]) ?? 0
+                blendTime: parseDouble(dict["blendtime"]) ?? 0.5,
+                name: dict["name"] as? String ?? ""
             ))
         }
         return layers

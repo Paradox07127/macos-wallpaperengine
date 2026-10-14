@@ -89,6 +89,80 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         assertEqual(animator.palette[1], expected)
     }
 
+    func testAuthoredLayerDefaultsReachTheBonePalette() throws {
+        // Native 14026c680 initializes rate=1, blendtime=0.5; 1401730d0 only parses keys present in JSON.
+        let document = try ParityCameraFixture.document(json: """
+        {"objects":[{"id":1,"image":"models/puppet.json","animationlayers":[
+          {"id":42,"animation":7,"name":" idle ","blendin":true}]}]}
+        """)
+        let authored = try XCTUnwrap(document.imageObjects.first).animationLayers
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(frames: 2), layers: authored)
+        animator.advance(dt: 0.125)
+        XCTAssertEqual(animator.layers[0].name, " idle ", "names are not trimmed")
+        XCTAssertEqual(animator.layers[0].frame, 0.5, accuracy: 1e-6)
+        XCTAssertEqual(animator.layers[0].weight, 0.5, accuracy: 1e-6)
+        // At half a frame the sample rotates 45 degrees; blend-in weight halves that to 22.5 degrees.
+        let expected = translation(SIMD3(1, 2, 0)) * simd_float4x4(rotationZ(.pi / 8))
+            * translation(SIMD3(-1, -2, 0))
+        assertEqual(animator.palette[1], expected)
+    }
+
+    func testHostPlaybackControlsPreservePauseSeekAndNativeEndedQualification() {
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(mode: "single", frames: 2), layers: [layer(7)])
+        animator.advance(dt: 0.125)
+        let held = animator.palette
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .pause))
+        XCTAssertFalse(animator.layers[0].isPlaying)
+        animator.advance(dt: 0.5)
+        XCTAssertEqual(animator.layers[0].frame, 0.5)
+        assertEqual(animator.palette[1], held[1])
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(1.5)))
+        XCTAssertEqual(animator.layers[0].frame, 1.5)
+        assertEqual(animator.palette[1], held[1], "host writes wait for object evaluation")
+        animator.advance(dt: 0)
+        XCTAssertEqual(animator.layers[0].frame, 1.5)
+        XCTAssertTrue(animator.endedLayers.isEmpty)
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .play))
+        animator.advance(dt: 0.25)
+        XCTAssertEqual(animator.layers[0].frame, 2)
+        XCTAssertFalse(animator.layers[0].isPlaying)
+        XCTAssertEqual(animator.endedLayers, [0])
+        animator.advance(dt: 0.25)
+        XCTAssertTrue(animator.endedLayers.isEmpty, "a finished single only notifies once")
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .play))
+        XCTAssertEqual(animator.layers[0].frame, 0, "play restarts a finished single")
+        XCTAssertTrue(animator.layers[0].isPlaying)
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(1.5)))
+        animator.advance(dt: 0.25)
+        XCTAssertTrue(animator.layers[0].finished)
+        XCTAssertTrue(animator.endedLayers.isEmpty, "setFrame suppresses one completion check")
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .stop))
+        XCTAssertFalse(animator.layers[0].finished)
+        XCTAssertTrue(animator.layers[0].paused)
+        XCTAssertEqual(animator.layers[0].frame, 0)
+        animator.advance(dt: 0)
+        assertEqual(animator.palette[1], matrix_identity_float4x4)
+        XCTAssertFalse(animator.controlLayer(at: 99, action: .play))
+    }
+
+    func testHostLayerFieldsDeferEvaluationAndKeepPlaybackIndependentOfVisibility() {
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(frames: 2), layers: [layer(7)])
+        XCTAssertTrue(animator.updateLayer(at: 0, enabled: false, name: "hidden", additive: true,
+                                           blendIn: true, blendOut: true, blendTime: 0.25))
+        XCTAssertTrue(animator.layers[0].isPlaying, "native isPlaying ignores the visible descriptor")
+        animator.advance(dt: 0.25)
+        XCTAssertEqual(animator.layers[0].time, 0)
+        XCTAssertTrue(animator.updateLayer(at: 0, enabled: true, rate: 0, blend: 0.5,
+                                           additive: false, blendIn: false, blendOut: false))
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(1)))
+        animator.advance(dt: 0)
+        XCTAssertEqual(animator.layers[0].name, "hidden")
+        XCTAssertEqual(animator.layers[0].weight, 0.5)
+        let expected = translation(SIMD3(1, 2, 0)) * simd_float4x4(rotationZ(.pi / 4))
+            * translation(SIMD3(-1, -2, 0))
+        assertEqual(animator.palette[1], expected)
+    }
+
     func testChildPaletteFollowsNlerpBetweenKeys() {
         var animator = WPEParityPuppetAnimator(model: rotatingChild(), layers: [layer(7)])
         animator.advance(dt: 0.0625)

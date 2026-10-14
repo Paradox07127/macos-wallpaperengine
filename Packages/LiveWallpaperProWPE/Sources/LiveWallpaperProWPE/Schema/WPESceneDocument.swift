@@ -1689,6 +1689,7 @@ private extension Array {
 
 public struct WPESceneAnimationLayer: Equatable, Sendable, Identifiable {
     public let id: Int
+    public let name: String
     public let rate: Double
     public let visible: Bool
     public let blend: Double
@@ -1702,8 +1703,9 @@ public struct WPESceneAnimationLayer: Equatable, Sendable, Identifiable {
     public let blendTime: Double
 
     public init(id: Int, rate: Double, visible: Bool, blend: Double, animation: Int, additive: Bool = false,
-                blendIn: Bool = false, blendOut: Bool = false, blendTime: Double = 0) {
+                blendIn: Bool = false, blendOut: Bool = false, blendTime: Double = 0.5, name: String = "") {
         self.id = id
+        self.name = name
         self.rate = rate
         self.visible = visible
         self.blend = blend
