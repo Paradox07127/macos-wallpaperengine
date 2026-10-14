@@ -908,6 +908,8 @@ public struct WPEParityParticleSystem {
             applyCollisionPlane(field, slot: slot, weight: weight)
         case let .collisionSphere(field):
             applyCollisionSphere(field, slot: slot, weight: weight)
+        case .collisionBox:
+            break
         case let .remap(field):
             // [U] The blended variant (type 0x29) is not read; the weight is not applied.
             applyRemap(field, slot: slot, initializer: false)

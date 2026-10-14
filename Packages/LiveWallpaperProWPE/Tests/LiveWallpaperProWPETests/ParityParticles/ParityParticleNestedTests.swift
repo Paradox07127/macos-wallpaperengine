@@ -4,6 +4,34 @@ import simd
 import XCTest
 
 final class ParityParticleNestedTests: XCTestCase {
+    /// Original collisionbox case 0x17 is a no-op. Treating it as an unknown component incorrectly drops a
+    /// follow child's complete simulation and draw stream, even though its native collision record does nothing.
+    func testNativeCollisionBoxNoOpAdmitsTheActualFollowChild() throws {
+        let parent = ParityParticleTestSupport.json(#"{"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,"distancemin":"1 1 1","distancemax":"1 1 1"}],"initializer":[{"name":"lifetimerandom","min":10,"max":10}],"renderer":[],"children":[{"name":"child","type":"eventfollow"}]}"#)
+        func system(box: Bool) -> WPEParityParticleSystem {
+            let child = ParityParticleTestSupport.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,
+              "distancemin":"1 1 1","distancemax":"1 1 1"}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10}],
+             "operator":[\(box ? "{\"name\":\"collisionbox\",\"collisionbehavior\":\"delete\",\"flags\":3}" : "")],
+             "renderer":[{"name":"sprite"}]}
+            """)
+            return WPEParityParticleSystem(json: parent, rng: WPEParityMT19937(seed: 7),
+                                           resolveChild: { $0 == "child" ? child : nil })
+        }
+        var ordinary = system(box: false), box = system(box: true)
+        ordinary.advance(dt: 0.01)
+        box.advance(dt: 0.01)
+        let expected = try XCTUnwrap(ordinary.drawBatches(objectID: "5").first)
+        let actual = try XCTUnwrap(box.drawBatches(objectID: "5").first)
+        XCTAssertEqual(actual.key.path, [.eventGroup(0)])
+        XCTAssertEqual(actual.vertices.count, 1)
+        XCTAssertEqual(actual.vertices.bytes, expected.vertices.bytes)
+        XCTAssertEqual(box.eventChildren[0].first?.liveCount, 1)
+        XCTAssertEqual(box.rng.next(), ordinary.rng.next())
+        XCTAssertTrue(box.config.unsupportedChildren.isEmpty)
+    }
+
     /// Native 22ebe0/22f890 permit the root and ten descendants, including repeated resource paths.
     /// Exercise the public scene producer, actual simulation, prototype lookup and packed draw stream together.
     func testRepeatedStaticAndEventAssetsProduceEveryDepthThroughTen() throws {

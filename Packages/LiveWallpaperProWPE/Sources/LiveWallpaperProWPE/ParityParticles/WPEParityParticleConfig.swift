@@ -79,6 +79,8 @@ struct WPEParityParticleOperator: Equatable, Sendable {
         case reduceMovement(controlPoint: Int, inner: Float, outer: Float, reductionInner: Float, reductionDelta: Float)
         case collisionPlane(WPEParityParticleCollision)
         case collisionSphere(WPEParityParticleCollision)
+        /// Original operator type 23 immediately returns to the dispatch loop (23fbc0 case 0x17).
+        case collisionBox
         case remap(WPEParityParticleRemap)
         case inherit(WPEParityParticleInherit)
     }
@@ -439,6 +441,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             }
             let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
             kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
+        case "collisionbox":
+            kind = .collisionBox
         case "remapvalue":
             kind = .remap(WPEParityParticleRemap(fields, defaultInput: .lifetimeFraction))
         case "inheritvaluefromevent":
