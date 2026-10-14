@@ -51,18 +51,38 @@ extension WPEParitySceneDriverTests {
         }
         let resources: [String: Any] = [
             "models/queue-witness.json": ["material": "materials/queue-witness.json"],
-            "materials/queue-witness.json": ["passes": [["shader": "genericimage2", "textures": ["util/white"],
+            "materials/queue-witness.json": ["passes": [["shader": "genericimage2", "textures": ["queue-red"],
                                                           "blending": "normal", "cullmode": "nocull"]]],
+            "models/queue-parent.json": ["material": "materials/queue-parent.json"],
+            "materials/queue-parent.json": ["passes": [["shader": "genericimage2", "textures": ["queue-black"],
+                                                         "blending": "normal", "cullmode": "nocull"]]],
             "cameras/queue.json": ["paths": [item(0, length: 1, zoom: 1), item(4, length: 4, zoom: 2)]],
         ]
-        let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        func solidTexture(_ pixel: [UInt8]) -> Data {
+            var data = Data("TEXV0005\0TEXI0001\0".utf8)
+            func word(_ value: UInt32) {
+                withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+            }
+            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] { word(value) }
+            data.append(contentsOf: "TEXB0003\0".utf8)
+            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] { word(value) }
+            for _ in 0 ..< 4 { data.append(contentsOf: pixel) }
+            return data
+        }
+        var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        let red = solidTexture([255, 0, 0, 255])
+        let black = solidTexture([0, 0, 0, 255])
+        XCTAssertEqual(SHA256.hash(data: red).map { String(format: "%02x", $0) }.joined(), "9e441ee114603c6004c2f599e900ab89f93c3821dcbb227a58018cf38b9a4aea")
+        XCTAssertEqual(SHA256.hash(data: black).map { String(format: "%02x", $0) }.joined(), "12bb09f8d804b7bc680b12fe8be942cd2870213357a9db7ea5b4ff2f899df86a")
+        files["materials/queue-red.tex"] = red
+        files["materials/queue-black.tex"] = black
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 16, "height": 16], "clearcolor": "0 0 0"],
             "objects": [
-                ["id": 1, "image": "models/queue-witness.json", "origin": "12 8 0", "size": "2 2", "color": "1 0 0"],
-                ["id": 3, "image": "models/queue-witness.json", "origin": "0 0 0", "size": "1 1", "color": "0 0 0",
+                ["id": 1, "image": "models/queue-witness.json", "origin": "12 8 0", "size": "2 2"],
+                ["id": 3, "image": "models/queue-parent.json", "origin": "0 0 0", "size": "1 1",
                  "visible": ["value": true, "script": "let ticks = 0; export function update(value) { return ++ticks !== 4; }"]],
                 ["id": 2, "camera": "queue witness", "parent": 3, "path": "cameras/queue.json", "queuemode": "sequential"],
             ],

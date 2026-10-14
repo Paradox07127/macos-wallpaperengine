@@ -83,10 +83,24 @@ extension WPEParitySceneDriverTests {
         ]
         let resources: [String: Any] = [
             "models/event.json": ["material": "materials/event.json"],
-            "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["util/white"],
+            "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["event-witness"],
                                                   "blending": "translucent"]]],
         ]
-        let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        func solidTexture(_ pixel: [UInt8]) -> Data {
+            var data = Data("TEXV0005\0TEXI0001\0".utf8)
+            func word(_ value: UInt32) {
+                withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+            }
+            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] { word(value) }
+            data.append(contentsOf: "TEXB0003\0".utf8)
+            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] { word(value) }
+            for _ in 0 ..< 4 { data.append(contentsOf: pixel) }
+            return data
+        }
+        var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        let white = solidTexture([255, 255, 255, 255])
+        XCTAssertEqual(SHA256.hash(data: white).map { String(format: "%02x", $0) }.joined(), "69a03565ff1e6ec0c468d27e1faff5cff7d00f0fb6a97cd34c053cb5d49f8f3c")
+        files["materials/event-witness.tex"] = white
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
