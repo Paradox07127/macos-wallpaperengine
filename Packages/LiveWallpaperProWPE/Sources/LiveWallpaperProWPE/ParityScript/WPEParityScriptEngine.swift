@@ -146,6 +146,9 @@ public final class WPEParityScriptEngine {
         public let objectID: String
         public let propertyPath: String
         public let modulePath: String
+        /// Temporary projection of the one Binding array, not an asset cache or additional owner.
+        public let registeredAssets: [RegisteredAsset]
+        public let assetsPrepared: Bool
     }
 
     public struct RegisteredAsset: Equatable, Sendable {
@@ -163,7 +166,13 @@ public final class WPEParityScriptEngine {
         public let name: String
         public let compiled: Bool
         public let exportBits: Int
-        public let assetContext: AssetContext
+
+        public var assetContext: AssetContext {
+            AssetContext(bindingIndex: bindingIndex, objectID: objectID, propertyPath: path,
+                         modulePath: "scripts/\(name).js", registeredAssets: registeredAssets, assetsPrepared: assetsPrepared)
+        }
+
+        fileprivate let bindingIndex: Int
         public fileprivate(set) var registeredAssets: [RegisteredAsset] = []
         fileprivate var assetsPrepared = true
         fileprivate let script: Int
@@ -1085,7 +1094,9 @@ public final class WPEParityScriptEngine {
               state.pointee.index(of: created.id) == nil,
               candidate.index(of: created.id) != nil,
               candidate.ids.count == state.pointee.ids.count + 1,
-              state.pointee.ids.allSatisfy({ candidate.index(of: $0) != nil }),
+              Array(candidate.ids.dropLast()) == state.pointee.ids,
+              Array(candidate.objects.dropLast()) == state.pointee.objects,
+              Array(candidate.commonOrder.dropLast()) == state.pointee.commonOrder,
               !layers.contains(where: { $0.id == created.id }),
               hasCreatedMaterialConsumers(id: created.id, config: config, state: candidate) else {
             configuration.log(1, "createLayer candidate is invalid or unsupported; no state was committed")
@@ -1096,8 +1107,13 @@ public final class WPEParityScriptEngine {
                 configuration.log(1, "createLayer numeric model has no canonical prepared State consumer")
                 return -1
             }
-            do { try candidate.retainModelData(token, for: created.id) } catch {
-                configuration.log(1, "createLayer could not retain its canonical ModelData")
+            if candidate.object(created.id)?.modelDataToken == nil {
+                do { try candidate.retainModelData(token, for: created.id) } catch {
+                    configuration.log(1, "createLayer could not retain its canonical ModelData")
+                    return -1
+                }
+            } else if candidate.object(created.id)?.modelDataToken != token {
+                configuration.log(1, "createLayer candidate retained a different ModelData token")
                 return -1
             }
         }
@@ -1243,9 +1259,9 @@ public final class WPEParityScriptEngine {
         let vars = resolved?["scriptproperties"].map(Self.jsonText) ?? NSNull() as Any
         let bindingIndex = bindings.count
         let assetContext = AssetContext(bindingIndex: bindingIndex, objectID: layerIndex < 0 ? "" : layers[layerIndex].id,
-                                        propertyPath: path, modulePath: "scripts/\(name).js")
+                                        propertyPath: path, modulePath: "scripts/\(name).js", registeredAssets: [], assetsPrepared: true)
         bindings.append(Binding(objectID: assetContext.objectID, path: path, name: name, compiled: false,
-                                exportBits: 0, assetContext: assetContext, script: -1, userKeys: userKeys))
+                                exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
         let function = context.evaluateScript(WPEParityScriptModule.lower(script),
                                               withSourceURL: URL(string: "scripts/\(name).js"))
@@ -1262,7 +1278,7 @@ public final class WPEParityScriptEngine {
         }
         let registered = bindings[bindingIndex]
         bindings[bindingIndex] = Binding(objectID: assetContext.objectID, path: path, name: name, compiled: handle >= 0,
-                                         exportBits: max(bits, 0), assetContext: assetContext,
+                                         exportBits: max(bits, 0), bindingIndex: bindingIndex,
                                          registeredAssets: registered.registeredAssets, assetsPrepared: registered.assetsPrepared,
                                          script: handle, userKeys: userKeys)
     }
