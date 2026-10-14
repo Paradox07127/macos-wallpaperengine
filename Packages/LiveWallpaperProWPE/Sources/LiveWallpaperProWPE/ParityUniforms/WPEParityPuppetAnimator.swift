@@ -22,27 +22,71 @@ public struct WPEParityPuppetAnimator: Sendable {
         public let sceneIndex: Int
         public let animation: WPEPuppetAnimation
         public let mode: Mode
+        public fileprivate(set) var name: String
         public fileprivate(set) var enabled: Bool
         public fileprivate(set) var rate: Float
         public fileprivate(set) var blend: Float
-        public let additive: Bool
-        public let blendOut: Bool
-        public let blendTime: Float
+        public fileprivate(set) var additive: Bool
+        public fileprivate(set) var blendOut: Bool
+        public fileprivate(set) var blendTime: Float
         public let frameDuration: Float
         /// [I] frameCount × frameDuration.
         public let duration: Float
         /// Cleared once a non-single ramp completes (FUN_14026c8b0).
-        public private(set) var blendIn: Bool
+        public fileprivate(set) var blendIn: Bool
         public private(set) var time: Float = 0
         /// Mirror playback running backwards (flag bit 31).
         public private(set) var reversing = false
         /// Single playback reached the end (flag 0x40000000).
         public private(set) var finished = false
+        /// Playback pause is independent of the descriptor's `visible` bit (FUN_14026c450).
+        public private(set) var paused = false
         public private(set) var weight: Float = 0
+        private var frameAssigned = false
+
+        public var frame: Float { time / frameDuration }
+        public var fps: Float { 1 / frameDuration }
+        /// FUN_14026c480 tests only the paused/finished flags, including when `visible` is false.
+        public var isPlaying: Bool { !paused && !finished }
+
+        fileprivate mutating func control(_ action: Control) {
+            switch action {
+            case .play:
+                if finished { time = 0 }
+                finished = false
+                paused = false
+            case .pause:
+                paused = true
+            case .stop:
+                time = 0
+                paused = true
+                finished = false
+                reversing = false
+            case let .setFrame(frame):
+                time = frameDuration * frame
+                frameAssigned = true
+            }
+        }
+
+        /// The object update qualifies the ended notification using the flags from before the step. Seeking
+        /// suppresses that notification once, even when the sought frame wraps or reaches a single's end.
+        fileprivate mutating func advance(_ delta: Float) -> Bool {
+            let canEnd = !paused && !finished && !frameAssigned
+            let previousTime = time, previousReversing = reversing
+            step(delta)
+            frameAssigned = false
+            updateWeight()
+            guard canEnd else { return false }
+            switch mode {
+            case .loop: return time < previousTime
+            case .mirror: return reversing != previousReversing
+            case .single: return finished
+            }
+        }
 
         /// FUN_1401a9f60; a rate ≤ 0 passes through unchanged: 0 holds, negative runs backwards.
         mutating func step(_ delta: Float) {
-            guard !finished, !(mode == .single && duration <= time), duration > 0 else { return }
+            guard !paused, !finished, !(mode == .single && duration <= time), duration > 0 else { return }
             time += reversing ? -delta : delta
             switch mode {
             case .single:
@@ -86,6 +130,12 @@ public struct WPEParityPuppetAnimator: Sendable {
         }
     }
 
+    /// The native IAnimationLayer methods mutate playback state; the next object update evaluates its pose.
+    public enum Control: Sendable, Equatable {
+        case play, pause, stop
+        case setFrame(Float)
+    }
+
     struct Pose {
         var translation: SIMD3<Float>
         var rotation: simd_quatf
@@ -106,6 +156,8 @@ public struct WPEParityPuppetAnimator: Sendable {
     public private(set) var palette: [simd_float4x4] = []
     /// This frame's world matrix per MDLS bone (puppet+0x2c8), the parent matrix attachments compose with.
     public private(set) var boneWorld: [simd_float4x4] = []
+    /// Authored layer identities whose native ended condition fired in the last object update, in layer order.
+    public private(set) var endedLayers: [Int] = []
     private let parents: [Int?]
     private let restLocal: [simd_float4x4]
     /// puppet+0x230: each rest local split into T, R, S; the first layer's base and every additive reference.
@@ -121,9 +173,10 @@ public struct WPEParityPuppetAnimator: Sendable {
                 return nil
             }
             let frameDuration = 1 / animation.fps
-            var layer = Layer(id: scene.id, sceneIndex: index, animation: animation, mode: Mode(animation.mode),
+            let mode = Mode(animation.mode)
+            var layer = Layer(id: scene.id, sceneIndex: index, animation: animation, mode: mode, name: scene.name,
                               enabled: scene.visible, rate: Float(scene.rate),
-                              blend: Float(scene.blend), additive: scene.additive, blendOut: scene.blendOut,
+                              blend: Float(scene.blend), additive: scene.additive, blendOut: mode == .single && scene.blendOut,
                               blendTime: Float(scene.blendTime), frameDuration: frameDuration,
                               duration: Float(animation.frameCount) * frameDuration, blendIn: scene.blendIn)
             layer.updateWeight()
@@ -142,9 +195,11 @@ public struct WPEParityPuppetAnimator: Sendable {
     }
 
     public mutating func advance(dt: Double) {
+        endedLayers.removeAll(keepingCapacity: true)
         for index in layers.indices where layers[index].enabled {
-            layers[index].step(Float(dt) * layers[index].rate)
-            layers[index].updateWeight()
+            if layers[index].advance(Float(dt) * layers[index].rate) {
+                endedLayers.append(layers[index].sceneIndex)
+            }
         }
         evaluate()
     }
@@ -153,7 +208,9 @@ public struct WPEParityPuppetAnimator: Sendable {
     /// normal evaluation boundary. Disabled layers keep their playback cursor instead of being re-created.
     @discardableResult
     public mutating func updateLayer(at sceneIndex: Int, enabled: Bool? = nil,
-                                     rate: Float? = nil, blend: Float? = nil) -> Bool {
+                                     rate: Float? = nil, blend: Float? = nil, name: String? = nil,
+                                     additive: Bool? = nil, blendIn: Bool? = nil, blendOut: Bool? = nil,
+                                     blendTime: Float? = nil) -> Bool {
         guard let index = layers.firstIndex(where: { $0.sceneIndex == sceneIndex }) else { return false }
         if let enabled {
             layers[index].enabled = enabled
@@ -164,8 +221,18 @@ public struct WPEParityPuppetAnimator: Sendable {
         if let blend {
             layers[index].blend = blend
         }
-        layers[index].updateWeight()
-        evaluate()
+        if let name { layers[index].name = name }
+        if let additive { layers[index].additive = additive }
+        if let blendIn { layers[index].blendIn = blendIn }
+        if let blendOut { layers[index].blendOut = blendOut }
+        if let blendTime { layers[index].blendTime = blendTime }
+        return true
+    }
+
+    @discardableResult
+    public mutating func controlLayer(at sceneIndex: Int, action: Control) -> Bool {
+        guard let index = layers.firstIndex(where: { $0.sceneIndex == sceneIndex }) else { return false }
+        layers[index].control(action)
         return true
     }
 
