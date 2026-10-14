@@ -52,6 +52,12 @@ public final class WPEParityFontFace {
     struct LayoutGlyph {
         let box: WPEParityGlyphBox
         let isColor: Bool
+        let quadPadding: Float
+    }
+
+    private struct LayoutKey: Hashable {
+        let glyph: UInt32
+        let mode: WPEParityTextGlyphMode
     }
 
     public let pointSize: Float
@@ -66,11 +72,13 @@ public final class WPEParityFontFace {
     let font: OpaquePointer
     private let library: WPEParityFreeTypeLibrary
     private var boxes: [UInt32: WPEParityGlyphBox?] = [:]
-    private var layoutGlyphs: [UInt32: LayoutGlyph?] = [:]
+    private var layoutGlyphs: [LayoutKey: LayoutGlyph?] = [:]
     /// Renders layout made that no atlas has taken yet.
     private var unpackedBitmaps: [UInt32: WPEParityGlyphBitmap] = [:]
     /// FT_LOAD_RENDER calls so far.
     private(set) var renders = 0
+
+    var isColorFace: Bool { face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0 }
 
     /// Opens face `index` from `bytes`, or from `path` when `bytes` is nil.
     static func open(_ library: WPEParityFreeTypeLibrary, bytes: WPEParityFontBytes?, path: String?,
@@ -149,8 +157,8 @@ public final class WPEParityFontFace {
         unpackedBitmaps.removeValue(forKey: glyph) ?? render(glyph)
     }
 
-    /// A candidate native field, produced in this face's existing serial owner. Ordinary layout/atlas consumers
-    /// keep using rasterize until the same-call Windows input/field qualification and material transaction pass.
+    /// A native field produced in this face's existing serial owner. The explicitly prepared mono planner
+    /// consumes it only at a missing atlas entry; ordinary bitmap consumers keep using rasterize.
     /// Captured stages are y-up; bitmap rows are top-first RGBA with no BGRA channel swap.
     public func glyphField(_ glyph: UInt32, captureStages: Bool = false) -> WPEParityGlyphField? {
         let hasColor = face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0
@@ -188,9 +196,28 @@ public final class WPEParityFontFace {
     }
 
     /// What layout needs from the atlas: whether the glyph renders at all (WPE drops it otherwise) and in which list.
-    func layoutGlyph(_ glyph: UInt32) -> LayoutGlyph? {
-        if let cached = layoutGlyphs[glyph] {
+    func layoutGlyph(_ glyph: UInt32, mode: WPEParityTextGlyphMode = .bitmap) -> LayoutGlyph? {
+        let key = LayoutKey(glyph: glyph, mode: mode)
+        if let cached = layoutGlyphs[key] {
             return cached
+        }
+        if mode == .distanceField {
+            // Metadata must be qualified for NO_BITMAP, not reused from a rendered bitmap slot. Fields are
+            // generated only if the shared atlas lacks the entry; no distance bitmap cache is added here.
+            let prepared: LayoutGlyph?
+            if isColorFace {
+                // Preserve real classification so the planner can reject the entire unpaired COLOR update
+                // before releasing its previous references. Do not silently drop it into the mono list.
+                prepared = layoutGlyph(glyph, mode: .bitmap)
+            } else {
+                prepared = glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: false, quadPadding: 0) }
+            }
+            let entry = prepared.map {
+                LayoutGlyph(box: $0.box, isColor: $0.isColor,
+                            quadPadding: Float(max(face.pointee.size.pointee.metrics.y_ppem, 1)) * 12 / 32)
+            }
+            layoutGlyphs[key] = entry
+            return entry
         }
         let bitmap = render(glyph)
         let entry = bitmap.flatMap { bitmap -> LayoutGlyph? in
@@ -202,9 +229,9 @@ public final class WPEParityFontFace {
                                               xMax: slot.bitmap_left + Int32(bitmap.width),
                                               yMax: slot.bitmap_top)
             let box = bitmap.pixelMode == .bgra ? bitmapBox : glyphBox(glyph)
-            return box.map { LayoutGlyph(box: $0, isColor: bitmap.pixelMode == .bgra) }
+            return box.map { LayoutGlyph(box: $0, isColor: bitmap.pixelMode == .bgra, quadPadding: 0) }
         }
-        layoutGlyphs[glyph] = entry
+        layoutGlyphs[key] = entry
         if entry != nil {
             unpackedBitmaps[glyph] = bitmap
         }

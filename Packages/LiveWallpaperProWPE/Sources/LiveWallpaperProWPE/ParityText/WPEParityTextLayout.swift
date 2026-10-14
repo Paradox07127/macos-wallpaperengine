@@ -30,6 +30,8 @@ public struct WPEParityTextLayoutInput: Equatable, Sendable {
     public var verticalAlign: WPEParityTextVerticalAlign
     /// Effect count ≥ 1, bit4 or opaquebackground: only then does the padding widen the FBO.
     public var appliesPadding: Bool
+    /// Actual prepared draw mode, supplied only after the caller admits the matching font material.
+    public var glyphMode: WPEParityTextGlyphMode
 
     public init(
         text: String,
@@ -44,7 +46,8 @@ public struct WPEParityTextLayoutInput: Equatable, Sendable {
         blockAlign: Bool = false,
         horizontalAlign: WPEParityTextHorizontalAlign = .center,
         verticalAlign: WPEParityTextVerticalAlign = .center,
-        appliesPadding: Bool = false
+        appliesPadding: Bool = false,
+        glyphMode: WPEParityTextGlyphMode = .bitmap
     ) {
         self.text = text
         self.fontPath = fontPath
@@ -59,6 +62,7 @@ public struct WPEParityTextLayoutInput: Equatable, Sendable {
         self.horizontalAlign = horizontalAlign
         self.verticalAlign = verticalAlign
         self.appliesPadding = appliesPadding
+        self.glyphMode = glyphMode
     }
 }
 
@@ -112,6 +116,7 @@ public struct WPEParityTextMesh: Hashable, Sendable {
     public var lineHeight: Float
     public var lineCount: Int
     public var pointSize: Float
+    public var glyphMode: WPEParityTextGlyphMode = .bitmap
 }
 
 public struct WPEParityTextLayout: Hashable, Sendable {
@@ -182,6 +187,7 @@ private struct WPEParityTextLayouter {
         var y0: Float
         var x1: Float
         var y1: Float
+        var quadPadding: Float
     }
 
     private struct Run {
@@ -313,7 +319,8 @@ private struct WPEParityTextLayouter {
             top: max(ascender, top),
             lineHeight: lineHeight,
             lineCount: laid.count,
-            pointSize: chain.pointSize
+            pointSize: chain.pointSize,
+            glyphMode: input.glyphMode
         )
         var lineY: Float = 0
         for line in laid {
@@ -325,12 +332,15 @@ private struct WPEParityTextLayouter {
             var pen: Float = 0
             for glyph in line.runs.flatMap(\.glyphs) {
                 let key = UInt32(glyph.faceIndex) << 24 | glyph.gid
-                let x0 = pen + glyph.x0 + offset
-                let x1 = pen + glyph.x1 + offset
+                // 1401b0410 expands only the written quad, after measuring/wrapping unexpanded ink.
+                let x0 = ((pen + glyph.x0) - glyph.quadPadding) + offset
+                let x1 = pen + glyph.x1 + glyph.quadPadding + offset
+                let top = lineY + glyph.y1 + glyph.quadPadding
+                let bottom = (lineY + glyph.y0) - glyph.quadPadding
                 if glyph.isColor {
-                    mesh.color.appendQuad(key: key, x0: x0, x1: x1, top: lineY + glyph.y1, bottom: lineY + glyph.y0)
+                    mesh.color.appendQuad(key: key, x0: x0, x1: x1, top: top, bottom: bottom)
                 } else {
-                    mesh.mono.appendQuad(key: key, x0: x0, x1: x1, top: lineY + glyph.y1, bottom: lineY + glyph.y0)
+                    mesh.mono.appendQuad(key: key, x0: x0, x1: x1, top: top, bottom: bottom)
                 }
                 pen += glyph.advance
             }
@@ -352,7 +362,7 @@ private struct WPEParityTextLayouter {
             let run = runs[runIndex]
             let face = chain.faces[run.faceIndex]
             for (info, position) in shape(run) {
-                guard info.codepoint != 0, let rendered = face.layoutGlyph(info.codepoint) else { continue }
+                guard info.codepoint != 0, let rendered = face.layoutGlyph(info.codepoint, mode: input.glyphMode) else { continue }
                 let xOffset = position.x_offset >> 6
                 let yOffset = position.y_offset >> 6
                 let glyph = Glyph(
@@ -367,7 +377,8 @@ private struct WPEParityTextLayouter {
                     x0: Float(rendered.box.xMin + xOffset),
                     y0: Float(rendered.box.yMin + yOffset),
                     x1: Float(rendered.box.xMax + xOffset),
-                    y1: Float(rendered.box.yMax + yOffset)
+                    y1: Float(rendered.box.yMax + yOffset),
+                    quadPadding: rendered.quadPadding
                 )
                 if input.maxWidth > 0, lineGlyphs != 0, !Self.isBlank(glyph.codepoint), glyph.cluster != lastCluster,
                    input.maxWidth < glyph.x1 + pen {
@@ -448,7 +459,7 @@ private struct WPEParityTextLayouter {
         for run in splitRuns(text) {
             let face = chain.faces[run.faceIndex]
             for (info, position) in shape(run) {
-                guard let box = face.layoutGlyph(info.codepoint)?.box else { continue }
+                guard let box = face.layoutGlyph(info.codepoint, mode: input.glyphMode)?.box else { continue }
                 right = Float(position.x_offset >> 6) + pen + Float(box.xMax)
                 pen += Float(position.x_advance >> 6)
             }

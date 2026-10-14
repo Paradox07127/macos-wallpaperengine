@@ -10,8 +10,14 @@ public struct WPEParityTextRelayoutDelta: Sendable {
                 [text.layout.mesh != nil, !(text.layout.mesh?.mono.glyphKeys.isEmpty ?? true),
                  !(text.layout.mesh?.color.glyphKeys.isEmpty ?? true)]
             }
+            func glyphCombos(_ text: WPEParitySceneText) -> [String: Int]? {
+                guard let mesh = text.layout.mesh, mesh.glyphMode == .distanceField else { return [:] }
+                return WPEParityTextDrawParameters(object: text.object, pointSize: mesh.pointSize)?.combos
+            }
             let throughFBO = current.effectCount > 0 || current.object.composesThroughPassthrough
             return glyphLists(previous) != glyphLists(current)
+                || previous.layout.mesh?.glyphMode != current.layout.mesh?.glyphMode
+                || glyphCombos(previous) != glyphCombos(current)
                 || previous.object.opaqueBackground != current.object.opaqueBackground
                 || previous.object.colorBlendMode != current.object.colorBlendMode
                 || previous.depthMaterials != current.depthMaterials

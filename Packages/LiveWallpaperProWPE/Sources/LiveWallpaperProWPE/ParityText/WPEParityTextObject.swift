@@ -133,7 +133,7 @@ public struct WPEParityTextObject: Hashable, Sendable {
         colorBlendMode != 0 && colorBlendMode != 31
     }
 
-    private var usesGlyphEffects: Bool {
+    public var usesGlyphEffects: Bool {
         msdf || outline || blur || dropShadow
     }
 

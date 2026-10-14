@@ -1,5 +1,5 @@
-/// Lays out text objects and packs their glyphs into one atlas instance per font and point size, shared across text
-/// objects as WPE shares them (1401b0410.c:274-349). Holds FreeType objects: one owner at a time.
+/// Lays out text and packs glyphs through one atlas/ref owner: bitmap keys include point size, prepared distance
+/// keys share the font (1401b0410.c:274-349). FreeType faces retain actual sizes and one serial owner.
 public final class WPEParityTextPlanner {
     private let fonts: WPEParityFontLibrary
     /// Keyed by `WPEParityGlyphAtlasInstance.key`; whoever uploads them clears their dirty state.
@@ -22,8 +22,11 @@ public final class WPEParityTextPlanner {
     }
 
     /// The layout of `object` without packing its glyphs.
-    public func layout(_ object: WPEParityTextObject, effectCount: Int) -> WPEParityTextLayout {
-        WPEParityTextLayoutEngine.layout(object.layoutInput(effectCount: effectCount), fonts: fonts)
+    public func layout(_ object: WPEParityTextObject, effectCount: Int,
+                       glyphMode: WPEParityTextGlyphMode = .bitmap) -> WPEParityTextLayout {
+        var input = object.layoutInput(effectCount: effectCount)
+        input.glyphMode = glyphMode
+        return WPEParityTextLayoutEngine.layout(input, fonts: fonts)
     }
 
     /// Takes over `layout`, planned for `objectID` against `atlases`, whose glyph references it already holds.
@@ -34,15 +37,53 @@ public final class WPEParityTextPlanner {
     /// The layout of `object` with every quad's UVs taken from its atlas instance, and that instance's key. Glyphs
     /// already in the atlas are not rasterised again.
     public func plan(_ object: WPEParityTextObject, effectCount: Int) -> (layout: WPEParityTextLayout, atlasKey: String) {
-        var layout = layout(object, effectCount: effectCount)
+        pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap)
+    }
+
+    /// Explicit preparation for a caller that will atomically admit the matching font PSO, constants and
+    /// texture binding. The existing pipeline does not enable this merely because JSON requests MSDF.
+    /// Unsupported COLOR/zero-area inputs fail before releasing previous references or changing atlases.
+    public func plan(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode)
+        throws -> (layout: WPEParityTextLayout, atlasKey: String) {
+        if glyphMode == .distanceField, !object.usesGlyphEffects {
+            throw WPEParityTextPreparationError.distanceFieldNotRequested
+        }
+        if glyphMode == .distanceField,
+           WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) == nil {
+            throw WPEParityTextPreparationError.nonfiniteDrawParameters
+        }
+        let layout = layout(object, effectCount: effectCount, glyphMode: glyphMode)
+        if glyphMode == .distanceField, let mesh = layout.mesh {
+            guard mesh.color.glyphKeys.isEmpty else { throw WPEParityTextPreparationError.colorRequiresPairedAtlas }
+            let chain = fonts.chain(fontPath: object.font, pointSize: mesh.pointSize)
+            for key in Set(mesh.mono.glyphKeys) {
+                let index = Int(key >> 24)
+                if index < chain.faces.count, chain.faces[index].isColorFace {
+                    throw WPEParityTextPreparationError.colorRequiresPairedAtlas
+                }
+                guard index < chain.faces.count,
+                      let box = chain.faces[index].layoutGlyph(key & 0xFFFFFF, mode: .distanceField)?.box,
+                      box.xMax > box.xMin, box.yMax > box.yMin else {
+                    throw WPEParityTextPreparationError.zeroAreaDistanceGlyph
+                }
+            }
+        }
+        return pack(object, layout: layout, glyphMode: glyphMode)
+    }
+
+    private func pack(_ object: WPEParityTextObject, layout: WPEParityTextLayout,
+                      glyphMode: WPEParityTextGlyphMode) -> (layout: WPEParityTextLayout, atlasKey: String) {
+        var layout = layout
         let pointSize = layout.mesh?.pointSize ?? WPEParityFontLibrary.clampedPointSize(object.pointSize)
-        let key = WPEParityGlyphAtlasInstance.key(fontPath: object.font, pointSize: pointSize)
+        let key = WPEParityGlyphAtlasInstance.key(fontPath: object.font, pointSize: pointSize, glyphMode: glyphMode)
         // Release against the stored instance before copying it. Releasing the dictionary after the copy would
         // be lost when the same-key instance is written back. Empty text must release its previous mesh too.
         release(objectID: object.id)
         guard var mesh = layout.mesh else { return (layout, key) }
         let chain = fonts.chain(fontPath: object.font, pointSize: pointSize)
-        var instance = atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize)
+        var instance = atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
+                                                                 glyphMode: glyphMode)
+        precondition(instance.glyphMode == glyphMode)
         let mono = Self.pack(mesh.mono, .mono, chain: chain, into: &instance)
         let color = Self.pack(mesh.color, .color, chain: chain, into: &instance)
         mesh.mono.removeQuads(mono.skipped)
@@ -108,12 +149,26 @@ public final class WPEParityTextPlanner {
             for (quad, key) in glyphs.glyphKeys.enumerated() {
                 guard entry(key, in: list, instance: instance) == nil else { continue }
                 let face = Int(key >> 24)
-                guard face < chain.faces.count, let bitmap = chain.faces[face].rasterize(key & 0xFFFFFF),
-                      (bitmap.pixelMode == .bgra) == (list == .color) else {
+                guard face < chain.faces.count else {
                     skipped.insert(quad)
                     continue
                 }
-                if instance.insert(key: key, bitmap: bitmap) == nil {
+                let inserted: Bool
+                if instance.glyphMode == .distanceField {
+                    guard list == .mono, let field = chain.faces[face].glyphField(key & 0xFFFFFF), !field.isColor else {
+                        skipped.insert(quad)
+                        continue
+                    }
+                    inserted = instance.insertDistanceField(key: key, field: field) != nil
+                } else {
+                    guard let bitmap = chain.faces[face].rasterize(key & 0xFFFFFF),
+                          (bitmap.pixelMode == .bgra) == (list == .color) else {
+                        skipped.insert(quad)
+                        continue
+                    }
+                    inserted = instance.insert(key: key, bitmap: bitmap) != nil
+                }
+                if !inserted {
                     skipped.insert(quad)
                     if round == 0 {
                         full = true
