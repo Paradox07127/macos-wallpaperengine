@@ -1,5 +1,6 @@
 #if !LITE_BUILD && DEBUG
 import CoreGraphics
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
@@ -209,6 +210,106 @@ extension WPEParitySceneDriverTests {
                 }
             } else {
                 XCTAssertNotNil(renderer.state.object("20"))
+            }
+        }
+    }
+
+    @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
+        // The ordinary helper below must use these actual bundled inputs; no environment fallback is admitted.
+        for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
+                    "TEST_RUNNER_WPE_SHADERC", "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"] {
+            XCTAssertNil(ProcessInfo.processInfo.environment[key], key)
+            _ = try XCTUnwrap(ProcessInfo.processInfo.environment[key] == nil ? true : nil, key)
+        }
+        let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
+        let components = ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
+        let hashes = try components.map { path in
+            let url = contents.appending(path: path).resolvingSymlinksInPath()
+            _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil, "bundled \(path)")
+            return SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        }
+        let compiler = try WPEParityShaderToolchain.makeCompiler().get()
+        XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
+        let (_, assets) = try sceneInputs()
+        for (path, expected) in [
+            ("models/util/solidlayer.json", "a39818343c99fbff21b3a21b962871618c63c0a9257cf944dc09d20d54e3f5ea"),
+            ("materials/util/solidlayer.json", "2bbc99c15f38041dfb636b4fb8afe975de500c3ad4eb5bd09b616564d46c7b59"),
+            ("shaders/flat.vert", "3659d0455c48d9c57b329675c42ce0e7f76628865bc2ce7c8452e1b63fdb9805"),
+            ("shaders/flat.frag", "7e0503a1821089475b884e4e8b0fb1987108f7d00c5cb353da7695eac7796477"),
+            ("materials/util/white.tex", "ac8a6c0726bf5744e816300278cf42bbe660ea885088e77bbbfb136725a26bdd"),
+        ] {
+            let data = try XCTUnwrap(assets.data(path), path)
+            XCTAssertEqual(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), expected, path)
+        }
+        func hit(_ witness: String) -> String {
+            """
+            let hits = 0;
+            export function cursorMove(event) {
+              hits += 1;
+              thisScene.getLayer('\(witness)').color = hits % 3 === 1 ? new Vec3(1, 0, 0)
+                : hits % 3 === 2 ? new Vec3(0, 1, 0) : new Vec3(0, 0, 1);
+            }
+            """
+        }
+        let control = """
+        let frames = 0;
+        export function update(value) {
+          frames += 1;
+          if (frames === 2 || frames === 4) {
+            const red = thisScene.getLayer('red');
+            const moved = thisScene.sortLayer(red, frames === 2 ? -1 : 0);
+            const index = frames === 2 ? 4 : 0;
+            const ready = moved === true && thisScene.getLayerIndex(red) === index
+              && thisScene.getLayer(index) === red && thisScene.enumerateLayers()[index] === red;
+            thisLayer.brightness = ready ? frames : 99;
+          }
+          return value;
+        }
+        """
+        var controller = sceneProtocolPanel(id: 101, name: "controller", x: 80, y: 80, script: control)
+        controller["solid"] = false
+        var red = sceneProtocolPanel(id: 10, name: "red", x: 80, color: "1 0 0", script: hit("red witness"))
+        var green = sceneProtocolPanel(id: 20, name: "green", x: 80, color: "0 1 0", script: hit("green witness"))
+        red["disablepropagation"] = true
+        green["disablepropagation"] = true
+        red["solid"] = true
+        green["solid"] = true
+        var redWitness = sceneProtocolPanel(id: 30, name: "red witness", x: 24, color: "0 0 0")
+        var greenWitness = sceneProtocolPanel(id: 40, name: "green witness", x: 136, color: "0 0 0")
+        redWitness["solid"] = false
+        greenWitness["solid"] = false
+        let (driver, layer) = try await sceneProtocolDriver(objects: [controller, red, green, redWitness, greenWitness],
+                                                           expectedScripts: 3)
+        defer { driver.cleanup() }
+        let reds = [[0, 0, 0], [0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 255, 0]]
+        let greens = [[255, 0, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 0, 255]]
+        for frame in 1 ... 5 {
+            if frame == 3 || frame == 4 {
+                weak var previous = driver.renderer
+                driver.updateSurfaceGeometry(drawableSize: frame == 3 ? CGSize(width: 80, height: 48)
+                    : CGSize(width: 160, height: 96))
+                XCTAssertTrue(driver.needsReplan)
+                let replanned = await driver.replan()
+                XCTAssertTrue(replanned)
+                XCTAssertNil(previous, "continued script cannot retain the old renderer")
+            }
+            // Move within both authored quads on every cursor pass. Sorting happens later in update, so the
+            // current drawing changes immediately and the cursor's occlusion order changes on the next frame.
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
+                pointer: SIMD2(0.5 + Double(frame - 1) / 160, 0.5), buttonDown: false))
+            try await settle(driver, label: "common sort \(frame)")
+            XCTAssertEqual(command.status, .completed)
+            XCTAssertNil(command.error)
+            let renderer = try XCTUnwrap(driver.renderer)
+            let script = try XCTUnwrap(renderer.script)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+            let pixels = try readBack(XCTUnwrap(layer.lastTexture), device: renderer.backbuffer.device)
+            sceneProtocolPixel(pixels, x: 80, y: 48, rgb: frame == 2 || frame == 3 ? [255, 0, 0] : [0, 255, 0])
+            sceneProtocolPixel(pixels, x: 24, y: 48, rgb: reds[frame - 1])
+            sceneProtocolPixel(pixels, x: 136, y: 48, rgb: greens[frame - 1])
+            if frame >= 2 {
+                XCTAssertEqual(renderer.state.object("101")?.brightness, frame < 4 ? 2 : 4)
             }
         }
     }
