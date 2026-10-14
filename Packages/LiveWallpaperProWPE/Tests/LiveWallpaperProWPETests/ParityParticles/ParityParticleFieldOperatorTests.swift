@@ -6,6 +6,30 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
     private typealias System = WPEParityParticleSystem
 
+    /// Plane compiler21 bypasses the blend compiler, so even an authored zero-weight interval is ignored.
+    func testPlaneCollisionIgnoresAuthoredBlendForEveryNativeBehavior() {
+        let cases: [(name: String, position: SIMD3<Float>, velocity: SIMD3<Float>, age: Float)] = [
+            ("bounce", .zero, SIMD3(1, 2, 3), 0), ("slide", .zero, SIMD3(1, 0, 3), 0),
+            ("stop", .zero, .zero, 0), ("delete", SIMD3(0, -2, 0), SIMD3(1, -4, 3), 100),
+        ]
+        for sample in cases {
+            var system = System(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,
+              "distancemax":0,"origin":"0 -2 0"}],
+             "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+               {"name":"velocityrandom","min":"1 -4 3","max":"1 -4 3"}],
+             "operator":[{"name":"collisionplane","plane":"0 1 0","distance":0,
+               "bouncefactor":0.5,"collisionbehavior":"\(sample.name)","blendinstart":0.5,"blendinend":1}]}
+            """), rng: WPEParityMT19937(seed: 7), is3D: true)
+            system.advance(dt: 0.25)
+            XCTAssertNil(system.config.operators.first?.blend)
+            assertEqual(system.position[0], sample.position)
+            assertEqual(system.velocity[0], sample.velocity)
+            XCTAssertEqual(system.age[0], sample.age)
+            XCTAssertTrue(system.diagnostics.isEmpty)
+        }
+    }
+
     func testNativePlaneSlideStopAndDeletePreserveTheirDistinctWrites() throws {
         let cases: [(name: String, position: SIMD3<Float>, velocity: SIMD3<Float>, deletes: Bool)] = [
             ("slide", .zero, SIMD3(1, 0, 3), false),

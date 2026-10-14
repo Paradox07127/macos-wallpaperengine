@@ -332,7 +332,7 @@ extension WPEParityParticleSystem {
     }
 
     /// Plane bounce (D/14024f5e0.c:20-120): below the plane, push back onto it and reflect v·n.
-    mutating func applyCollisionPlane(_ field: WPEParityParticleCollision, slot: Int, weight: Float) {
+    mutating func applyCollisionPlane(_ field: WPEParityParticleCollision, slot: Int, weight _: Float) {
         var normal = field.vector, distance = field.scalar
         if field.flags & 1 != 0 {
             normal = controlPointBasis(field.controlPoint) * field.vector
@@ -346,7 +346,7 @@ extension WPEParityParticleSystem {
         guard height < distance else { return }
         switch field.behavior {
         case .bounce:
-            bounce(slot: slot, normal: normal, height: height, floor: distance, field, weight)
+            bounce(slot: slot, normal: normal, height: height, floor: distance, field, 1)
         case .slide:
             position[slot] -= (height - distance) * normal
             velocity[slot] -= simd_dot(velocity[slot], normal) * normal

@@ -446,9 +446,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             )
         case "collisionplane", "collisionsphere":
             let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
-            let hasBlend = ["blendinstart", "blendinend", "blendoutstart", "blendoutend"].contains { entry[$0] != nil }
-            if collision.behavior != .bounce, name == "collisionsphere" || hasBlend {
-                diagnostics.append("operator \(name) (\(collision.behavior.rawValue)\(hasBlend ? ", blended" : "")) skipped")
+            if collision.behavior != .bounce, name == "collisionsphere" {
+                diagnostics.append("operator \(name) (\(collision.behavior.rawValue)) skipped")
                 return
             }
             kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
@@ -473,6 +472,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             blend = blend ?? fallback
             blend?.outStart = number("blendoutstart", 1)
             blend?.outEnd = number("blendoutend", 1)
+        }
+        switch kind {
+        case .collisionPlane, .collisionSphere, .collisionBox:
+            // 1cf5f7→1cc446 goes directly to iteration/clone; these compiler branches never call 1c2a40.
+            blend = nil
+        default: break
         }
         switch kind {
         case let .controlPointAttract(field): useControlPoints(field.controlPoint)
