@@ -59,7 +59,14 @@ enum WPETexConditionalMaterializer {
                     if flags & 1 != 0, format != .rgba8888 {
                         continue
                     }
-                    let source = try inflatePatch(record, mip)
+                    let source: Data
+                    do {
+                        source = try inflatePatch(record, mip)
+                    } catch WPETexDecodeError.decompressionFailed(mipmap: _) {
+                        // 15df78..15e036 frees a failed patch scratch buffer and continues to the next
+                        // record. The already decoded base and other valid patches remain usable.
+                        continue
+                    }
                     let expected = try WPETexMipValidation.layout(format: format, width: record.width, height: record.height).byteCount
                     guard source.count >= expected else {
                         throw WPETexDecodeError.decodeFailed(mipmap: mip.index, detail: "Truncated conditional patch")

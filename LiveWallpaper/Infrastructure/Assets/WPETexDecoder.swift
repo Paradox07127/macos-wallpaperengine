@@ -181,8 +181,19 @@ struct WPETexDecoder: Sendable {
                     inflatePatch: { record, mip in
                         let count = try WPETexMipValidation.layout(format: parsed.info.format!, width: record.width,
                                                                    height: record.height).byteCount
+                        if mip.isCompressed {
+                            // 15df24..15df73 uses a four-byte-per-pixel scratch capacity even for R/RG.
+                            // Unlike base mips, the native patch decoder accepts shorter successful output.
+                            let capacity = try WPETexMipValidation.layout(format: .rgba8888, width: record.width,
+                                                                          height: record.height).byteCount
+                            guard capacity <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+                                throw WPETexDecodeError.decompressionFailed(mipmap: mip.index)
+                            }
+                            return try lz4Inflate(payload: record.payload, outputCount: capacity, mipmap: mip.index,
+                                                  minimumOutputCount: count)
+                        }
                         return try inflateIfNeeded(payload: record.payload, expectedByteCount: count,
-                                                   decompressedByteCount: count, isCompressed: mip.isCompressed, mipmap: mip.index)
+                                                   decompressedByteCount: count, isCompressed: false, mipmap: mip.index)
                     }
                 )
                 let first = images.first ?? []
@@ -1225,7 +1236,7 @@ struct WPETexDecoder: Sendable {
         throw WPETexDecodeError.decodeFailed(mipmap: mipmap, detail: "Truncated uncompressed mip payload")
     }
 
-    private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int) throws -> Data {
+    private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int, minimumOutputCount: Int? = nil) throws -> Data {
         var output = Data(count: outputCount)
         let written = output.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) -> Int in
             payload.withUnsafeBytes { (input: UnsafeRawBufferPointer) -> Int in
@@ -1241,10 +1252,12 @@ struct WPETexDecoder: Sendable {
                 )
             }
         }
-        guard written == outputCount else {
+        // Base mips keep their exact-length guard. Patches need every byte their copy/blend reads;
+        // skipping insufficient output avoids reproducing a native uninitialized scratch read.
+        guard written >= (minimumOutputCount ?? outputCount), written <= outputCount else {
             throw WPETexDecodeError.decompressionFailed(mipmap: mipmap)
         }
-        return output
+        return minimumOutputCount == nil ? output : output.prefix(written)
     }
 
     // MARK: - Helpers

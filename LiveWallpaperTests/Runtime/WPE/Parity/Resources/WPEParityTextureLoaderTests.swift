@@ -11,12 +11,17 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         let height: Int
         let depth: Int
         let bytes: Data
+        let compressionFlags: UInt32
+        let decompressedByteCount: UInt32?
 
-        init(width: Int, height: Int, depth: Int = 1, bytes: Data) {
+        init(width: Int, height: Int, depth: Int = 1, bytes: Data,
+             compressionFlags: UInt32 = 0, decompressedByteCount: UInt32? = nil) {
             self.width = width
             self.height = height
             self.depth = depth
             self.bytes = bytes
+            self.compressionFlags = compressionFlags
+            self.decompressedByteCount = decompressedByteCount
         }
     }
 
@@ -518,6 +523,35 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
+    func testConditionalCompressedPatchFailureKeepsOtherPatchesAndRawChannelScratchBytesOnGPU() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let properties: WPESceneJSONValue = .object(["on": .object(["value": .bool(true)])])
+        for (code, compressedBase, baseCount, patch, expected): (UInt32, [UInt8], UInt32, [UInt8], [UInt8]) in [
+            (0, [0x80, 10, 20, 30, 40, 50, 60, 70, 80], 8, [0x40, 73, 149, 211, 255], [10, 20, 30, 40, 73, 149, 211, 255]),
+            (9, [0x20, 10, 20], 2, [0x40, 73, 149, 211, 255], [10, 73]),
+            (8, [0x40, 10, 20, 30, 40], 4, [0x40, 73, 149, 211, 255], [10, 20, 73, 149]),
+            (9, [0x20, 10, 20], 2, [0x10, 73], [10, 73]),
+            (8, [0x40, 10, 20, 30, 40], 4, [0x20, 73, 149], [10, 20, 73, 149]),
+            (0, [0x80, 10, 20, 30, 40, 50, 60, 70, 80], 8, [0x20, 73, 149], [10, 20, 30, 40, 50, 60, 70, 80]),
+        ] {
+            // Independent LZ4 literal blocks. The bad offset-zero block fails; the later valid patch
+            // produces four bytes, while R/RG copy only the channel prefix from the native 4B scratch.
+            let base = Mip(width: 2, height: 1, bytes: Data(compressedBase), compressionFlags: 1, decompressedByteCount: baseCount)
+            let packet = conditionalTex(format: code, images: [[base]], table: [(1, 8, 0, #"{"condition":"on"}"#)],
+                                        records: [0: [[
+                                            ConditionalRecord(id: 8, x: 0, y: 0, width: 1, height: 1, bytes: Data([0x00, 0x00, 0x00])),
+                                            ConditionalRecord(id: 8, x: 1, y: 0, width: 1, height: 1, bytes: Data(patch)),
+                                        ]]])
+            let loaded = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: packet), device: device, userProperties: properties)
+            var bytes = Data(count: expected.count)
+            bytes.withUnsafeMutableBytes {
+                loaded.texture.getBytes($0.baseAddress!, bytesPerRow: expected.count,
+                                        from: MTLRegionMake2D(0, 0, 2, 1), mipmapLevel: 0)
+            }
+            XCTAssertEqual(bytes, Data(expected), "A bad or insufficient compressed patch skips only that record for format \(code)")
+        }
+    }
+
     private struct ConditionalRecord {
         let id: UInt32
         let x: UInt32
@@ -547,7 +581,8 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         for (imageIndex, levels) in images.enumerated() {
             append(UInt32(levels.count), to: &data)
             for (level, mip) in levels.enumerated() {
-                for word in [UInt32(mip.width), UInt32(mip.height), 0, UInt32(mip.bytes.count), UInt32(mip.bytes.count)] {
+                for word in [UInt32(mip.width), UInt32(mip.height), mip.compressionFlags,
+                             mip.decompressedByteCount ?? UInt32(mip.bytes.count), UInt32(mip.bytes.count)] {
                     append(word, to: &data)
                 }
                 data.append(mip.bytes)
