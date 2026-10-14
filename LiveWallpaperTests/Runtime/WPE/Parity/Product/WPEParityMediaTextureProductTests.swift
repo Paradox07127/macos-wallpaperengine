@@ -97,13 +97,13 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         try await actor.load()
         await assertStaticActor(actor)
         try await actorFrame(actor)
-        assertPanels(try readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
         XCTAssertEqual(surface.lastIsPaused, true)
 
         // Controlled external icon bytes exercise the native-provider consumer, not macOS icon extraction pixels.
-        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 32).flatMap { $0 },
+        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 32).flatMap(\.self),
                                             width: 8, height: 4)
-        let magenta = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(255), 0, 255, 255], count: 32).flatMap { $0 },
+        let magenta = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(255), 0, 255, 255], count: 32).flatMap(\.self),
                                                width: 4, height: 8)
         XCTAssertTrue(icons.setIcon(cyan, forKey: "shortcut-current"))
         try await waitUntil("Shortcut icon did not wake the parked product actor") { surface.lastIsPaused == false }
@@ -123,8 +123,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         pixels = try readBack(XCTUnwrap(layer.lastTexture))
         assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
         assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [255, 0, 255, 255])
-        let sourceIDs = Set([cyanTexture, try XCTUnwrap(icons.substituting(nil, slot: 0,
-                                                                         declarations: [0: "shortcut-previous"]))].map(ObjectIdentifier.init))
+        let sourceIDs = try Set([cyanTexture, XCTUnwrap(icons.substituting(nil, slot: 0,
+                                                                           declarations: [0: "shortcut-previous"]))].map(ObjectIdentifier.init))
         let boundIDs = await actor.run { actor in
             Set(actor.parityDriverForTesting?.renderer?.lastFrameDraws.compactMap {
                 $0.draw.textures["g_Texture1"].map(ObjectIdentifier.init)
@@ -397,7 +397,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
         guard FileManager.default.fileExists(atPath: engine.appending(path: "shaders/combine.frag").path) else {
             try? FileManager.default.removeItem(at: root)
-            if qualifiedInput { throw MediaFixtureError.originalShader("required original combine.frag") }
+            if qualifiedInput {
+                throw MediaFixtureError.originalShader("required original combine.frag")
+            }
             throw XCTSkip("Set WPE_ASSETS_DIR to the original WPE 2.8.42 assets directory")
         }
         // Matches the sealed Windows resource manifest; no shader stub or translated-capture result is supplied.
@@ -498,8 +500,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             try json("materials/\(name)-effect.json", ["passes": [[
                 "shader": "combine", "textures": ["previous", "input/\(name)"],
                 "usertextures": [NSNull(), ["name": shortcutIcons ? "shortcut-\(name)"
-                                             : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
-                                             "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false]],
+                        : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
+                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false]],
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
             try json("materials/\(name)-compose.json", ["passes": [[
@@ -516,7 +518,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             var effect: [String: Any] = ["id": id, "file": "effects/\(name).json"]
             if mergeUserTextures {
                 effect["passes"] = [["usertextures": [NSNull(), ["name": name == "current" ? "$mediaThumbnail" : "$mediaPreviousThumbnail",
-                                                               "type": NSNull()]]]]
+                                                                 "type": NSNull()]]]]
             }
             return effect
         }

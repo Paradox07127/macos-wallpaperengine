@@ -350,8 +350,12 @@ final class WPESoundRuntime: Sendable {
         guard rules == .wpe else { return }
         state.withLock { state in
             guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
-            if let minTime { state.tracks[index].randomDelay.minTime = minTime }
-            if let maxTime { state.tracks[index].randomDelay.maxTime = maxTime }
+            if let minTime {
+                state.tracks[index].randomDelay.minTime = minTime
+            }
+            if let maxTime {
+                state.tracks[index].randomDelay.maxTime = maxTime
+            }
         }
     }
 
@@ -489,7 +493,9 @@ final class WPESoundRuntime: Sendable {
         }
         for index in state.tracks.indices where state.tracks[index].enabled {
             captureRandomDelay(in: &state, trackIndex: index)
-            if !state.tracks[index].player.isPlaying { state.tracks[index].player.play() }
+            if !state.tracks[index].player.isPlaying {
+                state.tracks[index].player.play()
+            }
         }
     }
 

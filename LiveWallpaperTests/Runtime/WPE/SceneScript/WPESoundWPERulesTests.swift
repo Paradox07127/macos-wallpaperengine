@@ -193,7 +193,7 @@ struct WPESoundWPERulesTests {
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
         runtime.setRandomDelay(minTime: 2, maxTime: 2, forSoundID: "s")
         runtime.setMuted(false)
-        #expect(try #require(runtime.play()), "This consumer guard requires a working audio output")
+        try #require(runtime.play(), "This consumer guard requires a working audio output")
         runtime.setRandomDelay(minTime: 3, maxTime: 3, forSoundID: "s")
         runtime.debugCompleteHeadSegment(forSoundID: "s")
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2,

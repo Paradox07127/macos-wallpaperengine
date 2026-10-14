@@ -261,7 +261,9 @@ struct WPEParityFrameDrawPlan {
                                      userShortcutTexture: (String) -> MTLTexture?) -> [Int: MTLTexture] {
         var textures = mediaSlots.compactMapValues(mediaTexture)
         for (slot, key) in userShortcutSlots {
-            if let texture = userShortcutTexture(key) { textures[slot] = texture }
+            if let texture = userShortcutTexture(key) {
+                textures[slot] = texture
+            }
         }
         return textures
     }
@@ -614,7 +616,9 @@ struct WPEParityFrameDrawPlanner {
             }
         }
         var userShortcutSlots = binding.userTextureSlots.reduce(into: [Int: String]()) { slots, entry in
-            if entry.key >= 0, entry.value.type == "usershortcut" { slots[Int(entry.key)] = entry.value.name }
+            if entry.key >= 0, entry.value.type == "usershortcut" {
+                slots[Int(entry.key)] = entry.value.name
+            }
         }
         let pipeline = try pipeline(description, target: target, resources: resources, program: layout.programs[index],
                                     artifact: artifact)
