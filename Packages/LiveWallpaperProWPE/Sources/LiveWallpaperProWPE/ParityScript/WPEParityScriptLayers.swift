@@ -157,7 +157,7 @@ enum WPEParityScriptLayers {
       const origin = read(layer.__base + originField.rel, 2, false), point = t.value;
       const axis = u ? u.value : new Vec3(0, 1, 0);
       const angles = host.lookAtAngles(origin.x, origin.y, origin.z, point.x, point.y, point.z,
-        axis.x, axis.y, axis.z, camera, yawOnly);
+        axis.x, axis.y, axis.z, camera ? 1 : 0, yawOnly ? 1 : 0);
       if (angles) write(layer.__base + anglesField.rel, 2, false, new Vec3(angles[0], angles[1], angles[2]));
     }
     const protos = host.kinds.map((fields, kind) => {

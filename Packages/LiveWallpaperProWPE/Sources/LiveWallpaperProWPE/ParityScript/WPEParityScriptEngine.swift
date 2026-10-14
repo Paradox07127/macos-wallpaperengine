@@ -860,10 +860,10 @@ public final class WPEParityScriptEngine {
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
         }
         let lookAtAngles: @convention(block) (Double, Double, Double, Double, Double, Double,
-                                              Double, Double, Double, Bool, Bool) -> NSArray? = { ox, oy, oz, tx, ty, tz, ux, uy, uz, camera, yawOnly in
+                                              Double, Double, Double, Double, Double) -> NSArray? = { ox, oy, oz, tx, ty, tz, ux, uy, uz, camera, yawOnly in
             guard let angles = WPEParityLayerTransform.lookAtAngles(
                 origin: SIMD3(Float(ox), Float(oy), Float(oz)), target: SIMD3(Float(tx), Float(ty), Float(tz)),
-                up: SIMD3(Float(ux), Float(uy), Float(uz)), camera: camera, yawOnly: yawOnly
+                up: SIMD3(Float(ux), Float(uy), Float(uz)), camera: camera != 0, yawOnly: yawOnly != 0
             ) else { return nil }
             return [NSNumber(value: angles.x), NSNumber(value: angles.y), NSNumber(value: angles.z)] as NSArray
         }
