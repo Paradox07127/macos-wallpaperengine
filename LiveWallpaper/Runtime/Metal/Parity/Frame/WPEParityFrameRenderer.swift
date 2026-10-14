@@ -1028,7 +1028,7 @@ final class WPEParityFrameRenderer {
         animations.advance(dt: clock.frametime, state: &state)
         if let script {
             for event in animations.firedEvents {
-                script.engine.dispatch(.animationEvent, payloadJSON: event.name, target: event.objectID, state: &state)
+                script.engine.dispatch(.animationEvent, payloadJSON: event.payloadJSON, target: event.objectID, state: &state)
             }
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
             script.tick(dt: clock.frametime, cursor: scriptCursor, world: cursorWorld(camera: camera),
