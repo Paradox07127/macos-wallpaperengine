@@ -316,6 +316,7 @@ private struct WPEParitySceneEmitter {
 
         guard bit4, object.visible else { return }
         owner = object.id
+        let publishBlend: WPEParitySceneBlend = object.colorBlendMode == 31 ? .additive : object.blend
         // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
         puppetDraw(object, WPEParitySceneDraw(pass: WPEPassIdentity("\(object.id)/passthrough4"),
                                               objectID: object.id, shader: "effectpassthrough_4",
@@ -324,14 +325,12 @@ private struct WPEParitySceneEmitter {
                                                                         puppet: object.puppet),
                                               reads: [composites[current], Resource.fullFrameBuffer],
                                               target: destination.color,
-                                              blend: object.colorBlendMode == 31 ? .additive : object.blend,
+                                              blend: publishBlend,
                                               alphaMax: destination.alphaMax,
                                               compositeOwnerID: destination.compositeOwnerID,
                                               writeMask: destination.writeMask, geometry: object.layerGeometry,
                                               depthTest: object.materialState.depthTest,
-                                              depthWrite: object.materialState.depthWrite
-                                                  && (object.colorBlendMode == 31 ? WPEParitySceneBlend.additive
-                                                      : object.blend).permitsDepthWrite,
+                                              depthWrite: object.materialState.depthWrite && publishBlend.permitsDepthWrite,
                                               colorRole: .compositePublish),
                    depth: destination.depth)
     }
