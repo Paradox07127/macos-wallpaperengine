@@ -62,14 +62,26 @@ final class WPEParitySceneDriverTests: XCTestCase {
         driver.applyPerformanceProfile(.suspended)
         var rampFrames = 0
         while try sceneClock(driver).pauseRamp > 0, rampFrames < 120 {
-            try await present(driver, layer: layer, label: "ramp frame \(rampFrames)")
+            let command = driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
+                                                        pointer: SIMD2(0.5, 0.5))
+            if try sceneClock(driver).pauseRamp > 0 {
+                let submitted = try XCTUnwrap(command, "ramp frame \(rampFrames)")
+                try await settle(driver, label: "ramp frame \(rampFrames)")
+                XCTAssertEqual(submitted.status, .completed)
+                XCTAssertNil(submitted.error)
+            } else {
+                XCTAssertNil(command, "the native transition to a fully held pause skips GPU submission")
+            }
             rampFrames += 1
         }
         XCTAssertEqual(try sceneClock(driver).pauseRamp, 0, "after \(rampFrames) suspended frames")
+        try await settle(driver, label: "pause ramp complete")
         let held = try sceneClock(driver).time
         for frame in 1 ... 2 {
-            try await present(driver, layer: layer, label: "suspended frame \(frame)")
+            XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
+                                                       pointer: SIMD2(0.5, 0.5)), "suspended frame \(frame)")
             XCTAssertEqual(try sceneClock(driver).time, held, "suspended frame \(frame)")
+            XCTAssertNil(driver.failedPresentGeneration)
         }
         driver.applyPerformanceProfile(.quality)
         for frame in 1 ... 2 {

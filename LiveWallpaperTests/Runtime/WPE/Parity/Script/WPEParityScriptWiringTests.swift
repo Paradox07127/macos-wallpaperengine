@@ -313,8 +313,11 @@ final class WPEParityScriptWiringTests: XCTestCase {
         ]
         let resources: [String: Any] = [
             "models/query.json": ["material": "materials/base.json"],
-            "materials/base.json": ["passes": [["shader": "genericimage4", "textures": ["white"], "blending": "normal"]]],
-            "materials/query.json": ["passes": [["shader": "query", "blending": "normal"]]],
+            "materials/base.json": ["passes": [["shader": "genericimage2", "combos": ["VERSION": 2],
+                                                "textures": ["white"], "blending": "normal", "cullmode": "nocull",
+                                                "depthtest": "disabled", "depthwrite": "disabled"]]],
+            "materials/query.json": ["passes": [["shader": "query", "blending": "normal", "cullmode": "nocull",
+                                                 "depthtest": "disabled", "depthwrite": "disabled"]]],
             "effects/query.json": ["passes": [["material": "materials/query.json", "compose": true],
                                               ["material": "materials/query.json"]]],
         ]

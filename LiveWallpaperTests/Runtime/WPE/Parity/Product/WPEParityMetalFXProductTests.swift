@@ -276,7 +276,8 @@ extension WPEParitySceneDriverTests {
             let renderer = try XCTUnwrap(driver.renderer)
             // physical128-high BB permits N=7, unlike logical256-high N=8.
             let frame = renderer.frames[0]
-            let deepest = try actualMetalFXTarget(renderer, id: "_rt_128FrameBuffer", size: SIMD2(1, 1))
+            // Original divided post targets have a two-pixel minimum, independently of bloom depth.
+            let deepest = try actualMetalFXTarget(renderer, id: "_rt_128FrameBuffer", size: SIMD2(2, 2))
             XCTAssertEqual(deepest.pixelFormat, .rgba16Float)
             XCTAssertFalse(frame.resources.contains { $0.id == "_rt_256FrameBuffer" })
             let down = try XCTUnwrap(frame.draws.first { _, draw in
@@ -614,11 +615,11 @@ extension WPEParitySceneDriverTests {
                 return result
             }
             let effect: [String: Any] = ["fbos": [
-                ["name": "thin", "width": 128, "height": 16, "unique": true],
-                ["name": "fit", "width": 401, "height": 203, "fit": 75, "scale": 258, "unique": true],
-                ["name": "history", "width": 64, "height": 32, "unique": true],
-                ["name": "scratch", "width": 64, "height": 32, "unique": true],
-                ["name": "shared", "width": 64, "height": 32],
+                ["name": "thin", "format": "rgba8888", "width": 128, "height": 16, "unique": true],
+                ["name": "fit", "format": "rgba8888", "width": 401, "height": 203, "fit": 75, "scale": 258, "unique": true],
+                ["name": "history", "format": "rgba8888", "width": 64, "height": 32, "unique": true],
+                ["name": "scratch", "format": "rgba8888", "width": 64, "height": 32, "unique": true],
+                ["name": "shared", "format": "rgba8888", "width": 64, "height": 32],
             ], "passes": [pass("thin"), pass("fit", "thin"), pass("history", "fit"),
                           pass("scratch", "history"), ["command": "swap", "source": "history", "target": "scratch"],
                           pass("shared", "history"), pass(nil, "history")]]
