@@ -15,9 +15,10 @@ public struct WPEParityParticleScene {
 
     /// `engineFlags` supplies the 2D defaults (orthographic projection, R22 Q8) and the HDR bit for brightness
     /// overrides. Each object prewarms with `frames[id]` (default context when absent) before the next is created.
+    /// A supplied scene generator continues its stream; `seed` is used only when no generator was supplied.
     public init(document: WPESceneDocument, assets: WPEParityProgramAssets, engineFlags: WPEEngineComboFlags,
-                seed: UInt32, frames: [String: WPEParityParticleFrameContext] = [:]) {
-        let rng = WPEParityMT19937(seed: seed)
+                seed: UInt32, frames: [String: WPEParityParticleFrameContext] = [:], rng suppliedRNG: WPEParityMT19937? = nil) {
+        let rng = suppliedRNG ?? WPEParityMT19937(seed: seed)
         let crt = WPEParityCRTRandom()
         let is3D = !engineFlags.orthographicProjection
         for particle in document.particleObjects {
