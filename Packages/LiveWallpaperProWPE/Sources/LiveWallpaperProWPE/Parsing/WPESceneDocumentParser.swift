@@ -2110,6 +2110,14 @@ public enum WPESceneDocumentParser {
 
     // MARK: - Image objects
 
+    /// Parses an already admitted literal createLayer object through the same numeric model/TRS path.
+    /// A layer configuration is not a scene document and has no camera/general envelope of its own.
+    public static func parseModelDataLayerConfiguration(_ object: [String: Any]) -> WPESceneModelDataObject? {
+        guard objectKindResolution(for: object).primary == .image, !hasValue(object, "image") else { return nil }
+        let transform = localTransform(in: object, scriptOrigins: [:])
+        return parseModelDataObject(object, transform: transform, scriptOrigins: [:], effectiveVisible: nil)
+    }
+
     private static func parseModelDataObject(
         _ dict: [String: Any], transform: SceneObjectTransform,
         scriptOrigins: [String: SIMD3<Double>], effectiveVisible: Bool?

@@ -2,6 +2,7 @@
 import CoreFoundation
 import Foundation
 import JavaScriptCore
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 
@@ -56,10 +57,7 @@ enum WPEParityModelDataLayerAdmission {
             if let scale = config["scale"], WPEValueParser.vector3(scale) == nil, WPEValueParser.double(scale) == nil {
                 throw WPEParityModelDataFailure.safety("dynamic model layer requires a literal scale")
             }
-            let input = try JSONSerialization.data(withJSONObject: ["objects": [config]])
-            let document = try WPESceneDocumentParser.parse(data: input, userValues: [:],
-                                                            makeTransformScriptResolver: { _, _ in LiteralTransforms() })
-            guard document.modelDataObjects.count == 1, let descriptor = document.modelDataObjects.first,
+            guard let descriptor = WPESceneDocumentParser.parseModelDataLayerConfiguration(config),
                   descriptor.id == String(id), let model = state.modelData(descriptor.modelDataToken),
                   model.shapes.allSatisfy({ $0.prepared is WPEParityModelDataMetalShape }) else {
                 throw WPEParityModelDataFailure.safety("numeric model has no prepared canonical shape consumer")
@@ -69,13 +67,6 @@ enum WPEParityModelDataLayerAdmission {
         } catch {
             Logger.warning("ModelData layer admission: \(error)", category: .wpeRender)
             return nil
-        }
-    }
-
-    private struct LiteralTransforms: WPESceneTransformScriptResolving {
-        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
-            nil
         }
     }
 
