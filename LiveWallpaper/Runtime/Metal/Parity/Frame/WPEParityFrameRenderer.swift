@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -1032,7 +1033,7 @@ final class WPEParityFrameRenderer {
         return try executor.encodeFrame(on: queue, textures: targets.merging(images) { $1 },
                                         prepare: { commandBuffer in
                                             try encodeMaterialClears(on: commandBuffer)
-                                            try videos.encode(commandBuffer)
+                                            try videos.encode(into: commandBuffer)
                                         }, shouldTransfer: { step in
                                             if case let .particleSnapshot(block) = graphs.operations[variant][step] {
                                                 return particleStreams[block]?.snapshotBoundary != nil
