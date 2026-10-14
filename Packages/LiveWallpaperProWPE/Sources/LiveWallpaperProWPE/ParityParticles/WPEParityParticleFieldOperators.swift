@@ -330,7 +330,12 @@ extension WPEParityParticleSystem {
             normal = controlPointBasis(field.controlPoint) * field.vector
             distance = simd_dot(normal, controlPointTranslation(field.controlPoint))
         }
-        bounce(slot: slot, normal: normal, height: simd_dot(position[slot], normal), floor: distance, field, weight)
+        let height = simd_dot(position[slot], normal)
+        if height < distance, field.flags & 2 != 0 {
+            // 24f5e0→252140 receives System+258; +40/+48/+50 are the angular velocity SoA pointers.
+            angularVelocity[slot] = .zero
+        }
+        bounce(slot: slot, normal: normal, height: height, floor: distance, field, weight)
     }
 
     /// [I] The sphere repels from outside: the plane rule on the tangent plane under the particle.

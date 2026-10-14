@@ -6,6 +6,47 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
     private typealias System = WPEParityParticleSystem
 
+    /// The original strict contact mask clears angular velocity only for flags2, before the next operator.
+    func testCollisionPlaneFlagTwoClearsOnlyAngularVelocityOnStrictContactBeforePacking() throws {
+        let cases: [(flags: Int, originY: Int, angular: SIMD3<Float>, velocity: SIMD3<Float>)] = [
+            (0, -2, SIMD3(2, 4, 6), SIMD3(1, 2, 3)),
+            (2, -2, .zero, SIMD3(1, 2, 3)),
+            (2, 0, SIMD3(2, 4, 6), SIMD3(1, -4, 3)),
+        ]
+        for sample in cases {
+            var system = System(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,
+              "distancemax":0,"origin":"0 \(sample.originY) 0"}],
+             "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+               {"name":"velocityrandom","min":"1 -4 3","max":"1 -4 3"},
+               {"name":"angularvelocityrandom","min":"2 4 6","max":"2 4 6"}],
+             "operator":[{"name":"collisionplane","plane":"0 1 0","distance":0,
+               "bouncefactor":0.5,"flags":\(sample.flags)}, {"name":"angularmovement"}],
+             "renderer":[{"name":"spritetrail"}]}
+            """), rng: WPEParityMT19937(seed: 7), is3D: true)
+            system.advance(dt: 0.25)
+            XCTAssertEqual(system.liveCount, 1)
+            assertEqual(system.angularVelocity[0], sample.angular)
+            assertEqual(system.velocity[0], sample.velocity)
+            assertEqual(system.rotation[0], sample.angular * 0.25)
+            system.advance(dt: 0.25)
+            assertEqual(system.angularVelocity[0], sample.angular)
+            assertEqual(system.rotation[0], sample.angular * 0.5)
+            let batch = try XCTUnwrap(system.drawBatches(objectID: "5").first)
+            for axis in 0 ..< 3 {
+                XCTAssertEqual(Support.float(batch.vertices.bytes, at: 12 + axis * 4), sample.angular[axis] * 0.5,
+                               accuracy: 1e-6)
+                XCTAssertEqual(Support.float(batch.vertices.bytes, at: 28 + axis * 4), sample.velocity[axis],
+                               accuracy: 1e-6)
+            }
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 15 {
+                _ = expected.next()
+            }
+            XCTAssertEqual(system.rng.next(), expected.next())
+        }
+    }
+
     /// `count` particles at the origin with lifetime 100 and no operators; tests then place them by hand.
     private func particles(count: Int = 1, maxCount: Int? = nil, extra: String = "",
                            flags: Int = 0, controlPoint: Int = 0) -> System {
