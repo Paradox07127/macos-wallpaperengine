@@ -53,14 +53,17 @@ extension WPEParitySceneDriverTests {
             let indexTail = false;
             try { model.replaceData({shapes:[{},
               {material:normal,indexBuffer:new Uint16Array([2,1,0])}]}); }
-            catch(e) { indexTail = e.message.includes('NORMAL'); }
+            catch(e) { indexTail = e.message.toLowerCase().includes('mdlv input normal0 has 0 native elements'); }
             model.replaceData({shapes:[{}, {material:material}]});
             const moved = new Float32Array(small);
             for (let i=0;i<3;i++) moved[i*5] += 2;
             let indexError = false;
             try { model.replaceData({shapes:[{},
               {material:normal,vertexBuffer:moved,indexBuffer:new Uint32Array([0,1,2])}]}); }
-            catch(e) { indexError = e.message === 'Incorrect index buffer type'; }
+            catch(e) {
+              if (e.message !== 'Incorrect index buffer type') throw e;
+              indexError = true;
+            }
             thisLayer.brightness = indexTail && indexError ? 2 : 99;
             return;
           }
@@ -166,7 +169,8 @@ extension WPEParitySceneDriverTests {
                 XCTFail("the registered generic3 shader must require NORMAL absent from the actual source stream")
             } catch let error as WPEParityModelDataFailure {
                 if case let .safety(reason) = error {
-                    XCTAssertTrue(reason.contains("NORMAL"), "actual shader reflection: \(reason)")
+                    XCTAssertTrue(reason.lowercased().contains("mdlv input normal0 has 0 native elements"),
+                                  "actual shader reflection: \(reason)")
                 } else {
                     XCTFail("expected the qualified missing reflected input: \(error)")
                 }
