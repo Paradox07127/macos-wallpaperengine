@@ -180,9 +180,13 @@ enum WPEParityScriptLayers {
     host.setString = function (slot, value) { S[slot] = value; };
     host.getString = function (slot) { return S[slot]; };
     host.setCommonOrder = function (indices) {
-      const members = indices.map(index => table[index]).filter(layer => layer !== undefined);
-      order.splice(0, order.length, ...members);
-      for (const layer of pending) if (!members.includes(layer)) pending.delete(layer);
+      const members = new Set();
+      order.length = 0;
+      for (const index of indices) {
+        const layer = table[index];
+        if (layer !== undefined) { order.push(layer); members.add(layer); }
+      }
+      for (const layer of pending) if (!members.has(layer)) pending.delete(layer);
     };
     """#
 
