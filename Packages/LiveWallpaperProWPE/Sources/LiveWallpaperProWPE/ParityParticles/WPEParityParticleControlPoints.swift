@@ -5,6 +5,9 @@ import simd
 public struct WPEParityParticleFrameContext: Sendable {
     /// Scene time in seconds (ctx+0x130): turbulence, turbulentvelocityrandom and positionoffsetrandom read it.
     public var time: Float
+    /// ctx+0x150 = renderer+0x160: the previous global frame interval, independent of instance/prewarm dt.
+    /// Construction seeds it with 1/30; the renderer's first ordinary update publishes its prior current dt (0).
+    public var previousFrametime: Float
     /// Cursor in [0, 1]², y down; nil leaves cursor-following control points where they are.
     public var cursor: SIMD2<Float>?
     public var viewProjection: simd_float4x4
@@ -24,9 +27,11 @@ public struct WPEParityParticleFrameContext: Sendable {
         objectMatrix: simd_float4x4 = matrix_identity_float4x4,
         worldSpace: Bool = false,
         timeOfDay: Float = 0,
-        layerOrigin: SIMD3<Float>? = nil
+        layerOrigin: SIMD3<Float>? = nil,
+        previousFrametime: Float = Float(bitPattern: 0x3D08_8889)
     ) {
         self.time = time
+        self.previousFrametime = previousFrametime
         self.cursor = cursor
         self.viewProjection = viewProjection
         self.objectMatrix = objectMatrix
