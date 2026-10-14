@@ -231,6 +231,7 @@ actor WPEDisplayRenderActor {
                 parityFramePending = false
                 applyParityPacing()
             }
+            replanParityIfNeeded()
             return
         }
         // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.

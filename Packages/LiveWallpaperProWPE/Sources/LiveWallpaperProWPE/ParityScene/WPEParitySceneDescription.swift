@@ -795,11 +795,16 @@ public struct WPEParitySceneFBOSizing: Hashable, Sendable {
     public var fit: Double?
     public var width: Double?
     public var height: Double?
+    /// Logical extent of the declaring layer, before explicit overrides, fit and divisor. Shared declarations
+    /// retain their owner's extent even when another layer reads them. Nil for caller-created sizing rules.
+    public var layerSize: SIMD2<Int>?
 
-    public init(scale: Double = 1, fit: Double? = nil, width: Double? = nil, height: Double? = nil) {
+    public init(scale: Double = 1, fit: Double? = nil, width: Double? = nil, height: Double? = nil,
+                layerSize: SIMD2<Int>? = nil) {
         self.scale = scale
         self.fit = fit
         self.width = width
         self.height = height
+        self.layerSize = layerSize
     }
 }

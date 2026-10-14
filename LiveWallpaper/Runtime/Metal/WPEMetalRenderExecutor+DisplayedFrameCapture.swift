@@ -94,16 +94,8 @@ extension WPEMetalRenderExecutor {
         target.label = "wpe.displayedFrameCapture"
         do {
             if pass.usedMetalFX {
-                guard let upscaler = metalFXUpscaler else {
-                    completion(nil)
-                    return
-                }
-                let scalerSource = target.pixelFormat == .rgba16Float
-                    ? try encodeLinearPresentationTexture(source: source, colorTransfer: pass.colorTransfer,
-                                                          into: commandBuffer)
-                    : source
-                guard try upscaler.encodeIfEligible(source: scalerSource, drawableTexture: target,
-                                                    fitMode: pass.fitMode, commandBuffer: commandBuffer) else {
+                guard try encodeUpscaledPresent(source: source, target: target, fitMode: pass.fitMode,
+                                                colorTransfer: pass.colorTransfer, into: commandBuffer) else {
                     completion(nil)
                     return
                 }

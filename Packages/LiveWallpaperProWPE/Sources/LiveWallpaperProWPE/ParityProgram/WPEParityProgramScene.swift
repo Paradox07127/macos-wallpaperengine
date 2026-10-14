@@ -78,7 +78,7 @@ public struct WPEParityProgramScene: Sendable {
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
         let sceneBloom = bloomGeneral["bloom"].map { Self.flag($0) } ?? true
         // 14010df40.c:299-335, 365, 519-552
-        flags.hdr = sceneBloom && Self.flag(general?["hdr"]) && settings.hdrPostProcessing
+        flags.hdr = Self.hdrEnabled(document: document, settings: settings)
         // A serialized model:null is not a model object. Match the class that actually draws MDL meshes below.
         let hasModels = document.imageObjects.contains { $0.imageRelativePath.lowercased().hasSuffix(".mdl") }
         let samples = hasModels && [2, 4, 8].contains(settings.msaaSampleCount) ? settings.msaaSampleCount : 1
@@ -291,14 +291,24 @@ public struct WPEParityProgramScene: Sendable {
         postProcess = post
     }
 
+    /// The native HDR allocation predicate, also used before the product plans its physical render extent.
+    public static func hdrEnabled(document: WPESceneDocument, settings: WPEParityProgramSettings) -> Bool {
+        let sceneBloom = document.resolvedGeneralJSON["bloom"].map { Self.flag($0) } ?? true
+        return sceneBloom && Self.flag(document.sourceJSON["general"]?["hdr"]) && settings.hdrPostProcessing
+    }
+
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a
     /// load with that set gives them.
-    public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool,
-                      textSizes: [String: SIMD2<Int>] = [:])
+    public func scene(effectVisible visible: (_ objectID: String, _ effectID: String) -> Bool = { _, _ in true },
+                      textSizes: [String: SIMD2<Int>] = [:], logicalViewport: SIMD2<Int>? = nil)
         -> WPEParitySceneDescription {
         var authored = authoredObjects
         for object in authored.indices {
-            if let size = textSizes[authored[object].id] {
+            // Resize the declaration before the scope resolves foreign readers of a shared FBO.
+            if scene.objects[object].fullscreen, let size = logicalViewport {
+                authored[object].width = size.x
+                authored[object].height = size.y
+            } else if let size = textSizes[authored[object].id] {
                 authored[object].width = size.x
                 authored[object].height = size.y
             }
@@ -309,12 +319,13 @@ public struct WPEParityProgramScene: Sendable {
         }
         let scope = WPEParitySceneFBOScope(authored, backbufferFormat: scene.backbufferFormat)
         var description = scene
+        if let logicalViewport {
+            (description.width, description.height) = (logicalViewport.x, logicalViewport.y)
+        }
         var diagnostics: [WPEParitySceneDiagnostic] = []
         for index in authored.indices {
-            if let size = textSizes[authored[index].id] {
-                description.objects[index].width = size.x
-                description.objects[index].height = size.y
-            }
+            description.objects[index].width = authored[index].width
+            description.objects[index].height = authored[index].height
             description.objects[index].effects = scope.effects(of: authored[index], diagnostics: &diagnostics)
         }
         return description

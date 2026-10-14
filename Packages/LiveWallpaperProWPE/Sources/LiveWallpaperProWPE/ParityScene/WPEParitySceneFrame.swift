@@ -55,6 +55,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let geometry: Geometry
     /// The albedo filling the layer's own first composite: composite-size mesh and camera instead of the 2×2 quad.
     public let fillsComposite: Bool
+    /// Original logical composite extent. Geometry/camera keep this size when the attachment is scaled on Mac.
+    public let logicalCompositeSize: SIMD2<Int>?
     /// Set by model, particle, bit4 composite and `_depth` text draws only; every other scene draw runs with depth off.
     public let depthTest: Bool
     public let depthWrite: Bool
@@ -71,7 +73,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
                 compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
                 fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
                 cullsBackFaces: Bool = false, layerMatrices: Bool = false, multipliesDestination: Bool = false,
-                colorRole: ColorRole = .none, clipMaskInverted: Bool = false) {
+                colorRole: ColorRole = .none, clipMaskInverted: Bool = false,
+                logicalCompositeSize: SIMD2<Int>? = nil) {
         self.pass = pass
         self.objectID = objectID
         self.effectID = effectID
@@ -88,6 +91,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.writeMask = writeMask
         self.geometry = geometry
         self.fillsComposite = fillsComposite
+        self.logicalCompositeSize = logicalCompositeSize
         self.depthTest = depthTest
         self.depthWrite = depthWrite
         self.cullsBackFaces = cullsBackFaces

@@ -26,18 +26,26 @@ public struct WPEParityFrame: Hashable, Sendable {
 
 public enum WPEParityFrameComposer {
     /// `frameIndex` picks the side of each effect FBO swap pair, as in `WPEParitySceneFrameBuilder.build`.
+    /// Post is already configured for the physical backbuffer. Its pyramid/RV0/texel sizes are never scaled again.
     public static func compose(scene: WPEParitySceneDescription, post: WPEParityPostProcessConfig,
-                               frameIndex: Int) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
+                               frameIndex: Int, physicalBackbufferSize: SIMD2<Int>? = nil,
+                               physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
+                               pixelScale: Double = 1) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
         guard scene.msaaSamples == post.msaaSampleCount else {
             throw .sampleCountMismatch(scene: scene.msaaSamples, post: post.msaaSampleCount)
         }
-        let sceneBackbuffer = "\(scene.width)x\(scene.height) \(scene.backbufferFormat)"
+        let sceneFrame = WPEParitySceneFrameBuilder.build(
+            scene, frameIndex: frameIndex, physicalBackbufferSize: physicalBackbufferSize,
+            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+        )
+        let actual = sceneFrame.resources.first { $0.id == WPEParitySceneResource.backbuffer }
+        let sceneBackbuffer = actual.map { "\($0.width)x\($0.height) \($0.format)" }
+            ?? "missing backbuffer"
         let postBackbuffer = "\(post.backbufferWidth)x\(post.backbufferHeight) \(post.backbufferFormat)"
         guard sceneBackbuffer == postBackbuffer else {
             throw .backbufferMismatch(scene: sceneBackbuffer, post: postBackbuffer)
         }
-        return try merge(WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex),
-                         WPEParityPostProcessBuilder.build(post))
+        return try merge(sceneFrame, WPEParityPostProcessBuilder.build(post))
     }
 
     static func merge(_ sceneFrame: WPEParitySceneFrame,

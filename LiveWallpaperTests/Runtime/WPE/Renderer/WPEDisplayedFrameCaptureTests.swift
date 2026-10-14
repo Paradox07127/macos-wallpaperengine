@@ -157,7 +157,7 @@ struct WPEDisplayedFrameCaptureTests {
         }
     }
 
-    @Test("MetalFX SDR capture reproduces the spatial scaler and opaque alpha",
+    @Test("Native and MetalFX SDR capture decode typed sRGB input once with opaque alpha",
           .enabled(if: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler), .timeLimit(.minutes(1)))
     func metalFXSDRCaptureMatchesPresentedPixels() async throws {
         let stack = try CaptureStack.make(size: CGSize(width: 128, height: 128))
@@ -173,6 +173,19 @@ struct WPEDisplayedFrameCaptureTests {
         pixels.withUnsafeBytes {
             source.replace(region: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0,
                            withBytes: $0.baseAddress!, bytesPerRow: 64 * 4)
+        }
+        let executor = stack.renderer.executor
+        executor.metalFXUpscaler = nil
+        let nativePresented = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch,
+                                                   colorTransfer: .authored)
+        try #require(nativePresented)
+        try #require(executor.lastPresentPass?.usedMetalFX == false)
+        let native = try stack.bytes(#require(stack.layer.lastDrawable).texture)
+        for point in [(32, 32), (64, 64), (96, 96)] {
+            let offset = (point.1 * 128 + point.0) * 4
+            for (channel, expected) in [80, 128, 180, 255].enumerated() {
+                #expect(abs(Int(native[offset + channel]) - expected) <= 2)
+            }
         }
         let captured = try await Self.captureMetalFX(stack, source: source, transfer: .authored)
         for point in [(32, 32), (64, 64), (96, 96)] {

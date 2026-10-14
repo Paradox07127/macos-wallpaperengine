@@ -270,7 +270,8 @@ struct ParitySceneCrossLayerFBOTests {
         let reader = D.layer("8", effects: [D.effect(passes: [D.pass("use", binds: [1: "glow"])])])
         let description = try D.convert([writer, reader])
         let shared = WPEParitySceneFBO(name: "glow", width: 400, height: 200, shared: true,
-                                       unscaledSize: SIMD2(800, 400), scale: 2, sizing: .init(scale: 2))
+                                       unscaledSize: SIMD2(800, 400), scale: 2,
+                                       sizing: .init(scale: 2, layerSize: SIMD2(800, 400)))
         #expect(description.objects[0].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].fbos == [shared])
         #expect(description.objects[1].effects[0].passes.map(\.binds) == [["glow"]])

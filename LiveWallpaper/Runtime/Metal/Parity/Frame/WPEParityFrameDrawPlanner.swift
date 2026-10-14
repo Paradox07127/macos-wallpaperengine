@@ -651,7 +651,9 @@ struct WPEParityFrameDrawPlanner {
         case let .scene(draw):
             WPEParityFrameDrawPlan.Placement(
                 layers: layers, objectID: draw.objectID,
-                kind: draw.fillsComposite ? .compositeFill(size: SIMD2(Float(color.width), Float(color.height)))
+                kind: draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
+                    SIMD2(Float($0.x), Float($0.y))
+                } ?? SIMD2(Float(color.width), Float(color.height)))
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
                 compositeOwnerID: draw.compositeOwnerID,

@@ -2,8 +2,15 @@
 /// chains, and the MSAA resolve. Bloom, mip-mapped/HDR copies, ccsimple, fade and present are not part of it.
 public enum WPEParitySceneFrameBuilder {
     /// `frameIndex` remains source-compatible; submitted command swaps now carry binding state in the executor.
-    public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0) -> WPEParitySceneFrame {
-        var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex)
+    /// The scene remains logical. Mac callers supply the physical backbuffer separately from the pure ordinary-RT
+    /// conversion (no scaler-input minimum), and its paired pixel scale for raw authored FBO fit values.
+    public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0,
+                             physicalBackbufferSize: SIMD2<Int>? = nil,
+                             physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
+                             pixelScale: Double = 1) -> WPEParitySceneFrame {
+        var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex,
+                                            physicalBackbufferSize: physicalBackbufferSize,
+                                            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)
         emitter.renderScene()
         // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
         let used = Set(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
@@ -42,6 +49,8 @@ private struct WPEParitySceneDestination {
 
 private struct WPEParitySceneEmitter {
     let scene: WPEParitySceneDescription
+    let physicalBackbufferSize: SIMD2<Int>
+    let physicalCanvasSize: @Sendable (SIMD2<Int>) -> SIMD2<Int>
     let roots: [WPEParitySceneObject]
     let childrenByParent: [String: [WPEParitySceneObject]]
     let sceneColor: WPEResourceID
@@ -60,8 +69,27 @@ private struct WPEParitySceneEmitter {
     /// may name it in its reads before the owner renders.
     private let layerComposites: [WPEResourceID: WPEParitySceneObject]
 
-    init(_ scene: WPEParitySceneDescription, frameIndex _: Int) {
+    init(_ logicalScene: WPEParitySceneDescription, frameIndex _: Int,
+         physicalBackbufferSize: SIMD2<Int>?,
+         physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int>, pixelScale: Double) {
+        // Each build starts from the logical description. Only FBO declaration copies become physical here;
+        // object geometry, text and camera extents stay logical, including repeated relayout/replan builds.
+        var scene = logicalScene
+        for object in scene.objects.indices {
+            for effect in scene.objects[object].effects.indices {
+                for index in scene.objects[object].effects[effect].fbos.indices {
+                    let fbo = scene.objects[object].effects[effect].fbos[index]
+                    let layer = fbo.sizing?.layerSize ?? SIMD2(scene.objects[object].width, scene.objects[object].height)
+                    scene.objects[object].effects[effect].fbos[index] = fbo.resized(
+                        layerWidth: layer.x, layerHeight: layer.y,
+                        physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+                    )
+                }
+            }
+        }
         self.scene = scene
+        self.physicalCanvasSize = physicalCanvasSize
+        self.physicalBackbufferSize = physicalBackbufferSize ?? physicalCanvasSize(SIMD2(scene.width, scene.height))
         let ids = Set(scene.objects.map(\.id))
         // 14018aac0.c:42-81 stable sort on obj+0x124.
         let ordered = scene.objects.enumerated()
@@ -170,11 +198,11 @@ private struct WPEParitySceneEmitter {
             return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
         }
 
-        let (width, height) = compositeExtent(object)
+        let physical = compositePhysicalSize(object)
         let sampler = object.compositeSampler
         let composites = (0 ..< 2).map { index in
             bit4 && index == 0 ? Resource.layerCompositeA(object.id)
-                : Resource.pooledComposite(width: width, height: height, sampler: sampler, index: index,
+                : Resource.pooledComposite(width: physical.x, height: physical.y, sampler: sampler, index: index,
                                            ancestors: ancestors)
         }
         for composite in composites {
@@ -304,9 +332,11 @@ private struct WPEParitySceneEmitter {
             return
         }
         let (shader, source, reads) = albedoSource(object)
+        let (width, height) = compositeExtent(object)
         draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: shader, source: source, reads: reads,
                                 target: composite, blend: .normal, writeMask: .rgba, geometry: .fullscreenQuad,
-                                fillsComposite: true, colorRole: object.passthrough ? .none : .compositeFill))
+                                fillsComposite: true, colorRole: object.passthrough ? .none : .compositeFill,
+                                logicalCompositeSize: SIMD2(width, height)))
     }
 
     /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and its children
@@ -469,10 +499,12 @@ private struct WPEParitySceneEmitter {
         for atlas in text.layout.mesh?.drawnLists ?? [] {
             let identity = Self.glyphPass(object, atlas)
             bind(identity, composite, depth: nil)
+            let (width, height) = compositeExtent(object)
             draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "font",
                                     source: .textGlyphs(atlas, depth: text.depthMaterials), reads: [],
                                     target: composite, blend: .translucent, writeMask: .rgba,
-                                    geometry: .textGlyphs(atlas), fillsComposite: true))
+                                    geometry: .textGlyphs(atlas), fillsComposite: true,
+                                    logicalCompositeSize: SIMD2(width, height)))
         }
     }
 
@@ -593,15 +625,26 @@ private struct WPEParitySceneEmitter {
     }
 
     private mutating func registerComposite(_ composite: WPEResourceID, of object: WPEParitySceneObject) {
-        let (width, height) = compositeExtent(object)
-        register(composite, width, height, format: compositeFormat)
+        let size = compositePhysicalSize(object)
+        register(composite, size.x, size.y, format: compositeFormat, physical: true)
         samplers[composite] = object.compositeSampler
+    }
+
+    private func compositePhysicalSize(_ object: WPEParitySceneObject) -> SIMD2<Int> {
+        // A fullscreen composite receives CopyResource from the scene, so it must also share the scaler-input
+        // floor of the physical backbuffer. Ordinary thin layer RTs use the canvas conversion's smaller floor.
+        if object.fullscreen {
+            return physicalBackbufferSize
+        }
+        let (width, height) = compositeExtent(object)
+        return physicalCanvasSize(SIMD2(width, height))
     }
 
     private mutating func registerFBO(_ fbo: WPEParitySceneFBO, object: WPEParitySceneObject,
                                       effect: WPEParitySceneEffect, lifetime: WPEResourceLifetime = .pooled) {
         let id = Self.fboID(object, effect, fbo.name)
-        register(id, fbo.width, fbo.height, format: fbo.format, lifetime: lifetime, initialClear: fbo.initialClear)
+        register(id, fbo.width, fbo.height, format: fbo.format, lifetime: lifetime, initialClear: fbo.initialClear,
+                 physical: true)
         samplers[id] = WPEParitySceneSampler(filter: .linear, address: fbo.repeats ? .wrap : .clamp)
     }
 
@@ -669,9 +712,22 @@ private struct WPEParitySceneEmitter {
     /// Every named RT in WPE's pool, including FFB, sc.* and effect FBOs, keeps its contents across frames.
     private mutating func register(_ id: WPEResourceID, _ width: Int, _ height: Int,
                                    format: String = Resource.colorFormat, samples: Int = 1,
-                                   lifetime: WPEResourceLifetime = .pooled, initialClear: WPEClearColor? = nil) {
+                                   lifetime: WPEResourceLifetime = .pooled, initialClear: WPEClearColor? = nil,
+                                   physical: Bool = false) {
         guard resources[id] == nil else { return }
-        resources[id] = WPELogicalResource(id: id, width: width, height: height, format: format,
+        let size: SIMD2<Int> = if lifetime == .imported || physical {
+            SIMD2(width, height)
+        } else {
+            switch id {
+            case Resource.backbuffer, Resource.backbufferDepth, Resource.fullFrameBuffer,
+                 Resource.multisampled, Resource.multisampledDepth,
+                 Resource.fullAlphaMask, Resource.fullAlphaMaskIntermediate:
+                physicalBackbufferSize
+            default:
+                physicalCanvasSize(SIMD2(width, height))
+            }
+        }
+        resources[id] = WPELogicalResource(id: id, width: size.x, height: size.y, format: format,
                                            sampleCount: samples, lifetime: lifetime, initialClear: initialClear)
     }
 }
@@ -705,7 +761,8 @@ private extension WPEParitySceneDraw {
                            target: target, blend: blend ?? self.blend, alphaMax: alphaMax,
                            compositeOwnerID: compositeOwnerID, writeMask: writeMask, geometry: .puppetSegment(index),
                            depthTest: depthTest, depthWrite: depthWrite, cullsBackFaces: cullsBackFaces,
-                           colorRole: colorRole, clipMaskInverted: clipMaskInverted)
+                           colorRole: colorRole, clipMaskInverted: clipMaskInverted,
+                           logicalCompositeSize: logicalCompositeSize)
     }
 }
 

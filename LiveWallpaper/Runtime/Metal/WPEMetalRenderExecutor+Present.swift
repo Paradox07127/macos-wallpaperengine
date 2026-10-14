@@ -86,16 +86,10 @@ extension WPEMetalRenderExecutor {
             width: CGFloat(drawable.texture.width), height: CGFloat(drawable.texture.height)
         )
         var encodedByUpscaler = false
-        if uniforms == nil, let upscaler = metalFXUpscaler {
-            let scalerSource = drawable.texture.pixelFormat == .rgba16Float
-                ? try encodeLinearPresentationTexture(source: source, colorTransfer: colorTransfer, into: commandBuffer)
-                : source
-            encodedByUpscaler = try upscaler.encodeIfEligible(
-                source: scalerSource,
-                drawableTexture: drawable.texture,
-                fitMode: fitMode,
-                commandBuffer: commandBuffer
-            )
+        if uniforms == nil {
+            encodedByUpscaler = try encodeUpscaledPresent(source: source, target: drawable.texture,
+                                                         fitMode: fitMode, colorTransfer: colorTransfer,
+                                                         into: commandBuffer)
         }
         if !encodedByUpscaler {
             // The plan sized this frame down expecting the scaler to restore it. It declined, so give up scaling for the rest of the scene rather than shipping a permanently bilinear-stretched low-resolution frame.
@@ -152,10 +146,30 @@ extension WPEMetalRenderExecutor {
     }
 
     static func presentFragment(source: MTLPixelFormat, colorTransfer: WPEPresentColorTransfer = .authored) -> String {
-        if colorTransfer == .linear { return "wpe_present_linear_fragment" }
+        // Sampling a typed sRGB texture already decodes its RGB channels in hardware.
+        if colorTransfer == .linear || source == .rgba8Unorm_srgb || source == .bgra8Unorm_srgb {
+            return "wpe_present_linear_fragment"
+        }
         return switch source {
         case .rgba16Float, .rgba32Float: "wpe_present_hdr_fragment"
         default: "wpe_present_authored_fragment"
+        }
+    }
+
+    /// Both live presentation and capture use the same terminal transfer, after MetalFX's full-rect map.
+    func encodeUpscaledPresent(source: MTLTexture, target: MTLTexture, fitMode: WPEPresentFitMode,
+                               colorTransfer: WPEPresentColorTransfer, into commandBuffer: MTLCommandBuffer)
+        throws -> Bool {
+        guard let upscaler = metalFXUpscaler else { return false }
+        let linearOutput = target.pixelFormat == .rgba16Float
+        let scalerSource = linearOutput
+            ? try encodeLinearPresentationTexture(source: source, colorTransfer: colorTransfer, into: commandBuffer)
+            : source
+        return try upscaler.encodeIfEligible(source: scalerSource, drawableTexture: target, fitMode: fitMode,
+                                             commandBuffer: commandBuffer) { scaled in
+            try self.encodePresentPass(source: scaled, target: target, fitMode: .stretch,
+                                       worldSourceSize: nil, uniforms: nil,
+                                       colorTransfer: linearOutput ? .linear : colorTransfer, into: commandBuffer)
         }
     }
 

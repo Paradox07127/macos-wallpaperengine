@@ -13,7 +13,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
     /// The capture machine's settings, as in `WPEParityRealSceneTests`.
     private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
 
-    private var scratch: URL!
+    var scratch: URL!
     private var timestamp: CFTimeInterval = 100
 
     override func setUp() {
@@ -204,7 +204,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
 
     /// The unsigned Debug test host cannot provide the inherited sandbox required by the shipping helper.
     /// Explicit test inputs use the current source build; the signed Release product gate uses its bundle.
-    private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
+    func makeCompiler() throws -> WPEParityHelperShaderCompiler {
         let environment = ProcessInfo.processInfo.environment
         let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
         let urls = keys.compactMap { environment[$0].map { URL(fileURLWithPath: $0) } }
@@ -219,16 +219,16 @@ final class WPEParitySceneDriverTests: XCTestCase {
         }
     }
 
-    private func present(_ driver: WPEParitySceneDriver, layer: CAMetalLayer, label: String) async throws {
+    nonisolated(nonsending) func present(_ driver: WPEParitySceneDriver, layer: CAMetalLayer, label: String) async throws {
         let commandBuffer = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
                                                                        pointer: SIMD2(0.5, 0.5)),
                                           "\(label) was not presented")
-        await commandBuffer.completed()
-        XCTAssertNil(commandBuffer.error, label)
         try await settle(driver, label: label)
+        XCTAssertEqual(commandBuffer.status, .completed, label)
+        XCTAssertNil(commandBuffer.error, label)
     }
 
-    private func capture(_ driver: WPEParitySceneDriver, colorSpace: CGColorSpace) async -> WPEDisplayedFrameCapture? {
+    func capture(_ driver: WPEParitySceneDriver, colorSpace: CGColorSpace) async -> WPEDisplayedFrameCapture? {
         await withCheckedContinuation { continuation in
             driver.captureDisplayedFrame(colorSpace: colorSpace) { continuation.resume(returning: $0) }
         }
@@ -249,7 +249,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
     }
 
     /// `completed()` can resume before the completion handlers that record readiness have run.
-    private func settle(_ driver: WPEParitySceneDriver, label: String) async throws {
+    nonisolated(nonsending) func settle(_ driver: WPEParitySceneDriver, label: String) async throws {
         let deadline = Date().addingTimeInterval(5)
         while driver.inFlightCount > 0, Date() < deadline {
             try await Task.sleep(for: .milliseconds(1))
@@ -257,7 +257,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertEqual(driver.inFlightCount, 0, label)
     }
 
-    private func nextTimestamp() -> CFTimeInterval {
+    func nextTimestamp() -> CFTimeInterval {
         timestamp += 1.0 / 60
         return timestamp
     }
@@ -266,7 +266,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         try XCTUnwrap(driver.renderer).clock
     }
 
-    private func sceneInputs(sceneID: String = "3815666789") throws -> (WPESceneDocument, WPEParityProgramAssets) {
+    func sceneInputs(sceneID: String = "3815666789") throws -> (WPESceneDocument, WPEParityProgramAssets) {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
             throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
         }
@@ -287,8 +287,9 @@ final class WPEParitySceneDriverTests: XCTestCase {
                                                  assetRoots: [root.appending(path: "wpeassets"), wpeAssets]))
     }
 
-    private func readBack(_ texture: MTLTexture, device: MTLDevice) throws -> [UInt8] {
-        let bytesPerRow = texture.width * 4
+    func readBack(_ texture: MTLTexture, device: MTLDevice) throws -> [UInt8] {
+        let bytesPerPixel = texture.pixelFormat == .rgba16Float ? 8 : 4
+        let bytesPerRow = texture.width * bytesPerPixel
         let length = bytesPerRow * texture.height
         let buffer = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
         let queue = try XCTUnwrap(device.makeCommandQueue())
@@ -303,23 +304,23 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertNil(commandBuffer.error)
         return Array(UnsafeRawBufferPointer(start: buffer.contents(), count: length))
     }
-}
 
-/// Keeps the texture of the last drawable handed out, so the test can read what the present wrote.
-private final class RecordingLayer: CAMetalLayer {
-    private(set) var lastTexture: MTLTexture?
+    /// Keeps the texture of the last drawable handed out, so the test can read what the present wrote.
+    final class RecordingLayer: CAMetalLayer {
+        private(set) var lastTexture: MTLTexture?
 
-    override func nextDrawable() -> (any CAMetalDrawable)? {
-        let drawable = super.nextDrawable()
-        lastTexture = drawable?.texture
-        return drawable
+        override func nextDrawable() -> (any CAMetalDrawable)? {
+            let drawable = super.nextDrawable()
+            lastTexture = drawable?.texture
+            return drawable
+        }
     }
-}
 
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
+    struct NoScripts: WPESceneTransformScriptResolving {
+        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
+                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
+            nil
+        }
     }
 }
 #endif

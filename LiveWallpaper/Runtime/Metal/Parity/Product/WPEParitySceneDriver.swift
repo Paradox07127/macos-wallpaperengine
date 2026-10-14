@@ -65,6 +65,12 @@ final class WPEParitySceneDriver {
         let height: Int
         let alignment: WPEParityCameraAlignment
         let presentFit: WPEPresentFitMode
+        var physicalSize: SIMD2<Int>?
+        var pixelScale: Double = 1
+
+        var pixelSize: SIMD2<Int> {
+            physicalSize ?? SIMD2(width, height)
+        }
     }
 
     /// What `load` planned from, so a new size or fit mode re-plans without reloading.
@@ -75,6 +81,8 @@ final class WPEParitySceneDriver {
         let shaders: WPEParityFrameShaderSource
         let workshopID: String?
         let sceneSize: SIMD2<Float>
+        let pixelFormat: MTLPixelFormat
+        let renderScale: Double
     }
 
     let executor: WPEMetalRenderExecutor
@@ -184,7 +192,11 @@ final class WPEParitySceneDriver {
     /// The loaded plan no longer matches the drawable size or fit mode.
     var needsReplan: Bool {
         guard didLoad, let planSource else { return false }
-        return plannedTarget != currentTarget(sceneSize: planSource.sceneSize)
+        return plannedTarget != currentTarget(sceneSize: planSource.sceneSize,
+                                              isHDR: WPEParityProgramScene.hdrEnabled(document: planSource.document,
+                                                                                      settings: planSource.settings),
+                                              pixelFormat: planSource.pixelFormat,
+                                              renderScale: planSource.renderScale).target
     }
 
     init(device: MTLDevice) throws {
@@ -215,6 +227,9 @@ final class WPEParitySceneDriver {
         executor.lastPresentPass = nil
         planSource = nil
         plannedTarget = nil
+        executor.upscalePlan = .inactive
+        executor.lastPresentedDrawableSize = .zero
+        _ = executor.takePresentSideDemotion()
         userPropertyBindings = [:]
         pendingUserProperties = nil
         shaderRequiresAudio = false
@@ -227,7 +242,11 @@ final class WPEParitySceneDriver {
         updateSurfaceGeometry(drawableSize: drawableSize)
         do {
             let sceneSize = WPEParityCamera(document: document, renderTargetSize: SIMD2(1, 1)).size
-            let target = currentTarget(sceneSize: sceneSize)
+            let renderScale = WPEMetalFXSpatialUpscaler.renderScale
+            let selection = currentTarget(sceneSize: sceneSize,
+                                          isHDR: WPEParityProgramScene.hdrEnabled(document: document, settings: settings),
+                                          pixelFormat: pixelFormat, renderScale: renderScale)
+            let target = selection.target
             let plan = try await Self.makePlan(document: document, assets: assets, settings: settings, target: target)
             let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache)
             let shaders = WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
@@ -271,8 +290,10 @@ final class WPEParitySceneDriver {
             shaderErrorSummary = (shaderErrors.count, shaderErrors)
             shaderRequiresAudio = Self.readsAudio(plan)
             planSource = PlanSource(document: document, assets: assets, settings: settings, shaders: shaders,
-                                    workshopID: workshopID, sceneSize: sceneSize)
+                                    workshopID: workshopID, sceneSize: sceneSize, pixelFormat: pixelFormat,
+                                    renderScale: renderScale)
             plannedTarget = target
+            adoptUpscalePlan(selection.upscale)
             userPropertyBindings = WPEParityUserProperties.bindings(document: document)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
@@ -285,7 +306,7 @@ final class WPEParitySceneDriver {
                     try renderer.attachScript(WPEParitySceneScript(
                         document: document, state: renderer.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
-                        screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+                        screenResolution: SIMD2(Float(target.width), Float(target.height)),
                         materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
                         fieldDefaults: renderer.scriptFieldDefaults, host: connectedHost
                     ))
@@ -311,27 +332,37 @@ final class WPEParitySceneDriver {
     @discardableResult
     nonisolated(nonsending) func replan() async -> Bool {
         guard didLoad, let planSource, let previous = renderer else { return false }
-        let target = currentTarget(sceneSize: planSource.sceneSize)
-        guard target != plannedTarget else { return true }
         let generation = loadGeneration
-        do {
-            let plan = try await Self.makePlan(document: planSource.document, assets: planSource.assets,
-                                               settings: planSource.settings, target: target)
-            let renderer = try await WPEParityFrameRenderer(
-                plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
-                workshopID: planSource.workshopID, continuing: previous
-            )
-            guard generation == loadGeneration, self.renderer === previous else { return false }
-            try renderer.continueScene(from: previous)
-            self.renderer = renderer
-            plannedTarget = target
-            return true
-        } catch {
-            if generation == loadGeneration {
-                Logger.warning("Parity scene re-plan at \(target.width)x\(target.height) failed: \(error)",
-                               category: .wpeRender)
+        let isHDR = WPEParityProgramScene.hdrEnabled(document: planSource.document, settings: planSource.settings)
+        while true {
+            let selection = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
+                                          pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
+            let target = selection.target
+            guard target != plannedTarget else { return true }
+            do {
+                let plan = try await Self.makePlan(document: planSource.document, assets: planSource.assets,
+                                                   settings: planSource.settings, target: target)
+                let renderer = try await WPEParityFrameRenderer(
+                    plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
+                    workshopID: planSource.workshopID, continuing: previous
+                )
+                guard generation == loadGeneration, self.renderer === previous else { return false }
+                // A present may decline scaling or discover a new drawable while this candidate is building.
+                let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
+                                            pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
+                guard current == selection else { continue }
+                try renderer.continueScene(from: previous)
+                self.renderer = renderer
+                plannedTarget = target
+                adoptUpscalePlan(selection.upscale)
+                return true
+            } catch {
+                if generation == loadGeneration {
+                    Logger.warning("Parity scene re-plan at \(target.width)x\(target.height) failed: \(error)",
+                                   category: .wpeRender)
+                }
+                return false
             }
-            return false
         }
     }
 
@@ -368,7 +399,8 @@ final class WPEParitySceneDriver {
         ), mergedJSON: scriptUserProperties)
         self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
-                                     workshopID: planSource.workshopID, sceneSize: planSource.sceneSize)
+                                     workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
+                                     pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
         return true
     }
 
@@ -377,10 +409,10 @@ final class WPEParitySceneDriver {
     /// backbuffer UV with a top-left origin.
     func pointerInput(_ reading: WPEPointerMailbox.Reading) -> (position: SIMD2<Double>, buttonDown: Bool) {
         let centre = SIMD2<Double>(0.5, 0.5)
-        guard let renderer, let plannedTarget, reading.pointerSample.isInsideView,
+        guard renderer != nil, let plannedTarget, reading.pointerSample.isInsideView,
               let inScene = WPEPresentUniforms.make(
-                  fitMode: plannedTarget.presentFit, sourceWidth: renderer.backbuffer.width,
-                  sourceHeight: renderer.backbuffer.height, targetWidth: Int(drawableSize.width),
+                  fitMode: plannedTarget.presentFit, sourceWidth: plannedTarget.width,
+                  sourceHeight: plannedTarget.height, targetWidth: Int(drawableSize.width),
                   targetHeight: Int(drawableSize.height)
               ).scenePointer(fromDrawablePointer: reading.pointerSample.position) else { return (centre, false) }
         let buttonDown = reading.clickCaptureEnabled && !reading.buttonsSuppressed && reading.pointerFrame.isDown
@@ -407,6 +439,9 @@ final class WPEParitySceneDriver {
             // Registered after the present's own handler, so readiness is recorded before the count drops.
             commandBuffer.addCompletedHandler { _ in state.end() }
             commandBuffer.commit()
+            if executor.takePresentSideDemotion() {
+                executor.releaseRenderScaleDependentResources()
+            }
         }
         do {
             let presented = try executor.encodePresent(
@@ -419,6 +454,9 @@ final class WPEParitySceneDriver {
                 into: commandBuffer
             )
             didLogFrameFailure = false
+            if presented {
+                updateSurfaceGeometry(drawableSize: executor.lastPresentedDrawableSize)
+            }
             return presented ? commandBuffer : nil
         } catch {
             logFrameFailure(error)
@@ -623,8 +661,38 @@ final class WPEParitySceneDriver {
         }
     }
 
-    private func currentTarget(sceneSize: SIMD2<Float>) -> RenderTarget {
-        Self.renderTarget(fitMode: fitMode, drawableSize: drawableSize, sceneSize: sceneSize)
+    private func currentTarget(sceneSize: SIMD2<Float>, isHDR: Bool,
+                               pixelFormat: MTLPixelFormat, renderScale: Double)
+        -> (target: RenderTarget, upscale: WPEMetalUpscalePlan) {
+        var target = Self.renderTarget(fitMode: fitMode, drawableSize: drawableSize, sceneSize: sceneSize)
+        let fresh = WPEMetalUpscalePlan.make(
+            worldCanvas: CGSize(width: target.width, height: target.height), drawableSize: drawableSize,
+            fitMode: target.presentFit, isHDR: isHDR, hdrOutputEnabled: pixelFormat == .rgba16Float,
+            renderScale: spanFrames == nil ? renderScale : 1,
+            deviceSupportsScaler: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler
+        )
+        let upscale = executor.upscalePlan.adopting(fresh)
+        if upscale.isActive {
+            target.pixelScale = upscale.renderPixelScale
+            let pixels = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
+                CGSize(width: target.width, height: target.height), pixelScale: target.pixelScale
+            )
+            target.physicalSize = SIMD2(Int(pixels.width), Int(pixels.height))
+        }
+        return (target, upscale)
+    }
+
+    /// The allocation verdict and the present consumer capture the same load-time setting.
+    private func adoptUpscalePlan(_ plan: WPEMetalUpscalePlan) {
+        if plan.isActive {
+            if executor.metalFXUpscaler == nil {
+                executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: executor.defaultLibrary)
+            }
+        } else if executor.lastPresentPass?.usedMetalFX != true {
+            // An unpresented native replan must still be able to replay the last scaled present for capture.
+            executor.metalFXUpscaler = nil
+        }
+        executor.upscalePlan = plan
     }
 
     /// WPE's HLSL carries only the declarations its combos leave live, so a mention is a read.
@@ -671,7 +739,8 @@ final class WPEParitySceneDriver {
                                  settings: WPEParityProgramSettings,
                                  target: RenderTarget) async throws -> sending WPEParityFramePlan {
         try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: target.width,
-                               height: target.height, alignment: target.alignment)
+                               height: target.height, alignment: target.alignment,
+                               physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale)
     }
 
     private func logFrameFailure(_ error: Error) {

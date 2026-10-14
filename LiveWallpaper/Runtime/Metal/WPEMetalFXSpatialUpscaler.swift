@@ -197,7 +197,8 @@ final class WPEMetalFXSpatialUpscaler {
         source: MTLTexture,
         drawableTexture: MTLTexture,
         fitMode: WPEPresentFitMode,
-        commandBuffer: MTLCommandBuffer
+        commandBuffer: MTLCommandBuffer,
+        encodeOutput: ((MTLTexture) throws -> Void)? = nil
     ) throws -> Bool {
         if let rejection = Self.preScalerRejection(
             fitMode: fitMode,
@@ -216,13 +217,16 @@ final class WPEMetalFXSpatialUpscaler {
             noteFallback(rejection, source: source, drawable: drawableTexture)
             return false
         }
+        // A product consumer applies the native terminal transfer after scaling. Keep the intermediate in
+        // the input's color domain; MetalFX rejects mixed sRGB/non-sRGB input and output formats.
+        let outputFormat = encodeOutput == nil ? drawableTexture.pixelFormat : source.pixelFormat
         let key = ScalerKey(
             inputWidth: source.width,
             inputHeight: source.height,
             outputWidth: drawableTexture.width,
             outputHeight: drawableTexture.height,
             inputFormat: source.pixelFormat.rawValue,
-            outputFormat: drawableTexture.pixelFormat.rawValue
+            outputFormat: outputFormat.rawValue
         )
         guard failedAttempts[key, default: 0] < Self.maxCreationAttempts else {
             // Still counted: a key written off after 3 tries would otherwise go
@@ -240,7 +244,7 @@ final class WPEMetalFXSpatialUpscaler {
             descriptor.outputWidth = drawableTexture.width
             descriptor.outputHeight = drawableTexture.height
             descriptor.colorTextureFormat = source.pixelFormat
-            descriptor.outputTextureFormat = drawableTexture.pixelFormat
+            descriptor.outputTextureFormat = outputFormat
             // `formatRejection` above already refused anything without a mode.
             descriptor.colorProcessingMode =
                 Self.colorProcessingMode(sourceFormat: source.pixelFormat) ?? .perceptual
@@ -254,14 +258,16 @@ final class WPEMetalFXSpatialUpscaler {
         }
         guard source.usage.isSuperset(of: scaler.colorTextureUsage),
               !drawableTexture.isFramebufferOnly,
-              let output = privateOutput(for: drawableTexture, usage: scaler.outputTextureUsage)
+              let output = privateOutput(for: drawableTexture, format: outputFormat,
+                                         usage: scaler.outputTextureUsage, alwaysStage: encodeOutput != nil)
         else {
             noteFallback(.usageMismatch, source: source, drawable: drawableTexture)
             return false
         }
         // Wallpaper window is transparent; present fragment writes A=1. Resolve
         // the alpha-fix pipeline before encoding so a miss falls back cleanly.
-        guard let alphaFix = alphaFixPipeline(for: drawableTexture.pixelFormat) else {
+        let alphaFix = encodeOutput == nil ? alphaFixPipeline(for: outputFormat) : nil
+        guard encodeOutput != nil || alphaFix != nil else {
             noteFallback(.scalerCreationFailed, source: source, drawable: drawableTexture)
             return false
         }
@@ -274,14 +280,18 @@ final class WPEMetalFXSpatialUpscaler {
             scaler.outputTexture = nil
         }
         scaler.encode(commandBuffer: commandBuffer)
-        try encodeAlphaFix(pipeline: alphaFix, drawableTexture: output, commandBuffer: commandBuffer)
-        if output !== drawableTexture {
-            guard let blit = commandBuffer.makeBlitCommandEncoder() else {
-                throw EncodingError.outputCopyEncoderUnavailable
+        if let encodeOutput {
+            try encodeOutput(output)
+        } else if let alphaFix {
+            try encodeAlphaFix(pipeline: alphaFix, drawableTexture: output, commandBuffer: commandBuffer)
+            if output !== drawableTexture {
+                guard let blit = commandBuffer.makeBlitCommandEncoder() else {
+                    throw EncodingError.outputCopyEncoderUnavailable
+                }
+                blit.label = "metalfx-outputCopy"
+                blit.copy(from: output, to: drawableTexture)
+                blit.endEncoding()
             }
-            blit.label = "metalfx-outputCopy"
-            blit.copy(from: output, to: drawableTexture)
-            blit.endEncoding()
         }
         if !didLogActivation {
             didLogActivation = true
@@ -297,17 +307,21 @@ final class WPEMetalFXSpatialUpscaler {
 
     /// MetalFX requires a private output; macOS drawables can use shared storage.
     /// Keep one target on this executor's serial queue and copy only for those drawables.
-    private func privateOutput(for drawable: MTLTexture, usage: MTLTextureUsage) -> MTLTexture? {
-        let required = usage.union(.renderTarget)
-        if drawable.storageMode == .private {
+    private func privateOutput(for drawable: MTLTexture, format: MTLPixelFormat,
+                               usage: MTLTextureUsage, alwaysStage: Bool) -> MTLTexture? {
+        var required = usage.union(.renderTarget)
+        if alwaysStage {
+            required.insert(.shaderRead)
+        }
+        if !alwaysStage, drawable.storageMode == .private {
             return drawable.usage.isSuperset(of: required) ? drawable : nil
         }
         if let cached = cachedPrivateOutput, cached.width == drawable.width, cached.height == drawable.height,
-           cached.pixelFormat == drawable.pixelFormat, cached.usage.isSuperset(of: required) {
+           cached.pixelFormat == format, cached.usage.isSuperset(of: required) {
             return cached
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: drawable.pixelFormat, width: drawable.width, height: drawable.height, mipmapped: false
+            pixelFormat: format, width: drawable.width, height: drawable.height, mipmapped: false
         )
         descriptor.storageMode = .private
         descriptor.usage = required

@@ -185,15 +185,27 @@ struct WPEParitySceneFBOScope {
 }
 
 private extension WPEParitySceneFBOScope.Declaration {
-    func parityFBO(shared: Bool, format: String) -> WPEParitySceneFBO {
-        let size = extent
-        let fitted = fittedExtent
-        let base = baseExtent
-        return WPEParitySceneFBO(name: fbo.name, width: size.width, height: size.height, format: format,
+    func parityFBO(shared: Bool, format: String,
+                   physicalCanvasSize: (SIMD2<Int>) -> SIMD2<Int> = { $0 },
+                   pixelScale: Double = 1) -> WPEParitySceneFBO {
+        // Validate the raw uint16 overrides first. Mac scaling must never turn a rejected author value into an
+        // accepted override. Convert the undivided base, then apply the original Float fit and integer divisor.
+        let logical = baseExtent
+        let base = physicalCanvasSize(SIMD2(logical.width, logical.height))
+        var fitted = base
+        if let logicalFit = explicitExtent(fbo.fit), max(base.x, base.y) > 0 {
+            let edge = min(Int(Double(logicalFit) * pixelScale), max(base.x, base.y))
+            fitted = base.x < base.y
+                ? SIMD2(Int(Float(base.x) / Float(base.y) * Float(edge)), edge)
+                : SIMD2(edge, Int(Float(base.y) / Float(base.x) * Float(edge)))
+        }
+        let size = SIMD2(max(2, Int(Double(fitted.x) / divisor)), max(2, Int(Double(fitted.y) / divisor)))
+        return WPEParitySceneFBO(name: fbo.name, width: size.x, height: size.y, format: format,
                                  shared: shared, swapPartner: local ? fbo.swapPartner : nil, unique: fbo.unique,
-                                 unscaledSize: SIMD2(fitted?.width ?? base.width, fitted?.height ?? base.height),
+                                 unscaledSize: fitted,
                                  scale: Int(divisor), sizing: WPEParitySceneFBOSizing(
-                                     scale: fbo.scale, fit: fbo.fit, width: fbo.explicitWidth, height: fbo.explicitHeight
+                                     scale: fbo.scale, fit: fbo.fit, width: fbo.explicitWidth, height: fbo.explicitHeight,
+                                     layerSize: SIMD2(width, height)
                                  ), initialClear: fbo.initialClear, repeats: fbo.repeats)
     }
 
@@ -212,22 +224,6 @@ private extension WPEParitySceneFBOScope.Declaration {
 
     private var baseExtent: (width: Int, height: Int) {
         (explicitExtent(fbo.explicitWidth) ?? width, explicitExtent(fbo.explicitHeight) ?? height)
-    }
-
-    private var fittedExtent: (width: Int, height: Int)? {
-        let base = baseExtent
-        guard let fit = explicitExtent(fbo.fit), max(base.width, base.height) > 0 else { return nil }
-        let edge = min(fit, max(base.width, base.height))
-        if base.width < base.height {
-            return (Int(Float(base.width) / Float(base.height) * Float(edge)), edge)
-        }
-        return (edge, Int(Float(base.height) / Float(base.width) * Float(edge)))
-    }
-
-    /// Explicit extents, then longest-edge fit without enlargement, then integer scale; allocation is at least 2.
-    var extent: (width: Int, height: Int) {
-        let base = fittedExtent ?? baseExtent
-        return (max(2, Int(Double(base.width) / divisor)), max(2, Int(Double(base.height) / divisor)))
     }
 
     /// 1401e7170.c:220-242 and FUN_1401e53a0 (string → engine code), FUN_1400d2a20 (engine code → DXGI); nil for a
@@ -254,15 +250,26 @@ private extension WPEParitySceneFBOScope.Declaration {
 
 public extension WPEParitySceneFBO {
     /// Reuses the declaration converter; no ratio inferred from an already rounded allocation size.
-    func resized(layerWidth: Int, layerHeight: Int) -> WPEParitySceneFBO {
-        guard let sizing else { return self }
+    func resized(layerWidth: Int, layerHeight: Int,
+                 physicalCanvasSize: (SIMD2<Int>) -> SIMD2<Int> = { $0 },
+                 pixelScale: Double = 1) -> WPEParitySceneFBO {
+        guard let sizing else {
+            // Caller-created absolute FBOs have no raw declaration to re-evaluate.
+            var result = self
+            let size = physicalCanvasSize(SIMD2(width, height))
+            result.width = size.x
+            result.height = size.y
+            result.unscaledSize = physicalCanvasSize(unscaledSize)
+            return result
+        }
         let authored = WPEParityAuthoredFBO(name: name, scale: sizing.scale, fit: sizing.fit, format: format,
                                             swapPartner: swapPartner, unique: unique,
                                             explicitWidth: sizing.width, explicitHeight: sizing.height,
                                             initialClear: initialClear, repeats: repeats)
         let declaration = WPEParitySceneFBOScope.Declaration(fbo: authored, width: layerWidth,
                                                              height: layerHeight, local: true)
-        return declaration.parityFBO(shared: shared, format: format)
+        return declaration.parityFBO(shared: shared, format: format,
+                                     physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)
     }
 }
 

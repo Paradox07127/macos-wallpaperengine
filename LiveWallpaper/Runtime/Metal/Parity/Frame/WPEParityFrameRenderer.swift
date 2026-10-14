@@ -19,7 +19,7 @@ struct WPEParityFrameShaderSource: Sendable {
 
 /// Host state the engine uniforms read each frame.
 struct WPEParityFrameInput {
-    /// Client-area pixels, y down.
+    /// Physical render-target pixels, y down; SceneScript receives the corresponding logical client pixels.
     var cursor: SIMD2<Float> = .zero
     var buttonDown = false
     /// 64 linear bins per channel; nil is silence.
@@ -98,6 +98,10 @@ final class WPEParityFrameRenderer {
     /// Dropped draws of graphs no longer kept.
     private var retiredDrops = 0
     private let plan: WPEParityFramePlan
+    var logicalSize: SIMD2<Float> {
+        SIMD2(Float(plan.width), Float(plan.height))
+    }
+
     var colorTransfer: WPEPresentColorTransfer {
         plan.colorTransfer
     }
@@ -182,6 +186,15 @@ final class WPEParityFrameRenderer {
     var frames: [WPEParityFrame] {
         graphs.layout.frames
     }
+
+    #if DEBUG
+    /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
+    func renderTarget(_ id: WPEResourceID, scope: WPEResourceBindingScope = .frame) -> MTLTexture? {
+        let variant = max(0, frameIndex - 1) % graphs.executors.count
+        let physical = resourceBindings[scope]?[id] ?? id
+        return graphs.executors[variant].transientTextures[physical] ?? targets[physical]
+    }
+    #endif
 
     var skipped: [Int: WPEParityFrameSkip] {
         var result = graphs.layout.skipped
@@ -568,7 +581,7 @@ final class WPEParityFrameRenderer {
         for text in previous.planner.texts.values {
             recordTextDelta(textPipeline.relayoutWithDelta(text.object, effectCount: text.effectCount))
         }
-        script?.resize(canvasSize: camera.size, screenResolution: SIMD2(Float(backbuffer.width), Float(backbuffer.height)),
+        script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
                        state: &state)
         repackBloom()
     }
@@ -708,11 +721,11 @@ final class WPEParityFrameRenderer {
     }
 
     /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
-    private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, input: WPEParityFrameInput,
-                                 timeOfDay: Float) {
+    private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, cursor: SIMD2<Float>,
+                                 buttonDown: Bool, timeOfDay: Float) {
         let world = cursorWorld(camera: camera)
         script.updateCursorTargets(quad: { cursorQuad($0, camera: camera) }, visible: { state.isVisible($0) })
-        script.cursor(at: input.cursor, world: world, leftDown: input.buttonDown, timeOfDay: timeOfDay, state: &state)
+        script.cursor(at: cursor, world: world, leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
         script.dispatchMedia(state: &state)
     }
 
@@ -728,7 +741,7 @@ final class WPEParityFrameRenderer {
         var placed = layers
         placed.camera = camera
         let matrix = placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * placed.model(id)
-        let pixels = SIMD2(Float(backbuffer.width), Float(backbuffer.height))
+        let pixels = logicalSize
         func corner(_ x: Float, _ y: Float) -> SIMD2<Float> {
             let clip = matrix * SIMD4(x, y, 0, 1)
             let ndc = SIMD2(clip.x, clip.y) / clip.w
@@ -824,6 +837,7 @@ final class WPEParityFrameRenderer {
             puppets[id]?.advance(dt: Double(clock.frametime))
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
+        let scriptCursor = input.cursor * logicalSize / SIMD2(Float(backbuffer.width), Float(backbuffer.height))
         applyTransforms()
         applyLayerFields()
         selectCamera(dt: clock.frametime)
@@ -850,10 +864,10 @@ final class WPEParityFrameRenderer {
                                              audio: audio)
         if let script {
             script.prepareFrame(frame: UInt64(frameIndex), dt: clock.frametime, runtime: clock.timeUniform,
-                                cursor: input.cursor, world: cursorWorld(camera: camera),
+                                cursor: scriptCursor, world: cursorWorld(camera: camera),
                                 leftDown: input.buttonDown, timeOfDay: daytime)
             script.updateAudio(audio.bins)
-            runScriptEvents(script, camera: camera, input: input, timeOfDay: daytime)
+            runScriptEvents(script, camera: camera, cursor: scriptCursor, buttonDown: input.buttonDown, timeOfDay: daytime)
         }
         consumeMediaInputs()
         // R24 Q1: animations run after the object update and the camera, and render reads their values.
@@ -863,7 +877,7 @@ final class WPEParityFrameRenderer {
                 script.engine.dispatch(.animationEvent, payloadJSON: event.name, target: event.objectID, state: &state)
             }
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
-            script.tick(dt: clock.frametime, cursor: input.cursor, world: cursorWorld(camera: camera),
+            script.tick(dt: clock.frametime, cursor: scriptCursor, world: cursorWorld(camera: camera),
                         leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
         }
         videos.applyScriptFields(state: &state)

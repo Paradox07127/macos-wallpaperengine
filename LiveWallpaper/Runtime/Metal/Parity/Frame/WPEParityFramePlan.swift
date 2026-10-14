@@ -66,9 +66,12 @@ struct WPEParityFramePlan {
     let scene: WPEParityProgramScene
     /// The frames of the effects the document enables.
     let layout: WPEParityFrameLayout
-    /// Backbuffer size in pixels.
+    /// Unscaled client extent used by the camera, scripts and layer geometry.
     let width: Int
     let height: Int
+    let physicalBackbufferSize: SIMD2<Int>
+    private let pixelScale: Double
+    private let physicalCanvasSize: @Sendable (SIMD2<Int>) -> SIMD2<Int>
     /// The user alignment the camera crops the canvas with (R8 Q1).
     let alignment: WPEParityCameraAlignment
     /// Object and material state as loaded, hidden objects included.
@@ -121,22 +124,35 @@ struct WPEParityFramePlan {
     }
 
     init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
-         width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop) throws {
+         width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop,
+         physicalBackbufferSize: SIMD2<Int>? = nil, pixelScale: Double = 1) throws {
+        let physicalBackbufferSize = physicalBackbufferSize ?? SIMD2(width, height)
+        let physicalCanvasSize: @Sendable (SIMD2<Int>) -> SIMD2<Int> = { size in
+            guard pixelScale != 1 else { return size }
+            let scaled = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
+                CGSize(width: size.x, height: size.y), pixelScale: pixelScale, minimumEdge: 1
+            )
+            return SIMD2(Int(scaled.width), Int(scaled.height))
+        }
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
         particleMaterials = WPEParityParticleScene.materialProbes(document: document, assets: assets,
                                                                   engineFlags: scene.engineFlags)
         var post = scene.postProcess
-        (post.backbufferWidth, post.backbufferHeight) = (width, height)
+        (post.backbufferWidth, post.backbufferHeight) = (physicalBackbufferSize.x, physicalBackbufferSize.y)
         var cache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>] = [:]
-        layout = try Self.layout(Self.sized(scene.scene, width: width, height: height), post: post, scene: scene,
+        layout = try Self.layout(Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), post: post, scene: scene,
+                                 physicalBackbufferSize: physicalBackbufferSize,
+                                 physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale,
                                  cache: &cache)
         var constantBindings = layout.bindings.flatMap(\.values)
         // Every effect on, then every effect off, draws each material any effect set does.
         for enabled in [true, false] {
             let frame = try WPEParityFrameComposer.compose(
-                scene: Self.sized(scene.scene(effectVisible: { _, _ in enabled }), width: width, height: height),
+                scene: Self.loaded(scene.scene(effectVisible: { _, _ in enabled },
+                                               logicalViewport: SIMD2(width, height))),
                 post: post,
-                frameIndex: 0
+                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
             )
             _ = Self.programs(frame, scene: scene, cache: &cache)
             constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
@@ -198,6 +214,9 @@ struct WPEParityFramePlan {
         self.scene = scene
         self.width = width
         self.height = height
+        self.physicalBackbufferSize = physicalBackbufferSize
+        self.pixelScale = pixelScale
+        self.physicalCanvasSize = physicalCanvasSize
         self.alignment = alignment
         self.post = post
         programCache = cache
@@ -211,7 +230,7 @@ struct WPEParityFramePlan {
         let visible = Dictionary(zip(state.effects, state.effectVisibility)) { first, _ in first }
         var description = scene.scene(effectVisible: {
             visible[.init(objectID: $0, effectID: $1)] ?? true
-        }, textSizes: texts.mapValues { $0.layout.fboSize })
+        }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
         for index in description.objects.indices {
             let previous = description.objects[index]
             guard let text = texts[previous.id] else { continue }
@@ -221,8 +240,9 @@ struct WPEParityFramePlan {
             updated.materialFrameReads = previous.materialFrameReads
             description.objects[index] = updated
         }
-        return try Self.layout(Self.sized(description, width: width, height: height),
-                               post: post, scene: scene, cache: &cache)
+        return try Self.layout(Self.loaded(description),
+                               post: post, scene: scene, physicalBackbufferSize: physicalBackbufferSize,
+                               physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
     }
 
     /// Frame 0 of effect sets that between them put every effect pass in each place it can draw to: every effect
@@ -243,37 +263,39 @@ struct WPEParityFramePlan {
         var seen: Set<[WPEPassIdentity]> = []
         return try sets.compactMap { visible in
             let frame = try WPEParityFrameComposer.compose(
-                scene: Self.sized(scene.scene(effectVisible: visible), width: width, height: height), post: post,
-                frameIndex: 0
+                scene: Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height))), post: post,
+                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
             )
             guard seen.insert(frame.operations.map(\.pass)).inserted else { return nil }
             return (frame, Self.programs(frame, scene: scene, cache: &cache).programs)
         }
     }
 
-    private static func scene(_ scene: WPEParityProgramScene, effects visibility: [Bool],
-                              of keys: [WPEParitySceneState.EffectKey]) -> WPEParitySceneDescription {
-        let visible = Dictionary(zip(keys, visibility)) { first, _ in first }
-        return scene.scene(effectVisible: { visible[WPEParitySceneState.EffectKey(objectID: $0, effectID: $1)] ?? true })
-    }
-
     /// WPE loads hidden objects too; the renderer skips their operations while they stay hidden (R24 Q2).
-    private static func sized(_ scene: WPEParitySceneDescription, width: Int,
-                              height: Int) -> WPEParitySceneDescription {
+    private static func loaded(_ scene: WPEParitySceneDescription) -> WPEParitySceneDescription {
         var description = scene
         for index in description.objects.indices {
             description.objects[index].visible = true
         }
-        (description.width, description.height) = (width, height)
         return description
     }
 
     private static func layout(_ description: WPEParitySceneDescription, post: WPEParityPostProcessConfig,
                                scene: WPEParityProgramScene,
+                               physicalBackbufferSize: SIMD2<Int>,
+                               physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int>,
+                               pixelScale: Double,
                                cache: inout [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>])
         throws -> WPEParityFrameLayout {
-        let even = try WPEParityFrameComposer.compose(scene: description, post: post, frameIndex: 0)
-        let odd = try WPEParityFrameComposer.compose(scene: description, post: post, frameIndex: 1)
+        let even = try WPEParityFrameComposer.compose(
+            scene: description, post: post, frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+        )
+        let odd = try WPEParityFrameComposer.compose(
+            scene: description, post: post, frameIndex: 1, physicalBackbufferSize: physicalBackbufferSize,
+            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+        )
         let (programs, skipped) = Self.programs(even, scene: scene, cache: &cache)
         let frames = even == odd ? [even] : [even, odd]
         return WPEParityFrameLayout(frames: frames, programs: programs,

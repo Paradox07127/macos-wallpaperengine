@@ -435,7 +435,7 @@ struct ParitySceneDocumentConversionTests {
         ])
         #expect(object.effects[0].fbos == [WPEParitySceneFBO(name: "half", width: 200, height: 100,
                                                              unscaledSize: SIMD2(400, 200), scale: 2,
-                                                             sizing: .init(scale: 2))])
+                                                             sizing: .init(scale: 2, layerSize: SIMD2(400, 200)))])
     }
 
     @Test func drawsNameTheMaterialPassTheyComeFrom() throws {
