@@ -125,9 +125,9 @@ public extension WPEParitySceneState {
             }
             if index == model.shapes.count {
                 let shape = try Self.modelShape(value)
-                try admitShape(shape, .rebuild(token: token, shape: index))
                 model.shapes.append(shape)
                 changed = true
+                try admitShape(shape, .rebuild(token: token, shape: index))
                 continue
             }
             if let material = value.material, !material.isEmpty, material != model.shapes[index].material {
