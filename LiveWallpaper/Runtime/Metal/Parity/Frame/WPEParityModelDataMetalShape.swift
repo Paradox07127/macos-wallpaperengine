@@ -60,30 +60,46 @@ final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unch
         plan: WPEParityFramePlan,
         artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>], device: MTLDevice
     ) throws -> WPEParityModelDataMetalShape {
-        guard let path = String(data: shape.material, encoding: .utf8), !path.isEmpty else {
-            throw WPEParityModelDataFailure.native(1)
-        }
         let previous = shape.prepared as? WPEParityModelDataMetalShape
         let mesh: WPEParitySceneModelMesh
         let program: WPEParityProgram
         let frameReads: [WPEResourceID]
-        if let previous, previous.mesh.material?.materialPath == path,
-           previous.engineFlags == plan.scene.engineFlags {
-            // The live canonical version already qualified this immutable material and shader. A buffer write
-            // does not repeat material/HLSL loading; a new path or engine combo input takes the real reader.
+        let engineFlags: WPEEngineComboFlags
+        let bufferMutation: Bool = switch mutation {
+        case .vertices, .indices: true
+        case .create, .rebuild, .material: false
+        }
+        if bufferMutation {
+            // 1401d6400 writes material before VB/IB, but notifies its material observer only at the tail.
+            // Buffer prefixes must use the program already admitted by the preceding resource version.
+            guard let previous else {
+                throw WPEParityModelDataFailure.safety("buffer update has no previously admitted material resource")
+            }
             mesh = previous.mesh
             program = previous.program
             frameReads = previous.frameReads
+            engineFlags = previous.engineFlags
         } else {
-            guard let loaded = plan.scene.modelDataMesh(materialPath: path) else {
+            guard let path = String(data: shape.material, encoding: .utf8), !path.isEmpty else {
                 throw WPEParityModelDataFailure.native(1)
             }
-            mesh = loaded
-            program = try Self.program(materialPath: path, plan: plan)
-            frameReads = plan.scene.modelDataFrameReads(materialPath: path)
+            if let previous, previous.mesh.material?.materialPath == path,
+               previous.engineFlags == plan.scene.engineFlags {
+                mesh = previous.mesh
+                program = previous.program
+                frameReads = previous.frameReads
+            } else {
+                guard let loaded = plan.scene.modelDataMesh(materialPath: path) else {
+                    throw WPEParityModelDataFailure.native(1)
+                }
+                mesh = loaded
+                program = try Self.program(materialPath: path, plan: plan)
+                frameReads = plan.scene.modelDataFrameReads(materialPath: path)
+            }
+            engineFlags = plan.scene.engineFlags
         }
         guard case let .success(artifact)? = artifacts[program.hlsl] else {
-            throw WPEParityModelDataFailure.safety("material program was not prepared by the scene asset loader: \(path)")
+            throw WPEParityModelDataFailure.safety("material program was not prepared by the scene asset loader: \(mesh.material?.materialPath ?? program.shader)")
         }
         guard artifact.geometry == nil else {
             throw WPEParityModelDataFailure.safety("model geometry-stage admission requires its original input contract")
@@ -151,7 +167,7 @@ final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unch
             indices = nil
         }
         return WPEParityModelDataMetalShape(shape: shape, program: program, mesh: mesh,
-                                            frameReads: frameReads, engineFlags: plan.scene.engineFlags, inputs: inputs,
+                                            frameReads: frameReads, engineFlags: engineFlags, inputs: inputs,
                                             vertices: vertices, indices: indices)
     }
 

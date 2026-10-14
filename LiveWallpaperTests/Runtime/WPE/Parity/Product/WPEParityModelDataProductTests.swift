@@ -16,7 +16,8 @@ extension WPEParitySceneDriverTests {
         let source = #"""
         const material = engine.registerAsset('materials/model-data.json', true);
         const other = engine.registerAsset('materials/model-other.json', true);
-        let model, layer, wide, tick = 0;
+        const normal = engine.registerAsset('materials/model-normal.json', true);
+        let model, layer, wide, small, tick = 0, resizes = 0;
         function vertex(x,y) { return [x,y,0,0.5,0.5]; }
         function shape(vertices, indices) {
           return {vertexBuffer:vertices,indexBuffer:indices,vertexFormat:[IModelData.POSITION,IModelData.UV],
@@ -25,7 +26,7 @@ extension WPEParitySceneDriverTests {
         export function init(value) {
           wide = new Float32Array(65539 * 5);
           wide.set(vertex(-4,-4),65536*5); wide.set(vertex(4,-4),65537*5); wide.set(vertex(0,4),65538*5);
-          const small = new Float32Array([...vertex(-20,-4),...vertex(-12,-4),...vertex(-16,4)]);
+          small = new Float32Array([...vertex(-20,-4),...vertex(-12,-4),...vertex(-16,4)]);
           model = thisScene.createModelData({shapes:[shape(wide,new Uint32Array([65536,65537,65538])),
             shape(small,new Uint16Array([0,1,2]))],boundingBoxMins:new Vec3(-20,-4,0),
             boundingBoxMaxs:new Vec3(4,4,0)});
@@ -43,14 +44,31 @@ extension WPEParitySceneDriverTests {
             catch(e) { prefix = e.message === 'Material cannot be changed in IModelData.update'; }
             thisLayer.brightness = prefix ? 1 : 99;
           }
-          if (tick === 4 && !thisScene.destroyLayer(layer)) throw Error('model layer destroy admission');
+          if (tick === 5 && !thisScene.destroyLayer(layer)) throw Error('model layer destroy admission');
           return 0;
         }
         export function resizeScreen() {
-          model.replaceData({vertexBuffer:new Float32Array([8,-4,0,0,0,1,.5,.5,
+          resizes += 1;
+          if (resizes === 1) {
+            let indexTail = false;
+            try { model.replaceData({shapes:[{},
+              {material:normal,indexBuffer:new Uint16Array([2,1,0])}]}); }
+            catch(e) { indexTail = e.message.includes('NORMAL'); }
+            model.replaceData({shapes:[{}, {material:material}]});
+            const moved = new Float32Array(small);
+            for (let i=0;i<3;i++) moved[i*5] += 2;
+            let indexError = false;
+            try { model.replaceData({shapes:[{},
+              {material:normal,vertexBuffer:moved,indexBuffer:new Uint32Array([0,1,2])}]}); }
+            catch(e) { indexError = e.message === 'Incorrect index buffer type'; }
+            thisLayer.brightness = indexTail && indexError ? 2 : 99;
+            return;
+          }
+          model.replaceData({shapes:[{vertexBuffer:new Float32Array([8,-4,0,0,0,1,.5,.5,
             16,-4,0,0,0,1,.5,.5,12,4,0,0,0,1,.5,.5]),
             indexBuffer:new Uint16Array([0,1,2]),
-            vertexFormat:[IModelData.POSITION,IModelData.NORMAL,IModelData.UV],material:material});
+            vertexFormat:[IModelData.POSITION,IModelData.NORMAL,IModelData.UV],material:material},
+            {material:material}]});
           thisScene.destroyModelData(model.__modelDataToken);
         }
         """#
@@ -130,7 +148,44 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(replanned)
         XCTAssertNil(previous, "the Engine callback must not keep a replaced renderer alive")
         layer.drawableSize = CGSize(width: 96, height: 64)
-        let resized = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.2, pointer: .zero))
+        do {
+            let renderer = try XCTUnwrap(driver.renderer)
+            XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 2,
+                           "new material reflection must not preempt the later native index-width error")
+            let token = try XCTUnwrap(renderer.state.object("700001")?.modelDataToken)
+            let committed = try XCTUnwrap(renderer.state.modelData(token)?.shapes[1])
+            XCTAssertEqual(committed.vertices.data.withUnsafeBytes { $0.loadUnaligned(as: Float.self) }, -18,
+                           "the VB prefix commits before the later index-width error and material tail observer")
+            XCTAssertEqual(committed.indices?.elementWidth, .uint16)
+            XCTAssertEqual(committed.indices?.data, Data([2, 0, 1, 0, 0, 0]),
+                           "an earlier same-width IB prefix commits before its new material observer fails")
+            XCTAssertEqual(String(data: committed.material, encoding: .utf8), "materials/model-normal.json")
+            XCTAssertNil(committed.prepared, "a failing tail material observer leaves an explicit no-draw shape")
+            do {
+                _ = try renderer.scriptModelDataAdmission(committed, .material(token: token, shape: 1))
+                XCTFail("the registered generic3 shader must require NORMAL absent from the actual source stream")
+            } catch let error as WPEParityModelDataFailure {
+                if case let .safety(reason) = error {
+                    XCTAssertTrue(reason.contains("NORMAL"), "actual shader reflection: \(reason)")
+                } else {
+                    XCTFail("expected the qualified missing reflected input: \(error)")
+                }
+            }
+            let third = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.2, pointer: .zero))
+            await third.completed()
+            try await settle(driver, label: "ModelData material observer after index error")
+            XCTAssertNil(third.error)
+            let engine = try XCTUnwrap(renderer.script?.engine)
+            XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+            let afterError = try readBack(renderer.backbuffer, device: device)
+            modelDataPixel(afterError, width: 96, x: 72, y: 32, white: true)
+            modelDataPixel(afterError, width: 96, x: 20, y: 32, white: false)
+        }
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 192, height: 128))
+        let restored = await driver.replan()
+        XCTAssertTrue(restored)
+        layer.drawableSize = CGSize(width: 192, height: 128)
+        let resized = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.3, pointer: .zero))
         await resized.completed()
         try await settle(driver, label: "ModelData replacement")
         let current = try XCTUnwrap(driver.renderer)
@@ -143,13 +198,13 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(rebuilt.indexCount, 3)
         XCTAssertEqual(rebuilt.pipeline.vertex.reflection.vertexInputs.sorted { $0.index < $1.index }.map(\.columns), [3, 2])
         let pixels = try readBack(current.backbuffer, device: device)
-        modelDataPixel(pixels, width: 96, x: 72, y: 32, white: true)
-        modelDataPixel(pixels, width: 96, x: 16, y: 32, white: true)
-        let removed = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.3, pointer: .zero))
+        modelDataPixel(pixels, width: 192, x: 144, y: 64, white: true)
+        modelDataPixel(pixels, width: 192, x: 40, y: 64, white: true)
+        let removed = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.4, pointer: .zero))
         await removed.completed()
         try await settle(driver, label: "ModelData layer destruction")
         XCTAssertNil(current.state.object("700001"))
-        try modelDataPixel(readBack(current.backbuffer, device: device), width: 96, x: 72, y: 32, white: false)
+        try modelDataPixel(readBack(current.backbuffer, device: device), width: 192, x: 144, y: 64, white: false)
     }
 
     func testRegisteredModelMaterialFailureAbortsLoadAndStopsItsPreparedSound() async throws {
@@ -227,7 +282,10 @@ extension WPEParitySceneDriverTests {
             ("shaders/common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
             ("shaders/common_pbr.h", "7a542df2279b6637d4f67434087df485b68ad24e06f85490d6ce424118c68d8d"),
             ("shaders/common_vertex.h", "cd4a005c0726603d613f97c8ebf9ff0a10d80f4f183de255f70bdecdb2d17ef9"),
+            ("shaders/common_fragment.h", "811378cbaffd98be2800eb820d04c707d471b1cd360d6f295855a4e656e97fe4"),
             ("shaders/genericimage2.frag", "1e252e2271cae57fcfdecf3bd79d1685bb726e1e8afe09ba863dca2e1b12d68e"),
+            ("shaders/generic3.vert", "258fe7388cc25aa6467a0747f4cb6f113c16d2a8829249aabba2a271c47b3305"),
+            ("shaders/generic3.frag", "ff2d9f8ece1f21aea8f01136d8cfaefa05d4fef8f6cba8d7905f1422f69cd429"),
             ("materials/util/white.tex", "ac8a6c0726bf5744e816300278cf42bbe660ea885088e77bbbfb136725a26bdd"),
         ] {
             let bytes = try XCTUnwrap(original.data(path), path)
@@ -256,7 +314,12 @@ extension WPEParitySceneDriverTests {
                                                        "textures": ["util/white"], "blending": "normal", "cullmode": "nocull",
                                                        "depthtest": "disabled", "depthwrite": "disabled"]]]
         let material = try JSONSerialization.data(withJSONObject: materialJSON, options: [.sortedKeys])
-        let files = ["materials/model-data.json": material, "materials/model-other.json": material]
+        let normalJSON: [String: Any] = ["passes": [["shader": "generic3", "textures": ["util/white"],
+                                                     "blending": "normal", "cullmode": "nocull",
+                                                     "depthtest": "disabled", "depthwrite": "disabled"]]]
+        let normalMaterial = try JSONSerialization.data(withJSONObject: normalJSON, options: [.sortedKeys])
+        let files = ["materials/model-data.json": material, "materials/model-other.json": material,
+                     "materials/model-normal.json": normalMaterial]
         let reads = ModelDataAssetReads()
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { path in
             reads.record(path)
@@ -296,6 +359,7 @@ extension WPEParitySceneDriverTests {
         }
         print("ModelData scene SHA256=\(SHA256.hash(data: data))")
         print("ModelData material SHA256=\(SHA256.hash(data: material))")
+        print("ModelData material observer input SHA256=\(SHA256.hash(data: normalMaterial))")
         return .init(document: document, assets: assets, compiler: compiler, soundResolver: soundResolver, reads: reads)
     }
 
