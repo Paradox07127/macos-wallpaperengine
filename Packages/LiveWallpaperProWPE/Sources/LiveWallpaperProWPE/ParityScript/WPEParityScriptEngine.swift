@@ -1217,6 +1217,7 @@ public final class WPEParityScriptEngine {
         case (.light, "exponent"): return .vector(SIMD4(2, 0, 0, 0))
         case (.light, "innercone"): return .vector(SIMD4(20, 0, 0, 0))
         case (.light, "outercone"): return .vector(SIMD4(30, 0, 0, 0))
+        case (.light, "controlpoint"): return .vector(SIMD4(2, 0, 0, 0))
         case (.text, "pointsize"): return .vector(SIMD4(32, 0, 0, 0))
         case (.text, "font"): return .string("systemfont_arial")
         case (.text, "padding"): return .vector(SIMD4(32, 32, 0, 0))

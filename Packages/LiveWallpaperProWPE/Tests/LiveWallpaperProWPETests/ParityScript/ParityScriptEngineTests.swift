@@ -3,6 +3,32 @@ import Foundation
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testTubeControlPointDescriptorUpdatesRealLightConstants() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100},"lightconfig":{"tube":1}},
+         "objects":[{"id":1,"light":"ltube","origin":"10 20 30","scale":"2 3 4",
+          "controlpoint":{"script":"const cp = thisObject.controlpoint; if (cp.x !== 2 || cp.y !== 0 || cp.z !== 0) throw new Error('controlpoint default'); export function init(v) { return new Vec3(4, 5, 6); } export function update(v) { thisObject.controlpoint = new Vec3(7, 8, 9); return thisObject.controlpoint; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("controlpoint", of: "1"), .vector(SIMD4(4, 5, 6, 0)))
+        var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        XCTAssertEqual(lights.tubeOriginB, [SIMD4(18, 35, 54, 0)])
+        let generation = state.generation(.lighting)
+        engine.tick(dt: 0.25, state: &state)
+        XCTAssertGreaterThan(state.generation(.lighting), generation)
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        XCTAssertEqual(lights.values["g_LTube_OriginB"], .array([.vector([24, 44, 66, 0])]))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testLightAndCameraModuleGettersUseFactoryDefaultsAndTypedWrites() throws {
         let json = #"""
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},

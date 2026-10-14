@@ -339,6 +339,7 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
 public enum WPESceneLightType: Equatable, Sendable {
     case point
     case spot
+    case tube
     case directional
     case unknown(String)
 
@@ -346,7 +347,8 @@ public enum WPESceneLightType: Equatable, Sendable {
         switch self {
         case .point: 0
         case .spot: 1
-        case .directional: 2
+        case .tube: 2
+        case .directional: 3
         case .unknown: nil
         }
     }

@@ -152,6 +152,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     public static let light: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "color", owner: .light, type: .vec3, target: .object(.color),
                                 invalidation: .lighting),
+        WPEParityScriptProperty(name: "controlpoint", owner: .light, type: .vec3, invalidation: .lighting),
     ] + ["intensity", "radius", "exponent", "innercone", "outercone"].map {
         WPEParityScriptProperty(name: $0, owner: .light, type: .float, invalidation: .lighting)
     }
