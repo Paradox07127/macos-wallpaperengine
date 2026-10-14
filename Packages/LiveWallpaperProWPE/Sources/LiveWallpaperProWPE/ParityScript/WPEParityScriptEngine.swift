@@ -578,26 +578,7 @@ public final class WPEParityScriptEngine {
 
     private static func kind(of id: String, object: WPESceneJSONValue,
                              document: WPESceneDocument) -> WPEParityScriptLayerKind {
-        // 14018ff60.c:116-118: a string `camera` member makes the object a camera.
-        if case .string? = object["camera"] {
-            return .camera
-        }
-        if document.textObjects.contains(where: { $0.id == id }) {
-            return .text
-        }
-        if document.imageObjects.contains(where: { $0.id == id }) {
-            return .image
-        }
-        if document.particleObjects.contains(where: { $0.id == id }) {
-            return .particle
-        }
-        if document.soundObjects.contains(where: { $0.id == id }) {
-            return .sound
-        }
-        if document.lightObjects.contains(where: { $0.id == id }) {
-            return .light
-        }
-        return .group
+        WPEParityScriptLayerKind.classify(id: id, object: object, document: document)
     }
 
     private var initialValues: [(slot: Int, value: WPEParitySceneState.ScriptValue)] = []

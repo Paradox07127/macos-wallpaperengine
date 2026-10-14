@@ -5,6 +5,7 @@ public struct WPEParitySceneAnimations {
     private enum Target {
         case object(Int, WPEParitySceneState.Property)
         case constant(pass: Int, name: String, components: Int)
+        case field(name: String, invalidation: WPEParitySceneState.Invalidation)
     }
 
     private struct Binding {
@@ -44,6 +45,25 @@ public struct WPEParitySceneAnimations {
     public init(document: WPESceneDocument, state: WPEParitySceneState,
                 constantComponents: [WPEParityMaterialPassKey: [String: Int]]) {
         var authored: [Authored] = []
+        func fields(_ descriptors: [WPEParityScriptProperty], config: WPESceneJSONValue?, objectID: String) {
+            for descriptor in descriptors {
+                guard case .field = descriptor.target, !descriptor.flags.contains(.notFromJSON) else { continue }
+                switch descriptor.type {
+                case .float, .vec2, .vec3, .vec4: break
+                default: continue
+                }
+                let name = objectID.isEmpty ? descriptor.name.lowercased() : descriptor.name
+                let raw = descriptor.owner == .particleInstance ? config?["instanceoverride"]?[name] : config?[name]
+                guard let raw,
+                      let type = WPEParityPropertyAnimation.ValueType(rawValue: descriptor.type.componentCount)
+                else { continue }
+                authored.append(Authored(property: raw, valueType: type,
+                                         target: .field(name: descriptor.fieldName, invalidation: descriptor.invalidation),
+                                         objectID: objectID))
+            }
+        }
+        // 140186c90 -> 1401730d0: scene fields use the same numeric animation reader as object descriptors.
+        fields(WPEParityScriptProperty.scene, config: document.sourceJSON["general"], objectID: "")
         for object in WPEParityProgramScene.array(document.sourceJSON["objects"]) {
             guard let id = Self.id(object), let index = state.index(of: id) else { continue }
             for property in WPEParitySceneState.Property.allCases where property != .visible {
@@ -52,6 +72,16 @@ public struct WPEParitySceneAnimations {
                 else { continue }
                 authored.append(Authored(property: raw, valueType: valueType, target: .object(index, property),
                                          objectID: id))
+            }
+            let kind = WPEParityScriptLayerKind.classify(id: id, object: object, document: document)
+            switch kind {
+            // These original readers reach 1730d0 through the common object loader (1de470), except the
+            // particle instance override, which registers separately in 22af30. Camera queue tracks are separate.
+            case .image, .particle, .sound, .camera, .group:
+                fields(WPEParityScriptProperty.layer(kind), config: object, objectID: id)
+            case .text, .light:
+                // Registration exists, but their derived fromJSON path still needs qualification.
+                break
             }
             func constants(_ values: WPESceneJSONValue?, _ key: WPEParityMaterialPassKey) {
                 guard case let .object(entries)? = values, let pass = state.passIndex(of: key) else { return }
@@ -108,6 +138,9 @@ public struct WPEParitySceneAnimations {
                 state.set(property, at: index, to: value)
             case let .constant(pass, name, components):
                 state.setConstant(name, pass: pass, to: WPEParitySceneState.Constant(value: value, count: components))
+            case let .field(name, invalidation):
+                // Animation curves are already in native stored units; the JavaScript angle conversion does not apply.
+                state.setScriptField(name, of: binding.objectID, to: .vector(value), invalidating: invalidation)
             }
         }
     }

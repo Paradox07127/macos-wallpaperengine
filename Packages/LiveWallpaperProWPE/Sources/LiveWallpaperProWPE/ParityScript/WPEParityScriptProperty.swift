@@ -304,6 +304,19 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
 /// The descriptor table a layer registers, by the object class the scene JSON names.
 public enum WPEParityScriptLayerKind: Int, Sendable, CaseIterable {
     case image, text, particle, sound, camera, group, light
+
+    /// Shared by script slots and native-unit animation bindings; neither keeps a second object registry.
+    public static func classify(id: String, object: WPESceneJSONValue,
+                                document: WPESceneDocument) -> WPEParityScriptLayerKind {
+        // 14018ff60: a string camera member selects the camera class.
+        if case .string? = object["camera"] { return .camera }
+        if document.textObjects.contains(where: { $0.id == id }) { return .text }
+        if document.imageObjects.contains(where: { $0.id == id }) { return .image }
+        if document.particleObjects.contains(where: { $0.id == id }) { return .particle }
+        if document.soundObjects.contains(where: { $0.id == id }) { return .sound }
+        if document.lightObjects.contains(where: { $0.id == id }) { return .light }
+        return .group
+    }
 }
 
 extension WPEParitySceneState.ScriptValue {
