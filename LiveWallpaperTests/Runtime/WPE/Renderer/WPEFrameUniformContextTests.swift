@@ -398,6 +398,55 @@ struct WPEFrameUniformContextTests {
         #expect(packed[1].x == 0.5)
     }
 
+    @Test("g_Color4 multiplies object brightness only in HDR scenes", arguments: [false, true])
+    func layerColorBrightnessFollowsSceneHDR(sceneHDR: Bool) {
+        let (raw, pass) = Self.makePass(id: "tinted.0", uniformValues: [:])
+        let layer = Self.makeLayer(
+            objectID: "T", alpha: 0.5, color: SIMD3<Double>(1, 0.5, 0.25), brightness: 2, passes: [raw]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [pass])])
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 64, height: 32, auto: true),
+            sceneCamera: .defaultCamera,
+            sceneHDR: sceneHDR
+        )
+        let (_, frameUniforms) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: camera)
+        let scale = sceneHDR ? 2.0 : 1.0
+        #expect(frameUniforms.layerColorUniformValuesByPassID[pass.id]?["g_Color4"]
+            == .vector([scale, 0.5 * scale, 0.25 * scale, 0.5]))
+    }
+
+    @Test("An SDR solid layer rebuilt for its alpha animation leaves object brightness out of g_Color")
+    func sdrSolidAlphaAnimationIgnoresBrightness() throws {
+        let seed: WPESceneShaderConstantValue = .vector([1, 1, 1, 1])
+        let raw = WPERenderPass(
+            id: "solid.0", phase: .material, shader: WPEBuiltinShaderKind.solidLayer.rawValue,
+            source: .image("models/solid.json"), target: .scene, textures: [:], binds: [:],
+            constants: ["g_Color": seed], combos: [:], blending: "normal",
+            cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let pass = WPEPreparedRenderPass(
+            pass: raw, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: ["g_Color": seed]
+        )
+        let alphaAnimation = WPESceneAnimatedValue(animation: WPESceneNumericAnimation(
+            tracks: [[.init(frame: 0, value: 0.2), .init(frame: 120, value: 0.8)]],
+            fps: 30, length: 120, mode: "single", wrapLoop: false
+        ), scalarFallback: 0.2, vectorFallback: nil)
+        let layer = WPERenderLayer(
+            objectID: "S", objectName: "Solid", imagePath: "models/solid.json", materialPath: nil,
+            geometry: WPERenderLayerGeometry(
+                origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                size: CGSize(width: 64, height: 64), alpha: 1, alphaAnimation: alphaAnimation,
+                color: SIMD3(0.5, 0.25, 0.125), brightness: 3
+            ),
+            compositeA: "a", compositeB: "b", localFBOs: [], passes: [raw]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [pass])])
+        let (prepared, _) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: Self.camera)
+        let color = try #require(prepared.layers[0].passes[0].uniformValues["g_Color"]?.vectorValue)
+        #expect(Array(color.prefix(3)) == [0.5, 0.25, 0.125])
+    }
+
     // MARK: - Static-pass structure reuse
 
     @Test("A fully static pass is reused without cloning; animated/scripted passes are re-resolved")

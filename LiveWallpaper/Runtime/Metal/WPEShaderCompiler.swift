@@ -7,6 +7,16 @@ import Metal
 
 enum WPEVertexExecution: String, Codable, Hashable, Sendable {
     case synthesized, authoredFullscreen, authoredObjectQuad
+    /// Interleaved IModelData vertices read by `vertex_id`; ABI in `WPEAuthoredMeshVertexLayout`.
+    case authoredMesh
+
+    var authoredVertexFunctionName: String {
+        switch self {
+        case .authoredObjectQuad: "wpe_authored_object_quad_vertex"
+        case .authoredMesh: "wpe_authored_mesh_vertex"
+        case .synthesized, .authoredFullscreen: "wpe_authored_fullscreen_vertex"
+        }
+    }
 }
 
 struct WPEShaderCompiledVertex: @unchecked Sendable {
@@ -143,7 +153,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 47
+    static let schemaVersion = 48
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

@@ -332,7 +332,7 @@ extension WPEMetalSceneRenderer {
                 .applyingFrameOverlay(WPEFrameOverlay(
                     visibility: liveLayerVisibilityIncludingText,
                     alpha: liveLayerAlphaIncludingText
-                ))
+                ), sceneHDR: cameraUniforms.sceneHDR)
             if !needsContinuousFrames {
                 do {
                     let frame = try renderCurrentFrame(inputs: makeFrameInputs())
@@ -618,7 +618,8 @@ extension WPEMetalSceneRenderer {
         if hasAnimatedShaderPasses {
             demand.insert(.animatedShaders)
         }
-        if !dynamicOriginAnimations.isEmpty || cameraMotionPlayback?.needsFrames == true || cameraPathPlayback?.needsFrames == true {
+        if !dynamicOriginAnimations.isEmpty || !dynamicScaleAnimations.isEmpty || !dynamicAnglesAnimations.isEmpty
+            || cameraMotionPlayback?.needsFrames == true || cameraPathPlayback?.needsFrames == true {
             demand.insert(.animations)
         }
         if sceneSupportsAudioProcessing {

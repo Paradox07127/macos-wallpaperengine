@@ -20,6 +20,8 @@ final class WorkshopSubscriptionSync {
     /// The failure is "sign in first", which the sheet can offer to fix rather
     /// than only describe.
     private(set) var requiresSignIn = false
+    /// The failure is the Steam library grant, which the sheet can offer to choose again.
+    private(set) var requiresLibraryAccess = false
     var selection: Set<UInt64> = []
     /// Ids this sync sent to download, kept so their rows and cancel survive a check that no longer lists them.
     private var submitted: [UInt64] = []
@@ -56,6 +58,7 @@ final class WorkshopSubscriptionSync {
         phase = .checking
         titles = [:]
         requiresSignIn = false
+        requiresLibraryAccess = false
         submitted.removeAll { !isActive($0) }
 
         // Without the library grant every subscription would read as missing.
@@ -63,7 +66,7 @@ final class WorkshopSubscriptionSync {
             fail(String(
                 localized: "Authorize your Steam library folder before checking your subscriptions.",
                 bundle: .appLanguage, comment: "Subscription sync error when the Steam library folder is not authorized."
-            ))
+            ), requiresLibraryAccess: true)
             return
         }
         defer { access.end() }
@@ -82,7 +85,7 @@ final class WorkshopSubscriptionSync {
                 fail(String(
                     localized: "The Workshop folder in your Steam library could not be read. Authorize your Steam library folder again, then check your subscriptions.",
                     bundle: .appLanguage, comment: "Subscription sync error when the Workshop content folder exists but cannot be read."
-                ))
+                ), requiresLibraryAccess: true)
                 return
             }
             let missing = result.workshopIDs.compactMap(UInt64.init).filter { !installed.contains($0) }
@@ -165,8 +168,9 @@ final class WorkshopSubscriptionSync {
         queue.isQueued(itemID) || downloads.isBusy(itemID)
     }
 
-    private func fail(_ reason: String, requiresSignIn: Bool = false) {
+    private func fail(_ reason: String, requiresSignIn: Bool = false, requiresLibraryAccess: Bool = false) {
         self.requiresSignIn = requiresSignIn
+        self.requiresLibraryAccess = requiresLibraryAccess
         phase = .failed(reason)
     }
 

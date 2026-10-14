@@ -719,17 +719,164 @@ struct WPELinkedShaderStageTests {
         })
     }
 
-    private func replay(vertex: String, fragment: String,
-                        vertexValues: [String: WPESceneShaderConstantValue] = [:],
-                        fragmentValues: [String: WPESceneShaderConstantValue] = [:],
-                        vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = [],
-                        execution: WPEVertexExecution = .authoredFullscreen, positionScale: SIMD2<Float> = SIMD2(1, 1), requiredPositionProof: Bool? = nil) throws -> [SIMD4<Float>] {
+    private static let we2dMeshVertex = """
+    uniform mat4 g_ModelMatrix;
+    uniform mat4 g_ViewProjectionMatrix;
+    attribute vec3 a_Position;
+    attribute vec2 a_TexCoord;
+    attribute vec4 a_Color;
+    varying vec2 v_TexCoord;
+    varying vec4 v_Color;
+    void main(){
+        gl_Position=mul(mul(vec4(a_Position,1.0),g_ModelMatrix),g_ViewProjectionMatrix);
+        v_TexCoord=a_TexCoord;v_Color=a_Color;
+    }
+    """
+
+    /// The four registerAsset fragment shaders of Workshop 3798688689; only the output line differs.
+    private static let we2dMeshFragments = [
+        "we2d_particle_mesh": "c*v_Color", "we2d_particle_alpha": "vec4(1.0,1.0,1.0,c.a*v_Color.a)",
+        "we2d_trail_color": "vec4(v_Color.rgb,c.a*v_Color.a)", "we2d_trail_alpha": "vec4(1.0,1.0,1.0,c.a*v_Color.a)",
+    ].mapValues { output in
+        """
+        uniform sampler2D g_Texture0;
+        uniform vec4 g_Texture0Resolution;
+        uniform float u_SourceTintMode; // {"material":"sourcetintmode","label":"KV1 源染色","default":0,"range":[0,1]}
+        varying vec2 v_TexCoord;
+        varying vec4 v_Color;
+        void main(){
+            vec2 mapped=g_Texture0Resolution.zw/g_Texture0Resolution.xy;
+            vec4 c=texSample2DLod(g_Texture0,v_TexCoord*mapped,0.0);
+            c.rgb=mix(c.rgb,mix(vec3(1.0,1.0,1.0),c.rgb,c.a),u_SourceTintMode);
+            gl_FragColor=\(output);
+        }
+        """
+    }
+
+    @Test func workshopMeshShadersCompileAsAuthoredMeshAndPassAttributeAdmission() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        for (name, fragment) in Self.we2dMeshFragments.sorted(by: { $0.key < $1.key }) {
+            let result = try compileLinkedStages(vertex: Self.we2dMeshVertex, fragment: fragment, execution: .authoredMesh)
+            let vertex = try #require(result.vertexStage, Comment(rawValue: name))
+            #expect(vertex.execution == .authoredMesh && result.vertexFunctionName == "wpe_authored_mesh_vertex", Comment(rawValue: name))
+            #expect(WPEMetalRenderExecutor.authoredMeshAttributeRejection(result) == nil, Comment(rawValue: name))
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = try #require(vertex.library.makeFunction(name: result.vertexFunctionName))
+            descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: result.library, name: result.fragmentFunctionName, format: .rgba32Float)
+            descriptor.colorAttachments[0].pixelFormat = .rgba32Float
+            _ = try device.makeRenderPipelineState(descriptor: descriptor)
+        }
+        let fragment = try #require(Self.we2dMeshFragments["we2d_particle_mesh"])
+        for (declaration, name) in [("attribute vec4 a_TexCoord;", "a_TexCoord"), ("attribute vec2 a_TexCoordC1;", "a_TexCoordC1")] {
+            let vertex = Self.we2dMeshVertex.replacingOccurrences(of: "attribute vec2 a_TexCoord;", with: declaration)
+                .replacingOccurrences(of: "v_TexCoord=a_TexCoord;", with: "v_TexCoord=\(name).xy;")
+            let result = try compileLinkedStages(vertex: vertex, fragment: fragment, execution: .authoredMesh)
+            #expect(WPEMetalRenderExecutor.authoredMeshAttributeRejection(result) == .unverifiedMeshAttribute(name))
+        }
+    }
+
+    @Test func authoredMeshLayoutFollowsTheFixedOfficialChannelOrder() {
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["position", "uv", "color"])?.words == [9, 0, -1, -1, 3, 5])
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["position", "normal", "tangentSigned", "uv", "color"])?.words == [16, 0, 3, 6, 10, 12])
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["position", "uv"])?.floatsPerVertex == 5)
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["uv", "position"]) == nil)
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["position", "position"]) == nil)
+        #expect(WPEAuthoredMeshVertexLayout(vertexFormat: ["position", "texcoord"]) == nil)
+    }
+
+    @Test func particleMeshReadsInterleavedPositionUVColorThroughModelThenViewProjection() throws {
+        let fragment = try #require(Self.we2dMeshFragments["we2d_particle_mesh"])
+        let model: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.2, 0.2, 0, 1]
+        let viewProjection: [Double] = [0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        let color = SIMD4<Float>(0.5, 0.75, 1, 0.625)
+        let texel = SIMD4<Float>(0.375, 0.25, 0.5, 1)
+        for (format, expectedColor) in [(["position", "uv", "color"], color), (["position", "uv"], SIMD4<Float>(repeating: 1))] {
+            let layout = try #require(WPEAuthoredMeshVertexLayout(vertexFormat: format))
+            let colorChannel: [Float] = format.contains("color") ? [color.x, color.y, color.z, color.w] : []
+            let corners: [SIMD2<Float>] = [SIMD2(-2, -2), SIMD2(2, -2), SIMD2(-2, 2)]
+            let vertices: [Float] = corners.flatMap { (corner: SIMD2<Float>) -> [Float] in
+                let positionUV: [Float] = [corner.x, corner.y, 0, 0.625, 0.375]
+                return positionUV + colorChannel
+            }
+            let pixels = try meshReplay(vertex: Self.we2dMeshVertex, fragment: fragment, vertices: vertices, layout: layout,
+                                        vertexValues: ["g_ModelMatrix": .vector(model), "g_ViewProjectionMatrix": .vector(viewProjection)],
+                                        fragmentValues: ["g_Texture0Resolution": .vector([4, 4, 4, 4]), "u_SourceTintMode": .number(1)])
+            for y in 0 ..< 4 {
+                for x in 0 ..< 4 {
+                    // Clip corners (-0.4,-0.9), (1.6,-0.9), (-0.4,1.1): VP * (M * position).
+                    let clip = SIMD2<Float>((Float(x) + 0.5) / 2 - 1, 1 - (Float(y) + 0.5) / 2)
+                    let covered = clip.x > -0.4 && clip.y > -0.9 && clip.x + clip.y < 0.7
+                    let expected = covered ? texel * expectedColor : SIMD4(repeating: -99)
+                    let error = pixels[y * 4 + x] - expected
+                    #expect(max(abs(error.x), abs(error.y), abs(error.z), abs(error.w)) < 0.00001,
+                            Comment(rawValue: "\(format) \(x),\(y) \(pixels[y * 4 + x])"))
+                }
+            }
+        }
+    }
+
+    private func meshReplay(vertex: String, fragment: String, vertices: [Float], layout: WPEAuthoredMeshVertexLayout,
+                            vertexValues: [String: WPESceneShaderConstantValue],
+                            fragmentValues: [String: WPESceneShaderConstantValue]) throws -> [SIMD4<Float>] {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fs = try compileLinkedStages(vertex: vertex, fragment: fragment, execution: .authoredMesh)
+        let vs = try #require(fs.vertexStage)
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vs.library.makeFunction(name: fs.vertexFunctionName)
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: fs.library, name: fs.fragmentFunctionName, format: .rgba32Float)
+        descriptor.colorAttachments[0].pixelFormat = .rgba32Float
+        let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        let binder = try WPEMetalRenderExecutor(device: device)
+        let sourceDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: 4, height: 4, mipmapped: false)
+        sourceDescriptor.storageMode = .shared; sourceDescriptor.usage = [.shaderRead]
+        let source = try #require(device.makeTexture(descriptor: sourceDescriptor))
+        // Texel (x, y) = ((x+1)/8, (y+1)/8, 0.5, 1); UV (0.625, 0.375) selects (2, 1).
+        let texels = (0 ..< 16).map { (index: Int) -> SIMD4<Float> in
+            let x = Float(index % 4 + 1), y = Float(index / 4 + 1)
+            return SIMD4<Float>(x / 8, y / 8, 0.5, 1)
+        }
+        texels.withUnsafeBytes { source.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 64) }
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: 4, height: 4, mipmapped: false)
+        td.storageMode = .shared; td.usage = [.renderTarget]
+        let target = try #require(device.makeTexture(descriptor: td))
+        let command = try #require(device.makeCommandQueue()?.makeCommandBuffer())
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(-99, -99, -99, -99)
+        pass.colorAttachments[0].storeAction = .store
+        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
+        encoder.setRenderPipelineState(pipeline)
+        vertices.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: 2) }
+        layout.words.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: 3) }
+        let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
+        for slot in 0 ..< fs.textureSlotCount {
+            encoder.setFragmentTexture(source, index: slot); encoder.setFragmentSamplerState(sampler, index: slot)
+        }
+        for (stage, layout, values) in [(WPEShaderStage.vertex, vs.uniformLayout, vertexValues), (.fragment, fs.uniformLayout, fragmentValues)] {
+            var slots = [SIMD4<Float>](repeating: .zero, count: max(1, layout.map { $0.slot + $0.slotCount }.max() ?? 0))
+            try slots.withUnsafeMutableBufferPointer { storage in
+                for uniform in layout {
+                    try WPEUniformPacking.pack(values[uniform.name], uniform: uniform, into: storage)
+                }
+            }
+            _ = binder.bindTranslatedUniformSlots(slots, to: encoder, stage: stage)
+        }
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count / layout.floatsPerVertex)
+        encoder.endEncoding(); command.commit(); command.waitUntilCompleted()
+        #expect(command.status == .completed && command.error == nil)
+        var pixels = [SIMD4<Float>](repeating: .zero, count: 16)
+        pixels.withUnsafeMutableBytes { target.getBytes($0.baseAddress!, bytesPerRow: 64, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0) }
+        return pixels
+    }
+
+    /// Goes through the production shader loader: real WPE bodies rely on its engine macro prelude and newline normalization.
+    private func compileLinkedStages(vertex: String, fragment: String, premultipliedInputSlots: Set<Int> = [],
+                                     execution: WPEVertexExecution) throws -> WPEShaderCompileResult {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let compiler = WPESwiftShaderCompiler(device: device, translationCache: WPEShaderTranslationCache(rootURL: root))
-        // Exercise the production loader as well as preprocessing: real WPE
-        // bodies rely on its engine macro prelude and newline normalization.
         let shaderRoot = root.appendingPathComponent("shaders")
         try FileManager.default.createDirectory(at: shaderRoot, withIntermediateDirectories: true)
         try vertex.write(to: shaderRoot.appendingPathComponent("linked_stage.vert"), atomically: true, encoding: .utf8)
@@ -743,9 +890,18 @@ struct WPELinkedShaderStageTests {
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: prepared, recordFailure: false))
             .replacingPremultipliedAlphaSettings(inputSlots: premultipliedInputSlots, output: false)
             .replacingVertexExecution(execution)
-        let fs = try compiler.compile(request)
+        return try compiler.compile(request)
+    }
+
+    private func replay(vertex: String, fragment: String,
+                        vertexValues: [String: WPESceneShaderConstantValue] = [:],
+                        fragmentValues: [String: WPESceneShaderConstantValue] = [:],
+                        vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = [],
+                        execution: WPEVertexExecution = .authoredFullscreen, positionScale: SIMD2<Float> = SIMD2(1, 1), requiredPositionProof: Bool? = nil) throws -> [SIMD4<Float>] {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fs = try compileLinkedStages(vertex: vertex, fragment: fragment, premultipliedInputSlots: premultipliedInputSlots, execution: execution)
         if let requiredPositionProof {
-            #expect(fs.fullscreenMVPPositionOnly == requiredPositionProof, Comment(rawValue: request.processedVertexSource))
+            #expect(fs.fullscreenMVPPositionOnly == requiredPositionProof, Comment(rawValue: vertex))
         }
         let vs = try #require(fs.vertexStage)
         let descriptor = MTLRenderPipelineDescriptor()

@@ -6,6 +6,7 @@ import SwiftUI
 struct WorkshopDownloadsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SteamCMDDoctorService.self) private var doctor
+    let onConnectSteam: () -> Void
     @State private var downloads = WorkshopDownloadCoordinator.shared
     @State private var queue = WorkshopDownloadQueue.shared
 
@@ -13,6 +14,11 @@ struct WorkshopDownloadsSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             SteamSheetHeader(icon: "arrow.down.circle", title: "Downloads")
                 .padding(DesignTokens.Spacing.xl)
+            SteamDownloadBlockerBanner {
+                dismiss()
+                onConnectSteam()
+            }
+            .padding([.horizontal, .bottom], DesignTokens.Spacing.xl)
             if downloads.downloadOrder.isEmpty {
                 IllustratedEmptyState(
                     symbol: "arrow.down.circle", title: "No downloads yet",

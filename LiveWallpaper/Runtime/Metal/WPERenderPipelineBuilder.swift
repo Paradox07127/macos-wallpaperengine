@@ -233,6 +233,34 @@ struct WPERenderPipelineBuilder: Sendable {
         )
     }
 
+    /// Material path → prepared template; a pass whose shader fails to load gets no entry.
+    func registeredMaterialTemplates(_ passes: [String: WPERenderPass]) -> [String: WPEPreparedRenderPass] {
+        Self.resolvingRegisteredMaterialTemplates(passes.compactMapValues { try? preparedPass(for: $0, fboFormats: [:]) })
+    }
+
+    /// Hidden carrier layers, keyed back by `materialPath`, so contract resolution and texture loading treat templates as scene passes.
+    static func registeredMaterialTemplateLayers(_ templates: [String: WPEPreparedRenderPass]) -> [WPEPreparedRenderLayer] {
+        templates.sorted { $0.key < $1.key }.map { path, template in
+            WPEPreparedRenderLayer(
+                graphLayer: WPERenderLayer(objectID: template.id, objectName: path, visible: false, imagePath: "", materialPath: path,
+                                           geometry: .identity, compositeA: "", compositeB: "", localFBOs: [], passes: [template.pass]),
+                passes: [template]
+            )
+        }
+    }
+
+    static func resolvingRegisteredMaterialTemplates(
+        _ templates: [String: WPEPreparedRenderPass],
+        externalSemantics: (WPETextureReference) -> WPEResourceSemantics? = { _ in nil }
+    ) -> [String: WPEPreparedRenderPass] {
+        let resolved = WPEPreparedRenderPipeline(layers: registeredMaterialTemplateLayers(templates))
+            .resolvingRenderContracts(externalSemantics: externalSemantics)
+        return Dictionary(uniqueKeysWithValues: resolved.layers.compactMap { layer in
+            guard let path = layer.graphLayer.materialPath, let pass = layer.passes.first else { return nil }
+            return (path, pass)
+        })
+    }
+
     func preprocessShaderStageForTesting(
         source: String,
         logicalPath: String,

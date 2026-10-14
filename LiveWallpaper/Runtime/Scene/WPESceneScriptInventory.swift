@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Foundation
 import LiveWallpaperProWPE
 
 extension WPESceneScriptInstanceInventory {
@@ -95,6 +96,25 @@ extension WPESceneScriptInstanceInventory {
                 || code.contains("mediaThumbnailChanged")
                 || code.contains("mediaTimelineChanged")
         }
+    }
+
+    /// Material paths passed to `engine.registerAsset` as a whole string literal, deduplicated in source order.
+    static func registeredAssetPaths(in document: WPESceneDocument) -> [String] {
+        // The trailing `[,)]` keeps `'a' + b` out: only a complete literal names an asset statically.
+        let pattern = #"engine\s*\.\s*registerAsset\s*\(\s*(?:'([^'\\\r\n]*)'|"([^"\\\r\n]*)")\s*[,)]"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        var paths: [String] = []
+        forEachBoundScript(in: document) { _, script in
+            let source = script as NSString
+            for match in expression.matches(in: script, range: NSRange(location: 0, length: source.length)) {
+                let range = match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range(at: 2)
+                let path = source.substring(with: range)
+                if !path.isEmpty, !paths.contains(path) {
+                    paths.append(path)
+                }
+            }
+        }
+        return paths
     }
 
     /// Removes `//`/`/* */` comments and '"`-quoted literals (escape-aware).

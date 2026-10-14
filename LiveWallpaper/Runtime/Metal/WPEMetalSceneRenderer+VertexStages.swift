@@ -143,20 +143,20 @@ extension WPEMetalRenderExecutor {
 extension WPEMetalSceneRenderer {
     /// Compile and build authored pairs before any frame encoder is opened.
     /// Failures are retained as explicit admission reasons; the legacy result stays available.
-    func prewarmAuthoredVertexShaders(for pipeline: WPEPreparedRenderPipeline,
+    /// `extraVariants` are layerless passes (script-registered mesh materials) warmed with the same budget.
+    func prewarmAuthoredVertexShaders(for pipeline: WPEPreparedRenderPipeline, extraVariants: [WPEAuthoredPassPrewarmVariant] = [],
                                       on _: isolated WPEDisplayRenderActor) async -> Set<String> {
         guard !Task.isCancelled else { return [] }
         let generation = loadGeneration
         var requestByKey: [String: WPEShaderCompileRequest] = [:]
         var candidates: [(pass: WPEPreparedRenderPass, key: String)] = []
-        for layer in pipeline.layers {
-            for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms) where variant.pass.shader?.isBuiltin == false {
-                guard !Task.isCancelled else { return [] }
-                let pass = variant.pass
-                guard let authored = executor.authoredPrewarmRequest(for: pass, execution: variant.vertexExecution) else { continue }
-                requestByKey[authored.translationCacheKey] = authored
-                candidates.append((pass, authored.translationCacheKey))
-            }
+        let variants = pipeline.layers.flatMap { WPEMetalRenderExecutor.authoredPrewarmVariants(for: $0, camera: cameraUniforms) } + extraVariants
+        for variant in variants where variant.pass.shader?.isBuiltin == false {
+            guard !Task.isCancelled else { return [] }
+            let pass = variant.pass
+            guard let authored = executor.authoredPrewarmRequest(for: pass, execution: variant.vertexExecution) else { continue }
+            requestByKey[authored.translationCacheKey] = authored
+            candidates.append((pass, authored.translationCacheKey))
         }
         let partition = executor.partitionTranslatedShaderPrewarmRequests(Array(requestByKey.values))
         let compiler = executor.shaderCompiler

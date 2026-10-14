@@ -509,7 +509,8 @@ struct WPEStaticParentHierarchyContext: Equatable, Sendable {
         // Omitted depths parse as (1, 1); they are inert while the scene-wide
         // parallax mechanism is disabled by this context's admission above.
         eligibleAncestorIDs = Set(document.transformHostObjects.filter {
-            $0.originAnimation == nil && $0.originScript == nil && $0.scaleScript == nil && $0.anglesScript == nil
+            $0.originAnimation == nil && $0.scaleAnimation == nil && $0.anglesAnimation == nil
+                && $0.originScript == nil && $0.scaleScript == nil && $0.anglesScript == nil
                 && $0.parallaxDepth.x.isFinite && $0.parallaxDepth.y.isFinite
         }.map(\.id))
     }
@@ -864,7 +865,7 @@ extension WPEPreparedRenderPipeline {
                 }
             }
         }
-        let sceneHDR = (runtimeUniformValues["g_SceneHDREnabled"]?.numberValue ?? 0) > 0.5
+        let sceneHDR = camera.sceneHDR
         func addingLayerColors(_ layers: [WPEPreparedRenderLayer]) -> WPEFrameUniformContext {
             var context = frameUniforms
             for layer in layers {
@@ -900,7 +901,7 @@ extension WPEPreparedRenderPipeline {
                     }
                     // The animated tint is a recomputed seed: it goes in before the script merge so scripted constants still override.
                     if overridesLayerColor {
-                        let tint = geometry.color * geometry.brightness
+                        let tint = geometry.color * (sceneHDR ? geometry.brightness : 1)
                         values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
                     // A script claim on animated g_Color lands after resolve, component-wise: the animation still owns what the script did not take.

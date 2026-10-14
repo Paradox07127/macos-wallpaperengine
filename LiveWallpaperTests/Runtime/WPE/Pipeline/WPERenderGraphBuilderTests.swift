@@ -6,6 +6,67 @@ import Testing
 
 @Suite("WPE render graph builder")
 struct WPERenderGraphBuilderTests {
+    @Test("registerAsset string literals are collected once in script order; computed arguments are not")
+    func registerAssetLiteralsAreCollected() throws {
+        let script = """
+        const a = engine.registerAsset('materials/particles/emitter_00.json',true);
+        const b = engine.registerAsset( "materials/particles/trail_additive_color.json" );
+        const again = engine.registerAsset('materials/particles/emitter_00.json', true);
+        const name = 'materials/dynamic.json';
+        const c = engine.registerAsset(name), d = engine.registerAsset('materials/' + name);
+        export function update(value) { value.x = shared.offset || value.x; return value; }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64, "auto": true]],
+            "objects": [["id": "1", "name": "Host", "type": "image", "image": "models/util/solidlayer.json",
+                         "origin": ["value": "0 0 0", "script": script]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
+        #expect(WPESceneScriptInstanceInventory.registeredAssetPaths(in: document)
+            == ["materials/particles/emitter_00.json", "materials/particles/trail_additive_color.json"])
+    }
+
+    @Test("Registered materials become prepared pass templates keyed by path with their texture bindings")
+    func registeredMaterialTemplatesBindTheirTextures() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = "materials/particles/trail_additive_color.json"
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("materials/particles"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("shaders"), withIntermediateDirectories: true)
+        try Data(#"""
+        {"passes":[{"shader":"we2d_trail_color","textures":["source/trail_atlas"],"blending":"additive",
+          "cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled","constantshadervalues":{"sourcetintmode":1}}]}
+        """#.utf8).write(to: root.appendingPathComponent(path))
+        try Data("""
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_TexCoord;
+        void main(){ gl_Position=vec4(a_Position,1.0); v_TexCoord=a_TexCoord; }
+        """.utf8).write(to: root.appendingPathComponent("shaders/we2d_trail_color.vert"))
+        try Data("""
+        uniform sampler2D g_Texture0;
+        uniform float u_SourceTintMode; // {"material":"sourcetintmode","default":0}
+        varying vec2 v_TexCoord;
+        void main(){ gl_FragColor=texSample2D(g_Texture0,v_TexCoord)*u_SourceTintMode; }
+        """.utf8).write(to: root.appendingPathComponent("shaders/we2d_trail_color.frag"))
+
+        let passes = WPERenderGraphBuilder(cacheRootURL: root).registeredMaterialPasses(paths: [path, "materials/missing.json"])
+        let templates = WPERenderPipelineBuilder(cacheRootURL: root).registeredMaterialTemplates(passes)
+        #expect(Set(templates.keys) == [path])
+        let template = try #require(templates[path])
+        #expect(template.pass.shader == "we2d_trail_color" && template.shader?.isBuiltin == false)
+        #expect(template.pass.target == .scene && template.pass.depthTest == "disabled" && template.pass.cullMode == "nocull")
+        #expect(template.uniformValues["u_SourceTintMode"] == .number(1))
+        let binding = try #require(template.textureBindings[0])
+        switch binding {
+        case let .asset(texture), let .image(texture): #expect(texture.hasSuffix("trail_atlas"))
+        default: Issue.record("slot 0 must name the material texture, got \(binding)")
+        }
+        #expect(template.renderContract.inputs[0]?.reference == binding)
+    }
+
     @Test("Builds material and effect passes from WPE asset JSON without effect-name fallbacks")
     func buildsMaterialAndEffectPassGraph() throws {
         let root = FileManager.default.temporaryDirectory

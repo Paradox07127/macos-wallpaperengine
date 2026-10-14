@@ -126,7 +126,7 @@ extension WPEMetalSceneRenderer {
         let sampledCameraMotion = cameraUniforms.sceneMotion
         applyScriptCameraMotion(liveScriptTransforms, sampled: sampledCameraMotion)
         frameOverlay.colors = layerColorsExcludingText(liveTransforms.colors)
-        var framePipeline = pipeline.applyingFrameOverlay(frameOverlay)
+        var framePipeline = pipeline.applyingFrameOverlay(frameOverlay, sceneHDR: cameraUniforms.sceneHDR)
         if !liveTransforms.isEmpty {
             framePipeline = framePipeline
                 .applyingLayerTransforms(

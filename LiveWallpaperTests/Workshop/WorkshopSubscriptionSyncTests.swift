@@ -68,6 +68,25 @@ struct WorkshopSubscriptionSyncTests {
                 Issue.record("an unreadable library was read as empty, got \(fixture.sync.phase)")
                 return
             }
+            #expect(fixture.sync.requiresLibraryAccess, "the sheet offers no way to authorize the library again")
+        }
+    }
+
+    @Test("A check without an authorized Steam library offers to choose the folder")
+    func unauthorizedLibraryOffersFolderChoice() async throws {
+        let fixture = try SyncFixture()
+        await TestScratch.withCleanup { await fixture.discard() } operation: {
+            fixture.doctor.workdirBookmarkData = nil
+            fixture.listing.ids = [itemID]
+
+            await fixture.sync.refresh(using: fixture.doctor)
+
+            guard case .failed = fixture.sync.phase else {
+                Issue.record("the check was expected to fail, got \(fixture.sync.phase)")
+                return
+            }
+            #expect(fixture.sync.requiresLibraryAccess)
+            #expect(!fixture.sync.requiresSignIn)
         }
     }
 
@@ -175,8 +194,9 @@ private final class SyncFixture {
     let sync: WorkshopSubscriptionSync
 
     init(parks: Bool = false, function: String = #function) throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SubscriptionSync-\(UUID().uuidString)", isDirectory: true)
+        // An app-home fixture needs no external sandbox extension. The missing-grant case clears its bookmark.
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Library/Caches/SubscriptionSync-\(UUID().uuidString)", isDirectory: true)
         self.root = root
         let source = root.appendingPathComponent("source/42", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)

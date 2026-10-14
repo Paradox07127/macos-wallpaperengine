@@ -247,7 +247,8 @@ struct WPEShaderStageLink {
     /// vertex stage), so these bind by name at the output's own type.
     private let implicitFragmentBindings: [FragmentBinding]
 
-    init(vertex: String, fragment: String) throws {
+    /// `.authoredMesh` links any non-array attribute; mesh admission decides which ones the vertex buffer can feed.
+    init(vertex: String, fragment: String, execution: WPEVertexExecution = .authoredFullscreen) throws {
         let inventory = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
         interface = inventory
         let activeFragment = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragment))
@@ -283,7 +284,8 @@ struct WPEShaderStageLink {
         }
         let attributes = interface.variables(stage: .vertex, kind: .attribute)
         guard attributes.allSatisfy({
-            $0.arrayDimensions.isEmpty && (($0.key.name == "a_Position" && ["vec3", "vec4"].contains($0.glslType))
+            $0.arrayDimensions.isEmpty && (execution == .authoredMesh
+                || ($0.key.name == "a_Position" && ["vec3", "vec4"].contains($0.glslType))
                 || ($0.key.name == "a_TexCoord" && ["vec2", "vec4"].contains($0.glslType)))
         }) else { throw WPEShaderCompilerError.translationFailed("authored fullscreen stage has unsupported attributes") }
         var total = 0

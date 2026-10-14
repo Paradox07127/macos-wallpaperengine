@@ -85,4 +85,29 @@ struct SteamStatusGlyph: View {
         }
     }
 }
+
+// MARK: - Download blocker
+
+/// The doctor's missing-step sentence with a route to the setup that fixes it; nothing once downloads are ready.
+struct SteamDownloadBlockerBanner: View {
+    @Environment(SteamCMDDoctorService.self) private var doctor
+    /// nil = no Connect Steam button; the host cannot be dismissed without losing state.
+    var onConnectSteam: (() -> Void)?
+
+    var body: some View {
+        if let reason = doctor.downloadBlockerMessage {
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.warning,
+                symbol: "arrow.down.circle.dotted",
+                title: Text(verbatim: reason),
+                surface: .content
+            ) {
+                if let onConnectSteam {
+                    Button("Connect Steam", action: onConnectSteam)
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+}
 #endif

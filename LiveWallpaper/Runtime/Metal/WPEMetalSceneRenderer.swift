@@ -191,6 +191,8 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     /// Keyframed `origin` on the same live-transform map as origin scripts (3448877775 meteor host gates its stars).
     var dynamicOriginAnimations: [String: WPESceneAnimatedValue] = [:]
+    var dynamicScaleAnimations: [String: WPESceneAnimatedValue] = [:]
+    var dynamicAnglesAnimations: [String: WPESceneAnimatedValue] = [:]
     var dynamicScaleScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
@@ -248,6 +250,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var liveLayerPresentation: [String: WPELayerScriptPresentationMutation] = [:]
     /// Hidden template layers are retained only when a script references them.
     var createdLayerTemplatesByImagePath: [String: WPEPreparedRenderLayer] = [:]
+    /// `engine.registerAsset` material path → scene-target pass, shaders warmed as `.authoredMesh`; never drawn by the pipeline.
+    var registeredMaterialTemplatesByPath: [String: WPEPreparedRenderPass] = [:]
     var introPhaseSource: WPEVideoTextureSource?
     var loopPhaseSource: WPEVideoTextureSource?
     var introLoopOffset: TimeInterval?

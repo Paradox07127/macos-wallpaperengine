@@ -190,9 +190,22 @@ extension WPEMetalSceneRenderer {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        func keyframed(_ track: (WPESceneImageObject) -> WPESceneAnimatedValue?,
+                       _ hostTrack: (WPESceneTransformHostObject) -> WPESceneAnimatedValue?) -> [String: WPESceneAnimatedValue] {
+            Dictionary(
+                document.imageObjects.compactMap { object in track(object).map { (object.id, $0) } }
+                    + document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
+                        guard object.id != cameraMotionPlayback?.definition.objectID else { return nil }
+                        return hostTrack(object).map { (object.id, $0) }
+                    },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+        dynamicScaleAnimations = keyframed(\.scaleAnimation, \.scaleAnimation)
+        dynamicAnglesAnimations = keyframed(\.anglesAnimation, \.anglesAnimation)
         debugStage(
             "transformScripts.load",
-            "origin=\(originScripts.count) scale=\(scaleScripts.count) angles=\(anglesScripts.count) color=\(colorScripts.count) originAnim=\(dynamicOriginAnimations.count) hosts=\(document.transformHostObjects.count)"
+            "origin=\(originScripts.count) scale=\(scaleScripts.count) angles=\(anglesScripts.count) color=\(colorScripts.count) originAnim=\(dynamicOriginAnimations.count) scaleAnim=\(dynamicScaleAnimations.count) anglesAnim=\(dynamicAnglesAnimations.count) hosts=\(document.transformHostObjects.count)"
         )
         let rateScripts = document.particleObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.instanceOverride?.rateScript.map { (object.id, $0) }
@@ -504,6 +517,8 @@ extension WPEMetalSceneRenderer {
         particleAlphaScriptInstances.removeAll(keepingCapacity: false)
         liveParticleInstanceAlpha.removeAll(keepingCapacity: false)
         dynamicOriginAnimations.removeAll(keepingCapacity: false)
+        dynamicScaleAnimations.removeAll(keepingCapacity: false)
+        dynamicAnglesAnimations.removeAll(keepingCapacity: false)
         dynamicOriginScriptInstances.removeAll(keepingCapacity: false)
         dynamicScaleScriptInstances.removeAll(keepingCapacity: false)
         dynamicAnglesScriptInstances.removeAll(keepingCapacity: false)

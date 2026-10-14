@@ -1652,7 +1652,27 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    private func loadMaterial(path: String) throws -> WPEMaterialAsset {
+    static let registeredMaterialPassIDPrefix = "registered-asset:"
+
+    /// One scene-target pass per `engine.registerAsset` material; unreadable or multi-pass materials get none.
+    func registeredMaterialPasses(paths: [String]) -> [String: WPERenderPass] {
+        var passes: [String: WPERenderPass] = [:]
+        for path in paths {
+            guard let material = try? loadMaterial(path: path), material.passes.count == 1, let pass = material.passes.first else { continue }
+            passes[path] = WPERenderPass(
+                id: Self.registeredMaterialPassIDPrefix + path, phase: .material, shader: pass.shader,
+                source: pass.textures[0] ?? .previous, target: .scene, textures: pass.textures, binds: [:],
+                constants: pass.constants, combos: pass.combos,
+                userTextureBindings: WPERenderUserTextureBindings(material: material.userTextures, pass: pass.userTextures),
+                authoredJSON: WPERenderPassAuthoredJSON(materialDocument: material.sourceJSON, materialPass: pass.sourceJSON),
+                blending: pass.blending.premultipliedRenderTargetBlendMode, cullMode: pass.cullMode,
+                depthTest: pass.depthTest, depthWrite: pass.depthWrite
+            )
+        }
+        return passes
+    }
+
+    func loadMaterial(path: String) throws -> WPEMaterialAsset {
         let dict = try readJSONObject(path: path)
         guard let sourceJSON = WPESceneJSONValue(jsonValue: dict) else {
             throw WPERenderGraphError.invalidJSON(path)
@@ -3064,7 +3084,7 @@ private extension Array where Element == WPERenderPass {
     }
 }
 
-private struct WPEMaterialAsset {
+struct WPEMaterialAsset {
     let path: String
     let passes: [WPEMaterialPass]
     let userTextures: [WPESceneUserTextureBinding]
@@ -3106,7 +3126,7 @@ private struct WPEEffectPass {
     }
 }
 
-private struct WPEMaterialPass {
+struct WPEMaterialPass {
     let shader: String
     let textures: [Int: WPETextureReference]
     let constants: [String: WPESceneShaderConstantValue]

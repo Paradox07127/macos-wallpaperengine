@@ -15,13 +15,13 @@ struct WPEFrameOverlayTests {
             alpha: mask & 2 == 0 ? [:] : ["layer": 0.25],
             colors: mask & 4 == 0 ? [:] : ["layer": SIMD3(0.2, 0.4, 0.6)]
         )
-        #expect(pipeline.applyingFrameOverlay(overlay) == Self.legacy(pipeline, overlay))
+        #expect(pipeline.applyingFrameOverlay(overlay, sceneHDR: true) == Self.legacy(pipeline, overlay))
     }
 
     @Test("Claims preserve unclaimed animated g_Color components and access metadata")
     func animatedClaims() throws {
         let pipeline = Self.fixture(animated: true)
-        let alpha = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]))
+        let alpha = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["layer": 0.25]), sceneHDR: true)
         #expect(alpha.layers[0].passes[0].access === pipeline.layers[0].passes[0].access)
         for time in [0.0, 4.0] {
             let values = Self.resolved(alpha, time: time)
@@ -30,14 +30,21 @@ struct WPEFrameOverlayTests {
             #expect(color[2] == (time == 0 ? 1 : 0))
             #expect(color[3] == 0.25)
         }
-        let both = alpha.applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3(0.2, 0.4, 0.6)]))
+        let both = alpha.applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3(0.2, 0.4, 0.6)]), sceneHDR: true)
         let color = try #require(Self.resolved(both, time: 4)["g_Color"]?.vectorValue)
         #expect(color == [0.4, 0.8, 1.2, 0.25])
-        let rgb = pipeline.applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3(0.2, 0.4, 0.6)]))
+        let rgb = pipeline.applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3(0.2, 0.4, 0.6)]), sceneHDR: true)
         #expect(Self.resolved(rgb, time: 0)["g_Color"]?.vectorValue == [0.4, 0.8, 1.2, 0.2])
         #expect(Self.resolved(rgb, time: 4)["g_Color"]?.vectorValue == [0.4, 0.8, 1.2, 0.8])
         // Foreign shaders can use g_Color for a different purpose.
         #expect(both.layers[0].passes[1].uniformValues == pipeline.layers[0].passes[1].uniformValues)
+    }
+
+    @Test("Script color multiplies object brightness into solid g_Color only in HDR scenes", arguments: [false, true])
+    func scriptColorBrightnessFollowsSceneHDR(sceneHDR: Bool) {
+        let result = Self.fixture().applyingFrameOverlay(WPEFrameOverlay(colors: ["layer": SIMD3(0.2, 0.4, 0.6)]), sceneHDR: sceneHDR)
+        let expected: [Double] = sceneHDR ? [0.4, 0.8, 1.2, 1] : [0.2, 0.4, 0.6, 1]
+        #expect(result.layers[0].passes[0].uniformValues["g_Color"]?.vectorValue == expected)
     }
 
     @Test("Matching authored values still claim animations and group-local tint")
@@ -45,7 +52,7 @@ struct WPEFrameOverlayTests {
         let pipeline = Self.fixture(animated: true, animatedGeometry: true)
         let original = pipeline.layers[0].graphLayer
         let overlay = WPEFrameOverlay(alpha: ["layer": original.geometry.alpha], colors: ["layer": original.geometry.color])
-        let result = pipeline.applyingFrameOverlay(overlay)
+        let result = pipeline.applyingFrameOverlay(overlay, sceneHDR: true)
         let graph = result.layers[0].graphLayer
         #expect(graph.geometry.alphaAnimation == nil)
         #expect(graph.geometry.colorAnimation == nil)
@@ -63,11 +70,11 @@ struct WPEFrameOverlayTests {
         let pipeline = Self.fixture()
         for overlay in [WPEFrameOverlay(), WPEFrameOverlay(visibility: ["missing": false]),
                         WPEFrameOverlay(visibility: ["layer": true], alpha: ["layer": 1], colors: ["layer": SIMD3(repeating: 1)])] {
-            let result = pipeline.applyingFrameOverlay(overlay)
+            let result = pipeline.applyingFrameOverlay(overlay, sceneHDR: true)
             #expect(Self.sharesStorage(pipeline.layers, result.layers))
             #expect(Self.sharesStorage(pipeline.layers[0].passes, result.layers[0].passes))
         }
-        let hidden = pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false]))
+        let hidden = pipeline.applyingFrameOverlay(WPEFrameOverlay(visibility: ["layer": false]), sceneHDR: true)
         #expect(!hidden.layers[0].graphLayer.visible)
         #expect(Self.sharesStorage(pipeline.layers[0].passes, hidden.layers[0].passes))
     }
@@ -95,7 +102,7 @@ struct WPEFrameOverlayTests {
                 hostTransforms: ["group": WPERenderObjectTransform(origin: .zero, scale: SIMD3(repeating: 1), angles: .zero)]
             )
         }
-        let result = transform(pipeline.applyingFrameOverlay(overlay))
+        let result = transform(pipeline.applyingFrameOverlay(overlay, sceneHDR: true))
         #expect(result == transform(Self.legacy(pipeline, overlay)))
         #expect(abs(result.layers[0].graphLayer.geometry.origin.x) < 1e-10)
         #expect(abs(result.layers[0].graphLayer.geometry.origin.y - 10) < 1e-10)
@@ -128,14 +135,14 @@ struct WPEFrameOverlayTests {
                 )
                 let expectedChecksum = Self.checksum(Self.legacy(pipeline, overlay)) * Double(iterations)
                 for _ in 0 ..< 10 {
-                    _ = Self.legacy(pipeline, overlay); _ = pipeline.applyingFrameOverlay(overlay)
+                    _ = Self.legacy(pipeline, overlay); _ = pipeline.applyingFrameOverlay(overlay, sceneHDR: true)
                 }
                 for round in 0 ..< 5 {
                     for fused in round.isMultiple(of: 2) ? [false, true] : [true, false] {
                         let start = ContinuousClock.now
                         var checksum = 0.0
                         for _ in 0 ..< iterations {
-                            let result = fused ? pipeline.applyingFrameOverlay(overlay) : Self.legacy(pipeline, overlay)
+                            let result = fused ? pipeline.applyingFrameOverlay(overlay, sceneHDR: true) : Self.legacy(pipeline, overlay)
                             checksum += Self.checksum(result)
                         }
                         let elapsed = start.duration(to: .now)

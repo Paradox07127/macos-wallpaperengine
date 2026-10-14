@@ -265,11 +265,12 @@ extension WPEMetalSceneRenderer {
         let mounts = dependencyMounts
         let engineRoot = effectiveEngineAssetsRootURL
         let provider = sceneAssetProvider
-        let graph = try await CancellableBackgroundWork.run {
+        let registeredMaterialPaths = WPESceneScriptInstanceInventory.registeredAssetPaths(in: document)
+        let (graph, registeredMaterialPasses) = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderGraphBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderGraphBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.build(document: document)
+            return try (builder.build(document: document), builder.registeredMaterialPasses(paths: registeredMaterialPaths))
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         #if DEBUG
@@ -311,15 +312,17 @@ extension WPEMetalSceneRenderer {
         let publicationParents = publicationCamera.flatMap { _ in
             WPEStaticParentHierarchyContext(document: document, localTransforms: Self.ancestorLocalTransforms(in: document))
         }
-        let (pipeline, canonicalRotation, passthroughElision) = try await CancellableBackgroundWork.run {
+        let (pipeline, canonicalRotation, passthroughElision, registeredMaterialTemplates) = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.buildReportingCanonicalRotation(
+            let built = try builder.buildReportingCanonicalRotation(
                 graph: graph, sceneHDR: document.general.usesHDRRendering,
                 proceduralPublicationCamera: publicationCamera, proceduralParentHierarchy: publicationParents,
                 permitsEffectVisibilityPublication: permitsEffectGates
             )
+            return (built.pipeline, built.canonicalRotation, built.fullFramePassthroughElision,
+                    builder.registeredMaterialTemplates(registeredMaterialPasses))
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         lastCanonicalRotation = canonicalRotation
@@ -358,6 +361,7 @@ extension WPEMetalSceneRenderer {
 
         renderGraph = graph
         renderPipeline = pipeline
+        registeredMaterialTemplatesByPath = registeredMaterialTemplates
         createdLayerTemplatesByImagePath = Self.createdLayerTemplatesByImagePath(pipeline)
         executor.invalidateStaticLayerCache()
         textureCacheBudgetBytesResolved = Self.textureCacheBudgetBytes
@@ -554,15 +558,27 @@ extension WPEMetalSceneRenderer {
         try await withTaskCancellationHandler {
             debugStage("textures.load", "begin (pipeline-driven)")
             onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
-            try await loadTextures(for: pipeline, on: actor)
+            // Template textures ride along: `loadTextures` replaces the whole texture table.
+            try await loadTextures(for: WPEPreparedRenderPipeline(
+                layers: pipeline.layers + WPERenderPipelineBuilder.registeredMaterialTemplateLayers(registeredMaterialTemplates)
+            ), on: actor)
             try checkCurrentSceneScriptLoad(scriptLoadToken)
             renderPipeline = pipeline.resolvingSourceMipLevels { reference in
                 guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
                 return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
             }
-            renderPipeline = renderPipeline?.resolvingRenderContracts { reference in
+            let loadedSemantics: (WPETextureReference) -> WPEResourceSemantics? = { [self] reference in
                 guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
                 return WPEMetalTextureMetadataRegistry.shared.semantics(for: texture)
+            }
+            renderPipeline = renderPipeline?.resolvingRenderContracts(externalSemantics: loadedSemantics)
+            if !registeredMaterialTemplates.isEmpty {
+                registeredMaterialTemplatesByPath = WPERenderPipelineBuilder.resolvingRegisteredMaterialTemplates(
+                    registeredMaterialTemplates, externalSemantics: loadedSemantics)
+                _ = await prewarmAuthoredVertexShaders(for: WPEPreparedRenderPipeline(layers: []), extraVariants: registeredMaterialTemplatesByPath.values.map {
+                    .init(pass: $0, vertexExecution: .authoredMesh)
+                }, on: actor)
+                try checkCurrentSceneScriptLoad(scriptLoadToken)
             }
             indexOnDemandVideoLayers(pipeline: pipeline)
             configureSceneScriptVideoSourceMapping()

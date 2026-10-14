@@ -337,6 +337,8 @@ extension WPEMetalSceneRenderer {
             }
             let roles = layer.passes.flatMap { textureReferenceRoles(for: $0) }
                 + meshMaterialTextureRoles(for: layer.graphLayer)
+            // A registerAsset template is never drawn by the pipeline; its missing texture must not fail the scene.
+            let isRegisteredTemplate = layer.id.hasPrefix(WPERenderGraphBuilder.registeredMaterialPassIDPrefix)
             for role in roles {
                 if let path = externalTexturePath(for: role.reference),
                    // Synthetic text paths are graph routing tokens; the glyph pass has no disk texture.
@@ -346,7 +348,7 @@ extension WPEMetalSceneRenderer {
                         path: path,
                         layerName: layerName,
                         candidates: textureCandidates(for: path),
-                        isRequired: role.isRequired, usage: usage(for: path)
+                        isRequired: role.isRequired && !isRegisteredTemplate, usage: usage(for: path)
                     ))
                 }
             }

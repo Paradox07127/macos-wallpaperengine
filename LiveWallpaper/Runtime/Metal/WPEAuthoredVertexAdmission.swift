@@ -9,7 +9,7 @@ enum WPEAuthoredVertexRejection: Equatable {
     case disabledForIsolation, geometryUnavailable, pipelineNotPrewarmed, stageUnavailable(String)
     case requiredUniformMissing(String), invalidMatrix(String), unverifiedEffectProjection3D
     case unverifiedFullscreenDepth, unverifiedFullscreenMVP, unverifiedEffectPositionContext, unverifiedObjectQuadSpace
-    case unverifiedInheritedObjectMatrix
+    case unverifiedInheritedObjectMatrix, unverifiedMeshAttribute(String)
 
     var reason: String {
         switch self {
@@ -25,11 +25,21 @@ enum WPEAuthoredVertexRejection: Equatable {
         case .unverifiedInheritedObjectMatrix: "inherited-object-matrix-producer-unverified"
         case .unverifiedEffectPositionContext: "effect-position-context-unverified"
         case .unverifiedEffectProjection3D: "effect-projection-3D-unverified"
+        case let .unverifiedMeshAttribute(name): "mesh-attribute-unverified:\(name)"
         }
     }
 }
 
 extension WPEMetalRenderExecutor {
+    /// A mesh stage is admitted only when every declared attribute is an official IModelData channel of its exact type.
+    static func authoredMeshAttributeRejection(_ result: WPEShaderCompileResult) -> WPEAuthoredVertexRejection? {
+        guard let interface = result.shaderInterface else { return .stageUnavailable("authored-mesh-interface-unavailable") }
+        let unknown = interface.variables(stage: .vertex, kind: .attribute).first {
+            !$0.arrayDimensions.isEmpty || WPEAuthoredMeshChannel(attribute: $0.key.name, glslType: $0.glslType) == nil
+        }
+        return unknown.map { .unverifiedMeshAttribute($0.key.name) }
+    }
+
     static func canSupplyAuthoredObjectQuad(layer: WPERenderLayer, camera: WPEMetalCameraUniforms) -> Bool {
         let geometry = layer.geometry
         guard !layer.isUtilityModelLayer, layer.attachment == nil, layer.groupRenderTarget == nil,
@@ -149,6 +159,9 @@ extension WPEMetalRenderExecutor {
         guard let vertex = result.vertexStage else { return .stageUnavailable("authored-stage-unavailable") }
         guard pass.pass.depthTest.lowercased() == "disabled", pass.pass.depthWrite.lowercased() == "disabled" else {
             return .unverifiedFullscreenDepth
+        }
+        if vertex.execution == .authoredMesh, let rejection = Self.authoredMeshAttributeRejection(result) {
+            return rejection
         }
         if vertex.execution == .authoredObjectQuad {
             guard case .scene = pass.pass.target,

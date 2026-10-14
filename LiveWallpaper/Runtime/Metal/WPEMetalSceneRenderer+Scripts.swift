@@ -1135,7 +1135,8 @@ extension WPEMetalSceneRenderer {
         let ids = Self.staticCacheExcludedLayerIDs(
             originScriptIDs: Array(dynamicOriginScriptInstances.keys) + Array(sharedOriginReadFans.keys),
             // Memo-safe despite `dynamicOriginAnimations` having no invalidating didSet: loadDynamicOriginScripts writes it only after resetting the script-instance dicts (which do invalidate) in the same sync pass.
-            originAnimationIDs: dynamicOriginAnimations.keys,
+            originAnimationIDs: Array(dynamicOriginAnimations.keys) + Array(dynamicScaleAnimations.keys)
+                + Array(dynamicAnglesAnimations.keys),
             scaleScriptIDs: Array(dynamicScaleScriptInstances.keys) + Array(sharedScaleReadFans.keys),
             anglesScriptIDs: Array(dynamicAnglesScriptInstances.keys) + Array(sharedAnglesReadFans.keys),
             colorScriptIDs: Array(dynamicColorScriptInstances.keys) + Array(sharedColorReadFans.keys)

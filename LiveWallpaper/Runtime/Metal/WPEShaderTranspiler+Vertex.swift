@@ -84,6 +84,9 @@ extension WPEShaderTranspiler {
         var parameters = ["uint vertexID [[vertex_id]]"]
         if execution == .authoredObjectQuad {
             parameters.append("constant float4* quadInputs [[buffer(2)]]")
+        } else if execution == .authoredMesh {
+            parameters.append("device const float* wpeMeshVertices [[buffer(2)]]")
+            parameters.append("constant int* wpeMeshLayout [[buffer(3)]]")
         }
         if !uniforms.isEmpty {
             parameters.append("constant WPEUniforms& u [[buffer(0)]]")
@@ -94,15 +97,21 @@ extension WPEShaderTranspiler {
         for slot in 0 ..< textureSlots {
             parameters.append("sampler wpeSampler\(slot) [[sampler(\(slot))]]")
         }
-        let entry = execution == .authoredObjectQuad ? "wpe_authored_object_quad_vertex" : "wpe_authored_fullscreen_vertex"
-        out += "vertex WPEStageIn \(entry)(\(parameters.joined(separator: ", "))) {\n"
+        out += "vertex WPEStageIn \(execution.authoredVertexFunctionName)(\(parameters.joined(separator: ", "))) {\n"
         out += "    const float2 positions[4] = {float2(-1,-1), float2(1,-1), float2(-1,1), float2(1,1)};\n"
         out += "    const float2 uvs[4] = {float2(0,1), float2(1,1), float2(0,0), float2(1,0)};\n"
         out += "    WPEStageIn out;\n    float4 gl_Position = {};\n"
+        if execution == .authoredMesh {
+            out += "    const uint wpeMeshBase = vertexID * uint(wpeMeshLayout[0]);\n"
+            out += "    const float2 wpeMeshUV = \(WPEAuthoredMeshChannel.uv.mslRead);\n"
+        }
         for attribute in link.interface.variables(stage: .vertex, kind: .attribute) {
             let position = execution == .authoredObjectQuad ? "quadInputs[vertexID].xy" : "positions[vertexID]"
             let uv = execution == .authoredObjectQuad ? "quadInputs[vertexID].zw" : "uvs[vertexID]"
-            let value: String = if attribute.key.name == "a_Position" {
+            // An attribute outside the official channels stays zero; admission rejects such a stage.
+            let value: String = if execution == .authoredMesh {
+                WPEAuthoredMeshChannel(attribute: attribute.key.name, glslType: attribute.glslType)?.mslRead ?? "{}"
+            } else if attribute.key.name == "a_Position" {
                 attribute.glslType == "vec4" ? "float4(\(position), 0, 1)" : "float3(\(position), 0)"
             } else {
                 attribute.glslType == "vec4" ? "float4(\(uv), 0, 0)" : uv
@@ -119,7 +128,7 @@ extension WPEShaderTranspiler {
         for global in globals.declarations {
             out += "    [[maybe_unused]] \(global.metalType) \(global.name) = \(global.initializer);\n"
         }
-        var finish = "out.position = gl_Position;\nout.uv = uvs[vertexID];\n"
+        var finish = "out.position = gl_Position;\nout.uv = \(execution == .authoredMesh ? "wpeMeshUV" : "uvs[vertexID]");\n"
         for v in link.varyings {
             for element in 0 ..< v.elementCount {
                 finish += "out.\(v.field(element)) = \(v.name)\(v.isArray ? "[\(element)]" : "");\n"
@@ -132,6 +141,88 @@ extension WPEShaderTranspiler {
         return WPEShaderTranslationResult(mslSource: out, samplers: sortedSamplers.map(\.name),
                                           uniformLayout: layout.slots, totalSlots: layout.totalSlots,
                                           textureSlotCount: textureSlots)
+    }
+}
+
+/// Official IModelData channels in their fixed interleave order; `rawValue` indexes `WPEAuthoredMeshVertexLayout.words`.
+enum WPEAuthoredMeshChannel: Int, CaseIterable, Sendable {
+    case position = 1, normal, tangentSigned, uv, color
+
+    init?(vertexFormat name: String) {
+        guard let channel = Self.allCases.first(where: { $0.formatName == name }) else { return nil }
+        self = channel
+    }
+
+    init?(attribute name: String, glslType: String) {
+        guard let channel = Self.allCases.first(where: { $0.attribute.name == name && $0.attribute.glslType == glslType }) else { return nil }
+        self = channel
+    }
+
+    /// The `IModelData` vertexFormat constant.
+    var formatName: String {
+        switch self {
+        case .position: "position"
+        case .normal: "normal"
+        case .tangentSigned: "tangentSigned"
+        case .uv: "uv"
+        case .color: "color"
+        }
+    }
+
+    var attribute: (name: String, glslType: String) {
+        switch self {
+        case .position: ("a_Position", "vec3")
+        case .normal: ("a_Normal", "vec3")
+        case .tangentSigned: ("a_Tangent4", "vec4")
+        case .uv: ("a_TexCoord", "vec2")
+        case .color: ("a_Color", "vec4")
+        }
+    }
+
+    var floatCount: Int {
+        switch self {
+        case .position, .normal: 3
+        case .tangentSigned, .color: 4
+        case .uv: 2
+        }
+    }
+
+    /// Value when the shape's vertexFormat omits the channel: an assumption until a Windows capture confirms it.
+    var absentMSL: String {
+        switch self {
+        case .position, .uv: "float\(floatCount)(0)"
+        case .normal: "float3(0, 0, 1)"
+        case .tangentSigned: "float4(1, 0, 0, 1)"
+        case .color: "float4(1)"
+        }
+    }
+
+    var mslRead: String {
+        let offset = "wpeMeshBase + uint(wpeMeshLayout[\(rawValue)])"
+        let reads = (0 ..< floatCount).map { "wpeMeshVertices[\(offset) + \($0)]" }.joined(separator: ", ")
+        return "(wpeMeshLayout[\(rawValue)] < 0 ? \(absentMSL) : float\(floatCount)(\(reads)))"
+    }
+}
+
+/// `words` is the `[[buffer(3)]]` ABI of `wpe_authored_mesh_vertex`: floats per vertex, then each channel's float offset or -1.
+struct WPEAuthoredMeshVertexLayout: Equatable, Sendable {
+    let floatsPerVertex: Int
+    let words: [Int32]
+
+    /// nil for unknown, repeated or reordered channels; how WPE treats a reordered format is unmeasured.
+    init?(vertexFormat: [String]) {
+        let channels = vertexFormat.compactMap(WPEAuthoredMeshChannel.init(vertexFormat:))
+        guard !channels.isEmpty, channels.count == vertexFormat.count,
+              zip(channels, channels.dropFirst()).allSatisfy({ $0.rawValue < $1.rawValue }) else { return nil }
+        var words = [Int32](repeating: -1, count: WPEAuthoredMeshChannel.allCases.count + 1)
+        var offset = 0
+        for channel in channels {
+            words[channel.rawValue] = Int32(offset)
+            offset += channel.floatCount
+        }
+        words[0] = Int32(offset)
+        floatsPerVertex = offset
+        self.words = words
     }
 }
 #endif

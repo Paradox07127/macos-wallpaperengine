@@ -744,7 +744,7 @@ struct WPERenderPipelineBuilderTests {
                 scriptedConstants: roleProbes
             ).pipeline
             #expect(rebuilt.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
-            let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]))
+            let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]), sceneHDR: false)
             #expect(overlay.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
         }
         #expect(canonical.resolvingEffectPublication(passVisibility: [:], camera: camera) == cold)
@@ -1113,7 +1113,7 @@ struct WPERenderPipelineBuilderTests {
         let immutable = pipeline.applyingLayerTransforms(origins: ["1": .zero, "2": .zero], scales: [:], angles: [:])
             .resolvingSceneModelMatrices(origins: [:], scales: [:], angles: [:], parentByID: [:], hostTransforms: [:], camera: camera)
         #expect(immutable == pipeline)
-        let overlay = pipeline.applyingFrameOverlay(.init(visibility: ["1": false], alpha: ["1": 0.5], colors: [:]))
+        let overlay = pipeline.applyingFrameOverlay(.init(visibility: ["1": false], alpha: ["1": 0.5], colors: [:]), sceneHDR: false)
         #expect(overlay.layers.first { $0.id == "1" }?.modelMatrix == layer.modelMatrix)
         let presentation = pipeline.applyingScriptLayerPresentation(["1": .init(sortIndex: 9)])
         #expect(presentation.layers.first { $0.id == "1" }?.modelMatrix == layer.modelMatrix)
@@ -2168,7 +2168,7 @@ struct WPERenderPipelineBuilderTests {
             WPEPreparedRenderLayer(graphLayer: layer, passes: [])
         ])
 
-        let faded = try #require(pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["96": 0.5])).layers.first).graphLayer
+        let faded = try #require(pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["96": 0.5]), sceneHDR: false).layers.first).graphLayer
         #expect(faded.geometry.alpha == 0.5)
         #expect(faded.geometry.shapePoints == points)
 
@@ -2215,7 +2215,7 @@ struct WPERenderPipelineBuilderTests {
         )
 
         let tinted = try #require(
-            pipeline.applyingFrameOverlay(WPEFrameOverlay(colors: ["96": SIMD3<Double>(0.2, 0.4, 0.6)])).layers.first
+            pipeline.applyingFrameOverlay(WPEFrameOverlay(colors: ["96": SIMD3<Double>(0.2, 0.4, 0.6)]), sceneHDR: false).layers.first
         ).graphLayer
         #expect(tinted.geometry.color == SIMD3<Double>(0.2, 0.4, 0.6))
         #expect(tinted.geometry.colorAnimation == nil, "the override must not be re-collapsed per frame")
@@ -3697,7 +3697,7 @@ struct WPERenderPipelineBuilderTests {
             WPEPreparedRenderLayer(graphLayer: child, passes: [])
         ])
 
-        let faded = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["child": 0.25])).layers[0].graphLayer
+        let faded = pipeline.applyingFrameOverlay(WPEFrameOverlay(alpha: ["child": 0.25]), sceneHDR: false).layers[0].graphLayer
         #expect(abs(faded.geometry.alpha - 0.25) < 0.0001)
         #expect(abs((faded.groupLocalGeometry?.alpha ?? -1) - 0.25) < 0.0001)
         #expect(faded.groupLocalGeometry?.alphaAnimation == nil)

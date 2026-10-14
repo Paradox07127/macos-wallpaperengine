@@ -21,7 +21,7 @@ struct PasteSheet: View {
                     iconTint: .accentColor
                 )
                 pasteArea
-                downloadReadinessBanner
+                SteamDownloadBlockerBanner()
             }
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.top, DesignTokens.Settings.formVerticalMargin)
@@ -202,30 +202,6 @@ struct PasteSheet: View {
             .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
         }
         .frame(minHeight: 200, idealHeight: 280, maxHeight: 520)
-    }
-
-    // MARK: - Download readiness
-
-    @ViewBuilder
-    private var downloadReadinessBanner: some View {
-        if let reason = doctor.downloadBlockerMessage {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "arrow.down.circle.dotted")
-                    .font(.title3)
-                    .foregroundStyle(DesignTokens.Colors.Status.warning)
-                    .accessibilityHidden(true)
-                Text(verbatim: reason)
-                    .font(DesignTokens.Typography.bodyEmphasized)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                DesignTokens.Colors.Status.warning.opacity(0.10),
-                in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-            )
-        }
     }
 
     private var downloadableRows: [WorkshopPasteQueueModel.QueueRow] {

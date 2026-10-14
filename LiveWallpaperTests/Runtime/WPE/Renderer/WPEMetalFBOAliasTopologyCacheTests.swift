@@ -409,7 +409,7 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
         #expect(executor.fboAliasTopologyRebuildCount == 1)
         #expect(try metrics(executor).structuralScans == 0)
 
-        let tinted = first.applyingFrameOverlay(WPEFrameOverlay(alpha: ["child": 0.5]))
+        let tinted = first.applyingFrameOverlay(WPEFrameOverlay(alpha: ["child": 0.5]), sceneHDR: false)
         #expect(executor.validatedFBOAliasTopology(for: tinted).groupingContainerObjectIDs == ["group-a"])
         #expect(executor.fboAliasTopologyRebuildCount == 1)
 
@@ -494,7 +494,7 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
 
         let tinted = base.applyingFrameOverlay(WPEFrameOverlay(
             alpha: ["fx": 0.25], colors: ["fx": SIMD3<Double>(0.1, 0.2, 0.3)]
-        ))
+        ), sceneHDR: false)
         _ = executor.fboAliasIntervals(pipeline: tinted, sceneSize: Self.sceneSize)
 
         #expect(executor.fboAliasTopologyRebuildCount == 1)
