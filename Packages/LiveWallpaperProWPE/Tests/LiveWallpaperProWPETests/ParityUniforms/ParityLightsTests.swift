@@ -28,7 +28,7 @@ final class ParityLightsTests: XCTestCase {
             return XCTFail("missing tube endpoint array")
         }
         XCTAssertEqual(packed.count, 2)
-        for (entry, expected) in zip(packed, [[Float](arrayLiteral: 16, 23, 44, 0), [6, 5, 6, 0]]) {
+        for (entry, expected) in zip(packed, [[Float](arrayLiteral: 16, 23, 44), [6, 5, 6]]) {
             guard case let .vector(actual) = entry else { return XCTFail("malformed tube endpoint") }
             XCTAssertEqual(actual, expected)
         }

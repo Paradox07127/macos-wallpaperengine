@@ -163,11 +163,15 @@ public struct WPEParityUniformLights: Sendable, Equatable {
         let arrays = [
             ("g_LPoint_Color", pointColor), ("g_LPoint_Origin", pointOrigin), ("g_LSpot_Color", spotColor),
             ("g_LSpot_Origin", spotOrigin), ("g_LSpot_Direction", spotDirection), ("g_LSpot_Exponent", spotExponent),
-            ("g_LTube_Color", tubeColor), ("g_LTube_OriginA", tubeOriginA), ("g_LTube_OriginB", tubeOriginB),
+            ("g_LTube_Color", tubeColor), ("g_LTube_OriginA", tubeOriginA),
             ("g_LDirectional_Color", directionalColor),
         ]
         for (name, array) in arrays where !array.isEmpty {
             values[name] = .array(array.map { .vector([$0.x, $0.y, $0.z, $0.w]) })
+        }
+        // The shared HLSL lighting cbuffer stages endpoint B as float3, like directional direction.
+        if !tubeOriginB.isEmpty {
+            values["g_LTube_OriginB"] = .array(tubeOriginB.map { .vector([$0.x, $0.y, $0.z]) })
         }
         if !directionalDirection.isEmpty {
             values["g_LDirectional_Direction"] = .array(directionalDirection.map { .vector([$0.x, $0.y, $0.z]) })

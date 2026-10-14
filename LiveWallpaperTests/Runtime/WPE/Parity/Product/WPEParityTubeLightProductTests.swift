@@ -100,7 +100,14 @@ extension WPEParitySceneDriverTests {
             } else {
                 XCTAssertEqual(try tubeLightVectors(constants["g_LTube_Color"]), [[1, 0, 0, 16]])
                 XCTAssertEqual(try tubeLightVectors(constants["g_LTube_OriginA"]), [[-64, 16, 16, 2]])
-                XCTAssertEqual(try tubeLightVectors(constants["g_LTube_OriginB"]), [[frame == 1 ? -64 : 16, 16, 16, 0]])
+                let endpoint = try XCTUnwrap(draw.pipeline.fragment.reflection.cbuffers.flatMap(\.variables)
+                    .first { $0.name == "g_LTube_OriginB" })
+                XCTAssertEqual(endpoint.class, .vector)
+                XCTAssertEqual(endpoint.baseType, .float)
+                XCTAssertEqual(endpoint.columns, 3)
+                XCTAssertEqual(endpoint.elements, 1)
+                XCTAssertTrue(endpoint.used)
+                XCTAssertEqual(try tubeLightVectors(constants["g_LTube_OriginB"]), [[frame == 1 ? -64 : 16, 16, 16]])
             }
             let texture = try XCTUnwrap(layer.lastTexture)
             let size = frame == 4 ? 64 : 32
