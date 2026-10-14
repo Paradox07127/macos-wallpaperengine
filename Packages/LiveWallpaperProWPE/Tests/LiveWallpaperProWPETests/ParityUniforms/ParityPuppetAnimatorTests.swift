@@ -92,7 +92,9 @@ final class ParityPuppetAnimatorTests: XCTestCase {
     func testAuthoredLayerDefaultsReachTheBonePalette() throws {
         // Native 14026c680 initializes rate=1, blendtime=0.5; 1401730d0 only parses keys present in JSON.
         let document = try ParityCameraFixture.document(json: """
-        {"objects":[{"id":1,"image":"models/puppet.json","animationlayers":[
+        {"camera":{"eye":"0 0 10","center":"0 0 0","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":16,"height":16}},
+         "objects":[{"id":1,"image":"models/puppet.json","animationlayers":[
           {"id":42,"animation":7,"name":" idle ","blendin":true}]}]}
         """)
         let authored = try XCTUnwrap(document.imageObjects.first).animationLayers
