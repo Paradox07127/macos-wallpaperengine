@@ -163,8 +163,8 @@ public struct WPEParitySceneState: Sendable {
         guard let number = UInt32(descriptor.id), number > 0, String(number) == descriptor.id else {
             throw WPEParityModelDataFailure.safety("dynamic model layer requires an explicit positive UInt32 id")
         }
-        guard commonOrder.count < 2048, indexByID[descriptor.id] == nil else {
-            throw WPEParityModelDataFailure.safety("dynamic model layer exceeds common capacity or reuses a reserved stable id")
+        guard indexByID[descriptor.id] == nil else {
+            throw WPEParityModelDataFailure.safety("dynamic model layer reuses a reserved stable id")
         }
         guard descriptor.parentObjectID == nil else {
             throw WPEParityModelDataFailure.safety("dynamic ModelData parent adoption is not qualified")
