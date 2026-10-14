@@ -24,9 +24,14 @@ final class ParityLightsTests: XCTestCase {
         assertEqual(lights.tubeColor, [SIMD4(4, 2, 1, 9), SIMD4(0, 0, 0, 1)])
         assertEqual(lights.tubeOriginA, [SIMD4(12, 26, 42, 3), SIMD4(4, 5, 6, 2)])
         assertEqual(lights.tubeOriginB, [SIMD4(16, 23, 44, 0), SIMD4(6, 5, 6, 0)])
-        XCTAssertEqual(lights.values["g_LTube_OriginB"], .array([
-            .vector([16, 23, 44, 0]), .vector([6, 5, 6, 0]),
-        ]))
+        guard case let .array(packed)? = lights.values["g_LTube_OriginB"] else {
+            return XCTFail("missing tube endpoint array")
+        }
+        XCTAssertEqual(packed.count, 2)
+        for (entry, expected) in zip(packed, [[Float](arrayLiteral: 16, 23, 44, 0), [6, 5, 6, 0]]) {
+            guard case let .vector(actual) = entry else { return XCTFail("malformed tube endpoint") }
+            XCTAssertEqual(actual, expected)
+        }
         state.setScriptField("controlpoint", of: "1", to: .vector(SIMD4(1, 2, 3, 0)), invalidating: .lighting)
         transforms.setTransform("10", origin: SIMD3(20, 30, 40), angles: .zero, scale: SIMD3(3, 4, 5))
         transforms.refreshWorlds()

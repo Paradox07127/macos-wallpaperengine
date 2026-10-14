@@ -96,10 +96,9 @@ extension WPEParitySceneDriverTests {
                 XCTAssertNil(constants["g_LTube_OriginA"])
                 XCTAssertNil(constants["g_LTube_OriginB"])
             } else {
-                XCTAssertEqual(constants["g_LTube_Color"], .array([.vector([1, 0, 0, 16])]))
-                XCTAssertEqual(constants["g_LTube_OriginA"], .array([.vector([-64, 16, 16, 2])]))
-                XCTAssertEqual(constants["g_LTube_OriginB"],
-                               .array([.vector([frame == 1 ? -64 : 16, 16, 16, 0])]))
+                XCTAssertEqual(try tubeLightVectors(constants["g_LTube_Color"]), [[1, 0, 0, 16]])
+                XCTAssertEqual(try tubeLightVectors(constants["g_LTube_OriginA"]), [[-64, 16, 16, 2]])
+                XCTAssertEqual(try tubeLightVectors(constants["g_LTube_OriginB"]), [[frame == 1 ? -64 : 16, 16, 16, 0]])
             }
             let texture = try XCTUnwrap(layer.lastTexture)
             let size = frame == 4 ? 64 : 32
@@ -118,6 +117,22 @@ extension WPEParitySceneDriverTests {
             }
         }
         XCTAssertGreaterThan(red[1] - red[0], 16, "moving only B near the surface must brighten the actual original fragment")
+    }
+
+    private func tubeLightVectors(_ value: WPECBufferValue?) throws -> [[Float]] {
+        let array: [WPECBufferValue]? = if case let .array(values)? = value {
+            values
+        } else {
+            nil
+        }
+        return try XCTUnwrap(array, "required original tube array").map { entry in
+            let vector: [Float]? = if case let .vector(values) = entry {
+                values
+            } else {
+                nil
+            }
+            return try XCTUnwrap(vector, "required original tube vector")
+        }
     }
 
     private func tubeLightInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {

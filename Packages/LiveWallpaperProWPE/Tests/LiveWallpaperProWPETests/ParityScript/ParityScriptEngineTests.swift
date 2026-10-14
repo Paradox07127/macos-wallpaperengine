@@ -25,7 +25,9 @@ final class ParityScriptEngineTests: XCTestCase {
         engine.tick(dt: 0.25, state: &state)
         XCTAssertGreaterThan(state.generation(.lighting), generation)
         lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
-        XCTAssertEqual(lights.values["g_LTube_OriginB"], .array([.vector([24, 44, 66, 0])]))
+        guard case let .array(packed)? = lights.values["g_LTube_OriginB"], packed.count == 1,
+              case let .vector(actual) = packed[0] else { return XCTFail("malformed tube endpoint array") }
+        XCTAssertEqual(actual, [24, 44, 66, 0])
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
