@@ -75,7 +75,9 @@ enum WPEParityHDRBloomReference {
             let divisor = 1 << (level + 1)
             let input = pyramid.last ?? source
             let offset = SIMD2(Double(1 << level) / Double(width), Double(1 << level) / Double(height))
-            let image = Image(width: width / divisor, height: height / divisor,
+            // Original RT ctor d2c60 and resize 161f40 clamp the divided physical grid to two.
+            // RV0 above still uses the original logical canvas; it is not the clamped texture's texel size.
+            let image = Image(width: max(2, width / divisor), height: max(2, height / divisor),
                               storageRounding: storageRounding) { u, v in
                 var rgb = four(input, uv: SIMD2(u, v), offset: offset, cubic: false)
                 if level == 0 {

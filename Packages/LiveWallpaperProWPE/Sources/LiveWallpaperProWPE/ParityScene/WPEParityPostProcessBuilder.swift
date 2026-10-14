@@ -104,8 +104,11 @@ private struct WPEParityPostProcessStream {
     mutating func resource(_ id: WPEResourceID, divisor: Int = 1, format: String? = nil,
                            mips: Int = 1, samples: Int = 1, lifetime: WPEResourceLifetime = .frameTransient) {
         guard !resources.contains(where: { $0.id == id }) else { return }
-        resources.append(WPELogicalResource(id: id, width: max(1, config.backbufferWidth / divisor),
-                                            height: max(1, config.backbufferHeight / divisor),
+        // Native d2c60 and resize 161f40 clamp each divided RT extent to two. Keep the exact extent of
+        // full-size snapshots: a one-pixel Metal canvas is a Mac policy and its copies must still match.
+        let minimum = divisor == 1 ? 1 : 2
+        resources.append(WPELogicalResource(id: id, width: max(minimum, config.backbufferWidth / divisor),
+                                            height: max(minimum, config.backbufferHeight / divisor),
                                             format: format ?? config.backbufferFormat, mipCount: mips,
                                             sampleCount: samples, lifetime: lifetime))
     }

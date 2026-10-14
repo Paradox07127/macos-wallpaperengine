@@ -35,7 +35,8 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         let context = try makeContext()
         // Pre-GPU sensitivity review: both cubic replacement and physical-size substitution
         // must exceed the fixed float tolerance, including on a taller odd texture.
-        for (width, height) in [(65, 33), (63, 159)] {
+        // 33x17 reaches a 2x2 native RT at divisor16: a one-pixel height changes the actual sampling grid.
+        for (width, height) in [(65, 33), (63, 159), (33, 17)] {
             try await verify(width: width, height: height, color: SIMD3(0.5, 0.49, 0.48), gradient: true,
                              context: context)
         }
@@ -201,37 +202,49 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let engine = environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
             ?? home.appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        for name in ["hdr_downsample_bloom", "hdr_downsample", "hdr_upsample_cubic", "hdr_upsample", "combine_hdr_upsample"] {
-            guard FileManager.default.fileExists(atPath: engine.appendingPathComponent("materials/util/\(name).json").path) else {
-                throw XCTSkip("Needs original WPE util material \(name), set WPE_ASSETS_DIR")
-            }
+        func digest(_ bytes: Data) -> String {
+            SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         }
-        for (name, expected) in [
-            ("hdr_downsample.frag", "f702cc282d08b6c618646ee78305991139185e626e454ab8a2e40600bb41c874"),
-            ("combine_hdr.frag", "755db6efba18303898c9a7fb2cb892f57fcddd11888d840e1be826d535ed83f2"),
+        // These originals match the preserved Windows engine-resource manifest, not a generated shader oracle.
+        for (path, expected) in [
+            ("materials/util/hdr_downsample_bloom.json", "1aee61c3e2bc1f641a07ddc4cbfb52dafa22ffcec31afd4a2d182fbf2d3397a5"),
+            ("materials/util/hdr_downsample.json", "3e453dfe06db50adaf07a7c2ca4b273bb5144088147076b71aa4b035f8b281fc"),
+            ("materials/util/hdr_upsample_cubic.json", "70e6751ef097672998991213b9715182b9e4734119a3c9c742b73f42bb0603bd"),
+            ("materials/util/hdr_upsample.json", "05d5ab7aa51b0b006ec69d80c5e668d977ad8fb6ea6c782c2997626635f03d12"),
+            ("materials/util/combine_hdr_upsample.json", "844d885484c09908882065d7663b8d39c415e194c638bc0ea7ff706c14549ce1"),
+            ("shaders/hdr_downsample.vert", "8a1ffaa2cbf79f3be3faa3e1aac5670d66711ec656cfdb1d5a89d8b6614e80b0"),
+            ("shaders/hdr_downsample.frag", "f702cc282d08b6c618646ee78305991139185e626e454ab8a2e40600bb41c874"),
+            ("shaders/combine_hdr.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
+            ("shaders/combine_hdr.frag", "755db6efba18303898c9a7fb2cb892f57fcddd11888d840e1be826d535ed83f2"),
+            ("shaders/common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
+            ("shaders/common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
+            ("shaders/common_fog.h", "a10116adc59b2232e24e06f9c01079393901c45cf47d45ecd17baa2583146201"),
+            ("shaders/common_pbr_2.h", "c6c7cc0a57e8621c00b940aaacdcfffa7eaf7d2b84af6a8feb4a9ed597772634"),
+            ("shaders/common_vertex.h", "cd4a005c0726603d613f97c8ebf9ff0a10d80f4f183de255f70bdecdb2d17ef9"),
         ] {
-            let bytes = try Data(contentsOf: engine.appendingPathComponent("shaders/\(name)"))
-            let actual = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            let bytes = try Data(contentsOf: engine.appendingPathComponent(path))
+            let actual = digest(bytes)
             _ = try XCTUnwrap(actual == expected ? true : nil,
-                              "Audited original shader \(name): expected SHA \(expected), actual \(actual)")
-            print("HDR+bloom source \(name) SHA256=\(actual)")
+                              "Required original \(path): expected SHA \(expected), actual \(actual)")
+            print("HDR+bloom source \(path) SHA256=\(actual)")
         }
-        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
-        let urls = keys.compactMap { environment[$0].map { URL(fileURLWithPath: $0) } }
-        let compiler: WPEParityHelperShaderCompiler
-        if !urls.isEmpty {
-            guard urls.count == 3, urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
-                throw XCTSkip("Supply all three current source-built toolchain paths: \(keys)")
-            }
-            compiler = try .init(helper: urls[0], dxcompiler: urls[1], metalIRConverter: urls[2],
-                                 workDirectory: scratch.appendingPathComponent("shaderc"))
-        } else {
-            switch WPEParityShaderToolchain.makeCompiler() {
-            case let .success(selected): compiler = selected
-            case let .failure(error): throw XCTSkip("Needs current bundled helper or explicit source-built toolchain: \(error)")
-            }
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
+                    "TEST_RUNNER_WPE_SHADERC", "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
+        _ = try XCTUnwrap(keys.allSatisfy { environment[$0] == nil } ? true : nil,
+                          "This product guard requires the current app bundle compiler")
+        let contents = Bundle.main.bundleURL.appending(path: "Contents").standardizedFileURL.resolvingSymlinksInPath()
+        let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"].map { path in
+            let url = contents.appending(path: path).standardizedFileURL.resolvingSymlinksInPath()
+            return try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil,
+                                 "Compiler escaped current bundle: \(path)")
         }
-        print("HDR+bloom compilerIdentity=\(compiler.compilerIdentity)")
+        let identity = try "wpe-shaderc " + tools.map { digest(try Data(contentsOf: $0)) }.joined(separator: " ")
+        let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1],
+                                                         metalIRConverter: tools[2],
+                                                         workDirectory: scratch.appendingPathComponent("shaderc"))
+        _ = try XCTUnwrap(compiler.compilerIdentity == identity ? compiler : nil,
+                          "Actual current app bundle compiler byte identity")
+        print("HDR+bloom compilerOrigin=current-app-bundle compilerIdentity=\(compiler.compilerIdentity)")
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
         let storageRounding = try calibrateStorageRounding(device: device, queue: queue)
