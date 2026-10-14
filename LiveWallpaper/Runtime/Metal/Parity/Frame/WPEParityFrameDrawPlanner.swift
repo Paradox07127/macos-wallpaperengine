@@ -801,7 +801,7 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         let geometry: WPEParityFrameDrawPlan.Geometry
-        var placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        let placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
         if let shape = layout.modelDataShapes[index] {
             guard let prepared = shape.prepared as? WPEParityModelDataMetalShape,
                   prepared.program.hlsl == layout.programs[index]?.hlsl else {
@@ -1213,7 +1213,7 @@ struct WPEParityFrameDrawPlanner {
         let count = try rawVertexWordCount(stream, inputs: inputs)
         var words = [UInt32](repeating: 0, count: count)
         let failure = words.withUnsafeMutableBufferPointer { buffer -> WPEParityFrameSkip? in
-            do {
+            do throws(WPEParityFrameSkip) {
                 try writeRawVertexWords(stream, inputs: inputs, uvMax: uvMax, to: buffer)
                 return nil
             } catch {
