@@ -222,6 +222,7 @@ public final class WPEParityScriptEngine {
     private var dispatchCounts = [Int](repeating: 0, count: WPEParityScriptEvent.allCases.count)
     private let sourceObjects: [WPESceneJSONValue]
     private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
+    private var mirroredMembershipGeneration: Int?
 
     /// Compiles every property script of `document`; `start` runs their `init`.
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
@@ -454,6 +455,12 @@ public final class WPEParityScriptEngine {
     }
 
     private func mirror(_ state: WPEParitySceneState) {
+        if mirroredMembershipGeneration != state.membershipGeneration {
+            // A temporary projection of the existing wrapper slots; neither State nor Engine slots are reordered.
+            let indices = Dictionary(layers.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
+            host.invokeMethod("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
+            mirroredMembershipGeneration = state.membershipGeneration
+        }
         for entry in refresh {
             switch entry {
             case let .object(slot, objectID, property):

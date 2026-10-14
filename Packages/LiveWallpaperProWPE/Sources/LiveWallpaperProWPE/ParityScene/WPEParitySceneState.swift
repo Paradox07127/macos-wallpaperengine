@@ -121,6 +121,9 @@ public struct WPEParitySceneState: Sendable {
 
     public let ids: [String]
     public private(set) var objects: [Object]
+    /// Actual common-scene members in current order; transform-only parent placeholders are not members.
+    /// Stable object/descriptor slots in `ids` never move when this order changes.
+    public private(set) var commonOrder: [String]
     /// HDR frames multiply the layer colour by brightness (R24 Q6).
     public let hdr: Bool
     /// Bumped by every origin, scale or angles change.
@@ -190,6 +193,12 @@ public struct WPEParitySceneState: Sendable {
         self.ids = ids
         self.objects = objects
         self.indexByID = indexByID
+        var commonIDs: Set<String> = []
+        commonOrder = document.resolvedObjectsJSON.compactMap { object in
+            guard let id = WPEParitySceneAnimations.id(object), indexByID[id] != nil,
+                  commonIDs.insert(id).inserted else { return nil }
+            return id
+        }
         parents = ids.map { document.objectParentByID[$0].flatMap { indexByID[$0] } }
         self.hdr = hdr
         var passes: [Pass] = []
@@ -266,7 +275,20 @@ public struct WPEParitySceneState: Sendable {
     public mutating func removeObject(_ id: String) -> Bool {
         guard let index = index(of: id) else { return false }
         objects[index].alive = false
+        commonOrder.removeAll { $0 == id }
         scriptFields = scriptFields.filter { $0.key.objectID != id }
+        membershipGeneration += 1
+        return true
+    }
+
+    /// 14018bbd0 removes the common member before clamping the unsigned low32 target position.
+    /// Pending members remain sortable until their successful deferred removal.
+    @discardableResult
+    public mutating func sortObject(_ id: String, to position: Int32) -> Bool {
+        guard index(of: id) != nil, let previous = commonOrder.firstIndex(of: id) else { return false }
+        commonOrder.remove(at: previous)
+        let next = min(Int(UInt32(bitPattern: position)), commonOrder.count)
+        commonOrder.insert(id, at: next)
         membershipGeneration += 1
         return true
     }

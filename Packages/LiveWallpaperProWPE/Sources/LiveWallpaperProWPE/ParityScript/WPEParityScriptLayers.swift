@@ -179,6 +179,11 @@ enum WPEParityScriptLayers {
     };
     host.setString = function (slot, value) { S[slot] = value; };
     host.getString = function (slot) { return S[slot]; };
+    host.setCommonOrder = function (indices) {
+      const members = indices.map(index => table[index]).filter(layer => layer !== undefined);
+      order.splice(0, order.length, ...members);
+      for (const layer of pending) if (!members.includes(layer)) pending.delete(layer);
+    };
     """#
 
     static let scene = #"""
