@@ -63,7 +63,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         var rampFrames = 0
         while try sceneClock(driver).pauseRamp > 0, rampFrames < 120 {
             let command = driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
-                                                        pointer: SIMD2(0.5, 0.5))
+                                                       pointer: SIMD2(0.5, 0.5))
             if try sceneClock(driver).pauseRamp > 0 {
                 let submitted = try XCTUnwrap(command, "ramp frame \(rampFrames)")
                 try await settle(driver, label: "ramp frame \(rampFrames)")
@@ -79,7 +79,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         let held = try sceneClock(driver).time
         for frame in 1 ... 2 {
             XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
-                                                       pointer: SIMD2(0.5, 0.5)), "suspended frame \(frame)")
+                                                      pointer: SIMD2(0.5, 0.5)), "suspended frame \(frame)")
             XCTAssertEqual(try sceneClock(driver).time, held, "suspended frame \(frame)")
             XCTAssertNil(driver.failedPresentGeneration)
         }
