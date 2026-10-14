@@ -236,28 +236,29 @@ extension WPEParitySceneDriverTests {
         engine.registerAsset('materials/model-data.json', true);
         export function init(value) { throw Error('cancelled dependency cannot initialize'); }
         """, withSound: true, cancellation: cancellation)
-        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
-        defer { driver.cleanup() }
-        driver.setAudioMuted(true)
         let cacheURL = scratch.appending(path: "cancel-cache")
-        let loading = Task {
-            try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
-                                  drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
-                                  compiler: fixture.compiler, diskCache: .init(cachesURL: cacheURL),
-                                  soundResolver: fixture.soundResolver)
+        // The non-Sendable driver belongs entirely to this task, including post-load checks and cleanup.
+        let loading = Task<Void, Error> {
+            let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+            defer { driver.cleanup() }
+            driver.setAudioMuted(true)
+            do {
+                try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                                      drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                                      compiler: fixture.compiler, diskCache: .init(cachesURL: cacheURL),
+                                      soundResolver: fixture.soundResolver)
+                XCTFail("the cancelled dependency load published a scene")
+            } catch {
+                XCTAssertTrue(error is CancellationError, "\(error)")
+            }
+            XCTAssertFalse(driver.didLoad)
+            XCTAssertNil(driver.renderer)
+            XCTAssertNil(driver.soundRuntime)
+            XCTAssertNil(driver.loadDiagnostics, "cancellation must not become a renderer failure")
         }
         cancellation.install(loading)
-        do {
-            try await loading.value
-            XCTFail("the cancelled dependency load published a scene")
-        } catch {
-            XCTAssertTrue(error is CancellationError, "\(error)")
-        }
+        try await loading.value
         XCTAssertTrue(cancellation.observed, "the real registered material reader must reach the cancellation boundary")
-        XCTAssertFalse(driver.didLoad)
-        XCTAssertNil(driver.renderer)
-        XCTAssertNil(driver.soundRuntime)
-        XCTAssertNil(driver.loadDiagnostics, "cancellation must not become a renderer failure")
     }
 
     private struct ModelDataFixture {
