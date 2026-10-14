@@ -637,7 +637,6 @@ final class WPEParityFrameRenderer {
         camera.perspectiveFOV = previous.camera.perspectiveFOV
         camera.zoom = previous.camera.zoom
         script = previous.script
-        script?.engine.materialFunctionHandler = scriptMaterialFunction
         materialFunctionFailure = previous.materialFunctionFailure
         media = previous.media
         mediaGeneration = previous.mediaGeneration
@@ -657,6 +656,10 @@ final class WPEParityFrameRenderer {
         for text in previous.planner.texts.values {
             recordTextDelta(textPipeline.relayoutWithDelta(text.object, effectCount: text.effectCount))
         }
+        // Resize handlers may call material functions on dynamically relaid text FBOs. Prepare those actual
+        // targets first, and only replace the engine callback after all throwing adoption work succeeds.
+        try replanRelaidTexts()
+        script?.engine.materialFunctionHandler = scriptMaterialFunction
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
                        state: &state)
         repackBloom()
