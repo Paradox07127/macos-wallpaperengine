@@ -64,7 +64,7 @@ public extension WPEParityBlendState {
             (rt.srcBlendAlpha, rt.destBlendAlpha) = (.srcAlpha, .one)
         }
 
-        // Which bit wins when combined bits touch the same field is unverified; order follows the RE report.
+        // FUN_140099f60, 0x14009a12d-0x14009a1ca: later writes below win for overlapping modifier bits.
         if modifiers.contains(.premultiplied) {
             (rt.srcBlend, rt.destBlend) = (.one, .invSrcAlpha)
             (rt.srcBlendAlpha, rt.destBlendAlpha) = (.one, .one)
@@ -78,12 +78,15 @@ public extension WPEParityBlendState {
         }
         if modifiers.contains(.max) {
             rt.blendOp = .max
+            (rt.srcBlendAlpha, rt.destBlendAlpha) = (.one, .one)
         }
         if modifiers.contains(.min) {
             rt.blendOp = .min
+            (rt.srcBlendAlpha, rt.destBlendAlpha) = (.one, .one)
         }
         if modifiers.contains(.multiply) {
             rt.srcBlend = .destColor
+            (rt.srcBlendAlpha, rt.destBlendAlpha) = (.one, .one)
         }
 
         return WPEParityBlendState(

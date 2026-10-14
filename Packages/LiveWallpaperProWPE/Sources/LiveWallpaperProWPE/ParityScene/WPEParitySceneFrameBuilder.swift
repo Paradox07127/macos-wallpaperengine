@@ -407,7 +407,7 @@ private struct WPEParitySceneEmitter {
 
     /// FUN_1402222a0: each sub-mesh in file order binds its own material, draws into the bound target and unbinds;
     /// the model sets no target or state itself. Blending other than opaque (0, 3) turns depth writes off
-    /// (140155fc0.c:713-738). The draws read only the frame resources their materials name.
+    /// (140099f60.c:21-25). The draws read only the frame resources their materials name.
     private mutating func renderModel(_ object: WPEParitySceneObject, _ model: WPEParitySceneModel,
                                       children: [WPEParitySceneObject],
                                       into destination: WPEParitySceneDestination, ancestors: [WPEResourceID]) {
@@ -420,7 +420,7 @@ private struct WPEParitySceneEmitter {
                                     reads: reads, target: destination.color, blend: mesh.blend,
                                     alphaMax: destination.alphaMax, compositeOwnerID: destination.compositeOwnerID,
                                     writeMask: destination.writeMask(state), geometry: .modelMesh,
-                                    depthTest: state.depthTest, depthWrite: state.depthWrite && mesh.blend == .normal,
+                                    depthTest: state.depthTest, depthWrite: state.depthWrite && mesh.blend.permitsDepthWrite,
                                     cullsBackFaces: state.cullsBackFaces))
         }
         for child in children {
@@ -506,7 +506,7 @@ private struct WPEParitySceneEmitter {
                                     target: destination.color, blend: entry.blend, alphaMax: destination.alphaMax,
                                     compositeOwnerID: destination.compositeOwnerID,
                                     writeMask: destination.writeMask(state), geometry: .particles(key),
-                                    depthTest: state.depthTest, depthWrite: state.depthWrite && entry.blend == .normal,
+                                    depthTest: state.depthTest, depthWrite: state.depthWrite && entry.blend.permitsDepthWrite,
                                     cullsBackFaces: state.cullsBackFaces))
         }
     }

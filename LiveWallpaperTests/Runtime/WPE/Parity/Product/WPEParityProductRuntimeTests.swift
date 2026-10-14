@@ -186,15 +186,33 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
             throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
         }
+        // An unsigned Debug test host cannot supply the shipping helper's inherited sandbox.
+        // Xcode forwards TEST_RUNNER_WPE_* as WPE_*; explicit test inputs must select all three together.
+        let environment = ProcessInfo.processInfo.environment
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
         let compiler: WPEParityHelperShaderCompiler
-        switch WPEParityShaderToolchain.makeCompiler() {
-        case let .success(found): compiler = found
-        case let .failure(reason): throw XCTSkip("\(reason)")
+        let compilerOrigin: String
+        if keys.contains(where: { environment[$0] != nil }) {
+            let urls = try keys.map { key in
+                let path = try XCTUnwrap(environment[key].flatMap { $0.isEmpty ? nil : $0 },
+                                         "Supply all three nonempty test toolchain paths: \(keys.joined(separator: ", "))")
+                return URL(fileURLWithPath: path)
+            }
+            compiler = try WPEParityHelperShaderCompiler(helper: urls[0], dxcompiler: urls[1], metalIRConverter: urls[2],
+                                                         workDirectory: scratch.appending(path: "shaderc"))
+            compilerOrigin = "test-environment"
+        } else {
+            switch WPEParityShaderToolchain.makeCompiler() {
+            case let .success(found): compiler = found
+            case let .failure(reason): throw reason
+            }
+            compilerOrigin = "product-default"
         }
+        print("parity runtime compilerOrigin=\(compilerOrigin) compilerIdentity=\(compiler.compilerIdentity)")
         // The sandboxed test host's home is its container; the WPE install lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        let wpeAssets = environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
         guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
             throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
         }

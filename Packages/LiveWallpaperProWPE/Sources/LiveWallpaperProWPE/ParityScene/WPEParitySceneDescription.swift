@@ -3,13 +3,20 @@ public enum WPEParitySceneBlend: String, Hashable, Sendable {
     case normal
     case translucent
     case additive
+    case alphaToCoverage = "alphatocoverage"
 
     public init(material raw: String?) {
         switch raw?.lowercased() {
         case "translucent": self = .translucent
         case "additive": self = .additive
+        case "alphatocoverage": self = .alphaToCoverage
         default: self = .normal
         }
+    }
+
+    /// FUN_140099f60 treats material modes 0/3 alike only for depth-write eligibility, not pixel coverage.
+    var permitsDepthWrite: Bool {
+        self == .normal || self == .alphaToCoverage
     }
 }
 

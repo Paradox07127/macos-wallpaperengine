@@ -21,7 +21,7 @@ struct WPEPresentPassRecord {
     let targetWidth: Int
     let targetHeight: Int
     let targetPixelFormat: MTLPixelFormat
-    /// MetalFX wrote the drawable itself; replaying the present pass would not reproduce that frame.
+    /// Capturing this pass must replay the spatial scaler and its opaque-alpha fix.
     let usedMetalFX: Bool
 
     init(
@@ -67,9 +67,10 @@ extension WPEMetalRenderExecutor {
     func encodeDisplayedFrameCapture(
         source: MTLTexture,
         colorSpace: CGColorSpace?,
+        queue: MTLCommandQueue? = nil,
         completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void
     ) {
-        guard let pass = lastPresentPass, !pass.usedMetalFX else {
+        guard let pass = lastPresentPass else {
             completion(nil)
             return
         }
@@ -77,23 +78,42 @@ extension WPEMetalRenderExecutor {
             pixelFormat: pass.targetPixelFormat, width: pass.targetWidth, height: pass.targetHeight, mipmapped: false
         )
         descriptor.usage = [.renderTarget, .shaderRead]
+        if pass.usedMetalFX {
+            descriptor.usage.insert(.shaderWrite)
+        }
         descriptor.storageMode = .private
         guard let target = device.makeTexture(descriptor: descriptor),
-              let commandBuffer = commandQueue.makeCommandBuffer() else {
+              let commandBuffer = (queue ?? commandQueue).makeCommandBuffer() else {
             completion(nil)
             return
         }
         target.label = "wpe.displayedFrameCapture"
         do {
-            try encodePresentPass(
-                source: source,
-                target: target,
-                fitMode: pass.fitMode,
-                worldSourceSize: pass.worldSourceSize,
-                uniforms: pass.uniforms,
-                colorTransfer: pass.colorTransfer,
-                into: commandBuffer
-            )
+            if pass.usedMetalFX {
+                guard let upscaler = metalFXUpscaler else {
+                    completion(nil)
+                    return
+                }
+                let scalerSource = target.pixelFormat == .rgba16Float
+                    ? try encodeLinearPresentationTexture(source: source, colorTransfer: pass.colorTransfer,
+                                                          into: commandBuffer)
+                    : source
+                guard try upscaler.encodeIfEligible(source: scalerSource, drawableTexture: target,
+                                                    fitMode: pass.fitMode, commandBuffer: commandBuffer) else {
+                    completion(nil)
+                    return
+                }
+            } else {
+                try encodePresentPass(
+                    source: source,
+                    target: target,
+                    fitMode: pass.fitMode,
+                    worldSourceSize: pass.worldSourceSize,
+                    uniforms: pass.uniforms,
+                    colorTransfer: pass.colorTransfer,
+                    into: commandBuffer
+                )
+            }
         } catch {
             completion(nil)
             return

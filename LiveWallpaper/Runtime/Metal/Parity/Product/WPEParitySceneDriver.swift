@@ -520,39 +520,12 @@ final class WPEParitySceneDriver {
     /// on the frame queue that writes the backbuffer. `completion` runs on a Metal callback thread.
     func captureDisplayedFrame(colorSpace: CGColorSpace?,
                                completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void) {
-        guard hasPresentedFrame, let source = renderer?.backbuffer, let pass = executor.lastPresentPass,
-              !pass.usedMetalFX else {
+        guard hasPresentedFrame, let source = renderer?.backbuffer else {
             completion(nil)
             return
         }
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: pass.targetPixelFormat, width: pass.targetWidth, height: pass.targetHeight, mipmapped: false
-        )
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .private
-        guard let target = device.makeTexture(descriptor: descriptor),
-              let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer() else {
-            completion(nil)
-            return
-        }
-        target.label = "wpe.displayedFrameCapture"
-        do {
-            try executor.encodePresentPass(source: source, target: target, fitMode: pass.fitMode,
-                                           worldSourceSize: pass.worldSourceSize, uniforms: pass.uniforms,
-                                           colorTransfer: pass.colorTransfer,
-                                           into: commandBuffer)
-        } catch {
-            completion(nil)
-            return
-        }
-        let capture = WPEDisplayedFrameCapture(
-            texture: target, pixelFormat: target.pixelFormat, colorSpace: colorSpace,
-            isEDR: WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: target.pixelFormat)
-        )
-        commandBuffer.addCompletedHandler { commandBuffer in
-            completion(commandBuffer.status == .completed ? capture : nil)
-        }
-        commandBuffer.commit()
+        executor.encodeDisplayedFrameCapture(source: source, colorSpace: colorSpace,
+                                             queue: executor.textureSourceCommandQueue, completion: completion)
     }
 
     private static func copyDescriptor(_ source: MTLTexture) -> MTLTextureDescriptor {

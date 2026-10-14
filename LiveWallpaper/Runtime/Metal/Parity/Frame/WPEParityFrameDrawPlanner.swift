@@ -96,13 +96,15 @@ struct WPEParityFrameDrawPlan {
                                                               blockOffset: text.blockOffset)
             let model = text.translation.map { WPEParityTextMatrices.direct(layerModel: layerModel, translation: $0) }
                 ?? layerModel
-            var matrices = WPEParityUniformMatrices(model: model, view: layers.view(objectID, parallax: parallax),
-                                                    projection: layers.projection(objectID))
-            if let ownerID = compositeOwnerID, let owner = layers.layers[ownerID] {
-                matrices = WPEParityLayerTransform.compositeMatrices(parentModel: layers.model(ownerID),
-                                                                     parentSize: owner.size, childModel: model)
-            }
+            // Keep the common draw's V/P: it selects the scene or composite camera before applying the layer's
+            // perspective push (1401e8aa0.c:314-342, 998-1001). Rebuilding the composite here lost that push.
             let layerMatrices = kind == .layer || kind == .lastEffectPass
+            var matrices = layerMatrices ? placed.matrices
+                : layers.draw(objectID, kind: .layer, compositeOwnerID: compositeOwnerID, parallax: parallax).matrices
+            matrices.model = model
+            if let ownerID = compositeOwnerID, let owner = layers.layers[ownerID] {
+                matrices.model = layers.model(owner.id).inverse * model
+            }
             placed.effectPass = WPEParityUniformEffectPass(
                 layerModel: matrices.model, layerModelViewProjection: matrices.modelViewProjection,
                 size: layers.layers[objectID]?.size ?? .zero, isLastPass: layerMatrices
@@ -936,6 +938,7 @@ struct WPEParityFrameDrawPlanner {
             case .normal: .normal
             case .translucent: .translucent
             case .additive: .additive
+            case .alphaToCoverage: .alphaToCoverage
             }
             var modifiers: WPEParityBlendModifiers = draw.writeMask == .rgba ? .writeAlpha : []
             if draw.alphaMax {

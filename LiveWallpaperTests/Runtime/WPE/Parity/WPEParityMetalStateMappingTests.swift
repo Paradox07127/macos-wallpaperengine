@@ -60,6 +60,127 @@ struct WPEParityMetalStateMappingTests {
         #expect(!pipeline.colorAttachments[0].isBlendingEnabled)
     }
 
+    @Test("Original modifier alpha ONE / ONE reaches GPU storage before presentation")
+    func modifierAlphaGPU() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let library = try device.makeLibrary(source: Self.stateShader, options: nil)
+        // Original FUN_140099f60 writes ONE / ONE at 0x14009a186/18e, 1a4/1ac and 1c2/1ca.
+        let color = SIMD4<Float>(0.75, 0.5, 0.125, 0.5)
+        let clear = MTLClearColor(red: 0.25, green: 0.25, blue: 0.25, alpha: 0.25)
+        for modifier in [WPEParityBlendModifiers.max, .min, .multiply] {
+            let samples = try renderStateSamples(device: device, queue: queue, library: library,
+                                                 state: .wpe(.translucent, modifiers: [modifier, .writeAlpha]),
+                                                 color: color, clear: clear)
+            #expect(samples.allSatisfy { abs($0.w - 0.75) < 0.001 })
+        }
+        let rgbOnly = try renderStateSamples(device: device, queue: queue, library: library,
+                                             state: .wpe(.translucent, modifiers: .multiply), color: color, clear: clear)
+        #expect(rgbOnly.allSatisfy { abs($0.w - 0.25) < 0.001 })
+        let combined = try renderStateSamples(
+            device: device, queue: queue, library: library,
+            state: .wpe(.translucent, modifiers: [.premultiplied, .alphaMax, .max, .min, .multiply]),
+            color: color, clear: clear
+        )
+        #expect(combined.allSatisfy { abs($0.w - 0.5) < 0.001 })
+    }
+
+    @Test("A2C writes discrete MSAA samples while ordinary translucent blending mixes every sample")
+    func alphaToCoverageSamplesGPU() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let library = try device.makeLibrary(source: Self.stateShader, options: nil)
+        let clear = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        for alpha in [Float(0), 0.5, 1] {
+            let samples = try renderStateSamples(device: device, queue: queue, library: library,
+                                                 state: .wpe(.alphaToCoverage), color: SIMD4(1, 0, 0, alpha), clear: clear)
+            #expect(samples.allSatisfy { abs($0.x) < 0.001 || abs($0.x - 1) < 0.001 })
+            if alpha == 0 {
+                #expect(samples.allSatisfy { abs($0.x) < 0.001 })
+            } else if alpha == 1 {
+                #expect(samples.allSatisfy { abs($0.x - 1) < 0.001 })
+            } else {
+                // No fixed fractional sample count/location: the Metal driver's coverage pattern is not a Windows golden.
+                #expect(samples.contains { abs($0.x) < 0.001 })
+                #expect(samples.contains { abs($0.x - 1) < 0.001 })
+            }
+        }
+        let normal = try renderStateSamples(device: device, queue: queue, library: library,
+                                            state: .wpe(.normal), color: SIMD4(1, 0, 0, 0.5), clear: clear)
+        #expect(normal.allSatisfy { abs($0.x - 1) < 0.001 })
+        let translucent = try renderStateSamples(device: device, queue: queue, library: library,
+                                                 state: .wpe(.translucent), color: SIMD4(1, 0, 0, 0.5), clear: clear)
+        #expect(translucent.allSatisfy { abs($0.x - 0.5) < 0.001 })
+    }
+
+    /// Exercises the production state mapping on a stored multisampled RT, then reads each sample with a GPU kernel.
+    /// This is a state boundary guard; material/planner/factory wiring needs the separate scene production guard.
+    private func renderStateSamples(device: MTLDevice, queue: MTLCommandQueue, library: MTLLibrary,
+                                    state: WPEParityBlendState, color: SIMD4<Float>, clear: MTLClearColor) throws -> [SIMD4<Float>] {
+        let side = 4
+        let sampleCount = 4
+        try #require(device.supportsTextureSampleCount(sampleCount))
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: side,
+                                                                         height: side, mipmapped: false)
+        textureDescriptor.textureType = .type2DMultisample
+        textureDescriptor.sampleCount = sampleCount
+        textureDescriptor.storageMode = .private
+        textureDescriptor.usage = [.renderTarget, .shaderRead]
+        let target = try #require(device.makeTexture(descriptor: textureDescriptor))
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "stateVertex")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "stateFragment")
+        pipelineDescriptor.rasterSampleCount = sampleCount
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .rgba16Float
+        WPEParityMetalStateMapping.apply(state, to: pipelineDescriptor)
+        let pipeline = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+        let sampleFunction = try #require(library.makeFunction(name: "readSamples"))
+        let readSamples = try device.makeComputePipelineState(function: sampleFunction)
+        let count = side * side * sampleCount
+        let output = try #require(device.makeBuffer(length: count * MemoryLayout<SIMD4<Float>>.stride, options: .storageModeShared))
+        let commandBuffer = try #require(queue.makeCommandBuffer())
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = clear
+        let render = try #require(commandBuffer.makeRenderCommandEncoder(descriptor: pass))
+        render.setRenderPipelineState(pipeline)
+        var source = color
+        render.setFragmentBytes(&source, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+        render.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        render.endEncoding()
+        let compute = try #require(commandBuffer.makeComputeCommandEncoder())
+        compute.setComputePipelineState(readSamples)
+        compute.setTexture(target, index: 0)
+        compute.setBuffer(output, offset: 0, index: 0)
+        compute.dispatchThreads(MTLSize(width: side, height: side, depth: sampleCount),
+                                threadsPerThreadgroup: MTLSize(width: side, height: side, depth: 1))
+        compute.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        try #require(commandBuffer.status == .completed)
+        try #require(commandBuffer.error == nil)
+        return Array(UnsafeBufferPointer(start: output.contents().assumingMemoryBound(to: SIMD4<Float>.self), count: count))
+    }
+
+    private static let stateShader = """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct StateVertex { float4 position [[position]]; };
+    vertex StateVertex stateVertex(uint id [[vertex_id]]) {
+        const float2 positions[] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        return {float4(positions[id], 0, 1)};
+    }
+    fragment float4 stateFragment(constant float4& color [[buffer(0)]]) { return color; }
+    kernel void readSamples(texture2d_ms<float, access::read> source [[texture(0)]],
+                            device float4* output [[buffer(0)]], uint3 id [[thread_position_in_grid]]) {
+        if (id.x >= source.get_width() || id.y >= source.get_height() || id.z >= source.get_num_samples()) return;
+        uint index = (id.y * source.get_width() + id.x) * source.get_num_samples() + id.z;
+        output[index] = source.read(id.xy, id.z);
+    }
+    """
+
     @Test("Every D3D11 blend factor and op has a Metal counterpart")
     func factorTable() {
         let factors: [D3D11Blend: MTLBlendFactor] = [

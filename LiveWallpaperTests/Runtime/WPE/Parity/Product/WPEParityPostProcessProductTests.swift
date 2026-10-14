@@ -158,9 +158,28 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let queue = try XCTUnwrap(device.makeCommandQueue())
         let supported = [2, 4, 8].filter { device.supportsTextureSampleCount($0) }
         guard !supported.isEmpty else { throw XCTSkip("Metal device supports none of 2/4/8 MSAA") }
-        for samples in supported {
+        let base = try WPEParityFramePlan(document: document, assets: assets,
+                                          settings: .init(bloom: false), width: 320, height: 180)
+        let materialPaths = Set(base.scene.models.values.flatMap(\.meshes).map(\.materialPath))
+        XCTAssertFalse(materialPaths.isEmpty)
+        var replacements: [String: Data] = [:]
+        for path in materialPaths {
+            var material = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(assets.data(path))) as? [String: Any])
+            var passes = try XCTUnwrap(material["passes"] as? [[String: Any]])
+            _ = try XCTUnwrap(passes.first)
+            passes[0]["blending"] = "alphatocoverage"
+            passes[0]["depthtest"] = "enabled"
+            passes[0]["depthwrite"] = "enabled"
+            material["passes"] = passes
+            replacements[path] = try JSONSerialization.data(withJSONObject: material)
+        }
+        let materialOverrides = replacements
+        let coverageAssets = WPEParityProgramAssets(sources: [.lookup(scratch) { materialOverrides[$0] }] + assets.sources)
+        let variants = supported.map { (samples: $0, coverage: false) }
+            + [(samples: supported.contains(4) ? 4 : supported[0], coverage: true)]
+        for (samples, coverage) in variants {
             let plan = try WPEParityFramePlan(
-                document: document, assets: assets,
+                document: document, assets: coverage ? coverageAssets : assets,
                 settings: .init(bloom: false, msaaSampleCount: samples,
                                 colorCorrection: .init(wecE: true, wecBrs: 75)),
                 width: 320, height: 180
@@ -173,6 +192,15 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 return index
             }
             XCTAssertEqual(modelIndices.count, 2)
+            if coverage {
+                for index in modelIndices {
+                    guard case let .scene(draw)? = plan.frames[0].draws[index] else {
+                        return XCTFail("Missing actual model draw")
+                    }
+                    XCTAssertEqual(draw.blend, .alphaToCoverage)
+                    XCTAssertTrue(draw.depthTest && draw.depthWrite)
+                }
+            }
             let post = try postIndex("ccsimple", in: plan)
             let renderer = try await makeRenderer(plan, device: device, queue: queue)
             let color = try XCTUnwrap(renderer.targets[WPEParitySceneResource.multisampled])

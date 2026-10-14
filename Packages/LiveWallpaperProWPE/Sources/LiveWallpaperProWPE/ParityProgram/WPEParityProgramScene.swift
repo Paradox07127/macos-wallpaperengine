@@ -641,7 +641,8 @@ extension WPEParitySceneBlend {
         switch mode {
         case .translucent: self = .translucent
         case .additive: self = .additive
-        case .normal, .alphaToCoverage: self = .normal
+        case .normal: self = .normal
+        case .alphaToCoverage: self = .alphaToCoverage
         }
     }
 }

@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 @testable import LiveWallpaper
 import Metal
+import MetalFX
 import os
 import QuartzCore
 import Testing
@@ -115,6 +116,98 @@ struct WPEDisplayedFrameCaptureTests {
         #expect(oldRepresentation.bitsPerComponent == 8)
     }
 
+    @Test("MetalFX capture preserves the producer transfer and writes opaque alpha",
+          .enabled(if: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler), .timeLimit(.minutes(1)),
+          arguments: [WPEPresentColorTransfer.linear, .authored], [0.125, 1.0])
+    func metalFXHDRCaptureMatchesPresentedPixels(transfer: WPEPresentColorTransfer, alpha: Double) async throws {
+        let stack = try CaptureStack.make(size: CGSize(width: 128, height: 128))
+        defer { stack.teardown() }
+        let device = try #require(stack.layer.device)
+        let source = try Self.linearSource(device: device, edge: 64, pixel: [0.214, 0.5, 2, Float16(alpha)])
+        stack.layer.pixelFormat = .rgba16Float
+        WPEDisplayHDROutput.apply(to: stack.layer, hdrOutputEnabled: true)
+        let captured = try await Self.captureMetalFX(stack, source: source, transfer: transfer)
+        var expected: [Float] = [Float(Float16(0.214)), 0.5, 2, 1]
+        if transfer == .authored {
+            expected = expected.prefix(3).map {
+                let value = min(max($0, 0), 1)
+                return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            } + [1]
+        }
+        // MetalFX's HDR filter is not an identity even for constant fields.
+        // Use the platform API directly, with independently decoded input, as the consumer reference.
+        let referenceInput = expected.prefix(3).map { Float16($0) } + [transfer == .linear ? Float16(alpha) : 1]
+        let reference = try Self.nativeMetalFXHDR(stack, pixel: referenceInput)
+        for point in [(32, 32), (64, 64), (96, 96)] {
+            for channel in 0 ..< 4 {
+                let offset = (point.1 * 128 + point.0) * 8 + channel * 2
+                let bits = UInt16(captured[offset]) | UInt16(captured[offset + 1]) << 8
+                let value = Float(Float16(bitPattern: bits))
+                if channel == 3 {
+                    #expect(value == 1)
+                } else {
+                    let wantedBits = UInt16(reference[offset]) | UInt16(reference[offset + 1]) << 8
+                    let wanted = Float(Float16(bitPattern: wantedBits))
+                    #expect(abs(value - wanted) <= 0.01)
+                    if transfer == .linear, channel == 2 {
+                        #expect(value > 1, "The already-linear highlight must survive presentation")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("MetalFX SDR capture reproduces the spatial scaler and opaque alpha",
+          .enabled(if: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler), .timeLimit(.minutes(1)))
+    func metalFXSDRCaptureMatchesPresentedPixels() async throws {
+        let stack = try CaptureStack.make(size: CGSize(width: 128, height: 128))
+        defer { stack.teardown() }
+        let device = try #require(stack.layer.device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm_srgb, width: 64, height: 64, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let pixels = Array(repeating: [UInt8](arrayLiteral: 80, 128, 180, 32), count: 64 * 64).flatMap(\.self)
+        pixels.withUnsafeBytes {
+            source.replace(region: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0,
+                           withBytes: $0.baseAddress!, bytesPerRow: 64 * 4)
+        }
+        let captured = try await Self.captureMetalFX(stack, source: source, transfer: .authored)
+        for point in [(32, 32), (64, 64), (96, 96)] {
+            let offset = (point.1 * 128 + point.0) * 4
+            for (channel, expected) in [80, 128, 180, 255].enumerated() {
+                #expect(abs(Int(captured[offset + channel]) - expected) <= 2)
+            }
+        }
+    }
+
+    @Test("Losing the MetalFX scaler cannot silently capture a bilinear substitute",
+          .enabled(if: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler), .timeLimit(.minutes(1)))
+    func missingMetalFXScalerRejectsCapture() async throws {
+        let stack = try CaptureStack.make(size: CGSize(width: 128, height: 128))
+        defer { stack.teardown() }
+        let device = try #require(stack.layer.device)
+        let source = try Self.linearSource(device: device, edge: 64, pixel: [0.214, 0.5, 2, 0.125])
+        let executor = stack.renderer.executor
+        stack.layer.pixelFormat = .rgba16Float
+        WPEDisplayHDROutput.apply(to: stack.layer, hdrOutputEnabled: true)
+        let library = try #require(device.makeDefaultLibrary())
+        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
+        let presented = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch, colorTransfer: .linear)
+        try #require(presented)
+        try #require(executor.lastPresentPass?.usedMetalFX == true)
+        _ = try stack.bytes(#require(stack.layer.lastDrawable).texture)
+        executor.metalFXUpscaler = nil
+        let result: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
+            executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+                continuation.resume(returning: $0)
+            }
+        }
+        #expect(result == nil)
+    }
+
     @Test("A frame that never reached the screen yields no capture", .timeLimit(.minutes(1)))
     func nilBeforeFirstPresent() async throws {
         let stack = try CaptureStack.make(size: CGSize(width: 96, height: 64))
@@ -200,22 +293,81 @@ struct WPEDisplayedFrameCaptureTests {
         Issue.record("Timed out waiting for: \(label)")
     }
 
-    private static func linearSource(device: MTLDevice) throws -> MTLTexture {
+    private static func captureMetalFX(_ stack: CaptureStack, source: MTLTexture,
+                                       transfer: WPEPresentColorTransfer) async throws -> [UInt8] {
+        let device = try #require(stack.layer.device)
+        let library = try #require(device.makeDefaultLibrary())
+        let executor = stack.renderer.executor
+        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
+        let didPresent = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch, colorTransfer: transfer)
+        try #require(didPresent)
+        let pass = try #require(executor.lastPresentPass)
+        try #require(pass.usedMetalFX, "A bilinear fallback does not verify the MetalFX consumer")
+        #expect(pass.colorTransfer == transfer)
+        let drawable = try #require(stack.layer.lastDrawable).texture
+        let presented = try stack.bytes(drawable)
+        let result: WPEDisplayedFrameCapture? = await withCheckedContinuation { continuation in
+            executor.encodeDisplayedFrameCapture(source: source, colorSpace: stack.layer.colorspace) {
+                continuation.resume(returning: $0)
+            }
+        }
+        let capture = try #require(result)
+        #expect(capture.pixelFormat == stack.layer.pixelFormat)
+        #expect(capture.isEDR == (stack.layer.pixelFormat == .rgba16Float))
+        #expect(capture.colorSpace == stack.layer.colorspace)
+        let captured = try stack.bytes(capture.texture)
+        #expect(captured == presented, "Capture must reproduce the spatial scaler, not the ordinary present pass")
+        return captured
+    }
+
+    private static func linearSource(device: MTLDevice, edge: Int = 2,
+                                     pixel: [Float16] = [0.214, 2, -0.25, 0.125]) throws -> MTLTexture {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba16Float, width: 2, height: 2, mipmapped: false
+            pixelFormat: .rgba16Float, width: edge, height: edge, mipmapped: false
         )
         descriptor.storageMode = .shared
-        descriptor.usage = .shaderRead
+        descriptor.usage = [.shaderRead, .renderTarget]
         let texture = try #require(device.makeTexture(descriptor: descriptor))
-        let pixel: [Float16] = [0.214, 2, -0.25, 0.125]
-        let components = Array(repeating: pixel, count: 4).flatMap(\.self)
+        let components = Array(repeating: pixel, count: edge * edge).flatMap(\.self)
         components.withUnsafeBytes {
             texture.replace(
-                region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
-                withBytes: $0.baseAddress!, bytesPerRow: 2 * 8
+                region: MTLRegionMake2D(0, 0, edge, edge), mipmapLevel: 0,
+                withBytes: $0.baseAddress!, bytesPerRow: edge * 8
             )
         }
         return texture
+    }
+
+    /// External platform reference: no WPE present encoder, upscaler wrapper or transfer shader.
+    private static func nativeMetalFXHDR(_ stack: CaptureStack, pixel: [Float16]) throws -> [UInt8] {
+        let device = try #require(stack.layer.device)
+        let descriptor = MTLFXSpatialScalerDescriptor()
+        descriptor.inputWidth = 64
+        descriptor.inputHeight = 64
+        descriptor.outputWidth = 128
+        descriptor.outputHeight = 128
+        descriptor.colorTextureFormat = .rgba16Float
+        descriptor.outputTextureFormat = .rgba16Float
+        descriptor.colorProcessingMode = .hdr
+        let scaler = try #require(descriptor.makeSpatialScaler(device: device))
+        let source = try linearSource(device: device, edge: 64, pixel: pixel)
+        try #require(source.usage.isSuperset(of: scaler.colorTextureUsage))
+        let texture = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 128, height: 128, mipmapped: false
+        )
+        texture.storageMode = .private
+        texture.usage = scaler.outputTextureUsage.union(.renderTarget)
+        let target = try #require(device.makeTexture(descriptor: texture))
+        let command = try #require(stack.renderer.executor.commandQueue.makeCommandBuffer())
+        scaler.colorTexture = source
+        scaler.outputTexture = target
+        scaler.inputContentWidth = 64
+        scaler.inputContentHeight = 64
+        scaler.encode(commandBuffer: command)
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed && command.error == nil)
+        return try stack.bytes(target)
     }
 }
 

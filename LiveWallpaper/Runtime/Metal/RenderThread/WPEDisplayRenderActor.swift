@@ -770,7 +770,7 @@ actor WPEDisplayRenderActor {
         }, isolation: self)
     }
 
-    /// Works while running or suspended; nil when nothing was presented, the scene is hibernated, or MetalFX drew the last frame.
+    /// Works while running or suspended; nil before presentation, after hibernation, or when replay fails.
     func captureDisplayedFrame() async -> WPEDisplayedFrameCapture? {
         let resumer = WPEDisplayedFrameCaptureResumer()
         return await withTaskCancellationHandler(operation: {

@@ -90,7 +90,7 @@ extension WPEMetalRenderExecutor {
             let scalerSource = drawable.texture.pixelFormat == .rgba16Float
                 ? try encodeLinearPresentationTexture(source: source, colorTransfer: colorTransfer, into: commandBuffer)
                 : source
-            encodedByUpscaler = upscaler.encodeIfEligible(
+            encodedByUpscaler = try upscaler.encodeIfEligible(
                 source: scalerSource,
                 drawableTexture: drawable.texture,
                 fitMode: fitMode,
@@ -159,7 +159,7 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    private func encodeLinearPresentationTexture(
+    func encodeLinearPresentationTexture(
         source: MTLTexture, colorTransfer: WPEPresentColorTransfer, into commandBuffer: MTLCommandBuffer
     ) throws -> MTLTexture {
         // The parity HDR tail has already converted its RGB. The scaler can read that float texture directly.

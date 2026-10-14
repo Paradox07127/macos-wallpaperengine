@@ -53,18 +53,67 @@ struct WPEParityStateBlendTests {
             == desc(rt(true, .srcAlpha, .invSrcAlpha, .add, .one, .one, .max, mask: 0xF)))
     }
 
-    @Test("0x20 and 0x40 replace only the colour op")
+    @Test("0x20 and 0x40 change the colour op and set alpha ONE / ONE")
     func minMax() {
         #expect(WPEParityBlendState.wpe(.additive, modifiers: .max)
-            == desc(rt(true, .srcAlpha, .one, .max, .srcAlpha, .one, .add, mask: 0x7)))
+            == desc(rt(true, .srcAlpha, .one, .max, .one, .one, .add, mask: 0x7)))
         #expect(WPEParityBlendState.wpe(.additive, modifiers: .min)
-            == desc(rt(true, .srcAlpha, .one, .min, .srcAlpha, .one, .add, mask: 0x7)))
+            == desc(rt(true, .srcAlpha, .one, .min, .one, .one, .add, mask: 0x7)))
     }
 
-    @Test("Multiply sets SrcBlend to DEST_COLOR")
+    @Test("Multiply sets RGB source DEST_COLOR and alpha ONE / ONE")
     func multiply() {
         #expect(WPEParityBlendState.wpe(.translucent, modifiers: .multiply)
-            == desc(rt(true, .destColor, .invSrcAlpha, .add, .srcAlpha, .invSrcAlpha, .add, mask: 0x7)))
+            == desc(rt(true, .destColor, .invSrcAlpha, .add, .one, .one, .add, mask: 0x7)))
+    }
+
+    @Test("Original sequential modifier writes retain MIN, DEST_COLOR and alpha MAX when combined")
+    func combinedModifiers() {
+        // FUN_140099f60: PMA, alphaMax, max, min, multiply; later writes affect only their named fields.
+        #expect(WPEParityBlendState.wpe(.translucent, modifiers: [.premultiplied, .alphaMax, .max, .min, .multiply])
+            == desc(rt(true, .destColor, .invSrcAlpha, .min, .one, .one, .max, mask: 0xF)))
+    }
+
+    @Test("A2C material mode survives model and particle frame production without claiming full coverage")
+    func materialDepthAndCoverage() throws {
+        #expect(WPEParitySceneBlend(material: "alphatocoverage") == .alphaToCoverage)
+        for (mode, writesDepth, authoredDepth) in [(WPEParityBlendMode.normal, true, true),
+                                                   (.alphaToCoverage, true, true), (.alphaToCoverage, false, false),
+                                                   (.translucent, false, true)] {
+            let blend = WPEParitySceneBlend(mode)
+            let state = WPEParitySceneMaterialState(depthWrite: authoredDepth)
+            let model = WPEParitySceneModel(meshes: [.init(material: nil, shader: "flat", blend: blend, materialState: state)])
+            let particleKey = WPEParityParticleDrawKey(objectID: "particle", renderer: 0)
+            let particle = WPEParitySceneParticle(draws: [.init(
+                key: particleKey, shader: "flat", source: .flatTexture,
+                blend: blend, materialState: state
+            )])
+            let frame = WPEParitySceneFrameBuilder.build(.init(width: 4, height: 4, msaaSamples: 4, objects: [
+                .init(id: "model", kind: .model(model), width: 4, height: 4),
+                .init(id: "particle", kind: .particle(particle), width: 4, height: 4),
+            ]))
+            for pass in [WPEParitySceneModel.pass(objectID: "model", mesh: 0), particleKey.passIdentity] {
+                let draw = try #require(frame.draws[pass])
+                #expect(draw.blend == blend)
+                #expect(draw.depthTest)
+                #expect(draw.depthWrite == writesDepth)
+                if mode == .alphaToCoverage {
+                    let operation = try #require(frame.operations.first { operation in
+                        guard operation.pass == pass else { return false }
+                        if case .draw = operation.kind {
+                            return true
+                        }
+                        return false
+                    })
+                    guard case let .draw(coverage) = operation.kind else {
+                        Issue.record("Expected the model or particle draw operation")
+                        return
+                    }
+                    #expect(coverage.readsDestination)
+                    #expect(!coverage.overwritesTargets)
+                }
+            }
+        }
     }
 
     @Test("Modifier and enum raw values match the engine and d3d11.h")

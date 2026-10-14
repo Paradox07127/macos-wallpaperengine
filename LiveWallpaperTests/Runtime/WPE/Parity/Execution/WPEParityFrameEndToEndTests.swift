@@ -112,6 +112,7 @@ final class WPEParityFrameEndToEndTests: XCTestCase {
             case .normal: .normal
             case .translucent: .translucent
             case .additive: .additive
+            case .alphaToCoverage: .alphaToCoverage
             }
             var modifiers: WPEParityBlendModifiers = draw.writeMask == .rgba ? .writeAlpha : []
             if draw.alphaMax {

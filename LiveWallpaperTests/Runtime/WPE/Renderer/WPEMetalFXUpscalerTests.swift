@@ -141,13 +141,13 @@ struct WPEMetalFXUpscalerTests {
         let upscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
         let commandBuffer = try #require(queue.makeCommandBuffer())
 
-        #expect(upscaler.encodeIfEligible(
+        #expect(try upscaler.encodeIfEligible(
             source: source, drawableTexture: output, fitMode: .stretch, commandBuffer: commandBuffer
         ))
 
         // `center` keeps source pixels 1:1; the return value IS the contract - on false
         // the caller runs the classic present pass.
-        #expect(upscaler.encodeIfEligible(
+        #expect(try upscaler.encodeIfEligible(
             source: source, drawableTexture: output, fitMode: .center, commandBuffer: commandBuffer
         ) == false)
 

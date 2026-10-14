@@ -98,6 +98,110 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(uncovered, 0)
     }
 
+    /// FUN_1401e5b60 pushes onto the parent's composite camera before slot30 draws text. At FOV90, a 1024x512
+    /// composite gives D=256; z=128 doubles the glyphs around pixel(256,384), versus the ortho(896,64).
+    func testPerspectiveTextInParentCompositeUsesThePushedCameraOnce() async throws {
+        let fixture = try await makeCompositeTextRenderer(effect: false)
+        let renderer = fixture.renderer
+        XCTAssertEqual(renderer.skipped, [:])
+        let text = try sceneText(fixture.plan)
+        let mesh = try XCTUnwrap(text.layout.mesh)
+        let operation = try XCTUnwrap(fixture.plan.frames[0].draws.first { _, draw in
+            guard case let .scene(scene) = draw else { return false }
+            return scene.objectID == Self.textID && scene.geometry == .textGlyphs(.mono)
+        })
+        guard case let .scene(description) = operation.value else { return XCTFail("not a text draw") }
+        XCTAssertEqual(description.compositeOwnerID, "1")
+        XCTAssertFalse(description.fillsComposite)
+        XCTAssertEqual(fixture.plan.programs[operation.key]?.shader, "font")
+        let target = try XCTUnwrap(renderer.targets[description.target])
+        XCTAssertEqual([target.width, target.height], [1024, 512])
+        let glyphOffset = SIMD2(-(mesh.maxX - mesh.minX) * 0.5 - min(mesh.minX, 0),
+                                (mesh.top - mesh.bottom) * 0.5 - mesh.top) + text.layout.blockOffset
+        let creations = renderer.pipelineCreations
+        var firstDraw: WPEParityDraw?
+        for perspective in [true, false, true] {
+            renderer.state.setScriptField("perspective", of: Self.textID,
+                                          to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)), invalidating: .none)
+            try await encode(renderer, label: "child perspective=\(perspective)")
+            let draw = try textDraw(renderer, geometry: .textGlyphs(.mono))
+            let matrices = try XCTUnwrap(renderer.uniforms(operation.key)).matrices
+            // The owner's rotated/scaled world chain cancels once; only the child's local translation remains.
+            let translation = SIMD4(384 + glyphOffset.x, 192 + glyphOffset.y, 128, 1)
+            XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.model.columns.3 - translation)), 0.001)
+            XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.model.columns.0 - SIMD4(1, 0, 0, 0))), 0.001)
+            let expectedView = perspective ? SIMD4<Float>(-512, -256, -256, 1) : SIMD4(0, 0, 0, 1)
+            XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.view.columns.3 - expectedView)), 0.001)
+            XCTAssertEqual(matrices.projection.columns.2.w, perspective ? -1 : 0)
+            let points = mesh.mono.vertices.map { vertex in
+                let local = SIMD2(vertex.x, vertex.y) + glyphOffset
+                // Independent native projection arithmetic, without production camera/MVP helpers.
+                return perspective ? SIMD2(256 + 2 * local.x, 384 - 2 * local.y)
+                    : SIMD2(896 + local.x, 64 - local.y)
+            }
+            _ = try assertTextInk(in: target, points: points, fixture: fixture)
+            try assertParentPublication(fixture)
+            let presented = try readBack(renderer.backbuffer, fixture)
+            XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0] > 0 },
+                          "the parent's real tint pass must publish its glyph pixels")
+            if let firstDraw {
+                XCTAssertTrue(draw.vertexBuffer === firstDraw.vertexBuffer)
+                XCTAssertTrue(draw.pipeline.state === firstDraw.pipeline.state)
+                let atlas = try XCTUnwrap(draw.textures["g_Texture0"])
+                let initialAtlas = try XCTUnwrap(firstDraw.textures["g_Texture0"])
+                XCTAssertTrue(atlas === initialAtlas)
+            } else {
+                firstDraw = draw
+            }
+            XCTAssertEqual(renderer.pipelineCreations, creations)
+        }
+    }
+
+    /// slot29 always fills the text's own FBO with V=I and its extent's ortho, even when its final composite
+    /// publishes through a perspective camera. An opaque black background isolates this from slot28's snapshot.
+    func testPerspectiveTextOwnFBOGlyphsKeepTheFillCamera() async throws {
+        let fixture = try await makeCompositeTextRenderer(effect: true)
+        let renderer = fixture.renderer
+        XCTAssertEqual(renderer.skipped, [:])
+        let text = try sceneText(fixture.plan)
+        let mesh = try XCTUnwrap(text.layout.mesh)
+        let operation = try XCTUnwrap(fixture.plan.frames[0].draws.first { _, draw in
+            guard case let .scene(scene) = draw else { return false }
+            return scene.objectID == Self.textID && scene.geometry == .textGlyphs(.mono) && scene.fillsComposite
+        })
+        guard case let .scene(description) = operation.value else { return XCTFail("not an FBO glyph draw") }
+        XCTAssertEqual(fixture.plan.programs[operation.key]?.shader, "font")
+        let target = try XCTUnwrap(renderer.targets[description.target])
+        XCTAssertEqual(SIMD2(target.width, target.height), text.layout.fboSize)
+        let offset = SIMD2(text.padding.x - min(mesh.minX, 0), text.padding.y - mesh.bottom)
+        let points = mesh.mono.vertices.map { SIMD2($0.x + offset.x, Float(target.height) - $0.y - offset.y) }
+        var firstPixels: [UInt8]?
+        var firstPresented: [UInt8]?
+        for perspective in [true, false] {
+            renderer.state.setScriptField("perspective", of: Self.textID,
+                                          to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)), invalidating: .none)
+            try await encode(renderer, label: "FBO child perspective=\(perspective)")
+            _ = try textDraw(renderer, geometry: .textGlyphs(.mono))
+            let matrices = try XCTUnwrap(renderer.uniforms(operation.key)).matrices
+            XCTAssertEqual(matrices.view, matrix_identity_float4x4)
+            XCTAssertEqual(matrices.projection.columns.2.w, 0)
+            XCTAssertEqual(matrices.projection.columns.0.x, 2 / Float(target.width), accuracy: 0.00001)
+            XCTAssertEqual(matrices.projection.columns.1.y, 2 / Float(target.height), accuracy: 0.00001)
+            XCTAssertEqual(matrices.model.columns.3, SIMD4(offset.x, offset.y, 0, 1))
+            let pixels = try assertTextInk(in: target, points: points, fixture: fixture)
+            try assertParentPublication(fixture)
+            let presented = try readBack(renderer.backbuffer, fixture)
+            XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0] > 0 })
+            if let firstPixels, let firstPresented {
+                XCTAssertTrue(pixels == firstPixels, "perspective belongs to publication, never the glyph FBO fill")
+                XCTAssertTrue(presented != firstPresented, "the actual final composite still consumes perspective")
+            } else {
+                firstPixels = pixels
+                firstPresented = presented
+            }
+        }
+    }
+
     /// Exercise the frame's camera and light consumers, including ancestor hiding and fallback to the authored
     /// root. Camera motion must move the actual glyph pixels; moving lights must keep the live ambient write.
     func testFrameConsumesLiveCameraAndLightsWithoutReloading() async throws {
@@ -757,6 +861,87 @@ final class WPEParityTextDrawTests: XCTestCase {
             "objects": [text],
         ]
         return try JSONSerialization.data(withJSONObject: scene)
+    }
+
+    private func makeCompositeTextRenderer(effect: Bool) async throws -> Fixture {
+        let scene = try Self.syntheticScene(effect: effect)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: scene) as? [String: Any])
+        var general = try XCTUnwrap(json["general"] as? [String: Any])
+        general["perspectiveoverridefov"] = 90
+        json["general"] = general
+        var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+        objects[0].merge(["parent": 1, "origin": "384 192 128", "pointsize": 8, "perspective": true,
+                          "padding": "8 8", "opaquebackground": effect] as [String: Any]) { _, next in next }
+        objects += [
+            ["id": 2, "origin": "64 24 0", "angles": "0 0 0.08"],
+            ["id": 1, "parent": 2, "image": "models/util/solidlayer.json", "size": "1024 512",
+             "origin": "448 232 0", "angles": "0 0 -0.12", "scale": "0.75 0.75 1", "color": "0 0 0", "alpha": 1,
+             "effects": [["file": "effects/tint/effect.json", "id": 10, "visible": true,
+                          "passes": [["constantshadervalues": ["alpha": 0]]]]]],
+        ]
+        json["objects"] = objects
+        return try await makeSyntheticRenderer(effect: effect, scene: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// Keep the parent world's nontrivial chain while diagnosing the actual final publication, after its child drew.
+    private func assertParentPublication(_ fixture: Fixture) throws {
+        let renderer = fixture.renderer
+        let operation = try XCTUnwrap(fixture.plan.frames[0].draws.first { _, draw in
+            guard case let .scene(scene) = draw else { return false }
+            return scene.objectID == "1" && scene.effectID == "10" && scene.target == WPEParitySceneResource.backbuffer
+        })
+        guard case let .scene(description) = operation.value else { return XCTFail("not a parent publication") }
+        let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation.key }?.draw)
+        let source = try XCTUnwrap(draw.textures["g_Texture0"])
+        let expectedSource = try XCTUnwrap(description.reads.first.flatMap { renderer.targets[$0] })
+        XCTAssertTrue(source === expectedSource, "the real tint pass must sample the composite its child wrote")
+        let input = try readBack(source, fixture)
+        XCTAssertTrue(stride(from: 0, to: input.count, by: 4).contains { input[$0] > 0 },
+                      "parent tint source is black before global publication")
+        let matrices = try XCTUnwrap(renderer.uniforms(operation.key)).matrices
+        let rootAngle: Float = 0.08
+        let angle: Float = -0.04
+        let translation = SIMD4<Float>(64 + cos(rootAngle) * 448 - sin(rootAngle) * 232,
+                                       24 + sin(rootAngle) * 448 + cos(rootAngle) * 232, 0, 1)
+        let right = SIMD4<Float>(0.75 * cos(angle), 0.75 * sin(angle), 0, 0)
+        let up = SIMD4<Float>(-0.75 * sin(angle), 0.75 * cos(angle), 0, 0)
+        XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.model.columns.3 - translation)), 0.001)
+        XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.model.columns.0 - right)), 0.001)
+        XCTAssertLessThanOrEqual(simd_reduce_max(abs(matrices.model.columns.1 - up)), 0.001)
+        print("text parent publication \(description.pass.rawValue): source=\(source.width)x\(source.height), "
+            + "modelOrigin=\(matrices.model.columns.3), "
+            + "tintAlpha=\(String(describing: draw.constants[.fragment]?["g_BlendAlpha"]))")
+    }
+
+    /// Read the actual font target, requiring ink inside the independently projected glyph quads and none outside.
+    private func assertTextInk(in texture: MTLTexture, points: [SIMD2<Float>], fixture: Fixture) throws -> [UInt8] {
+        XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+        var low = try XCTUnwrap(points.first)
+        var high = low
+        for point in points {
+            low = simd_min(low, point)
+            high = simd_max(high, point)
+        }
+        let lower = SIMD2<Int>(low, rounding: .down)
+        let upper = SIMD2<Int>(high, rounding: .up)
+        XCTAssertGreaterThanOrEqual(lower.x, 0)
+        XCTAssertGreaterThanOrEqual(lower.y, 0)
+        XCTAssertLessThanOrEqual(upper.x, texture.width)
+        XCTAssertLessThanOrEqual(upper.y, texture.height)
+        let pixels = try readBack(texture, fixture)
+        var (inside, outside) = (0, 0)
+        for y in 0 ..< texture.height {
+            for x in 0 ..< texture.width where pixels[(y * texture.width + x) * 4] > 0 {
+                if x >= lower.x, x < upper.x, y >= lower.y, y < upper.y {
+                    inside += 1
+                } else {
+                    outside += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(inside, 0, "no font pixels inside \(lower)..<\(upper)")
+        XCTAssertEqual(outside, 0, "font pixels escaped \(lower)..<\(upper)")
+        return pixels
     }
 
     private static func parse(_ scene: Data,
