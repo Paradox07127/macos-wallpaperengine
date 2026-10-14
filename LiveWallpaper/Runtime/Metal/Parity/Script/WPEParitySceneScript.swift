@@ -35,6 +35,8 @@ final class WPEParitySceneScript {
         var userPropertiesJSON = "{}"
         var openUserShortcut: (String) -> Bool = { _ in false }
         var media: WPESceneMediaEventMailbox?
+        /// The existing product load generation; parity inputs are consumed atomically by the renderer.
+        var mediaGeneration: Int?
         var storage = Storage()
         var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
@@ -61,6 +63,9 @@ final class WPEParitySceneScript {
     let cameraIDs: [String]
     let soundIDs: [String]
     private let media: WPESceneMediaEventMailbox?
+    private let hasMediaSource: Bool
+    private var userProperties: [String: Any]
+    private var mediaProperties: [String: String] = [:]
     private var tracker = WPEParityCursorTracker()
     private var targets: [WPEParityCursorTarget] = []
     private var lastCursor: SIMD2<Float>?
@@ -103,7 +108,9 @@ final class WPEParitySceneScript {
         let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }
         handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0
         handlesMedia = bits & WPEParityScriptEvent.mediaBits != 0
-        media = host.media
+        media = host.mediaGeneration == nil ? host.media : nil
+        hasMediaSource = host.media != nil
+        userProperties = (try? JSONSerialization.jsonObject(with: Data(host.userPropertiesJSON.utf8))) as? [String: Any] ?? [:]
         var candidates: [CursorCandidate] = []
         var cameras: [String] = []
         for object in document.resolvedObjectsJSON {
@@ -124,7 +131,7 @@ final class WPEParitySceneScript {
     /// Event 0 once every object loaded, then the current media state to the media handlers (140172830.c:82-288).
     func start(state: inout WPEParitySceneState) {
         engine.start(state: &state)
-        guard handlesMedia, media != nil else { return }
+        guard handlesMedia, hasMediaSource else { return }
         engine.dispatch(.mediaStatusChanged, payloadJSON: #"{"enabled":true}"#, state: &state)
         dispatchMedia(state: &state)
     }
@@ -160,6 +167,42 @@ final class WPEParitySceneScript {
             let (id, payload) = Self.payload(event)
             engine.dispatch(id, payloadJSON: payload, state: &state)
         }
+    }
+
+    /// Native thumbnail inputs reapply their system properties before dispatching the matching media events.
+    func applyMedia(properties: [String: String], events: [WPESceneMediaEvent], state: inout WPEParitySceneState) {
+        if !properties.isEmpty {
+            mediaProperties.merge(properties) { $1 }
+            var changed: [String: Any] = [:]
+            for (name, value) in properties {
+                var property = userProperties[name] as? [String: Any] ?? [:]
+                property["value"] = value
+                userProperties[name] = property
+                changed[name] = property
+            }
+            engine.applyUserProperties(changedJSON: Self.json(changed), mergedJSON: Self.json(userProperties), state: &state)
+        }
+        guard handlesMedia else { return }
+        for event in events {
+            let (id, payload) = Self.payload(event)
+            engine.dispatch(id, payloadJSON: payload, state: &state)
+        }
+    }
+
+    /// Product property changes keep the system properties installed by the last accepted media input.
+    func applyUserProperties(changedJSON: String, mergedJSON: String, state: inout WPEParitySceneState) {
+        userProperties = (try? JSONSerialization.jsonObject(with: Data(mergedJSON.utf8))) as? [String: Any] ?? [:]
+        for (name, value) in mediaProperties {
+            var property = userProperties[name] as? [String: Any] ?? [:]
+            property["value"] = value
+            userProperties[name] = property
+        }
+        engine.applyUserProperties(changedJSON: changedJSON, mergedJSON: Self.json(userProperties), state: &state)
+    }
+
+    private static func json(_ object: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: .sortedKeys) else { return "{}" }
+        return String(bytes: data, encoding: .utf8) ?? "{}"
     }
 
     func tick(dt: Float, cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool, timeOfDay: Float,

@@ -48,6 +48,12 @@ struct WPEParityFrameDrawPlan {
     let puppetID: String?
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
     var textures: [[String: TextureSource]]
+    /// System declarations eligible to replace an authored image, never a graph-owned RT or glyph atlas.
+    var mediaSlots: [Int: WPEMediaSystemTexture] = [:]
+    /// Full-image UVs for a media replacement of a padded authored albedo; built once, not on artwork changes.
+    var mediaGeometry: Geometry?
+    /// A compiled authored-format conversion that cannot consume an RGBA8 media image unchanged.
+    var mediaFormatFailures: [Int: String] = [:]
     let samplers: [String: WPEParitySamplerState]
     let uniforms: WPEParityUniformDraw
     /// Where a scene layer draw sits; nil for post-process and particle draws.
@@ -143,15 +149,17 @@ struct WPEParityFrameDrawPlan {
                   textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                   puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
-                  layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil) throws -> WPEParityDraw {
-        guard case let .mesh(vertices, indices, indexCount) = geometry else {
+                  layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
+                  mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
+        let selectedGeometry = mediaSlots[0].flatMap(mediaTexture) == nil ? geometry : mediaGeometry ?? geometry
+        guard case let .mesh(vertices, indices, indexCount) = selectedGeometry else {
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
         var state = try drawState(frame: frame,
                                   uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera,
                                                           layers: layers),
                                   variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
-                                  constants: constants ?? self.constants)
+                                  constants: constants ?? self.constants, mediaTexture: mediaTexture)
         if let renderVar0 {
             let value = WPECBufferValue.vector([renderVar0.x, renderVar0.y, renderVar0.z, renderVar0.w])
             for stage in state.constants.keys {
@@ -189,8 +197,13 @@ struct WPEParityFrameDrawPlan {
                           textures table: [WPEResourceID: MTLTexture], arena: WPEParityFrameArena.Frame,
                           textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
                           particles: inout WPEParityParticleFrame,
-                          layers live: WPEParityLayerTransformSet? = nil) throws -> WPEParityDraw? {
+                          layers live: WPEParityLayerTransformSet? = nil,
+                          mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
+        if particle.renderVar1 != nil, let kind = mediaSlots[0], mediaTexture(kind) != nil {
+            // The GS consumes RV1 rather than image Rotation/Translation. Do not reuse authored TEXS metadata.
+            throw WPEParityFrameSkip.program("particle media SPRITESHEET RV1 requires native evidence")
+        }
         var layers = live ?? particle.layers
         layers.camera = camera
         var uniforms = uniforms
@@ -220,7 +233,7 @@ struct WPEParityFrameDrawPlan {
         }
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
                                   textureSlots: &textureSlots, puppets: [:], constants: constants,
-                                  engineExtras: orientation)
+                                  engineExtras: orientation, mediaTexture: mediaTexture)
         // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
         if let renderVar1 = particle.renderVar1 {
             renderVars.setRV1(renderVar1)
@@ -245,11 +258,31 @@ struct WPEParityFrameDrawPlan {
                            table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                            puppets: [String: WPEParityPuppetAnimator],
                            constants: [WPEHLSLStage: [String: WPECBufferValue]],
-                           engineExtras: [String: WPECBufferValue] = [:])
+                           engineExtras: [String: WPECBufferValue] = [:],
+                           mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil })
         throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
+        for (slot, failure) in mediaFormatFailures {
+            if let kind = mediaSlots[slot], mediaTexture(kind) != nil {
+                throw WPEParityFrameSkip.program(failure)
+            }
+        }
         var uniforms = uniforms
         var spriteTextures: [String: MTLTexture] = [:]
-        for (slot, steps) in sprites where slot < uniforms.textures.count {
+        var systemTextures: [String: MTLTexture] = [:]
+        for (slot, kind) in mediaSlots {
+            guard let texture = mediaTexture(kind) else { continue }
+            if uniforms.textures.indices.contains(slot) {
+                let width = Float(texture.width), height = Float(texture.height)
+                uniforms.textures[slot] = WPEParityUniformTexture(
+                    textureWidth: UInt32(texture.width), textureHeight: UInt32(texture.height),
+                    imageWidth: UInt32(texture.width), imageHeight: UInt32(texture.height), mipMapInfo: 1,
+                    spriteFrame: .init(x: 0, y: 0, widthX: width, widthY: 0, heightX: 0, heightY: height,
+                                       imageWidth: width, imageHeight: height)
+                )
+            }
+            systemTextures["g_Texture\(slot)"] = texture
+        }
+        for (slot, steps) in sprites where slot < uniforms.textures.count && systemTextures["g_Texture\(slot)"] == nil {
             let step = Self.sprite(steps, at: frame.clock.time)
             uniforms.textures[slot]?.spriteFrame = step?.frame
             spriteTextures["g_Texture\(slot)"] = step?.texture
@@ -284,6 +317,7 @@ struct WPEParityFrameDrawPlan {
             }
         }
         boundTextures.merge(spriteTextures) { $1 }
+        boundTextures.merge(systemTextures) { $1 }
         return (stageConstants, boundTextures)
     }
 
@@ -483,8 +517,41 @@ struct WPEParityFrameDrawPlanner {
         else { throw .pipeline("operation \(index) has no draw or known target format") }
         let bindings = layout.bindings.compactMap { $0[index] }
         guard let binding = bindings.first, bindings.count == layout.frames.count else { throw .noMaterial }
+        let declarations = binding.userTextures.bindings
+        let hasMedia = [declarations.material, declarations.pass, declarations.override].joined().contains {
+            WPEMediaSystemTexture(bindingName: $0.name) != nil
+        }
+        if hasMedia, !binding.userTextures.diagnostics.isEmpty {
+            throw .texture("\(shader): \(binding.userTextures.diagnostics.joined(separator: "; "))")
+        }
+        // Native usertextures retains the provider type. A matching media name does not turn an explicit
+        // user-shortcut or unknown provider into a system texture. Keep the older untyped form compatible.
+        if let declaration = binding.userTextureSlots.values.first(where: {
+            WPEMediaSystemTexture(bindingName: $0.name) != nil && $0.type != nil && $0.type != "system"
+        }) {
+            throw .texture("\(shader): media usertexture provider '\(declaration.type ?? "")' is unsupported")
+        }
+        var mediaSlots = binding.userTextureSlots.reduce(into: [Int: WPEMediaSystemTexture]()) { slots, entry in
+            if entry.key >= 0, let kind = WPEMediaSystemTexture(bindingName: entry.value.name) {
+                slots[Int(entry.key)] = kind
+            }
+        }
         let pipeline = try pipeline(description, target: target, resources: resources, program: layout.programs[index],
                                     artifact: artifact)
+        func combo(_ name: String) -> Int32? {
+            layout.programs[index].flatMap {
+                ($0.combos + $0.textureCombos).last { $0.name == name }.flatMap { Int32($0.value) }
+            }
+        }
+        var mediaFormatFailures: [Int: String] = [:]
+        if ["genericparticle", "genericropeparticle"].contains(shader),
+           let format = combo("TEX0FORMAT"), (8 ... 11).contains(format) {
+            mediaFormatFailures[0] = "\(shader) media TEX0FORMAT \(format) needs a prepared RGBA8 program variant"
+        }
+        if shader == "generic4", combo("SHADINGGRADIENT").map({ $0 != 0 }) == true,
+           let format = combo("TEX4FORMAT"), [8, 9].contains(format) {
+            mediaFormatFailures[4] = "generic4 media gradient TEX4FORMAT \(format) needs a prepared RGBA8 program variant"
+        }
 
         let particleKey: WPEParityParticleDrawKey? = if case let .scene(draw) = description,
                                                         case let .particles(key) = draw.geometry {
@@ -515,6 +582,7 @@ struct WPEParityFrameDrawPlanner {
             artifact.map { (stage, $0.reflection) }
         }
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
+        mediaSlots = mediaSlots.filter { names.contains("g_Texture\($0.key)") }
         let text: WPEParitySceneText? = if case let .scene(draw) = description {
             texts[draw.objectID]
         } else {
@@ -665,6 +733,33 @@ struct WPEParityFrameDrawPlanner {
         } else {
             nil
         }
+        var mediaGeometry: WPEParityFrameDrawPlan.Geometry?
+        if mediaSlots[0] != nil, uvMax != .one {
+            let inputs = artifact.vertex.reflection.vertexInputs
+            let paddedComposite = placement.map {
+                if case .compositeFill = $0.kind {
+                    true
+                } else {
+                    false
+                }
+            } ?? false
+            let buffers: (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)?
+            if let puppet {
+                buffers = try Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: .one,
+                                                  inputs: inputs, device: device)
+            } else if let placement, case .compositeFill = placement.kind {
+                let full = layers.quad(placement.objectID, kind: placement.kind, uvMax: .one)
+                buffers = Self.geometry(full.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
+                                        indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
+            } else {
+                buffers = nil
+            }
+            if let buffers {
+                mediaGeometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount)
+            } else if puppet != nil || paddedComposite {
+                throw .pipeline("media vertex or index buffer allocation failed")
+            }
+        }
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
                                             textures: uniformTextures, lights: lights)
 
@@ -700,6 +795,9 @@ struct WPEParityFrameDrawPlanner {
             geometry: geometry,
             puppetID: puppetID,
             textures: textures,
+            mediaSlots: mediaSlots,
+            mediaGeometry: mediaGeometry,
+            mediaFormatFailures: mediaFormatFailures,
             samplers: samplers,
             uniforms: uniforms,
             placement: placement,

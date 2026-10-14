@@ -99,6 +99,7 @@ final class WPEParitySceneDriver {
     private var pendingUserProperties: (patch: WPEScenePropertyPatch, document: WPESceneDocument)?
     /// engine.userProperties as last applied: project.json's properties with the user's values.
     private var scriptUserProperties = "{}"
+    private var mediaMailbox: WPESceneMediaEventMailbox?
     /// Bumped on load and cleanup, so presents of an older load never count as ready.
     private(set) var loadGeneration = 0
     private(set) var loadDiagnostics: SceneLoadDiagnostic?
@@ -157,6 +158,10 @@ final class WPEParitySceneDriver {
         renderer?.script?.handlesMedia == true
     }
 
+    var hasMediaTextureDemand: Bool {
+        renderer?.hasMediaTextureDemand == true
+    }
+
     /// Present command buffers committed and not yet completed.
     var inFlightCount: Int {
         presentState.inFlight
@@ -197,8 +202,11 @@ final class WPEParitySceneDriver {
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
         workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init()
     ) async throws {
+        mediaMailbox?.invalidateParityGeneration(loadGeneration)
         loadGeneration &+= 1
         let generation = loadGeneration
+        mediaMailbox = scriptHost.media
+        mediaMailbox?.beginParityGeneration(generation)
         presentState.reset(generation: generation)
         spanFrames?.reset(generation: generation)
         didLoad = false
@@ -266,9 +274,11 @@ final class WPEParitySceneDriver {
             plannedTarget = target
             userPropertyBindings = WPEParityUserProperties.bindings(document: document)
             scriptUserProperties = scriptHost.userPropertiesJSON
+            renderer.attachMedia(mediaMailbox, generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
                 do {
                     var connectedHost = scriptHost
+                    connectedHost.mediaGeneration = generation
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
                     // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
                     try renderer.attachScript(WPEParitySceneScript(
@@ -621,6 +631,8 @@ final class WPEParitySceneDriver {
     /// Drops the renderer and its video players; frames already on the GPU finish but no longer mark readiness.
     func cleanup() {
         didLoad = false
+        mediaMailbox?.invalidateParityGeneration(loadGeneration)
+        mediaMailbox = nil
         loadGeneration &+= 1
         presentState.reset(generation: loadGeneration)
         spanFrames?.reset(generation: loadGeneration)

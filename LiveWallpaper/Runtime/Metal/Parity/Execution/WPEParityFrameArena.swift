@@ -17,9 +17,12 @@ final class WPEParityFrameArena {
         }
     }
 
-    final class Frame {
+    /// The encoder alone mutates a frame before commit. Its completion callback only releases the sampler
+    /// references after the GPU reader has finished; it never touches the cursor or encodes more work.
+    final class Frame: @unchecked Sendable {
         let buffer: MTLBuffer
         private var cursor = 0
+        private var samplers: [ObjectIdentifier: any MTLSamplerState] = [:]
 
         fileprivate init(buffer: MTLBuffer) {
             self.buffer = buffer
@@ -37,6 +40,15 @@ final class WPEParityFrameArena {
             guard canAllocate(length: length) else { return nil }
             cursor = offset + length
             return Allocation(buffer: buffer, offset: offset)
+        }
+
+        /// MSC argument tables contain a raw sampler GPU ID, which does not retain its Metal object.
+        func retainSampler(_ sampler: any MTLSamplerState) {
+            samplers[ObjectIdentifier(sampler)] = sampler
+        }
+
+        fileprivate func complete() {
+            samplers.removeAll()
         }
     }
 
@@ -79,10 +91,12 @@ final class WPEParityFrameArena {
            let buffer = device.makeBuffer(length: capacity, options: .storageModeShared) {
             buffers[slot] = buffer
         }
-        commandBuffer.addCompletedHandler { [busy] _ in
+        let frame = Frame(buffer: buffers[slot])
+        commandBuffer.addCompletedHandler { [busy, frame] _ in
+            frame.complete()
             busy.withLock { $0[slot] = false }
         }
-        return Frame(buffer: buffers[slot])
+        return frame
     }
 }
 #endif

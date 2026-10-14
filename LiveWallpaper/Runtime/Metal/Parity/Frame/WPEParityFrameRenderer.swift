@@ -123,6 +123,14 @@ final class WPEParityFrameRenderer {
     private var activeCameraID: String?
     /// The scene's SceneScript engine; nil for a scene without property scripts.
     private(set) var script: WPEParitySceneScript?
+    private var media: WPESceneMediaEventMailbox?
+    private var mediaGeneration = 0
+    private(set) var mediaTextures: WPEMediaTextureStore.ParitySnapshot?
+    private(set) var mediaDiagnostics: [String] = []
+    var hasMediaTextureDemand: Bool {
+        graphs.layout.draws.values.contains { !$0.mediaSlots.isEmpty }
+    }
+
     private var seenScriptBloom = 0
     private var seenScriptSound = 0
     private var seenSoundVisibility = -1
@@ -543,6 +551,10 @@ final class WPEParityFrameRenderer {
         camera.perspectiveFOV = previous.camera.perspectiveFOV
         camera.zoom = previous.camera.zoom
         script = previous.script
+        media = previous.media
+        mediaGeneration = previous.mediaGeneration
+        mediaTextures = previous.mediaTextures
+        mediaDiagnostics = previous.mediaDiagnostics
         seenScriptSound = previous.seenScriptSound
         seenScriptLighting = previous.seenScriptLighting
         lights = previous.lights
@@ -577,13 +589,30 @@ final class WPEParityFrameRenderer {
                 state.setScriptField(name, of: text.id, to: value, invalidating: .textLayout)
             }
         }
-        script?.engine.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
+        script?.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
     }
 
     /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.
     func attachScript(_ script: WPEParitySceneScript) {
         self.script = script
         script.start(state: &state)
+    }
+
+    func attachMedia(_ mailbox: WPESceneMediaEventMailbox?, generation: Int) {
+        media = mailbox
+        mediaGeneration = generation
+    }
+
+    /// The same accepted input supplies both textures and script properties/events before animation and update.
+    private func consumeMediaInputs() {
+        guard let media else { return }
+        for input in media.drainParityInputs(generation: mediaGeneration) {
+            if let textures = input.textures {
+                mediaTextures = textures
+            }
+            mediaDiagnostics = input.diagnostics
+            script?.applyMedia(properties: input.systemProperties, events: input.events, state: &state)
+        }
     }
 
     /// Event 3 to every binding; later frames run no script.
@@ -826,6 +855,7 @@ final class WPEParityFrameRenderer {
             script.updateAudio(audio.bins)
             runScriptEvents(script, camera: camera, input: input, timeOfDay: daytime)
         }
+        consumeMediaInputs()
         // R24 Q1: animations run after the object update and the camera, and render reads their values.
         animations.advance(dt: clock.frametime, state: &state)
         if let script {
@@ -859,7 +889,10 @@ final class WPEParityFrameRenderer {
             }
         }
         lastFrameDraws.removeAll(keepingCapacity: true)
-        graphs.executors[variant].restoreResourceBindings(resourceBindings)
+        let executor = graphs.executors[variant]
+        executor.restoreResourceBindings(resourceBindings)
+        // Encoding can throw after submitting a prefix. Carry every reached swap into the next frame too.
+        defer { resourceBindings = executor.resourceBindings }
         var particleStreams: [Int: WPEParityParticleDrawStream] = [:]
         let blocks = graphs.layout.frames[variant].particleBlocks
         func stream(for block: Int) throws -> WPEParityParticleDrawStream? {
@@ -881,70 +914,70 @@ final class WPEParityFrameRenderer {
             particleStreams[block] = stream
             return stream
         }
-        let submission = try graphs.executors[variant].encodeFrame(on: queue, textures: targets.merging(images) { $1 },
-                                                                   prepare: videos.encode, shouldTransfer: { step in
-                                                                       if case let .particleSnapshot(block) = graphs.operations[variant][step] {
-                                                                           return particleStreams[block]?.snapshotBoundary != nil
-                                                                       }
-                                                                       return true
-                                                                   }, clearColor: { pass in
-                                                                       guard let owner = textBackgroundOwners[pass], let color = backgroundColor(of: owner) else { return nil }
-                                                                       return WPEClearColor(red: Double(color.x), green: Double(color.y),
-                                                                                            blue: Double(color.z), alpha: Double(color.w))
-                                                                   }, visit: { step, textures, arena, emit in
-                                                                       func encode(_ provided: WPEParityDraw, operation: Int) throws {
-                                                                           var provided = provided
-                                                                           for (name, texture) in provided.textures {
-                                                                               if let sampler = targetSamplers[ObjectIdentifier(texture)] {
-                                                                                   provided.samplers[name + "SamplerState"] = sampler
-                                                                               }
-                                                                           }
-                                                                           lastFrameDraws.append((operation, provided))
-                                                                           try emit(provided)
-                                                                       }
-                                                                       let source = graphs.operations[variant][step]
-                                                                       switch source {
-                                                                       case let .particlePrefix(block), let .particleSuffix(block):
-                                                                           guard let stream = try stream(for: block) else { return }
-                                                                           let boundary = stream.snapshotBoundary ?? stream.batches.count
-                                                                           let range: Range<Int> = if case .particlePrefix = source {
-                                                                               0 ..< boundary
-                                                                           } else {
-                                                                               boundary ..< stream.batches.count
-                                                                           }
-                                                                           for index in range {
-                                                                               let batch = stream.batches[index]
-                                                                               guard let operation = graphs.particleDraws[batch.key], let plan = draws[operation] else { continue }
-                                                                               if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: camera, variant: variant,
-                                                                                                                           textures: textures, arena: arena, textureSlots: &textureSlots,
-                                                                                                                           renderVars: &renderVars, particles: &particles, layers: live) {
-                                                                                   // Encode argument tables before the next batch reserves any vertex bytes.
-                                                                                   try encode(provided, operation: operation)
-                                                                               }
-                                                                           }
-                                                                       case let .layout(operation):
-                                                                           guard let plan = draws[operation] else { return }
-                                                                           let fade = operation == graphs.layout.fade
-                                                                           if fade {
-                                                                               guard fadeAlpha > 0 else { return }
-                                                                               if fadeConstants.isEmpty {
-                                                                                   fadeConstants = plan.constants
-                                                                               }
-                                                                               fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
-                                                                           }
-                                                                           plan.applyRenderVarWrites(to: &renderVars)
-                                                                           let color = drawColor(operation: operation, variant: variant, plan: plan)
-                                                                           let provided = try plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
-                                                                                                            textureSlots: &textureSlots, puppets: puppets, layers: live,
-                                                                                                            constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
-                                                                                                            layerColor: color == plan.layerColor?.loaded ? nil : color,
-                                                                                                            renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0)
-                                                                           try encode(provided, operation: operation)
-                                                                       case .particleSnapshot, .state: break
-                                                                       }
-                                                                   })
-        resourceBindings = graphs.executors[variant].resourceBindings
-        return submission
+        return try executor.encodeFrame(on: queue, textures: targets.merging(images) { $1 },
+                                        prepare: videos.encode, shouldTransfer: { step in
+                                            if case let .particleSnapshot(block) = graphs.operations[variant][step] {
+                                                return particleStreams[block]?.snapshotBoundary != nil
+                                            }
+                                            return true
+                                        }, clearColor: { pass in
+                                            guard let owner = textBackgroundOwners[pass], let color = backgroundColor(of: owner) else { return nil }
+                                            return WPEClearColor(red: Double(color.x), green: Double(color.y),
+                                                                 blue: Double(color.z), alpha: Double(color.w))
+                                        }, visit: { step, textures, arena, emit in
+                                            func encode(_ provided: WPEParityDraw, operation: Int) throws {
+                                                var provided = provided
+                                                for (name, texture) in provided.textures {
+                                                    if let sampler = targetSamplers[ObjectIdentifier(texture)] {
+                                                        provided.samplers[name + "SamplerState"] = sampler
+                                                    }
+                                                }
+                                                lastFrameDraws.append((operation, provided))
+                                                try emit(provided)
+                                            }
+                                            let source = graphs.operations[variant][step]
+                                            switch source {
+                                            case let .particlePrefix(block), let .particleSuffix(block):
+                                                guard let stream = try stream(for: block) else { return }
+                                                let boundary = stream.snapshotBoundary ?? stream.batches.count
+                                                let range: Range<Int> = if case .particlePrefix = source {
+                                                    0 ..< boundary
+                                                } else {
+                                                    boundary ..< stream.batches.count
+                                                }
+                                                for index in range {
+                                                    let batch = stream.batches[index]
+                                                    guard let operation = graphs.particleDraws[batch.key], let plan = draws[operation] else { continue }
+                                                    if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: camera, variant: variant,
+                                                                                                textures: textures, arena: arena, textureSlots: &textureSlots,
+                                                                                                renderVars: &renderVars, particles: &particles, layers: live,
+                                                                                                mediaTexture: { mediaTextures?.texture(for: $0) }) {
+                                                        // Encode argument tables before the next batch reserves any vertex bytes.
+                                                        try encode(provided, operation: operation)
+                                                    }
+                                                }
+                                            case let .layout(operation):
+                                                guard let plan = draws[operation] else { return }
+                                                let fade = operation == graphs.layout.fade
+                                                if fade {
+                                                    guard fadeAlpha > 0 else { return }
+                                                    if fadeConstants.isEmpty {
+                                                        fadeConstants = plan.constants
+                                                    }
+                                                    fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
+                                                }
+                                                plan.applyRenderVarWrites(to: &renderVars)
+                                                let color = drawColor(operation: operation, variant: variant, plan: plan)
+                                                let provided = try plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
+                                                                                 textureSlots: &textureSlots, puppets: puppets, layers: live,
+                                                                                 constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
+                                                                                 layerColor: color == plan.layerColor?.loaded ? nil : color,
+                                                                                 renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
+                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) })
+                                                try encode(provided, operation: operation)
+                                            case .particleSnapshot, .state: break
+                                            }
+                                        })
     }
 
     /// Text background brightness has no layout hook. Consume it here without rebuilding glyph geometry or atlases.

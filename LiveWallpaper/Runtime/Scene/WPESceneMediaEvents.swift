@@ -2,6 +2,7 @@
 import Foundation
 import JavaScriptCore
 import LiveWallpaperProWPE
+import Metal
 
 #if DEBUG
 enum WPEOracleMediaSnapshotError: Error, Equatable {
@@ -85,7 +86,6 @@ final class WPEOracleFrozenNowPlayingSource: WPENowPlayingEventSource {
 }
 #endif
 
-
 /// The frozen `MediaPlaybackEvent` constants installed by
 /// `WPESceneScriptBaseclasses`. Raw values are the contract, not an enum order.
 enum WPESceneMediaPlaybackState: Int, Sendable, Equatable {
@@ -138,10 +138,10 @@ enum WPESceneMediaEvent: Sendable, Equatable {
 
     var handlerName: String {
         switch self {
-        case .playbackChanged: return "mediaPlaybackChanged"
-        case .propertiesChanged: return "mediaPropertiesChanged"
-        case .thumbnailChanged: return "mediaThumbnailChanged"
-        case .timelineChanged: return "mediaTimelineChanged"
+        case .playbackChanged: "mediaPlaybackChanged"
+        case .propertiesChanged: "mediaPropertiesChanged"
+        case .thumbnailChanged: "mediaThumbnailChanged"
+        case .timelineChanged: "mediaTimelineChanged"
         }
     }
 }
@@ -174,10 +174,10 @@ struct WPESceneMediaHandlerSet: Sendable, Equatable {
 
     func handles(_ event: WPESceneMediaEvent) -> Bool {
         switch event {
-        case .playbackChanged: return playback
-        case .propertiesChanged: return properties
-        case .thumbnailChanged: return thumbnail
-        case .timelineChanged: return timeline
+        case .playbackChanged: playback
+        case .propertiesChanged: properties
+        case .thumbnailChanged: thumbnail
+        case .timelineChanged: timeline
         }
     }
 }
@@ -216,7 +216,7 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
         case .paused: self.state = .paused
         case .noPlayer, .awaitingFirstEvent: self.state = .stopped
         }
-        self.isAwaitingFirstEvent = state.phase == .awaitingFirstEvent
+        isAwaitingFirstEvent = state.phase == .awaitingFirstEvent
         properties = self.state == .stopped ? nil : WPESceneMediaProperties(
             title: state.title,
             artist: state.artist ?? "",
@@ -295,7 +295,7 @@ struct WPESceneMediaDiffGate {
             var events: [WPESceneMediaEvent] = [
                 .playbackChanged(snapshot.state),
                 .propertiesChanged(snapshot.properties),
-                .thumbnailChanged(snapshot.thumbnail)
+                .thumbnailChanged(snapshot.thumbnail),
             ]
             if let timeline = snapshot.timeline {
                 events.append(.timelineChanged(timeline))
@@ -323,10 +323,81 @@ struct WPESceneMediaDiffGate {
     }
 }
 
-/// `@unchecked Sendable`: every access to `pending` is inside `lock`.
+/// One source observation for one loaded parity consumer. The uploaded texture pair is immutable and retained
+/// with its events; a renderer must keep the textures it submits until their last GPU reader completes.
+struct WPESceneParityMediaInput: Sendable {
+    let generation: Int
+    let sourceOrdinal: UInt64
+    let isReplay: Bool
+    let textures: WPEMediaTextureStore.ParitySnapshot?
+    /// Property key → generated system texture name; the host wraps each name in `{value: name}`.
+    let systemProperties: [String: String]
+    let events: [WPESceneMediaEvent]
+    let diagnostics: [String]
+}
+
+/// `@unchecked Sendable`: every queue and loaded-consumer identity is accessed inside `lock`.
 final class WPESceneMediaEventMailbox: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [WPESceneMediaEvent] = []
+    private var pendingParity: [WPESceneParityMediaInput] = []
+    private var parityGeneration: Int?
+    private var latestParityGeneration: Int?
+
+    /// Called by the driver before preparing a load. A retired load ID cannot admit itself again.
+    @discardableResult
+    func beginParityGeneration(_ generation: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if parityGeneration == generation {
+            return true
+        }
+        if let latestParityGeneration, generation <= latestParityGeneration {
+            return false
+        }
+        latestParityGeneration = generation
+        parityGeneration = generation
+        pendingParity.removeAll(keepingCapacity: true)
+        return true
+    }
+
+    func isParityGeneration(_ generation: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return parityGeneration == generation
+    }
+
+    func hasPendingParityInputs(generation: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return parityGeneration == generation && !pendingParity.isEmpty
+    }
+
+    @discardableResult
+    func postParityInput(_ input: WPESceneParityMediaInput) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard parityGeneration == input.generation else { return false }
+        pendingParity.append(input)
+        return true
+    }
+
+    func drainParityInputs(generation: Int) -> [WPESceneParityMediaInput] {
+        lock.lock()
+        defer { lock.unlock() }
+        guard parityGeneration == generation else { return [] }
+        let inputs = pendingParity
+        pendingParity.removeAll(keepingCapacity: true)
+        return inputs
+    }
+
+    func invalidateParityGeneration(_ generation: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard parityGeneration == generation else { return }
+        parityGeneration = nil
+        pendingParity.removeAll(keepingCapacity: true)
+    }
 
     func post(_ events: [WPESceneMediaEvent]) {
         guard !events.isEmpty else { return }
@@ -364,6 +435,34 @@ final class WPESceneMediaEventDispatcher {
     private var palette = WPEMediaArtworkPaletteCache()
     private var lastOrdinal: UInt64?
     private var isSubscribed = false
+    private var latest: (ordinal: UInt64, state: MonitorNowPlayingState)?
+
+    private struct ParityConfiguration {
+        let generation: Int
+        let textureDemand: Bool
+        let onChange: @Sendable () -> Void
+    }
+
+    private var parityConfiguration: ParityConfiguration?
+    private var parityStore: WPEMediaTextureStore?
+    private var parityDevice: ObjectIdentifier?
+    private var parityGate = WPESceneMediaDiffGate()
+    private var parityHasPublished = false
+
+    private enum ParityArtworkIdentity: Equatable {
+        case absent
+        case empty
+        case bytes(String)
+    }
+
+    // Names and source bytes belong to the observation, including script-only consumers without GPU demand.
+    private var parityArtworkIdentity: ParityArtworkIdentity?
+    private var parityArtworkRevision: UInt64 = 0
+    private var parityCurrentArtwork: Data?
+    private var parityPreviousArtwork: Data?
+    private var parityCurrentSystemName: String?
+    private var parityPreviousSystemName: String?
+    private var parityArtworkDiagnostics: [String] = []
 
     nonisolated static func isNeeded(by document: WPESceneDocument) -> Bool {
         WPESceneScriptInstanceInventory.usesMediaAPI(in: document)
@@ -375,6 +474,48 @@ final class WPESceneMediaEventDispatcher {
     ) {
         self.source = source
         self.now = now
+    }
+
+    /// Configures an already admitted load. One subscription feeds both the uploaded pair and its events.
+    /// Reusing the dispatcher for a new consumer resets its event gate, not the artwork pair or upload identity.
+    @discardableResult
+    func configureParity(generation: Int, device: (any MTLDevice)?, textureDemand: Bool,
+                         onChange: @escaping @Sendable () -> Void) -> Bool {
+        guard mailbox.isParityGeneration(generation), !textureDemand || device != nil else { return false }
+        let previous = parityConfiguration
+        let newConsumer = previous?.generation != generation
+        var newStore = false
+        if textureDemand, let device {
+            let identity = ObjectIdentifier(device)
+            if parityStore == nil || parityDevice != identity {
+                parityStore = WPEMediaTextureStore(device: device)
+                parityDevice = identity
+                newStore = true
+            }
+        }
+        parityConfiguration = ParityConfiguration(generation: generation, textureDemand: textureDemand,
+                                                  onChange: onChange)
+        if newConsumer {
+            parityGate = WPESceneMediaDiffGate()
+            parityHasPublished = false
+        } else if previous?.textureDemand != textureDemand || newStore {
+            parityHasPublished = false
+        }
+        start()
+        _ = replayGeneration(generation)
+        return mailbox.isParityGeneration(generation)
+    }
+
+    /// A normal reload needs a current-state delivery even when the source ordinal did not change.
+    @discardableResult
+    func replayGeneration(_ generation: Int) -> Bool {
+        guard let configuration = parityConfiguration, configuration.generation == generation,
+              mailbox.isParityGeneration(generation) else { return false }
+        if parityHasPublished {
+            return true
+        }
+        guard let latest else { return false }
+        return publishParity(ordinal: latest.ordinal, state: latest.state, isReplay: true)
     }
 
     func start() {
@@ -394,18 +535,148 @@ final class WPESceneMediaEventDispatcher {
         guard isSubscribed else { return }
         isSubscribed = false
         source.unsubscribe(id: id)
+        if let configuration = parityConfiguration {
+            mailbox.invalidateParityGeneration(configuration.generation)
+            parityConfiguration = nil
+            parityStore = nil
+            parityDevice = nil
+            parityHasPublished = false
+            parityGate = WPESceneMediaDiffGate()
+            parityArtworkIdentity = nil
+            parityCurrentArtwork = nil
+            parityPreviousArtwork = nil
+            parityCurrentSystemName = nil
+            parityPreviousSystemName = nil
+            parityArtworkDiagnostics = []
+            latest = nil
+        }
     }
 
     private func ingest(ordinal: UInt64, state: MonitorNowPlayingState) {
         // The ordinal lets a late hop be dropped rather than rewinding the scene.
-        if let lastOrdinal, ordinal < lastOrdinal { return }
+        if let lastOrdinal, ordinal < lastOrdinal {
+            return
+        }
         lastOrdinal = ordinal
+        latest = (ordinal, state)
+        if parityConfiguration != nil {
+            _ = publishParity(ordinal: ordinal, state: state, isReplay: false)
+            return
+        }
         let snapshot = WPESceneMediaSnapshot(
             state,
             thumbnail: palette.thumbnail(for: state.artwork),
             timeline: WPESceneMediaTimeline.interpolated(from: state, now: now())
         )
         mailbox.post(gate.events(for: snapshot))
+    }
+
+    @discardableResult
+    private func publishParity(ordinal: UInt64, state: MonitorNowPlayingState, isReplay: Bool) -> Bool {
+        guard let configuration = parityConfiguration, state.phase != .awaitingFirstEvent else { return false }
+        var thumbnail = palette.thumbnail(for: state.artwork)
+        let artworkChanged = updateParityArtwork(state.artwork, thumbnail: thumbnail)
+        var diagnostics = parityArtworkDiagnostics
+        if parityCurrentArtwork != nil, !thumbnail.hasThumbnail {
+            // Native hasThumbnail tests the byte range, not whether colour analysis found opaque samples.
+            thumbnail.hasThumbnail = true
+            diagnostics.append("media.artwork-palette-unavailable-native-colors-unverified")
+        }
+        let snapshot = WPESceneMediaSnapshot(
+            state, thumbnail: thumbnail, timeline: WPESceneMediaTimeline.interpolated(from: state, now: now())
+        )
+        // While a replacement load prepares, keep the source's pair current for its eventual seed, but do not
+        // upload or dispatch on behalf of the previous, no longer admitted consumer.
+        guard mailbox.isParityGeneration(configuration.generation) else { return false }
+        var textures = WPEMediaTextureStore.ParitySnapshot(
+            revision: parityArtworkRevision, current: nil, previous: nil,
+            currentSystemName: parityCurrentSystemName, previousSystemName: parityPreviousSystemName
+        )
+        if configuration.textureDemand, let parityStore {
+            let uploaded = parityStore.paritySnapshot(
+                revision: parityArtworkRevision, currentArtwork: parityCurrentArtwork,
+                previousArtwork: parityPreviousArtwork, currentSystemName: parityCurrentSystemName,
+                previousSystemName: parityPreviousSystemName
+            )
+            textures = uploaded.snapshot
+            diagnostics += uploaded.diagnostics
+        }
+        var events = parityGate.events(for: snapshot)
+        // 140172830:253–272 only seeds an initial thumbnail when image bytes exist.
+        if !parityHasPublished, !snapshot.thumbnail.hasThumbnail {
+            events.removeAll {
+                if case .thumbnailChanged = $0 {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        if artworkChanged, parityCurrentArtwork != nil,
+           !events.contains(where: {
+               if case .thumbnailChanged = $0 {
+                   true
+               } else {
+                   false
+               }
+           }) {
+            // The legacy palette-only diff cannot distinguish different covers with identical colours.
+            let timeline = events.firstIndex {
+                if case .timelineChanged = $0 {
+                    true
+                } else {
+                    false
+                }
+            } ?? events.count
+            events.insert(.thumbnailChanged(snapshot.thumbnail), at: timeline)
+        }
+        guard isReplay || artworkChanged || !events.isEmpty else { return false }
+        var properties: [String: String] = [:]
+        if isReplay || artworkChanged || !parityHasPublished {
+            properties["$mediaThumbnail"] = parityCurrentSystemName
+            properties["$mediaPreviousThumbnail"] = parityPreviousSystemName
+        }
+        let input = WPESceneParityMediaInput(generation: configuration.generation, sourceOrdinal: ordinal,
+                                             isReplay: isReplay, textures: textures,
+                                             systemProperties: properties, events: events,
+                                             diagnostics: diagnostics)
+        guard mailbox.postParityInput(input) else { return false }
+        parityHasPublished = true
+        configuration.onChange()
+        return true
+    }
+
+    private func updateParityArtwork(_ artwork: Data?, thumbnail: WPESceneMediaThumbnail) -> Bool {
+        let identity: ParityArtworkIdentity = if let artwork {
+            artwork.isEmpty ? .empty : .bytes(WPEMediaArtworkPaletteCache.identity(of: artwork))
+        } else {
+            .absent
+        }
+        guard identity != parityArtworkIdentity else { return false }
+        parityArtworkIdentity = identity
+        parityArtworkRevision &+= 1
+        if let artwork, !artwork.isEmpty,
+           thumbnail.hasThumbnail || WPEMediaTextureStore.hasDecodableParityArtwork(artwork) {
+            parityPreviousArtwork = parityCurrentArtwork
+            parityPreviousSystemName = parityCurrentSystemName
+            parityCurrentArtwork = artwork
+            parityCurrentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
+            parityArtworkDiagnostics = []
+        } else {
+            // The native factory's empty/bad-image result is unknown. Break the qualified nonempty chain;
+            // neither transparent nor authored fallback nor the old cover is asserted to be Windows' result.
+            parityCurrentArtwork = nil
+            parityPreviousArtwork = nil
+            parityCurrentSystemName = nil
+            parityPreviousSystemName = nil
+            let reason = switch identity {
+            case .absent: "absent"
+            case .empty: "empty"
+            case .bytes: "undecodable"
+            }
+            parityArtworkDiagnostics = ["media.artwork-\(reason)-native-behavior-unverified"]
+        }
+        return true
     }
 }
 #endif

@@ -470,6 +470,135 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try assertEvery(readBack(harness, target), equals: [255, 255, 255, 255])
     }
 
+    func testCommittedSamplingPrefixSurvivesLateThrowAndOwnerReplacement() throws {
+        enum ExpectedFailure: Error, Equatable { case afterSwap }
+        var sourceQueue: MTLCommandQueue?
+        var sourceArena: WPEParityFrameArena?
+        var readyGate: MTLSharedEvent?
+        var prefix: MTLCommandBuffer?
+        var outputs: [MTLTexture] = []
+        var bindings: WPEParityResourceBindings = [:]
+        var visited: [Int] = []
+        var emitted: [Int] = []
+        var threwAtVisit = false
+        weak var oldExecutor: WPEParityGraphExecutor?
+        weak var oldFactory: WPEParityPipelineFactory?
+        weak var heap: (any MTLHeap)?
+        weak var transient: (any MTLTexture)?
+        weak var indirectSampler: (any MTLSamplerState)?
+        var heldSlots: [MTLCommandBuffer] = []
+        let completed = expectation(description: "committed sampling prefix completed")
+        defer {
+            readyGate?.signaledValue = 1
+            for command in heldSlots where command.status == .notEnqueued {
+                command.commit()
+            }
+        }
+
+        try autoreleasepool {
+            let harness = try makeHarness()
+            sourceQueue = harness.queue
+            sourceArena = harness.arena
+            readyGate = try XCTUnwrap(harness.device.makeSharedEvent())
+            let graph = try WPERenderGraphCompiler.compile(
+                resources: [resource("I", .imported), resource("T1", .frameTransient), resource("T2", .frameTransient),
+                            resource("P", .persistent), resource("Q", .persistent), resource("O", .persistent)],
+                operations: [bind("T1"), draw(overwrites: true), op(.copy(source: "T1", destination: "P")),
+                             bind("T2"), draw(sampling: "I", overwrites: true), op(.copy(source: "T2", destination: "Q")),
+                             op(.swapResources(first: "P", second: "Q")), op(.copy(source: "P", destination: "O")),
+                             bind("P"), draw(sampling: "I")]
+            )
+            XCTAssertEqual(graph.allocationGroups, [["T1", "T2"]])
+            let input = try makeInput(harness)
+            let (p, q, output) = try (makeTexture(harness), makeTexture(harness), makeTexture(harness))
+            outputs = [p, q, output]
+            let flat = try harness.factory.makePipeline(artifact: loadProgram("shaders/flat"),
+                                                        blend: .wpe(.normal, modifiers: .writeAlpha),
+                                                        colorPixelFormat: .rgba8Unorm)
+            let red = try flatDraw(harness, pipeline: flat, color: SIMD3(1, 0, 0), alpha: 1)
+            let sampled = try passthroughDraw(harness, sampleCount: 1, input: input)
+            _ = try XCTUnwrap(sampled.pipeline.fragment.reflection.resources.contains {
+                $0.kind == .sampler && $0.name == "g_Texture0SamplerState"
+            } ? true : nil, "The prefix must really read an indirect sampler")
+            indirectSampler = try harness.factory.samplerState(.wpe(filter: .point, address: .clamp))
+            let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                      arena: harness.arena, pixelFormats: Self.formats)
+            oldExecutor = executor
+            oldFactory = harness.factory
+            let t1 = try XCTUnwrap(executor.transientTextures["T1"])
+            let t2 = try XCTUnwrap(executor.transientTextures["T2"])
+            XCTAssertTrue(t1.heap === executor.heap && t2.heap === executor.heap)
+            XCTAssertEqual(t1.heapOffset, t2.heapOffset)
+            heap = try XCTUnwrap(executor.heap)
+            transient = t2
+            do {
+                _ = try executor.encodeFrame(on: harness.queue, textures: ["I": input, "P": p, "Q": q, "O": output],
+                                             prepare: { command in
+                                                 prefix = command
+                                                 try command.encodeWaitForEvent(XCTUnwrap(readyGate), value: 1)
+                                                 command.addCompletedHandler { _ in completed.fulfill() }
+                                             }, visit: { operation, _, _, emit in
+                                                 visited.append(operation)
+                                                 switch operation {
+                                                 case 1: try emit(red)
+                                                 case 4: try emit(sampled)
+                                                 case 9:
+                                                     threwAtVisit = true
+                                                     throw ExpectedFailure.afterSwap
+                                                 default: return XCTFail("Unexpected draw operation \(operation)")
+                                                 }
+                                                 emitted.append(operation)
+                                             })
+                XCTFail("The late visit error was swallowed")
+            } catch {
+                XCTAssertEqual(error as? ExpectedFailure, .afterSwap)
+            }
+            bindings = executor.resourceBindings
+        }
+
+        // Only the actual submitted Metal reader and the explicit output/arena observations remain.
+        // The weak sampler observation must not become a test-supplied lifetime lease.
+        let command = try XCTUnwrap(prefix)
+        let queue = try XCTUnwrap(sourceQueue)
+        let arena = try XCTUnwrap(sourceArena)
+        let gate = try XCTUnwrap(readyGate)
+        XCTAssertTrue(threwAtVisit)
+        XCTAssertEqual(visited, [1, 4, 9])
+        XCTAssertEqual(emitted, [1, 4])
+        XCTAssertEqual(bindings, [.frame: ["P": "Q", "Q": "P"]])
+        XCTAssertTrue(command.retainedReferences)
+        XCTAssertTrue([MTLCommandBufferStatus.committed, .scheduled].contains(command.status))
+        XCTAssertNotNil(heap, "Submitted heap textures must keep their heap alive")
+        XCTAssertNotNil(transient, "The encoded alias reader must retain its actual texture")
+        XCTAssertNotNil(indirectSampler, "A raw sampler GPU ID needs a live owner until its last reader completes")
+        print("prefix retirement: executorAlive=\(oldExecutor != nil), factoryAlive=\(oldFactory != nil), "
+            + "samplerAlive=\(indirectSampler != nil), heapAlive=\(heap != nil)")
+
+        for _ in 1 ..< WPEParityFrameArena.slotCount {
+            let held = try XCTUnwrap(queue.makeCommandBuffer())
+            heldSlots.append(held)
+            _ = try XCTUnwrap(arena.beginFrame(for: held))
+        }
+        let next = try XCTUnwrap(queue.makeCommandBuffer())
+        heldSlots.append(next)
+        XCTAssertNil(arena.beginFrame(for: next), "The committed throwing prefix still owns its arena slot")
+        gate.signaledValue = 1
+        wait(for: [completed], timeout: 10)
+        _ = try XCTUnwrap(command.status == .completed && command.error == nil ? true : nil,
+                          "Throwing prefix GPU failure: \(String(describing: command.error))")
+        let reused = try XCTUnwrap(arena.beginFrame(for: next), "The actual completion must release the prefix slot")
+        XCTAssertNotNil(reused.allocate(length: reused.buffer.length), "A reused frame starts with an empty cursor")
+        for held in heldSlots {
+            held.commit()
+        }
+        next.waitUntilCompleted()
+        XCTAssertNil(next.error)
+        let device = command.commandQueue.device
+        try assertEvery(readBack(outputs[0], device: device, queue: queue), equals: [255, 0, 0, 255])
+        try assertPixels(readBack(outputs[1], device: device, queue: queue), equal: Self.texels)
+        try assertPixels(readBack(outputs[2], device: device, queue: queue), equal: Self.texels)
+    }
+
     // MARK: Graph builders
 
     private struct UnavailableCompiler: WPEParityShaderCompiling {
@@ -716,10 +845,15 @@ final class WPEParityGraphExecutionTests: XCTestCase {
     }
 
     private func readBack(_ harness: Harness, _ texture: MTLTexture, level: Int = 0) throws -> [UInt8] {
+        try readBack(texture, device: harness.device, queue: harness.queue, level: level)
+    }
+
+    private func readBack(_ texture: MTLTexture, device: MTLDevice, queue: MTLCommandQueue,
+                          level: Int = 0) throws -> [UInt8] {
         let side = max(1, Self.side >> level)
         let length = side * side * 4
-        let buffer = try XCTUnwrap(harness.device.makeBuffer(length: length, options: .storageModeShared))
-        let commandBuffer = try XCTUnwrap(harness.queue.makeCommandBuffer())
+        let buffer = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
+        let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
         let blit = try XCTUnwrap(commandBuffer.makeBlitCommandEncoder())
         blit.copy(from: texture, sourceSlice: 0, sourceLevel: level, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                   sourceSize: MTLSize(width: side, height: side, depth: 1), to: buffer,

@@ -537,13 +537,35 @@ actor WPEDisplayRenderActor {
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
                                     workshopID: inputs.descriptor.workshopID,
                                     scriptHost: inputs.scriptHost(userPropertiesJSON: userProperties))
-        if parityDriver.scriptHandlesMedia, let media = inputs.media {
-            Task { @MainActor in media.start() }
+        let generation = parityDriver.loadGeneration
+        if let media = inputs.media {
+            let mailbox = media.mailbox
+            if parityDriver.scriptHandlesMedia || parityDriver.hasMediaTextureDemand {
+                let textureDemand = parityDriver.hasMediaTextureDemand
+                await MainActor.run {
+                    media.configureParity(generation: generation, device: textureDemand ? inputs.device : nil,
+                                          textureDemand: textureDemand, onChange: { [weak self] in
+                                              Task { await self?.parityMediaChanged(generation: generation, mailbox: mailbox) }
+                                          })
+                }
+            } else {
+                await MainActor.run { media.stop() }
+            }
         }
+        guard self.parityDriver === parityDriver, parityDriver.loadGeneration == generation,
+              parityDriver.didLoad else { throw CancellationError() }
         requestParityFrame()
         // A resize or fit change that arrived while loading.
         replanParityIfNeeded()
         thread?.boostRenderQoSWarmup()
+    }
+
+    private func parityMediaChanged(generation: Int, mailbox: WPESceneMediaEventMailbox) {
+        // Reload requests its own first frame. Its replay callback may reach this actor after that frame
+        // has already consumed the input and parked; only queued input still needs another frame.
+        guard let driver = parityDriver, driver.didLoad, driver.loadGeneration == generation,
+              parityInputs?.media?.mailbox === mailbox, mailbox.hasPendingParityInputs(generation: generation) else { return }
+        requestParityFrame()
     }
 
     /// The display link starts paused; the parity scene runs it while loaded and not suspended, and a static one
@@ -587,7 +609,7 @@ actor WPEDisplayRenderActor {
         parityDriver?.cleanup()
         parityDriver = nil
         if let media = parityInputs?.media {
-            Task { @MainActor in media.stop() }
+            await MainActor.run { media.stop() }
         }
         parityInputs = nil
         if let retiringRenderer {

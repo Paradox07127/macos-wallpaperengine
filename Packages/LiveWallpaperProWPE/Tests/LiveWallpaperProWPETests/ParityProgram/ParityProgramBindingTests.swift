@@ -84,6 +84,100 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertEqual(try speed([:]), [1])
     }
 
+    /// The original ordinal, ordinary declarations and aspect flag survive the actual material→draw binding path.
+    func testUserTextureDeclarationsKeepSlotsTypesAspectAndAuthoredFallback() throws {
+        let declarations: [Any] = [NSNull(), "ordinary",
+                                   ["name": "$mediaThumbnail", "type": "system", "keepaspect": true],
+                                   ["name": "$mediaPreviousThumbnail", "type": "system"]]
+        for locus in ["material", "pass", "instance"] {
+            var pass: [String: Any] = ["shader": "probe", "textures": ["util/base", "util/ordinary", "util/current", "previous"]]
+            var material: [String: Any] = [:]
+            var instance: [String: Any] = [:]
+            switch locus {
+            case "material": material["usertextures"] = declarations
+            case "pass": pass["usertextures"] = declarations
+            default: instance["usertextures"] = declarations
+            }
+            material["passes"] = [pass]
+            let binding = try Self.userTextureBinding(material: material, instance: instance)
+            let raw = locus == "material" ? binding.userTextures.material
+                : locus == "pass" ? binding.userTextures.pass : binding.userTextures.override
+            XCTAssertEqual(raw?[0], .null, locus)
+            let typed = locus == "material" ? binding.userTextures.bindings.material
+                : locus == "pass" ? binding.userTextures.bindings.pass : binding.userTextures.bindings.override
+            XCTAssertEqual(typed, [.init(name: "ordinary", slot: 1),
+                                   .init(name: "$mediaThumbnail", type: "system", slot: 2),
+                                   .init(name: "$mediaPreviousThumbnail", type: "system", slot: 3)], locus)
+            XCTAssertEqual(binding.userTextures.keepAspect, [1: false, 2: true, 3: false], locus)
+            XCTAssertEqual(binding.userTextureSlots.keys.sorted(), [1, 2], "previous is producer-owned: \(locus)")
+            XCTAssertEqual(binding.userTextureSlots[1]?.name, "ordinary", "ordinary must not be removed: \(locus)")
+            XCTAssertEqual(binding.textures[1], .asset("util/ordinary"), locus)
+            XCTAssertEqual(binding.textures[2], .asset("util/current"), locus)
+            if case .resource? = binding.textures[3] {
+                // The graph supplies the source; a global media name cannot replace it.
+            } else {
+                XCTFail("previous lost its graph identity: \(locus)")
+            }
+            if case let .imported(_, asset)? = binding.textures[0] {
+                XCTAssertEqual(asset, "util/base", locus)
+            } else {
+                XCTFail("albedo fallback changed: \(locus)")
+            }
+            XCTAssertTrue(binding.userTextures.diagnostics.contains { $0.contains("keepaspect") }, locus)
+        }
+    }
+
+    /// This guard protects explicit unsupported merge behavior, not a claim about native conflict precedence.
+    func testUserTextureMergeUnknownRetainsAllLociAndFallback() throws {
+        let media: [Any] = [NSNull(), ["name": "$mediaThumbnail", "type": "system"]]
+        let cases: [(pass: Any, accepted: Bool)] = [
+            (media, true), ([NSNull(), "ordinary"], false), (NSNull(), false), ([Any](), false),
+        ]
+        for input in cases {
+            let material: [String: Any] = ["usertextures": media, "passes": [[
+                "shader": "probe", "textures": ["util/base", "util/fallback"], "usertextures": input.pass,
+            ]]]
+            let binding = try Self.userTextureBinding(material: material)
+            XCTAssertEqual(binding.userTextures.material, WPESceneJSONValue(jsonValue: media))
+            XCTAssertEqual(binding.userTextures.pass, WPESceneJSONValue(jsonValue: input.pass))
+            XCTAssertNil(binding.userTextures.override)
+            XCTAssertEqual(binding.userTextures.bindings.material, [.init(name: "$mediaThumbnail", type: "system", slot: 1)])
+            XCTAssertEqual(binding.textures[1], .asset("util/fallback"))
+            if input.accepted {
+                XCTAssertEqual(binding.userTextureSlots[1]?.name, "$mediaThumbnail")
+                XCTAssertTrue(binding.userTextures.diagnostics.isEmpty)
+            } else {
+                XCTAssertTrue(binding.userTextureSlots.isEmpty)
+                XCTAssertTrue(binding.userTextures.diagnostics.contains { $0.contains("array merge") })
+            }
+        }
+    }
+
+    private static func userTextureBinding(material: [String: Any], instance: [String: Any] = [:]) throws
+        -> WPEParityProgramBinding {
+        let resources: [String: Any] = [
+            "models/probe.json": ["material": "materials/probe.json"],
+            "materials/probe.json": material,
+        ]
+        var bytes = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        bytes["shaders/probe.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/probe.frag"] = Data("void main() {}".utf8)
+        let files = bytes
+        let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 200, "height": 100]],
+            "objects": [["id": 7, "image": "models/probe.json", "size": "200 100", "instance": instance]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        return try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
+            $0.materialPass == .init(objectID: "7", effectID: nil, pass: 0)
+        })
+    }
+
     /// R15/140181f30 binds the LUT in slot 1 independently of COL. A material/default texture is not a graph read.
     func testPostColorCorrectionBindsItsLUTAndPreservesFreeAnnotationAssets() throws {
         let (scene, frame) = try Self.postFixture(
@@ -217,7 +311,8 @@ final class ParityProgramBindingTests: XCTestCase {
             "models/probe.json": ["material": "materials/base.json"],
             "materials/base.json": ["passes": [["shader": "probe"]]],
             "materials/empty.json": ["passes": [["shader": "empty"]]],
-            "materials/later.json": ["passes": [["shader": "probe", "constantshadervalues": ["value": 1]]]],
+            "materials/later.json": ["passes": [["shader": "probe", "constantshadervalues": ["value": 1],
+                                                 "textures": ["previous", "util/authored-fallback"]]]],
             "effects/records.json": ["passes": [
                 ["material": "materials/empty.json"], ["command": "copy"],
                 ["material": "materials/skipped.json", "conditions": [["ON": 1]]],
@@ -243,7 +338,10 @@ final class ParityProgramBindingTests: XCTestCase {
             "objects": [["id": 7, "image": "models/probe.json", "size": "200 100", "effects": [
                 ["id": 9, "file": "effects/records.json", "visible": false,
                  "passes": [[:], NSNull(), ["constantshadervalues": ["value": 22]],
-                            ["constantshadervalues": ["value": 33]], [:], [:],
+                            ["constantshadervalues": ["value": 33], "usertextures": [
+                                ["name": "$mediaThumbnail", "type": "system"],
+                                ["name": "$mediaPreviousThumbnail", "type": "system"],
+                            ]], [:], [:],
                             ["constantshadervalues": ["phantom": 99]]]],
                 ["id": 10, "file": "effects/absent.json"],
                 ["id": 11, "file": "effects/empty.json"],
@@ -273,6 +371,13 @@ final class ParityProgramBindingTests: XCTestCase {
             $0.materialPass == later
         })
         XCTAssertEqual(Self.floats(binding.constants[.fragment]?["g_Value"]), [33])
+        XCTAssertEqual(binding.userTextures.bindings.override, [
+            .init(name: "$mediaThumbnail", type: "system", slot: 0),
+            .init(name: "$mediaPreviousThumbnail", type: "system", slot: 1),
+        ], "usertextures use the original override index after commands and rejected conditions")
+        XCTAssertEqual(binding.userTextureSlots, [1: .init(name: "$mediaPreviousThumbnail", type: "system", slot: 1)],
+                       "effect previous is producer-owned even when a usertexture declares its slot")
+        XCTAssertEqual(binding.textures[1], .asset("util/authored-fallback"))
         XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")]?.count, 7,
                        "disabled effects retain native records; enabling draws must not redefine the count")
     }

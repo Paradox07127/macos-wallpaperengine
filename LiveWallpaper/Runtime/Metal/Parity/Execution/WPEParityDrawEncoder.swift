@@ -207,8 +207,10 @@ struct WPEParityDrawEncoder {
                 guard let state = draw.samplers[resource.name] else {
                     throw WPEParityExecutionError.missingSampler(resource.name)
                 }
+                let sampler = try factory.samplerState(state)
+                frame.retainSampler(sampler)
                 // Sampler metadata is the LOD bias; it stays 0 because the sampler descriptor already carries it.
-                try plan.writeEntry(at: offset, gpuAddress: factory.samplerState(state).gpuResourceID._impl,
+                try plan.writeEntry(at: offset, gpuAddress: sampler.gpuResourceID._impl,
                                     resourceID: 0, metadata: 0, into: &table)
             }
         }

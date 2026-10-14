@@ -39,6 +39,10 @@ public struct WPEParityProgramBinding: Sendable {
     public var constants: [WPEHLSLStage: [String: WPECBufferValue]]
     /// Bound slots, and unbound slots whose sampler annotation names a default texture.
     public var textures: [Int32: TextureSource]
+    /// All original declaration loci, including ordinary user textures and unresolved merge diagnostics.
+    public var userTextures: WPEParityProgramUserTextures = .init()
+    /// Declarations eligible to replace this draw's authored asset fallback. Graph/atlas producers own other slots.
+    public var userTextureSlots: [Int32: WPESceneUserTextureBinding] = [:]
     /// Material `cullmode`.
     public var cullsBackFaces: Bool
     /// The material's depth state where the frame applies it (models, bit4 composites); off for every other draw.
@@ -87,7 +91,8 @@ public extension WPEParityProgramBuilder {
                 var slots = textures(names, draw: draw, object: object, imported: imported)
                 slots[0] = atlas ?? slots[0]
                 bindings[index] = WPEParityProgramBinding(
-                    constants: constants, textures: slots,
+                    constants: constants, textures: slots, userTextures: material.userTextures,
+                    userTextureSlots: userTextureSlots(material.userTextures, textures: slots),
                     cullsBackFaces: material.cullsBackFaces, depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                     layerColorObjectID: layerColor == nil ? nil : draw.objectID,
                     materialPass: scene.passKey(for: draw),
@@ -123,12 +128,24 @@ public extension WPEParityProgramBuilder {
                     textures[Int32(slot)] = .resource(read)
                 }
                 bindings[index] = WPEParityProgramBinding(
-                    constants: constants, textures: textures,
+                    constants: constants, textures: textures, userTextures: material.userTextures,
+                    userTextureSlots: userTextureSlots(material.userTextures, textures: textures),
                     cullsBackFaces: material.cullsBackFaces, depthTest: false, depthWrite: false
                 )
             }
         }
         return bindings
+    }
+
+    private static func userTextureSlots(_ declarations: WPEParityProgramUserTextures,
+                                         textures: [Int32: WPEParityProgramBinding.TextureSource])
+        -> [Int32: WPESceneUserTextureBinding] {
+        declarations.slots.filter { slot, _ in
+            switch textures[slot] {
+            case .asset?, .imported?: true
+            case .resource?, .textAtlas?, nil: false
+            }
+        }
     }
 
     /// Material constants over annotation defaults, the layer colour, the texture name of each slot (bound, or the

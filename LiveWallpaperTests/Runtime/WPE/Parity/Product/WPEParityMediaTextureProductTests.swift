@@ -1,0 +1,665 @@
+#if !LITE_BUILD && DEBUG
+import CoreGraphics
+import CryptoKit
+import Darwin
+import Foundation
+import ImageIO
+@testable import LiveWallpaper
+import LiveWallpaperCore
+import LiveWallpaperProWPE
+import Metal
+import os
+import QuartzCore
+import XCTest
+
+/// Original combine programs sample media in slot 1 of two real image effects.
+/// Input PNG quadrants and the original black + artwork equation define the pixel oracle.
+@MainActor
+final class WPEParityMediaTextureProductTests: XCTestCase {
+    private static let size = CGSize(width: 80, height: 32)
+    private static let settings = WPEParityProgramSettings(bloom: false, hdrPostProcessing: false)
+    private static let nativeSizingDiagnostic = "media.artwork-native-sizing-unverified:mac-maximum-edge=256"
+
+    func testExplicitNonSystemProviderCannotBecomeMediaThroughItsName() async throws {
+        for provider in ["usershortcut", "unverified-provider"] {
+            let fixture = try makeFixture(scripted: false, mediaProvider: provider)
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let driver = try WPEParitySceneDriver(device: fixture.device)
+            defer { driver.cleanup() }
+            try await driver.load(document: fixture.document, assets: fixture.assets, settings: Self.settings,
+                                  drawableSize: Self.size, pixelFormat: .bgra8Unorm_srgb,
+                                  compiler: fixture.compiler, diskCache: fixture.cache)
+            let renderer = try XCTUnwrap(driver.renderer)
+            XCTAssertFalse(driver.hasMediaTextureDemand, "An explicit provider cannot request system artwork uploads")
+            XCTAssertEqual(renderer.skipped.count, 2, "Both unsupported media-named provider draws are diagnosed")
+            XCTAssertTrue(renderer.skipped.values.allSatisfy {
+                $0.description.contains("media usertexture provider '\(provider)' is unsupported")
+            }, "\(renderer.skipped)")
+        }
+    }
+
+    func testOriginalEffectsConsumeSameFrameMediaAndScriptThenPreservePairAcrossReloadAndResize() async throws {
+        let fixture = try makeFixture(scripted: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let source = MediaInputSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        XCTAssertTrue(driver.hasMediaTextureDemand)
+        XCTAssertTrue(driver.scriptHandlesMedia)
+
+        // No source has delivered yet: these are authored material fallbacks, not an empty-art native oracle.
+        let fallback = try await present(driver, layer: layer)
+        assertPanel(fallback, width: 80, panel: 0, artwork: nil, fallback: [0, 128, 0, 255])
+        assertPanel(fallback, width: 80, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+        let configured = dispatcher.configureParity(generation: driver.loadGeneration, device: fixture.device,
+                                                    textureDemand: driver.hasMediaTextureDemand, onChange: {})
+        XCTAssertTrue(configured)
+        source.push(artwork: fixture.a)
+        let first = try await present(driver, layer: layer)
+        assertPanels(first, width: 80, current: .a, previous: nil)
+        assertSentinel(first, width: 80, deliveries: 1, currentRevision: 1, previousRevision: 0)
+        let a = try pair(driver)
+        XCTAssertEqual(a.dimensions, [16, 8, 0, 0])
+        XCTAssertNotNil(a.currentName)
+        XCTAssertNil(a.previousName)
+
+        // The source metadata and palette are unchanged. Only the artwork bytes and geometry change.
+        source.push(artwork: fixture.b)
+        let second = try await present(driver, layer: layer)
+        assertPanels(second, width: 80, current: .b, previous: .a)
+        assertSentinel(second, width: 80, deliveries: 2, currentRevision: 2, previousRevision: 1)
+        let b = try pair(driver)
+        XCTAssertEqual(b.dimensions, [8, 16, 16, 8])
+        XCTAssertEqual(b.previousName, a.currentName)
+        XCTAssertNotEqual(b.currentName, a.currentName)
+        XCTAssertEqual(b.revision, a.revision + 1)
+        try assertBoundEffects(driver, current: b.currentID, previous: b.previousID)
+
+        // A normal load creates a fresh script but replays the existing B/A pair without another source event.
+        let generation = driver.loadGeneration
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        XCTAssertGreaterThan(driver.loadGeneration, generation)
+        let replayed = dispatcher.configureParity(generation: driver.loadGeneration, device: fixture.device,
+                                                  textureDemand: driver.hasMediaTextureDemand, onChange: {})
+        XCTAssertTrue(replayed)
+        let reloaded = try await present(driver, layer: layer)
+        assertPanels(reloaded, width: 80, current: .b, previous: .a)
+        assertSentinel(reloaded, width: 80, deliveries: 1, currentRevision: 2, previousRevision: 1)
+        XCTAssertEqual(try pair(driver), b, "Reload must seed the existing current/previous identities")
+
+        let resized = CGSize(width: 160, height: 64)
+        layer.drawableSize = resized
+        driver.updateSurfaceGeometry(drawableSize: resized)
+        XCTAssertTrue(driver.needsReplan)
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        let afterResize = try await present(driver, layer: layer)
+        assertPanels(afterResize, width: 160, current: .b, previous: .a)
+        assertSentinel(afterResize, width: 160, deliveries: 1, currentRevision: 2, previousRevision: 1)
+        XCTAssertEqual(try pair(driver), b, "Resize must preserve B/A rather than seed previous from current")
+        try assertBoundEffects(driver, current: b.currentID, previous: b.previousID)
+
+        // A/B's exact palette guard exercises byte identity independently. Midtone C also detects a missing
+        // or duplicate sRGB conversion, which A/B's zero/one channels cannot expose.
+        source.push(artwork: fixture.c)
+        let midtones = try await present(driver, layer: layer)
+        assertPanels(midtones, width: 160, current: .c, previous: .b)
+        assertSentinel(midtones, width: 160, deliveries: 2, currentRevision: 3, previousRevision: 2)
+    }
+
+    func testTextureDemandWithoutHandlersWakesRealRenderActorAndParksAfterPresent() async throws {
+        let fixture = try makeFixture(scripted: false)
+        let source = MediaInputSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        var inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "media-input-guard", cacheRelativePath: "media-input-guard",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        inputs.media = dispatcher
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run {
+                dispatcher.stop()
+                try? FileManager.default.removeItem(at: fixtureRoot)
+            }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        let demandWithoutHandler = await actor.run {
+            $0.parityDriverForTesting?.hasMediaTextureDemand == true
+                && $0.parityDriverForTesting?.scriptHandlesMedia == false
+        }
+        XCTAssertTrue(demandWithoutHandler)
+        await assertStaticActor(actor)
+        try await actorFrame(actor)
+        XCTAssertEqual(surface.lastIsPaused, true, "The static scene parks after its first frame")
+        let fallback = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanels(fallback, width: 80, current: nil, previous: nil)
+
+        for (data, current, previous) in [(fixture.a, Artwork.a, Artwork?.none),
+                                          (fixture.b, Artwork.b, Optional(Artwork.a))] {
+            source.push(artwork: data)
+            // Observe the product's onChange -> actor pending-frame path before driving the display-link tick.
+            try await waitUntil("Texture-only input did not unpark the render actor") { surface.lastIsPaused == false }
+            try await actorFrame(actor)
+            try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80,
+                             current: current, previous: previous)
+            XCTAssertEqual(surface.lastIsPaused, true, "The accepted present consumes the pending frame")
+        }
+        // Exercise the Actor's real reload/configure/replay entry as well as the direct Driver contract above.
+        try await actor.reload()
+        await assertStaticActor(actor)
+        XCTAssertEqual(surface.lastIsPaused, false)
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: .b, previous: .a)
+        XCTAssertEqual(surface.lastIsPaused, true)
+        let allowedDiagnostic = Self.nativeSizingDiagnostic
+        let valid = await actor.run {
+            guard let driver = $0.parityDriverForTesting, let renderer = driver.renderer else { return false }
+            return driver.hasPresentedFrame && driver.shaderErrorSummary.count == 0
+                && renderer.skipped.isEmpty && renderer.fallbackTextures.isEmpty
+                && renderer.mediaDiagnostics.allSatisfy { $0 == allowedDiagnostic }
+        }
+        XCTAssertTrue(valid)
+    }
+
+    func testEvictedArtworkSurvivesActualInflightGPUReadThroughCleanup() async throws {
+        let fixture = try makeFixture(scripted: false)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let source = MediaInputSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        let configured = dispatcher.configureParity(generation: driver.loadGeneration, device: fixture.device,
+                                                    textureDemand: driver.hasMediaTextureDemand, onChange: {})
+        XCTAssertTrue(configured)
+        let queue = driver.executor.textureSourceCommandQueue
+        let gate = try XCTUnwrap(fixture.device.makeSharedEvent())
+        let blocker = try XCTUnwrap(queue.makeCommandBuffer())
+        blocker.encodeWaitForEvent(gate, value: 1)
+        blocker.commit()
+        defer { gate.signaledValue = 1 } // An assertion or thrown prerequisite must never strand the queue.
+
+        source.push(artwork: fixture.a)
+        let first = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: SIMD2(0.5, 0.5)))
+        let firstDrawable = try XCTUnwrap(layer.lastTexture)
+        weak var oldArtwork: (any MTLTexture)?
+        try autoreleasepool {
+            let renderer = try XCTUnwrap(driver.renderer)
+            let old = try XCTUnwrap(renderer.mediaTextures?.current)
+            oldArtwork = old
+            try assertBoundEffects(driver, current: ObjectIdentifier(old), previous: nil)
+        }
+        XCTAssertNotNil(oldArtwork)
+        source.push(artwork: fixture.b)
+        let second = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 101, pointer: SIMD2(0.5, 0.5)))
+        // A third distinct artwork evicts A from both the store and the renderer's current/previous pair.
+        source.push(artwork: fixture.c)
+        let third = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 102, pointer: SIMD2(0.5, 0.5)))
+        let latest = try pair(driver)
+        XCTAssertNotEqual(latest.currentID, oldArtwork.map(ObjectIdentifier.init))
+        XCTAssertNotEqual(latest.previousID, oldArtwork.map(ObjectIdentifier.init))
+        XCTAssertNotEqual(first.status, .completed, "The GPU read must still be blocked")
+        XCTAssertGreaterThan(driver.inFlightCount, 0)
+        driver.cleanup()
+        dispatcher.stop()
+        XCTAssertNil(driver.renderer)
+        XCTAssertNotNil(oldArtwork, "The evicted artwork must survive until its last GPU reader completes")
+
+        gate.signaledValue = 1
+        for command in [blocker, first, second, third] {
+            try await waitUntil("Released GPU reader did not reach a terminal status") {
+                command.status == .completed || command.status == .error
+            }
+            try requireCompleted(command)
+        }
+        // The old drawable proves the blocked graph actually sampled A, rather than merely retaining an unused object.
+        try assertPanels(readBack(firstDrawable), width: 80, current: .a, previous: nil)
+    }
+
+    private struct Fixture {
+        let root: URL
+        let device: any MTLDevice
+        let compiler: WPEParityHelperShaderCompiler
+        let cache: WPEParityShaderDiskCache
+        let assets: WPEParityProgramAssets
+        let document: WPESceneDocument
+        let a: Data
+        let b: Data
+        let c: Data
+    }
+
+    private struct Pair: Equatable {
+        let revision: UInt64
+        let currentName: String?
+        let previousName: String?
+        let currentID: ObjectIdentifier?
+        let previousID: ObjectIdentifier?
+        let dimensions: [Int]
+    }
+
+    private enum Artwork: Equatable {
+        case a, b, c
+
+        func isHole(right: Bool, bottom: Bool) -> Bool {
+            switch self {
+            case .a: right && !bottom
+            case .b: !right && bottom
+            case .c: right && bottom
+            }
+        }
+    }
+
+    private func makeFixture(scripted: Bool, mediaProvider: String = "system") throws -> Fixture {
+        let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let environment = ProcessInfo.processInfo.environment
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let engine = environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        guard FileManager.default.fileExists(atPath: engine.appending(path: "shaders/combine.frag").path) else {
+            try? FileManager.default.removeItem(at: root)
+            throw XCTSkip("Set WPE_ASSETS_DIR to the original WPE 2.8.42 assets directory")
+        }
+        // Matches the sealed Windows resource manifest; no shader stub or translated-capture result is supplied.
+        for (file, expected) in [
+            ("combine.frag", "94fdbeb77d365f330e538db4493b0b8374b48d2d95fd460f6dc34036d6868ddf"),
+            ("combine.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
+            ("genericimage2.frag", "1e252e2271cae57fcfdecf3bd79d1685bb726e1e8afe09ba863dca2e1b12d68e"),
+            ("genericimage2.vert", "97370dbb18746d61629edf77ee2c30afe07605f5270f8a29a406b414932368bb"),
+        ] {
+            let bytes = try Data(contentsOf: engine.appending(path: "shaders/\(file)"))
+            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(hash, expected, "Original WPE resource identity: \(file)")
+            guard hash == expected else { throw MediaFixtureError.originalShader(file) }
+            print("media product original shader=\(file) SHA256=\(hash)")
+        }
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
+        let compiler: WPEParityHelperShaderCompiler
+        if keys.contains(where: { environment[$0] != nil }) {
+            let urls = try keys.map { key in
+                try URL(fileURLWithPath: XCTUnwrap(environment[key].flatMap { $0.isEmpty ? nil : $0 },
+                                                   "Supply all three nonempty current test toolchain paths: \(keys)"))
+            }
+            compiler = try WPEParityHelperShaderCompiler(helper: urls[0], dxcompiler: urls[1], metalIRConverter: urls[2],
+                                                         workDirectory: root.appending(path: "shaderc"))
+        } else {
+            switch WPEParityShaderToolchain.makeCompiler() {
+            case let .success(found): compiler = found
+            case let .failure(reason): throw reason
+            }
+        }
+        print("media product compilerIdentity=\(compiler.compilerIdentity)")
+        func write(_ path: String, _ data: Data) throws {
+            let url = root.appending(path: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+        }
+        func json(_ path: String, _ value: Any) throws {
+            try write(path, JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
+        }
+        for (name, pixel) in [("black", [UInt8(0), 0, 0, 255]), ("white", [255, 255, 255, 255]),
+                              ("current", [0, 128, 0, 255]), ("previous", [0, 0, 128, 255])] {
+            try write("materials/input/\(name).tex", solidTEX(pixel))
+        }
+        // Select the original g_Color4 branch explicitly so the witness observes live thisLayer.color.
+        for name in ["black", "white"] {
+            try json("models/\(name).json", ["material": "materials/\(name).json"])
+            try json("materials/\(name).json", ["passes": [[
+                "shader": "genericimage2", "combos": ["VERSION": 2],
+                "textures": ["input/\(name)"], "blending": "normal",
+                "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
+            ]]])
+        }
+        for (name, system) in [("current", "$mediaThumbnail"), ("previous", "$mediaPreviousThumbnail")] {
+            // combine.vert consumes clip positions directly. Its intermediate 2x2 mesh must precede a
+            // layer-sized, MVP-aware draw; using it as the final effect would overwrite the entire scene.
+            try json("effects/\(name).json", [
+                "fbos": [["name": "media", "format": "rgba8888", "unique": true, "width": 32, "height": 32]],
+                "passes": [
+                    ["material": "materials/\(name)-effect.json", "target": "media"],
+                    ["material": "materials/\(name)-compose.json"],
+                ],
+            ])
+            try json("materials/\(name)-effect.json", ["passes": [[
+                "shader": "combine", "textures": ["previous", "input/\(name)"],
+                "usertextures": [NSNull(), ["name": system, "type": mediaProvider]],
+                "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
+            ]]])
+            try json("materials/\(name)-compose.json", ["passes": [[
+                "shader": "genericimage2", "combos": ["VERSION": 2], "textures": ["media"],
+                "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
+            ]]])
+        }
+        var witness: [String: Any] = ["id": 3, "name": "ordering-witness", "image": "models/white.json",
+                                      "size": "16 32", "origin": "72 16 0"]
+        if scripted {
+            witness["visible"] = ["value": true, "script": Self.orderingScript]
+        }
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 80, "height": 32], "clearcolor": "0 0 0",
+                        "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
+            "objects": [
+                ["id": 1, "name": "current", "image": "models/black.json", "size": "32 32", "origin": "16 16 0",
+                 "effects": [["id": 10, "file": "effects/current.json"]]],
+                ["id": 2, "name": "previous", "image": "models/black.json", "size": "32 32", "origin": "48 16 0",
+                 "effects": [["id": 20, "file": "effects/previous.json"]]],
+                witness,
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: scene, options: [.sortedKeys])
+        try write("scene.json", data)
+        let a = try png(.a, width: 16, height: 8), b = try png(.b, width: 8, height: 16)
+        let c = try png(.c, width: 16, height: 16)
+        XCTAssertNotEqual(a, b)
+        let paletteA = try XCTUnwrap(WPEMediaArtworkPalette.palette(from: a))
+        let paletteB = try XCTUnwrap(WPEMediaArtworkPalette.palette(from: b))
+        XCTAssertEqual(paletteA, paletteB, "Same-palette/different-bytes is a required fixture precondition")
+        guard paletteA == paletteB else { throw MediaFixtureError.palette }
+        return try Fixture(root: root, device: XCTUnwrap(MTLCreateSystemDefaultDevice()), compiler: compiler,
+                           cache: WPEParityShaderDiskCache(cachesURL: root.appending(path: "cache")),
+                           assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: [engine]),
+                           document: WPESceneDocumentParser.parse(data: data, userValues: [:]), a: a, b: b, c: c)
+    }
+
+    private static let orderingScript = """
+    var stage = 0;
+    var deliveries = 0;
+    var currentName;
+    var previousName;
+    export function applyUserProperties(properties) {
+        if (Object.prototype.hasOwnProperty.call(properties, '$mediaThumbnail')) {
+            currentName = properties['$mediaThumbnail'];
+            previousName = properties['$mediaPreviousThumbnail'];
+            deliveries += 1;
+            stage = 1;
+        }
+    }
+    export function mediaThumbnailChanged(event) {
+        stage = stage === 1 && event.hasThumbnail ? 2 : -1;
+    }
+    function revision(name) {
+        if (name === undefined) return 0;
+        var match = /_([0-9]+)[.]system$/.exec(name);
+        return match ? Number(match[1]) : -8;
+    }
+    export function update() {
+        var currentRevision = revision(currentName);
+        var previousRevision = revision(previousName);
+        var same = currentRevision > 0 && previousRevision >= 0 && stage === 2 && engine.userProperties['$mediaThumbnail'] === currentName;
+        if (previousName !== undefined) same = same && engine.userProperties['$mediaPreviousThumbnail'] === previousName;
+        thisLayer.color = same ? new Vec3(deliveries / 8, currentRevision / 8, previousRevision / 8) : new Vec3(1, 0, 1);
+        return true;
+    }
+    """
+
+    private func load(_ driver: WPEParitySceneDriver, fixture: Fixture, dispatcher: WPESceneMediaEventDispatcher,
+                      size: CGSize) async throws {
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: Self.settings,
+                              drawableSize: size, pixelFormat: .bgra8Unorm_srgb, compiler: fixture.compiler,
+                              diskCache: fixture.cache, scriptHost: .init(media: dispatcher.mailbox))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        XCTAssertTrue(renderer.fallbackTextures.isEmpty, "\(renderer.fallbackTextures)")
+    }
+
+    private func makeLayer(device: MTLDevice) -> MediaRecordingLayer {
+        let layer = MediaRecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = Self.size
+        layer.framebufferOnly = false
+        layer.maximumDrawableCount = 3
+        return layer
+    }
+
+    private func present(_ driver: WPEParitySceneDriver, layer: MediaRecordingLayer) async throws -> [UInt8] {
+        let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(),
+                                                                 pointer: SIMD2(0.5, 0.5)))
+        try await waitUntil("Presented GPU frame did not reach a terminal status") {
+            command.status == .completed || command.status == .error
+        }
+        try requireCompleted(command)
+        try await waitUntil("Present completion handlers did not settle") { driver.inFlightCount == 0 }
+        let diagnostics = try XCTUnwrap(driver.renderer).mediaDiagnostics
+        XCTAssertTrue(diagnostics.allSatisfy { $0 == Self.nativeSizingDiagnostic }, "\(diagnostics)")
+        return try readBack(XCTUnwrap(layer.lastTexture))
+    }
+
+    private func pair(_ driver: WPEParitySceneDriver) throws -> Pair {
+        let textures = try XCTUnwrap(driver.renderer?.mediaTextures)
+        return Pair(revision: textures.revision, currentName: textures.currentSystemName,
+                    previousName: textures.previousSystemName, currentID: textures.current.map(ObjectIdentifier.init),
+                    previousID: textures.previous.map(ObjectIdentifier.init),
+                    dimensions: [textures.current?.width ?? 0, textures.current?.height ?? 0,
+                                 textures.previous?.width ?? 0, textures.previous?.height ?? 0])
+    }
+
+    private func assertBoundEffects(_ driver: WPEParitySceneDriver, current: ObjectIdentifier?,
+                                    previous: ObjectIdentifier?) throws {
+        let renderer = try XCTUnwrap(driver.renderer)
+        let draws = renderer.lastFrameDraws.map(\.draw)
+        let ids = Set(draws.compactMap { $0.textures["g_Texture1"].map(ObjectIdentifier.init) })
+        if let current {
+            XCTAssertTrue(ids.contains(current), "Current must be bound to actual g_Texture1")
+        }
+        if let previous {
+            XCTAssertTrue(ids.contains(previous), "Previous must be bound to actual g_Texture1")
+        }
+        let producer = draws.filter { $0.textures["g_Texture1"] != nil }.compactMap { $0.textures["g_Texture0"] }
+        XCTAssertEqual(producer.count, 2, "Both original combine effects must draw")
+        XCTAssertTrue(producer.allSatisfy { ObjectIdentifier($0) != current && ObjectIdentifier($0) != previous },
+                      "Slot 0 remains the effect producer; the null declaration must not shift media into it")
+    }
+
+    private func actorFrame(_ actor: WPEDisplayRenderActor) async throws {
+        await actor.renderFrame()
+        let deadline = Date().addingTimeInterval(5)
+        var count = await actor.run { $0.parityDriverForTesting?.inFlightCount ?? 0 }
+        while count > 0, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+            count = await actor.run { $0.parityDriverForTesting?.inFlightCount ?? 0 }
+        }
+        XCTAssertEqual(count, 0)
+        let presented = await actor.run { $0.parityDriverForTesting?.hasPresentedFrame == true }
+        XCTAssertTrue(presented)
+    }
+
+    private func assertStaticActor(_ actor: WPEDisplayRenderActor) async {
+        let state = await actor.run { actor in
+            let driver = actor.parityDriverForTesting
+            return (driver?.renderer?.isStatic == true, driver?.soundRuntime == nil,
+                    driver?.needsContinuousFrames == false)
+        }
+        XCTAssertTrue(state.0, "This fixture must be a static renderer")
+        XCTAssertTrue(state.1, "This fixture must have no continuous sound demand")
+        XCTAssertTrue(state.2, "This fixture must have no continuous frame demand")
+    }
+
+    private func waitUntil(_ message: String, _ predicate: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while !predicate(), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        XCTAssertTrue(predicate(), message)
+        guard predicate() else { throw MediaFixtureError.timeout(message) }
+    }
+
+    private func requireCompleted(_ command: MTLCommandBuffer) throws {
+        XCTAssertNil(command.error)
+        XCTAssertEqual(command.status, .completed)
+        if let error = command.error {
+            throw error
+        }
+        guard command.status == .completed else { throw MediaFixtureError.command }
+    }
+
+    private func assertPanels(_ bytes: [UInt8], width: Int, current: Artwork?, previous: Artwork?) {
+        assertPanel(bytes, width: width, panel: 0, artwork: current, fallback: [0, 128, 0, 255])
+        assertPanel(bytes, width: width, panel: 1, artwork: previous, fallback: [0, 0, 128, 255])
+    }
+
+    private func assertPanel(_ bytes: [UInt8], width: Int, panel: Int, artwork: Artwork?, fallback: [UInt8]) {
+        let scale = width / 80
+        for bottom in [false, true] {
+            for right in [false, true] {
+                let expected: [UInt8] = artwork.map {
+                    $0.isHole(right: right, bottom: bottom) ? [0, 0, 0, 255]
+                        : $0 == .c ? [128, 64, 192, 255] : [255, 0, 0, 255]
+                } ?? fallback
+                assertPixel(bytes, width: width, x: (panel * 32 + (right ? 24 : 8)) * scale,
+                            y: (bottom ? 24 : 8) * scale, expected: expected)
+            }
+        }
+    }
+
+    private func assertSentinel(_ bytes: [UInt8], width: Int, deliveries: Int,
+                                currentRevision: Int, previousRevision: Int) {
+        let scale = width / 80
+        let rgb = [deliveries, currentRevision, previousRevision].map { UInt8((Double($0) * 255 / 8).rounded()) }
+        assertPixel(bytes, width: width, x: 72 * scale, y: 16 * scale, expected: rgb + [255])
+    }
+
+    private func assertPixel(_ bytes: [UInt8], width: Int, x: Int, y: Int, expected: [UInt8]) {
+        let offset = (y * width + x) * 4
+        guard offset + 4 <= bytes.count else { return XCTFail("Readback missing pixel (\(x),\(y))") }
+        let actual = [bytes[offset + 2], bytes[offset + 1], bytes[offset], bytes[offset + 3]]
+        for channel in 0 ..< 4 {
+            XCTAssertLessThanOrEqual(abs(Int(actual[channel]) - Int(expected[channel])), channel == 3 ? 0 : 2,
+                                     "pixel (\(x),\(y)) RGBA=\(actual), expected=\(expected), channel=\(channel)")
+        }
+    }
+
+    private func readBack(_ texture: MTLTexture) throws -> [UInt8] {
+        XCTAssertEqual(texture.pixelFormat, .bgra8Unorm_srgb)
+        let rowBytes = texture.width * 4, length = rowBytes * texture.height
+        let buffer = try XCTUnwrap(texture.device.makeBuffer(length: length, options: .storageModeShared))
+        let command = try XCTUnwrap(texture.device.makeCommandQueue()?.makeCommandBuffer())
+        let blit = try XCTUnwrap(command.makeBlitCommandEncoder())
+        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer,
+                  destinationOffset: 0, destinationBytesPerRow: rowBytes, destinationBytesPerImage: length)
+        blit.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try requireCompleted(command)
+        return Array(UnsafeRawBufferPointer(start: buffer.contents(), count: length))
+    }
+
+    private func png(_ artwork: Artwork, width: Int, height: Int) throws -> Data {
+        var rgba: [UInt8] = []
+        for y in 0 ..< height {
+            for x in 0 ..< width {
+                rgba.append(contentsOf: artwork.isHole(right: x >= width / 2, bottom: y >= height / 2)
+                    ? [0, 0, 0, 0] : artwork == .c ? [128, 64, 192, 255] : [255, 0, 0, 255])
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(rgba) as CFData))
+        let image = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                          bytesPerRow: width * 4, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
+                                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw MediaFixtureError.png }
+        return data as Data
+    }
+
+    private func solidTEX(_ pixel: [UInt8]) -> Data {
+        var data = Data()
+        func magic(_ text: String) {
+            data.append(contentsOf: text.utf8); data.append(0)
+        }
+        func append(_ number: UInt32) {
+            var value = number.littleEndian
+            withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
+        }
+        magic("TEXV0005"); magic("TEXI0001")
+        for value in [UInt32(0), 0, 2, 2, 2, 2, 0] {
+            append(value)
+        }
+        magic("TEXB0003")
+        for value in [UInt32(1), .max, 1, 2, 2, 0, 16, 16] {
+            append(value)
+        }
+        for _ in 0 ..< 4 {
+            data.append(contentsOf: pixel)
+        }
+        return data
+    }
+}
+
+private enum MediaFixtureError: Error {
+    case originalShader(String), palette, png, command, timeout(String)
+}
+
+/// A controllable external source only; all upload, delivery, script, graph and presentation behavior is production code.
+@MainActor
+private final class MediaInputSource: WPENowPlayingEventSource {
+    private var handlers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
+    private var ordinal: UInt64 = 0
+    private var current = MonitorNowPlayingState(phase: .awaitingFirstEvent, title: "")
+
+    func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
+        handlers[id] = handler
+        handler(ordinal, current)
+    }
+
+    func unsubscribe(id: UUID) {
+        handlers[id] = nil
+    }
+
+    func push(artwork: Data) {
+        ordinal += 1
+        current = MonitorNowPlayingState(phase: .paused, title: "Controlled", artwork: artwork)
+        for handler in handlers.values {
+            handler(ordinal, current)
+        }
+    }
+}
+
+private final class MediaRecordingLayer: CAMetalLayer {
+    private(set) var lastTexture: (any MTLTexture)?
+
+    override func nextDrawable() -> (any CAMetalDrawable)? {
+        let drawable = super.nextDrawable()
+        lastTexture = drawable?.texture
+        return drawable
+    }
+}
+
+private final class MediaPacingRecorder: WPESurfaceControl {
+    private let last = OSAllocatedUnfairLock<Bool?>(initialState: nil)
+    var lastIsPaused: Bool? {
+        last.withLock { $0 }
+    }
+
+    func applyPacing(_ update: WPERenderPacingUpdate) {
+        last.withLock { $0 = update.isPaused ?? $0 }
+    }
+
+    func setNeedsRedraw() {}
+    func drawImmediately() {}
+    func releaseDrawables() {}
+    func detach() {}
+    func setClickCaptureEnabled(_: Bool) {}
+}
+#endif

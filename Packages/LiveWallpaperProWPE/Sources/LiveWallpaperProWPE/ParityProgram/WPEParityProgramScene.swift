@@ -127,11 +127,13 @@ public struct WPEParityProgramScene: Sendable {
                 : Self.string(model?["material"]) ?? image.materialRelativePath
             let albedoSource = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
             var material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
+            let authored = authoredByID[image.id]
             if let instance = image.materialInstance {
                 // The instance merges over the pass JSON before annotation defaults fill missing keys (r3 Q1 J, Q4).
-                material?.merge(combos: instance.combos, textures: instance.textures, constants: instance.constants)
+                material?.merge(combos: instance.combos, textures: instance.textures, constants: instance.constants,
+                                userTextures: authored?["instance"]?["usertextures"],
+                                userTextureBindings: instance.userTextures)
             }
-            let authored = authoredByID[image.id]
             if let albedoSource, let material {
                 materials[MaterialKey(objectID: image.id, effectID: nil, source: albedoSource)] = material
             }
@@ -340,8 +342,11 @@ public struct WPEParityProgramScene: Sendable {
             let configuration = Self.array(authored?["effects"]).first {
                 (Self.string($0["id"]) ?? Self.number($0["id"]).map { String(Int($0)) }) == effect.id
             }
+            let userTextureConfiguration = Self.array(authored?["effects"]).enumerated().first { index, value in
+                (Self.string(value["id"]) ?? Self.number(value["id"]).map { String(Int($0)) } ?? "\(index)") == effect.id
+            }?.element
             let result = Self.effect(effect, objectID: objectID, file: file, assets: assets,
-                                     combos: configuration?["combos"])
+                                     combos: configuration?["combos"], userTextureConfiguration: userTextureConfiguration)
             records[.init(objectID: objectID, effectID: effect.id)] = result.records
             loaded.append(result.effect)
             for (source, material, pass) in result.materials {
@@ -484,7 +489,7 @@ public struct WPEParityProgramScene: Sendable {
 
     private static func effect(_ effect: WPESceneImageEffect, objectID: String,
                                file: WPESceneJSONValue, assets: WPEParityProgramAssets,
-                               combos: WPESceneJSONValue?)
+                               combos: WPESceneJSONValue?, userTextureConfiguration: WPESceneJSONValue?)
         -> (effect: WPEParityAuthoredEffect,
             materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)],
             records: [WPEParityEffectPassRecord]) {
@@ -535,7 +540,9 @@ public struct WPEParityProgramScene: Sendable {
                   var material = WPEParityProgramMaterial(path: path, assets: assets) else { continue }
             if passIndex < effect.passOverrides.count {
                 let override = effect.passOverrides[passIndex]
-                material.merge(combos: override.combos, textures: override.textures, constants: override.constants)
+                material.merge(combos: override.combos, textures: override.textures, constants: override.constants,
+                               userTextures: userTextureConfiguration?["passes"]?[passIndex]?["usertextures"],
+                               userTextureBindings: override.userTextures)
             }
             for case let .object(bind) in array(pass["bind"]) {
                 guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos) else { continue }
@@ -651,7 +658,8 @@ extension WPEParityProgramMaterial {
     /// `passes[pass]` of a material file.
     init?(path: String, pass index: Int = 0, assets: WPEParityProgramAssets) {
         typealias Scene = WPEParityProgramScene
-        guard let pass = assets.json(path)?["passes"]?[index], let shader = Scene.string(pass["shader"]) else {
+        guard let document = assets.json(path), let pass = document["passes"]?[index],
+              let shader = Scene.string(pass["shader"]) else {
             return nil
         }
         var combos: [String: Int32] = [:]
@@ -674,7 +682,8 @@ extension WPEParityProgramMaterial {
         }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
                   combos: combos, textures: textures, constants: constants,
-                  cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull")
+                  cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull",
+                  userTextures: .init(material: document["usertextures"], pass: pass["usertextures"]))
     }
 
     /// Texture names in slot order.
@@ -693,7 +702,9 @@ extension WPEParityProgramMaterial {
 
     /// Scene instance or effect-pass override; null texture slots keep the base.
     mutating func merge(combos: [String: Int], textures: [Int: String],
-                        constants: [String: WPESceneShaderConstantValue] = [:]) {
+                        constants: [String: WPESceneShaderConstantValue] = [:],
+                        userTextures: WPESceneJSONValue? = nil,
+                        userTextureBindings: [WPESceneUserTextureBinding]? = nil) {
         for (key, value) in combos {
             self.combos[key] = Int32(truncatingIfNeeded: value)
         }
@@ -702,6 +713,10 @@ extension WPEParityProgramMaterial {
         }
         for (key, value) in constants {
             self.constants[key] = WPEParityProgramConstants.components(value)
+        }
+        if userTextures != nil || userTextureBindings?.isEmpty == false {
+            self.userTextures = .init(material: self.userTextures.material, pass: self.userTextures.pass,
+                                      override: userTextures, overrideBindings: userTextureBindings)
         }
     }
 }
