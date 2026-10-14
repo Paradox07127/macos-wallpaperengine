@@ -16,14 +16,23 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         export function init() {
           let phase = false;
           try { engine.registerAsset('materials/late.json'); }
-          catch(e) { phase = e.message === 'registerAsset can only be called from global scope.'; }
+          catch(e) { phase = typeof e === 'object' && e.name === 'SyntaxError' && e instanceof Error
+            && e.message === 'registerAsset can only be called from global scope.'; }
           return global && phase ? 3 : 99;
+        }
+        export function update() {
+          let phase = false;
+          try { engine.registerAsset('materials/late-update.json'); }
+          catch(e) { phase = typeof e === 'object' && e.name === 'SyntaxError' && e instanceof Error
+            && e.message === 'registerAsset can only be called from global scope.'; }
+          return phase ? 4 : 99;
         }
         """#
         let objects: [[String: Any]] = [1, 2].map { id in
             ["id": id, "image": "models/a.json", "alpha": ["value": 1, "script": script]]
         }
-        let source: [String: Any] = ["general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
+        let source: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+                                     "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
         var state = WPEParitySceneState(document: document, hdr: false)
@@ -68,6 +77,9 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         XCTAssertNil(engine.start(state: &state))
         XCTAssertEqual(state.object("1")?.alpha, 3)
         XCTAssertEqual(state.object("2")?.alpha, 3)
+        engine.tick(dt: 1 / 60, state: &state)
+        XCTAssertEqual(state.object("1")?.alpha, 4)
+        XCTAssertEqual(state.object("2")?.alpha, 4)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 }

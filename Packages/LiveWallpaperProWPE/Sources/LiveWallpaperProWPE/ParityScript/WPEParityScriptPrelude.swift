@@ -248,7 +248,7 @@ enum WPEParityScriptPrelude {
       get screenResolution() { return new Vec2(G[5], G[6]); },
       userProperties: {},
       registerAsset(path, flag) {
-        if (current) throw new Error('registerAsset can only be called from global scope.');
+        if (current) throw new SyntaxError('registerAsset can only be called from global scope.');
         if (typeof path !== 'string' || compilingBinding < 0) return undefined;
         return host.registerAsset(compilingBinding, path, typeof flag === 'boolean' ? flag : false) ? path : undefined;
       },
