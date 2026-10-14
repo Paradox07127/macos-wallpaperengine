@@ -3,6 +3,67 @@ import simd
 import XCTest
 
 final class ParityParticleEmitterTests: XCTestCase {
+    /// 237a21..237acd: a positive timer crossing below zero still emits; zero goes directly to another on phase.
+    /// These finite MT schedules use nonzero box launches (six words per birth) and independent word ordinals.
+    func testPeriodicSignedClockKeepsTheCrossingFrameAndExactZeroBoundary() {
+        for (duration, counts, birthWords, words) in [
+            (Float(0.1), [1, 2, 3, 3, 4], [6, 12, 19, 26], 27),
+            (Float(0.125), [1, 2, 3, 4, 5], [6, 12, 18, 25, 31], 32),
+        ] {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount":20,"emitter":[{"name":"boxrandom","rate":16,"flags":4,
+              "distancemin":"1 1 1","distancemax":"1 1 1",
+              "minperiodicduration":\(duration),"maxperiodicduration":\(duration),
+              "minperiodicdelay":0.1,"maxperiodicdelay":0.1}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            for expected in counts {
+                particles.advance(dt: 0.0625)
+                XCTAssertEqual(particles.liveCount, expected)
+            }
+            let expected = WPEParityMT19937(seed: 7)
+            var samples: [Float] = []
+            for ordinal in 1 ... words {
+                let raw = expected.next()
+                if birthWords.contains(ordinal) {
+                    samples.append(Float(raw >> 8) * 0x1p-24)
+                }
+            }
+            XCTAssertEqual(Array(particles.birthU.prefix(samples.count)), samples)
+            XCTAssertEqual(particles.rng.next(), expected.next())
+        }
+    }
+
+    func testPeriodicClockPausesAtDelayAndCapacityAndRateCapDropsRequestedExcess() {
+        for delayed in [false, true] {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":16,"flags":4,
+              "delay":\(delayed ? 0.1 : 0),"distancemin":"1 1 1","distancemax":"1 1 1",
+              "minperiodicduration":0.1,"maxperiodicduration":0.1}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            for frame in 0 ..< 5 {
+                particles.advance(dt: 0.0625)
+                XCTAssertEqual(particles.liveCount, delayed && frame < 2 ? 0 : 1)
+            }
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 7 {
+                _ = expected.next()
+            }
+            XCTAssertEqual(particles.rng.next(), expected.next(), "full capacity does not advance the periodic clock")
+        }
+        var capped = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+        {"maxcount":20,"emitter":[{"name":"boxrandom","rate":64,"flags":2,
+          "distancemin":"1 1 1","distancemax":"1 1 1"}],
+         "initializer":[{"name":"lifetimerandom","min":10,"max":10}]}
+        """), rng: WPEParityMT19937(seed: 7))
+        for frame in 1 ... 3 {
+            capped.advance(dt: 0.0625)
+            XCTAssertEqual(capped.liveCount, frame)
+            XCTAssertEqual(capped.emitterStates[0].accumulator, 0)
+        }
+    }
+
     private func burst(_ emitter: String, count: Int = 1000) -> WPEParityParticleSystem {
         var particles = WPEParityParticleSystem(
             json: ParityParticleTestSupport.json("""

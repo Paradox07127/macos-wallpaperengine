@@ -43,8 +43,8 @@ public struct WPEParityParticleSystem {
         var durationLeft: Float
         var disabled = false
         var burstPending: Bool
-        var periodOn = true
-        var periodLeft: Float = 0
+        /// Native +0x40: positive on duration, nonpositive off delay; transitions discard overshoot.
+        var periodTimer: Float = 0
         var emittedThisPeriod = 0
     }
 
@@ -218,7 +218,7 @@ public struct WPEParityParticleSystem {
         sequenceStates = config.initializers.map(Self.sequenceState)
         birthNext = Array(repeating: -1, count: capacity)
         birthPrevious = birthNext
-        emitterStates = config.emitters.map { Self.emitterState($0, rng: rng) }
+        emitterStates = config.emitters.map { Self.emitterState($0) }
         builtEmitterStates = config.emitters.indices.map { emitterStates[$0] }
         if let trail = config.renderers.first(where: { $0.kind == .ropeTrail }) {
             trailSegments = trail.segments
@@ -261,11 +261,9 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    private static func emitterState(_ emitter: WPEParityParticleEmitterConfig, rng: WPEParityMT19937) -> EmitterState {
-        EmitterState(
-            delayLeft: emitter.delay, durationLeft: emitter.duration, burstPending: emitter.instantaneous > 0,
-            periodLeft: emitter.periodic ? rng.draw(emitter.periodicDurationMin, emitter.periodicDurationMax) : 0
-        )
+    private static func emitterState(_ emitter: WPEParityParticleEmitterConfig) -> EmitterState {
+        // 1c1c70 initializes the signed timer to zero; the first eligible emit call draws the on duration.
+        EmitterState(delayLeft: emitter.delay, durationLeft: emitter.duration, burstPending: emitter.instantaneous > 0)
     }
 
     /// Reuses the finished instance in place. Native reset/enable visits only static descendants and never
@@ -295,8 +293,7 @@ public struct WPEParityParticleSystem {
             emitterStates[index].durationLeft = emitter.duration
             emitterStates[index].burstPending = emitter.instantaneous > 0
             emitterStates[index].disabled = false
-            emitterStates[index].periodLeft = 0
-            emitterStates[index].periodOn = true
+            emitterStates[index].periodTimer = 0
             emitterStates[index].emittedThisPeriod = 0
         }
         for index in sequenceStates.indices {
@@ -714,53 +711,9 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// Gate live < maxcount, enabled, delay ≤ 0; acc += rate·dt and the burst both come out of acc (S 590140-590184).
-    private mutating func emit(_ index: Int, dt: Float) {
-        let emitter = config.emitters[index]
-        var state = emitterStates[index]
-        if !state.disabled, state.delayLeft <= 0, state.periodOn, liveCount < capacity {
-            state.accumulator += emitter.rate * instance.count * dt
-            if state.burstPending {
-                state.accumulator += Float(emitter.instantaneous) * instance.count
-                state.burstPending = false
-            }
-            let wanted = Int(state.accumulator)
-            state.accumulator -= Float(wanted)
-            var count = min(wanted, capacity - liveCount)
-            if emitter.periodic, emitter.maxPerPeriod > 0 {
-                count = min(count, emitter.maxPerPeriod - state.emittedThisPeriod)
-                state.emittedThisPeriod += count
-            }
-            for _ in 0 ..< count {
-                spawn(emitter)
-            }
-        }
-        // Frame end: a pending delay only counts down; a duration disables at ≤ 0 (D/1402378a0.c:1771-1794).
-        if state.delayLeft > 0 {
-            state.delayLeft -= dt
-        } else if state.durationLeft > 0 {
-            state.durationLeft -= dt
-            if state.durationLeft <= 0 {
-                // Native only ORs the disabled sign bit: a follow detach must not revive while duration is positive.
-                state.disabled = true
-            }
-        }
-        if emitter.periodic, state.delayLeft <= 0 {
-            state.periodLeft -= dt
-            if state.periodLeft <= 0 {
-                state.periodOn.toggle()
-                state.periodLeft += state.periodOn
-                    ? rng.draw(emitter.periodicDurationMin, emitter.periodicDurationMax)
-                    : rng.draw(emitter.periodicDelayMin, emitter.periodicDelayMax)
-                state.emittedThisPeriod = 0
-            }
-        }
-        emitterStates[index] = state
-    }
-
     /// Lowest free slot; emitter shape/direction/speed precede birthU and initializers in JSON order
     /// (140238185/238bda → 23b340:281–283 → 1f87a0).
-    private mutating func spawn(_ emitter: WPEParityParticleEmitterConfig) {
+    mutating func spawn(_ emitter: WPEParityParticleEmitterConfig) {
         var slot = freeHint
         while lifetime[slot] != 0 {
             slot += 1

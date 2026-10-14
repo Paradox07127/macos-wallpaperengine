@@ -22,6 +22,8 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     var delay: Float
     /// Emitter flags bit 2 [I]: every authored periodic emitter carries `flags: 4`.
     var periodic: Bool
+    /// Native emitter flags bit 1 caps the rate portion to one particle per update, after accumulator subtraction.
+    var maxOnePerFrame: Bool
     var periodicDurationMin: Float
     var periodicDurationMax: Float
     var periodicDelayMin: Float
@@ -272,9 +274,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             duration: JSON.number(entry["duration"]) ?? 0,
             delay: JSON.number(entry["delay"]) ?? 0,
             periodic: flags & 4 != 0,
-            periodicDurationMin: JSON.number(entry["minperiodicduration"]) ?? 2,
+            maxOnePerFrame: flags & 2 != 0,
+            periodicDurationMin: min(JSON.number(entry["minperiodicduration"]) ?? 2,
+                                     JSON.number(entry["maxperiodicduration"]) ?? 3),
             periodicDurationMax: JSON.number(entry["maxperiodicduration"]) ?? 3,
-            periodicDelayMin: JSON.number(entry["minperiodicdelay"]) ?? 1,
+            periodicDelayMin: min(JSON.number(entry["minperiodicdelay"]) ?? 1,
+                                  JSON.number(entry["maxperiodicdelay"]) ?? 2),
             periodicDelayMax: JSON.number(entry["maxperiodicdelay"]) ?? 2,
             maxPerPeriod: max(0, Int(JSON.number(entry["maxtoemitperperiod"]) ?? 0))
         ))
