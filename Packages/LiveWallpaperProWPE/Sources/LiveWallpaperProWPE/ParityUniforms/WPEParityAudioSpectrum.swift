@@ -20,34 +20,45 @@ public struct WPEParityAudioSpectrum: Sendable {
     public init() {}
 
     /// Provider bins are linear, dimensionless magnitudes in [0, +∞), not dB or clamped to 1; dt is seconds.
+    /// `silence` denotes an absent Mac provider: publish zero while retaining normalization histories.
+    /// A present provider with quiet bins follows the separate native threshold/peak-update path below.
     public mutating func advance(left: [Float], right: [Float], dt: Float, silence: Bool) {
         precondition(left.count == 64 && right.count == 64)
         precondition(dt.isFinite && dt >= 0)
-        let raw = left + right
-        let maximum = raw.reduce(Float(0), max)
+        if silence {
+            output = [Float](repeating: 0, count: 128)
+            return
+        }
+        func bin(_ index: Int) -> Float { index < 64 ? left[index] : right[index - 64] }
+        let maximum = max(left.reduce(Float(0), max), right.reduce(Float(0), max))
         let floor = 0.333 * maximum
+        let quiet = maximum < 1e-4 // DAT_1404925fc, compared strictly at 140111c8c.
 
         // WPE 0x14011167a: sixteen peaks over eight contiguous bins each, left then right.
-        if peaks[0] <= 0, !silence {
+        if peaks[0] <= 1e-4, !quiet {
             peaks = [Float](repeating: 1, count: 16)
         }
         for group in peaks.indices {
             let start = group * 8
-            let target = max(floor, raw[start ..< (start + 8)].reduce(Float(0), max))
+            let target = max(floor, (start ..< (start + 8)).reduce(Float(0)) { max($0, bin($1)) })
             let delta = target - peaks[group]
-            let step = min(abs(delta), min(1, dt))
-            peaks[group] += step * (delta > 0 ? 1 : -0.5)
+            if abs(delta) <= 1e-4 {
+                peaks[group] = target
+            } else {
+                let step = min(abs(delta), min(1, dt))
+                peaks[group] += step * (delta > 0 ? 1 : -0.5)
+            }
         }
 
-        // WPE clears the published bins, retaining both histories and the updated peaks.
-        if silence {
+        // A present quiet provider updates peaks, then clears published bins without changing either history.
+        if quiet {
             output = [Float](repeating: 0, count: 128)
             return
         }
         let smoothing = min(1, 20 * dt)
         let rateLimit = min(1, 40 * dt)
-        for index in raw.indices {
-            let normalized = raw[index] / max(peaks[index / 8], 0.001)
+        for index in output.indices {
+            let normalized = bin(index) / max(peaks[index / 8], 0.001)
             smoothed[index] += (normalized - smoothed[index]) * smoothing
             let delta = smoothed[index] - limited[index]
             limited[index] += max(-rateLimit, min(rateLimit, delta))
