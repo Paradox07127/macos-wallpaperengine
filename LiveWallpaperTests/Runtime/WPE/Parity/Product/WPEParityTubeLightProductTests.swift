@@ -21,7 +21,9 @@ extension WPEParitySceneDriverTests {
                         "clearcolor": "0 0 0", "camerashake": false, "cameraparallax": false],
             "objects": [
                 ["id": 1, "image": "models/tube-test.json", "size": "32 32", "origin": "16 16 0"],
-                ["id": 2, "name": "light parent", "origin": "0 0 0"],
+                // Native parent probe 9000810 uses an identity rendered image host at the canvas corner.
+                ["id": 2, "name": "light parent", "image": "models/tube-test.json", "size": "2 2",
+                 "origin": "0 0 0", "alpha": 1, "brightness": 1],
                 ["id": 3, "light": "ltube", "parent": 2, "origin": "-64 16 16", "color": "1 0 0",
                  "intensity": 1, "radius": 16, "controlpoint": ["value": "0 0 0", "script": """
                  let frame = 0;
