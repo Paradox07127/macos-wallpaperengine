@@ -100,6 +100,9 @@ extension WPEParitySceneDriverTests {
             let first = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
             XCTAssertTrue(first.retainedReferences)
             weak var oldVertices: MTLBuffer?
+            weak var oldPrepared: WPEParityModelDataMetalShape?
+            let modelToken = try XCTUnwrap(renderer.state.object("700001")?.modelDataToken)
+            oldPrepared = try XCTUnwrap(renderer.state.modelData(modelToken)?.shapes.first?.prepared as? WPEParityModelDataMetalShape)
             var oldIndices: MTLBuffer?
             var oldPipeline: MTLRenderPipelineState?
             do {
@@ -120,6 +123,7 @@ extension WPEParitySceneDriverTests {
             let shaderReads = fixture.reads.shaderCount
             let second = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.1, pointer: .zero))
             XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 1)
+            XCTAssertNil(oldPrepared, "the planner operation view must retire the replaced CPU/GPU wrapper")
             let nextDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.indexBuffer === oldIndices }?.draw)
             XCTAssertTrue(nextDraw.pipeline.state === oldPipeline, "an equal-layout buffer write must keep the actual PSO")
             XCTAssertEqual(renderer.pipelineCreations, pipelineCreations)
