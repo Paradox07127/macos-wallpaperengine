@@ -143,7 +143,9 @@ final class WPESoundRuntime: Sendable {
         var needsReschedule: Bool
         /// Bumped only on teardown, not per-segment: look-ahead has several in-flight completions.
         var epoch: UInt64
-        let randomDelay: (minTime: Double, maxTime: Double)
+        var randomDelay: (minTime: Double, maxTime: Double)
+        /// Selected once when the current file starts; pause/resume must preserve this choice.
+        var scheduledRandomDelay: Double?
         /// Seconds left of a WPE random-mode wait; the next file is scheduled only once it runs out.
         var delayRemaining: Double?
 
