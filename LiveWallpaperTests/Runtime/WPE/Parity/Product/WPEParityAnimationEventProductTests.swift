@@ -10,8 +10,8 @@ import XCTest
 extension WPEParitySceneDriverTests {
     /// Actual authored timeline -> frame renderer -> event 6 -> JSC -> original shader -> presented RGB.
     func testAuthoredAnimationEventKeepsFullPayloadAndWritesSameFrame() async throws {
-        let forbidden = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "WPE_SHADERC_TIMEOUT",
-                         "WPE_SHADERC_XCODEBUILD", "WPE_SHADERC_XCRUN"]
+        let forbidden = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
+                         "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
         XCTAssertTrue(forbidden.allSatisfy { ProcessInfo.processInfo.environment[$0] == nil })
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
         let tools = ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
