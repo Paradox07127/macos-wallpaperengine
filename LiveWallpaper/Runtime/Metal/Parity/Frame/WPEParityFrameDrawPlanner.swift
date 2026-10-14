@@ -49,6 +49,8 @@ struct WPEParityFrameDrawPlan {
     var textures: [[String: TextureSource]]
     /// System declarations eligible to replace an authored image, never a graph-owned RT or glyph atlas.
     var mediaSlots: [Int: WPEMediaSystemTexture] = [:]
+    /// Native usershortcut provider keys, resolved by the existing product icon store.
+    var userShortcutSlots: [Int: String] = [:]
     /// Full-image UVs for a media replacement of a padded authored albedo; built once, not on artwork changes.
     var mediaGeometry: Geometry?
     /// A compiled authored-format conversion that cannot consume an RGBA8 media image unchanged.
@@ -149,8 +151,10 @@ struct WPEParityFrameDrawPlan {
                   puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
                   layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
-                  mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
-        let selectedGeometry = mediaSlots[0].flatMap(mediaTexture) == nil ? geometry : mediaGeometry ?? geometry
+                  mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
+                  userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
+        let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
+        let selectedGeometry = replacements[0] == nil ? geometry : mediaGeometry ?? geometry
         guard case let .mesh(vertices, indices, indexCount) = selectedGeometry else {
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
@@ -158,7 +162,7 @@ struct WPEParityFrameDrawPlan {
                                   uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera,
                                                           layers: layers),
                                   variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
-                                  constants: constants ?? self.constants, mediaTexture: mediaTexture)
+                                  constants: constants ?? self.constants, replacementTextures: replacements)
         if let renderVar0 {
             let value = WPECBufferValue.vector([renderVar0.x, renderVar0.y, renderVar0.z, renderVar0.w])
             for stage in state.constants.keys {
@@ -197,9 +201,11 @@ struct WPEParityFrameDrawPlan {
                           textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
                           particles: inout WPEParityParticleFrame,
                           layers live: WPEParityLayerTransformSet? = nil,
-                          mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
+                          mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
+                          userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
-        if particle.renderVar1 != nil, let kind = mediaSlots[0], mediaTexture(kind) != nil {
+        let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
+        if particle.renderVar1 != nil, replacements[0] != nil {
             // The GS consumes RV1 rather than image Rotation/Translation. Do not reuse authored TEXS metadata.
             throw WPEParityFrameSkip.program("particle media SPRITESHEET RV1 requires native evidence")
         }
@@ -231,7 +237,7 @@ struct WPEParityFrameDrawPlan {
         }
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
                                   textureSlots: &textureSlots, puppets: [:], constants: constants,
-                                  engineExtras: orientation, mediaTexture: mediaTexture)
+                                  engineExtras: orientation, replacementTextures: replacements)
         // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
         if let renderVar1 = particle.renderVar1 {
             renderVars.setRV1(renderVar1)
@@ -251,24 +257,34 @@ struct WPEParityFrameDrawPlan {
         return draw
     }
 
+    private func replacementTextures(mediaTexture: (WPEMediaSystemTexture) -> MTLTexture?,
+                                     userShortcutTexture: (String) -> MTLTexture?) -> [Int: MTLTexture] {
+        var textures = mediaSlots.compactMapValues(mediaTexture)
+        for (slot, key) in userShortcutSlots {
+            if let texture = userShortcutTexture(key) {
+                textures[slot] = texture
+            }
+        }
+        return textures
+    }
+
     /// Per-stage constants (engine set, `engineExtras`, then the binding's `constants`) and the textures of `variant`.
     private func drawState(frame: WPEParityUniformFrame, uniforms: WPEParityUniformDraw, variant: Int,
                            table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                            puppets: [String: WPEParityPuppetAnimator],
                            constants: [WPEHLSLStage: [String: WPECBufferValue]],
                            engineExtras: [String: WPECBufferValue] = [:],
-                           mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil })
+                           replacementTextures: [Int: MTLTexture])
         throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
         for (slot, failure) in mediaFormatFailures {
-            if let kind = mediaSlots[slot], mediaTexture(kind) != nil {
+            if replacementTextures[slot] != nil {
                 throw WPEParityFrameSkip.program(failure)
             }
         }
         var uniforms = uniforms
         var spriteTextures: [String: MTLTexture] = [:]
         var systemTextures: [String: MTLTexture] = [:]
-        for (slot, kind) in mediaSlots {
-            guard let texture = mediaTexture(kind) else { continue }
+        for (slot, texture) in replacementTextures {
             if uniforms.textures.indices.contains(slot) {
                 let width = Float(texture.width), height = Float(texture.height)
                 uniforms.textures[slot] = WPEParityUniformTexture(
@@ -346,6 +362,7 @@ struct WPEParityFrameDrawPlanner {
         let texture: MTLTexture
         let info: WPETexInfo?
         var sprites: [WPEParityFrameDrawPlan.SpriteStep] = []
+        var conditionalSelection: WPETexConditionalSelection?
     }
 
     /// TEXI flag 0x20: the first mip is a video stream (1400ec220.c:851).
@@ -371,6 +388,8 @@ struct WPEParityFrameDrawPlanner {
     /// The scene camera and every layer's world matrix.
     private(set) var layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
+    /// The same committed typed snapshot the Driver supplies, also used for assets first loaded by a later layout.
+    private var userProperties: WPESceneJSONValue
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
@@ -388,11 +407,12 @@ struct WPEParityFrameDrawPlanner {
     private(set) var texts: [String: WPEParitySceneText] = [:]
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan,
-         preservingVideoImages: [String: Image] = [:]) {
+         preservingVideoImages: [String: Image] = [:], userProperties: WPESceneJSONValue = .object([:])) {
         self.device = device
         self.factory = factory
         self.plan = plan
         assetImages = preservingVideoImages
+        self.userProperties = userProperties
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -414,6 +434,64 @@ struct WPEParityFrameDrawPlanner {
 
     var videoImages: [String: Image] {
         assetImages.filter { $0.value.info.map { $0.flags & Self.videoFlag != 0 } == true }
+    }
+
+    /// Derived from final observations on the existing asset owners. This is a view, not another watch registry.
+    var conditionalPropertyBindings: [String: [WPEScenePropertyBinding]] {
+        var result: [String: [WPEScenePropertyBinding]] = [:]
+        for asset in assetImages.keys.sorted() {
+            guard let selection = assetImages[asset]?.conditionalSelection else { continue }
+            for key in selection.observations.keys {
+                if let name = String(data: key, encoding: .utf8) {
+                    result[name, default: []].append(WPEScenePropertyBinding(
+                        propertyKey: name, target: .conditionalTexture(asset: asset), kind: .texture, action: .incremental
+                    ))
+                }
+            }
+        }
+        return result
+    }
+
+    /// Prepare immutable replacements against the new committed snapshot in a value copy. The renderer can
+    /// rebuild affected draws and adopt this planner plus imported bindings together, or keep its old valid
+    /// cohort on failure. That failure policy is a Mac boundary, not a claim about native late-load errors.
+    func preparingConditionalProperties(changed: WPESceneJSONValue, merged: WPESceneJSONValue)
+        throws(WPEParityFrameSkip) -> (planner: Self, affectedOperations: Set<Int>) {
+        var candidate = self
+        candidate.userProperties = merged
+        let names = Set(assetImages.compactMap { name, image in
+            image.conditionalSelection?.requiresReload(changedProperties: changed) == true ? name : nil
+        })
+        guard !names.isEmpty else { return (candidate, []) }
+        var replacements: [ObjectIdentifier: Image] = [:]
+        for name in names.sorted() {
+            guard let previous = assetImages[name] else { continue }
+            candidate.assetImages.removeValue(forKey: name)
+            let replacement = try candidate.assetImage(name)
+            replacements[ObjectIdentifier(previous.texture)] = replacement
+        }
+        var imported: Set<WPEResourceID> = []
+        for (id, old) in layerImageAssets {
+            if let replacement = replacements[ObjectIdentifier(old.texture)] {
+                candidate.layerImageAssets[id] = replacement
+                candidate.layerImages[id] = replacement.texture
+                imported.insert(id)
+            }
+        }
+        var affected: Set<Int> = []
+        for bindings in layout.bindings {
+            for (operation, binding) in bindings where binding.textures.values.contains(where: { source in
+                switch source {
+                case let .asset(name): names.contains(name)
+                case let .imported(id, name): imported.contains(id) || name.map(names.contains) == true
+                case let .resource(id): imported.contains(id)
+                case .textAtlas: false
+                }
+            }) {
+                affected.insert(operation)
+            }
+        }
+        return (candidate, affected)
     }
 
     /// Takes re-laid text layers and their atlases, uploading the atlases that changed; later plans of their draws
@@ -519,7 +597,10 @@ struct WPEParityFrameDrawPlanner {
         let hasMedia = [declarations.material, declarations.pass, declarations.override].joined().contains {
             WPEMediaSystemTexture(bindingName: $0.name) != nil
         }
-        if hasMedia, !binding.userTextures.diagnostics.isEmpty {
+        let hasUserShortcut = [declarations.material, declarations.pass, declarations.override].joined().contains {
+            $0.type == "usershortcut"
+        }
+        if hasMedia || hasUserShortcut, !binding.userTextures.diagnostics.isEmpty {
             throw .texture("\(shader): \(binding.userTextures.diagnostics.joined(separator: "; "))")
         }
         // Native usertextures retains the provider type. A matching media name does not turn an explicit
@@ -532,6 +613,11 @@ struct WPEParityFrameDrawPlanner {
         var mediaSlots = binding.userTextureSlots.reduce(into: [Int: WPEMediaSystemTexture]()) { slots, entry in
             if entry.key >= 0, let kind = WPEMediaSystemTexture(bindingName: entry.value.name) {
                 slots[Int(entry.key)] = kind
+            }
+        }
+        var userShortcutSlots = binding.userTextureSlots.reduce(into: [Int: String]()) { slots, entry in
+            if entry.key >= 0, entry.value.type == "usershortcut" {
+                slots[Int(entry.key)] = entry.value.name
             }
         }
         let pipeline = try pipeline(description, target: target, resources: resources, program: layout.programs[index],
@@ -581,6 +667,7 @@ struct WPEParityFrameDrawPlanner {
         }
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
         mediaSlots = mediaSlots.filter { names.contains("g_Texture\($0.key)") }
+        userShortcutSlots = userShortcutSlots.filter { names.contains("g_Texture\($0.key)") }
         let text: WPEParitySceneText? = if case let .scene(draw) = description {
             texts[draw.objectID]
         } else {
@@ -656,8 +743,8 @@ struct WPEParityFrameDrawPlanner {
                 layers: layers, objectID: draw.objectID,
                 kind: draw.source == .textClearAlpha ? .textClearAlpha
                     : draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
-                    SIMD2(Float($0.x), Float($0.y))
-                } ?? SIMD2(Float(color.width), Float(color.height)))
+                        SIMD2(Float($0.x), Float($0.y))
+                    } ?? SIMD2(Float(color.width), Float(color.height)))
                     : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
@@ -735,7 +822,7 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         var mediaGeometry: WPEParityFrameDrawPlan.Geometry?
-        if mediaSlots[0] != nil, uvMax != .one {
+        if mediaSlots[0] != nil || userShortcutSlots[0] != nil, uvMax != .one {
             let inputs = artifact.vertex.reflection.vertexInputs
             let paddedComposite = placement.map {
                 if case .compositeFill = $0.kind {
@@ -797,6 +884,7 @@ struct WPEParityFrameDrawPlanner {
             puppetID: puppetID,
             textures: textures,
             mediaSlots: mediaSlots,
+            userShortcutSlots: userShortcutSlots,
             mediaGeometry: mediaGeometry,
             mediaFormatFailures: mediaFormatFailures,
             samplers: samplers,
@@ -934,7 +1022,7 @@ struct WPEParityFrameDrawPlanner {
             image = try videoImage(span, info: info, path: path)
         } else {
             do {
-                image = try Self.image(span, device: device)
+                image = try Self.image(span, device: device, userProperties: userProperties)
             } catch WPETexDecodeError.unsupportedAnimation {
                 throw .videoTexture(path)
             } catch {
@@ -967,11 +1055,12 @@ struct WPEParityFrameDrawPlanner {
 
     /// Keeps the authored channels, compression and mip chain. The loader owns the one-time TEX upload;
     /// this planner owns resource-key caching and turns its sprite metadata into draw steps.
-    static func image(_ span: WPEMappedByteSpan, device: MTLDevice) throws -> Image {
-        let loaded = try WPEParityTextureLoader.load(span: span, device: device)
+    static func image(_ span: WPEMappedByteSpan, device: MTLDevice,
+                      userProperties: WPESceneJSONValue? = nil) throws -> Image {
+        let loaded = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties)
         return Image(texture: loaded.texture, info: loaded.info, sprites: loaded.sprites.map {
             WPEParityFrameDrawPlan.SpriteStep(frame: $0.frame, texture: $0.texture, duration: $0.duration)
-        })
+        }, conditionalSelection: loaded.conditionalSelection)
     }
 
     /// Composites use the sampler WPE creates with them; images follow their TEXI flags.

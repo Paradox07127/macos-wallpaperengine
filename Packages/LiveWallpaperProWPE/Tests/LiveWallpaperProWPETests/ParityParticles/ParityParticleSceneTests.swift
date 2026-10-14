@@ -416,24 +416,25 @@ final class ParityParticleSceneTests: XCTestCase {
     /// The container's renderer entries in W32a's order: entries, static children depth first, event groups.
     private static func keys(_ system: WPEParityParticleSystem, at node: WPEParityParticleDrawKey,
                              into keys: inout [WPEParityParticleDrawKey]) {
-        for index in system.renderers.indices {
+        Self.keys(system.config, at: node, into: &keys)
+    }
+
+    private static func keys(_ config: WPEParityParticleConfig, at node: WPEParityParticleDrawKey,
+                             into keys: inout [WPEParityParticleDrawKey]) {
+        for index in config.renderers.indices {
             var key = node
             key.renderer = index
             keys.append(key)
         }
-        for (index, child) in system.children.enumerated() {
+        for (index, child) in config.children.filter({ $0.trigger == .always }).enumerated() {
             var key = node
             key.path.append(.staticChild(index))
-            Self.keys(child, at: key, into: &keys)
+            Self.keys(child.config, at: key, into: &keys)
         }
-        for (group, child) in system.config.children.filter({ $0.trigger != .always }).enumerated() {
-            XCTAssertTrue(child.config.children.isEmpty)
-            for index in child.config.renderers.indices {
-                var key = node
-                key.path.append(.eventGroup(group))
-                key.renderer = index
-                keys.append(key)
-            }
+        for (group, child) in config.children.filter({ $0.trigger != .always }).enumerated() {
+            var key = node
+            key.path.append(.eventGroup(group))
+            Self.keys(child.config, at: key, into: &keys)
         }
     }
 
@@ -538,15 +539,6 @@ final class ParityParticleSceneTests: XCTestCase {
         print("scene 3448877775: \(keys.count) draw keys, checksum \(checksum); per frame advance \(mean(simulate)) ms, "
             + "batches \(mean(pack)) ms, copy \(mean(copy)) ms")
         XCTAssertGreaterThan(vertexCount, 0, "The real scene must still produce and copy particle batches")
-    }
-
-    func testChildNamingItsOwnFileIsSkipped() throws {
-        let loop = Self.burst(1, extra: #", "children": [{"name": "particles/fx.json"}]"#)
-        let scene = try Self.scene(Self.five, particles: ["particles/fx.json": loop])
-        let root = try XCTUnwrap(Self.root(scene))
-        XCTAssertTrue(root.children.isEmpty)
-        XCTAssertTrue(root.config.children.isEmpty)
-        XCTAssertTrue(root.diagnostics.contains { $0.contains("particles/fx.json") })
     }
 
     func testSameSeedRepeatsTheBytesAndAnotherSeedDiffers() throws {
@@ -830,7 +822,7 @@ final class ParityParticleSceneTests: XCTestCase {
         let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let cases: [(text: String, edge: String, field: String)] = [
             (periodic, "", "emitter"),
-            (plain.replacingOccurrences(of: "lifetimerandom", with: "inheritcontrolpointvelocity"), "", "component"),
+            (plain.replacingOccurrences(of: "lifetimerandom", with: "unprovedinitializer"), "", "component"),
             (plain, #", "angles": "invalid""#, "angles"),
             (plain, #", "angles": "1e40 0 0""#, "angles"),
             (plain, #", "origin": "1e40 0 0""#, "origin"),
@@ -857,24 +849,24 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
                            [[.staticChild(0)], [.eventGroup(0), .staticChild(0)]], field)
         }
-        // A rejected grandchild is already absent: retain its healthy static ancestor and that ancestor's sibling.
-        for rejectedType in ["eventspawn", "eventfollow"] {
+        // An event instance retains event descendants as well as its healthy static sibling (2308a0).
+        for nestedType in ["eventspawn", "eventfollow"] {
             let parent = Self.burst(1, lifetime: 0.005, extra: #", "children": [{"name": "event", "type": "eventdeath"}]"#)
             let event = Self.burst(0, renderer: "", extra: #", "children": [{"name": "ancestor"}, {"name": "sibling"}]"#)
             let ancestor = Self.burst(1, extra: """
-            , "children": [{"name": "leaf", "type": "\(rejectedType)"}, {"name": "leaf"}]
+            , "children": [{"name": "leaf", "type": "\(nestedType)"}, {"name": "leaf"}]
             """)
             var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "event": event,
                                                               "ancestor": ancestor, "sibling": plain, "leaf": plain])
             let eventConfig = try XCTUnwrap(Self.root(scene)?.config.children.first?.config)
             XCTAssertEqual(eventConfig.children.count, 2)
-            XCTAssertEqual(eventConfig.children[0].config.children.count, 1)
-            XCTAssertTrue(eventConfig.children[0].config.unsupportedChildren.contains { $0.field == "type" })
+            XCTAssertEqual(eventConfig.children[0].config.children.count, 2)
+            XCTAssertTrue(eventConfig.children[0].config.unsupportedChildren.isEmpty)
             scene.advance(dt: 0.01, frames: ["5": .init()])
             scene.advance(dt: 0.01, frames: ["5": .init()])
             XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
                            [[.eventGroup(0), .staticChild(0)], [.eventGroup(0), .staticChild(0), .staticChild(0)],
-                            [.eventGroup(0), .staticChild(1)]])
+                            [.eventGroup(0), .staticChild(0), .eventGroup(0)], [.eventGroup(0), .staticChild(1)]])
         }
         // 22a360/229760/22e3e0/236cd0 close world, parent-copy and CP-history ancestry.
         for ancestorExtra in [#", "flags": 1"#,

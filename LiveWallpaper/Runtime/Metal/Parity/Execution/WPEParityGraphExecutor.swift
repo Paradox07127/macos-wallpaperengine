@@ -121,6 +121,22 @@ final class WPEParityGraphExecutor {
         self.resourceBindings = resourceBindings
     }
 
+    /// Shared color-only clear primitive for script commands and allocation initialization. Textures remain
+    /// owned by the renderer; the command buffer retains each encoded version through GPU completion.
+    static func encodeColorClear(_ texture: MTLTexture, color: WPEClearColor,
+                                 on commandBuffer: MTLCommandBuffer) throws {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: color.red, green: color.green,
+                                                          blue: color.blue, alpha: color.alpha)
+        pass.colorAttachments[0].storeAction = .store
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
+            throw WPEParityGraphExecutionError.encoderUnavailable
+        }
+        encoder.endEncoding()
+    }
+
     /// A cached graph must resume the most recently submitted permutation, not the one it last executed.
     /// Texture allocation/reuse remains with the renderer; this changes bindings without allocating GPU objects.
     func restoreResourceBindings(_ bindings: WPEParityResourceBindings) {
@@ -174,7 +190,7 @@ final class WPEParityGraphExecutor {
                      clearColor: (WPEPassIdentity) -> WPEClearColor? = { _ in nil },
                      visit: DrawVisitor) throws -> Submission {
         let physicalTextures = try frameTextures(external)
-        var textures = try boundTextures(physicalTextures, bindings: resourceBindings[.frame, default: [:]])
+        var textures = try Self.scopedTextures(physicalTextures, bindings: resourceBindings, scope: .frame)
         guard let commandBuffer = queue.makeCommandBuffer() else {
             throw WPEParityGraphExecutionError.encoderUnavailable
         }
@@ -236,7 +252,17 @@ final class WPEParityGraphExecutor {
         return textures
     }
 
-    private func boundTextures(_ physical: [WPEResourceID: MTLTexture],
+    /// Apply the frame permutation first, then the effect-local permutation to that result. Script calls and
+    /// graph scope changes share this composition, including frame swaps of effect-swapped targets.
+    static func scopedTextures(_ physical: [WPEResourceID: MTLTexture], bindings: WPEParityResourceBindings,
+                               scope: WPEResourceBindingScope, resources: [WPEResourceID]? = nil) throws
+        -> [WPEResourceID: MTLTexture] {
+        let frame = try boundTextures(physical, bindings: bindings[.frame, default: [:]])
+        return scope == .frame ? frame : try boundTextures(frame, bindings: bindings[scope, default: [:]],
+                                                         resources: resources)
+    }
+
+    private static func boundTextures(_ physical: [WPEResourceID: MTLTexture],
                                bindings: [WPEResourceID: WPEResourceID],
                                resources: [WPEResourceID]? = nil) throws -> [WPEResourceID: MTLTexture] {
         guard !bindings.isEmpty else { return physical }
@@ -294,12 +320,7 @@ final class WPEParityGraphExecutor {
         switch step.kind {
         case let .resourceScope(next, resources):
             scope = next
-            let frameTextures = try boundTextures(physicalTextures, bindings: bindings[.frame, default: [:]])
-            if next == .frame {
-                textures = frameTextures
-            } else {
-                textures = try boundTextures(frameTextures, bindings: bindings[next, default: [:]], resources: resources)
-            }
+            textures = try Self.scopedTextures(physicalTextures, bindings: bindings, scope: next, resources: resources)
             return
         case let .swapResources(first, second):
             let (a, b) = try (texture(first), texture(second))

@@ -742,10 +742,13 @@ public struct WPEParityScenePass: Hashable, Sendable {
     public var source: WPEParitySceneMaterialSource?
     /// `_rt_*` textures besides the effect's FBOs and `_rt_FullFrameBuffer`, such as another layer's composite.
     public var frameReads: [WPEResourceID]
+    /// State of this pass's material before the layer's final-pass override (1401ebf60 / virtual +0x108).
+    public var materialState: WPEParitySceneMaterialState
 
     public init(shader: String, target: String? = nil, binds: [String] = [], compose: Bool = false,
                 readsFullFrameBuffer: Bool = false, blend: WPEParitySceneBlend = .normal, kind: Kind = .draw,
-                source: WPEParitySceneMaterialSource? = nil, frameReads: [WPEResourceID] = []) {
+                source: WPEParitySceneMaterialSource? = nil, frameReads: [WPEResourceID] = [],
+                materialState: WPEParitySceneMaterialState = .init()) {
         self.shader = shader
         self.target = target
         self.binds = binds
@@ -755,6 +758,7 @@ public struct WPEParityScenePass: Hashable, Sendable {
         self.kind = kind
         self.source = source
         self.frameReads = frameReads
+        self.materialState = materialState
     }
 }
 
@@ -777,11 +781,14 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     /// Nil for caller-created FBOs whose width and height are already absolute.
     public var sizing: WPEParitySceneFBOSizing?
     public var initialClear: WPEClearColor?
+    /// A safe material function can address this FBO even when no draw operation uses it.
+    public var scriptClearable: Bool
     public var repeats: Bool
 
     public init(name: String, width: Int, height: Int, format: String = "rgba8unorm", shared: Bool = false,
                 swapPartner: String? = nil, unique: Bool = false, unscaledSize: SIMD2<Int>? = nil, scale: Int = 1,
-                sizing: WPEParitySceneFBOSizing? = nil, initialClear: WPEClearColor? = nil, repeats: Bool = false) {
+                sizing: WPEParitySceneFBOSizing? = nil, initialClear: WPEClearColor? = nil,
+                scriptClearable: Bool = false, repeats: Bool = false) {
         self.name = name
         self.width = width
         self.height = height
@@ -793,6 +800,7 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
         self.scale = scale
         self.sizing = sizing
         self.initialClear = initialClear
+        self.scriptClearable = scriptClearable
         self.repeats = repeats
     }
 }

@@ -43,6 +43,7 @@ final class WPEParitySceneScript {
         var canDestroyLayer: ((String) -> Bool)?
         var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         var pauseVideoTexture: ((String) -> Bool)?
+        var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -58,8 +59,8 @@ final class WPEParitySceneScript {
     let handlesCursor: Bool
     /// Some binding exports a media handler, which subscribes the engine to media events (140175880.c:373-375).
     let handlesMedia: Bool
-    /// Topmost first (140189e10.c:115-122).
-    let cursorCandidates: [CursorCandidate]
+    /// Loaded candidate defaults by stable identity; each cursor pass projects State's current common order.
+    private var cursorCandidates: [String: CursorCandidate]
     /// Objects of the camera class, whose fov and zoom the next frame's camera reads.
     let cameraIDs: [String]
     let soundIDs: [String]
@@ -100,6 +101,7 @@ final class WPEParitySceneScript {
             createLayer: host.createLayer, destroyLayer: host.destroyLayer, canDestroyLayer: host.canDestroyLayer,
             sortLayer: host.sortLayer,
             pauseVideoTexture: host.pauseVideoTexture,
+            executeMaterialFunction: host.executeMaterialFunction,
             log: { level, message in
                 if level >= 1 {
                     Logger.warning("SceneScript: \(message)", category: .wpeRender)
@@ -124,7 +126,7 @@ final class WPEParitySceneScript {
             candidates.append(CursorCandidate(id: id, solid: Self.flag(object["solid"]) ?? true,
                                               disablePropagation: Self.flag(object["disablepropagation"]) ?? false))
         }
-        cursorCandidates = candidates.reversed()
+        cursorCandidates = Dictionary(candidates.map { ($0.id, $0) }) { first, _ in first }
         cameraIDs = cameras
         soundIDs = document.soundObjects.map(\.id)
         targets.reserveCapacity(candidates.count)
@@ -148,7 +150,9 @@ final class WPEParitySceneScript {
             guard case let .vector(value)? = state.scriptField(name, of: candidate.id) else { return fallback }
             return value.x != 0
         }
-        for candidate in cursorCandidates {
+        // 140189e10.c:115-122: topmost first, after the common sort/removal consumed by the draw projection.
+        for id in state.commonOrder.reversed() {
+            guard let candidate = cursorCandidates[id] else { continue }
             guard state.isAlive(candidate.id) else { continue }
             // 140189e10.c:115-123 reads the live bit13 before each hit test.
             guard flag("solid", candidate, fallback: candidate.solid) else { continue }

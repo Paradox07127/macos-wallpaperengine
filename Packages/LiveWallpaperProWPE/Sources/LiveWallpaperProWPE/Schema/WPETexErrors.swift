@@ -4,9 +4,9 @@ import LiveWallpaperCore
 
 public enum WPETexFormat: Int, Sendable, Equatable {
     case rgba8888 = 0
-    case dxt5 = 4   // BC3
-    case dxt3 = 6   // BC2
-    case dxt1 = 7   // BC1
+    case dxt5 = 4 // BC3
+    case dxt3 = 6 // BC2
+    case dxt1 = 7 // BC1
     case rg88 = 8
     case r8 = 9
     case rg16Float = 10
@@ -207,7 +207,7 @@ public struct WPETexInfo: Sendable, Equatable {
 
     public var dimensionsLooksValid: Bool {
         width > 0 && height > 0
-            && width <= 16_384 && height <= 16_384
+            && width <= 16384 && height <= 16384
     }
 
     /// TEXI flag bit 0x1 = NoInterpolation: sample with nearest (point) filtering
@@ -221,10 +221,14 @@ public struct WPETexInfo: Sendable, Equatable {
     public static let rawExtensionFlag: UInt32 = 0x0000_0040
 
     /// Sample with clamp-to-edge (`true`) vs `repeat`/tile (`false`). See `clampUVsFlag`.
-    public var clampUVs: Bool { flags & Self.clampUVsFlag != 0 }
+    public var clampUVs: Bool {
+        flags & Self.clampUVsFlag != 0
+    }
 
     /// Sample with nearest (`true`) vs linear (`false`) filtering. See `noInterpolationFlag`.
-    public var noInterpolation: Bool { flags & Self.noInterpolationFlag != 0 }
+    public var noInterpolation: Bool {
+        flags & Self.noInterpolationFlag != 0
+    }
 
     /// Sample as LUMINANCE_ALPHA → (R, R, R, G): R luminance to RGB, G alpha. Uploading RG88 as `.rg8Unorm` samples (R, G, 0, 1) and renders opaque.
     public var isRG88LuminanceAlpha: Bool {
@@ -297,19 +301,32 @@ public struct WPETexRawMetadata: Sendable, Equatable {
     }
 }
 
-/// One mip level of a TEXB0004 conditional image. Either a full-size
-/// replacement (`x`/`y` = 0 with base dims) or a patch composited onto the
-/// base mip at (`x`, `y`).
+/// One TEXB0004 record. Selection is by variantID; replacement comes from the table flags,
+/// never from the rectangle. The ordinal fields retain ordering across groups, images and mips.
 public struct WPETexConditionalVariantMipmap: Sendable, Equatable {
+    public let leadingWord: UInt32
+    public let variantID: UInt32
+    public let imageIndex: Int
+    public let mipIndex: Int
+    public let groupIndex: Int
+    public let recordIndex: Int
     public let x: Int
     public let y: Int
     public let width: Int
     public let height: Int
-    /// FreeImage-style payload code (same domain as `TEXB.imageFormat`).
+    /// Image decoder format domain, not TEXI's texture format.
     public let formatCode: Int
     public let payload: WPEMappedByteSpan
 
-    public init(x: Int, y: Int, width: Int, height: Int, formatCode: Int, payload: WPEMappedByteSpan) {
+    public init(x: Int, y: Int, width: Int, height: Int, formatCode: Int, payload: WPEMappedByteSpan,
+                leadingWord: UInt32 = 1, variantID: UInt32 = 0, imageIndex: Int = 0, mipIndex: Int = 0,
+                groupIndex: Int = 0, recordIndex: Int = 0) {
+        self.leadingWord = leadingWord
+        self.variantID = variantID
+        self.imageIndex = imageIndex
+        self.mipIndex = mipIndex
+        self.groupIndex = groupIndex
+        self.recordIndex = recordIndex
         self.x = x
         self.y = y
         self.width = width
@@ -319,18 +336,35 @@ public struct WPETexConditionalVariantMipmap: Sendable, Equatable {
     }
 }
 
-/// A TEXB0004 conditional image selected when `condition` matches a scene
-/// user-property value, e.g. `{"condition":{"condition":"discord","name":"buttoniconleft"}}`.
-/// `mipmaps` follow container order: every mip level of every image.
+/// The original three unsigned table words plus the NUL-delimited JSON bytes (without the NUL).
 public struct WPETexConditionalVariant: Sendable, Equatable {
-    public let imageID: Int
-    public let condition: String
+    public let groupKey: UInt32
+    public let variantID: UInt32
+    public let flags: UInt32
+    public let conditionBytes: Data
+    /// Legacy diagnostics view; consumers use the byte-preserving fields above.
+    public var imageID: Int {
+        Int(variantID)
+    }
+
+    public var condition: String {
+        String(bytes: conditionBytes, encoding: .utf8) ?? "<invalid UTF-8 condition>"
+    }
+
     public let mipmaps: [WPETexConditionalVariantMipmap]
 
-    public init(imageID: Int, condition: String, mipmaps: [WPETexConditionalVariantMipmap]) {
-        self.imageID = imageID
-        self.condition = condition
+    public init(groupKey: UInt32, variantID: UInt32, flags: UInt32, conditionBytes: Data,
+                mipmaps: [WPETexConditionalVariantMipmap] = []) {
+        self.groupKey = groupKey
+        self.variantID = variantID
+        self.flags = flags
+        self.conditionBytes = conditionBytes
         self.mipmaps = mipmaps
+    }
+
+    public init(imageID: Int, condition: String, mipmaps: [WPETexConditionalVariantMipmap]) {
+        self.init(groupKey: 1, variantID: UInt32(truncatingIfNeeded: imageID), flags: 0,
+                  conditionBytes: Data(condition.utf8), mipmaps: mipmaps)
     }
 }
 
@@ -339,22 +373,24 @@ public struct WPETexBitmapBlock: Sendable, Equatable {
     public let sourceImageFormatCode: Int?
     public let isVideoPayload: Bool
     public let frames: [[WPETexMipmap]]
-    /// TEXB0004 conditional images declared alongside the base `frames`.
-    /// Consumers render the base image unless a user property selects a variant.
     public let conditionalVariants: [WPETexConditionalVariant]
+    /// Each wire record once, in original image/mip/group/record order, including unselected IDs.
+    public let conditionalRecords: [WPETexConditionalVariantMipmap]
 
     public init(
         version: Int,
         sourceImageFormatCode: Int?,
         isVideoPayload: Bool,
         frames: [[WPETexMipmap]],
-        conditionalVariants: [WPETexConditionalVariant] = []
+        conditionalVariants: [WPETexConditionalVariant] = [],
+        conditionalRecords: [WPETexConditionalVariantMipmap] = []
     ) {
         self.version = version
         self.sourceImageFormatCode = sourceImageFormatCode
         self.isVideoPayload = isVideoPayload
         self.frames = frames
         self.conditionalVariants = conditionalVariants
+        self.conditionalRecords = conditionalRecords
     }
 
     public var mipmaps: [WPETexMipmap] {
@@ -553,6 +589,8 @@ public struct WPETexTexturePayload: Sendable, Equatable {
     public let animationTrack: WPETexAnimationTrack?
     public let videoPayload: WPETexVideoPayload?
     public let hasConditionalVariants: Bool
+    /// Non-nil only after selection/materialization against the caller's typed property snapshot.
+    public let conditionalSelection: WPETexConditionalSelection?
 
     private let explicitAnimationFlag: Bool
 
@@ -562,11 +600,13 @@ public struct WPETexTexturePayload: Sendable, Equatable {
         hasAnimationFrames: Bool,
         animationTrack: WPETexAnimationTrack? = nil,
         videoPayload: WPETexVideoPayload? = nil,
-        hasConditionalVariants: Bool = false
+        hasConditionalVariants: Bool = false,
+        conditionalSelection: WPETexConditionalSelection? = nil
     ) {
         self.info = info
         self.mipmaps = mipmaps
-        self.explicitAnimationFlag = hasAnimationFrames
+        self.conditionalSelection = conditionalSelection
+        explicitAnimationFlag = hasAnimationFrames
         self.animationTrack = animationTrack
         self.videoPayload = videoPayload
         self.hasConditionalVariants = hasConditionalVariants
@@ -609,8 +649,8 @@ public struct DecodedRGBAImage: Sendable, Equatable {
     }
 }
 
-extension DecodedRGBAImage {
-    public func makeCGImage() throws -> CGImage {
+public extension DecodedRGBAImage {
+    func makeCGImage() throws -> CGImage {
         let bitsPerComponent = 8
         let bitsPerPixel = 32
         let bytesPerRow = width * 4

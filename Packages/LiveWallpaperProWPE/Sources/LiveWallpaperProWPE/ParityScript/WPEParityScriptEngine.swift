@@ -79,6 +79,8 @@ public final class WPEParityScriptEngine {
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
         public var pauseVideoTexture: ((String) -> Bool)?
+        /// Executes against the current renderer's material-function resources, including module-body calls.
+        public var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         /// Level 0 log, 1 warn, 2 error.
         public var log: (Int, String) -> Void
         public var openUserShortcut: (String) -> Bool
@@ -94,6 +96,7 @@ public final class WPEParityScriptEngine {
                     canDestroyLayer: ((String) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
                     pauseVideoTexture: ((String) -> Bool)? = nil,
+                    executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
             self.assets = assets
@@ -111,6 +114,7 @@ public final class WPEParityScriptEngine {
             self.canDestroyLayer = canDestroyLayer
             self.sortLayer = sortLayer
             self.pauseVideoTexture = pauseVideoTexture
+            self.executeMaterialFunction = executeMaterialFunction
             self.log = log
             self.openUserShortcut = openUserShortcut
         }
@@ -191,6 +195,8 @@ public final class WPEParityScriptEngine {
     public private(set) var createdLayers: [CreatedLayer] = []
     public private(set) var started = false
     public private(set) var audioResolutions: Set<Int> = []
+    /// Rebound when a renderer takes over this engine; accepted calls belong to that consumer's queue.
+    public var materialFunctionHandler: ((WPEParitySceneState.EffectKey, String) -> Void)?
 
     private let context: JSContext
     private let configuration: Configuration
@@ -216,10 +222,12 @@ public final class WPEParityScriptEngine {
     private var dispatchCounts = [Int](repeating: 0, count: WPEParityScriptEvent.allCases.count)
     private let sourceObjects: [WPESceneJSONValue]
     private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
+    private var mirroredMembershipGeneration: Int?
 
     /// Compiles every property script of `document`; `start` runs their `init`.
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
+        materialFunctionHandler = configuration.executeMaterialFunction
         context = JSContext()
         sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         capacity = 0
@@ -447,6 +455,12 @@ public final class WPEParityScriptEngine {
     }
 
     private func mirror(_ state: WPEParitySceneState) {
+        if mirroredMembershipGeneration != state.membershipGeneration {
+            // A temporary projection of the existing wrapper slots; neither State nor Engine slots are reordered.
+            let indices = Dictionary(layers.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
+            host.invokeMethod("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
+            mirroredMembershipGeneration = state.membershipGeneration
+        }
         for entry in refresh {
             switch entry {
             case let .object(slot, objectID, property):
@@ -483,7 +497,9 @@ public final class WPEParityScriptEngine {
         case let .integer(integer): integers[slot] = integer
         case let .string(string):
             if host != nil {
-                host.invokeMethod("setString", withArguments: [slot, string])
+                let descriptor = descriptors[Int(slots[slot].descriptor)]
+                let values: Any = descriptor.stringValues.map { $0 as Any } ?? NSNull()
+                host.invokeMethod("setString", withArguments: [slot, string, values])
             }
         }
     }
@@ -562,26 +578,7 @@ public final class WPEParityScriptEngine {
 
     private static func kind(of id: String, object: WPESceneJSONValue,
                              document: WPESceneDocument) -> WPEParityScriptLayerKind {
-        // 14018ff60.c:116-118: a string `camera` member makes the object a camera.
-        if case .string? = object["camera"] {
-            return .camera
-        }
-        if document.textObjects.contains(where: { $0.id == id }) {
-            return .text
-        }
-        if document.imageObjects.contains(where: { $0.id == id }) {
-            return .image
-        }
-        if document.particleObjects.contains(where: { $0.id == id }) {
-            return .particle
-        }
-        if document.soundObjects.contains(where: { $0.id == id }) {
-            return .sound
-        }
-        if document.lightObjects.contains(where: { $0.id == id }) {
-            return .light
-        }
-        return .group
+        WPEParityScriptLayerKind.classify(id: id, object: object, document: document)
     }
 
     private var initialValues: [(slot: Int, value: WPEParitySceneState.ScriptValue)] = []
@@ -850,8 +847,25 @@ public final class WPEParityScriptEngine {
                 return
             }
         }
+        let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
+            guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
+                  let effect = Self.checkedLayerIndex(Double(slots[slot].effect), count: effectKeys.count) else { return }
+            guard let handler = materialFunctionHandler else {
+                configuration.log(1, "executeMaterialFunction is unsupported without a product resource consumer")
+                return
+            }
+            handler(effectKeys[effect], name)
+        }
         let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
+        }
+        let lookAtAngles: @convention(block) (Double, Double, Double, Double, Double, Double,
+                                              Double, Double, Double, Double, Double) -> NSArray? = { ox, oy, oz, tx, ty, tz, ux, uy, uz, camera, yawOnly in
+            guard let angles = WPEParityLayerTransform.lookAtAngles(
+                origin: SIMD3(Float(ox), Float(oy), Float(oz)), target: SIMD3(Float(tx), Float(ty), Float(tz)),
+                up: SIMD3(Float(ux), Float(uy), Float(uz)), camera: camera != 0, yawOnly: yawOnly != 0
+            ) else { return nil }
+            return [NSNumber(value: angles.x), NSNumber(value: angles.y), NSNumber(value: angles.z)] as NSArray
         }
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
@@ -867,6 +881,9 @@ public final class WPEParityScriptEngine {
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
+        set("executeMaterialFunction", executeMaterialFunction)
+        set("lookAtAngles", lookAtAngles)
+        set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
         set("storageEnabled", configuration.storage != nil)
@@ -895,7 +912,7 @@ public final class WPEParityScriptEngine {
         }
         for (slot, value) in initialValues {
             if case let .string(string) = value {
-                host.invokeMethod("setString", withArguments: [slot, string])
+                store(.string(string), at: slot)
             }
         }
         host.invokeMethod("setUserProperties", withArguments: [configuration.userPropertiesJSON])
@@ -1187,12 +1204,14 @@ public final class WPEParityScriptEngine {
         // Camera constructor in 14018ff60.c: fov=0x42480000, zoom=0x3f800000.
         case (.camera, "fov"): return .vector(SIMD4(50, 0, 0, 0))
         case (.camera, "zoom"): return .vector(SIMD4(1, 0, 0, 0))
+        case (.camera, "queuemode"): return .string("random")
         // Inline light constructor, 14018ff60.c:203-218, before authored descriptor values are loaded.
         case (.light, "intensity"): return .vector(.zero)
         case (.light, "radius"): return .vector(SIMD4(1, 0, 0, 0))
         case (.light, "exponent"): return .vector(SIMD4(2, 0, 0, 0))
         case (.light, "innercone"): return .vector(SIMD4(20, 0, 0, 0))
         case (.light, "outercone"): return .vector(SIMD4(30, 0, 0, 0))
+        case (.light, "controlpoint"): return .vector(SIMD4(2, 0, 0, 0))
         case (.text, "pointsize"): return .vector(SIMD4(32, 0, 0, 0))
         case (.text, "font"): return .string("systemfont_arial")
         case (.text, "padding"): return .vector(SIMD4(32, 32, 0, 0))
@@ -1226,7 +1245,7 @@ public final class WPEParityScriptEngine {
             value = inner
         }
         if descriptor.type == .string {
-            return WPEParityProgramScene.string(value).map { .string($0) }
+            return WPEParityProgramScene.string(value).map { .string(descriptor.canonicalString($0, fromJSON: true)) }
         }
         if descriptor.type == .int {
             let number: Double? = switch value {

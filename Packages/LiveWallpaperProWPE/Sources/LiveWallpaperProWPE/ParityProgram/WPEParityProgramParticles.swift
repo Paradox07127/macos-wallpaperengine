@@ -1,5 +1,6 @@
 extension WPEParityProgramScene {
-    static let particleChildDepthLimit = 8
+    /// Root depth is 0; a depth-10 system exists but cannot instantiate further children (22ebe0/22f890).
+    static let particleChildDepthLimit = 10
 
     /// The draws of the particle JSON at `path`, keyed the way `WPEParityParticleSystem` nests its children.
     static func particleDraws(objectID: String, path: String, assets: WPEParityProgramAssets,

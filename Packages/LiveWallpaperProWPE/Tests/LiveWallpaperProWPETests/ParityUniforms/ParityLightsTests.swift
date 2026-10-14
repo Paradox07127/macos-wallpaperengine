@@ -3,6 +3,46 @@ import simd
 import XCTest
 
 final class ParityLightsTests: XCTestCase {
+    func testTubeUsesNativeTypeAndBothWorldEndpoints() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"lightconfig":{"tube":2}},
+         "objects":[
+          {"id":10,"origin":"10 20 30","scale":"2 3 4"},
+          {"id":1,"light":"ltube","parent":10,"origin":"1 2 3","color":"1 .5 .25",
+           "intensity":4,"radius":9,"exponent":3,"controlpoint":"2 -1 .5"},
+          {"id":2,"light":"ltube","origin":"4 5 6"},
+          {"id":3,"light":"ltube","origin":"99 99 99"},
+          {"id":4,"light":"ldirectional"}]}
+        """)
+        XCTAssertEqual(document.lightObjects[0].type, .tube)
+        XCTAssertEqual(document.lightObjects[0].type.knownShaderArrayValue, 2)
+        XCTAssertEqual(document.lightObjects[3].type.knownShaderArrayValue, 3)
+        var transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        var state = WPEParitySceneState(document: document, hdr: false)
+        var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        assertEqual(lights.tubeColor, [SIMD4(4, 2, 1, 9), SIMD4(0, 0, 0, 1)])
+        assertEqual(lights.tubeOriginA, [SIMD4(12, 26, 42, 3), SIMD4(4, 5, 6, 2)])
+        assertEqual(lights.tubeOriginB, [SIMD4(16, 23, 44, 0), SIMD4(6, 5, 6, 0)])
+        guard case let .array(packed)? = lights.values["g_LTube_OriginB"] else {
+            return XCTFail("missing tube endpoint array")
+        }
+        XCTAssertEqual(packed.count, 2)
+        for (entry, expected) in zip(packed, [[Float](arrayLiteral: 16, 23, 44), [6, 5, 6]]) {
+            guard case let .vector(actual) = entry else { return XCTFail("malformed tube endpoint") }
+            XCTAssertEqual(actual, expected)
+        }
+        state.setScriptField("controlpoint", of: "1", to: .vector(SIMD4(1, 2, 3, 0)), invalidating: .lighting)
+        transforms.setTransform("10", origin: SIMD3(20, 30, 40), angles: .zero, scale: SIMD3(3, 4, 5))
+        transforms.refreshWorlds()
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        assertEqual(lights.tubeOriginA, [SIMD4(23, 38, 55, 3), SIMD4(4, 5, 6, 2)])
+        assertEqual(lights.tubeOriginB, [SIMD4(26, 46, 70, 0), SIMD4(6, 5, 6, 0)])
+        state.set(.visible, of: "10", to: .zero)
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        assertEqual(lights.tubeOriginA, [SIMD4(4, 5, 6, 2), SIMD4(99, 99, 99, 2)])
+    }
+
     func testPlainPointDoesNotAliasShaderLpoint() throws {
         let document = try ParityCameraFixture.document(json: """
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},

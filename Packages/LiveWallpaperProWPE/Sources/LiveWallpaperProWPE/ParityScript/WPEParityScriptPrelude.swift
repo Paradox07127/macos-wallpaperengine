@@ -22,7 +22,7 @@ enum WPEParityScriptPrelude {
         return new Vec3(Math.fround(F[o] * k), Math.fround(F[o + 1] * k), Math.fround(F[o + 2] * k));
       }
       case 3: return new Vec4(F[o], F[o + 1], F[o + 2], F[o + 3]);
-      case 5: return S[s];
+      case 5: return S[s] && typeof S[s] === 'object' ? S[s].value : S[s];
       case 6: return F[o] !== 0;
       case 8: return F[o];
       }
@@ -33,7 +33,10 @@ enum WPEParityScriptPrelude {
       const o = s * 4;
       if (type === 5) {
         if (v === null || v === undefined) return;
-        const t = String(v); if (S[s] !== t) { S[s] = t; mark(s); } return;
+        const entry = S[s], values = entry && typeof entry === 'object' ? entry.values : null;
+        let t = String(v);
+        if (values) { t = t.split('\u0000', 1)[0]; if (!values.includes(t)) t = values[0]; }
+        if (read(s, type, angle) !== t) { if (values) entry.value = t; else S[s] = t; mark(s); } return;
       }
       if (type === 6 || type === 8) {
         if (typeof v !== 'boolean') return;

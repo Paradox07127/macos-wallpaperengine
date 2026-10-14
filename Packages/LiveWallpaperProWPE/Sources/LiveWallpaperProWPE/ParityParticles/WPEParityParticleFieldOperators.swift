@@ -121,6 +121,10 @@ struct WPEParityParticleBoids: Equatable, Sendable {
 
 /// collisionplane / collisionsphere with the bounce behaviour (D/1401c00a0.c, D/1401c0540.c:32-67).
 struct WPEParityParticleCollision: Equatable, Sendable {
+    enum Behavior: String, Sendable {
+        case bounce, slide, stop, delete
+    }
+
     /// Plane normal, or sphere origin.
     var vector: SIMD3<Float>
     /// Plane distance, or sphere radius.
@@ -129,6 +133,7 @@ struct WPEParityParticleCollision: Equatable, Sendable {
     var bounce: Float
     var controlPoint: Int
     var flags: Int
+    var behavior: Behavior
 
     init(_ entry: WPEParityParticleEntry, sphere: Bool, is3D: Bool) {
         if sphere {
@@ -141,6 +146,9 @@ struct WPEParityParticleCollision: Equatable, Sendable {
         bounce = -(1 + entry.number("bouncefactor", 0.5))
         controlPoint = entry.controlPoint("controlpoint")
         flags = entry.integer("flags", 0)
+        // 1c03f0 uses exact string comparisons; all unknown spellings take behavior 0 (bounce).
+        behavior = WPEParityParticleJSON.string(entry.json["collisionbehavior"]).flatMap(Behavior.init(rawValue:))
+            ?? .bounce
     }
 }
 
@@ -324,13 +332,31 @@ extension WPEParityParticleSystem {
     }
 
     /// Plane bounce (D/14024f5e0.c:20-120): below the plane, push back onto it and reflect v·n.
-    mutating func applyCollisionPlane(_ field: WPEParityParticleCollision, slot: Int, weight: Float) {
+    mutating func applyCollisionPlane(_ field: WPEParityParticleCollision, slot: Int, weight _: Float) {
         var normal = field.vector, distance = field.scalar
         if field.flags & 1 != 0 {
             normal = controlPointBasis(field.controlPoint) * field.vector
             distance = simd_dot(normal, controlPointTranslation(field.controlPoint))
         }
-        bounce(slot: slot, normal: normal, height: simd_dot(position[slot], normal), floor: distance, field, weight)
+        let height = simd_dot(position[slot], normal)
+        if height < distance, field.flags & 2 != 0 {
+            // 24f5e0→252140 receives System+258; +40/+48/+50 are the angular velocity SoA pointers.
+            angularVelocity[slot] = .zero
+        }
+        guard height < distance else { return }
+        switch field.behavior {
+        case .bounce:
+            bounce(slot: slot, normal: normal, height: height, floor: distance, field, 1)
+        case .slide:
+            position[slot] -= (height - distance) * normal
+            velocity[slot] -= simd_dot(velocity[slot], normal) * normal
+        case .stop:
+            position[slot] -= (height - distance) * normal
+            velocity[slot] = .zero
+        case .delete:
+            // 252a60 writes age=lifetime. The ordinary next-frame expiry pass owns actual death and events.
+            age[slot] = lifetime[slot]
+        }
     }
 
     /// [I] The sphere repels from outside: the plane rule on the tangent plane under the particle.

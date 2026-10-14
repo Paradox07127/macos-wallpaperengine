@@ -124,6 +124,42 @@ struct WPESoundWPERulesTests {
         #expect(snapshot.scheduledSegmentCount == 1)
     }
 
+    @Test("Sub-milliscale WPE master-gain changes reach streams and the zero-gain timer gate")
+    func subMilligainChangesStillReachWPEStreams() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        runtime.setMasterVolume(0.0005)
+        runtime.setMuted(false)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == Float(0.0005))
+        runtime.advance(by: 0.25)
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 0.75)
+
+        runtime.setMasterVolume(0)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0)
+        runtime.advance(by: 10)
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 0.75)
+
+        runtime.setMasterVolume(0.0005)
+        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == Float(0.0005))
+        runtime.advance(by: 0.75)
+        let resumed = try #require(runtime.debugTrackSnapshots().first)
+        #expect(resumed.pendingDelay == nil)
+        #expect(resumed.scheduledSegmentCount == 1)
+
+        let legacy = WPESoundRuntime(resolver: Self.resolver(root))
+        defer { legacy.stop() }
+        #expect(legacy.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
+        legacy.setMasterVolume(0.0005)
+        legacy.setMasterVolume(0)
+        #expect(try #require(legacy.debugTrackSnapshots().first).playerVolume == Float(0.0005),
+                "legacy retains its existing gain-coalescing behavior")
+    }
+
     @Test("A random track waits for the user-resolved mintime/maxtime, not the authored default")
     func randomWaitUsesUserResolvedBounds() throws {
         let json = #"""
@@ -145,6 +181,36 @@ struct WPESoundWPERulesTests {
         #expect(runtime.prepare(sounds: document.soundObjects) == 1)
         runtime.debugCompleteHeadSegment(forSoundID: "7")
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 4)
+    }
+
+    @Test("Random bounds are captured when a file starts, preserving its already selected wait")
+    func changingRandomBoundsAffectsNextPlayOnly() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
+        runtime.setRandomDelay(minTime: 2, maxTime: 2, forSoundID: "s")
+        runtime.setMuted(false)
+        try #require(runtime.play(), "This consumer guard requires a working audio output")
+        runtime.setRandomDelay(minTime: 3, maxTime: 3, forSoundID: "s")
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 2,
+                "Changing bounds during playback must not change the wait selected when it started")
+        runtime.advance(by: 2)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 3)
+
+        // Missing fields keep the last authored/observed value rather than resetting it to zero.
+        runtime.setRandomDelay(minTime: 4, maxTime: nil, forSoundID: "s")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 3)
+        runtime.advance(by: 3)
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        let next = try #require(runtime.debugTrackSnapshots().first?.pendingDelay)
+        #expect((3 ... 4).contains(next))
+        runtime.setRandomDelay(minTime: nil, maxTime: nil, forSoundID: "missing-owner")
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == next)
     }
 
     @Test("Master volume 0 pauses WPE playback and a later volume resumes it")

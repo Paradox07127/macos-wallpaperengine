@@ -10,6 +10,8 @@ struct WPEParityAuthoredFBO: Sendable {
     var explicitWidth: Double?
     var explicitHeight: Double?
     var initialClear: WPEClearColor?
+    var scriptClear = WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+    var scriptClearable = false
     var repeats = false
 
     /// FUN_1401e63b0: arrays and each object in them are AND groups. Missing combo values are integer zero;
@@ -72,6 +74,7 @@ struct WPEParityAuthoredPass: Sendable {
     let compose: Bool
     let blend: WPEParitySceneBlend
     let source: WPEParitySceneMaterialSource?
+    var materialState: WPEParitySceneMaterialState = .init()
 
     var references: [String] {
         var names = textures + [target].compactMap(\.self)
@@ -90,6 +93,7 @@ struct WPEParityAuthoredEffect: Sendable {
     var enabled: Bool
     let fbos: [WPEParityAuthoredFBO]
     let passes: [WPEParityAuthoredPass]
+    var materialFunctions = WPEParityMaterialFunctions(functions: [], targets: [])
 }
 
 struct WPEParityAuthoredObject: Sendable {
@@ -153,6 +157,8 @@ struct WPEParitySceneFBOScope {
         for effect in object.effects {
             let passes = effect.passes.compactMap { $0.resolved(visible) }
             var used = Set(passes.flatMap(\.fboNames))
+            let functionTargets = effect.materialFunctions.preparedTargetNames
+            used.formUnion(functionTargets)
             used.formUnion(used.compactMap { name in visible[name].flatMap { $0.local ? $0.fbo.swapPartner : nil } })
             var ordered: [String] = []
             for name in localNames + used.sorted() where used.contains(name) && !ordered.contains(name) {
@@ -160,9 +166,15 @@ struct WPEParitySceneFBOScope {
             }
             var declared: [WPEParitySceneFBO] = []
             for name in ordered {
-                guard let declaration = visible[name], !(declaration.local && declaredLocally.contains(name)) else {
-                    continue
-                }
+                // Native functions address this effect's own FBO records. A draw-scope deduplication must not
+                // redirect a unique function target to an earlier effect with the same declaration name.
+                let functionFBO = functionTargets.contains { $0.utf8.elementsEqual(name.utf8) }
+                    ? effect.fbos.first { $0.name.utf8.elementsEqual(name.utf8) } : nil
+                let declaration = functionFBO.map {
+                    Declaration(fbo: $0, width: object.width, height: object.height, local: true)
+                } ?? visible[name]
+                guard let declaration,
+                      functionFBO != nil || !(declaration.local && declaredLocally.contains(name)) else { continue }
                 let format = Declaration.metalFormat(declaration.fbo.format, backbufferFormat: backbufferFormat)
                 if format == nil {
                     let diagnostic = WPEParitySceneDiagnostic.compressedFBOFormat(fbo: name,
@@ -171,8 +183,14 @@ struct WPEParitySceneFBOScope {
                         diagnostics.append(diagnostic)
                     }
                 }
-                declared.append(declaration.parityFBO(shared: shared.contains(name),
-                                                      format: format ?? WPEParitySceneResource.colorFormat))
+                var fbo = declaration.parityFBO(shared: shared.contains(name),
+                                                 format: format ?? WPEParitySceneResource.colorFormat)
+                // A deduplicated local declaration can belong to an earlier effect. Keep its storage ready for
+                // every function using the same resolved name, not merely functions on the effect owning the draw.
+                fbo.scriptClearable = object.effects.contains {
+                    $0.materialFunctions.preparedTargetNames.contains { $0.utf8.elementsEqual(name.utf8) }
+                }
+                declared.append(fbo)
             }
             if effect.enabled {
                 declaredLocally.formUnion(declared.map(\.name).filter { visible[$0]?.local == true })
@@ -206,7 +224,7 @@ private extension WPEParitySceneFBOScope.Declaration {
                                  scale: Int(divisor), sizing: WPEParitySceneFBOSizing(
                                      scale: fbo.scale, fit: fbo.fit, width: fbo.explicitWidth, height: fbo.explicitHeight,
                                      layerSize: SIMD2(width, height)
-                                 ), initialClear: fbo.initialClear, repeats: fbo.repeats)
+                                 ), initialClear: fbo.initialClear, scriptClearable: fbo.scriptClearable, repeats: fbo.repeats)
     }
 
     /// Native scale is an integer byte (+0xc); keep zero safe rather than reproducing integer division by zero.
@@ -265,7 +283,7 @@ public extension WPEParitySceneFBO {
         let authored = WPEParityAuthoredFBO(name: name, scale: sizing.scale, fit: sizing.fit, format: format,
                                             swapPartner: swapPartner, unique: unique,
                                             explicitWidth: sizing.width, explicitHeight: sizing.height,
-                                            initialClear: initialClear, repeats: repeats)
+                                            initialClear: initialClear, scriptClearable: scriptClearable, repeats: repeats)
         let declaration = WPEParitySceneFBOScope.Declaration(fbo: authored, width: layerWidth,
                                                              height: layerHeight, local: true)
         return declaration.parityFBO(shared: shared, format: format,
@@ -292,7 +310,7 @@ private extension WPEParityAuthoredPass {
         let frameReads = Self.frameReads(textures.filter { visible[$0] == nil })
         return WPEParityScenePass(shader: shader, target: target, binds: binds, compose: compose,
                                   readsFullFrameBuffer: textures.contains(WPESceneAliasName.fullFrameBuffer),
-                                  blend: blend, source: source, frameReads: frameReads)
+                                  blend: blend, source: source, frameReads: frameReads, materialState: materialState)
     }
 }
 

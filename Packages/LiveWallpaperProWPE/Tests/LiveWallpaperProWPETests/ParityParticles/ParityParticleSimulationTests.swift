@@ -123,9 +123,9 @@ final class ParityParticleSimulationTests: XCTestCase {
         {"maxcount": 1,
          "initializer": [{"name": "remapinitialvalue"}, {"name": "inheritinitialvaluefromevent"}],
          "operator": [{"name": "remapvalue"}, {"name": "inheritvaluefromevent"}, {"name": "collisionquad"},
-                      {"name": "collisionplane", "collisionbehavior": "slide"}, {"name": "movement"}]}
+                      {"name": "collisionsphere", "collisionbehavior": "slide"}, {"name": "movement"}]}
         """)
-        for name in ["collisionquad", "collisionplane (slide)"] {
+        for name in ["collisionquad", "collisionsphere (slide)"] {
             XCTAssertTrue(particles.diagnostics.contains { $0.contains(name) }, name)
         }
         for name in ["movement", "remapinitialvalue", "inheritinitialvaluefromevent", "remapvalue",

@@ -1,9 +1,98 @@
+import Foundation
 @testable import LiveWallpaperProWPE
 import simd
 import XCTest
 
 final class ParityParticleInitializerTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
+
+    /// Case7's native words are Z,Y,X, independently exponentiated, then multiplied by the birth CP basis.
+    func testVelocityRandomExponentAndBirthBasisReachThePackedTrail() throws {
+        for exponent in [1, 2] {
+            let config = WPEParityParticleConfig(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,"controlpoint":1,
+              "distancemin":"1 1 1","distancemax":"1 1 1"}],
+             "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+               {"name":"velocityrandom","min":"1 2 3","max":"5 8 11","exponent":\(exponent)}],
+             "renderer":[{"name":"spritetrail"}]}
+            """), is3D: true, resolveChild: { _ in nil })
+            var instance = WPEParityParticleSystem.Instance()
+            instance.controlPointAngles[1] = SIMD3(0, 0, Float.pi / 2)
+            var particles = WPEParityParticleSystem(config: config, instance: instance,
+                                                    rng: WPEParityMT19937(seed: 7), crt: WPEParityCRTRandom())
+            particles.advance(dt: 0.1)
+            XCTAssertEqual(particles.liveCount, 1)
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 6 {
+                _ = expected.next()
+            }
+            func shapedWord() -> Float {
+                let u = Float(expected.next() >> 8) * 0x1p-24
+                return exponent == 1 ? u : u * u
+            }
+            let z = 3 + 8 * shapedWord(), y = 2 + 6 * shapedWord(), x = 1 + 4 * shapedWord()
+            let velocity = SIMD3(-y, x, z)
+            assertEqual(particles.velocity[0], velocity)
+            let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)
+            let packed = Support.floats(batch.vertices.bytes, at: 28, count: 3)
+            assertEqual(SIMD3(packed[0], packed[1], packed[2]), velocity)
+            XCTAssertEqual(particles.rng.next(), expected.next())
+        }
+    }
+
+    /// Original case8 reads the previous GLOBAL interval, then the emitter basis. The instance's rate-scaled
+    /// update interval differs here; literal axis expectations also distinguish local CP0, CP1 and world flags2.
+    func testInheritedControlPointVelocityReachesBirthAndPackedTrailWithOneSharedDraw() throws {
+        let document = try WPESceneDocumentParser.parse(
+            data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":5,"name":"fx","particle":"fx"}]}"#.utf8),
+            userValues: [:], makeTransformScriptResolver: { _, _ in Support.NoScripts() }
+        )
+        let owner = simd_float4x4(SIMD4(0, 2, 0, 0), SIMD4(-3, 0, 0, 0),
+                                  SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1))
+        let cases: [(world: Bool, point: Int, flags: Int, rotate: Bool, velocity: SIMD3<Float>)] = [
+            (false, 0, 0, false, SIMD3(60, 0, 0)),
+            (false, 1, 0, true, SIMD3(0, 60, 0)),
+            (true, 1, 0, false, SIMD3(0, 120, 0)),
+            (true, 1, 2, false, SIMD3(60, 0, 0)),
+        ]
+        for sample in cases {
+            let config = WPEParityParticleConfig(json: Support.json("""
+            {"maxcount":1,"flags":\(sample.world ? 1 : 0),
+             "controlpoint":[{"id":\(sample.point),"flags":\(sample.flags)}],
+             "emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,"controlpoint":\(sample.point),
+               "distancemin":"1 1 1","distancemax":"1 1 1"}],
+             "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+               {"name":"inheritcontrolpointvelocity","controlpoint":\(sample.point),"min":1,"max":1}],
+             "renderer":[{"name":"spritetrail"}]}
+            """), is3D: true, resolveChild: { _ in nil })
+            var particles = WPEParityParticleSystem(config: config, instance: .init(),
+                                                    rng: WPEParityMT19937(seed: 7), crt: WPEParityCRTRandom(),
+                                                    context: .init(objectMatrix: owner, worldSpace: sample.world))
+            var state = WPEParitySceneState(document: document, hdr: false)
+            state.setScriptField("instance.controlpoint\(sample.point)", of: "5", to: .vector(SIMD4(2, 0, 0, 0)),
+                                 invalidating: .particleInstance)
+            state.setScriptField("instance.rate", of: "5", to: .vector(SIMD4(2, 0, 0, 0)),
+                                 invalidating: .particleInstance)
+            if sample.rotate {
+                state.setScriptField("instance.controlpointangle\(sample.point)", of: "5",
+                                     to: .vector(SIMD4<Float>(0, 0, Float.pi / 2, 0)), invalidating: .particleInstance)
+            }
+            XCTAssertTrue(particles.applyScriptInstanceFields(state: state, objectID: "5"))
+            particles.advance(dt: 0.5, frame: .init(objectMatrix: owner, worldSpace: sample.world))
+            XCTAssertEqual(particles.liveCount, 1)
+            assertEqual(particles.velocity[0], sample.velocity, accuracy: 2e-4)
+            let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)
+            XCTAssertEqual(batch.vertices.stride, 60)
+            let packed = Support.floats(batch.vertices.bytes, at: 28, count: 3)
+            assertEqual(SIMD3(packed[0], packed[1], packed[2]), sample.velocity, accuracy: 2e-4)
+            let expected = WPEParityMT19937(seed: 7)
+            for _ in 0 ..< 7 {
+                _ = expected.next()
+            }
+            XCTAssertEqual(particles.rng.next(), expected.next())
+            XCTAssertTrue(particles.diagnostics.isEmpty)
+        }
+    }
 
     private func initializers(_ entries: String, is3D: Bool = false) -> [WPEParityParticleInitializer] {
         WPEParityParticleConfig(

@@ -212,7 +212,8 @@ final class WPEParitySceneDriver {
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
         diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
-        workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init()
+        workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
+        userShortcutIcons: WPEUserShortcutIconStore? = nil
     ) async throws {
         mediaMailbox?.invalidateParityGeneration(loadGeneration)
         loadGeneration &+= 1
@@ -253,9 +254,10 @@ final class WPEParitySceneDriver {
                                                      bindingABIVersion: 1)
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
-                workshopID: workshopID
+                workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
             )
             guard generation == loadGeneration else { throw CancellationError() }
+            renderer.userShortcutIcons = userShortcutIcons
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
@@ -295,6 +297,7 @@ final class WPEParitySceneDriver {
             plannedTarget = target
             adoptUpscalePlan(selection.upscale)
             userPropertyBindings = WPEParityUserProperties.bindings(document: document)
+                .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
@@ -302,8 +305,13 @@ final class WPEParitySceneDriver {
                     var connectedHost = scriptHost
                     connectedHost.mediaGeneration = generation
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
+                    connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
                     connectedHost.destroyLayer = { id, state in state.removeObject(id) }
+                    connectedHost.sortLayer = { id, position, state in
+                        guard let position = Int32(exactly: position) else { return false }
+                        return state.sortObject(id, to: position)
+                    }
                     // Init waits for every object, so it runs once the renderer holds them all (140186c90.c:689-738).
                     try renderer.attachScript(WPEParitySceneScript(
                         document: document, state: renderer.state, assets: assets,
@@ -346,15 +354,18 @@ final class WPEParitySceneDriver {
                                                    settings: planSource.settings, target: target)
                 let renderer = try await WPEParityFrameRenderer(
                     plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
-                    workshopID: planSource.workshopID, continuing: previous
+                    workshopID: planSource.workshopID, continuing: previous,
+                    userPropertiesJSON: scriptUserProperties
                 )
                 guard generation == loadGeneration, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
                                             pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
                 guard current == selection else { continue }
-                try renderer.continueScene(from: previous)
+                try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
                 self.renderer = renderer
+                userPropertyBindings = WPEParityUserProperties.bindings(document: planSource.document)
+                    .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
                 plannedTarget = target
                 adoptUpscalePlan(selection.upscale)
                 return true
@@ -393,12 +404,20 @@ final class WPEParitySceneDriver {
             return false
         }
         pendingUserProperties = nil
-        scriptUserProperties = WPEParitySceneScript.userPropertiesJSON(
+        let merged = WPEParitySceneScript.userPropertiesJSON(
             scriptUserProperties, values: patch.newValues.filter { patch.changedKeys.contains($0.key) }
         )
-        renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
-            scriptUserProperties, keys: patch.changedKeys
-        ), mergedJSON: scriptUserProperties)
+        do {
+            try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
+                merged, keys: patch.changedKeys
+            ), mergedJSON: merged)
+        } catch {
+            Logger.warning("Parity user property preparation failed: \(error)", category: .wpeRender)
+            return false
+        }
+        scriptUserProperties = merged
+        userPropertyBindings = WPEParityUserProperties.bindings(document: pending.document)
+            .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
         self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
@@ -536,6 +555,9 @@ final class WPEParitySceneDriver {
             if let soundRuntime {
                 renderer.takeScriptSoundVolumes { id, volume in
                     soundRuntime.setVolume(Double(volume), forSoundID: id)
+                }
+                renderer.takeScriptSoundBounds { id, minimum, maximum in
+                    soundRuntime.setRandomDelay(minTime: minimum, maxTime: maximum, forSoundID: id)
                 }
                 renderer.takeSoundVisibility { id, visible in soundRuntime.setVisible(visible, forSoundID: id) }
             }

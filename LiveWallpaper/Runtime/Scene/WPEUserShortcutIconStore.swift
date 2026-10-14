@@ -66,6 +66,11 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
         return changed
     }
 
+    /// One immutable set of icon references for a parity frame; draws never hold this lock while encoding.
+    func snapshot() -> [String: MTLTexture] {
+        lock.withLock { icons.mapValues(\.texture) }
+    }
+
     /// authored is returned for undeclared slots and for declared keys with no icon.
     func substituting(_ authored: MTLTexture?, slot: Int, declarations: [Int: String]) -> MTLTexture? {
         guard let key = declarations[slot] else { return authored }

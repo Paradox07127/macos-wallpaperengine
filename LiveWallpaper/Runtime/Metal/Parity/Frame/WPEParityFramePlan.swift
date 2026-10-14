@@ -235,7 +235,11 @@ struct WPEParityFramePlan {
             visible[.init(objectID: $0, effectID: $1)] ?? true
         }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
         description.objects.removeAll { !state.isAlive($0.id) }
+        let commonRanks = Dictionary(uniqueKeysWithValues: state.commonOrder.enumerated().map { ($0.element, $0.offset) })
         for index in description.objects.indices {
+            if let rank = commonRanks[description.objects[index].id] {
+                description.objects[index].sortKey = rank
+            }
             let previous = description.objects[index]
             guard let text = texts[previous.id] else { continue }
             var updated = WPEParitySceneObject.text(text, sortKey: previous.sortKey, visible: previous.visible,
@@ -247,6 +251,25 @@ struct WPEParityFramePlan {
         return try Self.layout(Self.loaded(description),
                                post: post, scene: scene, physicalBackbufferSize: physicalBackbufferSize,
                                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale, cache: &cache)
+    }
+
+    /// Resolve a function's own declaration through the same physical sizing and identity rules as draws.
+    /// This uses immutable plan metadata, so a host callback does not re-borrow the live SceneState inout.
+    func materialFunctionResources(_ key: WPEParitySceneState.EffectKey, names: [String],
+                                   texts: [String: WPEParitySceneText]) -> [WPEResourceID]? {
+        let description = scene.scene(textSizes: texts.mapValues { $0.layout.fboSize },
+                                      logicalViewport: SIMD2(width, height))
+        guard var object = description.objects.first(where: { $0.id == key.objectID }),
+              let index = object.effects.firstIndex(where: { $0.id == key.effectID }) else { return nil }
+        for fbo in object.effects[index].fbos.indices {
+            let declaration = object.effects[index].fbos[fbo]
+            let size = declaration.sizing?.layerSize ?? SIMD2(object.width, object.height)
+            object.effects[index].fbos[fbo] = declaration.resized(layerWidth: size.x, layerHeight: size.y,
+                                                                physicalCanvasSize: physicalCanvasSize,
+                                                                pixelScale: pixelScale)
+        }
+        let effect = object.effects[index]
+        return names.map { WPEParitySceneResource.resolvedFBO(object: object, effect: effect, name: $0) }
     }
 
     /// Resolve requests before draw readiness: an undeclared target must not make its own reader disappear.

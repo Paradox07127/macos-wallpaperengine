@@ -3,6 +3,114 @@ import Foundation
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testLookAtMethodsUseLocalTypedSlotsAndNativeCameraSign() throws {
+        let imageScript = """
+        const globalReturn = thisObject.lookAt(new Vec3(11, 20, 30));
+        if (globalReturn !== undefined || Math.abs(thisObject.angles.y - 90) > 0.001) throw new Error('global local lookAt');
+        export function init(v) {
+          thisObject.origin = new Vec3(20, 30, 40);
+          thisObject.lookAtYaw(new Vec3(21, 31, 40), new Vec3(0, 2, 0));
+          if (Math.abs(thisObject.angles.x - Math.atan2(3, 1) * 180 / Math.PI) > 0.001) throw new Error('raw up yaw');
+          const saved = thisObject.angles;
+          thisObject.lookAtYaw(new Vec3(20, 31, 40));
+          thisObject.lookAt(thisObject.origin);
+          thisObject.lookAt({ x: 21, y: 30, z: 40 });
+          if (thisObject.angles.x !== saved.x || thisObject.angles.y !== saved.y) throw new Error('degenerate target');
+          thisObject.lookAt(new Vec3(20, 30, 41), { x: 1, y: 0, z: 0 });
+          if (thisObject.angles.x !== 0 || thisObject.angles.y !== 0 || thisObject.angles.z !== 0) throw new Error('default up');
+          thisObject.lookAt.call({ __index: thisObject.__index, __base: thisObject.__base }, new Vec3(1, 2, 3));
+          if (thisObject.angles.y !== 0) throw new Error('forged receiver');
+        }
+        """
+        let cameraScript = """
+        thisObject.lookAt(new Vec3(11, 20, 30));
+        if (Math.abs(thisObject.angles.y + 90) > 0.001) throw new Error('global camera sign');
+        export function init(v) {
+          const result = thisObject.lookAtYaw(new Vec3(11, 21, 30));
+          if (result !== undefined || Math.abs(thisObject.angles.y + 90) > 0.001) throw new Error('camera yaw sign');
+        }
+        """
+        let json: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 200, "height": 100]],
+            "objects": [
+                ["id": 1, "image": "models/test.json", "parent": 3, "origin": "10 20 30",
+                 "angles": ["value": "0 0 0", "script": imageScript]],
+                ["id": 2, "camera": "default", "origin": "10 20 30", "fov": ["script": cameraScript]],
+                ["id": 3, "image": "models/test.json", "origin": "100 200 300"],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        var logs: [String] = []
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100),
+            log: { _, message in logs.append(message) }
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.object("1")?.origin, SIMD3(20, 30, 40))
+        XCTAssertEqual(state.object("1")?.angles, .zero)
+        let angles = try XCTUnwrap(state.object("2")?.angles)
+        XCTAssertEqual(angles.x, 0, accuracy: 0.000001)
+        XCTAssertEqual(angles.y, -.pi / 2, accuracy: 0.000001)
+        XCTAssertEqual(angles.z, 0, accuracy: 0.000001)
+        XCTAssertEqual(logs.filter { $0.contains("native Vec3 target") }.count, 1,
+                       "unqualified target conversion must be explicit rather than guessed")
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testCameraQueueEnumCanonicalizesImmediatelyWithoutChangingOrdinaryStrings() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100}},
+         "objects":[
+          {"id":1,"camera":"default","queuemode":{"value":"sequential\u0000suffix","script":"if (thisObject.queuemode !== 'random') throw new Error('initial enum'); export function init(v) { thisObject.queuemode = 'sequential\\u0000suffix'; if (thisObject.queuemode !== 'sequential') throw new Error('runtime cstring'); thisObject.queuemode = 'sequential'; if (thisObject.queuemode !== 'sequential') throw new Error('setter enum'); thisObject.queuemode = 'Sequential'; if (thisObject.queuemode !== 'random') throw new Error('case enum'); thisObject.queuemode = null; if (thisObject.queuemode !== 'random') throw new Error('nil enum'); return 'sequential'; } export function update(v) { thisObject.queuemode = 'unknown'; if (thisObject.queuemode !== 'random') throw new Error('unknown enum'); return 'SEQUENTIAL'; }"}},
+          {"id":2,"text":{"value":"seed","script":"export function init(v) { thisObject.text = 'Sequential'; if (thisObject.text !== 'Sequential') throw new Error('ordinary string'); thisObject.text = null; if (thisObject.text !== 'Sequential') throw new Error('ordinary nil'); return 'SEQUENTIAL'; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("queuemode", of: "1"), .string("sequential"))
+        XCTAssertEqual(state.scriptField("text", of: "2"), .string("SEQUENTIAL"))
+        engine.tick(dt: 0.1, state: &state)
+        XCTAssertEqual(state.scriptField("queuemode", of: "1"), .string("random"))
+        XCTAssertEqual(state.scriptField("text", of: "2"), .string("SEQUENTIAL"))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testTubeControlPointDescriptorUpdatesRealLightConstants() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100},"lightconfig":{"tube":1}},
+         "objects":[{"id":1,"light":"ltube","origin":"10 20 30","scale":"2 3 4",
+          "controlpoint":{"script":"const cp = thisObject.controlpoint; if (cp.x !== 2 || cp.y !== 0 || cp.z !== 0) throw new Error('controlpoint default'); export function init(v) { return new Vec3(4, 5, 6); } export function update(v) { thisObject.controlpoint = new Vec3(7, 8, 9); return thisObject.controlpoint; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("controlpoint", of: "1"), .vector(SIMD4(4, 5, 6, 0)))
+        var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        XCTAssertEqual(lights.tubeOriginB, [SIMD4(18, 35, 54, 0)])
+        let generation = state.generation(.lighting)
+        engine.tick(dt: 0.25, state: &state)
+        XCTAssertGreaterThan(state.generation(.lighting), generation)
+        lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        guard case let .array(packed)? = lights.values["g_LTube_OriginB"], packed.count == 1,
+              case let .vector(actual) = packed[0] else { return XCTFail("malformed tube endpoint array") }
+        XCTAssertEqual(actual, [24, 44, 66])
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testLightAndCameraModuleGettersUseFactoryDefaultsAndTypedWrites() throws {
         let json = #"""
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},

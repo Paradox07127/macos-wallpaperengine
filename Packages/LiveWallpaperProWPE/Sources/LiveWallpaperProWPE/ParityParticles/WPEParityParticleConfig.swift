@@ -22,6 +22,8 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     var delay: Float
     /// Emitter flags bit 2 [I]: every authored periodic emitter carries `flags: 4`.
     var periodic: Bool
+    /// Native emitter flags bit 1 caps the rate portion to one particle per update, after accumulator subtraction.
+    var maxOnePerFrame: Bool
     var periodicDurationMin: Float
     var periodicDurationMax: Float
     var periodicDelayMin: Float
@@ -37,7 +39,8 @@ enum WPEParityParticleInitializer: Equatable, Sendable {
     /// Colors as HSV (hue in turns); noise per HSV channel.
     case colorList(hsv: [SIMD3<Float>], noise: SIMD3<Float>)
     case alpha(min: Float, max: Float, exponent: Float)
-    case velocity(min: SIMD3<Float>, max: SIMD3<Float>)
+    case velocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
+    case inheritControlPointVelocity(controlPoint: Int, min: Float, max: Float)
     case rotation(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case turbulentVelocity(WPEParityParticleTurbulentVelocity)
@@ -77,6 +80,8 @@ struct WPEParityParticleOperator: Equatable, Sendable {
         case reduceMovement(controlPoint: Int, inner: Float, outer: Float, reductionInner: Float, reductionDelta: Float)
         case collisionPlane(WPEParityParticleCollision)
         case collisionSphere(WPEParityParticleCollision)
+        /// Original operator type 23 immediately returns to the dispatch loop (23fbc0 case 0x17).
+        case collisionBox
         case remap(WPEParityParticleRemap)
         case inherit(WPEParityParticleInherit)
     }
@@ -134,7 +139,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     /// Texture facts of this system's own `material`.
     var material = WPEParityParticleMaterial()
     var materialPath: String?
-    /// Children rejected by the existing depth/cycle policy, for its compatibility diagnostic.
+    /// Children omitted at the native maximum system depth, retained for compatibility diagnostics.
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
@@ -272,9 +277,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             duration: JSON.number(entry["duration"]) ?? 0,
             delay: JSON.number(entry["delay"]) ?? 0,
             periodic: flags & 4 != 0,
-            periodicDurationMin: JSON.number(entry["minperiodicduration"]) ?? 2,
+            maxOnePerFrame: flags & 2 != 0,
+            periodicDurationMin: min(JSON.number(entry["minperiodicduration"]) ?? 2,
+                                     JSON.number(entry["maxperiodicduration"]) ?? 3),
             periodicDurationMax: JSON.number(entry["maxperiodicduration"]) ?? 3,
-            periodicDelayMin: JSON.number(entry["minperiodicdelay"]) ?? 1,
+            periodicDelayMin: min(JSON.number(entry["minperiodicdelay"]) ?? 1,
+                                  JSON.number(entry["maxperiodicdelay"]) ?? 2),
             periodicDelayMax: JSON.number(entry["maxperiodicdelay"]) ?? 2,
             maxPerPeriod: max(0, Int(JSON.number(entry["maxtoemitperperiod"]) ?? 0))
         ))
@@ -315,7 +323,16 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             initializer = .alpha(min: JSON.number(minimum) ?? 0.05, max: JSON.number(maximum) ?? 1, exponent: exponent)
         case "velocityrandom":
             let limit: SIMD3<Float> = is3D ? SIMD3(1, 1, 1) : SIMD3(32, 32, 0)
-            initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit)
+            initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit,
+                                    exponent: exponent)
+        case "inheritcontrolpointvelocity":
+            let point = Int(UInt32(truncatingIfNeeded: fields.integer("controlpoint", 0)))
+            guard controlPoints.indices.contains(point) else {
+                diagnostics.append("initializer \(name) controlpoint \(point) exceeds the current 8-slot allocation")
+                return
+            }
+            initializer = .inheritControlPointVelocity(controlPoint: point,
+                                                       min: fields.number("min", 0.1), max: fields.number("max", 0.2))
         case "rotationrandom":
             initializer = .rotation(
                 min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(0, 0, 6.283_185_307_17),
@@ -343,6 +360,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             return
         }
         switch initializer {
+        case let .inheritControlPointVelocity(point, _, _): useControlPoints(point)
         case let .sequenceAround(field): useControlPoints(field.controlPoint)
         case let .sequenceBetween(field): useControlPoints(field.start, field.end)
         case let .remap(field): useRemapControlPoints(field, entry: fields)
@@ -427,13 +445,14 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                 reductionDelta: reductionInner == reductionOuter ? 1 : reductionOuter - reductionInner
             )
         case "collisionplane", "collisionsphere":
-            let behavior = JSON.string(entry["collisionbehavior"])?.lowercased() ?? "bounce"
-            guard behavior == "bounce" else {
-                diagnostics.append("operator \(name) (\(behavior)) skipped")
+            let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
+            if collision.behavior != .bounce, name == "collisionsphere" {
+                diagnostics.append("operator \(name) (\(collision.behavior.rawValue)) skipped")
                 return
             }
-            let collision = WPEParityParticleCollision(fields, sphere: name == "collisionsphere", is3D: is3D)
             kind = name == "collisionsphere" ? .collisionSphere(collision) : .collisionPlane(collision)
+        case "collisionbox":
+            kind = .collisionBox
         case "remapvalue":
             kind = .remap(WPEParityParticleRemap(fields, defaultInput: .lifetimeFraction))
         case "inheritvaluefromevent":
@@ -453,6 +472,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             blend = blend ?? fallback
             blend?.outStart = number("blendoutstart", 1)
             blend?.outEnd = number("blendoutend", 1)
+        }
+        switch kind {
+        case .collisionPlane, .collisionSphere, .collisionBox:
+            // 1cf5f7→1cc446 goes directly to iteration/clone; these compiler branches never call 1c2a40.
+            blend = nil
+        default: break
         }
         switch kind {
         case let .controlPointAttract(field): useControlPoints(field.controlPoint)
@@ -548,14 +573,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         let index = children.filter { ($0.trigger == .always) == (trigger == .always) }.count
         let childPath = context.path + [trigger == .always ? .staticChild(index) : .eventGroup(index)]
-        if context.underEventAncestor, trigger != .always {
-            unsupportedChildren.append(.init(path: childPath, asset: path, field: "type",
-                                             reason: "N1/N2 permit only static descendants of an event instance"))
-            return
-        }
-        // Depth/cycle remain the existing product policy; native permits depth 0...10.
-        guard !context.ancestors.contains(path),
-              context.ancestors.count < WPEParityProgramScene.particleChildDepthLimit else {
+        // 22ebe0 creates children while the current system's depth is < 10; 22f890 assigns depth + 1.
+        // A repeated asset is another instance, not a cycle error. The native depth also bounds such recursion.
+        guard context.path.count < WPEParityProgramScene.particleChildDepthLimit else {
             diagnostics.append("child \(path) omitted")
             omittedChildPaths.append(path)
             return

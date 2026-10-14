@@ -1,6 +1,6 @@
 #if !LITE_BUILD
-import CoreGraphics
 import Compression
+import CoreGraphics
 import Foundation
 import ImageIO
 import LiveWallpaperProWPE
@@ -18,13 +18,13 @@ struct WPETexMipInflateScope: Sendable, Equatable {
 
     /// MUST mirror `WPEMetalTextureLoader.makeTextureSynchronously`; that function degrades to a single level rather than throwing if the two disagree.
     func selectedLevels(levelSizes: [(width: Int, height: Int)], noInterpolation: Bool) -> Range<Int> {
-        guard let level0 = levelSizes.first else { return 0..<0 }
+        guard let level0 = levelSizes.first else { return 0 ..< 0 }
         // Data textures index by texel (nearest sampling, or a 4096×1 LUT
         // strip); minifying them collapses distinct entries, so they pin to 0.
         let isDataTexture = noInterpolation || min(level0.width, level0.height) <= 64
         let start = isDataTexture ? 0 : Self.startLevel(levelSizes: levelSizes, maxEdge: maxSourceEdge)
-        guard uploadsChain, levelSizes.count - start > 1 else { return start..<(start + 1) }
-        return start..<levelSizes.count
+        guard uploadsChain, levelSizes.count - start > 1 else { return start ..< (start + 1) }
+        return start ..< levelSizes.count
     }
 
     /// The SMALLEST level that still covers `maxEdge` on its longest side.
@@ -63,14 +63,13 @@ final class WPETexInflateMeter: @unchecked Sendable {
 #endif
 
 struct WPETexDecoder: Sendable {
-
     #if DEBUG
     @TaskLocal static var inflateMeter: WPETexInflateMeter?
     #endif
 
     func probe(span: WPEMappedByteSpan) -> Result<WPETexInfo, WPETexDecodeError> {
         do {
-            return .success(try parseHeader(span: span))
+            return try .success(parseHeader(span: span))
         } catch let error as WPETexDecodeError {
             return .failure(error)
         } catch {
@@ -96,7 +95,7 @@ struct WPETexDecoder: Sendable {
     func decode(span: WPEMappedByteSpan) -> Result<CGImage, WPETexDecodeError> {
         do {
             let parsed = try parse(span: span)
-            return .success(try makeCGImage(from: parsed))
+            return try .success(makeCGImage(from: parsed))
         } catch let error as WPETexDecodeError {
             return .failure(error)
         } catch {
@@ -113,7 +112,7 @@ struct WPETexDecoder: Sendable {
     func extractStreamingPayload(span: WPEMappedByteSpan) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
         do {
             let parsed = try parse(span: span)
-            return .success(try makeStreamingPayload(from: parsed))
+            return try .success(makeStreamingPayload(from: parsed))
         } catch let error as WPETexDecodeError {
             return .failure(error)
         } catch {
@@ -141,15 +140,18 @@ struct WPETexDecoder: Sendable {
     func extractTexturePayload(
         data: Data,
         scope: WPETexMipInflateScope = .fullChain,
-        allowRawVolume: Bool = false
+        allowRawVolume: Bool = false,
+        conditionalProperties: WPESceneJSONValue? = nil
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
-        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope, allowRawVolume: allowRawVolume)
+        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope, allowRawVolume: allowRawVolume,
+                              conditionalProperties: conditionalProperties)
     }
 
     func extractTexturePayload(
         span: WPEMappedByteSpan,
         scope: WPETexMipInflateScope = .fullChain,
-        allowRawVolume: Bool = false
+        allowRawVolume: Bool = false,
+        conditionalProperties: WPESceneJSONValue? = nil
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
         do {
             let parsed = try parse(span: span)
@@ -168,6 +170,38 @@ struct WPETexDecoder: Sendable {
                     throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
                 }
                 try WPETexMipValidation.rawVolume(parsed.bitmap.mipmaps, info: parsed.info, format: format)
+            }
+            if !parsed.bitmap.conditionalVariants.isEmpty, let conditionalProperties {
+                let selection = try WPETexConditionalSelection(variants: parsed.bitmap.conditionalVariants,
+                                                               properties: conditionalProperties)
+                let images = try WPETexConditionalMaterializer.images(
+                    info: parsed.info, bitmap: parsed.bitmap, selection: selection,
+                    decode: { try normalizedBytes(for: $0, format: parsed.info.format,
+                                                  textureFormatCode: parsed.info.textureFormatCode) },
+                    inflatePatch: { record, mip in
+                        let count = try WPETexMipValidation.layout(format: parsed.info.format!, width: record.width,
+                                                                   height: record.height).byteCount
+                        if mip.isCompressed {
+                            // 15df24..15df73 uses a four-byte-per-pixel scratch capacity even for R/RG.
+                            // Unlike base mips, the native patch decoder accepts shorter successful output.
+                            let capacity = try WPETexMipValidation.layout(format: .rgba8888, width: record.width,
+                                                                          height: record.height).byteCount
+                            guard capacity <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+                                throw WPETexDecodeError.decompressionFailed(mipmap: mip.index)
+                            }
+                            return try lz4Inflate(payload: record.payload, outputCount: capacity, mipmap: mip.index,
+                                                  minimumOutputCount: count)
+                        }
+                        return try inflateIfNeeded(payload: record.payload, expectedByteCount: count,
+                                                   decompressedByteCount: count, isCompressed: false, mipmap: mip.index)
+                    }
+                )
+                let first = images.first ?? []
+                return try .success(WPETexTexturePayload(
+                    info: parsed.info, mipmaps: first, hasAnimationFrames: parsed.hasAnimationFrames,
+                    animationTrack: makeAnimationTrack(from: parsed, firstImageMipmaps: first, imageMipmaps: images),
+                    hasConditionalVariants: true, conditionalSelection: selection
+                ))
             }
             if parsed.info.format?.requiresRawPayload == true,
                (parsed.bitmap.sourceImageFormatCode ?? -1) != -1 {
@@ -238,7 +272,8 @@ struct WPETexDecoder: Sendable {
     }
 
     private func makeAnimationTrack(from parsed: ParsedTex,
-                                    firstImageMipmaps: [WPETexTextureMipmap]? = nil) throws -> WPETexAnimationTrack? {
+                                    firstImageMipmaps: [WPETexTextureMipmap]? = nil,
+                                    imageMipmaps: [[WPETexTextureMipmap]]? = nil) throws -> WPETexAnimationTrack? {
         let texsFrames = parsed.frameInfo?.frames ?? []
         guard parsed.bitmap.frames.count > 1 || !texsFrames.isEmpty else { return nil }
 
@@ -257,6 +292,9 @@ struct WPETexDecoder: Sendable {
 
         // Share decompressed images across TEXS frames (avoids multi-GB OOM).
         var mipmapsByImageID: [Int: [WPETexTextureMipmap]] = firstImageMipmaps.map { [0: $0] } ?? [:]
+        if let imageMipmaps {
+            mipmapsByImageID = Dictionary(uniqueKeysWithValues: imageMipmaps.enumerated().map { ($0.offset, $0.element) })
+        }
         func mipmaps(for sourceIndex: Int) throws -> [WPETexTextureMipmap] {
             if let cached = mipmapsByImageID[sourceIndex] {
                 return cached
@@ -685,62 +723,37 @@ struct WPETexDecoder: Sendable {
             throw WPETexDecodeError.mipmapOutOfBounds(index: imageCount)
         }
 
-        var sourceImageFormatCode: Int?
-        var isVideoPayload = false
-        var conditionalVariantCount = 0
-        var effectiveBitmapVersion = bitmapVersion
+        let sourceImageFormatCode: Int?
         switch bitmapVersion {
-        case 0, 1, 2:
-            break
-        case 3:
-            sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
-        case 4:
-            sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
-            let conditionalImageCount = try Int(reader.readInt32(blockName: "TEXB.conditionalImageCount"))
-            // Volume selection is deliberately outside this raw-only path, including tables the legacy
-            // lookahead cannot recognize. Do not accidentally decode their first words as a base mip.
-            if info.isVolume, conditionalImageCount != 0 {
-                throw WPETexDecodeError.unsupportedTextureDimension(depth: info.depth)
-            }
-            // The third v4 field counts conditional image variants, not MP4
-            // payloads — video .tex files carry 0 here and are caught by
-            // payload sniffing instead. Only commit to the conditional-table
-            // read when the next bytes look like a `[flag=1][imageID][0][cond]`
-            // entry; otherwise keep the legacy video interpretation.
-            if conditionalImageCount > 0, Self.looksLikeConditionalImageTable(reader) {
-                guard conditionalImageCount <= 4096 else {
-                    throw WPETexDecodeError.mipmapOutOfBounds(index: conditionalImageCount)
-                }
-                conditionalVariantCount = conditionalImageCount
-                effectiveBitmapVersion = 3
-            } else {
-                isVideoPayload = conditionalImageCount == 1
-                if !isVideoPayload {
-                    effectiveBitmapVersion = 3
-                }
-            }
-        default:
-            throw WPETexDecodeError.unsupportedBlock(magic: versionedMagic)
+        case 0, 1, 2: sourceImageFormatCode = nil
+        case 3, 4: sourceImageFormatCode = try Int(reader.readInt32(blockName: "TEXB.imageFormat"))
+        default: throw WPETexDecodeError.unsupportedBlock(magic: versionedMagic)
         }
-
-        var conditionalImageIDs: [Int] = []
-        var conditionalConditions: [String] = []
-        if conditionalVariantCount > 0 {
-            for _ in 0 ..< conditionalVariantCount {
-                _ = try reader.readInt32(blockName: "TEXB.conditionalFlag")
-                try conditionalImageIDs.append(Int(reader.readInt32(blockName: "TEXB.conditionalImageID")))
-                _ = try reader.readInt32(blockName: "TEXB.conditionalReserved")
-                try conditionalConditions.append(reader.readNullTerminatedString(blockName: "TEXB.conditionalCondition"))
-            }
+        // 14015c8d0 reads this count unconditionally for TEXB4. Video is a TEXI flag,
+        // not an alternative interpretation of the first conditional-table words.
+        let variantCount = try bitmapVersion == 4 ? Int(reader.readUInt32(blockName: "TEXB.conditionalImageCount")) : 0
+        guard variantCount <= 4096 else { throw WPETexDecodeError.mipmapOutOfBounds(index: variantCount) }
+        if info.isVolume, variantCount != 0 {
+            throw WPETexDecodeError.unsupportedTextureDimension(depth: info.depth)
         }
-        var conditionalMipmaps = Array(
-            repeating: [WPETexConditionalVariantMipmap](),
-            count: conditionalVariantCount
-        )
-
+        var variants: [WPETexConditionalVariant] = []
+        var conditionByteCount = 0
+        for _ in 0 ..< variantCount {
+            let group = try reader.readUInt32(blockName: "TEXB.conditionalGroup")
+            let id = try reader.readUInt32(blockName: "TEXB.conditionalImageID")
+            let flags = try reader.readUInt32(blockName: "TEXB.conditionalFlags")
+            let condition = try reader.readNullTerminatedSpan(blockName: "TEXB.conditionalCondition")
+            conditionByteCount += condition.count
+            guard conditionByteCount <= 4 << 20 else {
+                throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Conditional JSON exceeds byte budget")
+            }
+            variants.append(WPETexConditionalVariant(groupKey: group, variantID: id, flags: flags,
+                                                     conditionBytes: condition.materializedData()))
+        }
+        var records: [WPETexConditionalVariantMipmap] = []
         var frames: [[WPETexMipmap]] = []
         frames.reserveCapacity(imageCount)
-        for _ in 0 ..< imageCount {
+        for imageIndex in 0 ..< imageCount {
             let mipmapCount = try Int(reader.readInt32(blockName: "TEXB.mipCount"))
             guard mipmapCount > 0, mipmapCount <= 32 else {
                 throw WPETexDecodeError.mipmapOutOfBounds(index: mipmapCount)
@@ -750,36 +763,30 @@ struct WPETexDecoder: Sendable {
             frameMipmaps.reserveCapacity(mipmapCount)
             for mipmapIndex in 0 ..< mipmapCount {
                 try frameMipmaps.append(parseMipmap(
-                    version: effectiveBitmapVersion,
+                    version: min(bitmapVersion, 3),
                     index: mipmapIndex,
                     info: info,
                     reader: &reader
                 ))
-                if conditionalVariantCount > 0 {
-                    try parseConditionalMipmaps(
-                        expectedCount: conditionalVariantCount,
-                        expectedImageIDs: conditionalImageIDs,
-                        info: info,
-                        mipmapIndex: mipmapIndex,
-                        reader: &reader,
-                        into: &conditionalMipmaps
-                    )
+                if variantCount > 0 {
+                    try parseConditionalMipmaps(imageIndex: imageIndex, mipmapIndex: mipmapIndex,
+                                                reader: &reader, into: &records)
                 }
             }
             frames.append(frameMipmaps)
         }
+        let recordsByVariant = Dictionary(grouping: records, by: \.variantID)
         let bitmap = WPETexBitmapBlock(
             version: bitmapVersion,
             sourceImageFormatCode: sourceImageFormatCode,
-            isVideoPayload: isVideoPayload,
+            isVideoPayload: info.flags & 0x20 != 0,
             frames: frames,
-            conditionalVariants: conditionalImageIDs.enumerated().map { index, imageID in
-                WPETexConditionalVariant(
-                    imageID: imageID,
-                    condition: conditionalConditions[index],
-                    mipmaps: conditionalMipmaps[index]
-                )
-            }
+            conditionalVariants: variants.map { variant in
+                WPETexConditionalVariant(groupKey: variant.groupKey, variantID: variant.variantID,
+                                         flags: variant.flags, conditionBytes: variant.conditionBytes,
+                                         mipmaps: recordsByVariant[variant.variantID] ?? [])
+            },
+            conditionalRecords: records
         )
         // Encoded image/video payloads have their own decoder geometry contract.
         if !bitmap.usesEncodedImagePayload, !bitmap.isVideoPayload {
@@ -790,70 +797,37 @@ struct WPETexDecoder: Sendable {
         return bitmap
     }
 
-    /// Peek (no consume) at the first conditional-table entry: `flag=1`, sane
-    /// `imageID`, reserved `0`. A video mip chain opens `flag=1` too, but then
-    /// stores width/height where the table expects `imageID`/`0`.
-    private static func looksLikeConditionalImageTable(_ reader: WPETexByteReader) -> Bool {
-        let start = reader.data.startIndex + reader.cursor
-        let end = reader.data.startIndex + reader.endBound
-        guard start + 13 <= end else { return false }
-        let fields = reader.data.withUnsafeBytes { buffer -> (Int32, Int32, Int32) in
-            (
-                Int32(littleEndian: buffer.loadUnaligned(fromByteOffset: start, as: Int32.self)),
-                Int32(littleEndian: buffer.loadUnaligned(fromByteOffset: start + 4, as: Int32.self)),
-                Int32(littleEndian: buffer.loadUnaligned(fromByteOffset: start + 8, as: Int32.self))
-            )
-        }
-        return fields.0 == 1 && fields.2 == 0 && fields.1 > 0 && fields.1 <= 4096
-    }
-
-    /// After each base mip, a `[1][variantCount]` marker precedes one record
-    /// per conditional image: `[1][imageID][x][y][w][h][format][size][payload]`.
-    /// (`x`, `y`) is the patch origin inside the base mip; (0,0) at base dims
-    /// is a full replacement.
+    /// 14015c8d0: each mip has an outer group count and an independent record count per group.
+    /// Records need not match the table order or contain every declared ID. Keep all records for selection.
     private func parseConditionalMipmaps(
-        expectedCount: Int,
-        expectedImageIDs: [Int],
-        info: WPETexInfo,
+        imageIndex: Int,
         mipmapIndex: Int,
         reader: inout WPETexByteReader,
-        into mipmaps: inout [[WPETexConditionalVariantMipmap]]
+        into records: inout [WPETexConditionalVariantMipmap]
     ) throws {
-        let marker = try reader.readInt32(blockName: "TEXB.conditionalMarker")
-        let levelVariantCount = try Int(reader.readInt32(blockName: "TEXB.conditionalLevelCount"))
-        guard marker == 1, levelVariantCount == expectedCount else {
-            throw WPETexDecodeError.decodeFailed(
-                mipmap: mipmapIndex,
-                detail: "TEXB0004 conditional mip marker/count mismatch (\(marker)/\(levelVariantCount))"
-            )
-        }
-        for variantIndex in 0 ..< levelVariantCount {
-            let flag = try reader.readInt32(blockName: "TEXB.conditionalMipFlag")
-            let imageID = try reader.readInt32(blockName: "TEXB.conditionalMipImageID")
-            let x = try Int(reader.readInt32(blockName: "TEXB.conditionalMipX"))
-            let y = try Int(reader.readInt32(blockName: "TEXB.conditionalMipY"))
-            guard flag == 1, Int(imageID) == expectedImageIDs[variantIndex] else {
-                throw WPETexDecodeError.decodeFailed(
-                    mipmap: mipmapIndex,
-                    detail: "TEXB0004 conditional mip header mismatch"
-                )
+        let groupCount = try Int(reader.readUInt32(blockName: "TEXB.conditionalGroupCount"))
+        guard groupCount <= 4096 else { throw WPETexDecodeError.mipmapOutOfBounds(index: groupCount) }
+        for groupIndex in 0 ..< groupCount {
+            let count = try Int(reader.readUInt32(blockName: "TEXB.conditionalRecordCount"))
+            guard count <= 4096, records.count <= 65536 - count else {
+                throw WPETexDecodeError.decodeFailed(mipmap: mipmapIndex, detail: "Conditional record budget exceeded")
             }
-            let mipWidth = try Int(reader.readInt32(blockName: "TEXB.conditionalMipWidth"))
-            let mipHeight = try Int(reader.readInt32(blockName: "TEXB.conditionalMipHeight"))
-            let formatCode = try Int(reader.readInt32(blockName: "TEXB.conditionalMipFormat"))
-            guard mipWidth > 0, mipHeight > 0, mipWidth <= info.width, mipHeight <= info.height else {
-                throw WPETexDecodeError.invalidDimensions(width: mipWidth, height: mipHeight)
+            for recordIndex in 0 ..< count {
+                let leadingWord = try reader.readUInt32(blockName: "TEXB.conditionalMipWord")
+                let id = try reader.readUInt32(blockName: "TEXB.conditionalMipImageID")
+                let x = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipX"))
+                let y = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipY"))
+                let width = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipWidth"))
+                let height = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipHeight"))
+                let format = try Int(reader.readInt32(blockName: "TEXB.conditionalMipFormat"))
+                let count = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipSize"))
+                let span = try reader.readSpan(count: count, blockName: "TEXB.conditionalMipPayload")
+                records.append(WPETexConditionalVariantMipmap(
+                    x: x, y: y, width: width, height: height, formatCode: format, payload: span,
+                    leadingWord: leadingWord, variantID: id, imageIndex: imageIndex, mipIndex: mipmapIndex,
+                    groupIndex: groupIndex, recordIndex: recordIndex
+                ))
             }
-            let storedSize = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipSize"))
-            let payload = try reader.readSpan(count: storedSize, blockName: "TEXB.conditionalMipPayload")
-            mipmaps[variantIndex].append(WPETexConditionalVariantMipmap(
-                x: x,
-                y: y,
-                width: mipWidth,
-                height: mipHeight,
-                formatCode: formatCode,
-                payload: payload
-            ))
         }
     }
 
@@ -863,20 +837,6 @@ struct WPETexDecoder: Sendable {
         info: WPETexInfo,
         reader: inout WPETexByteReader
     ) throws -> WPETexMipmap {
-        var v4Fields: WPETexMipmapV4Fields?
-        if version == 4 {
-            let param1 = try reader.readInt32(blockName: "TEXB.v4Param1")
-            let param2 = try reader.readInt32(blockName: "TEXB.v4Param2")
-            let condition = try reader.readNullTerminatedString(blockName: "TEXB.v4Condition")
-            let param3 = try reader.readInt32(blockName: "TEXB.v4Param3")
-            v4Fields = WPETexMipmapV4Fields(
-                param1: param1,
-                param2: param2,
-                condition: condition,
-                param3: param3
-            )
-        }
-
         let mipWidth = try Int(reader.readInt32(blockName: "TEXB.mipWidth"))
         let mipHeight = try Int(reader.readInt32(blockName: "TEXB.mipHeight"))
         let mipDepth = try info.isVolume ? Int(reader.readUInt32(blockName: "TEXB.mipDepth")) : 1
@@ -902,7 +862,6 @@ struct WPETexDecoder: Sendable {
             decompressedByteCount: decompressedByteCount,
             payload: payload,
             isCompressed: compressedFlag & 1 != 0,
-            v4Fields: v4Fields,
             depth: mipDepth,
             compressionFlags: compressedFlag
         )
@@ -1259,7 +1218,7 @@ struct WPETexDecoder: Sendable {
                 outputCount = min(outputCount, expectedByteCount)
             }
             let maxDecompressedSizeLimit = 268_435_456 // 256 MB
-            guard outputCount > 0 && outputCount <= maxDecompressedSizeLimit else {
+            guard outputCount > 0, outputCount <= maxDecompressedSizeLimit else {
                 throw WPETexDecodeError.decompressionFailed(mipmap: mipmap)
             }
             let inflated = try lz4Inflate(payload: payload, outputCount: outputCount, mipmap: mipmap)
@@ -1277,7 +1236,7 @@ struct WPETexDecoder: Sendable {
         throw WPETexDecodeError.decodeFailed(mipmap: mipmap, detail: "Truncated uncompressed mip payload")
     }
 
-    private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int) throws -> Data {
+    private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int, minimumOutputCount: Int? = nil) throws -> Data {
         var output = Data(count: outputCount)
         let written = output.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) -> Int in
             payload.withUnsafeBytes { (input: UnsafeRawBufferPointer) -> Int in
@@ -1293,10 +1252,12 @@ struct WPETexDecoder: Sendable {
                 )
             }
         }
-        guard written == outputCount else {
+        // Base mips keep their exact-length guard. Patches need every byte their copy/blend reads;
+        // skipping insufficient output avoids reproducing a native uninitialized scratch read.
+        guard written >= (minimumOutputCount ?? outputCount), written <= outputCount else {
             throw WPETexDecodeError.decompressionFailed(mipmap: mipmap)
         }
-        return output
+        return minimumOutputCount == nil ? output : output.prefix(written)
     }
 
     // MARK: - Helpers

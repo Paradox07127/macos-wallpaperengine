@@ -12,7 +12,7 @@ enum WPEParityTextureLoader {
 
         var errorDescription: String? {
             switch self {
-            case .unsupportedConditionalVariants: "TEXB conditional image selection and patches are not yet supported"
+            case .unsupportedConditionalVariants: "Conditional TEX requires a typed user-property snapshot"
             case let .unsupportedSpriteWithoutTEXS(imageID): "Sprite image \(imageID) has no supported TEXS sampling descriptor"
             }
         }
@@ -29,17 +29,23 @@ enum WPEParityTextureLoader {
         /// Authored TEXI fields, including source format and flags. The texture describes the actual upload format.
         let info: WPETexInfo
         let sprites: [Sprite]
+        /// Final observations only; the caller's existing resource owner handles property invalidation.
+        let conditionalSelection: WPETexConditionalSelection?
     }
 
-    static func load(span: WPEMappedByteSpan, device: MTLDevice) throws -> Loaded {
+    static func load(span: WPEMappedByteSpan, device: MTLDevice,
+                     userProperties: WPESceneJSONValue? = nil) throws -> Loaded {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
         if info.isVolume, info.width > 2048 || info.height > 2048 || info.depth > 2048 {
             throw WPEMetalTextureLoaderError.malformedPayload("Volume dimensions exceed the Metal 3D limit")
         }
-        let payload = try decoder.extractTexturePayload(span: span, scope: .fullChain, allowRawVolume: true).get()
+        let payload = try decoder.extractTexturePayload(span: span, scope: .fullChain, allowRawVolume: true,
+                                                        conditionalProperties: userProperties).get()
         guard payload.videoPayload == nil else { throw WPETexDecodeError.unsupportedAnimation }
-        guard !payload.hasConditionalVariants else { throw Failure.unsupportedConditionalVariants }
+        guard !payload.hasConditionalVariants || payload.conditionalSelection != nil else {
+            throw Failure.unsupportedConditionalVariants
+        }
         guard let format = payload.info.format else {
             throw WPETexDecodeError.unsupportedFormat(code: payload.info.textureFormatCode)
         }
@@ -82,7 +88,7 @@ enum WPEParityTextureLoader {
         }
         guard let texture = first ?? sprites.first?.texture else { throw WPETexDecodeError.missingBitmapBlock }
         // Loaded retains only uploaded GPU resources and small metadata; decompressed mip bytes die here.
-        return Loaded(texture: texture, info: info, sprites: sprites)
+        return Loaded(texture: texture, info: info, sprites: sprites, conditionalSelection: payload.conditionalSelection)
     }
 
     private static func makeTexture(mipmaps: [WPETexTextureMipmap], format: WPETexFormat,

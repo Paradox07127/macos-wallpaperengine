@@ -143,7 +143,9 @@ final class WPESoundRuntime: Sendable {
         var needsReschedule: Bool
         /// Bumped only on teardown, not per-segment: look-ahead has several in-flight completions.
         var epoch: UInt64
-        let randomDelay: (minTime: Double, maxTime: Double)
+        var randomDelay: (minTime: Double, maxTime: Double)
+        /// Selected once when the current file starts; pause/resume must preserve this choice.
+        var scheduledRandomDelay: Double?
         /// Seconds left of a WPE random-mode wait; the next file is scheduled only once it runs out.
         var delayRemaining: Double?
 
@@ -265,6 +267,7 @@ final class WPESoundRuntime: Sendable {
                     needsReschedule: true,
                     epoch: 0,
                     randomDelay: sound.randomDelay,
+                    scheduledRandomDelay: nil,
                     delayRemaining: nil
                 ))
 
@@ -343,6 +346,21 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
+    /// Native PlayNext reads +2f4/+2f8 when scheduling the next random play (1401f5980).
+    /// A missing script field keeps the last authored/observed bound, and a pending wait keeps its deadline.
+    func setRandomDelay(minTime: Double?, maxTime: Double?, forSoundID id: String) {
+        guard rules == .wpe else { return }
+        state.withLock { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
+            if let minTime {
+                state.tracks[index].randomDelay.minTime = minTime
+            }
+            if let maxTime {
+                state.tracks[index].randomDelay.maxTime = maxTime
+            }
+        }
+    }
+
     /// Performance suspend: pause engine, retain scheduled files for resume.
     func pause() {
         state.withLock { state in
@@ -370,7 +388,9 @@ final class WPESoundRuntime: Sendable {
     func setMasterVolume(_ volume: Double) {
         state.withLock { state in
             let clamped = Float(min(max(volume, 0), 1))
-            guard abs(state.masterVolume - clamped) > 0.001 else { return }
+            // Native 1816d0 compares the stored Float exactly. A small positive gain crossing zero
+            // must still pause/resume WPE streams; retain the legacy caller's coalescing policy.
+            guard rules == .wpe ? state.masterVolume != clamped : abs(state.masterVolume - clamped) > 0.001 else { return }
             let crossesZero = (state.masterVolume > 0) != (clamped > 0)
             state.masterVolume = clamped
             applyAudioState(to: &state)
@@ -422,10 +442,12 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Runs the completion path for the track's oldest queued segment, as if it had finished playing.
+    /// Simulates a queued file starting and finishing; real completions capture their wait in the play path.
     func debugCompleteHeadSegment(forSoundID id: String) {
         let key = state.withLock { state in
-            state.tracks.first { $0.id == id }.map { (token: $0.token, epoch: $0.epoch) }
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return nil as (token: UInt64, epoch: UInt64)? }
+            captureRandomDelay(in: &state, trackIndex: index)
+            return (token: state.tracks[index].token, epoch: state.tracks[index].epoch)
         }
         guard let key else { return }
         handleScheduledFileCompletion(token: key.token, epoch: key.epoch)
@@ -471,9 +493,22 @@ final class WPESoundRuntime: Sendable {
                 return
             }
         }
-        for track in state.tracks where track.enabled && !track.player.isPlaying {
-            track.player.play()
+        for index in state.tracks.indices where state.tracks[index].enabled {
+            captureRandomDelay(in: &state, trackIndex: index)
+            if !state.tracks[index].player.isPlaying {
+                state.tracks[index].player.play()
+            }
         }
+    }
+
+    private func captureRandomDelay(in state: inout State, trackIndex: Int) {
+        guard state.tracks[trackIndex].waitsBetweenPlays,
+              !state.tracks[trackIndex].scheduledFiles.isEmpty,
+              state.tracks[trackIndex].delayRemaining == nil,
+              state.tracks[trackIndex].scheduledRandomDelay == nil else { return }
+        let bounds = state.tracks[trackIndex].randomDelay
+        state.tracks[trackIndex].scheduledRandomDelay = state.tracks[trackIndex].scheduler
+            .randomDelay(minTime: bounds.minTime, maxTime: bounds.maxTime)
     }
 
     /// Returns whether anything is queued: `single` stopping at one is success; empty queue is failure.
@@ -506,6 +541,9 @@ final class WPESoundRuntime: Sendable {
             state.tracks[trackIndex].scheduledFiles.append(file)
             state.tracks[trackIndex].lastScheduledPathIndex = pathIndex
             state.tracks[trackIndex].needsReschedule = false
+            if state.engine.isRunning, player.isPlaying {
+                captureRandomDelay(in: &state, trackIndex: trackIndex)
+            }
             player.scheduleFile(
                 file,
                 at: nil,
@@ -535,9 +573,8 @@ final class WPESoundRuntime: Sendable {
             }
             guard state.tracks[index].enabled else { return }
             if state.tracks[index].waitsBetweenPlays {
-                let delay = state.tracks[index].randomDelay
-                state.tracks[index].delayRemaining = state.tracks[index].scheduler
-                    .randomDelay(minTime: delay.minTime, maxTime: delay.maxTime)
+                state.tracks[index].delayRemaining = state.tracks[index].scheduledRandomDelay
+                state.tracks[index].scheduledRandomDelay = nil
                 state.tracks[index].needsReschedule = true
                 return
             }
@@ -590,6 +627,7 @@ final class WPESoundRuntime: Sendable {
         state.tracks[index].scheduledFiles.removeAll(keepingCapacity: false)
         state.tracks[index].scheduler.reset()
         state.tracks[index].needsReschedule = true
+        state.tracks[index].scheduledRandomDelay = nil
         state.tracks[index].delayRemaining = nil
     }
 

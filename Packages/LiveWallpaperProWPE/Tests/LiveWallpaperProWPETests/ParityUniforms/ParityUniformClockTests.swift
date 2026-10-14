@@ -43,12 +43,25 @@ final class ParityUniformClockTests: XCTestCase {
         XCTAssertEqual(clock.frametime, max(1e-4, 0.1 * Float(step)), accuracy: 1e-7)
     }
 
-    func testHeldPauseZeroesFrametime() {
+    func testHeldPausePreservesPublishedIntervalsUntilNextUpdate() {
         var clock = WPEParityClock()
-        while clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: true) {}
-        XCTAssertEqual(clock.frametime, 0)
+        XCTAssertEqual(clock.previousFrametime.bitPattern, 0x3D08_8889)
+        clock.advance(elapsed: 0.02, ratePercent: 100, paused: false)
+        XCTAssertEqual(clock.previousFrametime, 0)
+        clock.advance(elapsed: 0.03, ratePercent: 100, paused: false)
+        XCTAssertEqual(clock.previousFrametime, Float(0.02))
+        var held: (Float, Float, Double) = (clock.frametime, clock.previousFrametime, clock.time)
+        while clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: true) {
+            held = (clock.frametime, clock.previousFrametime, clock.time)
+        }
+        XCTAssertEqual(clock.frametime, held.0)
+        XCTAssertEqual(clock.previousFrametime, held.1)
+        XCTAssertEqual(clock.time, held.2)
         XCTAssertFalse(clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: true))
-        XCTAssertEqual(clock.frametime, 0)
+        XCTAssertEqual(clock.frametime, held.0)
+        XCTAssertEqual(clock.previousFrametime, held.1)
+        XCTAssertTrue(clock.advance(elapsed: 0.1, ratePercent: 100, paused: false))
+        XCTAssertEqual(clock.previousFrametime, held.0)
     }
 
     func testRampSnapsToTargetWithinOneHundredth() {
@@ -64,30 +77,45 @@ final class ParityUniformClockTests: XCTestCase {
         XCTAssertEqual(clock.pauseRamp, 1)
     }
 
-    func testTimeWrapsToZeroAbove432000() {
+    func testTimeWrapsOnlyWhenPublishedFloatExceeds432000() {
         var clock = WPEParityClock()
-        var previous = 0.0
-        for _ in 0 ..< 2_000_000 {
+        for _ in 0 ..< 1_728_000 {
             clock.advance(elapsed: 1, ratePercent: 100, paused: false)
-            if clock.time < previous {
-                break
-            }
-            previous = clock.time
         }
+        XCTAssertEqual(clock.time, 432_000)
+        XCTAssertEqual(clock.timeUniform, 432_000)
+        // The stored sum has exceeded five days, but its published float still equals the boundary.
+        clock.advance(elapsed: 0.01, ratePercent: 100, paused: false)
+        XCTAssertEqual(clock.time, 432_000)
+        XCTAssertEqual(clock.timeUniform, 432_000)
+        clock.advance(elapsed: 0.01, ratePercent: 100, paused: false)
         XCTAssertEqual(clock.time, 0)
-        XCTAssertEqual(previous, 432_000)
+        XCTAssertEqual(clock.timeUniform, 0)
+        XCTAssertEqual(clock.frametime, Float(0.01), "wrapping the shader clock must not reverse animation dt")
     }
 
-    func testTimeAccumulatesInNativeFloat32Precision() {
+    func testTimeAccumulatesBinary64AndPublishesBinary32() {
         var clock = WPEParityClock()
         for _ in 0 ..< 10 {
             clock.advance(elapsed: 0.1, ratePercent: 100, paused: false)
         }
-        // 14017fa70's float add rounds each step: ten additions of binary32 0.1 produce 0x3f800001.
-        // Keeping Double storage at the API boundary must not change the native accumulation precision.
-        XCTAssertEqual(clock.timeUniform.bitPattern, 0x3F80_0001)
-        XCTAssertEqual(clock.time, Double(Float(bitPattern: 0x3F80_0001)))
-        XCTAssertNotEqual(clock.time, 10 * Double(Float(0.1)))
+        // Original instructions widen each step, addsd/store at +0x148, then cvtpd2ps at +0x140.
+        XCTAssertEqual(clock.timeUniform.bitPattern, 0x3F80_0000)
+        XCTAssertEqual(clock.time, 1)
+    }
+
+    func testSmallStepsKeepAdvancingWhenPublishedFloatCannotRepresentEachStep() {
+        var clock = WPEParityClock()
+        for _ in 0 ..< 524_288 {
+            clock.advance(elapsed: 0.25, ratePercent: 100, paused: false)
+        }
+        XCTAssertEqual(clock.timeUniform, 131_072)
+        for _ in 0 ..< 1000 {
+            clock.advance(elapsed: 0.001, ratePercent: 100, paused: false)
+        }
+        // A float accumulator stalls here: its ULP is 0.015625, larger than this frame's step.
+        XCTAssertEqual(clock.timeUniform, 131_073)
+        XCTAssertEqual(clock.time, 131_073)
     }
 
     func testDaytimeIncludesMilliseconds() {

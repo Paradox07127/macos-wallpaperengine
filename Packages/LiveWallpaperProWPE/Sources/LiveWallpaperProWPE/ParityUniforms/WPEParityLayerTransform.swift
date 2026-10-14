@@ -138,6 +138,37 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
             * simd_float4x4(diagonal: SIMD4(scale, 1))
     }
 
+    /// Native 1401dfc00 / 1401dfe30: local origin, camera type8 faces target, other layers face away.
+    /// Yaw projects onto the supplied up vector without normalizing it; coincident/projected-small targets do nothing.
+    public static func lookAtAngles(origin: SIMD3<Float>, target: SIMD3<Float>, up: SIMD3<Float>,
+                                    camera: Bool, yawOnly: Bool) -> SIMD3<Float>? {
+        var delta = target - origin
+        if yawOnly {
+            let projected = (up.x * delta.x + up.y * delta.y) + up.z * delta.z
+            delta -= up * projected
+        }
+        let lengthSquared = (delta.x * delta.x + delta.y * delta.y) + delta.z * delta.z
+        guard lengthSquared > Float.ulpOfOne else { return nil }
+        let center: SIMD3<Float> = if yawOnly {
+            camera ? origin + delta : origin - delta
+        } else {
+            camera ? target : origin - delta
+        }
+        return angles(fromLookAt: WPEParityCamera.lookAt(eye: origin, center: center, up: up))
+    }
+
+    /// 1401f2ad0:31f2–3306 and both script methods share this native local XYZ extraction, in radians.
+    static func angles(fromLookAt matrix: simd_float4x4) -> SIMD3<Float> {
+        let roll = atan2(matrix.columns.1.x, matrix.columns.0.x)
+        let sine = sin(roll)
+        let cosine = cos(roll)
+        let pitch = atan2(-matrix.columns.2.x, sqrt(matrix.columns.2.z * matrix.columns.2.z
+                + matrix.columns.2.y * matrix.columns.2.y))
+        let yaw = atan2(sine * matrix.columns.0.z - cosine * matrix.columns.1.z,
+                        cosine * matrix.columns.1.y - sine * matrix.columns.0.y)
+        return SIMD3(yaw, pitch, roll)
+    }
+
     /// W' = W·T(alignment offset), used for this layer's own draws only (FUN_1401fd3f0).
     public func aligned(_ world: simd_float4x4) -> simd_float4x4 {
         world * WPEParityCamera.translation(SIMD3(alignment.offset(size: size), 0))

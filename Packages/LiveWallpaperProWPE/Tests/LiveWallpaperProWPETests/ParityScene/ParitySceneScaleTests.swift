@@ -244,7 +244,8 @@ struct ParitySceneScaleTests {
             "materials/base.json": ["passes": [["shader": "probe"]]],
             "materials/read.json": ["passes": [["shader": "probe", "textures": ["F"]]]],
             "effects/declare.json": [
-                "fbos": [["name": "F"], ["name": "X", "width": 640, "height": 360, "scale": 2]],
+                "fbos": [["name": "F", "format": "rgba8888"],
+                         ["name": "X", "format": "rgba8888", "width": 640, "height": 360, "scale": 2]],
                 "passes": [["material": "materials/base.json", "target": "F"],
                            ["material": "materials/base.json", "target": "X"],
                            ["material": "materials/read.json"]],

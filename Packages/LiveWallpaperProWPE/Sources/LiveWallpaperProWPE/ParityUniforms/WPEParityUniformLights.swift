@@ -62,6 +62,9 @@ public struct WPEParityUniformLights: Sendable, Equatable {
     public var spotOrigin: [SIMD4<Float>] = []
     public var spotDirection: [SIMD4<Float>] = []
     public var spotExponent: [SIMD4<Float>] = []
+    public var tubeColor: [SIMD4<Float>] = []
+    public var tubeOriginA: [SIMD4<Float>] = []
+    public var tubeOriginB: [SIMD4<Float>] = []
     public var directionalColor: [SIMD4<Float>] = []
     /// float3 in the cbuffer (lightsCBuffer); WPE stages it as a float4 with w = 0.
     public var directionalDirection: [SIMD3<Float>] = []
@@ -124,6 +127,25 @@ public struct WPEParityUniformLights: Sendable, Equatable {
                 spotOrigin.append(SIMD4(origin, cos(scalar("innercone", light.innerConeDegrees) * degrees)))
                 spotDirection.append(SIMD4(axis, cos(scalar("outercone", light.outerConeDegrees) * degrees)))
                 spotExponent.append(SIMD4(exponent, 0, 0, 0))
+            case .tube where tubeColor.count < config.tube:
+                // 140190c80.c:832–893: the second endpoint is W · (controlpoint, 1), not an axis or direction.
+                let point: SIMD3<Float> = if case let .vector(value)? = state?.scriptField("controlpoint", of: light.id) {
+                    SIMD3(value.x, value.y, value.z)
+                } else if let values = light.fieldBindings["controlpoint"]?.resolvedValue?.vectorValue {
+                    SIMD3(values.indices.contains(0) ? Float(values[0]) : 0,
+                          values.indices.contains(1) ? Float(values[1]) : 0,
+                          values.indices.contains(2) ? Float(values[2]) : 0)
+                } else if let value = light.fieldBindings["controlpoint"]?.resolvedValue?.numberValue {
+                    SIMD3(repeating: Float(value))
+                } else {
+                    SIMD3(2, 0, 0)
+                }
+                let first = world.columns.1 * point.y + world.columns.0 * point.x
+                let second = world.columns.3 + world.columns.2 * point.z
+                let end = second + first
+                tubeColor.append(color)
+                tubeOriginA.append(SIMD4(origin, exponent))
+                tubeOriginB.append(SIMD4(end.x, end.y, end.z, 0))
             case .directional where directionalColor.count < config.directional:
                 directionalColor.append(SIMD4(color.x, color.y, color.z, 1))
                 directionalDirection.append(-axis)
@@ -141,10 +163,15 @@ public struct WPEParityUniformLights: Sendable, Equatable {
         let arrays = [
             ("g_LPoint_Color", pointColor), ("g_LPoint_Origin", pointOrigin), ("g_LSpot_Color", spotColor),
             ("g_LSpot_Origin", spotOrigin), ("g_LSpot_Direction", spotDirection), ("g_LSpot_Exponent", spotExponent),
+            ("g_LTube_Color", tubeColor), ("g_LTube_OriginA", tubeOriginA),
             ("g_LDirectional_Color", directionalColor),
         ]
         for (name, array) in arrays where !array.isEmpty {
             values[name] = .array(array.map { .vector([$0.x, $0.y, $0.z, $0.w]) })
+        }
+        // The shared HLSL lighting cbuffer stages endpoint B as float3, like directional direction.
+        if !tubeOriginB.isEmpty {
+            values["g_LTube_OriginB"] = .array(tubeOriginB.map { .vector([$0.x, $0.y, $0.z]) })
         }
         if !directionalDirection.isEmpty {
             values["g_LDirectional_Direction"] = .array(directionalDirection.map { .vector([$0.x, $0.y, $0.z]) })

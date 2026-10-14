@@ -124,15 +124,16 @@ final class ParityAudioSpectrumTests: XCTestCase {
         XCTAssertEqual(spectrum.left64[0], 1)
         spectrum.advance(left: bins(100), right: bins(100), dt: 1, silence: false)
         XCTAssertEqual(spectrum.left64[0], 2)
-        spectrum.advance(left: bins(0), right: bins(0), dt: 0.1, silence: false)
+        // A nonquiet right channel keeps this on the per-bin limiter path rather than the global quiet branch.
+        spectrum.advance(left: bins(0), right: bins(1), dt: 0.1, silence: false)
         XCTAssertEqual(spectrum.left64[0], 1)
-        spectrum.advance(left: bins(0), right: bins(0), dt: 0.01, silence: false)
+        spectrum.advance(left: bins(0), right: bins(1), dt: 0.01, silence: false)
         XCTAssertEqual(spectrum.left64[0], 0.6, accuracy: 0.000001)
 
         var control = WPEParityAudioSpectrum()
         control.advance(left: bins(0.25), right: bins(0.25), dt: 1, silence: false)
         XCTAssertEqual(control.left64[0], 0.4, accuracy: 0.000001)
-        control.advance(left: bins(0), right: bins(0), dt: 0.1, silence: false)
+        control.advance(left: bins(0), right: bins(1), dt: 0.1, silence: false)
         XCTAssertEqual(control.left64[0], 0)
     }
 
@@ -141,7 +142,7 @@ final class ParityAudioSpectrumTests: XCTestCase {
             var spectrum = WPEParityAudioSpectrum()
             spectrum.advance(left: bins(input), right: bins(input), dt: 1, silence: false)
             XCTAssertEqual(spectrum.left64[0], 1)
-            spectrum.advance(left: bins(0), right: bins(0), dt: 0.01, silence: false)
+            spectrum.advance(left: bins(0), right: bins(1), dt: 0.01, silence: false)
             XCTAssertEqual(spectrum.left64[0], expected, accuracy: 0.000001)
         }
     }
@@ -155,13 +156,43 @@ final class ParityAudioSpectrumTests: XCTestCase {
         for name in spectrum.uniforms().keys {
             XCTAssertTrue(try bands(spectrum, name).allSatisfy { $0 == 0 })
         }
-        control.advance(left: bins(0), right: bins(0), dt: 0, silence: false)
+        control.advance(left: bins(0), right: bins(1), dt: 0, silence: false)
         XCTAssertEqual(control.left64[0], 2.0 / 3, accuracy: 0.000001)
         spectrum.advance(left: bins(0), right: bins(0), dt: 0.1, silence: true)
         spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 0, silence: false)
         XCTAssertEqual(spectrum.left64[0], 2.0 / 3, accuracy: 0.000001)
         spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 0.1, silence: false)
-        XCTAssertEqual(spectrum.left64[0], 10.0 / 13, accuracy: 0.000001)
+        XCTAssertEqual(spectrum.left64[0], 5.0 / 7, accuracy: 0.000001,
+                       "an absent provider must not decay normalization peaks")
+    }
+
+    func testPresentQuietThresholdClearsOutputAndPreservesBothHistories() {
+        var spectrum = WPEParityAudioSpectrum()
+        spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 1, silence: false)
+        spectrum.advance(left: bins(0.00005), right: bins(0), dt: 0.1, silence: false)
+        XCTAssertTrue(spectrum.bins.allSatisfy { $0 == 0 })
+        spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 0, silence: false)
+        XCTAssertEqual(spectrum.left64[0], 2.0 / 3, accuracy: 0.000001,
+                       "quiet output did not replace either retained history")
+        spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 0.1, silence: false)
+        XCTAssertEqual(spectrum.left64[0], 10.0 / 13, accuracy: 0.000001,
+                       "a present quiet provider still decayed its peaks")
+
+        // Strictly below 1e-4 is quiet; exactly 1e-4 bootstraps the sixteen peaks before normalizing.
+        var boundary = WPEParityAudioSpectrum()
+        boundary.advance(left: bins(0.000099), right: bins(0), dt: 1, silence: false)
+        XCTAssertTrue(boundary.bins.allSatisfy { $0 == 0 })
+        boundary.advance(left: bins(0.0001), right: bins(0), dt: 1, silence: false)
+        XCTAssertEqual(boundary.left64[0], 0.0001 / 0.50005, accuracy: 0.00000001)
+    }
+
+    func testPeakWithinNativeToleranceSnapsInsteadOfHalfDecaying() {
+        var spectrum = WPEParityAudioSpectrum()
+        spectrum.advance(left: bins(0.5), right: bins(0.5), dt: 1, silence: false)
+        // Peak 0.75 -> target 0.74995: |delta| <= 1e-4 stores the target, with no falling half-rate.
+        spectrum.advance(left: bins(0.74995), right: bins(0.74995), dt: 1, silence: false)
+        XCTAssertEqual(spectrum.left64[0], 1, accuracy: 0.000001)
+        XCTAssertEqual(spectrum.right64[0], 1, accuracy: 0.000001)
     }
 
     func testPoolingToThirtyTwoAndSixteenBands() throws {

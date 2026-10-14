@@ -12,7 +12,7 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var msaaSampleCount: Int
     /// A prepared material's actual active slot requests the resource, independently of quality.
     public var sceneMipMappedFrameBufferEnabled: Bool
-    /// Refresh policy; native bit7's setting/default remains unverified.
+    /// Main+0x128 bit7: native general.reflection, normalised to true when absent or not a JSON bool.
     public var qualityMipMappedFrameBufferEnabled: Bool
     public var bloomSettings: WPEParityBloomSettings
     /// ccsimple.json is loaded (`WPEParityColorCorrection.drawn`); `colorCorrection` gives its combos and values.

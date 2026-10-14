@@ -57,7 +57,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     public let fillsComposite: Bool
     /// Original logical composite extent. Geometry/camera keep this size when the attachment is scaled on Mac.
     public let logicalCompositeSize: SIMD2<Int>?
-    /// Set by model, particle, bit4 composite and `_depth` text draws only; every other scene draw runs with depth off.
+    /// Effective state after the native layer override and blend-dependent write restriction.
     public let depthTest: Bool
     public let depthWrite: Bool
     public let cullsBackFaces: Bool

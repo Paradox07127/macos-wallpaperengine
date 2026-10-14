@@ -13,7 +13,7 @@ public enum WPEParitySceneFrameBuilder {
                                             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)
         emitter.renderScene()
         // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
-        let used = Set(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
+        let used = emitter.scriptClearResources.union(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
             [$0.color, $0.snapshotSource, Resource.fullFrameBuffer] + [$0.depth].compactMap(\.self)
         })
         return WPEParitySceneFrame(operations: emitter.operations,
@@ -65,6 +65,7 @@ private struct WPEParitySceneEmitter {
     var samplers: [WPEResourceID: WPEParitySceneSampler] = [:]
     var owners: [WPEPassIdentity: String] = [:]
     var particleBlocks: [WPEParityParticleBlock] = []
+    var scriptClearResources: Set<WPEResourceID> = []
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
     /// Each `_rt_imageLayerComposite_<id>_a` the scene has and the layer it belongs to, so a draw of another layer
@@ -132,7 +133,8 @@ private struct WPEParitySceneEmitter {
         for object in scene.objects {
             for effect in object.effects {
                 for fbo in effect.fbos {
-                    guard fbo.swapPartner != nil else { continue }
+                    guard fbo.swapPartner != nil || fbo.scriptClearable else { continue }
+                    if fbo.scriptClearable { scriptClearResources.insert(Self.fboID(object, effect, fbo.name)) }
                     registerFBO(fbo, object: object, effect: effect, lifetime: .persistent)
                 }
             }
@@ -254,6 +256,7 @@ private struct WPEParitySceneEmitter {
                 let target: WPEResourceID
                 var depth: WPEResourceID?
                 var blend = pass.blend
+                var materialState = pass.materialState
                 var alphaMax = false
                 var compositeOwnerID: String?
                 var mask = WPEParitySceneWriteMask.rgba
@@ -272,6 +275,15 @@ private struct WPEParitySceneEmitter {
                 }
                 if lastSegment, passIndex == finalPass {
                     blend = object.blend
+                    // Image virtual +0x108 (140209160) copies only blend/depth from the albedo material;
+                    // culling stays with this effect material. Text's 140258580 forces translucent instead.
+                    if case .text = object.kind {
+                        blend = .translucent
+                        materialState.depthTest = object.materialState.depthTest
+                    } else {
+                        materialState.depthTest = object.materialState.depthTest
+                        materialState.depthWrite = object.materialState.depthWrite
+                    }
                     mask = destination.writeMask
                     geometry = object.layerGeometry
                 }
@@ -285,6 +297,9 @@ private struct WPEParitySceneEmitter {
                                         passIndex: passIndex, shader: pass.shader, source: pass.source, reads: reads,
                                         target: target, blend: blend, alphaMax: alphaMax,
                                         compositeOwnerID: compositeOwnerID, writeMask: mask, geometry: geometry,
+                                        depthTest: materialState.depthTest,
+                                        depthWrite: materialState.depthWrite && blend.permitsDepthWrite,
+                                        cullsBackFaces: materialState.cullsBackFaces,
                                         layerMatrices: lastSegment && geometry == .fullscreenQuad))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
@@ -301,6 +316,7 @@ private struct WPEParitySceneEmitter {
 
         guard bit4, object.visible else { return }
         owner = object.id
+        let publishBlend: WPEParitySceneBlend = object.colorBlendMode == 31 ? .additive : object.blend
         // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
         puppetDraw(object, WPEParitySceneDraw(pass: WPEPassIdentity("\(object.id)/passthrough4"),
                                               objectID: object.id, shader: "effectpassthrough_4",
@@ -309,12 +325,13 @@ private struct WPEParitySceneEmitter {
                                                                         puppet: object.puppet),
                                               reads: [composites[current], Resource.fullFrameBuffer],
                                               target: destination.color,
-                                              blend: object.colorBlendMode == 31 ? .additive : object.blend,
+                                              blend: publishBlend,
                                               alphaMax: destination.alphaMax,
                                               compositeOwnerID: destination.compositeOwnerID,
                                               writeMask: destination.writeMask, geometry: object.layerGeometry,
                                               depthTest: object.materialState.depthTest,
-                                              depthWrite: object.materialState.depthWrite, colorRole: .compositePublish),
+                                              depthWrite: object.materialState.depthWrite && publishBlend.permitsDepthWrite,
+                                              colorRole: .compositePublish),
                    depth: destination.depth)
     }
 
@@ -362,6 +379,11 @@ private struct WPEParitySceneEmitter {
                                                   alphaMax: destination.alphaMax,
                                                   compositeOwnerID: destination.compositeOwnerID,
                                                   writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                                  // A passthrough uses composelayer, whose material disables depth.
+                                                  depthTest: !object.passthrough && object.materialState.depthTest,
+                                                  depthWrite: !object.passthrough && object.materialState.depthWrite
+                                                      && object.blend.permitsDepthWrite,
+                                                  cullsBackFaces: !object.passthrough && object.materialState.cullsBackFaces,
                                                   colorRole: object.passthrough ? .none : .albedo),
                        depth: destination.depth)
         }
@@ -593,6 +615,7 @@ private struct WPEParitySceneEmitter {
                 continue
             }
             let final = passIndex == finalPass
+            let blend: WPEParitySceneBlend = final ? .additive : pass.blend
             let target = pass.target.map(fbo) ?? destination.color
             bind(identity, target, depth: pass.target == nil ? destination.depth : nil)
             if passIndex == 0, readsFullFrame {
@@ -604,11 +627,15 @@ private struct WPEParitySceneEmitter {
                 + frameReads(pass.frameReads)
             draw(WPEParitySceneDraw(pass: identity, objectID: object.id, effectID: effect.id, passIndex: passIndex,
                                     shader: pass.shader, source: source, reads: reads, target: target,
-                                    blend: final ? .additive : pass.blend,
+                                    blend: blend,
                                     alphaMax: pass.target == nil && destination.alphaMax,
                                     compositeOwnerID: destination.compositeOwnerID,
                                     writeMask: final ? destination.writeMask : .rgba,
-                                    geometry: final ? .shapeQuad : .fullscreenQuad, layerMatrices: !final))
+                                    geometry: final ? .shapeQuad : .fullscreenQuad,
+                                    // Shape virtual +0x108 (140260790) changes only blend, never depth or cull.
+                                    depthTest: pass.materialState.depthTest,
+                                    depthWrite: pass.materialState.depthWrite && blend.permitsDepthWrite,
+                                    cullsBackFaces: pass.materialState.cullsBackFaces, layerMatrices: !final))
         }
         if !scoped.isEmpty {
             emit(WPEPassIdentity("\(object.id)/\(effect.id)/bindings.end"),
@@ -664,19 +691,9 @@ private struct WPEParitySceneEmitter {
         }
     }
 
-    /// A name `effect` does not declare resolves to the first enabled effect of the layer that does.
     private static func fboID(_ object: WPEParitySceneObject, _ effect: WPEParitySceneEffect,
                               _ name: String) -> WPEResourceID {
-        func declaration(_ candidate: WPEParitySceneEffect) -> WPEParitySceneFBO? {
-            candidate.fbos.first { $0.name == name }
-        }
-        let owner = declaration(effect) != nil ? effect
-            : object.effects.first { $0.enabled && declaration($0) != nil } ?? effect
-        guard let fbo = declaration(owner) else {
-            return Resource.effectFBO(objectID: object.id, effectID: owner.id, name: name)
-        }
-        return fbo.shared ? Resource.sharedFBO(name)
-            : Resource.effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
+        Resource.resolvedFBO(object: object, effect: effect, name: name)
     }
 
     private mutating func snapshot(_ identity: WPEPassIdentity) {
@@ -788,5 +805,22 @@ private extension WPERenderOperation.Kind {
         case let .resourceScope(_, resources): resources
         case let .generateMips(id): [id]
         }
+    }
+}
+
+public extension WPEParitySceneResource {
+    /// The single FBO identity resolver for draws and script functions. A foreign local name resolves to the
+    /// first enabled declaring effect, while shared and pool/unique identities retain their existing rules.
+    static func resolvedFBO(object: WPEParitySceneObject, effect: WPEParitySceneEffect,
+                            name: String) -> WPEResourceID {
+        func declaration(_ candidate: WPEParitySceneEffect) -> WPEParitySceneFBO? {
+            candidate.fbos.first { $0.name.utf8.elementsEqual(name.utf8) }
+        }
+        let owner = declaration(effect) != nil ? effect
+            : object.effects.first { $0.enabled && declaration($0) != nil } ?? effect
+        guard let fbo = declaration(owner) else {
+            return effectFBO(objectID: object.id, effectID: owner.id, name: name)
+        }
+        return fbo.shared ? sharedFBO(name) : effectFBO(fbo, effectID: owner.id, fullscreen: object.fullscreen)
     }
 }

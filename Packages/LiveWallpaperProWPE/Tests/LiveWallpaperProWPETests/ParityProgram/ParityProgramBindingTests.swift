@@ -204,6 +204,41 @@ final class ParityProgramBindingTests: XCTestCase {
         }
     }
 
+    func testSelectedPassAndInstanceRecursivelyMergeUserTexturesWithoutLosingSlotsOrMetadata() throws {
+        let base: [Any] = [["name": "$mediaThumbnail", "type": "system", "keepaspect": false],
+                           "ordinary", "tail"]
+        let overrides: [Any] = [["name": "$mediaPreviousThumbnail", "type": NSNull()], NSNull()]
+        let binding = try Self.userTextureBinding(material: ["passes": [[
+            "shader": "probe", "textures": ["util/base", "util/ordinary", "util/tail"], "usertextures": base,
+        ]]], instance: ["usertextures": overrides])
+        XCTAssertEqual(binding.userTextures.pass, WPESceneJSONValue(jsonValue: base))
+        XCTAssertEqual(binding.userTextures.override, WPESceneJSONValue(jsonValue: overrides))
+        XCTAssertEqual(binding.userTextureSlots, [
+            0: .init(name: "$mediaPreviousThumbnail", type: "system", slot: 0),
+            1: .init(name: "ordinary", slot: 1), 2: .init(name: "tail", slot: 2),
+        ])
+        XCTAssertEqual(binding.userTextures.keepAspect, [0: false, 1: false, 2: false])
+        XCTAssertEqual(binding.userTextures.resolved, .array([
+            .object(["name": .string("$mediaPreviousThumbnail"), "type": .string("system"), "keepaspect": .bool(false)]),
+            .string("ordinary"), .string("tail"),
+        ]))
+        XCTAssertTrue(binding.userTextures.diagnostics.isEmpty)
+        XCTAssertEqual(binding.textures[1], .asset("util/ordinary"))
+        XCTAssertEqual(binding.textures[2], .asset("util/tail"))
+
+        let nullOverride = try Self.userTextureBinding(material: ["passes": [[
+            "shader": "probe", "textures": ["util/base"], "usertextures": [base[0]],
+        ]]], instance: ["usertextures": NSNull()])
+        XCTAssertEqual(nullOverride.userTextureSlots[0]?.name, "$mediaThumbnail")
+        XCTAssertTrue(nullOverride.userTextures.diagnostics.isEmpty)
+
+        let extensionUnknown = try Self.userTextureBinding(material: ["passes": [[
+            "shader": "probe", "textures": ["util/base", "util/ordinary"], "usertextures": [base[0]],
+        ]]], instance: ["usertextures": [NSNull(), "ordinary"]])
+        XCTAssertTrue(extensionUnknown.userTextureSlots.isEmpty)
+        XCTAssertTrue(extensionUnknown.userTextures.diagnostics.contains { $0.contains("array extension") })
+    }
+
     /// This guard protects explicit unsupported merge behavior, not a claim about native conflict precedence.
     func testUserTextureMergeUnknownRetainsAllLociAndFallback() throws {
         let media: [Any] = [NSNull(), ["name": "$mediaThumbnail", "type": "system"]]

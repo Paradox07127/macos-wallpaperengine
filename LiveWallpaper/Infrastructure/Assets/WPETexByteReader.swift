@@ -20,7 +20,9 @@ struct WPETexByteReader {
         self.init(data: span.owner, cursor: span.range.lowerBound, endBound: span.range.upperBound)
     }
 
-    var isAtEnd: Bool { cursor >= endBound }
+    var isAtEnd: Bool {
+        cursor >= endBound
+    }
 
     mutating func readUInt32(blockName: String = "?") throws -> UInt32 {
         try ensure(byteCount: 4, blockName: blockName)
@@ -49,7 +51,7 @@ struct WPETexByteReader {
     mutating func readMagic() throws -> String {
         try ensure(byteCount: 9, blockName: "magic")
         let start = data.startIndex + cursor
-        let raw = data.subdata(in: start..<(start + 9))
+        let raw = data.subdata(in: start ..< (start + 9))
         cursor += 9
         let trimmed = raw.prefix { $0 != 0 }
         guard let asciiString = String(data: Data(trimmed), encoding: .ascii),
@@ -62,28 +64,34 @@ struct WPETexByteReader {
     /// Zero-copy view of the next `count` bytes; the span keeps `data` alive.
     mutating func readSpan(count: Int, blockName: String) throws -> WPEMappedByteSpan {
         try ensure(byteCount: count, blockName: blockName)
-        let span = WPEMappedByteSpan(owner: data, range: cursor..<(cursor + count))
+        let span = WPEMappedByteSpan(owner: data, range: cursor ..< (cursor + count))
         cursor += count
         return span
     }
 
-    /// NUL-terminated ASCII; advances past the terminator.
-    mutating func readNullTerminatedString(blockName: String) throws -> String {
+    /// The original NUL-delimited bytes without copying the container or discarding non-ASCII JSON.
+    mutating func readNullTerminatedSpan(blockName: String) throws -> WPEMappedByteSpan {
         let absoluteCursor = data.startIndex + cursor
         let absoluteEnd = data.startIndex + endBound
-        guard absoluteCursor <= absoluteEnd else {
+        guard absoluteCursor <= absoluteEnd,
+              let terminator = data[absoluteCursor ..< absoluteEnd].firstIndex(of: 0) else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
         }
-        guard let terminator = data[absoluteCursor..<absoluteEnd].firstIndex(of: 0) else {
-            throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
+        let span = WPEMappedByteSpan(owner: data, range: cursor ..< (terminator - data.startIndex))
+        cursor = terminator - data.startIndex + 1
+        return span
+    }
+
+    mutating func readNullTerminatedString(blockName: String) throws -> String {
+        let span = try readNullTerminatedSpan(blockName: blockName)
+        guard let value = String(data: span.materializedData(), encoding: .utf8) else {
+            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Invalid UTF-8 in \(blockName)")
         }
-        let slice = data.subdata(in: absoluteCursor..<terminator)
-        cursor = (terminator - data.startIndex) + 1
-        return String(data: slice, encoding: .ascii) ?? ""
+        return value
     }
 
     private func ensure(byteCount: Int, blockName: String) throws {
-        guard byteCount >= 0, cursor + byteCount <= endBound else {
+        guard byteCount >= 0, cursor <= endBound, byteCount <= endBound - cursor else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
         }
     }

@@ -56,6 +56,11 @@ enum WPEParityScriptLayers {
       return true;
     }
     const EffectProto = {
+      executeMaterialFunction(name) {
+        if (this == null || owners[this.__s] !== this) return;
+        const a = argument(name, 0x200);
+        host.executeMaterialFunction(this.__s, a ? a.value : '');
+      },
       getMaterial(key) {
         if (!this.__metadataKnown) {
           host.log(1, 'getMaterial is unsupported without resolved effect resource metadata');
@@ -141,8 +146,25 @@ enum WPEParityScriptLayers {
         host.pauseVideoTexture(index);
       }
     };
-    const protos = host.kinds.map(fields => {
+    // 1401e0530 registers void methods with two native Vec3 (0x20) parameters. They use current local slots.
+    function orientLayer(layer, originField, anglesField, camera, target, up, yawOnly) {
+      if (!liveLayer(layer)) return;
+      const t = argument(target, 0x20), u = argument(up, 0x20);
+      if (!t) { host.log(1, 'lookAt and lookAtYaw are unsupported without a native Vec3 target'); return; }
+      if (!originField || !anglesField || originField.type !== 2 || anglesField.type !== 2) {
+        host.log(1, 'lookAt and lookAtYaw are unsupported without native local transform fields'); return;
+      }
+      const origin = read(layer.__base + originField.rel, 2, false), point = t.value;
+      const axis = u ? u.value : new Vec3(0, 1, 0);
+      const angles = host.lookAtAngles(origin.x, origin.y, origin.z, point.x, point.y, point.z,
+        axis.x, axis.y, axis.z, camera ? 1 : 0, yawOnly ? 1 : 0);
+      if (angles) write(layer.__base + anglesField.rel, 2, false, new Vec3(angles[0], angles[1], angles[2]));
+    }
+    const protos = host.kinds.map((fields, kind) => {
       const proto = Object.create(LayerProto), instance = {}, video = Object.create(VideoProto);
+      const origin = fields.find(f => f.name === 'origin'), angles = fields.find(f => f.name === 'angles');
+      proto.lookAt = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, false); };
+      proto.lookAtYaw = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, true); };
       for (const f of fields) {
         const target = f.owner === 'instance' ? instance : f.owner === 'video' ? video : proto;
         const receiverAllowed = f.owner === 'instance' || f.owner === 'video' ? undefined : liveLayer;
@@ -172,8 +194,19 @@ enum WPEParityScriptLayers {
       order.push(layer);
       return layer;
     };
-    host.setString = function (slot, value) { S[slot] = value; };
-    host.getString = function (slot) { return S[slot]; };
+    host.setString = function (slot, value, values) {
+      S[slot] = values ? { value: values.includes(value) ? value : values[0], values } : value;
+    };
+    host.getString = function (slot) { return read(slot, 5, false); };
+    host.setCommonOrder = function (indices) {
+      const members = new Set();
+      order.length = 0;
+      for (const index of indices) {
+        const layer = table[index];
+        if (layer !== undefined) { order.push(layer); members.add(layer); }
+      }
+      for (const layer of pending) if (!members.has(layer)) pending.delete(layer);
+    };
     """#
 
     static let scene = #"""

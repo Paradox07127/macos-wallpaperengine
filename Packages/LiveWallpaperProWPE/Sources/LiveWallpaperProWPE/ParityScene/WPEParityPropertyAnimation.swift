@@ -57,6 +57,8 @@ public final class WPEParityPropertyAnimation {
     /// An authored `options.events` entry; WPE sends each crossing to the scripts as event 6 (140171440.c:857-883).
     public struct Event: Sendable, Equatable {
         public let name: String
+        /// Original event 6 carries the complete authored event object, including extension fields.
+        public let payloadJSON: String
         /// The authored frame; it fires at `frame / fps` seconds.
         public let frame: Float
         let time: Float
@@ -92,10 +94,12 @@ public final class WPEParityPropertyAnimation {
     private var clockDirection: Float = 1
     private var clockFinished = false
     private var lastFrameStamp: UInt64?
+    private var collectsEvents = true
 
     /// Parses a raw property; a supplied parent must match parent.key and already have its root resolved.
     public init?(property: WPESceneJSONValue, valueType: ValueType,
-                 parent: WPEParityPropertyAnimation? = nil) {
+                 parent: WPEParityPropertyAnimation? = nil,
+                 sharingClock: WPEParityPropertyAnimation? = nil) {
         guard let animation = property["animation"],
               let options = animation["options"],
               let authoredFPS = Self.number(options["fps"]),
@@ -106,7 +110,10 @@ public final class WPEParityPropertyAnimation {
 
         name = Self.string(options["name"])
         parentKey = Self.string(options["parent"]?["key"])
-        if let parentKey {
+        if let sharingClock {
+            guard parent == nil, parentKey == nil else { return nil }
+            root = sharingClock.root ?? sharingClock
+        } else if let parentKey {
             guard let parent, parent.name == parentKey else { return nil }
             root = parent.root ?? parent
         } else {
@@ -159,7 +166,9 @@ public final class WPEParityPropertyAnimation {
             for entry in entries {
                 guard let frame = Self.number(entry["frame"]),
                       let name = Self.string(entry["name"]) else { continue }
-                parsedEvents.append(Event(name: name, frame: frame, time: frame / fps))
+                // 1401a9410: serialize the complete entry; its time is frame * stored frameDuration.
+                parsedEvents.append(Event(name: name, payloadJSON: WPEParityScriptEngine.jsonText(entry),
+                                          frame: frame, time: frame * (1 / fps)))
             }
         }
         events = parsedEvents
@@ -167,9 +176,9 @@ public final class WPEParityPropertyAnimation {
     }
 
     /// Advances without allocation; pass the same frame stamp to all bindings sharing a root.
-    public func advance(dt: Float, frameStamp: UInt64? = nil) {
+    public func advance(dt: Float, frameStamp: UInt64? = nil, collectEvents: Bool = true) {
         if let root {
-            root.advance(dt: dt, frameStamp: frameStamp)
+            root.advance(dt: dt, frameStamp: frameStamp, collectEvents: collectEvents)
             return
         }
         if let frameStamp, lastFrameStamp == frameStamp {
@@ -177,7 +186,21 @@ public final class WPEParityPropertyAnimation {
         }
         lastFrameStamp = frameStamp
         firedEvents.removeAll(keepingCapacity: true)
+        collectsEvents = collectEvents
         step(rate * dt)
+    }
+
+    /// Camera queue item reuse (1401f2ad0:2b95–2ba9): clear finished and reset time, retaining reverse/paused state.
+    public func resetFinished() {
+        if let root {
+            root.resetFinished()
+            return
+        }
+        guard clockFinished else { return }
+        clockTime = 0
+        clockFinished = false
+        lastFrameStamp = nil
+        firedEvents.removeAll(keepingCapacity: true)
     }
 
     /// FUN_1401a9f60: events fire on the unwrapped step before the clock wraps, reflects or clamps.
@@ -223,6 +246,7 @@ public final class WPEParityPropertyAnimation {
     }
 
     private func fire(_ crossed: (Float) -> Bool) {
+        guard collectsEvents else { return }
         for event in events where crossed(event.time) {
             firedEvents.append(event)
         }

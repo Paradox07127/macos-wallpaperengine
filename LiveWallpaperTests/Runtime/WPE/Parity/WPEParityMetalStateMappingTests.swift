@@ -100,7 +100,7 @@ struct WPEParityMetalStateMappingTests {
             } else if alpha == 1 {
                 #expect(samples.allSatisfy { abs($0.x - 1) < 0.001 })
             } else {
-                // No fixed fractional sample count/location: the Metal driver's coverage pattern is not a Windows golden.
+                // Matching sample positions does not establish the original fractional alpha-to-coverage mask.
                 #expect(samples.contains { abs($0.x) < 0.001 })
                 #expect(samples.contains { abs($0.x - 1) < 0.001 })
             }
@@ -113,12 +113,47 @@ struct WPEParityMetalStateMappingTests {
         #expect(translucent.allSatisfy { abs($0.x - 0.5) < 0.001 })
     }
 
+    @Test("Default Metal sample positions and indices match WPE's D3D standard pattern")
+    func nativeStandardSamplePositionsGPU() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        try #require(device.areProgrammableSamplePositionsSupported)
+        let queue = try #require(device.makeCommandQueue())
+        let library = try device.makeLibrary(source: Self.stateShader, options: nil)
+        // Original 14012b701 writes SampleDesc.Quality = 0xffffffff on feature levels 10.1 and later.
+        // D3D11.3 specification 19.2.4: offsets from pixel centre in sixteenths, in sample-index order.
+        let patterns: [[SIMD2<Float>]] = [
+            [SIMD2(4, 4), SIMD2(-4, -4)],
+            [SIMD2(-2, -6), SIMD2(6, -2), SIMD2(-6, 2), SIMD2(2, 6)],
+            [SIMD2(1, -3), SIMD2(-1, 3), SIMD2(5, 1), SIMD2(-3, -5),
+             SIMD2(-5, 5), SIMD2(-7, -1), SIMD2(3, 7), SIMD2(7, -7)],
+        ]
+        for offsets in patterns {
+            let sampleCount = offsets.count
+            try #require(device.supportsTextureSampleCount(sampleCount))
+            let expected = offsets.map { $0 / 16 + SIMD2<Float>(repeating: 0.5) }
+            let defaults = device.getDefaultSamplePositions(sampleCount: sampleCount)
+            #expect(defaults.count == sampleCount)
+            for (position, expected) in zip(defaults, expected) {
+                #expect(SIMD2(position.x, position.y) == expected)
+            }
+            let samples = try renderStateSamples(
+                device: device, queue: queue, library: library, state: .wpe(.normal), color: .zero,
+                clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0),
+                sampleCount: sampleCount, fragmentName: "samplePositionFragment"
+            )
+            for (index, value) in samples.enumerated() {
+                #expect(SIMD2(value.x, value.y) == expected[index % sampleCount])
+                #expect(value.z == Float(index % sampleCount))
+            }
+        }
+    }
+
     /// Exercises the production state mapping on a stored multisampled RT, then reads each sample with a GPU kernel.
     /// This is a state boundary guard; material/planner/factory wiring needs the separate scene production guard.
     private func renderStateSamples(device: MTLDevice, queue: MTLCommandQueue, library: MTLLibrary,
-                                    state: WPEParityBlendState, color: SIMD4<Float>, clear: MTLClearColor) throws -> [SIMD4<Float>] {
+                                    state: WPEParityBlendState, color: SIMD4<Float>, clear: MTLClearColor,
+                                    sampleCount: Int = 4, fragmentName: String = "stateFragment") throws -> [SIMD4<Float>] {
         let side = 4
-        let sampleCount = 4
         try #require(device.supportsTextureSampleCount(sampleCount))
         let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: side,
                                                                          height: side, mipmapped: false)
@@ -129,7 +164,7 @@ struct WPEParityMetalStateMappingTests {
         let target = try #require(device.makeTexture(descriptor: textureDescriptor))
         let pipelineDescriptor = MTLRenderPipelineDescriptor()
         pipelineDescriptor.vertexFunction = library.makeFunction(name: "stateVertex")
-        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "stateFragment")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: fragmentName)
         pipelineDescriptor.rasterSampleCount = sampleCount
         pipelineDescriptor.colorAttachments[0].pixelFormat = .rgba16Float
         WPEParityMetalStateMapping.apply(state, to: pipelineDescriptor)
@@ -173,6 +208,9 @@ struct WPEParityMetalStateMappingTests {
         return {float4(positions[id], 0, 1)};
     }
     fragment float4 stateFragment(constant float4& color [[buffer(0)]]) { return color; }
+    fragment float4 samplePositionFragment(uint sample [[sample_id]]) {
+        return float4(get_sample_position(sample), float(sample), 1.0);
+    }
     kernel void readSamples(texture2d_ms<float, access::read> source [[texture(0)]],
                             device float4* output [[buffer(0)]], uint3 id [[thread_position_in_grid]]) {
         if (id.x >= source.get_width() || id.y >= source.get_height() || id.z >= source.get_num_samples()) return;

@@ -202,7 +202,7 @@ struct ParityPostProcessTests {
         try verifyCompilation(frame)
     }
 
-    @Test func fractionalSizesTruncateAndNeverBecomeZero() throws {
+    @Test func fractionalPostTargetsKeepTheNativeTwoPixelMinimum() throws {
         var config = bloomConfig()
         config.hdrEnabled = true
         config.backbufferWidth = 17
@@ -210,10 +210,19 @@ struct ParityPostProcessTests {
         let frame = WPEParityPostProcessBuilder.build(config)
         #expect(config.hdrBloomLevelCount == 1)
         #expect(frame.resources.first { $0.id == "_rt_2FrameBuffer" }?.width == 8)
-        #expect(frame.resources.first { $0.id == "_rt_2FrameBuffer" }?.height == 1)
+        #expect(frame.resources.first { $0.id == "_rt_2FrameBuffer" }?.height == 2)
         #expect(!frame.resources.contains { $0.id == "_rt_4FrameBuffer" })
         #expect(frame.draws.map(\.shader) == ["hdr_downsample_bloom", "combine_hdr"])
         try verifyCompilation(frame)
+        config.hdrEnabled = false
+        let ldr = WPEParityPostProcessBuilder.build(config)
+        for (name, width) in [("_rt_4FrameBuffer", 4), ("_rt_8FrameBuffer", 2), ("_rt_Bloom", 2)] {
+            let resource = try #require(ldr.resources.first { $0.id.rawValue == name })
+            #expect(resource.width == width && resource.height == 2)
+        }
+        #expect(ldr.draws[1].texelSizes == [SIMD2<Float>(0.25, 0.5)])
+        #expect(ldr.draws[2].texelSizes == [SIMD2<Float>(0.5, 0.5)])
+        try verifyCompilation(ldr)
     }
 
     /// N = max(1, min(iterations, L)); L counts halvings of min(W, H) that stay ≥ 1, at most 8.

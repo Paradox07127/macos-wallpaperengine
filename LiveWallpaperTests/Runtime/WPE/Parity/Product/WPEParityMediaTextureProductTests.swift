@@ -38,6 +38,128 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
     }
 
+    func testSelectedPassInstanceMergeBindsCurrentAndPreviousArtworkInOriginalEffectsAcrossResize() async throws {
+        let fixture = try makeFixture(scripted: false, mergeUserTextures: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let source = MediaInputSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        XCTAssertTrue(driver.hasMediaTextureDemand)
+        XCTAssertTrue(dispatcher.configureParity(generation: driver.loadGeneration, device: fixture.device,
+                                                 textureDemand: driver.hasMediaTextureDemand, onChange: {}))
+        source.push(artwork: fixture.a)
+        let first = try await present(driver, layer: layer)
+        assertPanels(first, width: 80, current: .a, previous: nil)
+        source.push(artwork: fixture.b)
+        let second = try await present(driver, layer: layer)
+        assertPanels(second, width: 80, current: .b, previous: .a)
+        let before = try pair(driver)
+        try assertBoundEffects(driver, current: before.currentID, previous: before.previousID)
+
+        // The same immutable pair and merged declarations survive a real renderer replan.
+        weak var retired = driver.renderer
+        layer.drawableSize = CGSize(width: 160, height: 64)
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 160, height: 64))
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        XCTAssertNil(retired)
+        let resized = try await present(driver, layer: layer)
+        assertPanels(resized, width: 160, current: .b, previous: .a)
+        XCTAssertEqual(try pair(driver), before)
+        try assertBoundEffects(driver, current: before.currentID, previous: before.previousID)
+    }
+
+    func testUserShortcutIconsWakeOriginalEffectsAndRestoreFallbackAcrossReloadAndResize() async throws {
+        let fixture = try makeFixture(scripted: false, shortcutIcons: true)
+        let icons = WPEUserShortcutIconStore(device: fixture.device)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        var inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "shortcut-icon-guard", cacheRelativePath: "shortcut-icon-guard",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        inputs.userShortcutIcons = icons
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run { try? FileManager.default.removeItem(at: fixtureRoot) }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        await assertStaticActor(actor)
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
+        XCTAssertEqual(surface.lastIsPaused, true)
+
+        // Controlled external icon bytes exercise the native-provider consumer, not macOS icon extraction pixels.
+        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 32).flatMap(\.self),
+                                            width: 8, height: 4)
+        let magenta = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(255), 0, 255, 255], count: 32).flatMap(\.self),
+                                               width: 4, height: 8)
+        XCTAssertTrue(icons.setIcon(cyan, forKey: "shortcut-current"))
+        try await waitUntil("Shortcut icon did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        var pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+        XCTAssertEqual(surface.lastIsPaused, true)
+        let cyanTexture = try XCTUnwrap(icons.substituting(nil, slot: 0, declarations: [0: "shortcut-current"]))
+        XCTAssertFalse(icons.setIcon(cyan, forKey: "shortcut-current"))
+        XCTAssertTrue(icons.substituting(nil, slot: 0, declarations: [0: "shortcut-current"]) === cyanTexture)
+        XCTAssertEqual(surface.lastIsPaused, true, "Identical icon bytes must not cause another wake")
+
+        XCTAssertTrue(icons.setIcon(magenta, forKey: "shortcut-previous"))
+        try await waitUntil("Second shortcut icon did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [255, 0, 255, 255])
+        let sourceIDs = try Set([cyanTexture, XCTUnwrap(icons.substituting(nil, slot: 0,
+                                                                           declarations: [0: "shortcut-previous"]))].map(ObjectIdentifier.init))
+        let boundIDs = await actor.run { actor in
+            Set(actor.parityDriverForTesting?.renderer?.lastFrameDraws.compactMap {
+                $0.draw.textures["g_Texture1"].map(ObjectIdentifier.init)
+            } ?? [])
+        }
+        XCTAssertEqual(boundIDs, sourceIDs, "Both real original combine effects must bind the existing store textures")
+
+        try await actor.reload()
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [255, 0, 255, 255])
+        layer.drawableSize = CGSize(width: 160, height: 64)
+        await actor.updateSurfaceGeometry(drawableSize: CGSize(width: 160, height: 64))
+        let deadline = Date().addingTimeInterval(5)
+        while await actor.run({ $0.parityDriverForTesting?.renderer?.backbuffer.width != 160 }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        let resized = await actor.run { $0.parityDriverForTesting?.renderer?.backbuffer.width }
+        XCTAssertEqual(resized, 160, "A real renderer replan must complete")
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 160, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 160, panel: 1, artwork: nil, fallback: [255, 0, 255, 255])
+        XCTAssertTrue(icons.substituting(nil, slot: 0, declarations: [0: "shortcut-current"]) === cyanTexture)
+
+        XCTAssertTrue(icons.setIcon(nil, forKey: "shortcut-current"))
+        try await waitUntil("Clearing an icon did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 160, panel: 0, artwork: nil, fallback: [0, 128, 0, 255])
+        assertPanel(pixels, width: 160, panel: 1, artwork: nil, fallback: [255, 0, 255, 255])
+        XCTAssertEqual(surface.lastIsPaused, true)
+    }
+
     func testOriginalEffectsConsumeSameFrameMediaAndScriptThenPreservePairAcrossReloadAndResize() async throws {
         let fixture = try makeFixture(scripted: true)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -264,7 +386,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
     }
 
-    private func makeFixture(scripted: Bool, mediaProvider: String = "system") throws -> Fixture {
+    private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
+                             shortcutIcons: Bool = false) throws -> Fixture {
+        let qualifiedInput = mergeUserTextures || shortcutIcons
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let environment = ProcessInfo.processInfo.environment
@@ -273,6 +397,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
         guard FileManager.default.fileExists(atPath: engine.appending(path: "shaders/combine.frag").path) else {
             try? FileManager.default.removeItem(at: root)
+            if qualifiedInput {
+                throw MediaFixtureError.originalShader("required original combine.frag")
+            }
             throw XCTSkip("Set WPE_ASSETS_DIR to the original WPE 2.8.42 assets directory")
         }
         // Matches the sealed Windows resource manifest; no shader stub or translated-capture result is supplied.
@@ -281,6 +408,10 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ("combine.vert", "25d48e4e45c8f2092e87d1a29eb2aeb62e5592e1581a6efc15dd06e9790f53cd"),
             ("genericimage2.frag", "1e252e2271cae57fcfdecf3bd79d1685bb726e1e8afe09ba863dca2e1b12d68e"),
             ("genericimage2.vert", "97370dbb18746d61629edf77ee2c30afe07605f5270f8a29a406b414932368bb"),
+            ("common_vertex.h", "cd4a005c0726603d613f97c8ebf9ff0a10d80f4f183de255f70bdecdb2d17ef9"),
+            ("common_pbr.h", "7a542df2279b6637d4f67434087df485b68ad24e06f85490d6ce424118c68d8d"),
+            ("common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
+            ("common_blending.h", "f1cf5473991614784a7feafbd34c65b83a27851bfe9d763ca9c8c3fcbb2dcc6b"),
         ] {
             let bytes = try Data(contentsOf: engine.appending(path: "shaders/\(file)"))
             let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
@@ -290,7 +421,22 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
         let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER"]
         let compiler: WPEParityHelperShaderCompiler
-        if keys.contains(where: { environment[$0] != nil }) {
+        if qualifiedInput {
+            for key in keys + keys.map({ "TEST_RUNNER_" + $0 }) {
+                _ = try XCTUnwrap(environment[key] == nil ? true : nil, "required bundled toolchain disallows \(key)")
+            }
+            let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath().standardizedFileURL
+            let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"].map { path in
+                let url = contents.appending(path: path).resolvingSymlinksInPath().standardizedFileURL
+                _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil, "required bundled tool \(url)")
+                return url
+            }
+            let hashes = try tools.map { try SHA256.hash(data: Data(contentsOf: $0)).map { String(format: "%02x", $0) }.joined() }
+            compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
+                                                         workDirectory: root.appending(path: "shaderc"))
+            XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
+            print("media merge product toolchain origin=app-bundle compilerIdentity=\(compiler.compilerIdentity)")
+        } else if keys.contains(where: { environment[$0] != nil }) {
             let urls = try keys.map { key in
                 try URL(fileURLWithPath: XCTUnwrap(environment[key].flatMap { $0.isEmpty ? nil : $0 },
                                                    "Supply all three nonempty current test toolchain paths: \(keys)"))
@@ -308,13 +454,29 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             let url = root.appending(path: path)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url)
+            if qualifiedInput {
+                let readBack = try Data(contentsOf: url)
+                XCTAssertEqual(readBack, data, "required controlled input \(path)")
+                let hash = SHA256.hash(data: readBack).map { String(format: "%02x", $0) }.joined()
+                print("media merge controlled input=\(path) bytes=\(readBack.count) SHA256=\(hash)")
+            }
         }
         func json(_ path: String, _ value: Any) throws {
             try write(path, JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
         }
         for (name, pixel) in [("black", [UInt8(0), 0, 0, 255]), ("white", [255, 255, 255, 255]),
                               ("current", [0, 128, 0, 255]), ("previous", [0, 0, 128, 255])] {
-            try write("materials/input/\(name).tex", solidTEX(pixel))
+            let bytes = solidTEX(pixel)
+            if qualifiedInput {
+                let expected = [
+                    "black": "12bb09f8d804b7bc680b12fe8be942cd2870213357a9db7ea5b4ff2f899df86a",
+                    "white": "69a03565ff1e6ec0c468d27e1faff5cff7d00f0fb6a97cd34c053cb5d49f8f3c",
+                    "current": "3f42f5054e37baaba996691e03011d5c786c640212dac5cf6204031cdc1f8acd",
+                    "previous": "80e49f65d3e7c3898cd20e6aa9a13f8479c19c63e3e6f873e6441de60acdd0ed",
+                ]
+                XCTAssertEqual(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(), expected[name])
+            }
+            try write("materials/input/\(name).tex", bytes)
         }
         // Select the original g_Color4 branch explicitly so the witness observes live thisLayer.color.
         for name in ["black", "white"] {
@@ -337,7 +499,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ])
             try json("materials/\(name)-effect.json", ["passes": [[
                 "shader": "combine", "textures": ["previous", "input/\(name)"],
-                "usertextures": [NSNull(), ["name": system, "type": mediaProvider]],
+                "usertextures": [NSNull(), ["name": shortcutIcons ? "shortcut-\(name)"
+                        : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
+                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false]],
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
             try json("materials/\(name)-compose.json", ["passes": [[
@@ -350,15 +514,23 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         if scripted {
             witness["visible"] = ["value": true, "script": Self.orderingScript]
         }
+        func effect(_ id: Int, _ name: String) -> [String: Any] {
+            var effect: [String: Any] = ["id": id, "file": "effects/\(name).json"]
+            if mergeUserTextures {
+                effect["passes"] = [["usertextures": [NSNull(), ["name": name == "current" ? "$mediaThumbnail" : "$mediaPreviousThumbnail",
+                                                                 "type": NSNull()]]]]
+            }
+            return effect
+        }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 80, "height": 32], "clearcolor": "0 0 0",
                         "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
             "objects": [
                 ["id": 1, "name": "current", "image": "models/black.json", "size": "32 32", "origin": "16 16 0",
-                 "effects": [["id": 10, "file": "effects/current.json"]]],
+                 "effects": [effect(10, "current")]],
                 ["id": 2, "name": "previous", "image": "models/black.json", "size": "32 32", "origin": "48 16 0",
-                 "effects": [["id": 20, "file": "effects/previous.json"]]],
+                 "effects": [effect(20, "previous")]],
                 witness,
             ],
         ]

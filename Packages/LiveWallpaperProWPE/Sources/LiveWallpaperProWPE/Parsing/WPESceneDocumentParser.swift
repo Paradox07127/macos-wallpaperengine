@@ -501,7 +501,7 @@ public enum WPESceneDocumentParser {
         "ledsource", "castshadow", "castvolumetrics", "innercone", "outercone",
         "attenuation", "exponent", "density", "volumetricsexponent",
         "lightsourcesize", "mindistance", "cascadedistance0", "cascadedistance1",
-        "cascadedistance2"
+        "cascadedistance2", "controlpoint",
     ]
 
     private static func parseLightObject(
@@ -521,6 +521,7 @@ public enum WPESceneDocumentParser {
         // strings after load; plain-name aliases are not registered and must not create g_L* slots.
         case "lpoint": .point
         case "lspot": .spot
+        case "ltube": .tube
         case "ldirectional": .directional
         default: .unknown(authoredType)
         }
