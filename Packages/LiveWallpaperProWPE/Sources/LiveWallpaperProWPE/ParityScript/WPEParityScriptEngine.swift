@@ -79,6 +79,8 @@ public final class WPEParityScriptEngine {
         public var sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)?
         /// Pauses the existing video consumer of this layer. The result is internal readiness, not a JS return.
         public var pauseVideoTexture: ((String) -> Bool)?
+        /// Executes against the current renderer's material-function resources, including module-body calls.
+        public var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         /// Level 0 log, 1 warn, 2 error.
         public var log: (Int, String) -> Void
         public var openUserShortcut: (String) -> Bool
@@ -94,6 +96,7 @@ public final class WPEParityScriptEngine {
                     canDestroyLayer: ((String) -> Bool)? = nil,
                     sortLayer: ((String, Int, inout WPEParitySceneState) -> Bool)? = nil,
                     pauseVideoTexture: ((String) -> Bool)? = nil,
+                    executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
             self.assets = assets
@@ -111,6 +114,7 @@ public final class WPEParityScriptEngine {
             self.canDestroyLayer = canDestroyLayer
             self.sortLayer = sortLayer
             self.pauseVideoTexture = pauseVideoTexture
+            self.executeMaterialFunction = executeMaterialFunction
             self.log = log
             self.openUserShortcut = openUserShortcut
         }
@@ -191,6 +195,8 @@ public final class WPEParityScriptEngine {
     public private(set) var createdLayers: [CreatedLayer] = []
     public private(set) var started = false
     public private(set) var audioResolutions: Set<Int> = []
+    /// Rebound when a renderer takes over this engine; accepted calls belong to that consumer's queue.
+    public var materialFunctionHandler: ((WPEParitySceneState.EffectKey, String) -> Void)?
 
     private let context: JSContext
     private let configuration: Configuration
@@ -220,6 +226,7 @@ public final class WPEParityScriptEngine {
     /// Compiles every property script of `document`; `start` runs their `init`.
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
+        materialFunctionHandler = configuration.executeMaterialFunction
         context = JSContext()
         sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         capacity = 0
@@ -850,6 +857,15 @@ public final class WPEParityScriptEngine {
                 return
             }
         }
+        let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
+            guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
+                  let effect = Self.checkedLayerIndex(Double(slots[slot].effect), count: effectKeys.count) else { return }
+            guard let handler = materialFunctionHandler else {
+                configuration.log(1, "executeMaterialFunction is unsupported without a product resource consumer")
+                return
+            }
+            handler(effectKeys[effect], name)
+        }
         let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
         }
@@ -867,6 +883,7 @@ public final class WPEParityScriptEngine {
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
+        set("executeMaterialFunction", executeMaterialFunction)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
         set("storageEnabled", configuration.storage != nil)

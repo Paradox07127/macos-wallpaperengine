@@ -56,6 +56,11 @@ enum WPEParityScriptLayers {
       return true;
     }
     const EffectProto = {
+      executeMaterialFunction(name) {
+        if (this == null || owners[this.__s] !== this) return;
+        const a = argument(name, 0x200);
+        host.executeMaterialFunction(this.__s, a ? a.value : '');
+      },
       getMaterial(key) {
         if (!this.__metadataKnown) {
           host.log(1, 'getMaterial is unsupported without resolved effect resource metadata');
