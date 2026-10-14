@@ -208,8 +208,8 @@ struct WPEParityMetalStateMappingTests {
         return {float4(positions[id], 0, 1)};
     }
     fragment float4 stateFragment(constant float4& color [[buffer(0)]]) { return color; }
-    fragment float4 samplePositionFragment(float2 position [[sample_position]], uint sample [[sample_id]]) {
-        return float4(position, float(sample), 1.0);
+    fragment float4 samplePositionFragment(uint sample [[sample_id]]) {
+        return float4(get_sample_position(sample), float(sample), 1.0);
     }
     kernel void readSamples(texture2d_ms<float, access::read> source [[texture(0)]],
                             device float4* output [[buffer(0)]], uint3 id [[thread_position_in_grid]]) {
