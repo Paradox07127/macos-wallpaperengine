@@ -32,6 +32,8 @@ private struct WPEParitySceneDestination {
     let alphaMax: Bool
     /// The layer whose composite `color` is; nil for the scene.
     let compositeOwnerID: String?
+    /// Last ancestor that actually replaced V/P; fullscreen composites inherit their caller's camera.
+    let cameraOwnerID: String?
     /// Top level writes RGB only; a parent composite gets RGBA once any ancestor counted R+0x1c9.
     var writeMask: WPEParitySceneWriteMask {
         alphaMax ? .rgba : .rgb
@@ -147,7 +149,7 @@ private struct WPEParitySceneEmitter {
             emit(pass, .clearDepth(WPETextureView(sceneDepth), depth: 0))
         }
         let top = WPEParitySceneDestination(color: sceneColor, depth: sceneDepth, alphaMax: false,
-                                            compositeOwnerID: nil)
+                                            compositeOwnerID: nil, cameraOwnerID: nil)
         for object in roots {
             render(object, into: top, ancestors: [])
         }
@@ -210,10 +212,11 @@ private struct WPEParitySceneEmitter {
         }
         // 1401e8aa0.c:476-487: the last reader always lands on composites[0].
         var current = bit4 ? n % 2 : (n - 1) % 2
-        fillComposite(object, composites[current])
+        fillComposite(object, composites[current], clearCameraOwnerID: destination.cameraOwnerID)
         let childDestination = WPEParitySceneDestination(color: composites[current], depth: nil,
                                                          alphaMax: destination.alphaMax || !object.copyBackground,
-                                                         compositeOwnerID: object.id)
+                                                         compositeOwnerID: object.id,
+                                                         cameraOwnerID: object.fullscreen ? destination.cameraOwnerID : object.id)
         for child in children {
             render(child, into: childDestination, ancestors: ancestors + [composites[current]])
         }
@@ -316,9 +319,10 @@ private struct WPEParitySceneEmitter {
     }
 
     /// 140207b50: albedo into the starting composite with ONE/ZERO and RGBA.
-    private mutating func fillComposite(_ object: WPEParitySceneObject, _ composite: WPEResourceID) {
+    private mutating func fillComposite(_ object: WPEParitySceneObject, _ composite: WPEResourceID,
+                                        clearCameraOwnerID: String?) {
         if case let .text(text) = object.kind {
-            return fillTextComposite(object, text, composite)
+            return fillTextComposite(object, text, composite, clearCameraOwnerID: clearCameraOwnerID)
         }
         if object.fullscreen {
             // 1401e8aa0.c:720-736
@@ -483,7 +487,7 @@ private struct WPEParitySceneEmitter {
 
     /// 140257c30 then 140257d70: clearalpha over the snapshot (or an opaque Clear), then the glyph lists translucent.
     private mutating func fillTextComposite(_ object: WPEParitySceneObject, _ text: WPEParitySceneText,
-                                            _ composite: WPEResourceID) {
+                                            _ composite: WPEResourceID, clearCameraOwnerID: String?) {
         let opaque = text.object.opaqueBackground
         let fill = opaque ? text.backgroundPass : WPEPassIdentity("\(object.id)/clearalpha")
         bind(fill, composite, depth: nil)
@@ -494,7 +498,7 @@ private struct WPEParitySceneEmitter {
         } else {
             draw(WPEParitySceneDraw(pass: fill, objectID: object.id, shader: "composelayer", source: .textClearAlpha,
                                     reads: [Resource.fullFrameBuffer], target: composite, blend: .normal,
-                                    writeMask: .rgba, geometry: .layerMesh))
+                                    compositeOwnerID: clearCameraOwnerID, writeMask: .rgba, geometry: .layerMesh))
         }
         for atlas in text.layout.mesh?.drawnLists ?? [] {
             let identity = Self.glyphPass(object, atlas)

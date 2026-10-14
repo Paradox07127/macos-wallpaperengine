@@ -121,12 +121,12 @@ struct WPEParityFrameDrawPlan {
         }
     }
 
-    /// A text layer draw's model terms (R23 Q6): every draw but the FBO glyphs moves with slot16, the layer model
-    /// between T(anchor) and T(block offset).
+    /// Slot16 model terms for glyph/background and final text draws (R23 Q6).
+    /// Slot28 clearalpha bypasses this placement and uses W' with the inherited camera.
     struct TextPlacement {
         let anchorOffset: SIMD2<Float>
         let blockOffset: SIMD2<Float>
-        /// The glyph or background translation; nil for the clearalpha quad, effect passes and the final composite.
+        /// The glyph or background translation; nil for effect passes and the final composite.
         let translation: SIMD2<Float>?
     }
 
@@ -654,14 +654,15 @@ struct WPEParityFrameDrawPlanner {
         case let .scene(draw):
             WPEParityFrameDrawPlan.Placement(
                 layers: layers, objectID: draw.objectID,
-                kind: draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
+                kind: draw.source == .textClearAlpha ? .textClearAlpha
+                    : draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
                     SIMD2(Float($0.x), Float($0.y))
                 } ?? SIMD2(Float(color.width), Float(color.height)))
                     : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
                 compositeOwnerID: draw.compositeOwnerID,
-                text: text.map { textPlacement($0, draw) }
+                text: draw.source == .textClearAlpha ? nil : text.map { textPlacement($0, draw) }
             )
         case .post: nil
         }

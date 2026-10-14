@@ -138,14 +138,22 @@ final class WPEParitySceneScript {
 
     /// The layers the cursor pass tests this frame. `quad` gives a layer's corners in client pixels, nil for an object
     /// the frame does not draw as a quad.
-    func updateCursorTargets(quad: (String) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)?,
-                             visible: (String) -> Bool) {
+    func updateCursorTargets(state: WPEParitySceneState,
+                             quad: (String) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)?) {
         guard handlesCursor else { return }
         targets.removeAll(keepingCapacity: true)
-        for candidate in cursorCandidates where candidate.solid {
+        func flag(_ name: String, _ candidate: CursorCandidate, fallback: Bool) -> Bool {
+            guard case let .vector(value)? = state.scriptField(name, of: candidate.id) else { return fallback }
+            return value.x != 0
+        }
+        for candidate in cursorCandidates {
+            // 140189e10.c:115-123 reads the live bit13 before each hit test.
+            guard flag("solid", candidate, fallback: candidate.solid) else { continue }
             guard let corners = quad(candidate.id) else { continue }
-            targets.append(WPEParityCursorTarget(id: candidate.id, quad: corners, visible: visible(candidate.id),
-                                                 disablePropagation: candidate.disablePropagation))
+            targets.append(WPEParityCursorTarget(
+                id: candidate.id, quad: corners, visible: state.isVisible(candidate.id),
+                disablePropagation: flag("disablepropagation", candidate, fallback: candidate.disablePropagation)
+            ))
         }
     }
 

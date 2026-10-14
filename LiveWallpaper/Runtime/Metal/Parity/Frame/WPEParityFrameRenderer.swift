@@ -732,7 +732,7 @@ final class WPEParityFrameRenderer {
     private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, cursor: SIMD2<Float>,
                                  buttonDown: Bool, timeOfDay: Float) {
         let world = cursorWorld(camera: camera)
-        script.updateCursorTargets(quad: { cursorQuad($0, camera: camera) }, visible: { state.isVisible($0) })
+        script.updateCursorTargets(state: state, quad: { cursorQuad($0, camera: camera) })
         script.cursor(at: cursor, world: world, leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
         script.dispatchMedia(state: &state)
     }

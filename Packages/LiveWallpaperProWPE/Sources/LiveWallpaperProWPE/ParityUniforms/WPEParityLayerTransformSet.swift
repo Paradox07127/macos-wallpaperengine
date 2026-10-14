@@ -3,6 +3,8 @@ import simd
 public enum WPEParityLayerDrawKind: Sendable, Equatable {
     /// Layer albedo, or the last effect pass drawn onto the layer-size mesh.
     case layer
+    /// Slot28 overwrites M with W' and inherits V/P before the text FBO/perspective pushes (140257c30.c).
+    case textClearAlpha
     /// The albedo filling the layer's first composite of `size` (R10 step 1).
     case compositeFill(size: SIMD2<Float>)
     /// An intermediate effect pass on the 2×2 quad.
@@ -187,14 +189,22 @@ public struct WPEParityLayerTransformSet: Sendable {
     /// composite instead of the scene, also when the owner is a grandparent (140207b50.c:386-458).
     public func draw(_ id: String, kind: WPEParityLayerDrawKind, compositeOwnerID: String? = nil,
                      parallax: SIMD2<Float>) -> WPEParityUniformDraw {
-        var matrices = WPEParityUniformMatrices(model: model(id), view: sceneView(id, parallax: parallax),
+        var matrices = WPEParityUniformMatrices(model: model(id),
+                                                view: kind == .textClearAlpha ? camera.view : sceneView(id, parallax: parallax),
                                                 projection: camera.projection)
         if let ownerID = compositeOwnerID, let owner = layers[ownerID] {
-            matrices = WPEParityLayerTransform.compositeMatrices(parentModel: model(ownerID), parentSize: owner.size,
-                                                                 childModel: matrices.model)
+            if kind == .textClearAlpha {
+                // The parent supplies only the inherited camera; slot28 replaces its inverse model entirely.
+                matrices.view = matrix_identity_float4x4
+                matrices.projection = WPEParityUniformMatrices.ortho(halfWidth: owner.size.x / 2,
+                                                                     halfHeight: owner.size.y / 2, depth: 1000)
+            } else {
+                matrices = WPEParityLayerTransform.compositeMatrices(parentModel: model(ownerID), parentSize: owner.size,
+                                                                     childModel: matrices.model)
+            }
         }
         // 1401e8aa0.c:998-1001: the perspective replaces whichever V and P are pushed, composite ones included.
-        if layers[id]?.perspective == true {
+        if kind != .textClearAlpha, layers[id]?.perspective == true {
             (matrices.view, matrices.projection) = camera.pushPerspective(view: matrices.view,
                                                                           projection: matrices.projection)
         }
@@ -202,9 +212,9 @@ public struct WPEParityLayerTransformSet: Sendable {
         let effectPass = WPEParityUniformEffectPass(layerModel: matrices.model,
                                                     layerModelViewProjection: matrices.modelViewProjection,
                                                     size: layers[id]?.size ?? .zero,
-                                                    isLastPass: kind == .layer || kind == .lastEffectPass)
+                                                    isLastPass: kind == .layer || kind == .textClearAlpha || kind == .lastEffectPass)
         let drawn = switch kind {
-        case .layer, .lastEffectPass: matrices
+        case .layer, .textClearAlpha, .lastEffectPass: matrices
         case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
         case .effectPass: WPEParityUniformMatrices.effectPass
         case .clipMaskMerge: WPEParityUniformMatrices(model: matrix_identity_float4x4,
@@ -216,7 +226,7 @@ public struct WPEParityLayerTransformSet: Sendable {
 
     public func quad(_ id: String, kind: WPEParityLayerDrawKind, uvMax: SIMD2<Float> = .one) -> WPEParityLayerQuad {
         switch kind {
-        case .layer: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
+        case .layer, .textClearAlpha: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
         case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
         case .effectPass, .clipMaskMerge, .lastEffectPass: .effectPass
         }

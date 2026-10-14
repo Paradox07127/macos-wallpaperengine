@@ -577,7 +577,8 @@ final class WPESceneMediaEventDispatcher {
         var thumbnail = palette.thumbnail(for: state.artwork)
         let artworkChanged = updateParityArtwork(state.artwork, thumbnail: thumbnail)
         var diagnostics = parityArtworkDiagnostics
-        if parityCurrentArtwork != nil, !thumbnail.hasThumbnail {
+        let hasRawArtwork = state.artwork?.isEmpty == false
+        if hasRawArtwork, !thumbnail.hasThumbnail {
             // Native hasThumbnail tests the byte range, not whether colour analysis found opaque samples.
             thumbnail.hasThumbnail = true
             diagnostics.append("media.artwork-palette-unavailable-native-colors-unverified")
@@ -612,7 +613,7 @@ final class WPESceneMediaEventDispatcher {
                 }
             }
         }
-        if artworkChanged, parityCurrentArtwork != nil,
+        if artworkChanged, hasRawArtwork,
            !events.contains(where: {
                if case .thumbnailChanged = $0 {
                    true
