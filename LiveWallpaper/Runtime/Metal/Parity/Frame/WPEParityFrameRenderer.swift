@@ -34,6 +34,7 @@ enum WPEParityFrameRenderError: Error, LocalizedError {
     case arenaUnavailable
     case allocationFailed(WPEResourceID)
     case encoderUnavailable
+    case invalidUserProperties
     case requiredPostProcessUnavailable(pass: String, reason: WPEParityFrameSkip)
 
     var errorDescription: String? {
@@ -42,6 +43,7 @@ enum WPEParityFrameRenderError: Error, LocalizedError {
         case .arenaUnavailable: "The WPE frame arena is unavailable"
         case let .allocationFailed(resource): "The WPE frame could not allocate \(resource)"
         case .encoderUnavailable: "The WPE frame encoder is unavailable"
+        case .invalidUserProperties: "The WPE user properties are not a JSON object"
         case let .requiredPostProcessUnavailable(pass, reason): "Required WPE postprocess \(pass) unavailable: \(reason)"
         }
     }
@@ -120,7 +122,7 @@ final class WPEParityFrameRenderer {
     private var postConstants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] = [:]
     private let device: MTLDevice
     private let drawEncoder: WPEParityDrawEncoder
-    private let images: [WPEResourceID: MTLTexture]
+    private var images: [WPEResourceID: MTLTexture]
     private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
     private let screen: WPEParityUniformScreen
@@ -381,6 +383,10 @@ final class WPEParityFrameRenderer {
         planner.texts
     }
 
+    var conditionalPropertyBindings: [String: [WPEScenePropertyBinding]] {
+        planner.conditionalPropertyBindings
+    }
+
     /// Built on the first text change, from the layers and atlases as loaded.
     private lazy var textPipeline = WPEParityTextPipeline(
         assets: plan.scene.assets, hdr: plan.scene.engineFlags.hdr,
@@ -403,11 +409,13 @@ final class WPEParityFrameRenderer {
     /// directory's name.
     nonisolated(nonsending) init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
                                  particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
-                                 workshopID: String? = nil, continuing previous: WPEParityFrameRenderer? = nil) async throws {
+                                 workshopID: String? = nil, continuing previous: WPEParityFrameRenderer? = nil,
+                                 userPropertiesJSON: String = "{}") async throws {
         let factory = WPEParityPipelineFactory(device: device)
         let encoder = WPEParityDrawEncoder(factory: factory)
         var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan,
-                                                preservingVideoImages: previous?.planner.videoImages ?? [:])
+                                                preservingVideoImages: previous?.planner.videoImages ?? [:],
+                                                userProperties: try Self.propertySnapshot(userPropertiesJSON))
         // Disabled effects' programs too, so a toggle compiles nothing (R24 Q3).
         let artifacts = await withTaskGroup(
             of: (WPEHLSLProgram, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self
@@ -605,7 +613,7 @@ final class WPEParityFrameRenderer {
     }
 
     /// Picks up `previous`'s scene where it stopped, for the same document planned at another size.
-    func continueScene(from previous: WPEParityFrameRenderer) throws {
+    func continueScene(from previous: WPEParityFrameRenderer, userPropertiesJSON: String? = nil) throws {
         try previous.submitMaterialClears()
         clock = previous.clock
         pointer = previous.pointer
@@ -660,6 +668,10 @@ final class WPEParityFrameRenderer {
         // Resize handlers may call material functions on dynamically relaid text FBOs. Prepare those actual
         // targets first, and only replace the engine callback after all throwing adoption work succeeds.
         try replanRelaidTexts()
+        if let userPropertiesJSON {
+            let snapshot = try Self.propertySnapshot(userPropertiesJSON)
+            try replaceConditionalProperties(changed: snapshot, merged: snapshot)
+        }
         script?.engine.materialFunctionHandler = scriptMaterialFunction
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
                        state: &state)
@@ -669,7 +681,9 @@ final class WPEParityFrameRenderer {
     /// Writes a user-property change between frames; changed text layers are re-laid now. `changedJSON` holds the
     /// changed project properties, `mergedJSON` all of them (1401731d0.c:143-840).
     func applyUserProperties(_ update: WPEParityUserPropertyUpdate, changedJSON: String = "{}",
-                             mergedJSON: String = "{}") {
+                             mergedJSON: String = "{}") throws {
+        try replaceConditionalProperties(changed: Self.propertySnapshot(changedJSON),
+                                         merged: Self.propertySnapshot(mergedJSON))
         update.apply(to: &state)
         cameraParallax = update.cameraParallax
         if update.bloom != bloom {
@@ -683,6 +697,48 @@ final class WPEParityFrameRenderer {
             }
         }
         script?.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
+    }
+
+    private static func propertySnapshot(_ json: String) throws -> WPESceneJSONValue {
+        let raw = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        guard let value = WPESceneJSONValue(jsonValue: raw), case .object = value else {
+            throw WPEParityFrameRenderError.invalidUserProperties
+        }
+        return value
+    }
+
+    /// Prepare all immutable texture replacements and their existing readers before adopting them. Native
+    /// reload destroys its old resources before its placeholder fallback; matching that failure path is still
+    /// open. A failed Mac preparation currently leaves the valid cohort intact and rejects the product commit.
+    private func replaceConditionalProperties(changed: WPESceneJSONValue, merged: WPESceneJSONValue) throws {
+        let prepared = try planner.preparingConditionalProperties(changed: changed, merged: merged)
+        var candidate = prepared.planner
+        guard !prepared.affectedOperations.isEmpty else {
+            planner = candidate
+            return
+        }
+        let current = graphs.layout
+        let affectedNames = Set(Self.drawNames(current.frames[0]).compactMap { index, name in
+            prepared.affectedOperations.contains(index) ? name : nil
+        })
+        let reuse = Layout(effects: current.effects, frames: current.frames,
+                           draws: current.draws.filter { !prepared.affectedOperations.contains($0.key) },
+                           skipped: current.skipped, fade: current.fade)
+        let planned = try plan.layout(effects: state, texts: candidate.texts,
+                                      mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
+        let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+                                         planner: &candidate, encoder: drawEncoder,
+                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: reuse)
+        for (index, name) in Self.drawNames(planned.frames[0])
+            where affectedNames.contains(name) && planned.programs[index] != nil && layout.draws[index] == nil {
+            throw layout.skipped[index] ?? WPEParityFrameSkip.noMaterial
+        }
+        try installGraphs(layout, cachePrevious: false)
+        planner = candidate
+        images = candidate.layerImages
+        packedConstants.removeAll()
+        fadeConstants.removeAll()
+        repackBloom()
     }
 
     /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.

@@ -253,7 +253,7 @@ final class WPEParitySceneDriver {
                                                      bindingABIVersion: 1)
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
-                workshopID: workshopID
+                workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
             )
             guard generation == loadGeneration else { throw CancellationError() }
             // Built here so the first present does not compile its pipeline on the frame path.
@@ -295,6 +295,7 @@ final class WPEParitySceneDriver {
             plannedTarget = target
             adoptUpscalePlan(selection.upscale)
             userPropertyBindings = WPEParityUserProperties.bindings(document: document)
+                .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
@@ -351,15 +352,18 @@ final class WPEParitySceneDriver {
                                                    settings: planSource.settings, target: target)
                 let renderer = try await WPEParityFrameRenderer(
                     plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
-                    workshopID: planSource.workshopID, continuing: previous
+                    workshopID: planSource.workshopID, continuing: previous,
+                    userPropertiesJSON: scriptUserProperties
                 )
                 guard generation == loadGeneration, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
                                             pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
                 guard current == selection else { continue }
-                try renderer.continueScene(from: previous)
+                try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
                 self.renderer = renderer
+                userPropertyBindings = WPEParityUserProperties.bindings(document: planSource.document)
+                    .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
                 plannedTarget = target
                 adoptUpscalePlan(selection.upscale)
                 return true
@@ -398,12 +402,20 @@ final class WPEParitySceneDriver {
             return false
         }
         pendingUserProperties = nil
-        scriptUserProperties = WPEParitySceneScript.userPropertiesJSON(
+        let merged = WPEParitySceneScript.userPropertiesJSON(
             scriptUserProperties, values: patch.newValues.filter { patch.changedKeys.contains($0.key) }
         )
-        renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
-            scriptUserProperties, keys: patch.changedKeys
-        ), mergedJSON: scriptUserProperties)
+        do {
+            try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
+                merged, keys: patch.changedKeys
+            ), mergedJSON: merged)
+        } catch {
+            Logger.warning("Parity user property preparation failed: \(error)", category: .wpeRender)
+            return false
+        }
+        scriptUserProperties = merged
+        userPropertyBindings = WPEParityUserProperties.bindings(document: pending.document)
+            .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
         self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
