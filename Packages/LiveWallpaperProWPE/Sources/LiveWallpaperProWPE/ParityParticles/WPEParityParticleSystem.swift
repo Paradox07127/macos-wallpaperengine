@@ -739,7 +739,7 @@ public struct WPEParityParticleSystem {
         birthU[slot] = u
         frame[slot] = config.randomFrame ? u : 0
         for (index, initializer) in config.initializers.enumerated() {
-            initialize(slot, initializer, index: index)
+            initialize(slot, initializer, index: index, birthBasis: basis ?? matrix_identity_float3x3)
         }
         lifetime[slot] = max(lifetime[slot] * instance.lifetime, 0.001)
         initialSize[slot] *= instance.size
@@ -764,7 +764,8 @@ public struct WPEParityParticleSystem {
     }
 
     /// D/14023b340.c:360-1032.
-    private mutating func initialize(_ slot: Int, _ initializer: WPEParityParticleInitializer, index: Int) {
+    private mutating func initialize(_ slot: Int, _ initializer: WPEParityParticleInitializer, index: Int,
+                                     birthBasis: simd_float3x3) {
         switch initializer {
         case let .lifetime(low, high, exponent):
             lifetime[slot] = max(low + pow(rng.unit(), exponent) * (high - low), 0.001)
@@ -794,6 +795,8 @@ public struct WPEParityParticleSystem {
             if let parentSample {
                 applyInitialInherit(field, slot: slot, parent: parentSample)
             }
+        case let .inheritControlPointVelocity(point, low, high):
+            initializeControlPointVelocity(point, minimum: low, maximum: high, slot: slot, birthBasis: birthBasis)
         case let .velocity(low, high):
             // Sampled z, y, x (D/1401bac50.c:16-25).
             let z = rng.draw(low.z, high.z)

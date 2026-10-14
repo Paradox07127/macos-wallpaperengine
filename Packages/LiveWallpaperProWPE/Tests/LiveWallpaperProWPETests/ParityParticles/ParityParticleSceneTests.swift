@@ -822,7 +822,7 @@ final class ParityParticleSceneTests: XCTestCase {
         let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let cases: [(text: String, edge: String, field: String)] = [
             (periodic, "", "emitter"),
-            (plain.replacingOccurrences(of: "lifetimerandom", with: "inheritcontrolpointvelocity"), "", "component"),
+            (plain.replacingOccurrences(of: "lifetimerandom", with: "unprovedinitializer"), "", "component"),
             (plain, #", "angles": "invalid""#, "angles"),
             (plain, #", "angles": "1e40 0 0""#, "angles"),
             (plain, #", "origin": "1e40 0 0""#, "origin"),

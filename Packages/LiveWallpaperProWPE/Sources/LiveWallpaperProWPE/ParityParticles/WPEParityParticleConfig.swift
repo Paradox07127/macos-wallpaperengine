@@ -40,6 +40,7 @@ enum WPEParityParticleInitializer: Equatable, Sendable {
     case colorList(hsv: [SIMD3<Float>], noise: SIMD3<Float>)
     case alpha(min: Float, max: Float, exponent: Float)
     case velocity(min: SIMD3<Float>, max: SIMD3<Float>)
+    case inheritControlPointVelocity(controlPoint: Int, min: Float, max: Float)
     case rotation(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case angularVelocity(min: SIMD3<Float>, max: SIMD3<Float>, exponent: Float)
     case turbulentVelocity(WPEParityParticleTurbulentVelocity)
@@ -323,6 +324,14 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         case "velocityrandom":
             let limit: SIMD3<Float> = is3D ? SIMD3(1, 1, 1) : SIMD3(32, 32, 0)
             initializer = .velocity(min: JSON.vector(minimum) ?? -limit, max: JSON.vector(maximum) ?? limit)
+        case "inheritcontrolpointvelocity":
+            let point = Int(UInt32(truncatingIfNeeded: fields.integer("controlpoint", 0)))
+            guard controlPoints.indices.contains(point) else {
+                diagnostics.append("initializer \(name) controlpoint \(point) exceeds the current 8-slot allocation")
+                return
+            }
+            initializer = .inheritControlPointVelocity(controlPoint: point,
+                                                       min: fields.number("min", 0.1), max: fields.number("max", 0.2))
         case "rotationrandom":
             initializer = .rotation(
                 min: JSON.vector(minimum) ?? .zero, max: JSON.vector(maximum) ?? SIMD3(0, 0, 6.283_185_307_17),
@@ -350,6 +359,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             return
         }
         switch initializer {
+        case let .inheritControlPointVelocity(point, _, _): useControlPoints(point)
         case let .sequenceAround(field): useControlPoints(field.controlPoint)
         case let .sequenceBetween(field): useControlPoints(field.start, field.end)
         case let .remap(field): useRemapControlPoints(field, entry: fields)
