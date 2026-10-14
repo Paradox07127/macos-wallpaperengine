@@ -60,6 +60,11 @@ final class ParityModelDataConsumerTests: XCTestCase {
           new Uint32Array(patch.buffer)[8] = 0x7fc12345;
           model.replaceData({vertexBuffer:patch,vertexFormat:[IModelData.POSITION],indexBuffer:null,
             material:'',boundingBoxMins:{x:0},boundingBoxMaxs:{x:0}});
+          let appended = false;
+          try { model.replaceData({shapes:[{}, {}, {vertexBuffer:vertices,vertexFormat:[IModelData.POSITION],
+            material:'materials/other.json'}]}); }
+          catch(e) { appended = e.message === 'Invalid material'; }
+          if (!appended) throw Error('append resource error');
         }
         export function destroy() { model.replaceData({shapes:[null]}); thisScene.destroyModelData(1); }
         """#
@@ -122,13 +127,15 @@ final class ParityModelDataConsumerTests: XCTestCase {
         XCTAssertFalse(replaced.shapes[0].isVertexBufferDynamic)
         XCTAssertFalse(replaced.shapes[0].isIndexBufferDynamic)
         XCTAssertEqual(replaced.shapes[0].material, Data("materials/model.json".utf8))
+        XCTAssertEqual(replaced.shapes.count, 3, "an appended native shape precedes its resource validation error")
+        XCTAssertEqual(replaced.shapes[2].material, Data("materials/other.json".utf8))
         XCTAssertEqual(Self.word(replaced.shapes[0].vertices.data, 8), 0x7FC1_2345)
         XCTAssertEqual(replaced.bounds, initial.bounds, "replacement does not recompute the initial MDL bounds")
         try state.retainModelData(1, for: "1")
         XCTAssertEqual(state.modelData(1)?.references, 2)
         engine.destroy(state: &state)
         XCTAssertEqual(state.modelData(1)?.references, 1)
-        XCTAssertEqual(state.modelData(1)?.shapes.count, 1)
+        XCTAssertEqual(state.modelData(1)?.shapes.count, 2)
         XCTAssertEqual(state.modelData(1)?.shapes.first?.indices?.elementWidth, .uint32)
         state.releaseLayerModelData("1")
         XCTAssertNil(state.modelData(1))
