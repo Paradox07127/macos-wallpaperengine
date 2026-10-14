@@ -262,9 +262,11 @@ public struct WPEParityPuppetAnimator: Sendable {
         }
     }
 
-    /// FUN_140170580: A = clamp(Int(time / frameDuration), 0, N − 1), B = min(A + 1, N).
+    /// FUN_140170580 truncates the Float quotient to Int32 with CVTTSS2SI before clamping A. Its masked-invalid
+    /// result is Int32.min, including NaN, infinity and finite overflow; the interpolation factor stays unchanged.
     static func frame(time: Float, frameDuration: Float, frameCount: Int) -> (a: Int, b: Int, t: Float) {
-        let a = min(max(Int(time / frameDuration), 0), max(frameCount - 1, 0))
+        let index = Int32(exactly: (time / frameDuration).rounded(.towardZero)) ?? Int32.min
+        let a = min(max(Int(index), 0), max(frameCount - 1, 0))
         return (a, min(a + 1, frameCount), time.truncatingRemainder(dividingBy: frameDuration) / frameDuration)
     }
 

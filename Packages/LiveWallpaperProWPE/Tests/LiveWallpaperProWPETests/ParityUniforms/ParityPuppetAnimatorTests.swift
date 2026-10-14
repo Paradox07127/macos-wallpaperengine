@@ -215,6 +215,50 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         XCTAssertEqual([start.a, start.b], [0, 1])
     }
 
+    func testNativeInt32FrameConversionHandlesInvalidAndBoundaryQuotients() {
+        // 1401705be is CVTTSS2SI ecx: invalid returns 0x80000000, then 1401705cb..5d8 selects A=0.
+        // Float immediately below +2^31 is valid; +2^31 itself is invalid, rather than clamped to the last frame.
+        let cases: [(time: Float, duration: Float, indices: [Int])] = [
+            (33.25, 1, [3, 4]), (-0.75, 1, [0, 1]),
+            (Float(bitPattern: 0x4EFF_FFFF), 1, [3, 4]),
+            (Float(bitPattern: 0x4F00_0000), 1, [0, 1]),
+            (Float(bitPattern: 0x4F00_0001), 1, [0, 1]),
+            (Float(bitPattern: 0xCEFF_FFFF), 1, [0, 1]),
+            (Float(bitPattern: 0xCF00_0000), 1, [0, 1]),
+            (Float(bitPattern: 0xCF00_0001), 1, [0, 1]),
+            (.greatestFiniteMagnitude, 1, [0, 1]), (-.greatestFiniteMagnitude, 1, [0, 1]),
+            (1_073_741_824, 0.5, [0, 1]), (100, .leastNormalMagnitude, [0, 1]),
+            (.nan, 1, [0, 1]), (.infinity, 1, [0, 1]), (-.infinity, 1, [0, 1]),
+        ]
+        for value in cases {
+            let frame = WPEParityPuppetAnimator.frame(time: value.time, frameDuration: value.duration, frameCount: 4)
+            XCTAssertEqual([frame.a, frame.b], value.indices, "time=\(value.time), duration=\(value.duration)")
+            if !value.time.isFinite {
+                XCTAssertTrue(frame.t.isNaN, "the native remainder stays NaN")
+            }
+        }
+        let negative = WPEParityPuppetAnimator.frame(time: -0.75, frameDuration: 1, frameCount: 4)
+        XCTAssertEqual(negative.t, -0.75, "index qualification does not clamp the native interpolation factor")
+
+        // Drive the same conversion through the newly exposed host control and the real pose evaluation.
+        var animator = WPEParityPuppetAnimator(model: rotatingChild(frames: 2), layers: [layer(7)])
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .pause))
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(Float(bitPattern: 0x4EFF_FFFF))))
+        animator.advance(dt: 0)
+        let last = translation(SIMD3(1, 2, 0)) * simd_float4x4(rotationZ(.pi / 2))
+            * translation(SIMD3(-1, -2, 0))
+        assertEqual(animator.palette[1], last)
+        XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(Float(bitPattern: 0x4F00_0000))))
+        animator.advance(dt: 0)
+        assertEqual(animator.palette[1], matrix_identity_float4x4)
+        for frame: Float in [.nan, .infinity, -.infinity] {
+            XCTAssertTrue(animator.controlLayer(at: 0, action: .setFrame(frame)))
+            animator.advance(dt: 0)
+            XCTAssertTrue(animator.palette[1].columns.0.x.isNaN,
+                          "the native nonfinite sample remains nonfinite without an integer-conversion trap")
+        }
+    }
+
     func testRateScalesAdvance() {
         var animator = WPEParityPuppetAnimator(model: rotatingChild(frames: 2), layers: [layer(7, rate: 2)])
         animator.advance(dt: 0.0625)
