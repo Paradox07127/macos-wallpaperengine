@@ -212,7 +212,8 @@ final class WPEParitySceneDriver {
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
         diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
-        workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init()
+        workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
+        userShortcutIcons: WPEUserShortcutIconStore? = nil
     ) async throws {
         mediaMailbox?.invalidateParityGeneration(loadGeneration)
         loadGeneration &+= 1
@@ -256,6 +257,7 @@ final class WPEParitySceneDriver {
                 workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
             )
             guard generation == loadGeneration else { throw CancellationError() }
+            renderer.userShortcutIcons = userShortcutIcons
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
@@ -553,6 +555,9 @@ final class WPEParitySceneDriver {
             if let soundRuntime {
                 renderer.takeScriptSoundVolumes { id, volume in
                     soundRuntime.setVolume(Double(volume), forSoundID: id)
+                }
+                renderer.takeScriptSoundBounds { id, minimum, maximum in
+                    soundRuntime.setRandomDelay(minTime: minimum, maxTime: maximum, forSoundID: id)
                 }
                 renderer.takeSoundVisibility { id, visible in soundRuntime.setVisible(visible, forSoundID: id) }
             }

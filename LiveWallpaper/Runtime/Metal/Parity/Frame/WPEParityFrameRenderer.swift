@@ -137,6 +137,7 @@ final class WPEParityFrameRenderer {
     private var media: WPESceneMediaEventMailbox?
     private var mediaGeneration = 0
     private(set) var mediaTextures: WPEMediaTextureStore.ParitySnapshot?
+    var userShortcutIcons: WPEUserShortcutIconStore?
     private(set) var mediaDiagnostics: [String] = []
     var hasMediaTextureDemand: Bool {
         graphs.layout.draws.values.contains { !$0.mediaSlots.isEmpty }
@@ -144,6 +145,7 @@ final class WPEParityFrameRenderer {
 
     private var seenScriptBloom = 0
     private var seenScriptSound = 0
+    private var seenSoundBoundsFields = -1
     private var seenSoundVisibility = -1
     private var seenScriptLighting = -1
     private var seenLightTransforms = -1
@@ -677,8 +679,10 @@ final class WPEParityFrameRenderer {
         media = previous.media
         mediaGeneration = previous.mediaGeneration
         mediaTextures = previous.mediaTextures
+        userShortcutIcons = previous.userShortcutIcons
         mediaDiagnostics = previous.mediaDiagnostics
         seenScriptSound = previous.seenScriptSound
+        seenSoundBoundsFields = previous.seenSoundBoundsFields
         seenScriptLighting = previous.seenScriptLighting
         lights = previous.lights
         // A script's bloom write reaches `bloom` below; the generation only marks it consumed.
@@ -928,6 +932,25 @@ final class WPEParityFrameRenderer {
         }
     }
 
+    /// These descriptors have no native onChanged hook; consume their stored fields at the next sound update.
+    func takeScriptSoundBounds(_ body: (String, Double?, Double?) -> Void) {
+        guard let script, seenSoundBoundsFields != state.scriptFieldsGeneration else { return }
+        seenSoundBoundsFields = state.scriptFieldsGeneration
+        for id in script.soundIDs {
+            let minimum: Double? = if case let .vector(value)? = state.scriptField("mintime", of: id) {
+                Double(value.x)
+            } else {
+                nil
+            }
+            let maximum: Double? = if case let .vector(value)? = state.scriptField("maxtime", of: id) {
+                Double(value.x)
+            } else {
+                nil
+            }
+            body(id, minimum, maximum)
+        }
+    }
+
     /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
     private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, cursor: SIMD2<Float>,
                                  buttonDown: Bool, timeOfDay: Float) {
@@ -1040,6 +1063,7 @@ final class WPEParityFrameRenderer {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera.shaken(time: clock.timeUniform)
         guard clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused) else { return .skipped }
+        let shortcutTextures = userShortcutIcons?.snapshot() ?? [:]
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
@@ -1178,7 +1202,8 @@ final class WPEParityFrameRenderer {
                                                     if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: camera, variant: variant,
                                                                                                 textures: textures, arena: arena, textureSlots: &textureSlots,
                                                                                                 renderVars: &renderVars, particles: &particles, layers: live,
-                                                                                                mediaTexture: { mediaTextures?.texture(for: $0) }) {
+                                                                                                mediaTexture: { mediaTextures?.texture(for: $0) },
+                                                                                                userShortcutTexture: { shortcutTextures[$0] }) {
                                                         // Encode argument tables before the next batch reserves any vertex bytes.
                                                         try encode(provided, operation: operation)
                                                     }
@@ -1200,7 +1225,8 @@ final class WPEParityFrameRenderer {
                                                                                  constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
                                                                                  renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
-                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) })
+                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) },
+                                                                                 userShortcutTexture: { shortcutTextures[$0] })
                                                 try encode(provided, operation: operation)
                                             case .particleSnapshot, .state: break
                                             }

@@ -181,8 +181,13 @@ actor WPEDisplayRenderActor {
         driver.setPresentFitMode(inputs.presentFitMode)
         driver.spanFrames = inputs.span?.frames
         driver.executor.spanOutputTextureLimit = inputs.span?.outputTextureLimit
+        parityInputs?.userShortcutIcons?.onChange = nil
         parityDriver = driver
         parityInputs = inputs
+        inputs.userShortcutIcons?.onChange = { [weak self, weak icons = inputs.userShortcutIcons] in
+            guard let icons else { return }
+            Task { await self?.parityIconsChanged(icons) }
+        }
         startConfigConsumer()
     }
 
@@ -537,7 +542,8 @@ actor WPEDisplayRenderActor {
                                     compiler: inputs.compiler, soundResolver: inputs.soundResolver,
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
                                     workshopID: inputs.descriptor.workshopID,
-                                    scriptHost: inputs.scriptHost(userPropertiesJSON: userProperties))
+                                    scriptHost: inputs.scriptHost(userPropertiesJSON: userProperties),
+                                    userShortcutIcons: inputs.userShortcutIcons)
         let generation = parityDriver.loadGeneration
         if let media = inputs.media {
             let mailbox = media.mailbox
@@ -566,6 +572,11 @@ actor WPEDisplayRenderActor {
         // has already consumed the input and parked; only queued input still needs another frame.
         guard let driver = parityDriver, driver.didLoad, driver.loadGeneration == generation,
               parityInputs?.media?.mailbox === mailbox, mailbox.hasPendingParityInputs(generation: generation) else { return }
+        requestParityFrame()
+    }
+
+    private func parityIconsChanged(_ icons: WPEUserShortcutIconStore) {
+        guard parityInputs?.userShortcutIcons === icons, parityDriver?.didLoad == true else { return }
         requestParityFrame()
     }
 
@@ -609,6 +620,7 @@ actor WPEDisplayRenderActor {
         spanPresenter = nil
         parityDriver?.cleanup()
         parityDriver = nil
+        parityInputs?.userShortcutIcons?.onChange = nil
         if let media = parityInputs?.media {
             await MainActor.run { media.stop() }
         }
