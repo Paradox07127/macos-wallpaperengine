@@ -17,6 +17,7 @@ let package = Package(
                 .product(name: "LiveWallpaperCore", package: "LiveWallpaperCore"),
                 "CFreeType",
                 "CHarfBuzz",
+                "CWPESDF",
             ],
             path: "Sources/LiveWallpaperProWPE",
             swiftSettings: [
@@ -92,10 +93,24 @@ let package = Package(
                 .define("HAVE_FT_GET_TRANSFORM", to: "1"),
             ]
         ),
+        // Pinned msdfgen 1.13 core. Borrows the existing FreeType outline; no second font or atlas owner.
+        .target(
+            name: "CWPESDF",
+            dependencies: ["CFreeType"],
+            path: "Sources/CWPESDF",
+            exclude: ["vendor/msdfgen/LICENSE.txt", "vendor/msdfgen/SOURCE.json"],
+            sources: ["WPEField.cpp", "WPEColorField.cpp", "vendor/msdfgen/core"],
+            cxxSettings: [
+                .define("MSDFGEN_PUBLIC", to: ""),
+                .define("MSDFGEN_USE_CPP11"),
+                .unsafeFlags(["-ffp-contract=off", "-fno-fast-math"]),
+            ]
+        ),
         .testTarget(
             name: "LiveWallpaperProWPETests",
-            dependencies: ["LiveWallpaperProWPE", "CHarfBuzz", "CFreeType"],
+            dependencies: ["LiveWallpaperProWPE", "CHarfBuzz", "CFreeType", "CWPESDF"],
             path: "Tests/LiveWallpaperProWPETests"
         )
-    ]
+    ],
+    cxxLanguageStandard: .cxx17
 )

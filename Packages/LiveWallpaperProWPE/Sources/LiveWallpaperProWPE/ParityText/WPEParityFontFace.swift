@@ -149,6 +149,29 @@ public final class WPEParityFontFace {
         unpackedBitmaps.removeValue(forKey: glyph) ?? render(glyph)
     }
 
+    /// A candidate native field, produced in this face's existing serial owner. Ordinary layout/atlas consumers
+    /// keep using rasterize until the same-call Windows input/field qualification and material transaction pass.
+    /// Captured stages are y-up; bitmap rows are top-first RGBA with no BGRA channel swap.
+    public func glyphField(_ glyph: UInt32, captureStages: Bool = false) -> WPEParityGlyphField? {
+        let hasColor = face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0
+        let flags = hasColor ? FT_LOAD_RENDER | FT_LOAD_COLOR : FT_LOAD_NO_BITMAP
+        guard FT_Load_Glyph(face, glyph, FT_Int32(flags)) == 0 else { return nil }
+        let slot = face.pointee.glyph.pointee
+        let isColor = UInt32(slot.bitmap.pixel_mode) == FT_PIXEL_MODE_BGRA.rawValue
+        let box: WPEParityGlyphBox
+        if hasColor {
+            guard isColor else { return nil }
+            box = WPEParityGlyphBox(xMin: slot.bitmap_left,
+                                    yMin: slot.bitmap_top - Int32(slot.bitmap.rows),
+                                    xMax: slot.bitmap_left + Int32(slot.bitmap.width), yMax: slot.bitmap_top)
+        } else {
+            guard slot.format == FT_GLYPH_FORMAT_OUTLINE, let cbox = Self.outlineBox(slot) else { return nil }
+            box = cbox
+        }
+        return WPEParityGlyphFieldProducer.produce(face: face, box: box, isColor: isColor,
+                                                   captureStages: captureStages)
+    }
+
     private func render(_ glyph: UInt32) -> WPEParityGlyphBitmap? {
         guard let mode = renderedPixelMode(glyph) else { return nil }
         let bitmap = face.pointee.glyph.pointee.bitmap
@@ -204,6 +227,10 @@ public final class WPEParityFontFace {
         guard FT_Load_Glyph(face, glyph, FT_Int32(FT_LOAD_NO_BITMAP)) == 0 else { return nil }
         let slot = face.pointee.glyph.pointee
         guard slot.format == FT_GLYPH_FORMAT_OUTLINE else { return nil }
+        return Self.outlineBox(slot)
+    }
+
+    private static func outlineBox(_ slot: FT_GlyphSlotRec) -> WPEParityGlyphBox? {
         let points = UnsafeBufferPointer(start: slot.outline.points, count: Int(slot.outline.n_points))
         guard let first = points.first else { return WPEParityGlyphBox(xMin: 0, yMin: 0, xMax: 0, yMax: 0) }
         var box = (xMin: first.x, yMin: first.y, xMax: first.x, yMax: first.y)

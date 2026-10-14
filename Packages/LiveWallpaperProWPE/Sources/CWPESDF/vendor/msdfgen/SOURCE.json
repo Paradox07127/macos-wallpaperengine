@@ -1,0 +1,334 @@
+{
+  "upstream": "https://github.com/Chlumsky/msdfgen",
+  "tag": "v1.13",
+  "commit": "1874bcf7d9624ccc85b4bc9a85d78116f690f35b",
+  "license": "MIT",
+  "scope": "Unmodified core, no ext, standalone, PNG, SVG, Skia, or OpenMP",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "bytes": 1079,
+      "sha256": "32a94b25ad7072a78457d35019b32d73d2c265c806b0b76e9638fe800330bbe4"
+    },
+    {
+      "path": "msdfgen.h",
+      "bytes": 5448,
+      "sha256": "40828d93b444f462fd5a72c484c2e90c0eeebf9e26e7818ab12f488304600db7"
+    },
+    {
+      "path": "core/Bitmap.h",
+      "bytes": 1863,
+      "sha256": "99ea9dac0de50218ec7983b677fdce5deb0da88b6f8a058e6623ebb7d69dbdd6"
+    },
+    {
+      "path": "core/Bitmap.hpp",
+      "bytes": 4766,
+      "sha256": "9a3ca718fe959d81c854a6ae56f69dd2989ee27c10a2970c18d1ce8e43e1ef3d"
+    },
+    {
+      "path": "core/BitmapRef.hpp",
+      "bytes": 8333,
+      "sha256": "97a7c5950083aa0c60cc67fad1f248ce1b6cdf71e4178ff1042e16a9dd8ef417"
+    },
+    {
+      "path": "core/Contour.cpp",
+      "bytes": 2967,
+      "sha256": "3851d5353e344743cba1311f047a10ac9c8ca2917342d6b8e61a3cdd96a39e88"
+    },
+    {
+      "path": "core/Contour.h",
+      "bytes": 1012,
+      "sha256": "d25f86609aa30d72a46a835bd1fc87e0e8d98051d25f07fa11ae91074f98cbe7"
+    },
+    {
+      "path": "core/DistanceMapping.cpp",
+      "bytes": 701,
+      "sha256": "fe1b21f7c680c6fa0868ac58829eb9cc0030c6b2b27ecd2ab00f5fb50adf3bc3"
+    },
+    {
+      "path": "core/DistanceMapping.h",
+      "bytes": 807,
+      "sha256": "7d8a759327549d6ca9c2802aab0f3b4f6a74de22545602ccb38cf50ce23e99ea"
+    },
+    {
+      "path": "core/EdgeColor.h",
+      "bytes": 262,
+      "sha256": "d6df85303e7600ff5ce1ba71edfe62a1fd9f7d75f3cad8ba44b3e899f818247a"
+    },
+    {
+      "path": "core/EdgeHolder.cpp",
+      "bytes": 1409,
+      "sha256": "a970cb1ccbbafc35837357a438918f6bfe13fb0169ff9735241343414cfcf2d2"
+    },
+    {
+      "path": "core/EdgeHolder.h",
+      "bytes": 1308,
+      "sha256": "35c4d3aef7db41b4d5023129a5116e0664c583a550dda8145210d869f5d15895"
+    },
+    {
+      "path": "core/MSDFErrorCorrection.cpp",
+      "bytes": 26351,
+      "sha256": "cafd83488b5dd5dc1456496cfef6c77ac0c8370704d0b18201ca187709890e29"
+    },
+    {
+      "path": "core/MSDFErrorCorrection.h",
+      "bytes": 2321,
+      "sha256": "ebaa79cf1cf726f46085ab1393f3316c31d8afe8941c5954e0423895a1e0d9af"
+    },
+    {
+      "path": "core/Projection.cpp",
+      "bytes": 935,
+      "sha256": "fc56e6be3b3cc5ca53eefda29bef8064982a0b2df0d47b4eb7b404b59fe8bbbc"
+    },
+    {
+      "path": "core/Projection.h",
+      "bytes": 1175,
+      "sha256": "076bda206bee95576033206270e69427952909d9eb4d2fbcc5e3b38c3cddc8b6"
+    },
+    {
+      "path": "core/Range.hpp",
+      "bytes": 1020,
+      "sha256": "13e8f58a56be55cb5abc5ad6deef7d167d2cb01cf06af9e564e2a67ae1fc86cb"
+    },
+    {
+      "path": "core/SDFTransformation.h",
+      "bytes": 555,
+      "sha256": "2305fdca4ba93fe9aaaae6b8787494a17c376f59ab026ae7ef76536315d2eb6d"
+    },
+    {
+      "path": "core/Scanline.cpp",
+      "bytes": 4036,
+      "sha256": "c19f52ece86a8d96466891523a2f0d122acaaaeb7c192e35a83fd3cce0730eee"
+    },
+    {
+      "path": "core/Scanline.h",
+      "bytes": 1536,
+      "sha256": "ef3bef10b8ce58d67500303aced27e95dbdcd6afcd8a673475d9b1c2b5ac8d92"
+    },
+    {
+      "path": "core/Shape.cpp",
+      "bytes": 8897,
+      "sha256": "b9cffc2232c9b20ab781171092454d59bc1e34ffd7c24765d6b0a4d5d744b24b"
+    },
+    {
+      "path": "core/Shape.h",
+      "bytes": 2426,
+      "sha256": "c19a8c98def6b7bc56befdfd9fd8c38cb5c34deed9d15d7feefafdc3cd3fe9e9"
+    },
+    {
+      "path": "core/ShapeDistanceFinder.h",
+      "bytes": 1209,
+      "sha256": "bc1e5ae31d9d03afdd4fb8f914cb8d2c945cd660696402e7a80e1bf418c145aa"
+    },
+    {
+      "path": "core/ShapeDistanceFinder.hpp",
+      "bytes": 2842,
+      "sha256": "085f89b8fb0ce1c11284862e2eb7aba4444494d926bd1118d39e217e1cf561d8"
+    },
+    {
+      "path": "core/SignedDistance.hpp",
+      "bytes": 1165,
+      "sha256": "9e6810461d8207181f946caa364880a0de22f95b7f624a01ef1c3ab58d87fecd"
+    },
+    {
+      "path": "core/Vector2.hpp",
+      "bytes": 4102,
+      "sha256": "8a9d4af297405e82f9fa45743bc036f77cfc45650a4b3dd92dc5bbd6689955ac"
+    },
+    {
+      "path": "core/YAxisOrientation.h",
+      "bytes": 434,
+      "sha256": "e4832e60980a27155e7dbb5c9a1d559778ea62d5b906e5d80d94bc15fd283659"
+    },
+    {
+      "path": "core/arithmetics.hpp",
+      "bytes": 1381,
+      "sha256": "a1a9b2786e7e37fb6753642504765ba675fe818a50fc7b17fbb86164d60a2c2c"
+    },
+    {
+      "path": "core/base.h",
+      "bytes": 219,
+      "sha256": "fad5b77ee26c7291343407b362c114cf203df00777a3a2cf149ee63b026ea8eb"
+    },
+    {
+      "path": "core/bitmap-interpolation.hpp",
+      "bytes": 772,
+      "sha256": "7078967d7443b60f4a2bfa6c4aa6d7585a9ae2c8a9697feda65003e24d1076e7"
+    },
+    {
+      "path": "core/contour-combiners.cpp",
+      "bytes": 5434,
+      "sha256": "21fbf22d41c4e047fbbf60eecd535c83b2f7d54495222760f10efdea80a477da"
+    },
+    {
+      "path": "core/contour-combiners.h",
+      "bytes": 1063,
+      "sha256": "01d8508cef70843022e9cb545c489c7147a950179791e6e8fd592ad26501f7c0"
+    },
+    {
+      "path": "core/convergent-curve-ordering.cpp",
+      "bytes": 5803,
+      "sha256": "e129fb19d8bdf67ebc7d8f8002d3ff57b46d920de1d77dd6af60b2cf1e11d7c8"
+    },
+    {
+      "path": "core/convergent-curve-ordering.h",
+      "bytes": 381,
+      "sha256": "342b64a2b0d10b0bee80cd9845c6f4933914fed58afefee8593fbf06b04b67a4"
+    },
+    {
+      "path": "core/edge-coloring.cpp",
+      "bytes": 21937,
+      "sha256": "c124f6b740d3b5fb0e6092eb652b39cb3ad7ab252ac665a50172f8ead17461c1"
+    },
+    {
+      "path": "core/edge-coloring.h",
+      "bytes": 1338,
+      "sha256": "b7aa060f024e4578fbf85fbd9c94f37e66d1fe703dde1007095e74138d514412"
+    },
+    {
+      "path": "core/edge-segments.cpp",
+      "bytes": 17775,
+      "sha256": "72e6335db720915c48cdd71e9e3b7c927a33ad333b05f2dc65e6e53aa68485c0"
+    },
+    {
+      "path": "core/edge-segments.h",
+      "bytes": 5403,
+      "sha256": "15a116ba83471ebbee5448166771ccf54b1017cbaf49db55fdb51e8b6956a4dc"
+    },
+    {
+      "path": "core/edge-selectors.cpp",
+      "bytes": 10628,
+      "sha256": "7e5268e4238754350ee34077735ee9c9f27c3e29e6568c41363e221ed3a08e3a"
+    },
+    {
+      "path": "core/edge-selectors.h",
+      "bytes": 3105,
+      "sha256": "19aa9440e04528337d2406985253b17dbd31836297e8582887dc2305c3c99dac"
+    },
+    {
+      "path": "core/equation-solver.cpp",
+      "bytes": 1818,
+      "sha256": "7bb955c5a3cfdbea2e8e046762d62cd0958678a6e75e940ef97fdf71eb122228"
+    },
+    {
+      "path": "core/equation-solver.h",
+      "bytes": 240,
+      "sha256": "4fa00f069cf4a6723d93e2c7d4f7f03375313a49a9ee7f3ba6161ac633cd5569"
+    },
+    {
+      "path": "core/export-svg.cpp",
+      "bytes": 2519,
+      "sha256": "4daeb56e410f6069067a8b045e1c2e4065c3cfe27d2806cd122714d04f770892"
+    },
+    {
+      "path": "core/export-svg.h",
+      "bytes": 210,
+      "sha256": "5da7b2a65549042b8918c5cf4acba1881966ae02305ec1791582f9ddc1e17b3f"
+    },
+    {
+      "path": "core/generator-config.h",
+      "bytes": 3202,
+      "sha256": "4d1ea0078cc6c8f6e1bf042b68bbc558bf1f6c00a6080d68501d65169af5e1fb"
+    },
+    {
+      "path": "core/msdf-error-correction.cpp",
+      "bytes": 9616,
+      "sha256": "7b0331f17c9376bb539a64ee89bb739a39ad302e12fc5b2e165f70af2865fb19"
+    },
+    {
+      "path": "core/msdf-error-correction.h",
+      "bytes": 3760,
+      "sha256": "8d49bccdbecccc67826992f4b6103ccf9aaa5fe9c6ee72a4ce7e636753f0be09"
+    },
+    {
+      "path": "core/msdfgen.cpp",
+      "bytes": 16718,
+      "sha256": "1b24019ae9cfcaeced8c2977f4c3203ba22211ae4b66f58ec5798ea03b77bee2"
+    },
+    {
+      "path": "core/pixel-conversion.hpp",
+      "bytes": 229,
+      "sha256": "e4b554a2ac6a4531c6f76de3ee94d167d0aad9742925b622869366b22b05b8e9"
+    },
+    {
+      "path": "core/rasterization.cpp",
+      "bytes": 5398,
+      "sha256": "2ab95dceab93981d1dcdaa82789076714630719dd690dbd6f4a85e2d08e3bfd1"
+    },
+    {
+      "path": "core/rasterization.h",
+      "bytes": 2054,
+      "sha256": "41eb37394f5eea1416d1b677b8648b0c65815a3c9a45b033bb00cc436c29e1d8"
+    },
+    {
+      "path": "core/render-sdf.cpp",
+      "bytes": 8354,
+      "sha256": "5ab16c94d8ea2f125f7c00413785484dad08bcc0fb119571c8699fb20f4c4c98"
+    },
+    {
+      "path": "core/render-sdf.h",
+      "bytes": 1343,
+      "sha256": "07c678bc9e4c4421a293bc9a70127d2ecc77fef88f9af7ecd0d39f730aaae9fb"
+    },
+    {
+      "path": "core/save-bmp.cpp",
+      "bytes": 7243,
+      "sha256": "d103763348afe7ff595de613ccf9c808264a28df68dcc2b290137212f5881202"
+    },
+    {
+      "path": "core/save-bmp.h",
+      "bytes": 536,
+      "sha256": "cf23809cdb2ad4618a70655258d29bad73d72d066e91ce452c3e6fa3765f35f8"
+    },
+    {
+      "path": "core/save-fl32.cpp",
+      "bytes": 1331,
+      "sha256": "daa596b156de36a3d25e1a6b692ae9f6c2f9cc2eeb426ac2e9c00935739f7343"
+    },
+    {
+      "path": "core/save-fl32.h",
+      "bytes": 254,
+      "sha256": "584695710a255ca2546185911333a53edd6c98a64f4c172af4fbe0034fda22e5"
+    },
+    {
+      "path": "core/save-rgba.cpp",
+      "bytes": 4354,
+      "sha256": "1ea2fc15508fd0b36f0c56177f2523ace83fe3d073762a69d85928e542be7e89"
+    },
+    {
+      "path": "core/save-rgba.h",
+      "bytes": 582,
+      "sha256": "061779f816a477d801700b90f1f20b7f4997378a11d408950321df1f5b24ed85"
+    },
+    {
+      "path": "core/save-tiff.cpp",
+      "bytes": 6428,
+      "sha256": "8ebfa485d3ca5831a57c186d8a86f77056811f0111f25f715b56146e09a2189d"
+    },
+    {
+      "path": "core/save-tiff.h",
+      "bytes": 374,
+      "sha256": "38c6dab0616e11d10863f43574d07fda1d31eb49ce7a36cc7c512a122e465f37"
+    },
+    {
+      "path": "core/sdf-error-estimation.cpp",
+      "bytes": 9692,
+      "sha256": "964149c9af25715fa3d7f26eb835977d5f5f343d5b03c127a0a0a3ab5cb5a6c0"
+    },
+    {
+      "path": "core/sdf-error-estimation.h",
+      "bytes": 2920,
+      "sha256": "d5d007778db9808b99ff2202aabdbc0044638c3a5dd11cf1b378400936cc1917"
+    },
+    {
+      "path": "core/shape-description.cpp",
+      "bytes": 11396,
+      "sha256": "b320ae0d46b607e016610285db3bb140ac930e00f9352fb3067bd505d2c52a36"
+    },
+    {
+      "path": "core/shape-description.h",
+      "bytes": 437,
+      "sha256": "e67ced119337f78ccdad1806b6df77316af2ce0f79f45c63c4010db0751e2281"
+    }
+  ]
+}

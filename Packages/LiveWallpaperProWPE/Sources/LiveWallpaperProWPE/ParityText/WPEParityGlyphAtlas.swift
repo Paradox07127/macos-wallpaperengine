@@ -1,6 +1,7 @@
 /// An already rasterised FreeType bitmap; rows are tightly packed, top row first.
 public struct WPEParityGlyphBitmap: Equatable, Sendable {
-    public enum PixelMode: Equatable, Sendable { case gray, bgra }
+    /// rgba is already native-channel field data; it must never pass through the BGRA colour swizzle.
+    public enum PixelMode: Equatable, Sendable { case gray, bgra, rgba }
 
     public var width: Int
     public var rows: Int
@@ -77,7 +78,7 @@ public struct WPEParityGlyphAtlas: Sendable {
 
     /// Returns nil when the atlas is full (WPE result 2): nothing fits, nothing is evictable and width > 4095.
     public mutating func insert(key: UInt32, bitmap: WPEParityGlyphBitmap) -> WPEParityGlyphAtlasEntry? {
-        precondition((bitmap.pixelMode == .bgra) == (format == .rgba8), "BGRA bitmaps go to the RGBA8 atlas")
+        precondition((bitmap.pixelMode != .gray) == (format == .rgba8), "Four-channel glyphs go to the RGBA8 atlas")
         if let existing = entries[key] {
             return existing
         }
