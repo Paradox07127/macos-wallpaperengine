@@ -20,7 +20,8 @@ public struct WPEParityLightConfig: Sendable, Equatable {
     public init(general: WPESceneJSONValue?, shadowQuality: Int32 = 0) {
         let config = general?["lightconfig"]
         func count(_ key: String, _ mask: Int32) -> Int32 {
-            guard let value = WPEParityProgramScene.number(config?[key]), value >= 0 else { return 0 }
+            guard case let .number(value)? = config?[key], value >= 0,
+                  value <= Double(UInt32.max), value.rounded(.towardZero) == value else { return 0 }
             return Int32(truncatingIfNeeded: Int64(value)) & mask
         }
         point = count("point", 0xF)
