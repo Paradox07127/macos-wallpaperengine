@@ -82,6 +82,12 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         self.invalidation = invalidation
     }
 
+    /// The accepted-write hook is separate from changed-value render invalidation (1401a49f0/1f7090).
+    var isSoundVolumeWrite: Bool {
+        owner == .sound && name == "volume" && type == .float && target == .field
+            && !flags.contains(.notFromJSON)
+    }
+
     /// π/180 as WPE multiplies it (DAT_140492628).
     public static let degreesToRadians: Float = 0.017_453_292
     public static let radiansToDegrees: Float = 57.295_78

@@ -9,6 +9,24 @@ public final class WPEParityScriptEngine {
         case registeredAssetsNotPrepared([String])
     }
 
+    /// Native ISound methods; only isPlaying exposes the consumer's Bool to JavaScript.
+    public enum SoundCommand: Int, Sendable {
+        case play, stop, pause, isPlaying
+    }
+
+    /// A snapshot of the existing typed fields at this synchronous native-call boundary.
+    public struct SoundFields: Sendable {
+        public let volume: Float
+        public let minTime: Float?
+        public let maxTime: Float?
+
+        public init(volume: Float, minTime: Float?, maxTime: Float?) {
+            self.volume = volume
+            self.minTime = minTime
+            self.maxTime = maxTime
+        }
+    }
+
     public struct ConstantKey: Hashable, Sendable {
         public var pass: WPEParityMaterialPassKey
         public var name: String
@@ -257,6 +275,26 @@ public final class WPEParityScriptEngine {
     private let sourceObjects: [WPESceneJSONValue]
     private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
     private var mirroredMembershipGeneration: Int?
+    private var soundVolumeConsumer: ((String, SoundFields) -> Void)?
+    private var soundCommandConsumer: ((String, SoundCommand, SoundFields) -> Bool)?
+
+    /// Consumers may capture the actor's scene RNG only for this synchronous body. Nested scopes restore it.
+    public func withSoundConsumers<Result>(volume: (String, SoundFields) -> Void,
+                                           command: (String, SoundCommand, SoundFields) -> Bool,
+                                           body: () throws -> Result) rethrows -> Result {
+        try withoutActuallyEscaping(volume) { volume in
+            try withoutActuallyEscaping(command) { command in
+                let previousVolume = soundVolumeConsumer, previousCommand = soundCommandConsumer
+                soundVolumeConsumer = volume
+                soundCommandConsumer = command
+                defer {
+                    soundVolumeConsumer = previousVolume
+                    soundCommandConsumer = previousCommand
+                }
+                return try body()
+            }
+        }
+    }
 
     /// Compiles every property script of `document`; `start` runs their `init`.
     public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
@@ -604,6 +642,47 @@ public final class WPEParityScriptEngine {
         }
     }
 
+    /// Uses this layer's existing descriptor layout, not a second sound/slot registry.
+    private func soundFields(layer index: Int) -> SoundFields? {
+        let layer = layers[index]
+        guard layer.kind == .sound else { return nil }
+        let fields = fields(layer.kind)
+        func value(_ name: String) -> Float? {
+            guard let relative = fields.firstIndex(where: {
+                $0.owner == .sound && $0.name == name && $0.type == .float && $0.target == .field
+            }) else { return nil }
+            return floats[(layer.base + relative) * 4]
+        }
+        guard let volume = value("volume") else { return nil }
+        return SoundFields(volume: volume, minTime: value("mintime"), maxTime: value("maxtime"))
+    }
+
+    private func soundVolumeWritten(slot value: Double) {
+        guard let consume = soundVolumeConsumer, let slot = Self.checkedLayerIndex(value, count: slots.count),
+              descriptors[Int(slots[slot].descriptor)].isSoundVolumeWrite,
+              let layer = Self.checkedLayerIndex(Double(slots[slot].layer), count: layers.count),
+              let state = activeState, state.pointee.isAlive(layers[layer].id) else { return }
+        // The accepted setter already stored its Float, including equal writes. Prior writes must be visible
+        // to the native hook, while this flush must not synthesize additional accepted-write events.
+        flushWrites(to: &state.pointee)
+        guard let fields = soundFields(layer: layer) else { return }
+        consume(layers[layer].id, fields)
+    }
+
+    private func soundCommand(layer value: Double, command raw: Double) -> Bool {
+        guard let layer = Self.checkedLayerIndex(value, count: layers.count), layers[layer].kind == .sound,
+              let raw = Int(exactly: raw), let command = SoundCommand(rawValue: raw) else { return false }
+        if let state = activeState {
+            guard state.pointee.isAlive(layers[layer].id) else { return false }
+            flushWrites(to: &state.pointee)
+        }
+        guard let consume = soundCommandConsumer, let fields = soundFields(layer: layer) else {
+            configuration.log(1, "ISound methods are unsupported without a synchronous product sound consumer")
+            return false
+        }
+        return consume(layers[layer].id, command, fields)
+    }
+
     // MARK: Layout
 
     private func index(of descriptor: WPEParityScriptProperty) -> Int32 {
@@ -893,6 +972,12 @@ public final class WPEParityScriptEngine {
             entries["id"] = nil
             return Self.jsonText(.object(entries))
         }
+        let soundVolumeWritten: @convention(block) (Double) -> Void = { [weak self] slot in
+            self?.soundVolumeWritten(slot: slot)
+        }
+        let soundCommand: @convention(block) (Double, Double) -> Bool = { [weak self] layer, command in
+            self?.soundCommand(layer: layer, command: command) ?? false
+        }
         let pauseVideo: @convention(block) (Double) -> Void = { [weak self] index in
             guard let self else { return }
             guard let index = Self.checkedLayerIndex(index, count: layers.count), layers[index].hasVideo else {
@@ -957,6 +1042,9 @@ public final class WPEParityScriptEngine {
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
+        set("soundVolumeWritten", soundVolumeWritten)
+        set("soundCommand", soundCommand)
+        set("soundKind", WPEParityScriptLayerKind.sound.rawValue)
         set("executeMaterialFunction", executeMaterialFunction)
         set("lookAtAngles", lookAtAngles)
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
@@ -1004,7 +1092,7 @@ public final class WPEParityScriptEngine {
         default: ""
         }
         return ["name": field.name, "type": field.type.rawValue, "angle": field.flags.contains(.angle),
-                "readonly": field.flags.contains(.notFromJSON), "rel": rel, "owner": owner]
+                "readonly": field.flags.contains(.notFromJSON), "soundVolume": field.isSoundVolumeWrite, "rel": rel, "owner": owner]
     }
 
     private func addHostLayer(_ index: Int, _ layer: Layer, state: WPEParitySceneState) {
@@ -1043,7 +1131,7 @@ public final class WPEParityScriptEngine {
         let baseMaterials = constantSlots.keys.filter {
             $0.objectID == layer.id && $0.effectID == nil && state.passIndex(of: $0) != nil
         }
-            .sorted { $0.pass < $1.pass }.map(materialInfo)
+        .sorted { $0.pass < $1.pass }.map(materialInfo)
         host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials, layer.hasVideo])
     }
 
@@ -1270,7 +1358,7 @@ public final class WPEParityScriptEngine {
         if exceptionCount == before, let function, function.isObject {
             bits = Int(host.invokeMethod("addBinding", withArguments: [
                 function, name, assetContext.modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
-                descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars,
+                descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars, descriptor.isSoundVolumeWrite,
             ]).toInt32())
             if bits >= 0 {
                 handle = bindings.filter { $0.script >= 0 }.count

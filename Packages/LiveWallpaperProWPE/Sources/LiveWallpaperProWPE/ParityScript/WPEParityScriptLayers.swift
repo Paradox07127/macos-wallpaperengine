@@ -163,6 +163,12 @@ enum WPEParityScriptLayers {
     const protos = host.kinds.map((fields, kind) => {
       const proto = Object.create(LayerProto), instance = {}, video = Object.create(VideoProto);
       const origin = fields.find(f => f.name === 'origin'), angles = fields.find(f => f.name === 'angles');
+      if (kind === host.soundKind) {
+        proto.play = function () { if (liveLayer(this)) host.soundCommand(this.__index, 0); };
+        proto.stop = function () { if (liveLayer(this)) host.soundCommand(this.__index, 1); };
+        proto.pause = function () { if (liveLayer(this)) host.soundCommand(this.__index, 2); };
+        proto.isPlaying = function () { return liveLayer(this) ? host.soundCommand(this.__index, 3) : undefined; };
+      }
       proto.lookAt = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, false); };
       proto.lookAtYaw = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, true); };
       for (const f of fields) {

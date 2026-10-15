@@ -31,7 +31,7 @@ enum WPEParityScriptPrelude {
       }
       return undefined;
     }
-    function write(s, type, angle, v) {
+    function write(s, type, angle, v, soundVolume) {
       if (s < 0) return;
       const o = s * 4;
       if (type === 5) {
@@ -52,7 +52,11 @@ enum WPEParityScriptPrelude {
       if (type === 4) {
         if (typeof v !== 'number') return;
         const n = Math.fround(Math.fround(v) * (angle ? TO_RADIANS : 1));
-        if (!Object.is(F[o], n)) { F[o] = n; mark(s); } return;
+        const changed = !Object.is(F[o], n);
+        F[o] = n;
+        if (changed) mark(s);
+        if (soundVolume) host.soundVolumeWritten(s);
+        return;
       }
       if (type >= 1 && type <= 3) {
         const scalar = typeof v === 'number', count = type + 1;
@@ -77,7 +81,7 @@ enum WPEParityScriptPrelude {
         enumerable: true, configurable: true
       };
       if (!f.readonly) descriptor.set = function (v) {
-        if (!receiverAllowed || receiverAllowed(this)) write(slotOf(this) + f.rel, f.type, f.angle, v);
+        if (!receiverAllowed || receiverAllowed(this)) write(slotOf(this) + f.rel, f.type, f.angle, v, f.soundVolume);
       };
       return descriptor;
     }
@@ -109,7 +113,7 @@ enum WPEParityScriptPrelude {
         return namespace;
       };
     }
-    host.addBinding = function (fn, name, path, index, layerIndex, slot, type, angle, readonly, vars) {
+    host.addBinding = function (fn, name, path, index, layerIndex, slot, type, angle, readonly, vars, soundVolume) {
       const owner = owners[slot];
       const targetLayer = layerIndex < 0 ? null : table[layerIndex];
       const layer = layerIndex < 0 ? owner : targetLayer;
@@ -122,7 +126,7 @@ enum WPEParityScriptPrelude {
         fn(importer(path), (n, get) => Object.defineProperty(exports, n, { get, enumerable: true }), layer, owner);
       } catch (e) { report({ name }, e); return -1; }
       finally { current = previous; compilingBinding = previousCompile; currentEvent = previousEvent; }
-      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
+      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, soundVolume, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
       for (let id = 0; id < NAMES.length; id++) {
         const f = NAMES[id] && exports[NAMES[id]];
         if (typeof f === 'function') { b.fns[id] = f; b.bits |= 1 << id; }
@@ -142,7 +146,7 @@ enum WPEParityScriptPrelude {
     }
     function valueEvent(b, id) {
       const r = call(b, id, [read(b.slot, b.type, b.angle)]);
-      if (!b.readonly && r !== undefined && b.slot >= 0) write(b.slot, b.type, b.angle, r);
+      if (!b.readonly && r !== undefined && b.slot >= 0) write(b.slot, b.type, b.angle, r, b.soundVolume);
     }
     host.init = function (first) {
       for (let i = first; i < bindings.length; i++) {
@@ -179,7 +183,7 @@ enum WPEParityScriptPrelude {
         if (!b.fns[id] || b.dead || (b.disabled & (1 << id))) continue;
         if (target >= 0 && b.targetLayer !== null && b.targetLayer !== table[target]) continue;
         const result = call(b, id, id === 6 ? [args[0], read(b.slot, b.type, b.angle)] : args);
-        if (id === 6 && !b.readonly && result !== undefined) write(b.slot, b.type, b.angle, result);
+        if (id === 6 && !b.readonly && result !== undefined) write(b.slot, b.type, b.angle, result, b.soundVolume);
       }
     };
     function flushDestroys() {
