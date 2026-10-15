@@ -15,6 +15,14 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         try compareRaw(Oracle(scale: 2))
     }
 
+    func testRawWindowsSun32MatchesOriginalFieldAndCell() throws {
+        try compareRaw(Oracle(scale: 1, glyph: .sun))
+    }
+
+    func testRawWindowsSun64MatchesOriginalFieldAndCell() throws {
+        try compareRaw(Oracle(scale: 2, glyph: .sun))
+    }
+
     private func compareRaw(_ oracle: Oracle) throws {
         let header = try oracle.data("color-header.bin")
         let source = try oracle.data("bgra-span.bin")
@@ -67,14 +75,22 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         try compareFace(Oracle(scale: 2))
     }
 
+    func testExistingFontFaceSun32MatchesOriginalBitmapFieldAndCell() throws {
+        try compareFace(Oracle(scale: 1, glyph: .sun))
+    }
+
+    func testExistingFontFaceSun64MatchesOriginalBitmapFieldAndCell() throws {
+        try compareFace(Oracle(scale: 2, glyph: .sun))
+    }
+
     private func compareFace(_ oracle: Oracle) throws {
         let library = WPEParityFontLibrary(assets: WPEParityProgramAssets(sources: [.directory(oracle.root)]))
         let face = try XCTUnwrap(library.chain(fontPath: "TwemojiMozilla.ttf", pointSize: oracle.pointSize).faces.first)
-        let source = try XCTUnwrap(face.rasterize(166))
+        let source = try XCTUnwrap(face.rasterize(oracle.gid))
         XCTAssertEqual(source.width, oracle.sourceWidth); XCTAssertEqual(source.rows, oracle.sourceRows)
         XCTAssertEqual(source.pixelMode, .bgra)
         try assertBytes(Data(source.pixels), oracle.data("bgra-packed.bin"), label: "existing FontFace original BGRA")
-        let pair = try XCTUnwrap(face.colorGlyphField(166, companionScale: oracle.scale, captureStages: true))
+        let pair = try XCTUnwrap(face.colorGlyphField(oracle.gid, companionScale: oracle.scale, captureStages: true))
         let field = pair.primary
         XCTAssertEqual(pair.companionScale, oracle.scale)
         XCTAssertEqual(pair.companion.width, field.bitmap.width * oracle.scale)
@@ -90,8 +106,8 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                        try oracle.transform().map(\.bitPattern))
         try compareAndDump(label: "font-face-color", post: field.afterCorrection, rgba: field.bitmap.pixels,
                            companion: pair.companion.pixels, sourceBGRA: Data(source.pixels), oracle: oracle)
-        XCTAssertNil(face.colorGlyphField(166, companionScale: 3), "unqualified scales must not silently select a group")
-        XCTAssertNotNil(face.rasterize(166), "existing serial face remains usable")
+        XCTAssertNil(face.colorGlyphField(oracle.gid, companionScale: 3), "unqualified scales must not silently select a group")
+        XCTAssertNotNil(face.rasterize(oracle.gid), "existing serial face remains usable")
     }
 
     private func compareAndDump(label: String, post: [Float], rgba: [UInt8], companion: [UInt8], sourceBGRA: Data, oracle: Oracle) throws {
@@ -116,7 +132,10 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
     }
 
     private struct Oracle {
+        enum Glyph: Equatable { case heart, sun }
+
         let root: URL
+        let gid: UInt32
         let scale: Int
         let pointSize: Float
         let ppem: Int
@@ -125,18 +144,30 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         let cbox: [Int32]
         let outputEnvironment: String
         private let files: [String: String]
-        init(scale: Int) throws {
+        private let usesLegacyTransform: Bool
+        init(scale: Int, glyph: Glyph = .heart) throws {
             let environment: String, manifestSHA: String
-            if scale == 1 {
+            switch (glyph, scale) {
+            case (.heart, 1):
                 environment = "LOOMSCREEN_WPE_COLOR_ORACLE_DIR"
                 outputEnvironment = "LOOMSCREEN_WPE_COLOR_CANDIDATE_OUT"
                 manifestSHA = "3865f6694de4f06de499106f12eb614bea3bfc9562eeebcb0b9ade024cb451fc"
-            } else {
-                precondition(scale == 2)
+            case (.heart, 2):
                 environment = "LOOMSCREEN_WPE_COLOR_SCALE2_ORACLE_DIR"
                 outputEnvironment = "LOOMSCREEN_WPE_COLOR_SCALE2_CANDIDATE_OUT"
                 manifestSHA = "b343ac055b6c45787327427a4fddd506e332ff06be08be8fd8919e01c850c332"
+            case (.sun, 1):
+                environment = "LOOMSCREEN_WPE_COLOR_SUN32_ORACLE_DIR"
+                outputEnvironment = "LOOMSCREEN_WPE_COLOR_SUN32_CANDIDATE_OUT"
+                manifestSHA = "142f9bec6a786e17fa51afc6896db5a9537387f903ec08249d9932b38fcc0751"
+            case (.sun, 2):
+                environment = "LOOMSCREEN_WPE_COLOR_SUN64_ORACLE_DIR"
+                outputEnvironment = "LOOMSCREEN_WPE_COLOR_SUN64_CANDIDATE_OUT"
+                manifestSHA = "69ccf0ac6c58905627cc2671dee839580fcfa4713026315d646c9e48b38a7fb0"
+            default:
+                preconditionFailure("Only the four pinned original COLOR samples are qualified")
             }
+            usesLegacyTransform = glyph == .heart && scale == 1
             guard let path = ProcessInfo.processInfo.environment[environment] else {
                 throw NSError(domain: "OriginalColorGlyphOracle", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Root must supply the pinned original oracle directory; no skip/fallback"])
@@ -146,6 +177,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
             guard Self.sha(manifest) == manifestSHA,
                   let body = try JSONSerialization.jsonObject(with: manifest) as? [String: Any],
                   body["companionScale"] as? Int == scale,
+                  let gid = body["gid"] as? Int, gid == (glyph == .heart ? 166 : 58),
                   let pointSize = body["pointSize"] as? Double, let ppem = body["ppem"] as? Int,
                   let width = body["width"] as? Int, let height = body["height"] as? Int,
                   let sourceWidth = body["sourceWidth"] as? Int, let sourceRows = body["sourceRows"] as? Int,
@@ -153,6 +185,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                   let entries = body["files"] as? [[String: Any]] else {
                 throw NSError(domain: "OriginalColorGlyphOracle", code: 2)
             }
+            self.gid = UInt32(gid)
             self.scale = scale
             self.pointSize = Float(pointSize)
             self.ppem = ppem
@@ -179,7 +212,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         }
 
         func transform() throws -> [Double] {
-            if scale == 1 {
+            if usesLegacyTransform {
                 let bytes = try data("numeric-transform.bin")
                 return stride(from: 0, to: bytes.count, by: 8).map { Double(bitPattern: colorU64(bytes, $0)) }
             }
