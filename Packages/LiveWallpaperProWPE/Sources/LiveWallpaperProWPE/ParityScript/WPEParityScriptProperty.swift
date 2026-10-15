@@ -100,6 +100,18 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         }
     }
 
+    var isSceneBloomIterations: Bool {
+        owner == .scene && name == "bloomhdriterations" && type == .int && target == .field
+    }
+
+    var isSceneBloomTint: Bool {
+        owner == .scene && name == "bloomtint" && type == .vec3 && target == .field
+    }
+
+    var isSceneBloomField: Bool {
+        isSceneBloom || isSceneBloomFloat || isSceneBloomIterations || isSceneBloomTint
+    }
+
     /// 14019b4e0 accepts only a JSON Bool or an object's immediate Bool `value`.
     /// Nil means keep the existing bit (the scene constructor starts with mask2 set).
     public static func bloomValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
@@ -127,6 +139,31 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
                 nil
             }
         default: nil
+        }
+    }
+
+    /// 1401a4930 admits numeric JSON directly or at the immediate `value` and truncates a Double with CVTTSD2SI.
+    /// The JSON enum does not retain native signed/unsigned tags; their low-DWORD conversion remains unrepresented.
+    public static func bloomIterationsValue(fromJSON value: WPESceneJSONValue?) -> Int32? {
+        guard case let .number(number)? = bloomSeed(value) else { return nil }
+        return WPEParityNumericConversion.cvttsd2si(number)
+    }
+
+    /// 1401a4230 broadcasts a number or reads up to three ASCII-space runs from a string; invalid shapes preserve storage.
+    /// The string path shares the existing native-family parser; UCRT/Darwin locale and nonfinite grammar remain distinct.
+    public static func bloomTintValue(fromJSON value: WPESceneJSONValue?) -> SIMD3<Float>? {
+        switch bloomSeed(value) {
+        case let .number(number)?: SIMD3(repeating: Float(number))
+        case let .string(text)?: WPEParityCameraPath.vector(.string(text))
+        default: nil
+        }
+    }
+
+    private static func bloomSeed(_ value: WPESceneJSONValue?) -> WPESceneJSONValue? {
+        if case let .object(entries)? = value {
+            entries["value"]
+        } else {
+            value
         }
     }
 
@@ -267,6 +304,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "bloomhdrthreshold", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "bloomhdrfeather", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "bloomhdrscatter", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomhdriterations", owner: .scene, type: .int, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomtint", owner: .scene, type: .vec3, invalidation: .bloom),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.

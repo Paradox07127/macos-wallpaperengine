@@ -1,10 +1,10 @@
 /// User-property bindings of a parity scene and the live writes a change makes (R24 Q5 step 1). SceneScript
 /// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
 public enum WPEParityUserProperties {
-    /// Live bloom fields use the existing State/graph consumer; `hdr` and the HDR pyramid depth still reload.
+    /// Live bloom fields use the canonical State/graph consumer; changing `hdr` still reloads.
     private static let liveGeneralFields: Set = [
         "cameraparallaxdelay", "cameraparallaxmouseinfluence", "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
-        "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter",
+        "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter", "bloomhdriterations",
     ]
 
     /// Text layer fields that only move glyphs, which a live re-layout redraws (the enum fields never bind).
@@ -137,6 +137,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public let sceneBloom: Bool?
     /// Accepted document deltas for the six LDR/HDR Float fields, not a second live settings owner.
     public private(set) var sceneBloomFloats: [SceneFloatWrite] = []
+    /// Accepted typed deltas; nil preserves the running script's value instead of restoring the authored seed.
+    public let sceneBloomIterations: Int32?
+    public let sceneBloomTint: SIMD3<Float>?
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
@@ -145,6 +148,12 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let oldBloom = WPEParityScriptProperty.bloomValue(fromJSON: old.resolvedGeneralJSON["bloom"])
         let newBloom = WPEParityScriptProperty.bloomValue(fromJSON: new.resolvedGeneralJSON["bloom"])
         sceneBloom = oldBloom != newBloom ? newBloom : nil
+        let oldIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: old.resolvedGeneralJSON["bloomhdriterations"])
+        let newIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: new.resolvedGeneralJSON["bloomhdriterations"])
+        sceneBloomIterations = oldIterations != newIterations ? newIterations : nil
+        let oldTint = WPEParityScriptProperty.bloomTintValue(fromJSON: old.resolvedGeneralJSON["bloomtint"])
+        let newTint = WPEParityScriptProperty.bloomTintValue(fromJSON: new.resolvedGeneralJSON["bloomtint"])
+        sceneBloomTint = oldTint != newTint ? newTint : nil
         for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
             let previous = WPEParityScriptProperty.bloomFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
             guard let value = WPEParityScriptProperty.bloomFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
@@ -194,6 +203,12 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         }
         for write in sceneBloomFloats {
             state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .bloom)
+        }
+        if let sceneBloomIterations {
+            state.setScriptField("bloomhdriterations", of: "", to: .integer(sceneBloomIterations), invalidating: .bloom)
+        }
+        if let sceneBloomTint {
+            state.setScriptField("bloomtint", of: "", to: .vector(SIMD4(sceneBloomTint, 0)), invalidating: .bloom)
         }
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)

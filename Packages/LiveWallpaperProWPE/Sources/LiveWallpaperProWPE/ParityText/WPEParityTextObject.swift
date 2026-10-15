@@ -216,7 +216,7 @@ private struct WPEParityTextField {
     /// 1401a4930: reals truncate.
     func read(_ key: String, into target: inout Int) {
         if case let .number(value)? = lookup(key) {
-            target = Int32(exactly: value.rounded(.towardZero)).map(Int.init) ?? Int(Int32.min)
+            target = Int(WPEParityNumericConversion.cvttsd2si(value))
         }
     }
 

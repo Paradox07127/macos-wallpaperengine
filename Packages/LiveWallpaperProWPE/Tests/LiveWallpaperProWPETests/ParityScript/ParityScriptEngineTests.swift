@@ -4,6 +4,109 @@ import LiveWallpaperCore
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testBloomTintAndIterationsBindingsAndDocumentDeltasReachCanonicalState() throws {
+        let iterationScript = """
+        export function init(v) {
+          if (typeof v !== 'number') throw new Error('Bloom Int binding type');
+          thisScene.bloomhdriterations = v + 1;
+          if (thisScene.bloomhdriterations !== v + 1) throw new Error('Bloom Int setter');
+          return v + 2;
+        }
+        export function update(v) { return v + 1; }
+        """
+        let tintScript = """
+        export function init(v) {
+          if (typeof v.x !== 'number' || typeof v.y !== 'number' || typeof v.z !== 'number')
+            throw new Error('Bloom Vec3 binding type');
+          thisScene.bloomtint = new Vec3(v.x + 1, v.y + 1, v.z + 1);
+          if (thisScene.bloomtint.x !== v.x + 1 || thisScene.bloomtint.y !== v.y + 1 ||
+              thisScene.bloomtint.z !== v.z + 1) throw new Error('Bloom Vec3 setter');
+          return new Vec3(v.x + 2, v.y + 2, v.z + 2);
+        }
+        export function update(v) { return new Vec3(v.x + 1, v.y + 1, v.z + 1); }
+        """
+        let encodedIteration = try XCTUnwrap(String(data: JSONEncoder().encode(iterationScript), encoding: .utf8))
+        let encodedTint = try XCTUnwrap(String(data: JSONEncoder().encode(tintScript), encoding: .utf8))
+        func document(_ iterations: String, _ tint: String, alpha: Double = 1) throws -> WPESceneDocument {
+            // Raw literals retain the explicit real-token witness `1e100`; native integer-tag extremes are not asserted.
+            let source = """
+            {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+             "general":{"orthogonalprojection":{"width":32,"height":32},
+               "bloomhdriterations":{"value":\(iterations),"script":\(encodedIteration)},
+               "bloomtint":{"value":\(tint),"script":\(encodedTint)}},
+             "objects":[{"id":1,"image":"models/surface.json","alpha":\(alpha)}]}
+            """
+            return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: [:],
+                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        let assets = try Self.fixedAssets()
+        let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [
+            .init(objectID: "", name: "bloomhdriterations"): .integer(999),
+            .init(objectID: "", name: "bloomtint"): .vector(SIMD4(repeating: 999)),
+        ]
+        let seeds: [(iterations: String, tint: String, expectedInt: Int32, expectedTint: SIMD3<Float>)] = [
+            ("false", "false", 8, SIMD3(repeating: 1)),
+            ("\"12\"", "[1,2,3]", 8, SIMD3(repeating: 1)),
+            (#"{"value":3}"#, #"{"value":"1 2 3"}"#, 8, SIMD3(repeating: 1)),
+            ("3.9", "0.25", 3, SIMD3(repeating: 0.25)),
+            ("-3.9", "\"0.25 0.5\"", -3, SIMD3(0.25, 0.5, 0)),
+            ("0", "\"\"", 0, .zero),
+            ("1e100", "1", Int32.min, SIMD3(repeating: 1)),
+        ]
+        for seed in seeds {
+            let parsed = try document(seed.iterations, seed.tint)
+            var state = WPEParitySceneState(document: parsed, hdr: true)
+            let engine = try WPEParityScriptEngine.prepare(document: parsed, state: &state, configuration: .init(
+                assets: assets, canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32), fieldDefaults: untrusted
+            ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+            XCTAssertEqual(engine.bindings.map(\.path), ["bloomhdriterations", "bloomtint"])
+            XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
+            XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(seed.expectedInt))
+            XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(seed.expectedTint, 0)))
+            XCTAssertNil(engine.start(state: &state))
+            XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(seed.expectedInt + 2))
+            XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(seed.expectedTint + SIMD3(repeating: 2), 0)))
+            XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        }
+
+        let before = try document("false", "false")
+        var state = WPEParitySceneState(document: before, hdr: true)
+        let engine = try WPEParityScriptEngine.prepare(document: before, state: &state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32)
+        ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+        XCTAssertNil(engine.start(state: &state))
+        let changed = try document("4.9", "\"0.25 0.5 0.75\"")
+        let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
+        XCTAssertEqual(accepted.sceneBloomIterations, 4)
+        XCTAssertEqual(accepted.sceneBloomTint, SIMD3(0.25, 0.5, 0.75))
+        let initialGeneration = state.generation(.bloom)
+        accepted.apply(to: &state)
+        XCTAssertGreaterThan(state.generation(.bloom), initialGeneration)
+        XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(4))
+        XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(0.25, 0.5, 0.75, 0)))
+        engine.tick(dt: 0, state: &state)
+        let scriptGeneration = state.generation(.bloom)
+        let unchangedSeed = try document("4.1", "\"0.25 0.5 0.75\"", alpha: 0.25)
+        let invalidSeed = try document("\"6\"", "[0,0,0]", alpha: 0.25)
+        for newDocument in [unchangedSeed, invalidSeed] {
+            let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: newDocument))
+            XCTAssertNil(preserved.sceneBloomIterations)
+            XCTAssertNil(preserved.sceneBloomTint)
+            preserved.apply(to: &state)
+            XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(5))
+            XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(1.25, 1.5, 1.75, 0)))
+            XCTAssertEqual(state.generation(.bloom), scriptGeneration)
+            XCTAssertEqual(state.object("1")?.alpha, 0.25)
+        }
+        let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalidSeed, to: unchangedSeed))
+        XCTAssertEqual(recovered.sceneBloomIterations, 4)
+        XCTAssertEqual(recovered.sceneBloomTint, SIMD3(0.25, 0.5, 0.75))
+        recovered.apply(to: &state)
+        XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(4))
+        XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(0.25, 0.5, 0.75, 0)))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testHDRBloomFloatBindingsAndDocumentDeltasPreserveCanonicalValues() throws {
         // Existing LDR strength/threshold use the same native Float reader as these four HDR fields.
         let fields: [(name: String, bits: UInt32)] = [
