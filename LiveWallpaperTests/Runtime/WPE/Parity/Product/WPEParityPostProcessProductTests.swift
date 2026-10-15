@@ -72,9 +72,10 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0.5 0.5 0.5",
                         "clearenabled": true, "bloom": true, "hdr": false, "camerafade": false, "bloomthreshold": 0,
                         "bloomstrength": ["value": 0, "animation": [
-                            "c0": [["frame": 0, "value": 0], ["frame": 1, "value": 0],
-                                   ["frame": 2, "value": 1], ["frame": 3, "value": 0]],
-                            "options": ["fps": 4, "length": 4],
+                            "c0": [["frame": 0, "value": 0], ["frame": 3, "value": 0],
+                                   ["frame": 4, "value": 1], ["frame": 7, "value": 1],
+                                   ["frame": 8, "value": 0], ["frame": 11, "value": 0]],
+                            "options": ["fps": 4, "length": 12],
                         ]]],
             // Native bloom requires a nonempty object table. A camera is a real object with no color draw.
             "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
@@ -91,8 +92,16 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                                                                        bindingABIVersion: 1))
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: document, to: document))
-        for (strength, expected): (Float, Int) in [(0, 128), (1, 192), (0, 128)] {
+        for (strength, expected, advances): (Float, Int, Int) in [(0, 128, 1), (1, 192, 4), (0, 128, 4)] {
+            for _ in 0 ..< (advances - 1) {
+                guard case let .committed(command) = try renderer.encodeFrame(elapsed: 0.25) else {
+                    return XCTFail("authored plateau warmup was not committed")
+                }
+                await command.completed()
+                XCTAssertNil(command.error)
+            }
             for elapsed in [0.25, 0.0] {
+                let generation = renderer.state.generation(.bloom)
                 if elapsed == 0 {
                     try renderer.applyUserProperties(unchanged)
                 }
@@ -101,6 +110,11 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 }
                 await command.completed()
                 XCTAssertNil(command.error)
+                if elapsed == 0 {
+                    // Clock clamps to a positive minimum step. Sample inside a plateau so it cannot re-dirty
+                    // the unchanged field and mask a document snapshot restoring the authored strength.
+                    XCTAssertEqual(renderer.state.generation(.bloom), generation)
+                }
                 let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
                 XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"]), [strength])
                 let pixels = try await present(renderer, device: device, queue: queue)
