@@ -411,7 +411,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             let renderer = fixture.renderer
             let warmed = fixture.plan.loadPrograms.filter { $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" } }
             XCTAssertGreaterThan(warmed.count, 0)
-            XCTAssertLessThanOrEqual(warmed.count, 16, "Existing HLSL view deduplicates the finite source variants")
+            XCTAssertLessThanOrEqual(warmed.count, 32, "Two lists/depth/eight combos share the existing HLSL dedup view")
             print("mono authored effect=\(effect): unique field HLSL compile requests=\(warmed.count); all programs=\(fixture.plan.loadPrograms.count)")
             try await encode(renderer, label: "mono initial effect=\(effect)")
             XCTAssertTrue(renderer.skipped.isEmpty)
@@ -523,6 +523,80 @@ final class WPEParityTextDrawTests: XCTestCase {
             XCTAssertTrue(recovered.atlases.textures[key] === texture, "Correction reuses actual H fields")
             XCTAssertTrue(renderer.skipped.isEmpty)
             XCTAssertNotEqual(try readBack(renderer.backbuffer, fixture), presented, "Legal correction must actually render")
+        }
+    }
+
+    /// Original COLOR shaders consume the paired atlas at both qualified physical scales. This verifies
+    /// Mac product consumption and parameter reuse, not a Windows GPU pixel comparison.
+    func testColorFieldsConsumePairedOriginalShaderTextures() async throws {
+        let assets = try wpeAssets()
+        let font = try Data(contentsOf: assets.appending(path: "fonts/TwemojiMozilla.ttf"))
+        XCTAssertEqual(SHA256.hash(data: font).map { String(format: "%02x", $0) }.joined(),
+                       "063b2a145c2331e1aede451242b5107a0f29a44d782fdb24a6adb9754dc48d14")
+        for (path, expected) in [
+            ("shaders/font.frag", "d9f4e7198e2cc417c50a62d65e7dd2a654a13657b4d61df358bb1c016d4d7b26"),
+            ("shaders/font.vert", "8b337706d01a9a7ee5919c3cd3e489190d753e26e191e68b4014cb732c26f944"),
+            ("materials/fonts/basefontrgba_msdf.json", "66f3e264b1f7a7b401ba44cbd693520da065046c7e7dbb7894d7e67d787e12cc"),
+        ] {
+            let bytes = try Data(contentsOf: assets.appending(path: path))
+            XCTAssertEqual(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(), expected, path)
+        }
+        for (pointSize, scale) in [(7.68, 1), (15.36, 2)] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false, text: "❤")) as? [String: Any])
+            var object = try XCTUnwrap((json["objects"] as? [[String: Any]])?.first)
+            object["font"] = "fonts/TwemojiMozilla.ttf"; object["pointsize"] = pointSize; object["msdf"] = true
+            object["outline"] = true; object["outlinethickness"] = 1; object["outlinecolor"] = "0 1 0"
+            object["blur"] = true; object["blursize"] = 0.1
+            object["dropshadow"] = true; object["dropshadowcolor"] = "0 0 1"
+            object["dropshadowsize"] = 1; object["dropshadowopacity"] = 1; object["dropshadowoffset"] = "5 -4"
+            json["objects"] = [object]
+            let initialJSON = try JSONSerialization.data(withJSONObject: json)
+            let fixture = try await makeSyntheticRenderer(effect: false, scene: initialJSON)
+            let renderer = fixture.renderer
+            try await encode(renderer, label: "COLOR scale\(scale) initial")
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            let before = renderer.textPreparationState
+            let text = try XCTUnwrap(before.texts[Self.textID])
+            let mesh = try XCTUnwrap(text.layout.mesh)
+            XCTAssertEqual(mesh.glyphMode, .distanceField)
+            XCTAssertEqual(mesh.colorAtlasScale, scale)
+            XCTAssertTrue(mesh.mono.glyphKeys.isEmpty)
+            XCTAssertEqual(mesh.color.glyphKeys, [166])
+            let group = try XCTUnwrap(before.atlases.atlases[text.atlasKey]?.colorGroups[scale])
+            let primaryKey = WPEParityTextAtlasTextures.Key(atlasKey: text.atlasKey, atlas: .color, colorScale: scale)
+            let companionKey = WPEParityTextAtlasTextures.Key(atlasKey: text.atlasKey, atlas: .color,
+                                                              colorScale: scale, plane: .companion)
+            let primary = try XCTUnwrap(before.atlases.textures[primaryKey])
+            let companion = try XCTUnwrap(before.atlases.textures[companionKey])
+            XCTAssertEqual(SIMD2(primary.width, primary.height), SIMD2(group.width, group.height))
+            XCTAssertEqual(SIMD2(companion.width, companion.height), SIMD2(group.width * scale, group.height * scale))
+            XCTAssertEqual(try readBack(primary, fixture), group.pixels)
+            XCTAssertEqual(try readBack(companion, fixture), try XCTUnwrap(group.companionPixels))
+            let draw = try textDraw(renderer, geometry: .textGlyphs(.color))
+            XCTAssertTrue(draw.textures["g_Texture0"] === primary)
+            XCTAssertTrue(draw.textures["g_Texture1"] === companion)
+            try assertFontRVConstants(draw, expected: XCTUnwrap(text.fieldParameters))
+            let initial = try readBack(renderer.backbuffer, fixture)
+            XCTAssertGreaterThan(stride(from: 0, to: initial.count, by: 4).count {
+                Int(initial[$0]) > max(Int(initial[$0 + 1]), Int(initial[$0 + 2])) + 30
+            }, 0, "Original COLOR shader must preserve actual red heart pixels")
+            object["outlinecolor"] = "0 0 1"; json["objects"] = [object]
+            let changed = try Self.parse(JSONSerialization.data(withJSONObject: json))
+            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: Self.parse(initialJSON), to: changed)))
+            try await encode(renderer, label: "COLOR scale\(scale) parameter only")
+            let after = renderer.textPreparationState
+            XCTAssertEqual(after.texts[Self.textID]?.layout, text.layout)
+            XCTAssertTrue(after.atlases.textures[primaryKey] === primary)
+            XCTAssertTrue(after.atlases.textures[companionKey] === companion)
+            XCTAssertEqual(after.atlases.contentGenerations, before.atlases.contentGenerations)
+            let current = try textDraw(renderer, geometry: .textGlyphs(.color))
+            XCTAssertTrue(current.vertexBuffer === draw.vertexBuffer)
+            XCTAssertTrue(current.indexBuffer === draw.indexBuffer)
+            XCTAssertTrue(current.pipeline.state === draw.pipeline.state)
+            XCTAssertTrue(current.textures["g_Texture0"] === primary)
+            XCTAssertTrue(current.textures["g_Texture1"] === companion)
+            try assertFontRVConstants(current, expected: XCTUnwrap(after.texts[Self.textID]?.fieldParameters))
+            XCTAssertNotEqual(try readBack(renderer.backbuffer, fixture), initial, "Live COLOR RV change must affect actual pixels")
         }
     }
 

@@ -200,8 +200,10 @@ struct WPEParityFramePlan {
                             where bits & (1 << index) != 0 {
                             combos[name] = 1
                         }
-                        variants.append((.textGlyphs(.mono, depth: depth, mode: .distanceField, combos: combos),
-                                         .textGlyphs(.mono)))
+                        for list in [WPEParityGlyphAtlasInstance.Atlas.mono, .color] {
+                            variants.append((.textGlyphs(list, depth: depth, mode: .distanceField, combos: combos),
+                                             .textGlyphs(list)))
+                        }
                     }
                 }
                 for (source, geometry) in variants {
@@ -251,6 +253,8 @@ struct WPEParityFramePlan {
                               ("camerashakeroughness", shake.roughness)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
         }
+        let overrideFOV = WPEParityCamera.perspectiveOverrideFOV(general: document.resolvedGeneralJSON)
+        loadedState.setScriptField("perspectiveoverridefov", of: "", to: .vector(SIMD4(overrideFOV, 0, 0, 0)), invalidating: .none)
         let projection = WPEParityScenePerspective(general: document.resolvedGeneralJSON)
         for (name, value) in [("fov", projection.fov), ("nearz", projection.near), ("farz", projection.far)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)

@@ -547,8 +547,8 @@ struct WPEParityFrameDrawPlanner {
         for variant in draw.textures.indices {
             guard let binding = layout.bindings[variant][operation] else { continue }
             for (slot, source) in binding.textures {
-                guard case let .textAtlas(key, atlas) = source,
-                      let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas)] else { continue }
+                guard case let .textAtlas(key, atlas, scale, plane) = source,
+                      let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else { continue }
                 draw.textures[variant]["g_Texture\(slot)"] = .image(texture)
             }
         }
@@ -730,8 +730,9 @@ struct WPEParityFrameDrawPlanner {
                 }
                 // A re-laid layer's font or size may have moved it to another atlas.
                 var source = binding.textures[slot]
-                if case let .textAtlas(_, atlas)? = source, let text {
-                    source = .textAtlas(key: text.atlasKey, atlas: atlas)
+                if case let .textAtlas(_, atlas, _, plane)? = source, let text {
+                    let scale = atlas == .color ? text.layout.mesh?.colorAtlasScale ?? 1 : 1
+                    source = .textAtlas(key: text.atlasKey, atlas: atlas, colorScale: scale, plane: plane)
                 }
                 if source == nil, unboundIsTransparent {
                     textures[variant][name] = try .image(transparentTexture())
@@ -1037,8 +1038,8 @@ struct WPEParityFrameDrawPlanner {
             return .resource(id)
         case let .asset(name)?:
             return try .image(assetImage(name).texture)
-        case let .textAtlas(key, atlas)?:
-            guard let texture = textAtlases.textures[WPEParityTextAtlasTextures.Key(atlasKey: key, atlas: atlas)] else {
+        case let .textAtlas(key, atlas, scale, plane)?:
+            guard let texture = textAtlases.textures[WPEParityTextAtlasTextures.Key(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else {
                 throw .texture("\(shader) slot \(slot) samples text atlas \(key) \(atlas), which has no texture")
             }
             return .image(texture)

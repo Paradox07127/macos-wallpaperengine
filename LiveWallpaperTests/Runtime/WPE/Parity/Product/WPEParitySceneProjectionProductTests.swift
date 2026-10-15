@@ -223,6 +223,7 @@ extension WPEParitySceneDriverTests {
                             scriptHost: .init(userPropertiesJSON: host(fov: 60)))
         let overrideRenderer = try XCTUnwrap(cold.renderer)
         XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, 95, "Bool cannot replace the native Float seed")
+        XCTAssertEqual(overrideRenderer.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(95, 0, 0, 0)))
         var distances: [Float] = []
         for (index, expectedFOV): (Int, Float) in [(0, 95), (1, 60)] {
             let command = try XCTUnwrap(cold.renderAndPresentFrame(layer: layer, timestamp: 200 + Double(index) * 0.25,
