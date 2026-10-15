@@ -21,6 +21,10 @@ public final class WPEParityTextPlanner {
     fileprivate enum Disposition: Equatable { case pending, accepted, discarded }
     private var state = State()
     private var revision: UInt64 = 0
+    #if DEBUG
+    /// Failure-path injection only. The actual face stays owned here and the callback is used synchronously.
+    var fieldForTesting: ((WPEParityFontFace, UInt32) -> WPEParityGlyphField?)?
+    #endif
 
     /// One candidate value snapshot, not another atlas or font owner. Use only on the planner's serial owner.
     /// Drop/discard it on a failed GPU preparation; old active layouts/references/pixels remain unchanged.
@@ -74,9 +78,14 @@ public final class WPEParityTextPlanner {
     /// already in the atlas are not rasterised again.
     public func plan(_ object: WPEParityTextObject, effectCount: Int) -> (layout: WPEParityTextLayout, atlasKey: String) {
         var next = state
-        let result = pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
-        state = next; revision &+= 1
-        return result
+        do {
+            let result = try pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
+            state = next; revision &+= 1
+            return result
+        } catch {
+            // Only distance-field generation/admission can throw; the original bitmap skip policy is unchanged.
+            preconditionFailure("Bitmap packing violated its nonthrowing internal invariant: \(error)")
+        }
     }
 
     /// Explicit preparation for a caller that will atomically admit the matching font PSO, constants and
@@ -134,7 +143,7 @@ public final class WPEParityTextPlanner {
             }
         }
         var next = base
-        let result = pack(object, layout: layout, glyphMode: glyphMode, state: &next)
+        let result = try pack(object, layout: layout, glyphMode: glyphMode, state: &next)
         return PreparedPlan(owner: self, revision: revision, state: next,
                             layout: result.layout, atlasKey: result.atlasKey)
     }
@@ -161,7 +170,7 @@ public final class WPEParityTextPlanner {
 
     private func pack(_ object: WPEParityTextObject, layout: WPEParityTextLayout,
                       glyphMode: WPEParityTextGlyphMode, state: inout State)
-        -> (layout: WPEParityTextLayout, atlasKey: String) {
+        throws -> (layout: WPEParityTextLayout, atlasKey: String) {
         var layout = layout
         let pointSize = layout.mesh?.pointSize ?? WPEParityFontLibrary.clampedPointSize(object.pointSize)
         let key = WPEParityGlyphAtlasInstance.key(fontPath: object.font, pointSize: pointSize, glyphMode: glyphMode)
@@ -173,8 +182,8 @@ public final class WPEParityTextPlanner {
         var instance = state.atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
                                                                          glyphMode: glyphMode)
         precondition(instance.glyphMode == glyphMode)
-        let mono = Self.pack(mesh.mono, .mono, chain: chain, into: &instance)
-        let color = Self.pack(mesh.color, .color, chain: chain, into: &instance)
+        let mono = try Self.pack(mesh.mono, .mono, chain: chain, into: &instance, field: glyphField)
+        let color = try Self.pack(mesh.color, .color, chain: chain, into: &instance, field: glyphField)
         mesh.mono.removeQuads(mono.skipped)
         mesh.color.removeQuads(color.skipped)
         mesh.mono.atlasResetGeneration = instance.mono.resetGeneration
@@ -228,11 +237,22 @@ public final class WPEParityTextPlanner {
         layout.mesh = mesh
     }
 
+    private func glyphField(_ face: WPEParityFontFace, _ glyph: UInt32) -> WPEParityGlyphField? {
+        #if DEBUG
+        if let fieldForTesting {
+            return fieldForTesting(face, glyph)
+        }
+        #endif
+        return face.glyphField(glyph)
+    }
+
     /// Inserts the glyphs the atlas lacks. On a full atlas the first round resets it and repacks; the second skips
-    /// the glyphs that still do not fit (1401b0410.c:933-940, :1095-1214). Returns the skipped quads.
+    /// the glyphs that still do not fit (1401b0410.c:933-940, :1095-1214). Bitmap retains that skip policy;
+    /// prepared fields reject the whole Mac candidate on any missing output instead of publishing blank quads.
     private static func pack(_ glyphs: WPEParityTextGlyphMesh, _ list: WPEParityGlyphAtlasInstance.Atlas,
                              chain: WPEParityFontChain,
-                             into instance: inout WPEParityGlyphAtlasInstance) -> (skipped: Set<Int>, reset: Bool) {
+                             into instance: inout WPEParityGlyphAtlasInstance,
+                             field: (WPEParityFontFace, UInt32) -> WPEParityGlyphField?) throws -> (skipped: Set<Int>, reset: Bool) {
         var skipped: Set<Int> = []
         var reset = false
         let counts = glyphs.glyphKeys.reduce(into: [UInt32: Int]()) { $0[$1, default: 0] += 1 }
@@ -248,16 +268,18 @@ public final class WPEParityTextPlanner {
                 guard entry(key, in: list, instance: instance) == nil else { continue }
                 let face = Int(key >> 24)
                 guard face < chain.faces.count else {
+                    if instance.glyphMode == .distanceField {
+                        throw WPEParityTextPreparationError.distanceFieldGenerationFailed
+                    }
                     skipped.insert(quad)
                     continue
                 }
                 let inserted: Bool
                 if instance.glyphMode == .distanceField {
-                    guard list == .mono, let field = chain.faces[face].glyphField(key & 0xFFFFFF), !field.isColor else {
-                        skipped.insert(quad)
-                        continue
+                    guard list == .mono, let generated = field(chain.faces[face], key & 0xFFFFFF), !generated.isColor else {
+                        throw WPEParityTextPreparationError.distanceFieldGenerationFailed
                     }
-                    inserted = instance.insertDistanceField(key: key, field: field) != nil
+                    inserted = instance.insertDistanceField(key: key, field: generated) != nil
                 } else {
                     guard let bitmap = chain.faces[face].rasterize(key & 0xFFFFFF),
                           (bitmap.pixelMode == .bgra) == (list == .color) else {
@@ -283,6 +305,9 @@ public final class WPEParityTextPlanner {
             } else {
                 instance.color?.reset()
             }
+        }
+        if instance.glyphMode == .distanceField, !skipped.isEmpty {
+            throw WPEParityTextPreparationError.distanceFieldAtlasAdmissionFailed
         }
         return (skipped, reset)
     }

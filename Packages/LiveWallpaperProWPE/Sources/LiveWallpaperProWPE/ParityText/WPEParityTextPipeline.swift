@@ -74,6 +74,14 @@ public final class WPEParityTextPipeline {
         }
     }
 
+    #if DEBUG
+    /// Forward to the same planner's synchronous failure-path hook; no field/atlas owner is duplicated.
+    var fieldForTesting: ((WPEParityFontFace, UInt32) -> WPEParityGlyphField?)? {
+        get { planner.fieldForTesting }
+        set { planner.fieldForTesting = newValue }
+    }
+    #endif
+
     /// Keyed by `WPEParityGlyphAtlasInstance.key`; whoever uploads them clears their dirty state.
     public var atlases: [String: WPEParityGlyphAtlasInstance] {
         get { planner.atlases }

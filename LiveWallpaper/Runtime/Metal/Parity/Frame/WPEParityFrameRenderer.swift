@@ -419,6 +419,8 @@ final class WPEParityFrameRenderer {
     private var textRequests: [WPEParityTextPipeline.RelayoutRequest] = []
     private var pendingScriptTextGeneration: Int?
     private var pendingTextEffectsGeneration: Int?
+    /// Only a previously attempted failed prefix; later unattempted input must remain ordered.
+    private var failedTextRequestCount = 0
 
     #if DEBUG
     /// Value snapshots for the real Metal preparation guard, never an additional resource owner/cache.
@@ -769,6 +771,9 @@ final class WPEParityFrameRenderer {
             bloom = update.bloom
             repackBloom()
         }
+        if !update.texts.isEmpty {
+            discardSupersededFailedTexts()
+        }
         for text in update.texts {
             textRequests.append(.init(text))
             for (name, value) in WPEParityTextFields.seed(text) {
@@ -1074,6 +1079,7 @@ final class WPEParityFrameRenderer {
         let changed = textGeneration != (pendingScriptTextGeneration ?? seenScriptText)
         let effectsChanged = effectsGeneration != (pendingTextEffectsGeneration ?? seenEffects)
         guard changed || effectsChanged else { return }
+        discardSupersededFailedTexts()
         var latest = textPipeline.texts.mapValues(\.object)
         for request in textRequests {
             latest[request.object.id] = request.object
@@ -1092,8 +1098,18 @@ final class WPEParityFrameRenderer {
         pendingTextEffectsGeneration = effectsGeneration
     }
 
-    private func consumeTextRequests() {
-        textRequests.removeAll(keepingCapacity: true)
+    private func discardSupersededFailedTexts() {
+        guard failedTextRequestCount > 0 else { return }
+        // Only the failed attempted prefix is superseded; preserve an already appended unattempted tail.
+        textRequests.removeFirst(failedTextRequestCount)
+        failedTextRequestCount = 0
+        pendingScriptTextGeneration = nil
+        pendingTextEffectsGeneration = nil
+    }
+
+    private func consumeTextRequests(_ count: Int) {
+        textRequests.removeFirst(count)
+        failedTextRequestCount = 0
         if let generation = pendingScriptTextGeneration {
             seenScriptText = generation
         }
@@ -1104,6 +1120,14 @@ final class WPEParityFrameRenderer {
     /// Prepare all text/atlas/geometry/RT values on this serial owner, then publish once after CPU accept.
     private func replanRelaidTexts() throws {
         guard !textRequests.isEmpty else { return }
+        let attemptedCount = textRequests.count
+        failedTextRequestCount = 0
+        var completed = false
+        defer {
+            if !completed {
+                failedTextRequestCount = attemptedCount
+            }
+        }
         let pipeline = textPipeline
         let requested = try WPEParityTextFieldAdmission.requests(textRequests, texts: pipeline.texts,
                                                                  qualifiedObjects: plan.scene.scene.objects.compactMap {
@@ -1113,7 +1137,8 @@ final class WPEParityFrameRenderer {
                                                                      return nil
                                                                  })
         guard let prepared = try pipeline.prepareRelayouts(requested) else {
-            consumeTextRequests()
+            consumeTextRequests(attemptedCount)
+            completed = true
             return
         }
         var accepted = false
@@ -1196,7 +1221,8 @@ final class WPEParityFrameRenderer {
         pipeline.atlases = candidatePlanner.textAtlases.atlases
         packedConstants.removeAll()
         fadeConstants.removeAll()
-        consumeTextRequests()
+        consumeTextRequests(attemptedCount)
+        completed = true
         repackBloom()
     }
 

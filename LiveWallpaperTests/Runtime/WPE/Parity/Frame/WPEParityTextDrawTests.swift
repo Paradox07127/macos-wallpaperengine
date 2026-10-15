@@ -464,6 +464,40 @@ final class WPEParityTextDrawTests: XCTestCase {
             XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.textures["g_Texture0"] === texture })
             let presented = try readBack(renderer.backbuffer, fixture)
             XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0 + 1] > 0 })
+
+            // A failed loaded8 ->32 cohort must not poison a later legal8 input with its old request prefix.
+            let stable = renderer.textPreparationState
+            var invalidObject = object
+            invalidObject["pointsize"] = 32
+            var invalidJSON = json
+            invalidJSON["objects"] = [invalidObject]
+            let invalid = try Self.parse(JSONSerialization.data(withJSONObject: invalidJSON))
+            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: invalid)))
+            XCTAssertThrowsError(try renderer.encodeFrame(elapsed: 1.0 / 60)) { error in
+                XCTAssertEqual(error as? WPEParityTextPreparationError, .unqualifiedDistanceFieldGroup)
+            }
+            let rejected = renderer.textPreparationState
+            XCTAssertGreaterThan(rejected.pendingRequests, 0)
+            XCTAssertEqual(rejected.texts, stable.texts)
+            XCTAssertEqual(rejected.frames, stable.frames)
+            XCTAssertEqual(rejected.layers.layers, stable.layers.layers)
+            XCTAssertEqual(rejected.executorIDs, stable.executorIDs)
+            XCTAssertEqual(textGeometryIdentities(rejected), textGeometryIdentities(stable))
+            XCTAssertEqual(rejected.atlases.textures.mapValues(ObjectIdentifier.init), stable.atlases.textures.mapValues(ObjectIdentifier.init))
+            XCTAssertEqual(rejected.targets.mapValues(ObjectIdentifier.init), stable.targets.mapValues(ObjectIdentifier.init))
+            XCTAssertEqual(try readBack(renderer.backbuffer, fixture), presented)
+            object["text"] = "HH" // Still the loaded font/8pt, a real new legal layout rather than a discarded retry.
+            json["objects"] = [object]
+            let corrected = try Self.parse(JSONSerialization.data(withJSONObject: json))
+            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: corrected)))
+            try await encode(renderer, label: "mono rejected size then corrected input effect=\(effect)")
+            let recovered = renderer.textPreparationState
+            XCTAssertEqual(recovered.pendingRequests, 0)
+            XCTAssertEqual(recovered.texts[Self.textID]?.object.text, "HH")
+            XCTAssertEqual(recovered.texts[Self.textID]?.object.pointSize, 8)
+            XCTAssertTrue(recovered.atlases.textures[key] === texture, "Correction reuses actual H fields")
+            XCTAssertTrue(renderer.skipped.isEmpty)
+            XCTAssertNotEqual(try readBack(renderer.backbuffer, fixture), presented, "Legal correction must actually render")
         }
     }
 

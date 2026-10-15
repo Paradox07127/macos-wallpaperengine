@@ -18,6 +18,8 @@ public enum WPEParityTextPreparationError: Error, Equatable, Sendable {
     case zeroAreaDistanceGlyph
     case nonfiniteDrawParameters
     case unqualifiedDistanceFieldGroup
+    case distanceFieldGenerationFailed
+    case distanceFieldAtlasAdmissionFailed
     case foreignPreparedUpdate
     case stalePreparedUpdate
     case preparedUpdateConsumed

@@ -210,6 +210,58 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldGeneration + 1)
     }
 
+    #if DEBUG
+    /// The real font preflight and first object's numeric generation run normally. Only the second field
+    /// output is injected, to qualify nil/atlas failure propagation and whole-batch state isolation.
+    func testDistanceFieldGenerationAndTwoRoundAtlasFailureRejectWholeBatchThenRecover() throws {
+        for atlasFailure in [false, true] {
+            let pipeline = try fieldPipeline()
+            let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
+            let atlas = try XCTUnwrap(pipeline.atlases[key]).mono
+            let probe = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+            let newGlyph = try XCTUnwrap(probe.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
+            try pipeline.discard(probe)
+            var calls = 0
+            pipeline.fieldForTesting = { face, glyph in
+                // The first staged glyph is still produced by the existing face and numeric bridge.
+                if glyph == newGlyph & 0xFFFFFF {
+                    return face.glyphField(glyph)
+                }
+                calls += 1
+                guard atlasFailure, let original = face.glyphField(glyph) else { return nil }
+                // Small synthetic tile with an impossible padded width; real atlas runs both rounds.
+                // This is a failure fixture, never an original field/golden or a native resource cap.
+                return WPEParityGlyphField(bitmap: .init(width: 4096, rows: 1, pixelMode: .rgba,
+                                                         pixels: [UInt8](repeating: 0, count: 4096 * 4)),
+                                           box: original.box, yPpem: original.yPpem, isColor: false,
+                                           transform: original.transform, beforeCorrection: [], afterCorrection: [])
+            }
+            assertError(atlasFailure ? .distanceFieldAtlasAdmissionFailed : .distanceFieldGenerationFailed) {
+                _ = try pipeline.prepareRelayouts([.init(self.object("T", "ii"), glyphMode: .distanceField),
+                                                   .init(self.object("U", "M"), glyphMode: .distanceField)])
+            }
+            XCTAssertEqual(calls, atlasFailure ? 2 : 1, "Both real atlas rounds run; numeric nil fails immediately")
+            XCTAssertEqual(pipeline.texts, before)
+            let retained = try XCTUnwrap(pipeline.atlases[key]).mono
+            XCTAssertEqual(hash(retained.pixels), hash(atlas.pixels))
+            XCTAssertEqual(retained.width, atlas.width); XCTAssertEqual(retained.height, atlas.height)
+            XCTAssertEqual(retained.contentGeneration, atlas.contentGeneration)
+            XCTAssertEqual(retained.resetGeneration, atlas.resetGeneration)
+            XCTAssertEqual(retained.entry(forKey: 43)?.references, 2)
+            XCTAssertNil(retained.entry(forKey: newGlyph), "The earlier staged i must not leak after the second object fails")
+            pipeline.fieldForTesting = nil
+            let recovered = try XCTUnwrap(pipeline.prepareRelayouts([
+                .init(object("T", "ii"), glyphMode: .distanceField),
+                .init(object("U", "M"), glyphMode: .distanceField),
+            ]))
+            _ = try pipeline.accept(recovered)
+            XCTAssertEqual(pipeline.texts["T"]?.object.text, "ii")
+            XCTAssertEqual(pipeline.texts["U"]?.object.text, "M")
+            XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
+        }
+    }
+    #endif
+
     private func fieldPipeline() throws -> WPEParityTextPipeline {
         let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
         pipeline.add(object("T", "H"), effectCount: 0)
