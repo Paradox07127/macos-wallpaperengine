@@ -1080,13 +1080,15 @@ final class WPEParityFrameRenderer {
         let effectsChanged = effectsGeneration != (pendingTextEffectsGeneration ?? seenEffects)
         guard changed || effectsChanged else { return }
         discardSupersededFailedTexts()
+        // Discarding a failed cohort also drops its pending receipt; its canonical fields remain unconsumed.
+        let projectFields = textGeneration != (pendingScriptTextGeneration ?? seenScriptText)
         var latest = textPipeline.texts.mapValues(\.object)
         for request in textRequests {
             latest[request.object.id] = request.object
         }
         for sceneObject in plan.scene.scene.objects {
             guard var object = latest[sceneObject.id] else { continue }
-            if changed {
+            if projectFields {
                 object = WPEParityTextFields.applying(to: object, state: state)
             }
             let effects = state.effects.indices.count {
