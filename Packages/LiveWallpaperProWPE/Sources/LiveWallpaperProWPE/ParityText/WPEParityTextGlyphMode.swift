@@ -14,7 +14,7 @@ public enum WPEParityTextGlyphMode: Hashable, Sendable {
 /// Preparation failures that must leave the previous text's atlas references intact.
 public enum WPEParityTextPreparationError: Error, Equatable, Sendable {
     case distanceFieldNotRequested
-    case colorRequiresPairedAtlas
+    case unsupportedColorFieldScale(Int)
     case zeroAreaDistanceGlyph
     case nonfiniteDrawParameters
     case unqualifiedDistanceFieldGroup
@@ -73,7 +73,7 @@ public struct WPEParityTextDrawParameters: Hashable, Sendable {
     }
 }
 
-/// Current product qualification: requested non-colour fields share one font and actual point size.
+/// Current product qualification: prepared fields share one font and actual point size; COLOR scales are 1/2.
 /// This is an admission boundary, not a native font/atlas resource limit or a second planner.
 public enum WPEParityTextFieldAdmission {
     public static func mode(for object: WPEParityTextObject) -> WPEParityTextGlyphMode {

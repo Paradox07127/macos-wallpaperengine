@@ -1,13 +1,20 @@
 /// One existing font-atlas owner: bitmap keys include point size; distance keys share the font's mono RGBA field.
-/// Bitmap COLOR remains scale1. The distance COLOR paired/multiscale consumer is not admitted yet.
+/// COLOR groups share each group's one shelf/ref owner, with a paired plane only in field mode.
 public struct WPEParityGlyphAtlasInstance: Sendable {
     public enum Atlas: Hashable, Sendable { case mono, color }
 
     public let key: String
     public let glyphMode: WPEParityTextGlyphMode
     public var mono: WPEParityGlyphAtlas
-    /// Nil until the first BGRA glyph, as WPE creates it.
-    public var color: WPEParityGlyphAtlas?
+    public var colorGroups: [Int: WPEParityGlyphAtlas] = [:]
+    /// Compatibility access to the one scale1 group, never a second stored owner.
+    public var color: WPEParityGlyphAtlas? {
+        get { colorGroups[1] }
+        set { colorGroups[1] = newValue }
+    }
+
+    /// AD400's Float record belongs to this parent, not to an individual fallback FT face.
+    private var recordColorScales: [UInt32: Int] = [:]
 
     public init(fontPath: String, pointSize: Float, glyphMode: WPEParityTextGlyphMode = .bitmap) {
         key = Self.key(fontPath: fontPath, pointSize: pointSize, glyphMode: glyphMode)
@@ -27,6 +34,26 @@ public struct WPEParityGlyphAtlasInstance: Sendable {
         return color?.entry(forKey: key).map { (.color, $0) }
     }
 
+    public func colorScale(recordPointSize: Float) -> Int? {
+        recordColorScales[recordPointSize.bitPattern]
+    }
+
+    /// ADF30 writes the first actual COLOR CBox scale once per positive finite size record.
+    mutating func selectColorScale(recordPointSize: Float, box: WPEParityGlyphBox) throws -> Int {
+        guard recordPointSize.isFinite, recordPointSize > 0 else {
+            throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup
+        }
+        if let scale = colorScale(recordPointSize: recordPointSize) {
+            return scale
+        }
+        let width = Int64(box.xMax) - Int64(box.xMin), height = Int64(box.yMax) - Int64(box.yMin)
+        guard width > 0, height > 0 else { throw WPEParityTextPreparationError.zeroAreaDistanceGlyph }
+        let scale = glyphMode == .bitmap ? 1 : max(1, Int((max(width, height) + 31) / 32))
+        guard scale == 1 || scale == 2 else { throw WPEParityTextPreparationError.unsupportedColorFieldScale(scale) }
+        recordColorScales[recordPointSize.bitPattern] = scale
+        return scale
+    }
+
     public mutating func insert(
         key: UInt32,
         bitmap: WPEParityGlyphBitmap
@@ -44,5 +71,15 @@ public struct WPEParityGlyphAtlasInstance: Sendable {
     public mutating func insertDistanceField(key: UInt32, field: WPEParityGlyphField) -> WPEParityGlyphAtlasEntry? {
         precondition(glyphMode == .distanceField && !field.isColor && field.bitmap.pixelMode == .rgba)
         return mono.insert(key: key, bitmap: field.bitmap)
+    }
+
+    public mutating func insertColorField(key: UInt32, field: WPEParityColorGlyphField) -> WPEParityGlyphAtlasEntry? {
+        precondition(glyphMode == .distanceField)
+        let scale = field.companionScale
+        guard scale == 1 || scale == 2 else { return nil }
+        var group = colorGroups[scale] ?? WPEParityGlyphAtlas(format: .rgba8, companionScale: scale)
+        guard let entry = group.insertColorField(key: key, field: field) else { return nil }
+        colorGroups[scale] = group
+        return entry
     }
 }

@@ -211,4 +211,59 @@ final class ParityGlyphAtlasTests: XCTestCase {
         XCTAssertEqual(instance.entry(forKey: 2)?.atlas, .color)
         XCTAssertNil(instance.entry(forKey: 3))
     }
+
+    func testColorPairSharesPlacementGrowthReferencesAndReset() throws {
+        /// Pixel transport inputs for the existing shelf owner, not generated field golden values.
+        func pair(_ primary: UInt8, _ companion: UInt8) -> WPEParityColorGlyphField {
+            let bitmap = WPEParityGlyphBitmap(width: 300, rows: 300, pixelMode: .rgba,
+                                              pixels: Array(repeating: primary, count: 300 * 300 * 4))
+            let field = WPEParityGlyphField(bitmap: bitmap, box: .init(xMin: 0, yMin: 0, xMax: 64, yMax: 64),
+                                            yPpem: 64, isColor: true,
+                                            transform: .init(scaleX: 1, scaleY: 1, translateX: 0, translateY: 0,
+                                                             distanceScale: 1, distanceOffset: 0),
+                                            beforeCorrection: [], afterCorrection: [])
+            return WPEParityColorGlyphField(primary: field,
+                                            companion: .init(width: 600, rows: 600, pixelMode: .rgba,
+                                                             pixels: Array(repeating: companion, count: 600 * 600 * 4)),
+                                            companionScale: 2)
+        }
+        var atlas = WPEParityGlyphAtlas(format: .rgba8, companionScale: 2)
+        let first = try XCTUnwrap(atlas.insertColorField(key: 1, field: pair(17, 91)))
+        XCTAssertEqual(rect(first), [0, 0, 300, 300])
+        atlas.retain([1])
+        let second = try XCTUnwrap(atlas.insertColorField(key: 2, field: pair(23, 103)))
+        XCTAssertEqual(rect(second), [301, 0, 601, 300])
+        XCTAssertEqual([atlas.width, atlas.height, atlas.generation], [1024, 1024, 1])
+        XCTAssertEqual(atlas.contentGeneration, 3, "one version per insert plus the one shared grow")
+        XCTAssertEqual(atlas.entry(forKey: 1)?.references, 1, "the companion never acquires a second reference")
+        XCTAssertEqual(atlas.entry(forKey: 1)?.uv, first.uv * 0.5)
+        XCTAssertEqual(pixel(atlas, 0, 0), 17)
+        XCTAssertEqual(pixel(atlas, 301, 0), 23)
+        let companion = try XCTUnwrap(atlas.companionPixels)
+        XCTAssertEqual(companion.count, 2048 * 2048 * 4)
+        XCTAssertEqual(companion[0], 91)
+        XCTAssertEqual(companion[602 * 4], 103)
+        XCTAssertEqual(companion[601 * 4], 0)
+        XCTAssertEqual(companion[(600 * 2048) * 4], 0)
+        atlas.release([1])
+        XCTAssertEqual(atlas.entry(forKey: 1)?.references, 0)
+        let version = atlas.contentGeneration, epoch = atlas.resetGeneration
+        atlas.reset()
+        XCTAssertNil(atlas.entry(forKey: 1))
+        XCTAssertNil(atlas.entry(forKey: 2))
+        XCTAssertEqual(atlas.resetGeneration, epoch + 1)
+        XCTAssertEqual(atlas.contentGeneration, version)
+        XCTAssertEqual(atlas.companionPixels, companion, "one reset keeps both planes' bytes")
+    }
+
+    func testColorScaleBelongsToExactRecordAndRejectsUnsupportedScale() throws {
+        var instance = WPEParityGlyphAtlasInstance(fontPath: "color.ttf", pointSize: 32, glyphMode: .distanceField)
+        XCTAssertEqual(try instance.selectColorScale(recordPointSize: 32, box: .init(xMin: 0, yMin: 0, xMax: 32, yMax: 30)), 1)
+        XCTAssertEqual(try instance.selectColorScale(recordPointSize: 32, box: .init(xMin: 0, yMin: 0, xMax: 64, yMax: 64)), 1)
+        XCTAssertEqual(try instance.selectColorScale(recordPointSize: 64, box: .init(xMin: 0, yMin: 0, xMax: 64, yMax: 64)), 2)
+        XCTAssertThrowsError(try instance.selectColorScale(recordPointSize: 96, box: .init(xMin: 0, yMin: 0, xMax: 65, yMax: 64))) {
+            XCTAssertEqual($0 as? WPEParityTextPreparationError, .unsupportedColorFieldScale(3))
+        }
+        XCTAssertNil(instance.colorScale(recordPointSize: 96))
+    }
 }

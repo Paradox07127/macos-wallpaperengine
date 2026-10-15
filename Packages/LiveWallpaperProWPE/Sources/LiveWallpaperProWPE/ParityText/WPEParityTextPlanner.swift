@@ -8,6 +8,7 @@ public final class WPEParityTextPlanner {
         let color: [UInt32]
         let monoReset: UInt64
         let colorReset: UInt64?
+        let colorScale: Int
     }
 
     /// Value state only. Atlas dictionaries, shelves, entries and pixel arrays are Swift COW values;
@@ -90,7 +91,7 @@ public final class WPEParityTextPlanner {
 
     /// Explicit preparation for a caller that will atomically admit the matching font PSO, constants and
     /// texture binding. The existing pipeline does not enable this merely because JSON requests MSDF.
-    /// Unsupported COLOR/zero-area inputs fail before releasing previous references or changing atlases.
+    /// Unsupported COLOR scales/zero-area inputs fail without publishing previous reference/atlas changes.
     public func plan(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode)
         throws -> (layout: WPEParityTextLayout, atlasKey: String) {
         try accept(prepare(object, effectCount: effectCount, glyphMode: glyphMode))
@@ -126,19 +127,18 @@ public final class WPEParityTextPlanner {
         }
         let layout = layout(object, effectCount: effectCount, glyphMode: glyphMode)
         if glyphMode == .distanceField, let mesh = layout.mesh {
-            guard mesh.color.glyphKeys.isEmpty else { throw WPEParityTextPreparationError.colorRequiresPairedAtlas }
             let chain = fonts.chain(fontPath: object.font, pointSize: mesh.pointSize)
-            for key in Set(mesh.mono.glyphKeys) {
+            for key in Set(mesh.mono.glyphKeys + mesh.color.glyphKeys) {
                 let index = Int(key >> 24)
                 // Product qualification currently covers one actual primary face, not mixed fallback groups.
                 guard index == 0 else { throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup }
-                if index < chain.faces.count, chain.faces[index].isColorFace {
-                    throw WPEParityTextPreparationError.colorRequiresPairedAtlas
-                }
                 guard index < chain.faces.count,
-                      let box = chain.faces[index].layoutGlyph(key & 0xFFFFFF, mode: .distanceField)?.box,
-                      box.xMax > box.xMin, box.yMax > box.yMin else {
+                      let glyph = chain.faces[index].layoutGlyph(key & 0xFFFFFF, mode: .distanceField),
+                      glyph.box.xMax > glyph.box.xMin, glyph.box.yMax > glyph.box.yMin else {
                     throw WPEParityTextPreparationError.zeroAreaDistanceGlyph
+                }
+                guard glyph.isColor == mesh.color.glyphKeys.contains(key) else {
+                    throw WPEParityTextPreparationError.distanceFieldGenerationFailed
                 }
             }
         }
@@ -184,10 +184,11 @@ public final class WPEParityTextPlanner {
         precondition(instance.glyphMode == glyphMode)
         let mono = try Self.pack(mesh.mono, .mono, chain: chain, into: &instance, field: glyphField)
         let color = try Self.pack(mesh.color, .color, chain: chain, into: &instance, field: glyphField)
+        mesh.colorAtlasScale = glyphMode == .distanceField ? color.colorScale : nil
         mesh.mono.removeQuads(mono.skipped)
         mesh.color.removeQuads(color.skipped)
         mesh.mono.atlasResetGeneration = instance.mono.resetGeneration
-        mesh.color.atlasResetGeneration = instance.color?.resetGeneration
+        mesh.color.atlasResetGeneration = instance.colorGroups[color.colorScale ?? 1]?.resetGeneration
         if mono.reset || color.reset {
             state.resets[key, default: 0] += 1
         }
@@ -196,7 +197,7 @@ public final class WPEParityTextPlanner {
         Self.hold(objectID: object.id, mesh: mesh, atlasKey: key, state: &state)
 
         Self.fillUVs(&mesh.mono, from: instance.mono)
-        Self.fillUVs(&mesh.color, from: instance.color)
+        Self.fillUVs(&mesh.color, from: instance.colorGroups[color.colorScale ?? 1])
         layout.mesh = mesh
         return (layout, key)
     }
@@ -207,7 +208,8 @@ public final class WPEParityTextPlanner {
                                           monoReset: mesh?.mono.atlasResetGeneration
                                               ?? state.atlases[atlasKey]?.mono.resetGeneration ?? 0,
                                           colorReset: mesh?.color.atlasResetGeneration
-                                              ?? state.atlases[atlasKey]?.color?.resetGeneration)
+                                              ?? state.atlases[atlasKey]?.colorGroups[mesh?.colorAtlasScale ?? 1]?.resetGeneration,
+                                          colorScale: mesh?.colorAtlasScale ?? 1)
     }
 
     private static func release(objectID: String, state: inout State) {
@@ -215,8 +217,8 @@ public final class WPEParityTextPlanner {
         if state.atlases[previous.atlas]?.mono.resetGeneration == previous.monoReset {
             state.atlases[previous.atlas]?.mono.release(previous.mono)
         }
-        if state.atlases[previous.atlas]?.color?.resetGeneration == previous.colorReset {
-            state.atlases[previous.atlas]?.color?.release(previous.color)
+        if state.atlases[previous.atlas]?.colorGroups[previous.colorScale]?.resetGeneration == previous.colorReset {
+            state.atlases[previous.atlas]?.colorGroups[previous.colorScale]?.release(previous.color)
         }
     }
 
@@ -233,7 +235,7 @@ public final class WPEParityTextPlanner {
                                    atlases: [String: WPEParityGlyphAtlasInstance]) {
         guard var mesh = layout.mesh, let instance = atlases[atlasKey] else { return }
         fillUVs(&mesh.mono, from: instance.mono)
-        fillUVs(&mesh.color, from: instance.color)
+        fillUVs(&mesh.color, from: instance.colorGroups[mesh.colorAtlasScale ?? 1])
         layout.mesh = mesh
     }
 
@@ -252,20 +254,25 @@ public final class WPEParityTextPlanner {
     private static func pack(_ glyphs: WPEParityTextGlyphMesh, _ list: WPEParityGlyphAtlasInstance.Atlas,
                              chain: WPEParityFontChain,
                              into instance: inout WPEParityGlyphAtlasInstance,
-                             field: (WPEParityFontFace, UInt32) -> WPEParityGlyphField?) throws -> (skipped: Set<Int>, reset: Bool) {
+                             field: (WPEParityFontFace, UInt32) -> WPEParityGlyphField?)
+        throws -> (skipped: Set<Int>, reset: Bool, colorScale: Int?) {
         var skipped: Set<Int> = []
         var reset = false
+        var colorScale: Int? = list == .color
+            ? (instance.glyphMode == .bitmap ? 1 : instance.colorScale(recordPointSize: chain.pointSize)) : nil
         let counts = glyphs.glyphKeys.reduce(into: [UInt32: Int]()) { $0[$1, default: 0] += 1 }
         for round in 0 ..< 2 {
             skipped = []
             var full = false
             // Protect the new mesh's existing glyphs before the first insert, and new glyphs immediately after
             // insertion. Otherwise a later glyph in this very mesh can evict one of its earlier glyphs.
-            for (key, count) in counts where entry(key, in: list, instance: instance) != nil {
-                retain(key, count: count, in: list, instance: &instance)
+            var protected: Set<UInt32> = []
+            for (key, count) in counts where entry(key, in: list, colorScale: colorScale, instance: instance) != nil {
+                retain(key, count: count, in: list, colorScale: colorScale, instance: &instance)
+                protected.insert(key)
             }
             for (quad, key) in glyphs.glyphKeys.enumerated() {
-                guard entry(key, in: list, instance: instance) == nil else { continue }
+                guard entry(key, in: list, colorScale: colorScale, instance: instance) == nil else { continue }
                 let face = Int(key >> 24)
                 guard face < chain.faces.count else {
                     if instance.glyphMode == .distanceField {
@@ -276,10 +283,29 @@ public final class WPEParityTextPlanner {
                 }
                 let inserted: Bool
                 if instance.glyphMode == .distanceField {
-                    guard list == .mono, let generated = field(chain.faces[face], key & 0xFFFFFF), !generated.isColor else {
-                        throw WPEParityTextPreparationError.distanceFieldGenerationFailed
+                    if list == .mono {
+                        guard let generated = field(chain.faces[face], key & 0xFFFFFF), !generated.isColor else {
+                            throw WPEParityTextPreparationError.distanceFieldGenerationFailed
+                        }
+                        inserted = instance.insertDistanceField(key: key, field: generated) != nil
+                    } else {
+                        let newlySelectedGroup = colorScale == nil
+                        guard let generated = try chain.faces[face].colorGlyphField(key & 0xFFFFFF, companionScaleForBox: { box in
+                            let scale = try instance.selectColorScale(recordPointSize: chain.pointSize, box: box)
+                            colorScale = scale
+                            return scale
+                        }) else { throw WPEParityTextPreparationError.distanceFieldGenerationFailed }
+                        // A newly selected record may share a group whose entries predate this mesh.
+                        // Protect them once before any insertion can evict one of this mesh's later glyphs.
+                        if newlySelectedGroup {
+                            for (key, count) in counts where !protected.contains(key)
+                                && entry(key, in: list, colorScale: colorScale, instance: instance) != nil {
+                                retain(key, count: count, in: list, colorScale: colorScale, instance: &instance)
+                                protected.insert(key)
+                            }
+                        }
+                        inserted = instance.insertColorField(key: key, field: generated) != nil
                     }
-                    inserted = instance.insertDistanceField(key: key, field: generated) != nil
                 } else {
                     guard let bitmap = chain.faces[face].rasterize(key & 0xFFFFFF),
                           (bitmap.pixelMode == .bgra) == (list == .color) else {
@@ -295,7 +321,9 @@ public final class WPEParityTextPlanner {
                         break
                     }
                 } else {
-                    retain(key, count: counts[key] ?? 1, in: list, instance: &instance)
+                    if protected.insert(key).inserted {
+                        retain(key, count: counts[key] ?? 1, in: list, colorScale: colorScale, instance: &instance)
+                    }
                 }
             }
             guard full else { break }
@@ -303,26 +331,34 @@ public final class WPEParityTextPlanner {
             if list == .mono {
                 instance.mono.reset()
             } else {
-                instance.color?.reset()
+                if let colorScale {
+                    instance.colorGroups[colorScale]?.reset()
+                }
             }
         }
         if instance.glyphMode == .distanceField, !skipped.isEmpty {
             throw WPEParityTextPreparationError.distanceFieldAtlasAdmissionFailed
         }
-        return (skipped, reset)
+        return (skipped, reset, colorScale)
     }
 
     private static func entry(_ key: UInt32, in list: WPEParityGlyphAtlasInstance.Atlas,
+                              colorScale: Int?,
                               instance: WPEParityGlyphAtlasInstance) -> WPEParityGlyphAtlasEntry? {
-        list == .mono ? instance.mono.entry(forKey: key) : instance.color?.entry(forKey: key)
+        if list == .mono {
+            return instance.mono.entry(forKey: key)
+        }
+        guard let colorScale else { return nil }
+        return instance.colorGroups[colorScale]?.entry(forKey: key)
     }
 
     private static func retain(_ key: UInt32, count: Int, in list: WPEParityGlyphAtlasInstance.Atlas,
+                               colorScale: Int?,
                                instance: inout WPEParityGlyphAtlasInstance) {
         if list == .mono {
             instance.mono.retain(repeatElement(key, count: count))
-        } else {
-            instance.color?.retain(repeatElement(key, count: count))
+        } else if let colorScale {
+            instance.colorGroups[colorScale]?.retain(repeatElement(key, count: count))
         }
     }
 

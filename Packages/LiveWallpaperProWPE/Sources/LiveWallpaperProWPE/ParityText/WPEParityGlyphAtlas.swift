@@ -37,6 +37,8 @@ public struct WPEParityGlyphAtlasEntry: Equatable, Sendable {
 
 /// WPE 2.8.42 shelf glyph atlas (FUN_1401ae080) over a CPU pixel buffer that is uploaded whole when dirty.
 public struct WPEParityGlyphAtlas: Sendable {
+    public enum Plane: Hashable, Sendable { case primary, companion }
+
     public static let initialSize = 512
 
     public static func entryKey(faceIndex: Int, glyphID: UInt32) -> UInt32 {
@@ -47,6 +49,9 @@ public struct WPEParityGlyphAtlas: Sendable {
     public private(set) var width = initialSize
     public private(set) var height = initialSize
     public private(set) var pixels: [UInt8]
+    /// A second pixel plane of this same shelf/entry/ref owner; dimensions are logical size times scale.
+    public let companionScale: Int?
+    public private(set) var companionPixels: [UInt8]?
     public private(set) var isDirty = false
     /// Bumped on every doubling: meshes built on an older generation hold stale UVs.
     public private(set) var generation = 0
@@ -67,9 +72,14 @@ public struct WPEParityGlyphAtlas: Sendable {
     private var keyOrder: [UInt32] = []
     private var orderedKeys: Set<UInt32> = []
 
-    public init(format: WPEParityGlyphAtlasFormat) {
+    public init(format: WPEParityGlyphAtlasFormat, companionScale: Int? = nil) {
+        precondition(companionScale == nil || (format == .rgba8 && (companionScale == 1 || companionScale == 2)))
         self.format = format
+        self.companionScale = companionScale
         pixels = Array(repeating: 0, count: Self.initialSize * Self.initialSize * format.bytesPerPixel)
+        if let companionScale {
+            companionPixels = Array(repeating: 0, count: Self.initialSize * Self.initialSize * companionScale * companionScale * 4)
+        }
     }
 
     public func entry(forKey key: UInt32) -> WPEParityGlyphAtlasEntry? {
@@ -78,6 +88,26 @@ public struct WPEParityGlyphAtlas: Sendable {
 
     /// Returns nil when the atlas is full (WPE result 2): nothing fits, nothing is evictable and width > 4095.
     public mutating func insert(key: UInt32, bitmap: WPEParityGlyphBitmap) -> WPEParityGlyphAtlasEntry? {
+        precondition(companionScale == nil, "A paired COLOR atlas cannot publish only its primary plane")
+        return insert(key: key, bitmap: bitmap, companion: nil)
+    }
+
+    /// One placement and generation advance for both native RGBA planes, with no BGRA swizzle.
+    public mutating func insertColorField(key: UInt32, field: WPEParityColorGlyphField) -> WPEParityGlyphAtlasEntry? {
+        let primary = field.primary.bitmap, companion = field.companion
+        guard field.primary.isColor, companionScale == field.companionScale,
+              primary.pixelMode == .rgba, companion.pixelMode == .rgba,
+              primary.width > 0, primary.rows > 0,
+              primary.width <= 4096 / field.companionScale, primary.rows <= 4096 / field.companionScale,
+              companion.width == primary.width * field.companionScale,
+              companion.rows == primary.rows * field.companionScale,
+              primary.pixels.count == primary.width * primary.rows * 4,
+              companion.pixels.count == companion.width * companion.rows * 4 else { return nil }
+        return insert(key: key, bitmap: primary, companion: companion)
+    }
+
+    private mutating func insert(key: UInt32, bitmap: WPEParityGlyphBitmap,
+                                 companion: WPEParityGlyphBitmap?) -> WPEParityGlyphAtlasEntry? {
         precondition((bitmap.pixelMode != .gray) == (format == .rgba8), "Four-channel glyphs go to the RGBA8 atlas")
         if let existing = entries[key] {
             return existing
@@ -99,6 +129,10 @@ public struct WPEParityGlyphAtlas: Sendable {
         let entry = entries[key]!
         copy(bitmap, to: entry)
         clearGap(around: entry)
+        if let companion, let scale = companionScale {
+            copyCompanion(companion, to: entry, scale: scale)
+            clearCompanionGap(around: entry, scale: scale)
+        }
         isDirty = true
         contentGeneration &+= 1
         return entry
@@ -219,6 +253,14 @@ public struct WPEParityGlyphAtlas: Sendable {
                 pixels[row * oldRowBytes ..< (row + 1) * oldRowBytes]
         }
         pixels = grown
+        if let scale = companionScale, let previous = companionPixels {
+            let oldStride = oldWidth * scale * 4, stride = width * scale * 4
+            var grown = [UInt8](repeating: 0, count: width * height * scale * scale * 4)
+            for row in 0 ..< oldHeight * scale {
+                grown[row * stride ..< row * stride + oldStride] = previous[row * oldStride ..< (row + 1) * oldStride]
+            }
+            companionPixels = grown
+        }
         entries = entries.mapValues { entry in
             var entry = entry
             entry.uv *= 0.5
@@ -273,6 +315,34 @@ public struct WPEParityGlyphAtlas: Sendable {
                 let start = (row * width + column) * bytesPerPixel
                 for offset in start ..< start + bytesPerPixel {
                     pixels[offset] = 0
+                }
+            }
+        }
+    }
+
+    private mutating func copyCompanion(_ bitmap: WPEParityGlyphBitmap, to entry: WPEParityGlyphAtlasEntry, scale: Int) {
+        let stride = width * scale * 4, rowBytes = bitmap.width * 4
+        for row in 0 ..< bitmap.rows {
+            let start = (entry.y0 * scale + row) * stride + entry.x0 * scale * 4
+            companionPixels![start ..< start + rowBytes] = bitmap.pixels[row * rowBytes ..< (row + 1) * rowBytes]
+        }
+    }
+
+    /// AE080 clears one physical pixel at each scaled edge, rather than a scale-wide border.
+    private mutating func clearCompanionGap(around entry: WPEParityGlyphAtlasEntry, scale: Int) {
+        let physicalWidth = width * scale, physicalHeight = height * scale
+        let x0 = entry.x0 * scale, y0 = entry.y0 * scale
+        let x1 = entry.x1 * scale, y1 = entry.y1 * scale
+        let rowBytes = (x1 - x0) * 4
+        for row in [(y0 == 0 ? physicalHeight : y0) - 1, y1 % physicalHeight] {
+            let start = (row * physicalWidth + x0) * 4
+            companionPixels!.replaceSubrange(start ..< start + rowBytes, with: repeatElement(0, count: rowBytes))
+        }
+        for row in y0 ..< y1 {
+            for column in [(x0 == 0 ? physicalWidth : x0) - 1, x1 % physicalWidth] {
+                let start = (row * physicalWidth + column) * 4
+                for offset in start ..< start + 4 {
+                    companionPixels![offset] = 0
                 }
             }
         }

@@ -9,7 +9,8 @@ public struct WPEParityProgramBinding: Sendable {
         /// `materials/<name>.tex`.
         case asset(String)
         /// A glyph atlas of `WPEParityProgramScene.textAtlases`; its CPU pixels are uploaded whole when dirty.
-        case textAtlas(key: String, atlas: WPEParityGlyphAtlasInstance.Atlas)
+        case textAtlas(key: String, atlas: WPEParityGlyphAtlasInstance.Atlas,
+                       colorScale: Int = 1, plane: WPEParityGlyphAtlas.Plane = .primary)
     }
 
     /// One stage's uniform annotated with a material key.
@@ -76,13 +77,19 @@ public extension WPEParityProgramBuilder {
                 var layerColor = draw.colorRole.usesLayerColor ? scene.layerColors[draw.objectID] : nil
                 var fixedColor = white
                 var atlas: WPEParityProgramBinding.TextureSource?
+                var companion: WPEParityProgramBinding.TextureSource?
                 var textRenderVars: WPEParityTextDrawParameters?
                 if case let .text(text)? = object?.kind {
                     // 140258050.c:106-116, 184-191: glyphs take the live layer colour, the background quad its own.
                     switch draw.geometry {
                     case let .textGlyphs(list):
                         layerColor = scene.layerColors[draw.objectID]
-                        atlas = .textAtlas(key: text.atlasKey, atlas: list)
+                        let scale = list == .color ? text.layout.mesh?.colorAtlasScale ?? 1 : 1
+                        atlas = .textAtlas(key: text.atlasKey, atlas: list, colorScale: scale)
+                        if list == .color, text.layout.mesh?.glyphMode == .distanceField,
+                           text.layout.mesh?.colorAtlasScale != nil {
+                            companion = .textAtlas(key: text.atlasKey, atlas: list, colorScale: scale, plane: .companion)
+                        }
                         textRenderVars = text.fieldParameters
                     case .textBackground:
                         fixedColor = text.background
@@ -94,6 +101,7 @@ public extension WPEParityProgramBuilder {
                                                            layerColor: layerColor ?? fixedColor)
                 var slots = textures(names, draw: draw, object: object, imported: imported)
                 slots[0] = atlas ?? slots[0]
+                slots[1] = companion ?? slots[1]
                 bindings[index] = WPEParityProgramBinding(
                     constants: constants, textRenderVars: textRenderVars, textures: slots, userTextures: material.userTextures,
                     userTextureSlots: userTextureSlots(material.userTextures, textures: slots),

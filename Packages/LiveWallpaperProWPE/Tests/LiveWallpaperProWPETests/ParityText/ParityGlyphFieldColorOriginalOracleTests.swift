@@ -106,8 +106,42 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                        try oracle.transform().map(\.bitPattern))
         try compareAndDump(label: "font-face-color", post: field.afterCorrection, rgba: field.bitmap.pixels,
                            companion: pair.companion.pixels, sourceBGRA: Data(source.pixels), oracle: oracle)
+        try comparePlanner(oracle)
         XCTAssertNil(face.colorGlyphField(oracle.gid, companionScale: 3), "unqualified scales must not silently select a group")
         XCTAssertNotNil(face.rasterize(oracle.gid), "existing serial face remains usable")
+    }
+
+    private func comparePlanner(_ oracle: Oracle) throws {
+        let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(oracle.root)]))
+        let object = WPEParityTextObject(json: .object([
+            "id": .string("color"), "text": .string(oracle.gid == 166 ? "❤" : "☀"),
+            "font": .string("TwemojiMozilla.ttf"), "pointsize": .number(Double(oracle.pointSize)), "msdf": .bool(true),
+        ]))
+        let prepared = try planner.prepare(object, effectCount: 0, glyphMode: .distanceField)
+        XCTAssertTrue(planner.atlases.isEmpty, "both planes stay in the existing prepared transaction")
+        let mesh = try XCTUnwrap(prepared.layout.mesh)
+        XCTAssertEqual(mesh.colorAtlasScale, oracle.scale)
+        XCTAssertEqual(mesh.color.glyphKeys, [oracle.gid])
+        let group = try XCTUnwrap(prepared.atlases[prepared.atlasKey]?.colorGroups[oracle.scale])
+        XCTAssertEqual(group.companionScale, oracle.scale)
+        let entry = try XCTUnwrap(group.entry(forKey: oracle.gid))
+        XCTAssertEqual(entry.references, 1)
+        func cell(_ bytes: [UInt8], scale: Int) -> Data {
+            var result = Data()
+            for row in entry.y0 * scale ..< entry.y1 * scale {
+                let start = (row * group.width * scale + entry.x0 * scale) * 4
+                result.append(contentsOf: bytes[start ..< start + (entry.x1 - entry.x0) * scale * 4])
+            }
+            return result
+        }
+        try assertBytes(cell(group.pixels, scale: 1), oracle.data("rgba-cell.bin"), label: "planner primary")
+        try assertBytes(cell(XCTUnwrap(group.companionPixels), scale: oracle.scale), oracle.data("companion-cell.bin"),
+                        label: "planner same-entry companion")
+        _ = try planner.accept(prepared)
+        XCTAssertEqual(planner.atlases[prepared.atlasKey]?.colorGroups[oracle.scale]?.entry(forKey: oracle.gid)?.references, 1)
+        var empty = object; empty.text = ""
+        _ = try planner.plan(empty, effectCount: 0, glyphMode: .distanceField)
+        XCTAssertEqual(planner.atlases[prepared.atlasKey]?.colorGroups[oracle.scale]?.entry(forKey: oracle.gid)?.references, 0)
     }
 
     private func compareAndDump(label: String, post: [Float], rgba: [UInt8], companion: [UInt8], sourceBGRA: Data, oracle: Oracle) throws {

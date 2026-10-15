@@ -183,12 +183,20 @@ public final class WPEParityFontFace {
     }
 
     /// CPU preparation for an explicitly qualified scale 1/2 COLOR group, using glyphField's same loaded
-    /// slot. It does not choose the native face's first-glyph scale, admit a material or mutate the atlas.
+    /// slot. It does not choose the parent record's first-glyph scale, admit a material or mutate the atlas.
     /// Other scales remain outside the consumer qualification; nil never means bitmap fallback.
     public func colorGlyphField(_ glyph: UInt32, companionScale: Int,
                                 captureStages: Bool = false) -> WPEParityColorGlyphField? {
-        guard companionScale == 1 || companionScale == 2, isColorFace,
-              let primary = glyphField(glyph, captureStages: captureStages),
+        guard companionScale == 1 || companionScale == 2 else { return nil }
+        return colorGlyphField(glyph, companionScaleForBox: { _ in companionScale }, captureStages: captureStages)
+    }
+
+    /// The existing planner selects its parent record after this same slot's actual CBox is available.
+    public func colorGlyphField(_ glyph: UInt32, companionScaleForBox: (WPEParityGlyphBox) throws -> Int,
+                                captureStages: Bool = false) rethrows -> WPEParityColorGlyphField? {
+        guard isColorFace, let primary = glyphField(glyph, captureStages: captureStages) else { return nil }
+        let companionScale = try companionScaleForBox(primary.box)
+        guard companionScale == 1 || companionScale == 2,
               let companion = WPEParityGlyphFieldProducer.companion(face: face, field: primary,
                                                                     scale: companionScale) else { return nil }
         return WPEParityColorGlyphField(primary: primary, companion: companion, companionScale: companionScale)

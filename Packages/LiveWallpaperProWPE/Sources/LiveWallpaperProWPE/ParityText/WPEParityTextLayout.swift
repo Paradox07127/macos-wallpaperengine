@@ -117,6 +117,8 @@ public struct WPEParityTextMesh: Hashable, Sendable {
     public var lineCount: Int
     public var pointSize: Float
     public var glyphMode: WPEParityTextGlyphMode = .bitmap
+    /// The selected native COLOR group; bitmap's existing scale1 access does not need a field selection.
+    public var colorAtlasScale: Int?
 }
 
 public struct WPEParityTextLayout: Hashable, Sendable {

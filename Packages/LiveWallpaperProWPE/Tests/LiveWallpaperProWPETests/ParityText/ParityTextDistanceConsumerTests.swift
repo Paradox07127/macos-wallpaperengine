@@ -42,17 +42,12 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
                        [SIMD2(0, 0), SIMD2(42.0 / 512, 0), SIMD2(0, 47.0 / 512), SIMD2(42.0 / 512, 47.0 / 512)])
     }
 
-    func testRejectedColorAndZeroAreaPreparationPreservesExistingReferences() throws {
-        let outline = try originalOutline(), color = try originalColor()
-        let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(outline), .directory(color)]))
+    func testRejectedZeroAreaAndInvalidPreparationPreservesExistingReferences() throws {
+        let outline = try originalOutline()
+        let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(outline)]))
         let prepared = try planner.plan(text(), effectCount: 0, glyphMode: .distanceField)
         let before = try XCTUnwrap(planner.atlases[prepared.atlasKey])
-        var unsupported = text()
-        unsupported.font = "TwemojiMozilla.ttf"; unsupported.text = "❤"; unsupported.pointSize = 7.68
-        XCTAssertThrowsError(try planner.plan(unsupported, effectCount: 0, glyphMode: .distanceField)) {
-            XCTAssertEqual($0 as? WPEParityTextPreparationError, .colorRequiresPairedAtlas)
-        }
-        unsupported = text(); unsupported.text = "H "
+        var unsupported = text(); unsupported.text = "H "
         XCTAssertThrowsError(try planner.plan(unsupported, effectCount: 0, glyphMode: .distanceField)) {
             XCTAssertEqual($0 as? WPEParityTextPreparationError, .zeroAreaDistanceGlyph)
         }
@@ -151,11 +146,6 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
     private func originalOutline() throws -> URL {
         try oracle(environment: "LOOMSCREEN_WPE_GLYPH_ORACLE_DIR",
                    manifestSHA: "ac47bffbf998d8ac6fb3bec69f2564b6f7578bb13509ffc575a759746a50da1f")
-    }
-
-    private func originalColor() throws -> URL {
-        try oracle(environment: "LOOMSCREEN_WPE_COLOR_ORACLE_DIR",
-                   manifestSHA: "3865f6694de4f06de499106f12eb614bea3bfc9562eeebcb0b9ade024cb451fc")
     }
 
     private func oracle(environment: String, manifestSHA: String) throws -> URL {
