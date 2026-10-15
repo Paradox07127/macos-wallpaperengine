@@ -180,19 +180,6 @@ public struct WPEParityCameraPaths: Sendable, Equatable {
     /// "x y z" read with atof from each run of spaces; a missing component is 0 (FUN_140198e20).
     static func vector(_ value: WPESceneJSONValue?) -> SIMD3<Float> {
         guard case let .string(text)? = value else { return .zero }
-        var result = SIMD3<Float>.zero
-        text.withCString { start in
-            var cursor = start
-            for component in 0 ..< 3 {
-                result[component] = Float(strtod(cursor, nil))
-                while cursor.pointee != 0, cursor.pointee != 0x20 {
-                    cursor += 1
-                }
-                while cursor.pointee == 0x20 {
-                    cursor += 1
-                }
-            }
-        }
-        return result
+        return WPEParityNumericConversion.asciiSpaceVector3(text)
     }
 }
