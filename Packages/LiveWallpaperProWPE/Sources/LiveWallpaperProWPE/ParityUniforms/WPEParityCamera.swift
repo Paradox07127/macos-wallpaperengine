@@ -75,7 +75,7 @@ public struct WPEParityCamera: Sendable, Equatable {
         let ortho = general.orthogonalProjection
         let size = Self.autoLayer(document)?.size.map { SIMD2(Float($0.width), Float($0.height)) }
             ?? SIMD2(Float(ortho.width), Float(ortho.height))
-        let parallax = general.cameraParallax
+        let parallax = Self.parallaxSettings(general: document.resolvedGeneralJSON)
         let resolved = document.resolvedGeneralJSON
         func value(_ key: String, _ fallback: Float) -> Float {
             let raw = resolved[key]
@@ -94,6 +94,17 @@ public struct WPEParityCamera: Sendable, Equatable {
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
                   perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
                   shake: WPEParityCameraShake(general: general), scenePerspective: perspective)
+    }
+
+    /// Native constructor values and strict typed fromJSON seeds, before any SceneScript writes.
+    public static func parallaxSettings(general: WPESceneJSONValue) -> WPESceneCameraParallaxSettings {
+        let defaults = WPESceneCameraParallaxSettings.disabled
+        return WPESceneCameraParallaxSettings(
+            enabled: WPEParityScriptProperty.sceneBoolValue(fromJSON: general["cameraparallax"]) ?? defaults.enabled,
+            amount: Double(WPEParityScriptProperty.sceneFloatValue(fromJSON: general["cameraparallaxamount"]) ?? Float(defaults.amount)),
+            delay: Double(WPEParityScriptProperty.sceneFloatValue(fromJSON: general["cameraparallaxdelay"]) ?? Float(defaults.delay)),
+            mouseInfluence: Double(WPEParityScriptProperty.sceneFloatValue(fromJSON: general["cameraparallaxmouseinfluence"]) ?? Float(defaults.mouseInfluence))
+        )
     }
 
     /// The authored root camera, before any camera object takes control. A hidden camera object must not leave

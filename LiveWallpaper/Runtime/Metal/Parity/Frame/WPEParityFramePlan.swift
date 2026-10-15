@@ -237,6 +237,13 @@ struct WPEParityFramePlan {
         loadedState.setScriptField("bloomhdriterations", of: "",
                                    to: .integer(Int32(truncatingIfNeeded: post.bloomSettings.hdrIterations)), invalidating: .bloom)
         loadedState.setScriptField("bloomtint", of: "", to: .vector(SIMD4(post.bloomSettings.tint, 0)), invalidating: .bloom)
+        let parallax = WPEParityCamera.parallaxSettings(general: document.resolvedGeneralJSON)
+        loadedState.setScriptField("cameraparallax", of: "", to: .vector(SIMD4(parallax.enabled ? 1 : 0, 0, 0, 0)),
+                                   invalidating: .none)
+        for (name, value) in [("cameraparallaxamount", parallax.amount), ("cameraparallaxdelay", parallax.delay),
+                              ("cameraparallaxmouseinfluence", parallax.mouseInfluence)] {
+            loadedState.setScriptField(name, of: "", to: .vector(SIMD4(Float(value), 0, 0, 0)), invalidating: .none)
+        }
         for binding in constantBindings {
             guard let pass = binding.materialPass else { continue }
             for (stage, constants) in binding.materialConstants {

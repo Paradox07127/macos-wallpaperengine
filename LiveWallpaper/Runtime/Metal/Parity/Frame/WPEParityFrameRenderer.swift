@@ -159,8 +159,24 @@ final class WPEParityFrameRenderer {
     private var cameraPose: WPEParityCameraPose?
     /// The fade draw's planned constants with this frame's g_Alpha.
     private var fadeConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
-    /// Only delay and mouse influence change after load; enabling or the amount is baked into the camera.
-    private var cameraParallax: WPESceneCameraParallaxSettings
+    /// Native no-hook fields are polled at the camera-update and layer-render read points.
+    private var cameraParallax: WPESceneCameraParallaxSettings {
+        var settings = WPESceneCameraParallaxSettings.disabled
+        if case let .vector(value)? = state.scriptField("cameraparallax", of: "") {
+            settings.enabled = value.x != 0
+        }
+        if case let .vector(value)? = state.scriptField("cameraparallaxamount", of: "") {
+            settings.amount = Double(value.x)
+        }
+        if case let .vector(value)? = state.scriptField("cameraparallaxdelay", of: "") {
+            settings.delay = Double(value.x)
+        }
+        if case let .vector(value)? = state.scriptField("cameraparallaxmouseinfluence", of: "") {
+            settings.mouseInfluence = Double(value.x)
+        }
+        return settings
+    }
+
     private(set) var clock = WPEParityClock()
     private(set) var pointer = WPEParityUniformPointer()
     private var parallax = WPEParityUniformParallax()
@@ -298,7 +314,10 @@ final class WPEParityFrameRenderer {
 
     /// The camera before the shake: the last frame's path pose, or the scene camera.
     var pathCamera: WPEParityCamera {
-        camera
+        var selected = camera
+        let parallax = cameraParallax
+        selected.parallaxAmount = parallax.enabled && selected.scenePerspective == nil ? Float(parallax.amount) : nil
+        return selected
     }
 
     var heapBytes: Int {
@@ -313,7 +332,7 @@ final class WPEParityFrameRenderer {
     /// camera shake or parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
     private let hasStaticBase: Bool
     var isStatic: Bool {
-        hasStaticBase && !cameraQueues.values.contains {
+        hasStaticBase && !cameraParallax.enabled && !cameraQueues.values.contains {
             $0.hasEligibleItems && state.isAlive($0.objectID) && state.isVisible($0.objectID)
         }
     }
@@ -641,7 +660,6 @@ final class WPEParityFrameRenderer {
         generalZoom = Float(plan.document.general.zoom)
         cameraPaths = plan.scene.cameraPaths
         layers = planner.layers
-        cameraParallax = plan.document.general.cameraParallax
         let particleObjects = plan.scene.scene.objects.compactMap { object -> (id: String, index: Int?)? in
             if case .particle = object.kind {
                 (object.id, plan.state.index(of: object.id))
@@ -681,7 +699,7 @@ final class WPEParityFrameRenderer {
         hasStaticBase = animations.isEmpty && particleObjects.isEmpty
             && !(mipRequested && plan.post.qualityMipMappedFrameBufferEnabled)
             && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
-            && plan.scene.cameraPaths.paths.isEmpty && !document.general.cameraParallax.enabled && !document.general.supportsAudioProcessing
+            && plan.scene.cameraPaths.paths.isEmpty && !document.general.supportsAudioProcessing
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
             && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
             && !([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: Self.hasScript)
@@ -743,7 +761,6 @@ final class WPEParityFrameRenderer {
                        colors: clearColors)
         state = previous.state
         animations = previous.animations
-        cameraParallax = previous.cameraParallax
         camera.perspectiveFOV = previous.camera.perspectiveFOV
         camera.zoom = previous.camera.zoom
         script = previous.script
@@ -791,7 +808,6 @@ final class WPEParityFrameRenderer {
         try replaceConditionalProperties(changed: Self.propertySnapshot(changedJSON),
                                          merged: Self.propertySnapshot(mergedJSON))
         update.apply(to: &state)
-        cameraParallax = update.cameraParallax
         let updatedBloom = bloomSettingsFromState(update.bloom)
         if updatedBloom != bloom {
             bloom = updatedBloom
@@ -1303,9 +1319,10 @@ final class WPEParityFrameRenderer {
         let fadeAlpha = cameraPaths.fadeAlpha
         let camera = pathCamera.shaken(time: clock.timeUniform)
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
-        if cameraParallax.enabled {
-            parallax.advance(pointer: pointer.position, mouseInfluence: Float(cameraParallax.mouseInfluence),
-                             delay: Float(cameraParallax.delay), eye: SIMD2(camera.eye.x, camera.eye.y),
+        let updateParallax = cameraParallax
+        if updateParallax.enabled {
+            parallax.advance(pointer: pointer.position, mouseInfluence: Float(updateParallax.mouseInfluence),
+                             delay: Float(updateParallax.delay), eye: SIMD2(camera.eye.x, camera.eye.y),
                              ortho: camera.size,
                              frametime: clock.frametime)
         }
@@ -1333,6 +1350,8 @@ final class WPEParityFrameRenderer {
             script.tick(dt: clock.frametime, cursor: scriptCursor, world: cursorWorld(camera: camera),
                         leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
         }
+        // 18aac0 reads the post-tick Bool/amount with the smoother already advanced by 1891a0 above.
+        let renderCamera = pathCamera.shaken(time: clock.timeUniform)
         videos.applyScriptFields(state: &state)
         applyTransforms()
         applyLayerFields()
@@ -1422,7 +1441,7 @@ final class WPEParityFrameRenderer {
                                                 for index in range {
                                                     let batch = stream.batches[index]
                                                     guard let operation = graphs.particleDraws[batch.key], let plan = draws[operation] else { continue }
-                                                    if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: camera, variant: variant,
+                                                    if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: renderCamera, variant: variant,
                                                                                                 textures: textures, arena: arena, textureSlots: &textureSlots,
                                                                                                 renderVars: &renderVars, particles: &particles, layers: live,
                                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) },
@@ -1443,7 +1462,7 @@ final class WPEParityFrameRenderer {
                                                 }
                                                 plan.applyRenderVarWrites(to: &renderVars)
                                                 let color = drawColor(operation: operation, variant: variant, plan: plan)
-                                                let provided = try plan.makeDraw(frame: uniforms, camera: camera, variant: variant, textures: textures,
+                                                let provided = try plan.makeDraw(frame: uniforms, camera: renderCamera, variant: variant, textures: textures,
                                                                                  textureSlots: &textureSlots, puppets: puppets, layers: live,
                                                                                  constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
