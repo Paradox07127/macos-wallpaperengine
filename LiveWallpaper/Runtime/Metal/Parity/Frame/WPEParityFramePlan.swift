@@ -226,7 +226,9 @@ struct WPEParityFramePlan {
         var loadedState = WPEParitySceneState(scene: scene, document: document)
         loadedState.setScriptField("bloom", of: "", to: .vector(SIMD4(post.sceneBloomEnabled ? 1 : 0, 0, 0, 0)),
                                    invalidating: .none)
-        for (name, value) in [("bloomhdrstrength", post.bloomSettings.hdrStrength),
+        for (name, value) in [("bloomstrength", post.bloomSettings.strength),
+                              ("bloomthreshold", post.bloomSettings.threshold),
+                              ("bloomhdrstrength", post.bloomSettings.hdrStrength),
                               ("bloomhdrthreshold", post.bloomSettings.hdrThreshold),
                               ("bloomhdrfeather", post.bloomSettings.hdrFeather),
                               ("bloomhdrscatter", post.bloomSettings.hdrScatter)] {

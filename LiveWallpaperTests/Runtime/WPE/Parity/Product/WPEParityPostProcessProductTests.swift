@@ -90,20 +90,26 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                                                         shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity,
                                                                        bindingABIVersion: 1))
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: document, to: document))
         for (strength, expected): (Float, Int) in [(0, 128), (1, 192), (0, 128)] {
-            guard case let .committed(command) = try renderer.encodeFrame(elapsed: 0.25) else {
-                return XCTFail("authored general animation frame was not committed")
-            }
-            await command.completed()
-            XCTAssertNil(command.error)
-            let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
-            XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"]), [strength])
-            let pixels = try await present(renderer, device: device, queue: queue)
-            let pixel = centerRGBA(pixels, width: 32, height: 32)
-            // Original bloom source: constant 128/255 squared, then contrast/saturation -> byte64;
-            // the two normalized blurs preserve it and combine adds 128+64. Zero strength removes it.
-            for channel in pixel.prefix(3) {
-                XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1)
+            for elapsed in [0.25, 0.0] {
+                if elapsed == 0 {
+                    try renderer.applyUserProperties(unchanged)
+                }
+                guard case let .committed(command) = try renderer.encodeFrame(elapsed: elapsed) else {
+                    return XCTFail("authored general animation frame was not committed")
+                }
+                await command.completed()
+                XCTAssertNil(command.error)
+                let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+                XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"]), [strength])
+                let pixels = try await present(renderer, device: device, queue: queue)
+                let pixel = centerRGBA(pixels, width: 32, height: 32)
+                // Original bloom source: constant 128/255 squared, then contrast/saturation -> byte64;
+                // the two normalized blurs preserve it and combine adds 128+64. Zero strength removes it.
+                for channel in pixel.prefix(3) {
+                    XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1)
+                }
             }
         }
     }

@@ -791,7 +791,7 @@ final class WPEParityFrameRenderer {
                                          merged: Self.propertySnapshot(mergedJSON))
         update.apply(to: &state)
         cameraParallax = update.cameraParallax
-        let updatedBloom = hdrBloomSettings(update.bloom)
+        let updatedBloom = bloomSettingsFromState(update.bloom)
         if updatedBloom != bloom {
             bloom = updatedBloom
             repackBloom()
@@ -989,10 +989,16 @@ final class WPEParityFrameRenderer {
         seenLayerFields = state.scriptFieldsGeneration
     }
 
-    /// The four HDR fields share canonical State with scripts and accepted document deltas.
+    /// The six Float fields share canonical State with scripts and accepted document deltas.
     /// A full settings snapshot must not replace unchanged or rejected seeds over live values.
-    private func hdrBloomSettings(_ source: WPEParityBloomSettings) -> WPEParityBloomSettings {
+    private func bloomSettingsFromState(_ source: WPEParityBloomSettings) -> WPEParityBloomSettings {
         var settings = source
+        if case let .vector(value)? = state.scriptField("bloomstrength", of: "") {
+            settings.strength = value.x
+        }
+        if case let .vector(value)? = state.scriptField("bloomthreshold", of: "") {
+            settings.threshold = value.x
+        }
         if case let .vector(value)? = state.scriptField("bloomhdrstrength", of: "") {
             settings.hdrStrength = value.x
         }
@@ -1012,14 +1018,7 @@ final class WPEParityFrameRenderer {
     private func applyScriptBloom() {
         guard state.generation(.bloom) != seenScriptBloom else { return }
         seenScriptBloom = state.generation(.bloom)
-        var settings = bloom
-        if case let .vector(strength)? = state.scriptField("bloomstrength", of: "") {
-            settings.strength = strength.x
-        }
-        if case let .vector(threshold)? = state.scriptField("bloomthreshold", of: "") {
-            settings.threshold = threshold.x
-        }
-        settings = hdrBloomSettings(settings)
+        let settings = bloomSettingsFromState(bloom)
         guard settings != bloom else { return }
         bloom = settings
         repackBloom()

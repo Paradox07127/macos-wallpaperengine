@@ -409,8 +409,8 @@ public struct WPEParityProgramScene: Sendable {
         func value(_ key: String) -> Float? {
             number(general[key]).map(Float.init)
         }
-        settings.strength = value("bloomstrength") ?? settings.strength
-        settings.threshold = value("bloomthreshold") ?? settings.threshold
+        settings.strength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomstrength"]) ?? settings.strength
+        settings.threshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomthreshold"]) ?? settings.threshold
         settings.hdrStrength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrstrength"]) ?? settings.hdrStrength
         settings.hdrThreshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrthreshold"]) ?? settings.hdrThreshold
         settings.hdrFeather = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrfeather"]) ?? settings.hdrFeather
