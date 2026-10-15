@@ -272,7 +272,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
         let layers = WPEParityLayerTransformSet(document: plan.document,
                                                 renderTargetSize: SIMD2(Float(Self.width), Float(Self.height)))
-        let expected = layers.draw("935", kind: .layer, parallax: .zero).matrices.modelViewProjection
+        let expected = try layers.draw("935", kind: .layer, parallax: .zero).matrices.modelViewProjection
         let spec: [[Float]] = [
             [-1.15e-8, 1.02761e-3, 0, -0.805596], [-5.55231e-3, -6.7e-9, 0, -0.199726],
             [0, 0, 2.5e-4, 0.5], [0, 0, 0, 1],

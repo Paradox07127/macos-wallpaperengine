@@ -1240,7 +1240,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                                                           blockOffset: text.layout.blockOffset)
         let model = WPEParityTextMatrices.direct(layerModel: layerModel,
                                                  translation: WPEParityTextMatrices.glyphTranslation(mesh))
-        let mvp = layers.projection(Self.textID) * layers.view(Self.textID, parallax: .zero) * model
+        let mvp = try layers.projection(Self.textID) * layers.view(Self.textID, parallax: .zero) * model
         var low = SIMD2<Float>(repeating: .infinity)
         var high = SIMD2<Float>(repeating: -.infinity)
         for vertex in mesh.mono.vertices {
