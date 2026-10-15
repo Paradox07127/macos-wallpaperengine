@@ -3,6 +3,45 @@ import simd
 import XCTest
 
 final class ParityLightsTests: XCTestCase {
+    func testColdGeneralColorReaderReachesLightingUniforms() throws {
+        // 199780 binds both colours to 1a4230: numeric broadcast and a NUL-terminated ASCII-space scan.
+        let cases: [(source: String, resolved: WPESceneJSONValue, expected: [Float])] = [
+            ("0.5", .number(0.5), [0.5, 0.5, 0.5]),
+            (#""1 2""#, .string("1 2"), [1, 2, 0]),
+            (#"" 1 2 3""#, .string(" 1 2 3"), [1, 1, 2]),
+            (#""1\u0000 2 3""#, .string("1\u{0} 2 3"), [1, 0, 0]),
+            (#""1 2 3""#, .string("1 2 3"), [1, 2, 3]),
+            (#""""#, .string(""), [0, 0, 0]),
+            ("true", .bool(true), [0, 0, 0]),
+            ("[1,2,3]", .array([.number(1), .number(2), .number(3)]), [0, 0, 0]),
+        ]
+        let frame = WPEParityUniformFrame(
+            clock: WPEParityClock(), daytime: 0, screen: WPEParityUniformScreen(clientWidth: 200, clientHeight: 100),
+            pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
+            eyePosition: .zero, view: matrix_identity_float4x4
+        )
+        for sample in cases {
+            let document = try ParityCameraFixture.document(json: """
+            {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+             "general":{"ambientcolor":\(sample.source),"skylightcolor":\(sample.source)},"objects":[]}
+            """)
+            for name in ["ambientcolor", "skylightcolor"] {
+                XCTAssertEqual(document.resolvedGeneralJSON[name], sample.resolved, "resolved \(name): \(sample.source)")
+            }
+            let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+            let lights = WPEParityUniformLights(document: document, transforms: transforms)
+            let draw = WPEParityUniformDraw(matrices: .effectPass, lights: lights)
+            let values = WPEParityUniformSet.values(frame: frame, draw: draw)
+            for name in ["g_LightAmbientColor", "g_LightSkylightColor"] {
+                guard case let .vector(actual)? = values[name] else {
+                    XCTFail("missing lighting uniform \(name)")
+                    continue
+                }
+                XCTAssertEqual(actual, sample.expected, "\(name): \(sample.source)")
+            }
+        }
+    }
+
     func testTubeUsesNativeTypeAndBothWorldEndpoints() throws {
         let document = try ParityCameraFixture.document(json: """
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
