@@ -130,7 +130,8 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                         }
                         """],
                         "bloomhdrthreshold": ["value": "0.05", "user": fields[1]],
-                        "bloomhdrfeather": ["value": ["value": 0.2], "user": fields[2]],
+                        "bloomhdrfeather": ["value": ["value": 0.2], "user": fields[2],
+                                            "script": "export function update(value) { return value; }"],
                         "bloomhdrscatter": ["value": [1.25], "user": fields[3]]],
             "objects": [["id": 1, "camera": "HDR witness", "origin": "0 0 0", "angles": "0 0 0",
                          "alpha": ["value": 1, "user": "fade"]]],
@@ -148,6 +149,10 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             return try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: values), encoding: .utf8))
         }
         let initial = try document()
+        for field in fields {
+            XCTAssertNil(WPEParityScriptProperty.bloomFloatValue(fromJSON: initial.resolvedGeneralJSON[field]),
+                         "This fixture must reach the typed reader with an invalid seed after envelope resolution")
+        }
         let plan = try WPEParityFramePlan(document: initial, assets: assets,
                                           settings: .init(bloom: true, hdrPostProcessing: true), width: 32, height: 32)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
@@ -182,13 +187,22 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let (update, animate, values) = entry
             try renderer.applyUserProperties(update, changedJSON: host(animate), mergedJSON: host(animate))
             try await render(renderer)
-            let down = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.fragment]?["g_BloomBlendParams"] != nil }?.draw)
+            let down = try XCTUnwrap(renderer.lastFrameDraws.first { entry in
+                if case let .post(post)? = renderer.frames[0].draws[entry.operation] {
+                    return post.shader == "hdr_downsample_bloom"
+                }
+                return false
+            }?.draw)
             let (threshold, feather, scatter) = (values[1], values[2], values[3])
             let strength = values[0] / (pow(scatter, Float(max(plan.post.hdrBloomLevelCount, 2) - 2)) + 1)
             XCTAssertEqual(components(down.constants[.fragment]?["g_BloomStrength"]), [strength])
             XCTAssertEqual(components(down.constants[.fragment]?["g_BloomBlendParams"]),
                            [threshold, threshold - threshold * feather, 2 * threshold * feather, 0.25 / (threshold * feather + 1e-5)])
-            let up = renderer.lastFrameDraws.compactMap { components($0.draw.constants[.fragment]?["g_BloomScatter"]) }
+            let up = renderer.lastFrameDraws.compactMap { entry -> [Float]? in
+                guard case let .post(post)? = renderer.frames[0].draws[entry.operation],
+                      post.shader == "hdr_upsample" || post.shader == "hdr_upsample_cubic" else { return nil }
+                return components(entry.draw.constants[.fragment]?["g_BloomScatter"])
+            }
             XCTAssertFalse(up.isEmpty)
             XCTAssertTrue(up.allSatisfy { $0 == [scatter] })
             for (field, value) in zip(fields, values) {
