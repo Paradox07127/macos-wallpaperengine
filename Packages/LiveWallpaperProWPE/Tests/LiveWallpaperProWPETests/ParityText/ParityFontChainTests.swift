@@ -40,6 +40,26 @@ final class ParityFontChainTests: XCTestCase {
         XCTAssertEqual(library.chain(fontPath: Self.notoSans, pointSize: 32).faces.first?.pointSize, 32)
     }
 
+    func testDistinctFloatSizesDoNotAliasWithinOneBitmapAtlasKey() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let data = try XCTUnwrap(Data(base64Encoded: Self.bitmapOnlyFont, options: .ignoreUnknownCharacters))
+        try data.write(to: directory.appendingPathComponent("bitmap.ttf"))
+        let library = WPEParityFontLibrary(assets: WPEParityProgramAssets(sources: [.directory(directory)]))
+        let first: Float = 32
+        let second = first.nextUp
+        XCTAssertEqual(WPEParityGlyphAtlasInstance.key(fontPath: "bitmap.ttf", pointSize: first),
+                       WPEParityGlyphAtlasInstance.key(fontPath: "bitmap.ttf", pointSize: second))
+        let a = library.chain(fontPath: "bitmap.ttf", pointSize: first)
+        let b = library.chain(fontPath: "bitmap.ttf", pointSize: second)
+        XCTAssertFalse(a === b)
+        XCTAssertEqual(try XCTUnwrap(a.faces.first).pointSize, first)
+        XCTAssertEqual(try XCTUnwrap(b.faces.first).pointSize, second)
+        XCTAssertTrue(a === library.chain(fontPath: "bitmap.ttf", pointSize: first))
+        XCTAssertTrue(b === library.chain(fontPath: "bitmap.ttf", pointSize: second))
+    }
+
     func testNotoSansMetricsAt32PointAnd300Dpi() throws {
         let face = try XCTUnwrap(Self.makeLibrary().chain(fontPath: Self.notoSans, pointSize: 32).faces.first)
         XCTAssertEqual(face.ascender, 143)

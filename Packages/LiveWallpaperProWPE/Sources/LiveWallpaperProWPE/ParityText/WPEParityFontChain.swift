@@ -6,7 +6,12 @@ import Foundation
 /// Holds FreeType objects: not thread-safe, one owner at a time.
 public final class WPEParityFontLibrary {
     private let loader: WPEParityFontLoader
-    private var chains: [String: WPEParityFontChain] = [:]
+    private struct ChainKey: Hashable {
+        let fontPath: String
+        let pointSizeBits: UInt32
+    }
+
+    private var chains: [ChainKey: WPEParityFontChain] = [:]
 
     public init(assets: WPEParityProgramAssets) {
         loader = WPEParityFontLoader(assets: assets)
@@ -24,10 +29,14 @@ public final class WPEParityFontLibrary {
         return clamped
     }
 
-    /// The chain for a scene `font` value at a point size, keyed like WPE's font instances ("path_pt×64").
+    /// AD400 keys the chain record by Float size in both modes; the bitmap atlas's string key is separate.
     public func chain(fontPath: String, pointSize: Float) -> WPEParityFontChain {
         let clamped = Self.clampedPointSize(pointSize)
-        let key = "\(fontPath)_\(Int64(clamped * 64))"
+        if !clamped.isFinite {
+            // Preserve the former conversion failure for invalid input; this is not a NaN fallback policy.
+            _ = Int64(clamped * 64)
+        }
+        let key = ChainKey(fontPath: fontPath, pointSizeBits: clamped.bitPattern)
         if let cached = chains[key] {
             return cached
         }
