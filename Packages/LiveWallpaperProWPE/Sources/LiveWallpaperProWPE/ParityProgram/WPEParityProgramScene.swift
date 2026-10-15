@@ -84,7 +84,7 @@ public struct WPEParityProgramScene: Sendable {
         flags.fogHeight = Self.flag(general?["fogheight"])
         WPEParityLightConfig(general: general).apply(to: &flags)
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
-        let sceneBloom = bloomGeneral["bloom"].map { Self.flag($0) } ?? true
+        let sceneBloom = WPEParityScriptProperty.bloomValue(fromJSON: bloomGeneral["bloom"]) ?? true
         // 14010df40.c:299-335, 365, 519-552
         flags.hdr = Self.hdrEnabled(document: document, settings: settings)
         // A serialized model:null is not a model object. Match the class that actually draws MDL meshes below.

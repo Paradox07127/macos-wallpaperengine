@@ -265,7 +265,7 @@ final class WPEParitySceneScript {
             ("bloomstrength", SIMD4(2, 0, 0, 0)), ("bloomthreshold", SIMD4(0.65, 0, 0, 0)),
             ("ambientcolor", .zero), ("skylightcolor", .zero),
         ]
-        return Dictionary(uniqueKeysWithValues: native.map { name, fallback in
+        var fields = Dictionary(uniqueKeysWithValues: native.map { name, fallback in
             var value = fallback
             if let parsed = components(general[name]), !parsed.isEmpty {
                 value = .zero
@@ -276,6 +276,9 @@ final class WPEParitySceneScript {
             return (WPEParitySceneState.ScriptFieldKey(objectID: "", name: name),
                     WPEParitySceneState.ScriptValue.vector(value))
         })
+        let bloom = WPEParityScriptProperty.bloomValue(fromJSON: general["bloom"]) ?? true
+        fields[.init(objectID: "", name: "bloom")] = .vector(SIMD4(bloom ? 1 : 0, 0, 0, 0))
+        return fields
     }
 
     /// Refreshes the registerAudioBuffers bins from the frame's spectrum: 64 as published, 32 and 16 max-pooled

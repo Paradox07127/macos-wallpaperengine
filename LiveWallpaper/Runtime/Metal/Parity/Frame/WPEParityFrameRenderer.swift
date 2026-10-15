@@ -54,6 +54,7 @@ enum WPEParityFrameRenderError: Error, LocalizedError {
 final class WPEParityFrameRenderer {
     /// The frames of one set of shown effects and the plans of their draws (R24 Q2 "effect").
     private struct Layout {
+        let post: WPEParityPostProcessConfig
         /// The state's effect visible bits the frames were composed with.
         let effects: [Bool]
         let frames: [WPEParityFrame]
@@ -521,11 +522,31 @@ final class WPEParityFrameRenderer {
         let planned = mipRequested ? try plan.layout(effects: plan.state, mipMappedFrameBufferRequested: true) : plan.layout
         let layout = try Self.makeLayout(planned, effects: plan.state.effectVisibility, artifacts: artifacts,
                                          planner: &planner, encoder: encoder,
-                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: nil)
+                                         reusing: nil)
         for probe in probes {
-            for (index, program) in probe.programs {
-                guard case let .success(artifact)? = artifacts[program.hlsl] else { continue }
-                planner.prewarmPipeline(probe.frame, index, program: program, artifact: artifact)
+            for (index, description) in probe.frame.draws {
+                let required = Self.requiredPost(description)
+                guard let program = probe.programs[index],
+                      case let .success(artifact)? = artifacts[program.hlsl] else {
+                    if let required {
+                        var reason = probe.skipped[index] ?? WPEParityFrameSkip.noShader("Required utility variant was not prepared")
+                        if let unresolved = probe.programs[index],
+                           case let .failure(failure)? = artifacts[unresolved.hlsl] {
+                            reason = failure
+                        }
+                        throw WPEParityFrameRenderError.requiredPostProcessUnavailable(
+                            pass: required, reason: reason
+                        )
+                    }
+                    continue
+                }
+                do {
+                    try planner.prewarmPipeline(probe.frame, index, program: program, artifact: artifact)
+                } catch {
+                    if let required {
+                        throw WPEParityFrameRenderError.requiredPostProcessUnavailable(pass: required, reason: error)
+                    }
+                }
             }
         }
         let draws = layout.draws
@@ -805,14 +826,14 @@ final class WPEParityFrameRenderer {
         let affectedNames = Set(Self.drawNames(current.frames[0]).compactMap { index, name in
             prepared.affectedOperations.contains(index) ? name : nil
         })
-        let reuse = Layout(effects: current.effects, frames: current.frames,
+        let reuse = Layout(post: current.post, effects: current.effects, frames: current.frames,
                            draws: current.draws.filter { !prepared.affectedOperations.contains($0.key) },
                            skipped: current.skipped, fade: current.fade)
         let planned = try plan.layout(effects: state, texts: candidate.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidate, encoder: drawEncoder,
-                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: reuse)
+                                         reusing: reuse)
         for (index, name) in Self.drawNames(planned.frames[0])
             where affectedNames.contains(name) && planned.programs[index] != nil && layout.draws[index] == nil {
             throw layout.skipped[index] ?? WPEParityFrameSkip.noMaterial
@@ -1171,11 +1192,11 @@ final class WPEParityFrameRenderer {
                   let after = prepared.texts[draw.objectID] else { return false }
             return before.layout == after.layout && before.atlasKey == after.atlasKey
         }
-        let reuse = Layout(effects: current.effects, frames: current.frames, draws: kept,
+        let reuse = Layout(post: current.post, effects: current.effects, frames: current.frames, draws: kept,
                            skipped: current.skipped, fade: current.fade)
         var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidatePlanner, encoder: drawEncoder,
-                                         requiredPresentationPass: plan.requiredPresentationPass, reusing: reuse)
+                                         reusing: reuse)
         // makeLayout records per-draw failures as skips. Required readers of this changed text cohort cannot
         // be silently dropped while its CPU atlas/ref/layout is accepted.
         for (index, description) in planned.frames[0].draws {
@@ -1194,7 +1215,7 @@ final class WPEParityFrameRenderer {
             candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
             candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
         }
-        layout = Layout(effects: layout.effects, frames: layout.frames, draws: rebound,
+        layout = Layout(post: layout.post, effects: layout.effects, frames: layout.frames, draws: rebound,
                         skipped: layout.skipped, fade: layout.fade)
         let readinessChanged = Set(layout.draws.keys) != Set(current.draws.keys)
         let requiresRebuild = prepared.delta.changes.contains { $0.requiresFrameRebuild }
@@ -1467,6 +1488,7 @@ final class WPEParityFrameRenderer {
     /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
     /// previous set.
     private func selectGraphs() throws {
+        let bloomEnabled = plan.postConfig(state: state).bloomEnabled
         if state.membershipGeneration == seenMembership, state.modelDataGeneration != seenModelData,
            refreshModelDataDrawVersions() {
             seenModelData = state.modelDataGeneration
@@ -1481,7 +1503,6 @@ final class WPEParityFrameRenderer {
                                           mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
             let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                              planner: &planner, encoder: drawEncoder,
-                                             requiredPresentationPass: plan.requiredPresentationPass,
                                              reusing: graphs.layout)
             // Removed owners cannot return through the visibility cache. Existing command buffers retain
             // their submitted resource versions; this drops the renderer's obsolete draw/graph references.
@@ -1492,13 +1513,15 @@ final class WPEParityFrameRenderer {
             seenModelData = state.modelDataGeneration
             repackBloom()
         }
-        guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects else {
+        guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects
+            || bloomEnabled != graphs.layout.post.bloomEnabled else {
             return
         }
         let hidden = state.objects.indices.map { !state.isVisible(at: $0) }
         let effects = state.effectVisibility
-        if hidden != graphs.hidden || effects != graphs.layout.effects {
+        if hidden != graphs.hidden || effects != graphs.layout.effects || bloomEnabled != graphs.layout.post.bloomEnabled {
             if let previous = previousGraphs, previous.hidden == hidden, previous.layout.effects == effects,
+               previous.layout.post.bloomEnabled == bloomEnabled,
                previous.executors.allSatisfy({ executor in
                    executor.graph.resources.values.allSatisfy { resource in
                        resource.lifetime == .imported || executor.transientTextures[resource.id] != nil
@@ -1509,11 +1532,10 @@ final class WPEParityFrameRenderer {
                 targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
             } else {
                 var layout = graphs.layout
-                if effects != layout.effects {
+                if effects != layout.effects || bloomEnabled != layout.post.bloomEnabled {
                     layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts,
                                                              mipMappedFrameBufferRequested: mipMappedFrameBufferRequested), effects: effects,
                                                  artifacts: artifacts, planner: &planner, encoder: drawEncoder,
-                                                 requiredPresentationPass: plan.requiredPresentationPass,
                                                  reusing: layout)
                 }
                 try installGraphs(layout, cachePrevious: true)
@@ -1559,7 +1581,7 @@ final class WPEParityFrameRenderer {
             guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
             guard indices[id] == Set(model.shapes.indices) else { return false }
         }
-        let replaced = Layout(effects: layout.effects, frames: layout.frames, draws: draws,
+        let replaced = Layout(post: layout.post, effects: layout.effects, frames: layout.frames, draws: draws,
                               skipped: layout.skipped, fade: layout.fade)
         retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
         previousGraphs = nil
@@ -1653,10 +1675,10 @@ final class WPEParityFrameRenderer {
     /// frame (R24 Q5).
     private func repackBloom() {
         postConstants.removeAll()
-        guard bloom != plan.post.bloomSettings else { return }
-        var config = plan.post
-        config.bloomSettings = bloom
         let layout = graphs.layout
+        guard bloom != layout.post.bloomSettings else { return }
+        var config = layout.post
+        config.bloomSettings = bloom
         let operations = layout.frames[0].draws.compactMap { index, draw -> Int? in
             if case .post = draw {
                 index
@@ -1679,7 +1701,7 @@ final class WPEParityFrameRenderer {
     private static func makeLayout(_ planned: WPEParityFrameLayout, effects: [Bool],
                                    artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>],
                                    planner: inout WPEParityFrameDrawPlanner, encoder: WPEParityDrawEncoder,
-                                   requiredPresentationPass: String?, reusing previous: Layout?) throws -> Layout {
+                                   reusing previous: Layout?) throws -> Layout {
         planner.use(planned)
         let names = drawNames(planned.frames[0])
         var earlier: [DrawName: Int] = [:]
@@ -1708,7 +1730,14 @@ final class WPEParityFrameRenderer {
                 skipped[index] = error
             }
         }
-        if let requiredPresentationPass {
+        for (index, description) in planned.frames[0].draws {
+            if let pass = requiredPost(description), draws[index] == nil {
+                throw WPEParityFrameRenderError.requiredPostProcessUnavailable(
+                    pass: pass, reason: skipped[index] ?? .noMaterial
+                )
+            }
+        }
+        if let requiredPresentationPass = planned.requiredPresentationPass {
             let terminalIndex = planned.frames[0].draws.first { _, draw in
                 guard case let .post(post) = draw else { return false }
                 return post.shader == requiredPresentationPass
@@ -1734,7 +1763,12 @@ final class WPEParityFrameRenderer {
                 false
             }
         }?.key
-        return Layout(effects: effects, frames: planned.frames, draws: draws, skipped: skipped, fade: fade)
+        return Layout(post: planned.post, effects: effects, frames: planned.frames, draws: draws, skipped: skipped, fade: fade)
+    }
+
+    private static func requiredPost(_ draw: WPEParityFrameDraw) -> String? {
+        guard case let .post(post) = draw, post.shader != "fade", post.shader != "ccsimple" else { return nil }
+        return post.shader
     }
 
     private static func sameModelDataVersion(_ shape: WPEParitySceneModelData.Shape?,

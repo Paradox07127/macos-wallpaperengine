@@ -107,6 +107,142 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         }
     }
 
+    /// Native no-hook Bool -> canonical State -> actual post graph, including cold-off and HDR terminals.
+    func testScriptBloomBoolSelectsAndReusesActualLDRAndHDRGraphsWithoutChangingAllocationFormat() async throws {
+        let engine = try engineAssets()
+        let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [engine])
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        func properties(_ enabled: Bool) -> String {
+            "{\"enable\":{\"type\":\"bool\",\"value\":\(enabled)}}"
+        }
+        for (hdr, initial, quality) in [(false, false, true), (false, true, true), (true, true, true), (false, true, false)] {
+            let document = try parse([
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                            "clearcolor": "0.5 0.5 0.5", "clearenabled": true,
+                            "bloom": initial, "hdr": hdr, "camerafade": false,
+                            "bloomthreshold": 0, "bloomhdrthreshold": 0,
+                            "bloomstrength": ["value": 1, "script": """
+                            shared.bloomLoads = (shared.bloomLoads || 0) + 1;
+                            export function update(value) {
+                              if (shared.bloomLoads !== 1) throw new Error('module rerun');
+                              thisScene.bloom = engine.userProperties.enable.value;
+                              return value;
+                            }
+                            """]],
+                "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
+            ])
+            let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                              settings: .init(bloom: quality, hdrPostProcessing: hdr), width: 32, height: 32)
+            if quality {
+                XCTAssertTrue(plan.loadPrograms.contains { $0.shader == (hdr ? "combine_hdr" : "combine") },
+                              "The live-on utility programs must be prepared even for a cold-off scene")
+            }
+            let renderer = try await makeRenderer(plan, device: device, queue: queue)
+            let backbuffer = renderer.backbuffer
+            let script = try WPEParitySceneScript(
+                document: document, state: renderer.state, assets: assets,
+                canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32),
+                materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
+                host: .init(userPropertiesJSON: properties(initial))
+            )
+            try renderer.attachScript(script)
+            let hookGeneration = renderer.state.generation(.bloom)
+            let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: document, to: document))
+            var firstPixels: [UInt8] = []
+            var firstExecutors: [ObjectIdentifier] = []
+            var firstPipelines: [Int: ObjectIdentifier] = [:]
+            var secondTargets: [WPEResourceID: ObjectIdentifier] = [:]
+            for (step, enabled) in [initial, !initial, initial].enumerated() {
+                try renderer.applyUserProperties(unchanged, changedJSON: properties(enabled), mergedJSON: properties(enabled))
+                try await render(renderer)
+                let on = enabled && quality
+                let posts = renderer.frames[0].draws.values.compactMap { draw -> String? in
+                    if case let .post(post) = draw {
+                        return post.shader
+                    }
+                    return nil
+                }
+                XCTAssertEqual(posts.contains(hdr ? "combine_hdr" : "combine"), on)
+                if hdr {
+                    XCTAssertEqual(posts.contains("combine_srgb"), !on)
+                }
+                XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+                XCTAssertTrue(renderer.backbuffer === backbuffer)
+                XCTAssertEqual(renderer.backbuffer.pixelFormat, hdr ? .rgba16Float : .rgba8Unorm)
+                XCTAssertEqual(renderer.colorTransfer, hdr ? .linear : .authored)
+                XCTAssertEqual(renderer.state.scriptField("bloom", of: ""), .vector(SIMD4(enabled ? 1 : 0, 0, 0, 0)))
+                XCTAssertEqual(renderer.state.generation(.bloom), hookGeneration, "Bool must not fabricate the Float hook")
+                let pixels = try await present(renderer, device: device, queue: queue)
+                for channel in 0 ..< 3 {
+                    if hdr, on {
+                        XCTAssertGreaterThan(Int(pixels[channel]), 130, "Positive native bloom energy must reach present")
+                    } else {
+                        XCTAssertLessThanOrEqual(abs(Int(pixels[channel]) - (on ? 192 : 128)), hdr ? 2 : 1)
+                    }
+                }
+                let pipelines = Dictionary(uniqueKeysWithValues: renderer.lastFrameDraws.map {
+                    ($0.operation, ObjectIdentifier($0.draw.pipeline.state))
+                })
+                if step == 0 {
+                    firstPixels = pixels; firstExecutors = renderer.graphExecutorIdentities; firstPipelines = pipelines
+                } else if step == 1 {
+                    secondTargets = renderer.targets.mapValues(ObjectIdentifier.init)
+                    if !quality {
+                        XCTAssertEqual(renderer.graphExecutorIdentities, firstExecutors)
+                    }
+                } else {
+                    XCTAssertEqual(pixels, firstPixels)
+                    XCTAssertEqual(renderer.graphExecutorIdentities, firstExecutors, "Return to the already prepared graph")
+                    XCTAssertEqual(pipelines, firstPipelines)
+                    XCTAssertEqual(renderer.targets.mapValues(ObjectIdentifier.init), secondTargets)
+                }
+            }
+            // A live true Bool alone cannot bypass Main's nonempty common-vector gate.
+            try renderer.applyUserProperties(unchanged, changedJSON: properties(true), mergedJSON: properties(true))
+            XCTAssertTrue(renderer.state.removeObject("1"))
+            try await render(renderer)
+            XCTAssertTrue(renderer.state.commonOrder.isEmpty)
+            XCTAssertEqual(renderer.state.scriptField("bloom", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+            let pixels = try await present(renderer, device: device, queue: queue)
+            for channel in 0 ..< 3 {
+                XCTAssertLessThanOrEqual(abs(Int(pixels[channel]) - 128), hdr ? 2 : 1)
+            }
+            XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    func testColdOffBloomRejectsMissingReachableUtilityBeforePresent() async throws {
+        let engine = try engineAssets()
+        let path = "shaders/downsample_quarter_bloom.vert"
+        let assets = WPEParityProgramAssets(sources: [.lookup(engine) { name in
+            name == path ? nil : try? Data(contentsOf: engine.appendingPathComponent(name))
+        }])
+        let document = try parse([
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                        "clearcolor": "0.5 0.5 0.5", "clearenabled": true,
+                        "bloom": false, "hdr": false, "camerafade": false],
+            "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
+        ])
+        let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                          settings: .init(bloom: true), width: 32, height: 32)
+        XCTAssertFalse(plan.post.bloomEnabled)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        do {
+            _ = try await makeRenderer(plan, device: device, queue: queue)
+            XCTFail("An admitted live-on branch must not silently lose its required utility")
+        } catch let error as WPEParityFrameRenderError {
+            guard case let .requiredPostProcessUnavailable(pass, reason) = error else {
+                return XCTFail("unexpected renderer failure: \(error)")
+            }
+            XCTAssertEqual(pass, "downsample_quarter_bloom")
+            XCTAssertEqual(reason, .program("downsample_quarter_bloom: missingShader(\"\(path)\")"))
+        }
+    }
+
     func testOriginalHDRTerminalDecodesGrayOnceBeforeSRGBPresent() async throws {
         let engine = try engineAssets()
         let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [engine])

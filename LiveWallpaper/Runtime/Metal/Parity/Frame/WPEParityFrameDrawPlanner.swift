@@ -568,10 +568,12 @@ struct WPEParityFrameDrawPlanner {
 
     /// Builds the pipeline draw `index` of `frame` needs, so a later plan of the same draw finds it.
     mutating func prewarmPipeline(_ frame: WPEParityFrame, _ index: Int, program: WPEParityProgram,
-                                  artifact: WPEParityShaderArtifact) {
-        guard let description = frame.draws[index], let target = Self.targets(frame)[index] else { return }
-        _ = try? pipeline(description, target: target, resources: Self.resources(frame), program: program,
-                          artifact: artifact)
+                                  artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) {
+        guard let description = frame.draws[index], let target = Self.targets(frame)[index] else {
+            throw .pipeline("Missing draw or target during pipeline preparation")
+        }
+        _ = try pipeline(description, target: target, resources: Self.resources(frame), program: program,
+                         artifact: artifact)
     }
 
     private mutating func pipeline(_ description: WPEParityFrameDraw,

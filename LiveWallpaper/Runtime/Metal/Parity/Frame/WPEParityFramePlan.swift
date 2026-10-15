@@ -37,6 +37,13 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
 
 /// The frames of one set of enabled effects, with the WPE program and binding of each draw.
 struct WPEParityFrameLayout {
+    /// The actual postprocess branch composed into these frames, independent of later State writes.
+    let post: WPEParityPostProcessConfig
+
+    var requiredPresentationPass: String? {
+        post.hdrEnabled ? (post.bloomEnabled ? "combine_hdr" : "combine_srgb") : nil
+    }
+
     /// Frame `n` uses `frames[n % frames.count]`; a second entry exists only when FBO swap pairs alternate.
     let frames: [WPEParityFrame]
     /// Keyed by draw operation index; a draw without a program is in `skipped`.
@@ -81,7 +88,7 @@ struct WPEParityFramePlan {
     let materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant]
     let post: WPEParityPostProcessConfig
     var requiredPresentationPass: String? {
-        post.hdrEnabled ? (post.bloomEnabled ? "combine_hdr" : "combine_srgb") : nil
+        layout.requiredPresentationPass
     }
 
     /// Both HDR combine paths write linear RGB; ccsimple and fade preserve that domain.
@@ -163,6 +170,18 @@ struct WPEParityFramePlan {
             constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
         }
 
+        // Main prepares utility materials from fixed quality/HDR switches, independently of live bloom.
+        // Resolve both reachable branches in the existing cache; no texture or second artifact store is made.
+        for variant in Self.postVariants(post) {
+            let frame = try WPEParityFrameComposer.compose(
+                scene: Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), post: variant,
+                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+            )
+            _ = Self.programs(frame, scene: scene, cache: &cache)
+            constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
+        }
+
         // Empty text and later colour/depth/background changes still use programs compiled once at load.
         for object in scene.scene.objects {
             guard case let .text(text) = object.kind else { continue }
@@ -205,6 +224,8 @@ struct WPEParityFramePlan {
         }
         var metadata: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:]
         var loadedState = WPEParitySceneState(scene: scene, document: document)
+        loadedState.setScriptField("bloom", of: "", to: .vector(SIMD4(post.sceneBloomEnabled ? 1 : 0, 0, 0, 0)),
+                                   invalidating: .none)
         for binding in constantBindings {
             guard let pass = binding.materialPass else { continue }
             for (stage, constants) in binding.materialConstants {
@@ -241,13 +262,24 @@ struct WPEParityFramePlan {
         state = loadedState
     }
 
-    /// The layout of the effects `state` shows.
+    /// The native quality switch, current scene flag and actual common-membership gate (180a41..180a75).
+    func postConfig(state: WPEParitySceneState, mipMappedFrameBufferRequested: Bool = false)
+        -> WPEParityPostProcessConfig {
+        var current = post
+        if case let .vector(flag)? = state.scriptField("bloom", of: "") {
+            current.sceneBloomEnabled = flag.x != 0
+        }
+        current.objectTableNonEmpty = !state.commonOrder.isEmpty
+        current.sceneMipMappedFrameBufferEnabled = mipMappedFrameBufferRequested
+        return current
+    }
+
+    /// The layout of the effects and live postprocess branch `state` shows.
     func layout(effects state: WPEParitySceneState, texts: [String: WPEParitySceneText] = [:],
                 mipMappedFrameBufferRequested: Bool = false) throws
         -> WPEParityFrameLayout {
         var cache = programCache
-        var post = post
-        post.sceneMipMappedFrameBufferEnabled = mipMappedFrameBufferRequested
+        let post = postConfig(state: state, mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let visible = Dictionary(zip(state.effects, state.effectVisibility)) { first, _ in first }
         var description = scene.scene(effectVisible: {
             visible[.init(objectID: $0, effectID: $1)] ?? true
@@ -340,7 +372,7 @@ struct WPEParityFramePlan {
     /// Resolve requests before draw readiness: an undeclared target must not make its own reader disappear.
     /// All resident effect sets participate; optimized-out slots and failed programs request nothing.
     func requestsMipMappedFrameBuffer(
-        in probes: [(frame: WPEParityFrame, programs: [Int: WPEParityProgram])],
+        in probes: [(frame: WPEParityFrame, programs: [Int: WPEParityProgram], skipped: [Int: WPEParityFrameSkip])],
         artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
     ) -> Bool {
         let mip = WPEResourceID("_rt_MipMappedFrameBuffer")
@@ -363,7 +395,7 @@ struct WPEParityFramePlan {
     /// Frame 0 of effect sets that between them put every effect pass in each place it can draw to: every effect
     /// on, every effect off, and for each position `m`, only effect `m` of each layer, with and without the layers
     /// that have children dropping theirs.
-    func probeFrames() throws -> [(frame: WPEParityFrame, programs: [Int: WPEParityProgram])] {
+    func probeFrames() throws -> [(frame: WPEParityFrame, programs: [Int: WPEParityProgram], skipped: [Int: WPEParityFrameSkip])] {
         let parents = Set(scene.scene.objects.compactMap(\.parentID))
         let depth = scene.scene.objects.map(\.effects.count).max() ?? 0
         let positions = Dictionary(scene.scene.objects.map { object in
@@ -376,15 +408,27 @@ struct WPEParityFramePlan {
         }
         var cache = programCache
         var seen: Set<[WPEPassIdentity]> = []
-        return try sets.compactMap { visible in
-            let frame = try WPEParityFrameComposer.compose(
-                scene: Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height))), post: post,
-                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
-                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
-            )
-            guard seen.insert(frame.operations.map(\.pass)).inserted else { return nil }
-            return (frame, Self.programs(frame, scene: scene, cache: &cache).programs)
+        return try sets.flatMap { visible in
+            try Self.postVariants(post).compactMap { variant in
+                let frame = try WPEParityFrameComposer.compose(
+                    scene: Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height))), post: variant,
+                    frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                    physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+                )
+                guard seen.insert(frame.operations.map(\.pass)).inserted else { return nil }
+                let resolved = Self.programs(frame, scene: scene, cache: &cache)
+                return (frame, resolved.programs, resolved.skipped)
+            }
         }
+    }
+
+    private static func postVariants(_ post: WPEParityPostProcessConfig) -> [WPEParityPostProcessConfig] {
+        guard post.userBloomEnabled else { return [post] }
+        var enabled = post, disabled = post
+        enabled.sceneBloomEnabled = true
+        enabled.objectTableNonEmpty = true
+        disabled.sceneBloomEnabled = false
+        return [enabled, disabled]
     }
 
     /// WPE loads hidden objects too; the renderer skips their operations while they stay hidden (R24 Q2).
@@ -413,7 +457,7 @@ struct WPEParityFramePlan {
         )
         let (programs, skipped) = Self.programs(even, scene: scene, cache: &cache)
         let frames = even == odd ? [even] : [even, odd]
-        return WPEParityFrameLayout(frames: frames, programs: programs,
+        return WPEParityFrameLayout(post: post, frames: frames, programs: programs,
                                     bindings: frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene, description: description) },
                                     skipped: skipped)
     }
