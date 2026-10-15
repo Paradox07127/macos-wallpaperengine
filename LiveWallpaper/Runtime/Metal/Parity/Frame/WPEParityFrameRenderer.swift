@@ -1194,7 +1194,7 @@ final class WPEParityFrameRenderer {
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera.shaken(time: clock.timeUniform)
-        guard clock.advance(elapsed: elapsed, ratePercent: 100, paused: paused) else { return .skipped }
+        guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
         let shortcutTextures = userShortcutIcons?.snapshot() ?? [:]
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
