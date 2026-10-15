@@ -544,9 +544,12 @@ final class WPEParityTextDrawTests: XCTestCase {
             do { fixture = try await makeSyntheticRenderer(effect: effect, scene: beforeJSON) }
             catch { throw NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"]) }
             let renderer = fixture.renderer
-            let warmed = fixture.plan.loadPrograms.filter { $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" } }
+            let warmed = fixture.plan.loadPrograms.filter {
+                $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" }
+                    && !$0.combos.contains { $0.name == "COLORFONT" && $0.value == "1" }
+            }
             XCTAssertGreaterThan(warmed.count, 0)
-            XCTAssertLessThanOrEqual(warmed.count, 32, "Two lists/depth/eight combos share the existing HLSL dedup view")
+            XCTAssertLessThanOrEqual(warmed.count, 16, "Existing HLSL view deduplicates the finite mono source variants")
             print("mono authored effect=\(effect): unique field HLSL compile requests=\(warmed.count); all programs=\(fixture.plan.loadPrograms.count)")
             try await encode(renderer, label: "mono initial effect=\(effect)")
             XCTAssertTrue(renderer.skipped.isEmpty)
@@ -688,6 +691,12 @@ final class WPEParityTextDrawTests: XCTestCase {
             let initialJSON = try JSONSerialization.data(withJSONObject: json)
             let fixture = try await makeSyntheticRenderer(effect: false, scene: initialJSON)
             let renderer = fixture.renderer
+            let warmed = fixture.plan.loadPrograms.filter {
+                $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" }
+                    && $0.combos.contains { $0.name == "COLORFONT" && $0.value == "1" }
+            }
+            XCTAssertGreaterThan(warmed.count, 0)
+            XCTAssertLessThanOrEqual(warmed.count, 16, "COLOR variants share the existing HLSL dedup view")
             try await encode(renderer, label: "COLOR scale\(scale) initial")
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             let before = renderer.textPreparationState
