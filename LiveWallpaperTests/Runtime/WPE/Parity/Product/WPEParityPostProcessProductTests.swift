@@ -116,7 +116,14 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                     XCTAssertEqual(renderer.state.generation(.bloom), generation)
                 }
                 let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
-                XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"]), [strength])
+                guard case let .vector(canonical)? = renderer.state.scriptField("bloomstrength", of: "") else {
+                    return XCTFail("Animated strength must be present in canonical State")
+                }
+                // The existing sampler may round the authored plateau by one ULP; this guard qualifies the
+                // consumer, whose encoded value must preserve the canonical Float's exact bits.
+                XCTAssertEqual(canonical.x, strength, accuracy: Float.ulpOfOne)
+                XCTAssertEqual(components(draw.constants[.fragment]?["g_BloomStrength"])?.map(\.bitPattern),
+                               [canonical.x.bitPattern])
                 let pixels = try await present(renderer, device: device, queue: queue)
                 let pixel = centerRGBA(pixels, width: 32, height: 32)
                 // Original bloom source: constant 128/255 squared, then contrast/saturation -> byte64;
