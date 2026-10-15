@@ -1,10 +1,9 @@
 /// User-property bindings of a parity scene and the live writes a change makes (R24 Q5 step 1). SceneScript
 /// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
 public enum WPEParityUserProperties {
-    /// The bloom constants WPE refreshes on the next frame (R24 Q5); the bloom switch, `hdr` and the HDR pyramid depth
-    /// change the post-process chain and reload.
+    /// Live bloom fields use the existing State/graph consumer; `hdr` and the HDR pyramid depth still reload.
     private static let liveGeneralFields: Set = [
-        "cameraparallaxdelay", "cameraparallaxmouseinfluence", "bloomstrength", "bloomthreshold", "bloomtint",
+        "cameraparallaxdelay", "cameraparallaxmouseinfluence", "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
         "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter",
     ]
 
@@ -16,7 +15,7 @@ public enum WPEParityUserProperties {
 
     /// Every user property the scene JSON binds, with each target it reaches. Object fields of image layers, groups
     /// and particles, effect visibility and material constants of image layers, the layout fields of text layers, the
-    /// per-frame parallax terms and the bloom constants are `.incremental`; anything else is `.reload`.
+    /// per-frame parallax terms, bloom Bool and bloom constants are `.incremental`; anything else is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
@@ -102,7 +101,7 @@ public enum WPEParityUserProperties {
 
 /// The state writes that take a running parity scene from one parse of its JSON to a parse with changed user values:
 /// every object field, effect visible bit and material constant whose parsed value differs, and the camera parallax
-/// terms and bloom constants read per frame.
+/// terms, accepted bloom Bool delta and bloom constants read per frame.
 public struct WPEParityUserPropertyUpdate: Sendable {
     public struct ObjectWrite: Sendable, Equatable {
         public let id: String
@@ -129,11 +128,16 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public let cameraParallax: WPESceneCameraParallaxSettings
     /// The new parse's bloom values, which the post-process draws read on the next frame.
     public let bloom: WPEParityBloomSettings
+    /// A valid changed JSON Bool seed, or nil to preserve the running script's current value.
+    public let sceneBloom: Bool?
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
         cameraParallax = new.general.cameraParallax
         bloom = WPEParityProgramScene.bloomSettings(new.resolvedGeneralJSON)
+        let oldBloom = WPEParityScriptProperty.bloomValue(fromJSON: old.resolvedGeneralJSON["bloom"])
+        let newBloom = WPEParityScriptProperty.bloomValue(fromJSON: new.resolvedGeneralJSON["bloom"])
+        sceneBloom = oldBloom != newBloom ? newBloom : nil
         let before = WPEParitySceneState(document: old, hdr: false)
         let after = WPEParitySceneState(document: new, hdr: false)
         guard before.ids == after.ids, before.effects == after.effects else { return nil }
@@ -172,6 +176,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     }
 
     public func apply(to state: inout WPEParitySceneState) {
+        if let sceneBloom {
+            state.setScriptField("bloom", of: "", to: .vector(SIMD4(sceneBloom ? 1 : 0, 0, 0, 0)), invalidating: .none)
+        }
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)
         }
