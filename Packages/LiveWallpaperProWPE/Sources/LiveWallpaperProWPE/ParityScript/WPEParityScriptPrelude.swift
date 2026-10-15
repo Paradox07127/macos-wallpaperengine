@@ -113,7 +113,7 @@ enum WPEParityScriptPrelude {
         return namespace;
       };
     }
-    host.addBinding = function (fn, name, path, index, layerIndex, slot, type, angle, readonly, vars, soundVolume) {
+    host.addBinding = function (fn, name, path, index, layerIndex, slot, type, angle, readonly, vars, soundVolume, nullGlobalAliases) {
       const owner = owners[slot];
       const targetLayer = layerIndex < 0 ? null : table[layerIndex];
       const layer = layerIndex < 0 ? owner : targetLayer;
@@ -122,11 +122,15 @@ enum WPEParityScriptPrelude {
       current = null;
       compilingBinding = index;
       currentEvent = -1;
+      let aliases = null;
       try {
-        fn(importer(path), (n, get) => Object.defineProperty(exports, n, { get, enumerable: true }), layer, owner);
+        // Native sound property globals have null aliases; the module still executes exactly once.
+        const setAliases = fn(importer(path), (n, get) => Object.defineProperty(exports, n, { get, enumerable: true }),
+          nullGlobalAliases ? null : layer, nullGlobalAliases ? null : owner);
+        if (nullGlobalAliases) aliases = setAliases;
       } catch (e) { report({ name }, e); return -1; }
       finally { current = previous; compilingBinding = previousCompile; currentEvent = previousEvent; }
-      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, soundVolume, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
+      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, soundVolume, aliases, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
       for (let id = 0; id < NAMES.length; id++) {
         const f = NAMES[id] && exports[NAMES[id]];
         if (typeof f === 'function') { b.fns[id] = f; b.bits |= 1 << id; }
@@ -140,9 +144,14 @@ enum WPEParityScriptPrelude {
       const previousEvent = currentEvent;
       current = b;
       currentEvent = id;
+      const previousAliases = b.aliases ? b.aliases(b.layer, b.owner, true) : null;
       try { return b.fns[id].apply(undefined, args); }
       catch (e) { b.disabled |= 1 << id; report(b, e); return undefined; }
-      finally { current = previous; currentEvent = previousEvent; }
+      finally {
+        if (b.aliases) b.aliases(previousAliases[0], previousAliases[1], false);
+        current = previous;
+        currentEvent = previousEvent;
+      }
     }
     function valueEvent(b, id) {
       const r = call(b, id, [read(b.slot, b.type, b.angle)]);
@@ -234,7 +243,11 @@ enum WPEParityScriptPrelude {
           if (t.remaining > 0) continue;
           const previous = current;
           current = b;
-          try { t.callback(); } catch (e) { report(b, e); } finally { current = previous; }
+          const previousAliases = b.aliases ? b.aliases(b.layer, b.owner, true) : null;
+          try { t.callback(); } catch (e) { report(b, e); } finally {
+            if (b.aliases) b.aliases(previousAliases[0], previousAliases[1], false);
+            current = previous;
+          }
           if (!b.timers.has(id)) continue;
           if (t.repeat) t.remaining = t.period; else b.timers.delete(id);
         }

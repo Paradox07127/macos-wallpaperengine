@@ -1379,6 +1379,7 @@ public final class WPEParityScriptEngine {
             bits = Int(host.invokeMethod("addBinding", withArguments: [
                 function, name, assetContext.modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
                 descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars, descriptor.isSoundVolumeWrite,
+                layerIndex >= 0 && layers[layerIndex].kind == .sound && descriptor.owner == .sound,
             ]).toInt32())
             if bits >= 0 {
                 handle = bindings.filter { $0.script >= 0 }.count

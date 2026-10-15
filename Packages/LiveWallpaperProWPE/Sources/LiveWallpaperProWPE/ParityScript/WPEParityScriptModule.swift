@@ -22,12 +22,14 @@ public enum WPEParityScriptModule {
         return path.split(separator: "/").last?.contains(".") == true ? path : path + ".js"
     }
 
-    /// `source` as the text of a function expression.
+    /// `source` as a function expression returning an internal setter for its existing alias parameter slots.
     public static func lower(_ source: String) -> String {
         var lowering = Lowering(Array(source.utf16))
         lowering.run()
         return "(function(__wpeImport, __wpeExport, thisLayer, thisObject) {'use strict';"
-            + String(decoding: lowering.output, as: UTF16.self) + "\n" + lowering.exportTail + "})"
+            + String(decoding: lowering.output, as: UTF16.self) + "\n" + lowering.exportTail
+            + "return function(layer, object, save) {const previous = save ? [thisLayer, thisObject] : null;"
+            + "thisLayer = layer; thisObject = object; return previous;};})"
     }
 }
 
