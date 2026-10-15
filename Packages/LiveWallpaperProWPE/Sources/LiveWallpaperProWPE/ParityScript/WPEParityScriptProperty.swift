@@ -156,8 +156,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     public func canonicalString(_ value: String, fromJSON: Bool = false) -> String {
         guard let stringValues else { return value }
         // Runtime 1401f38c0 uses strlen; fromJSON 1401f3a20 compares the explicit std::string length.
-        let candidate = fromJSON ? value : String(decoding: value.utf8.prefix { $0 != 0 }, as: UTF8.self)
-        return stringValues.contains(candidate) ? candidate : stringValues[0]
+        let bytes = value.utf8.prefix { fromJSON || $0 != 0 }
+        return stringValues.first { bytes.elementsEqual($0.utf8) } ?? stringValues[0]
     }
 
     /// Basic shader-light fields (14025da80.c). Native fields have no setter hook; the lighting generation is the
@@ -309,12 +309,24 @@ public enum WPEParityScriptLayerKind: Int, Sendable, CaseIterable {
     public static func classify(id: String, object: WPESceneJSONValue,
                                 document: WPESceneDocument) -> WPEParityScriptLayerKind {
         // 14018ff60: a string camera member selects the camera class.
-        if case .string? = object["camera"] { return .camera }
-        if document.textObjects.contains(where: { $0.id == id }) { return .text }
-        if document.imageObjects.contains(where: { $0.id == id }) { return .image }
-        if document.particleObjects.contains(where: { $0.id == id }) { return .particle }
-        if document.soundObjects.contains(where: { $0.id == id }) { return .sound }
-        if document.lightObjects.contains(where: { $0.id == id }) { return .light }
+        if case .string? = object["camera"] {
+            return .camera
+        }
+        if document.textObjects.contains(where: { $0.id == id }) {
+            return .text
+        }
+        if document.imageObjects.contains(where: { $0.id == id }) {
+            return .image
+        }
+        if document.particleObjects.contains(where: { $0.id == id }) {
+            return .particle
+        }
+        if document.soundObjects.contains(where: { $0.id == id }) {
+            return .sound
+        }
+        if document.lightObjects.contains(where: { $0.id == id }) {
+            return .light
+        }
         return .group
     }
 }

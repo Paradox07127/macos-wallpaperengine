@@ -633,7 +633,9 @@ public struct WPEParityProgramScene: Sendable {
                           targets.contains(where: { $0.name.utf8.elementsEqual(name.utf8) }) else { return count }
                     return count + 1
                 }
-                if count > 0 { functions.append(.init(name: name, clearCount: count)) }
+                if count > 0 {
+                    functions.append(.init(name: name, clearCount: count))
+                }
             }
         }
         let metadata = WPEParityMaterialFunctions(functions: functions, targets: targets)
@@ -652,19 +654,25 @@ public struct WPEParityProgramScene: Sendable {
         let zero = WPEClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         guard case let .string(text)? = value else { return (zero, nil) }
         return text.withCString { start in
-            if start.pointee == 0 { return (zero, zero) }
+            if start.pointee == 0 {
+                return (zero, zero)
+            }
             var cursor = start
             var channels = [Double](repeating: 0, count: 4)
             var complete = true
             for index in 0 ..< 4 {
                 channels[index] = Double(Float(atof(cursor)))
                 if index < 3 {
-                    while cursor.pointee != 0, cursor.pointee != 32 { cursor += 1 }
+                    while cursor.pointee != 0, cursor.pointee != 32 {
+                        cursor += 1
+                    }
                     guard cursor.pointee != 0 else {
                         complete = false
                         break
                     }
-                    while cursor.pointee == 32 { cursor += 1 }
+                    while cursor.pointee == 32 {
+                        cursor += 1
+                    }
                 }
             }
             let stored = WPEClearColor(red: channels[0], green: channels[1], blue: channels[2], alpha: channels[3])

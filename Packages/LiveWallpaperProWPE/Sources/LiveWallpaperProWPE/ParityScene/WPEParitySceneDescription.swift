@@ -386,7 +386,9 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var skinningCombos: [String: Int] {
         guard skinned else { return [:] }
         var combos = ["SKINNING": 1, "BONECOUNT": boneCount]
-        if skinningAlpha { combos["SKINNING_ALPHA"] = 1 }
+        if skinningAlpha {
+            combos["SKINNING_ALPHA"] = 1
+        }
         return combos
     }
 }

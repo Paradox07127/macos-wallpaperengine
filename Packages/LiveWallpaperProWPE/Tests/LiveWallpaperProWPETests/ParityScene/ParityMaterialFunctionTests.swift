@@ -74,7 +74,7 @@ final class ParityMaterialFunctionTests: XCTestCase {
         """#
         let program = try Fixtures.programScene([layer], files: ["effects/7_1.json": file, "effects/7_2.json": file])
         let object = program.scene.objects[0]
-        XCTAssertEqual(object.effects.map { $0.fbos.count }, [1, 1])
+        XCTAssertEqual(object.effects.map(\.fbos.count), [1, 1])
         XCTAssertEqual(object.effects.map {
             WPEParitySceneResource.resolvedFBO(object: object, effect: $0, name: "same").rawValue
         }, ["same_1", "same_2"])

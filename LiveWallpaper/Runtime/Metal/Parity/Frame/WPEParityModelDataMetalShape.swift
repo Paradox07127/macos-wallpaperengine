@@ -65,7 +65,7 @@ final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unch
         let program: WPEParityProgram
         let frameReads: [WPEResourceID]
         let engineFlags: WPEEngineComboFlags
-        let bufferMutation: Bool = switch mutation {
+        let bufferMutation = switch mutation {
         case .vertices, .indices: true
         case .create, .rebuild, .material: false
         }

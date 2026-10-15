@@ -129,7 +129,7 @@ final class WPEParityGraphExecutor {
         pass.colorAttachments[0].texture = texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: color.red, green: color.green,
-                                                          blue: color.blue, alpha: color.alpha)
+                                                            blue: color.blue, alpha: color.alpha)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             throw WPEParityGraphExecutionError.encoderUnavailable
@@ -259,7 +259,7 @@ final class WPEParityGraphExecutor {
         -> [WPEResourceID: MTLTexture] {
         let frame = try boundTextures(physical, bindings: bindings[.frame, default: [:]])
         return scope == .frame ? frame : try boundTextures(frame, bindings: bindings[scope, default: [:]],
-                                                         resources: resources)
+                                                           resources: resources)
     }
 
     private static func boundTextures(_ physical: [WPEResourceID: MTLTexture],

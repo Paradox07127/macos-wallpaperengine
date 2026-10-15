@@ -64,5 +64,7 @@ final class ParityMaterialFunctionBridgeTests: XCTestCase {
 
 private struct NoScripts: WPESceneTransformScriptResolving {
     func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? { nil }
+                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
+        nil
+    }
 }

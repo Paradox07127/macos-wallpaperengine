@@ -33,7 +33,7 @@ extension WPEParitySceneDriverTests {
     }
 
     private nonisolated(nonsending) func materialFunctionProduct(function: String, cleared: [[Int]],
-                                                                presented: [Int]) async throws {
+                                                                 presented: [Int]) async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "required product GPU")
         let (original, compiler) = try materialFunctionRequiredInputs()
         let (document, assets) = try materialFunctionDocument(original: original, function: function)
@@ -109,7 +109,9 @@ extension WPEParitySceneDriverTests {
                                                 label: "\(function) \(label) \(id)")
                 actual.append(texture)
             }
-            if persistent.isEmpty { persistent = actual }
+            if persistent.isEmpty {
+                persistent = actual
+            }
             XCTAssertFalse(actual[0] === actual[1])
             XCTAssertFalse(actual[1] === actual[2])
             XCTAssertFalse(actual[0] === actual[2])
@@ -189,7 +191,7 @@ extension WPEParitySceneDriverTests {
             return url
         }
         let toolHashes = try toolURLs.map { url in
-            SHA256.hash(data: try Data(contentsOf: url, options: .alwaysMapped)).map { String(format: "%02x", $0) }.joined()
+            try SHA256.hash(data: Data(contentsOf: url, options: .alwaysMapped)).map { String(format: "%02x", $0) }.joined()
         }
         let compiler = try WPEParityHelperShaderCompiler(helper: toolURLs[0], dxcompiler: toolURLs[1],
                                                          metalIRConverter: toolURLs[2],
@@ -229,12 +231,14 @@ extension WPEParitySceneDriverTests {
         var passes: [[String: Any]] = []
         // Each pair executes twice, leaving I. Every FBO has a real swap partner and persistent lifetime.
         for pair in [("first", "second"), ("second", "third")] {
-            for _ in 0 ..< 2 { passes.append(["command": "swap", "source": pair.0, "target": pair.1]) }
+            for _ in 0 ..< 2 {
+                passes.append(["command": "swap", "source": pair.0, "target": pair.1])
+            }
         }
         for name in names {
             passes.append(["material": "materials/effects/opacity.json", "target": name, "compose": true,
                            "blending": "translucent", "bind": [["index": 0, "name": "material-function-\(name)"],
-                                                                ["index": 1, "name": "material-function-mask"]]])
+                                                               ["index": 1, "name": "material-function-mask"]]])
         }
         for name in names {
             passes.append(["material": "materials/util/passthrough.json", "blending": "additive",
@@ -247,7 +251,7 @@ extension WPEParitySceneDriverTests {
                           "reverseTwo": ["action": "clear", "fbos": ["third", "first"]]],
             "passes": passes,
         ]
-        var files = ["effects/material-function-product.json": try JSONSerialization.data(withJSONObject: effect)]
+        var files = try ["effects/material-function-product.json": JSONSerialization.data(withJSONObject: effect)]
         for (index, name) in (names + ["mask"]).enumerated() {
             var tex = Data("TEXV0004\0".utf8)
             for value: UInt32 in [0, 0, 1, 1, 1, 1, 1, 1, 1, 4] {
@@ -264,7 +268,9 @@ extension WPEParitySceneDriverTests {
         let snapshot = files
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         var overrides = [[String: Any]](repeating: [:], count: 10)
-        for index in 4 ... 6 { overrides[index] = ["constantshadervalues": ["alpha": 1], "combos": ["MASK": 1]] }
+        for index in 4 ... 6 {
+            overrides[index] = ["constantshadervalues": ["alpha": 1], "combos": ["MASK": 1]]
+        }
         // passthrough uses #ifdef TRANSFORM, so the first two full-screen readers must omit the key entirely.
         // The final reader is a layer mesh and therefore explicitly transforms that pixel-sized geometry.
         overrides[9] = ["combos": ["TRANSFORM": 1]]

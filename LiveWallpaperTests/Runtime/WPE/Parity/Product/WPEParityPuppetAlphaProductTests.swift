@@ -20,7 +20,9 @@ extension WPEParitySceneDriverTests {
             throw NSError(domain: "WPEParityPuppetAlphaProductTests.RequiredInputs", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"])
         }
-        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        func digest(_ data: Data) -> String {
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
         for (path, expected) in [
             ("shaders/genericimage4.vert", "7cc66038ea106b213ae2b9103d0b3c6646e3b4d08f9821afbb24aa32f6186672"),
             ("shaders/genericimage4.frag", "6b5344953054ae853ff8a7942f716dd9eb67f61cc1526bd8b6bc67df92c76e1f"),
@@ -40,7 +42,7 @@ extension WPEParitySceneDriverTests {
             _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil, "compiler escaped current bundle: \(path)")
             return url
         }
-        let expectedIdentity = try "wpe-shaderc " + tools.map { digest(try Data(contentsOf: $0)) }.joined(separator: " ")
+        let expectedIdentity = try "wpe-shaderc " + tools.map { try digest(Data(contentsOf: $0)) }.joined(separator: " ")
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
                                                          workDirectory: scratch.appending(path: "shaderc"))
         _ = try XCTUnwrap(compiler.compilerIdentity == expectedIdentity ? compiler : nil, "actual bundle compiler byte identity")
@@ -50,8 +52,11 @@ extension WPEParitySceneDriverTests {
         let scaleKey = WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey
         let savedScale = defaults.object(forKey: scaleKey)
         defer {
-            if let savedScale { defaults.set(savedScale, forKey: scaleKey) }
-            else { defaults.removeObject(forKey: scaleKey) }
+            if let savedScale {
+                defaults.set(savedScale, forKey: scaleKey)
+            } else {
+                defaults.removeObject(forKey: scaleKey)
+            }
         }
         defaults.set(1.0, forKey: scaleKey)
         for boneCount in [1, 5] {
@@ -68,9 +73,9 @@ extension WPEParitySceneDriverTests {
             try JSONSerialization.data(withJSONObject: json).write(to: url)
         }
         try write(["passes": [["shader": "genericimage4", "textures": ["util/white"],
-                                "combos": ["LIGHTING": 0, "FOG": 0, "REFLECTION": 0],
-                                "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
-                                "blending": "translucent"]]], "materials/alpha.json")
+                               "combos": ["LIGHTING": 0, "FOG": 0, "REFLECTION": 0],
+                               "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
+                               "blending": "translucent"]]], "materials/alpha.json")
         var objects: [[String: Any]] = []
         for (index, flags): (Int, UInt32) in [(0, 0), (1, 0), (2, 1)] {
             let name = "alpha\(boneCount)_\(index)"
@@ -187,13 +192,15 @@ extension WPEParitySceneDriverTests {
         writer.floats([-32, -32, 0, 32, 32, 0])
         writer.words([0x0180_000B, 4 * 64])
         for (x, y, u, v): (Float, Float, Float, Float) in [(-32, 32, 0, 0), (32, 32, 1, 0),
-                                                          (-32, -32, 0, 1), (32, -32, 1, 1)] {
+                                                           (-32, -32, 0, 1), (32, -32, 1, 1)] {
             writer.floats([x, y, 0, 0, 0, 1])
             writer.words([UInt32(boneCount - 1), 0, 0, 0])
             writer.floats([1, 0, 0, 0, u, v])
         }
         writer.words([12])
-        for index: UInt16 in [0, 2, 1, 1, 2, 3] { writer.uint16(index) }
+        for index: UInt16 in [0, 2, 1, 1, 2, 3] {
+            writer.uint16(index)
+        }
         writer.string("MDLS0001")
         let skeletonEnd = writer.data.count
         writer.words([0, UInt32(boneCount)])
@@ -239,14 +246,24 @@ extension WPEParitySceneDriverTests {
 
 private struct PuppetAlphaMDLWriter {
     var data = Data()
-    mutating func string(_ value: String) { data.append(contentsOf: value.utf8); data.append(0) }
-    mutating func words(_ values: [UInt32]) {
-        for value in values { Swift.withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+    mutating func string(_ value: String) {
+        data.append(contentsOf: value.utf8); data.append(0)
     }
-    mutating func floats(_ values: [Float]) { words(values.map(\.bitPattern)) }
+
+    mutating func words(_ values: [UInt32]) {
+        for value in values {
+            Swift.withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+    }
+
+    mutating func floats(_ values: [Float]) {
+        words(values.map(\.bitPattern))
+    }
+
     mutating func uint16(_ value: UInt16) {
         Swift.withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
     }
+
     mutating func end(at offset: Int) {
         Swift.withUnsafeBytes(of: UInt32(data.count).littleEndian) { data.replaceSubrange(offset ..< offset + 4, with: $0) }
     }

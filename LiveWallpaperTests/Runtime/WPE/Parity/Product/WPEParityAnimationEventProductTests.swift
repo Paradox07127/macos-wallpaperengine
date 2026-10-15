@@ -84,17 +84,23 @@ extension WPEParitySceneDriverTests {
         let resources: [String: Any] = [
             "models/event.json": ["material": "materials/event.json"],
             "materials/event.json": ["passes": [["shader": "genericimage4", "textures": ["event-witness"],
-                                                  "blending": "translucent"]]],
+                                                 "blending": "translucent"]]],
         ]
         func solidTexture(_ pixel: [UInt8]) -> Data {
             var data = Data("TEXV0005\0TEXI0001\0".utf8)
             func word(_ value: UInt32) {
                 withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
             }
-            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] { word(value) }
+            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] {
+                word(value)
+            }
             data.append(contentsOf: "TEXB0003\0".utf8)
-            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] { word(value) }
-            for _ in 0 ..< 4 { data.append(contentsOf: pixel) }
+            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] {
+                word(value)
+            }
+            for _ in 0 ..< 4 {
+                data.append(contentsOf: pixel)
+            }
             return data
         }
         var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
@@ -118,7 +124,7 @@ extension WPEParitySceneDriverTests {
         layer.framebufferOnly = false
         for (frame, expectedAlpha, expectedEvents): (Int, Float, Float) in [(0, 0.5, 1), (1, 0.25, 2), (2, 1, 2)] {
             let submission = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 200 + Double(frame) * 0.25,
-                                                                         pointer: SIMD2(0.5, 0.5)))
+                                                                        pointer: SIMD2(0.5, 0.5)))
             await submission.completed()
             try await settle(driver, label: "animation event frame \(frame)")
             let renderer = try XCTUnwrap(driver.renderer)
@@ -138,7 +144,7 @@ extension WPEParitySceneDriverTests {
             let expected = Int((expectedAlpha * 255).rounded())
             for channel in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs(Int(pixels[center + channel]) - expected), 1,
-                                          "frame \(frame), RGB channel \(channel)")
+                                         "frame \(frame), RGB channel \(channel)")
             }
         }
     }

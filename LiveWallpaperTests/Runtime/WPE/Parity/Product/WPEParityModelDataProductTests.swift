@@ -317,7 +317,7 @@ extension WPEParitySceneDriverTests {
                 let url = contents.appending(path: path).resolvingSymlinksInPath()
                 _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil,
                                   "required compiler component must resolve inside the current app bundle")
-                return SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+                return try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
             }
         XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
         print("ModelData compilerOrigin=current-app-bundle compilerIdentity=\(compiler.compilerIdentity)")

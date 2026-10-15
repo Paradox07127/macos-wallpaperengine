@@ -12,8 +12,11 @@ extension WPEParitySceneDriverTests {
     /// Actual object queue -> local transform -> selected camera -> original shader pixels, continued at resize.
     func testCameraQueueMovesOriginalDrawAndContinuesAcrossResizeAndHiddenParent() async throws {
         let original: WPEParityProgramAssets
-        do { original = try sceneInputs().1 }
-        catch { throw NSError(domain: "CameraQueue.RequiredOriginal", code: 1) }
+        do {
+            original = try sceneInputs().1
+        } catch {
+            throw NSError(domain: "CameraQueue.RequiredOriginal", code: 1)
+        }
         for (path, expected) in [
             ("shaders/genericimage2.vert", "97370dbb18746d61629edf77ee2c30afe07605f5270f8a29a406b414932368bb"),
             ("shaders/common.h", "acf56edaeca256e6d40b4fc29ababe1f9742197300c418589137911bc8f82ed1"),
@@ -33,14 +36,14 @@ extension WPEParitySceneDriverTests {
         switch WPEParityShaderToolchain.makeCompiler() {
         case let .success(value): compiler = value
         case let .failure(error): throw NSError(domain: "CameraQueue.BundleToolchain", code: 1,
-                                                 userInfo: [NSLocalizedDescriptionKey: "\(error)"])
+                                                userInfo: [NSLocalizedDescriptionKey: "\(error)"])
         }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
         let hashes = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
             .map { path in
                 let url = contents.appending(path: path).resolvingSymlinksInPath()
                 _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil)
-                return SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+                return try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
             }
         XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
         func item(_ x: Float, length: Int, zoom: Float) -> [String: Any] {
@@ -52,10 +55,10 @@ extension WPEParitySceneDriverTests {
         let resources: [String: Any] = [
             "models/queue-witness.json": ["material": "materials/queue-witness.json"],
             "materials/queue-witness.json": ["passes": [["shader": "genericimage2", "textures": ["queue-red"],
-                                                          "blending": "normal", "cullmode": "nocull"]]],
+                                                         "blending": "normal", "cullmode": "nocull"]]],
             "models/queue-parent.json": ["material": "materials/queue-parent.json"],
             "materials/queue-parent.json": ["passes": [["shader": "genericimage2", "textures": ["queue-black"],
-                                                         "blending": "normal", "cullmode": "nocull"]]],
+                                                        "blending": "normal", "cullmode": "nocull"]]],
             "cameras/queue.json": ["paths": [item(0, length: 1, zoom: 1), item(4, length: 4, zoom: 2)]],
         ]
         func solidTexture(_ pixel: [UInt8]) -> Data {
@@ -63,10 +66,16 @@ extension WPEParitySceneDriverTests {
             func word(_ value: UInt32) {
                 withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
             }
-            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] { word(value) }
+            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] {
+                word(value)
+            }
             data.append(contentsOf: "TEXB0003\0".utf8)
-            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] { word(value) }
-            for _ in 0 ..< 4 { data.append(contentsOf: pixel) }
+            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] {
+                word(value)
+            }
+            for _ in 0 ..< 4 {
+                data.append(contentsOf: pixel)
+            }
             return data
         }
         var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
@@ -90,7 +99,9 @@ extension WPEParitySceneDriverTests {
         ]
         let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
         print("camera queue scene SHA256=\(SHA256.hash(data: data))")
-        for path in files.keys.sorted() { print("camera queue input \(path) SHA256=\(SHA256.hash(data: files[path]!))") }
+        for path in files.keys.sorted() {
+            print("camera queue input \(path) SHA256=\(SHA256.hash(data: files[path]!))")
+        }
         let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
@@ -115,7 +126,7 @@ extension WPEParitySceneDriverTests {
                 XCTAssertNil(old)
             }
             let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(frame) * 0.25,
-                                                                      pointer: SIMD2(0.5, 0.5)))
+                                                                     pointer: SIMD2(0.5, 0.5)))
             await command.completed()
             try await settle(driver, label: "camera queue frame \(frame)")
             let renderer = try XCTUnwrap(driver.renderer)

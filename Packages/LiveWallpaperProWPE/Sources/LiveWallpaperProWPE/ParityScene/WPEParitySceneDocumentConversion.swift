@@ -184,7 +184,7 @@ struct WPEParitySceneFBOScope {
                     }
                 }
                 var fbo = declaration.parityFBO(shared: shared.contains(name),
-                                                 format: format ?? WPEParitySceneResource.colorFormat)
+                                                format: format ?? WPEParitySceneResource.colorFormat)
                 // A deduplicated local declaration can belong to an earlier effect. Keep its storage ready for
                 // every function using the same resolved name, not merely functions on the effect owning the draw.
                 fbo.scriptClearable = object.effects.contains {

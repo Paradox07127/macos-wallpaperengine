@@ -226,7 +226,7 @@ extension WPEParitySceneDriverTests {
         let hashes = try components.map { path in
             let url = contents.appending(path: path).resolvingSymlinksInPath()
             _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil, "bundled \(path)")
-            return SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+            return try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
         }
         let compiler = try WPEParityShaderToolchain.makeCompiler().get()
         XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
@@ -279,7 +279,7 @@ extension WPEParitySceneDriverTests {
         redWitness["solid"] = false
         greenWitness["solid"] = false
         let (driver, layer) = try await sceneProtocolDriver(objects: [controller, red, green, redWitness, greenWitness],
-                                                           expectedScripts: 3)
+                                                            expectedScripts: 3)
         defer { driver.cleanup() }
         let reds = [[0, 0, 0], [0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 255, 0]]
         let greens = [[255, 0, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 0, 255]]
@@ -296,7 +296,7 @@ extension WPEParitySceneDriverTests {
             // Move within both authored quads on every cursor pass. Sorting happens later in update, so the
             // current drawing changes immediately and the cursor's occlusion order changes on the next frame.
             let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
-                pointer: SIMD2(0.5 + Double(frame - 1) / 160, 0.5), buttonDown: false))
+                                                                     pointer: SIMD2(0.5 + Double(frame - 1) / 160, 0.5), buttonDown: false))
             try await settle(driver, label: "common sort \(frame)")
             XCTAssertEqual(command.status, .completed)
             XCTAssertNil(command.error)

@@ -1225,7 +1225,9 @@ struct WPEParityFrameDrawPlanner {
                 return error
             }
         }
-        if let failure { throw failure }
+        if let failure {
+            throw failure
+        }
         return words
     }
 

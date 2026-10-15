@@ -29,7 +29,9 @@ public struct WPEParityAudioSpectrum: Sendable {
             output = [Float](repeating: 0, count: 128)
             return
         }
-        func bin(_ index: Int) -> Float { index < 64 ? left[index] : right[index - 64] }
+        func bin(_ index: Int) -> Float {
+            index < 64 ? left[index] : right[index - 64]
+        }
         let maximum = max(left.reduce(Float(0), max), right.reduce(Float(0), max))
         let floor = 0.333 * maximum
         let quiet = maximum < 1e-4 // DAT_1404925fc, compared strictly at 140111c8c.

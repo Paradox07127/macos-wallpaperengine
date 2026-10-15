@@ -79,9 +79,11 @@ final class ParitySceneCommonOrderTests: XCTestCase {
     }
 
     private static func document(script: String? = nil) throws -> WPESceneDocument {
-        let alpha: Any
-        if let script { alpha = ["value": 1, "script": script] }
-        else { alpha = 1 }
+        let alpha: Any = if let script {
+            ["value": 1, "script": script]
+        } else {
+            1
+        }
         let json: [String: Any] = [
             "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
@@ -99,5 +101,7 @@ final class ParitySceneCommonOrderTests: XCTestCase {
 
 private struct NoScripts: WPESceneTransformScriptResolving {
     func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? { nil }
+                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
+        nil
+    }
 }

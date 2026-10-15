@@ -314,8 +314,8 @@ struct WPEParityFramePlan {
             let declaration = object.effects[index].fbos[fbo]
             let size = declaration.sizing?.layerSize ?? SIMD2(object.width, object.height)
             object.effects[index].fbos[fbo] = declaration.resized(layerWidth: size.x, layerHeight: size.y,
-                                                                physicalCanvasSize: physicalCanvasSize,
-                                                                pixelScale: pixelScale)
+                                                                  physicalCanvasSize: physicalCanvasSize,
+                                                                  pixelScale: pixelScale)
         }
         let effect = object.effects[index]
         return names.map { WPEParitySceneResource.resolvedFBO(object: object, effect: effect, name: $0) }

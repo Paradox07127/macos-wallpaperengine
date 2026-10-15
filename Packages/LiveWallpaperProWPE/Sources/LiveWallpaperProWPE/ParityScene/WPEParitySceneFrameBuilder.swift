@@ -134,7 +134,9 @@ private struct WPEParitySceneEmitter {
             for effect in object.effects {
                 for fbo in effect.fbos {
                     guard fbo.swapPartner != nil || fbo.scriptClearable else { continue }
-                    if fbo.scriptClearable { scriptClearResources.insert(Self.fboID(object, effect, fbo.name)) }
+                    if fbo.scriptClearable {
+                        scriptClearResources.insert(Self.fboID(object, effect, fbo.name))
+                    }
                     registerFBO(fbo, object: object, effect: effect, lifetime: .persistent)
                 }
             }

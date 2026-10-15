@@ -44,15 +44,25 @@ public struct WPEParityPuppetAnimator: Sendable {
         public private(set) var weight: Float = 0
         private var frameAssigned = false
 
-        public var frame: Float { time / frameDuration }
-        public var fps: Float { 1 / frameDuration }
+        public var frame: Float {
+            time / frameDuration
+        }
+
+        public var fps: Float {
+            1 / frameDuration
+        }
+
         /// FUN_14026c480 tests only the paused/finished flags, including when `visible` is false.
-        public var isPlaying: Bool { !paused && !finished }
+        public var isPlaying: Bool {
+            !paused && !finished
+        }
 
         fileprivate mutating func control(_ action: Control) {
             switch action {
             case .play:
-                if finished { time = 0 }
+                if finished {
+                    time = 0
+                }
                 finished = false
                 paused = false
             case .pause:
@@ -226,11 +236,21 @@ public struct WPEParityPuppetAnimator: Sendable {
         if let blend {
             layers[index].blend = blend
         }
-        if let name { layers[index].name = name }
-        if let additive { layers[index].additive = additive }
-        if let blendIn { layers[index].blendIn = blendIn }
-        if let blendOut { layers[index].blendOut = blendOut }
-        if let blendTime { layers[index].blendTime = blendTime }
+        if let name {
+            layers[index].name = name
+        }
+        if let additive {
+            layers[index].additive = additive
+        }
+        if let blendIn {
+            layers[index].blendIn = blendIn
+        }
+        if let blendOut {
+            layers[index].blendOut = blendOut
+        }
+        if let blendTime {
+            layers[index].blendTime = blendTime
+        }
         return true
     }
 
@@ -293,7 +313,9 @@ public struct WPEParityPuppetAnimator: Sendable {
         for bone in poses.indices {
             poses[bone] = nil
         }
-        for bone in bonesAlpha.indices { bonesAlpha[bone] = 1 }
+        for bone in bonesAlpha.indices {
+            bonesAlpha[bone] = 1
+        }
         for layer in layers where layer.enabled {
             let frame = Self.frame(time: layer.time, frameDuration: layer.frameDuration,
                                    frameCount: layer.animation.frameCount)

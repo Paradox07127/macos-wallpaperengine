@@ -25,8 +25,11 @@ final class WPEParityPostProcessProductTests: XCTestCase {
     /// General descriptor -> authored timeline -> bloom invalidation -> original four-pass LDR bloom -> present.
     func testRegisteredGeneralAnimationUpdatesOriginalBloomAndPresentedPixels() async throws {
         let engine: URL
-        do { engine = try engineAssets() }
-        catch { throw NSError(domain: "S06.RequiredBloomInputs", code: 1) }
+        do {
+            engine = try engineAssets()
+        } catch {
+            throw NSError(domain: "S06.RequiredBloomInputs", code: 1)
+        }
         for (path, expected) in [
             ("materials/util/downsample_quarter_bloom.json", "bc240ebf7d1c74e7280d9c9101a274a0281f1bf65ab6c229c093b01827afd4a0"),
             ("shaders/downsample_quarter_bloom.vert", "024d1f44853a78087aeed4c402d1f3b69549eaaf26c48d71baf551b91332802d"),
@@ -57,7 +60,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 return try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? url : nil)
             }
         let hashes = try tools.map { url in
-            SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+            try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
         }
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
                                                          workDirectory: scratch.appending(path: "scene-animation-shaderc"))
@@ -98,7 +101,9 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let pixel = centerRGBA(pixels, width: 32, height: 32)
             // Original bloom source: constant 128/255 squared, then contrast/saturation -> byte64;
             // the two normalized blurs preserve it and combine adds 128+64. Zero strength removes it.
-            for channel in pixel.prefix(3) { XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1) }
+            for channel in pixel.prefix(3) {
+                XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1)
+            }
         }
     }
 

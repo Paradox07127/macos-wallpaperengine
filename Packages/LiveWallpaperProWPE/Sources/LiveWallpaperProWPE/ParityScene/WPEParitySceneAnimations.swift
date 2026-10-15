@@ -130,7 +130,7 @@ public struct WPEParitySceneAnimations {
             binding.animation.advance(dt: dt, frameStamp: frameStamp)
             for event in binding.animation.firedEvents {
                 firedEvents.append(FiredEvent(objectID: binding.objectID, name: event.name,
-                                               payloadJSON: event.payloadJSON, frame: event.frame))
+                                              payloadJSON: event.payloadJSON, frame: event.frame))
             }
             guard let value = binding.animation.value else { continue }
             switch binding.target {

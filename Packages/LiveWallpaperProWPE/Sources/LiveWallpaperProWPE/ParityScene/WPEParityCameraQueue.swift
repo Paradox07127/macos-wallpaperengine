@@ -33,7 +33,9 @@ public final class WPEParityCameraQueue {
         items.count
     }
 
-    public var hasEligibleItems: Bool { !eligible.isEmpty }
+    public var hasEligibleItems: Bool {
+        !eligible.isEmpty
+    }
 
     public private(set) var selectedIndex: Int?
     public var selectedZoom: Float? {
