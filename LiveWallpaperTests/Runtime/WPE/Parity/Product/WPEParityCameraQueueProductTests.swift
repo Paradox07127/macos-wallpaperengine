@@ -33,12 +33,17 @@ extension WPEParitySceneDriverTests {
             return try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
         }
         XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
-        let files = try [
+        var files = try [
             "models/parallax-witness.json": ["material": "materials/parallax-witness.json"] as [String: Any],
-            "materials/parallax-witness.json": ["passes": [["shader": "genericimage2", "textures": ["util/white"],
+            "materials/parallax-witness.json": ["passes": [["shader": "genericimage2", "textures": ["parallax-red"],
                                                             "blending": "normal", "cullmode": "nocull"]]],
         ].mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        let red = cameraWitnessTexture([255, 0, 0, 255])
+        XCTAssertEqual(SHA256.hash(data: red).map { String(format: "%02x", $0) }.joined(),
+                       "9e441ee114603c6004c2f599e900ab89f93c3821dcbb227a58018cf38b9a4aea")
+        files["materials/parallax-red.tex"] = red
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         func document(enabled: Any = false, amount: Any = 0.5, delay: Any = 0, influence: Any = 1,
                       scripts: Bool = true, witness: Bool = true, visible: Bool = true) throws -> WPESceneDocument {
             var general: [String: Any] = ["orthogonalprojection": ["width": 16, "height": 16],
@@ -64,7 +69,7 @@ extension WPEParitySceneDriverTests {
             }
             let object: [String: Any] = witness
                 ? ["id": 1, "image": "models/parallax-witness.json", "origin": "8 8 0", "size": "2 2",
-                   "parallaxDepth": "1 0", "color": "1 0 0", "visible": visible]
+                   "parallaxDepth": "1 0", "visible": visible]
                 : ["id": 1, "camera": "activity witness", "origin": "0 0 0"]
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
                 "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general, "objects": [object],
@@ -226,26 +231,9 @@ extension WPEParitySceneDriverTests {
                                                         "blending": "normal", "cullmode": "nocull"]]],
             "cameras/queue.json": ["paths": [item(0, length: 1, zoom: 1), item(4, length: 4, zoom: 2)]],
         ]
-        func solidTexture(_ pixel: [UInt8]) -> Data {
-            var data = Data("TEXV0005\0TEXI0001\0".utf8)
-            func word(_ value: UInt32) {
-                withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
-            }
-            for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] {
-                word(value)
-            }
-            data.append(contentsOf: "TEXB0003\0".utf8)
-            for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] {
-                word(value)
-            }
-            for _ in 0 ..< 4 {
-                data.append(contentsOf: pixel)
-            }
-            return data
-        }
         var files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
-        let red = solidTexture([255, 0, 0, 255])
-        let black = solidTexture([0, 0, 0, 255])
+        let red = cameraWitnessTexture([255, 0, 0, 255])
+        let black = cameraWitnessTexture([0, 0, 0, 255])
         XCTAssertEqual(SHA256.hash(data: red).map { String(format: "%02x", $0) }.joined(), "9e441ee114603c6004c2f599e900ab89f93c3821dcbb227a58018cf38b9a4aea")
         XCTAssertEqual(SHA256.hash(data: black).map { String(format: "%02x", $0) }.joined(), "12bb09f8d804b7bc680b12fe8be942cd2870213357a9db7ea5b4ff2f899df86a")
         files["materials/queue-red.tex"] = red
@@ -310,6 +298,24 @@ extension WPEParitySceneDriverTests {
             XCTAssertLessThanOrEqual(pixels[offset + 1], 1)
             XCTAssertLessThanOrEqual(pixels[offset + 2], 1)
         }
+    }
+
+    private func cameraWitnessTexture(_ pixel: [UInt8]) -> Data {
+        var data = Data("TEXV0005\0TEXI0001\0".utf8)
+        func word(_ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        for value: UInt32 in [0, 0, 2, 2, 2, 2, 0] {
+            word(value)
+        }
+        data.append(contentsOf: "TEXB0003\0".utf8)
+        for value: UInt32 in [1, .max, 1, 2, 2, 0, 16, 16] {
+            word(value)
+        }
+        for _ in 0 ..< 4 {
+            data.append(contentsOf: pixel)
+        }
+        return data
     }
 }
 #endif
