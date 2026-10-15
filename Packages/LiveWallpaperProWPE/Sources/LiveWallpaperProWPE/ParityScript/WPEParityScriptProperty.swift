@@ -92,10 +92,10 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         owner == .scene && name == "bloom" && type == .flagBool && target == .field
     }
 
-    var isSceneHDRBloomFloat: Bool {
+    var isSceneBloomFloat: Bool {
         guard owner == .scene, type == .float, target == .field else { return false }
         switch name {
-        case "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter": return true
+        case "bloomstrength", "bloomthreshold", "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter": return true
         default: return false
         }
     }

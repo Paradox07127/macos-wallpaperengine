@@ -5,16 +5,18 @@ import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
     func testHDRBloomFloatBindingsAndDocumentDeltasPreserveCanonicalValues() throws {
+        // Existing LDR strength/threshold use the same native Float reader as these four HDR fields.
         let fields: [(name: String, bits: UInt32)] = [
+            ("bloomstrength", 0x4000_0000), ("bloomthreshold", 0x3F26_6666),
             ("bloomhdrstrength", 0x4000_0000), ("bloomhdrthreshold", 0x3F80_0000),
             ("bloomhdrfeather", 0x3DCC_CCCD), ("bloomhdrscatter", 0x3FCF_3B64),
         ]
-        let invalidSeeds: [Any] = [false, "0.5", ["value": 0.5], [0.5]]
+        let invalidSeeds: [Any] = [["value": 0.5], ["value": 0.5], false, "0.5", ["value": 0.5], [0.5]]
         var general: [String: Any] = ["orthogonalprojection": ["width": 32, "height": 32]]
         for (field, seed) in zip(fields, invalidSeeds) {
             general[field.name] = ["value": seed, "user": field.name, "script": """
             export function init(v) {
-              if (typeof v !== 'number') throw new Error('HDR Float binding type');
+              if (typeof v !== 'number') throw new Error('Bloom Float binding type');
               thisScene.\(field.name) = v + 10;
               return v + 20;
             }
@@ -32,6 +34,9 @@ final class ParityScriptEngineTests: XCTestCase {
                                              makeTransformScriptResolver: { _, _ in NoScripts() })
         }
         let before = try document()
+        for field in fields {
+            XCTAssertNil(WPEParityScriptProperty.bloomFloatValue(fromJSON: before.resolvedGeneralJSON[field.name]), field.name)
+        }
         var state = WPEParitySceneState(document: before, hdr: true)
         let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] =
             Dictionary(uniqueKeysWithValues: fields.map { (.init(objectID: "", name: $0.name), .vector(SIMD4(999, 0, 0, 0))) })
@@ -42,7 +47,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
         for field in fields {
             guard case let .vector(value)? = state.scriptField(field.name, of: "") else {
-                XCTFail("Missing canonical HDR field \(field.name)"); continue
+                XCTFail("Missing canonical bloom field \(field.name)"); continue
             }
             XCTAssertEqual(value.x.bitPattern, field.bits, field.name)
         }
@@ -52,7 +57,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
 
         // The real document resolver replaces the invalid seeds; accepted deltas reach those same State fields.
-        let values: [Float] = [-3, 4, -0.25, 2]
+        let values: [Float] = [-3, 4, -5, 6, -0.25, 2]
         let validUsers = Dictionary(uniqueKeysWithValues: zip(fields, values).map {
             ($0.0.name, WallpaperEngineProjectPropertyValue.number(Double($0.1)))
         })
@@ -75,19 +80,20 @@ final class ParityScriptEngineTests: XCTestCase {
         unrelated.apply(to: &state)
         XCTAssertEqual(state.object("1")?.alpha, 0.25)
         XCTAssertEqual(state.generation(.bloom), scriptGeneration)
-        let invalid = try document([
-            fields[0].name: .bool(false), fields[1].name: .string("4"),
-            fields[2].name: .bool(true), fields[3].name: .string("2"),
-        ], alpha: 0.25)
-        let rejected = try XCTUnwrap(WPEParityUserPropertyUpdate(from: faded, to: invalid))
-        XCTAssertTrue(rejected.sceneBloomFloats.isEmpty)
-        rejected.apply(to: &state)
-        XCTAssertEqual(state.generation(.bloom), scriptGeneration)
-        for (field, value) in zip(fields, values) {
-            XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value + 1, 0, 0, 0)))
+        var previousDocument = faded
+        for invalidValue: WallpaperEngineProjectPropertyValue in [.bool(false), .string("0.5")] {
+            let invalid = try document(Dictionary(uniqueKeysWithValues: fields.map { ($0.name, invalidValue) }), alpha: 0.25)
+            let rejected = try XCTUnwrap(WPEParityUserPropertyUpdate(from: previousDocument, to: invalid))
+            XCTAssertTrue(rejected.sceneBloomFloats.isEmpty)
+            rejected.apply(to: &state)
+            XCTAssertEqual(state.generation(.bloom), scriptGeneration)
+            for (field, value) in zip(fields, values) {
+                XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value + 1, 0, 0, 0)))
+            }
+            previousDocument = invalid
         }
-        let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: faded))
-        XCTAssertEqual(recovered.sceneBloomFloats.count, 4, "Old invalid is not substituted with a constructor default")
+        let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: previousDocument, to: faded))
+        XCTAssertEqual(recovered.sceneBloomFloats.count, fields.count, "Old invalid is not substituted with a constructor default")
         recovered.apply(to: &state)
         for (field, value) in zip(fields, values) {
             XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value, 0, 0, 0)))

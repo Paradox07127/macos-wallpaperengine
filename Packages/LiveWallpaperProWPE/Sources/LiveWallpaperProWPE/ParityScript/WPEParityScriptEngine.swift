@@ -752,7 +752,7 @@ public final class WPEParityScriptEngine {
             let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
             // Strict bloom JSON must not be replaced by a generic number-derived product seed.
             // Existing canonical fields are retained by seedMissingFields and mirror.
-            let value = descriptor.isSceneBloom || descriptor.isSceneHDRBloomFloat ? parsed ?? Self.generalDefault(descriptor)
+            let value = descriptor.isSceneBloom || descriptor.isSceneBloomFloat ? parsed ?? Self.generalDefault(descriptor)
                 : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
             if let value {
                 initialValues.append((slot, value))
@@ -1503,7 +1503,7 @@ public final class WPEParityScriptEngine {
         if descriptor.isSceneBloom {
             return WPEParityScriptProperty.bloomValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
         }
-        if descriptor.isSceneHDRBloomFloat {
+        if descriptor.isSceneBloomFloat {
             return WPEParityScriptProperty.bloomFloatValue(fromJSON: raw).map { .vector(SIMD4($0, 0, 0, 0)) }
         }
         guard var value = raw else { return nil }

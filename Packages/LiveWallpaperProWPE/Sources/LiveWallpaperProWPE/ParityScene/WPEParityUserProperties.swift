@@ -135,7 +135,7 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public let bloom: WPEParityBloomSettings
     /// A valid changed JSON Bool seed, or nil to preserve the running script's current value.
     public let sceneBloom: Bool?
-    /// Accepted document deltas for the four HDR Float fields, not a second live settings owner.
+    /// Accepted document deltas for the six LDR/HDR Float fields, not a second live settings owner.
     public private(set) var sceneBloomFloats: [SceneFloatWrite] = []
 
     /// Nil when the two parses do not hold the same objects and effects.
@@ -145,7 +145,7 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let oldBloom = WPEParityScriptProperty.bloomValue(fromJSON: old.resolvedGeneralJSON["bloom"])
         let newBloom = WPEParityScriptProperty.bloomValue(fromJSON: new.resolvedGeneralJSON["bloom"])
         sceneBloom = oldBloom != newBloom ? newBloom : nil
-        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneHDRBloomFloat {
+        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
             let previous = WPEParityScriptProperty.bloomFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
             guard let value = WPEParityScriptProperty.bloomFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
                   value != previous else { continue }
