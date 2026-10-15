@@ -5,9 +5,9 @@ import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
     func testSceneProjectionStrictTypedBindingsPreserveRawValuesAndAcceptedDocumentDeltasWithoutHooks() throws {
-        let names = ["fov", "nearz", "farz"]
-        let invalidSeeds: [Any] = [false, "0.1", ["value": 10000]]
-        let initialReturns: [Float] = [250, -2, 0]
+        let names = ["fov", "nearz", "farz", "perspectiveoverridefov"]
+        let invalidSeeds: [Any] = [false, "0.1", ["value": 10000], ["value": 95]]
+        let initialReturns: [Float] = [250, -2, 0, 250]
         func document(_ seeds: [Any], visible: Bool = true, scripted: Bool = true) throws -> WPESceneDocument {
             var general: [String: Any] = ["orthogonalprojection": NSNull()]
             for (index, name) in names.enumerated() {
@@ -44,9 +44,9 @@ final class ParityScriptEngineTests: XCTestCase {
             assets: Self.fixedAssets(), canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32), fieldDefaults: untrusted
         ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
         XCTAssertEqual(Set(engine.bindings.map(\.path)), Set(names))
-        XCTAssertEqual(engine.bindings.count, 3)
+        XCTAssertEqual(engine.bindings.count, names.count)
         XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
-        let defaults: [Float] = [50, Float(bitPattern: 0x3DCC_CCCD), 10000]
+        let defaults: [Float] = [50, Float(bitPattern: 0x3DCC_CCCD), 10000, Float(bitPattern: 0x42BE_0000)]
         for (name, value) in zip(names, defaults) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
@@ -57,7 +57,7 @@ final class ParityScriptEngineTests: XCTestCase {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)),
                            "Public raw fields have no clamp or near/far reorder")
         }
-        let values: [Float] = [60, 0.25, 200]
+        let values: [Float] = [60, 0.25, 200, 70]
         let validSeeds: [Any] = values.map { Double($0) }
         let changed = try document(validSeeds)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
@@ -70,7 +70,15 @@ final class ParityScriptEngineTests: XCTestCase {
         let scriptGeneration = state.scriptFieldsGeneration
         let unrelated = try document(validSeeds, visible: false)
         let invalid = try document(invalidSeeds, visible: false)
-        for next in [changed, unrelated, invalid] {
+        var rejectedDocuments = [changed, unrelated, invalid]
+        for invalidOverride in [false, "95"] as [Any] {
+            var seeds = invalidSeeds
+            seeds[seeds.count - 1] = invalidOverride
+            let rejected = try document(seeds, visible: false)
+            XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: rejected.resolvedGeneralJSON["perspectiveoverridefov"]))
+            rejectedDocuments.append(rejected)
+        }
+        for next in rejectedDocuments {
             let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: next))
             XCTAssertTrue(preserved.sceneProjectionFloats.isEmpty)
             preserved.apply(to: &state)
@@ -86,7 +94,7 @@ final class ParityScriptEngineTests: XCTestCase {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 0.125, 0, 0, 0)))
         }
         let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: unrelated))
-        XCTAssertEqual(recovered.sceneProjectionFloats.count, 3)
+        XCTAssertEqual(recovered.sceneProjectionFloats.count, names.count)
         recovered.apply(to: &state)
         for (name, value) in zip(names, values) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))

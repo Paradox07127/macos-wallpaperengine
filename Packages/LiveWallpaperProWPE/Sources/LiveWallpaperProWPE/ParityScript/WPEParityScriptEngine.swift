@@ -1509,6 +1509,8 @@ public final class WPEParityScriptEngine {
         case "fov": .vector(SIMD4(Float(bitPattern: 0x4248_0000), 0, 0, 0))
         case "nearz": .vector(SIMD4(Float(bitPattern: 0x3DCC_CCCD), 0, 0, 0))
         case "farz": .vector(SIMD4(Float(bitPattern: 0x461C_4000), 0, 0, 0))
+        // 140186d67: O144 raw override95; no public clamp or angle conversion.
+        case "perspectiveoverridefov": .vector(SIMD4(Float(bitPattern: 0x42BE_0000), 0, 0, 0))
         default: nil
         }
     }
