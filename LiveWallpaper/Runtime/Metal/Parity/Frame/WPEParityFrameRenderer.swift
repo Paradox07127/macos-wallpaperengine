@@ -1294,7 +1294,7 @@ final class WPEParityFrameRenderer {
         var rebound = layout.draws
         for index in rebound.keys {
             candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
-            candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
+            try candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
         }
         layout = Layout(post: layout.post, effects: layout.effects, frames: layout.frames, draws: rebound,
                         skipped: layout.skipped, fade: layout.fade)

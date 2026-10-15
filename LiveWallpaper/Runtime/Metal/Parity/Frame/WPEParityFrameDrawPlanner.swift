@@ -543,12 +543,14 @@ struct WPEParityFrameDrawPlanner {
     }
 
     /// Rebinds the current immutable atlas version without touching another layer's glyph mesh or UVs.
-    func refreshAtlasBindings(_ draw: inout WPEParityFrameDrawPlan, operation: Int) {
+    func refreshAtlasBindings(_ draw: inout WPEParityFrameDrawPlan, operation: Int) throws(WPEParityFrameSkip) {
         for variant in draw.textures.indices {
             guard let binding = layout.bindings[variant][operation] else { continue }
             for (slot, source) in binding.textures {
-                guard case let .textAtlas(key, atlas, scale, plane) = source,
-                      let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else { continue }
+                guard case let .textAtlas(key, atlas, scale, plane) = source else { continue }
+                guard let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else {
+                    throw .texture("Text atlas \(key) \(atlas) scale\(scale) \(plane) has no prepared texture")
+                }
                 draw.textures[variant]["g_Texture\(slot)"] = .image(texture)
             }
         }
