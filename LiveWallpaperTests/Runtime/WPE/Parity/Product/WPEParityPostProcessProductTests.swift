@@ -320,7 +320,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             try renderer.attachScript(script)
             let backbuffer = renderer.backbuffer
             let capacityIDs = (1 ... plan.post.hdrBloomCapacity).map { WPEResourceID("_rt_\(1 << $0)FrameBuffer") }
-            let capacity = try hdr ? Dictionary(uniqueKeysWithValues: capacityIDs.map { id in
+            let capacity: [WPEResourceID: ObjectIdentifier] = try hdr ? Dictionary(uniqueKeysWithValues: capacityIDs.map { id in
                 let texture = try XCTUnwrap(renderer.targets[id], "Every capacity target must exist before the first frame")
                 XCTAssertEqual(texture.pixelFormat, .rgba16Float)
                 return (id, ObjectIdentifier(texture))
@@ -352,7 +352,10 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                     XCTAssertEqual(post.map(\.0.shader).filter { $0.hasPrefix("hdr_") }, expected)
                     let strength: Float = 2 / (pow(1.25, Float(max(n, 2) - 2)) + 1)
                     XCTAssertEqual(components(down.constants[.fragment]?["g_BloomStrength"])?.map(\.bitPattern), [strength.bitPattern])
-                    XCTAssertEqual(try Dictionary(uniqueKeysWithValues: capacityIDs.map { try ($0, ObjectIdentifier(XCTUnwrap(renderer.targets[$0]))) }), capacity)
+                    let currentCapacity: [WPEResourceID: ObjectIdentifier] = try Dictionary(uniqueKeysWithValues: capacityIDs.map {
+                        try ($0, ObjectIdentifier(XCTUnwrap(renderer.targets[$0])))
+                    })
+                    XCTAssertEqual(currentCapacity, capacity)
                 }
                 XCTAssertEqual(renderer.pipelineCreations, pipelines, "N changes must use already prepared PSOs")
                 XCTAssertTrue(renderer.backbuffer === backbuffer)
