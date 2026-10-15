@@ -270,7 +270,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [engine])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
-        func document(hdr: Bool, iterations: Any = 2, tint: Any = "1 0 0", alpha: Double = 1,
+        func document(hdr: Bool, iterations: Any = 2, tint: Any = "1 0 0", visible: Bool = true,
                       scripts: Bool = true, bloom: Bool = true) throws -> WPESceneDocument {
             var general: [String: Any] = [
                 "orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0.5 0.5 0.5",
@@ -293,9 +293,15 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             }
             let source: [String: Any] = [
                 "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general,
-                "objects": [["id": 1, "camera": "capacity witness", "origin": "0 0 0", "angles": "0 0 0", "alpha": alpha]],
+                "objects": [["id": 1, "camera": "capacity witness", "origin": "0 0 0", "angles": "0 0 0", "visible": visible]],
             ]
-            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
+            let data = try JSONSerialization.data(withJSONObject: source)
+            if let number = iterations as? Double, number == 1e100 {
+                let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
+                XCTAssertNotNil(raw.range(of: #""bloomhdriterations":1[eE]\+?100"#, options: .regularExpression),
+                                "The overflow witness must actually be serialized as a real exponent token")
+            }
+            return try WPESceneDocumentParser.parse(data: data,
                                                     userValues: ["toggle": .bool(bloom)],
                                                     makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
         }
@@ -371,17 +377,20 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                     XCTAssertEqual(renderer.graphExecutorIdentities, ldrExecutors, "LDR ignores raw HDR N for graph selection")
                 }
             }
-            let faded = try document(hdr: hdr, alpha: 0.25)
-            let invalid = try document(hdr: hdr, iterations: false, tint: [0, 0, 0], alpha: 0.25)
+            let unrelated = try document(hdr: hdr, visible: false)
+            let invalid = try document(hdr: hdr, iterations: false, tint: [0, 0, 0], visible: false)
             let generation = renderer.state.generation(.bloom)
-            for update in try [unchanged, XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: faded)),
-                               XCTUnwrap(WPEParityUserPropertyUpdate(from: faded, to: invalid))] {
+            let preservationUpdates = try [unchanged, XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: unrelated)),
+                                           XCTUnwrap(WPEParityUserPropertyUpdate(from: unrelated, to: invalid))]
+            for (index, update) in preservationUpdates.enumerated() {
                 let json = host(drive: false)
                 try renderer.applyUserProperties(update, changedJSON: json, mergedJSON: json)
                 _ = try await check(2, SIMD3(0, 0, 1))
                 XCTAssertEqual(renderer.state.generation(.bloom), generation)
+                XCTAssertEqual(renderer.state.object("1")?.visible, index == 0,
+                               "The unrelated update must reach a real non-bloom State consumer")
             }
-            let recovered = try document(hdr: hdr, iterations: 3.9, tint: "0.25 0.5 0.75", alpha: 0.25)
+            let recovered = try document(hdr: hdr, iterations: 3.9, tint: "0.25 0.5 0.75", visible: false)
             try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: recovered)))
             _ = try await check(3, SIMD3(0.25, 0.5, 0.75))
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
