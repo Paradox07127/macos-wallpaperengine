@@ -752,7 +752,8 @@ public final class WPEParityScriptEngine {
             let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
             // Strict scene JSON must not be replaced by a generic number-derived product seed.
             // Existing canonical fields are retained by seedMissingFields and mirror.
-            let value = descriptor.isSceneBloomField || descriptor.isSceneCameraParallax ? parsed ?? Self.generalDefault(descriptor)
+            let strictSceneSeed = descriptor.isSceneBloomField || descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake
+            let value = strictSceneSeed ? parsed ?? Self.generalDefault(descriptor)
                 : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
             if let value {
                 initialValues.append((slot, value))
@@ -1496,19 +1497,24 @@ public final class WPEParityScriptEngine {
         case "bloomhdrscatter": .vector(SIMD4(Float(bitPattern: 0x3FCF_3B64), 0, 0, 0))
         case "bloomhdriterations": .integer(8)
         case "bloomtint": .vector(SIMD4(1, 1, 1, 0))
-        case "cameraparallax": .vector(.zero)
+        case "cameraparallax", "camerashake": .vector(.zero)
         case "cameraparallaxamount", "cameraparallaxmouseinfluence": .vector(SIMD4(0.5, 0, 0, 0))
         case "cameraparallaxdelay": .vector(SIMD4(Float(bitPattern: 0x3DCC_CCCD), 0, 0, 0))
+        // 140186f84..186fa5: three DWORD defaults in the same SceneObject receiver.
+        case "camerashakespeed": .vector(SIMD4(Float(bitPattern: 0x4040_0000), 0, 0, 0))
+        case "camerashakeamplitude": .vector(SIMD4(Float(bitPattern: 0x3F00_0000), 0, 0, 0))
+        case "camerashakeroughness": .vector(SIMD4(Float(bitPattern: 0x3F80_0000), 0, 0, 0))
         default: nil
         }
     }
 
     private static func parse(_ raw: WPESceneJSONValue?,
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
-        if descriptor.isSceneBloom || (descriptor.isSceneCameraParallax && descriptor.type == .flagBool) {
+        let sceneCameraField = descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake
+        if descriptor.isSceneBloom || (sceneCameraField && descriptor.type == .flagBool) {
             return WPEParityScriptProperty.sceneBoolValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
         }
-        if descriptor.isSceneBloomFloat || (descriptor.isSceneCameraParallax && descriptor.type == .float) {
+        if descriptor.isSceneBloomFloat || (sceneCameraField && descriptor.type == .float) {
             return WPEParityScriptProperty.sceneFloatValue(fromJSON: raw).map { .vector(SIMD4($0, 0, 0, 0)) }
         }
         if descriptor.isSceneBloomIterations {

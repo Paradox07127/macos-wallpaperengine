@@ -4,6 +4,7 @@ public enum WPEParityUserProperties {
     /// Live bloom fields use the canonical State/graph consumer; changing `hdr` still reloads.
     private static let liveGeneralFields: Set = [
         "cameraparallax", "cameraparallaxamount", "cameraparallaxdelay", "cameraparallaxmouseinfluence",
+        "camerashake", "camerashakespeed", "camerashakeamplitude", "camerashakeroughness",
         "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
         "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter", "bloomhdriterations",
     ]
@@ -16,7 +17,7 @@ public enum WPEParityUserProperties {
 
     /// Every user property the scene JSON binds, with each target it reaches. Object fields of image layers, groups
     /// and particles, effect visibility and material constants of image layers, the layout fields of text layers, the
-    /// per-frame parallax terms, bloom Bool and bloom constants are `.incremental`; anything else is `.reload`.
+    /// per-frame parallax/shake fields, bloom Bool and bloom constants are `.incremental`; anything else is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
@@ -144,6 +145,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     /// No-hook accepted deltas, consumed at the native camera-update and layer-render read points.
     public let sceneParallaxEnabled: Bool?
     public private(set) var sceneParallaxFloats: [SceneFloatWrite] = []
+    /// Accepted no-hook fields, polled together by the next native camera-update step.
+    public let sceneShakeEnabled: Bool?
+    public private(set) var sceneShakeFloats: [SceneFloatWrite] = []
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
@@ -166,6 +170,15 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
                   value != previous else { continue }
             sceneParallaxFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
+        }
+        let oldShake = WPEParityScriptProperty.sceneBoolValue(fromJSON: old.resolvedGeneralJSON["camerashake"])
+        let newShake = WPEParityScriptProperty.sceneBoolValue(fromJSON: new.resolvedGeneralJSON["camerashake"])
+        sceneShakeEnabled = oldShake != newShake ? newShake : nil
+        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneCameraShake && descriptor.type == .float {
+            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
+            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
+                  value != previous else { continue }
+            sceneShakeFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
         }
         for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
             let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
@@ -227,6 +240,12 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             state.setScriptField("cameraparallax", of: "", to: .vector(SIMD4(sceneParallaxEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
         }
         for write in sceneParallaxFloats {
+            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
+        }
+        if let sceneShakeEnabled {
+            state.setScriptField("camerashake", of: "", to: .vector(SIMD4(sceneShakeEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
+        }
+        for write in sceneShakeFloats {
             state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
         }
         for write in objects {

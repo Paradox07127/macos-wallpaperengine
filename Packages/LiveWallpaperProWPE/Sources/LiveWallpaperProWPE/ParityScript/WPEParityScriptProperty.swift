@@ -121,7 +121,16 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         }
     }
 
-    /// 14019b4e0/19c850 accept only a JSON Bool or an object's immediate Bool `value`.
+    var isSceneCameraShake: Bool {
+        guard owner == .scene, target == .field else { return false }
+        switch (name, type) {
+        case ("camerashake", .flagBool), ("camerashakespeed", .float),
+             ("camerashakeamplitude", .float), ("camerashakeroughness", .float): return true
+        default: return false
+        }
+    }
+
+    /// 14019b4e0/19c620/19c850 accept only a JSON Bool or an object's immediate Bool `value`.
     /// Nil preserves storage; each descriptor supplies its own constructor bit and hook contract.
     public static func sceneBoolValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
         switch value {
@@ -320,6 +329,11 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "cameraparallaxamount", owner: .scene, type: .float),
         WPEParityScriptProperty(name: "cameraparallaxdelay", owner: .scene, type: .float),
         WPEParityScriptProperty(name: "cameraparallaxmouseinfluence", owner: .scene, type: .float),
+        // 140199780: flags0, no hooks; Bool is O.e0 mask80, scalars are O328/32c/330.
+        WPEParityScriptProperty(name: "camerashake", owner: .scene, type: .flagBool),
+        WPEParityScriptProperty(name: "camerashakespeed", owner: .scene, type: .float),
+        WPEParityScriptProperty(name: "camerashakeamplitude", owner: .scene, type: .float),
+        WPEParityScriptProperty(name: "camerashakeroughness", owner: .scene, type: .float),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.
