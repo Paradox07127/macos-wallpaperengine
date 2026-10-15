@@ -198,13 +198,14 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             XCTAssertEqual(components(down.constants[.fragment]?["g_BloomStrength"]), [strength])
             XCTAssertEqual(components(down.constants[.fragment]?["g_BloomBlendParams"]),
                            [threshold, threshold - threshold * feather, 2 * threshold * feather, 0.25 / (threshold * feather + 1e-5)])
-            let up = renderer.lastFrameDraws.compactMap { entry -> [Float]? in
-                guard case let .post(post)? = renderer.frames[0].draws[entry.operation],
-                      post.shader == "hdr_upsample" || post.shader == "hdr_upsample_cubic" else { return nil }
-                return components(entry.draw.constants[.fragment]?["g_BloomScatter"])
+            let up = renderer.lastFrameDraws.filter { entry in
+                guard case let .post(post)? = renderer.frames[0].draws[entry.operation] else { return false }
+                return post.shader == "hdr_upsample" || post.shader == "hdr_upsample_cubic"
             }
-            XCTAssertFalse(up.isEmpty)
-            XCTAssertTrue(up.allSatisfy { $0 == [scatter] })
+            XCTAssertEqual(up.count, plan.post.hdrBloomLevelCount - 1)
+            for entry in up {
+                XCTAssertEqual(components(entry.draw.constants[.fragment]?["g_BloomScatter"]), [scatter])
+            }
             for (field, value) in zip(fields, values) {
                 XCTAssertEqual(renderer.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
             }
