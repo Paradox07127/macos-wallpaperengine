@@ -3,7 +3,8 @@
 public enum WPEParityUserProperties {
     /// Live bloom fields use the canonical State/graph consumer; changing `hdr` still reloads.
     private static let liveGeneralFields: Set = [
-        "cameraparallaxdelay", "cameraparallaxmouseinfluence", "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
+        "cameraparallax", "cameraparallaxamount", "cameraparallaxdelay", "cameraparallaxmouseinfluence",
+        "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
         "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter", "bloomhdriterations",
     ]
 
@@ -140,6 +141,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     /// Accepted typed deltas; nil preserves the running script's value instead of restoring the authored seed.
     public let sceneBloomIterations: Int32?
     public let sceneBloomTint: SIMD3<Float>?
+    /// No-hook accepted deltas, consumed at the native camera-update and layer-render read points.
+    public let sceneParallaxEnabled: Bool?
+    public private(set) var sceneParallaxFloats: [SceneFloatWrite] = []
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
@@ -154,6 +158,15 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let oldTint = WPEParityScriptProperty.bloomTintValue(fromJSON: old.resolvedGeneralJSON["bloomtint"])
         let newTint = WPEParityScriptProperty.bloomTintValue(fromJSON: new.resolvedGeneralJSON["bloomtint"])
         sceneBloomTint = oldTint != newTint ? newTint : nil
+        let oldParallax = WPEParityScriptProperty.sceneBoolValue(fromJSON: old.resolvedGeneralJSON["cameraparallax"])
+        let newParallax = WPEParityScriptProperty.sceneBoolValue(fromJSON: new.resolvedGeneralJSON["cameraparallax"])
+        sceneParallaxEnabled = oldParallax != newParallax ? newParallax : nil
+        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneCameraParallax && descriptor.type == .float {
+            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
+            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
+                  value != previous else { continue }
+            sceneParallaxFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
+        }
         for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
             let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
             guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
@@ -209,6 +222,12 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         }
         if let sceneBloomTint {
             state.setScriptField("bloomtint", of: "", to: .vector(SIMD4(sceneBloomTint, 0)), invalidating: .bloom)
+        }
+        if let sceneParallaxEnabled {
+            state.setScriptField("cameraparallax", of: "", to: .vector(SIMD4(sceneParallaxEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
+        }
+        for write in sceneParallaxFloats {
+            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
         }
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)

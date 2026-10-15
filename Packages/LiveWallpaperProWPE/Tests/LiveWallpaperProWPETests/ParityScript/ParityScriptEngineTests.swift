@@ -4,6 +4,104 @@ import LiveWallpaperCore
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testCameraParallaxStrictBindingsAndDocumentDeltasPreserveCanonicalFieldsWithoutHooks() throws {
+        let names = ["cameraparallax", "cameraparallaxamount", "cameraparallaxdelay", "cameraparallaxmouseinfluence"]
+        let invalidSeeds: [Any] = [1, false, "0.1", ["value": 0.5]]
+        func document(_ seeds: [Any], visible: Bool = true) throws -> WPESceneDocument {
+            var general: [String: Any] = ["orthogonalprojection": ["width": 32, "height": 32]]
+            for (index, name) in names.enumerated() {
+                let script = index == 0 ? """
+                export function init(v) {
+                  if (typeof v !== 'boolean') throw new Error('Parallax Bool type');
+                  thisScene.cameraparallax = !v;
+                  if (thisScene.cameraparallax !== !v) throw new Error('Parallax Bool setter');
+                  return !v;
+                }
+                export function update(v) { return !v; }
+                """ : """
+                export function init(v) {
+                  if (typeof v !== 'number') throw new Error('Parallax Float type');
+                  thisScene.\(name) = v + 1;
+                  if (thisScene.\(name) !== Math.fround(v + 1)) throw new Error('Parallax Float setter');
+                  return v + 2;
+                }
+                export function update(v) { return Math.fround(v + 1); }
+                """
+                general[name] = ["value": seeds[index], "script": script]
+            }
+            let source: [String: Any] = [
+                "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"], "general": general,
+                "objects": [["id": 1, "image": "models/surface.json", "visible": visible]],
+            ]
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        let before = try document(invalidSeeds)
+        XCTAssertNil(WPEParityScriptProperty.sceneBoolValue(fromJSON: before.resolvedGeneralJSON[names[0]]))
+        for name in names.dropFirst() {
+            XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: before.resolvedGeneralJSON[name]))
+        }
+        var state = WPEParitySceneState(document: before, hdr: false)
+        let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] =
+            Dictionary(uniqueKeysWithValues: names.map { (.init(objectID: "", name: $0), .vector(SIMD4(999, 0, 0, 0))) })
+        let engine = try WPEParityScriptEngine.prepare(document: before, state: &state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32), fieldDefaults: untrusted
+        ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+        XCTAssertEqual(engine.bindings.map(\.path), names)
+        XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
+        let defaults: [Float] = [0, 0.5, Float(bitPattern: 0x3DCC_CCCD), 0.5]
+        for (name, value) in zip(names, defaults) {
+            XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        let bloomGeneration = state.generation(.bloom)
+        let transformGeneration = state.generation(.transform)
+        XCTAssertNil(engine.start(state: &state))
+        XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        for (name, value) in zip(names.dropFirst(), defaults.dropFirst()) {
+            XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 2, 0, 0, 0)))
+        }
+
+        // A valid false must replace a current true; it cannot be mistaken for an absent accepted write.
+        let validSeeds: [Any] = [false, -0.25, 0.75, 1.5]
+        let values: [Float] = [-0.25, 0.75, 1.5]
+        let changed = try document(validSeeds)
+        let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
+        XCTAssertEqual(accepted.sceneParallaxEnabled, false)
+        XCTAssertEqual(accepted.sceneParallaxFloats.map(\.name), Array(names.dropFirst()))
+        accepted.apply(to: &state)
+        XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(.zero))
+        for (name, value) in zip(names.dropFirst(), values) {
+            XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        engine.tick(dt: 0, state: &state)
+        let scriptGeneration = state.scriptFieldsGeneration
+        let unrelated = try document(validSeeds, visible: false)
+        let invalid = try document(invalidSeeds, visible: false)
+        for next in [changed, unrelated, invalid] {
+            let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: next))
+            XCTAssertNil(preserved.sceneParallaxEnabled)
+            XCTAssertTrue(preserved.sceneParallaxFloats.isEmpty)
+            preserved.apply(to: &state)
+            XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
+            for (name, value) in zip(names.dropFirst(), values) {
+                XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 1, 0, 0, 0)))
+            }
+            XCTAssertEqual(state.scriptFieldsGeneration, scriptGeneration)
+        }
+        XCTAssertEqual(state.object("1")?.visible, false)
+        let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: unrelated))
+        XCTAssertEqual(recovered.sceneParallaxEnabled, false)
+        XCTAssertEqual(recovered.sceneParallaxFloats.count, 3)
+        recovered.apply(to: &state)
+        XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(.zero))
+        for (name, value) in zip(names.dropFirst(), values) {
+            XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        XCTAssertEqual(state.generation(.bloom), bloomGeneration, "These descriptors have no hook")
+        XCTAssertEqual(state.generation(.transform), transformGeneration)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testBloomTintAndIterationsBindingsAndDocumentDeltasReachCanonicalState() throws {
         let iterationScript = """
         export function init(v) {
