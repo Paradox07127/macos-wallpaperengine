@@ -46,11 +46,14 @@ final class ParitySoundConsumerTests: XCTestCase {
         let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
             path == "scripts/jsclasses/baseclasses.js" ? base : nil
         }])
-        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
-            assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
-        ))
         var writes: [(String, String, WPEParityScriptEngine.SoundFields)] = []
         var commands: [(String, WPEParityScriptEngine.SoundCommand, WPEParityScriptEngine.SoundFields)] = []
+        let engine = try WPEParityScriptEngine.prepare(document: document, state: &state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ), volume: { writes.append(("prepare", $0, $1)) }, command: { id, command, fields in
+            commands.append((id, command, fields))
+            return command == .isPlaying
+        })
         var soundGeneration = 0
         engine.withSoundConsumers(volume: { writes.append(("outer", $0, $1)) }, command: { id, command, fields in
             commands.append((id, command, fields))

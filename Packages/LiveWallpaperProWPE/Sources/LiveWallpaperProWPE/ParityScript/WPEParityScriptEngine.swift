@@ -296,8 +296,31 @@ public final class WPEParityScriptEngine {
         }
     }
 
-    /// Compiles every property script of `document`; `start` runs their `init`.
-    public init(document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
+    /// Compatibility entry point for callers without synchronous sound consumers.
+    public convenience init(document: WPESceneDocument, state: WPEParitySceneState,
+                            configuration: Configuration) throws {
+        try self.init(layoutOf: document, state: state, configuration: configuration)
+        mirror(state)
+        compileBindings(document: document)
+    }
+
+    /// Constructs one VM/layout and compiles module globals against the caller's canonical mutable state.
+    /// The caller next prepares registered assets, then scopes consumers around start/init and later events.
+    public static func prepare(document: WPESceneDocument, state: inout WPEParitySceneState,
+                               configuration: Configuration, volume: (String, SoundFields) -> Void,
+                               command: (String, SoundCommand, SoundFields) -> Bool) throws -> WPEParityScriptEngine {
+        let engine = try WPEParityScriptEngine(layoutOf: document, state: state, configuration: configuration)
+        engine.withSoundConsumers(volume: volume, command: command) {
+            engine.seedMissingFields(state: &state)
+            engine.run(state: &state) {
+                engine.compileBindings(document: document)
+            }
+        }
+        return engine
+    }
+
+    /// Initializes the existing VM/metadata once; no authored module body executes before its caller's scope.
+    private init(layoutOf document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
         materialFunctionHandler = configuration.executeMaterialFunction
         modelDataAdmissionHandler = configuration.modelData?.admitShape
@@ -324,9 +347,6 @@ public final class WPEParityScriptEngine {
                                withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
         layout(document: document, state: state)
         installHost(state: state)
-        // Module bodies run here and may read their layer.
-        mirror(state)
-        compileBindings(document: document, state: state)
     }
 
     deinit {
@@ -1267,7 +1287,7 @@ public final class WPEParityScriptEngine {
 
     // MARK: Bindings
 
-    private func compileBindings(document: WPESceneDocument, state _: WPEParitySceneState) {
+    private func compileBindings(document: WPESceneDocument) {
         if case let .object(entries) = document.resolvedGeneralJSON {
             let supported = Set(sceneFields.map(\.name))
             for (name, value) in entries where value["script"] != nil && !supported.contains(name) {
