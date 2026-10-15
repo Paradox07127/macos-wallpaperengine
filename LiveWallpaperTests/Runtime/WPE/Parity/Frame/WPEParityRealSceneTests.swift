@@ -205,7 +205,8 @@ final class WPEParityRealSceneTests: XCTestCase {
         let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
         let store = try WPEParityShaderStore(
             compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.loadPrograms,
-                                                     geometryCompiler: geometryCompiler),
+                                                     geometryCompiler: geometryCompiler,
+                                                     uncapturedUtilityPrograms: WPEParityFixtureShaderCompiler.utilityPrograms(in: plan)),
             diskCache: WPEParityShaderDiskCache(cachesURL: cache)
         )
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())

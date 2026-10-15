@@ -26,11 +26,15 @@ struct WPEParityFixtureShaderCompiler: WPEParityShaderCompiling {
     /// The capture compiled each VS as a plain vertex function; geometry emulation needs it as an object stage with
     /// a stage-in function, so a program with a GS is compiled here from the same captured HLSL.
     private let geometryCompiler: (any WPEParityShaderCompiling)?
+    /// Only exact reachable utility programs may compile original HLSL when the old capture lacks a variant.
+    private let uncapturedUtilityPrograms: Set<WPEHLSLProgram>
 
     init(directory: URL, programs: some Sequence<WPEParityProgram>,
-         geometryCompiler: (any WPEParityShaderCompiling)? = nil) throws {
+         geometryCompiler: (any WPEParityShaderCompiling)? = nil,
+         uncapturedUtilityPrograms: Set<WPEHLSLProgram> = []) throws {
         self.directory = directory
         self.geometryCompiler = geometryCompiler
+        self.uncapturedUtilityPrograms = uncapturedUtilityPrograms
         dxsKeys = Dictionary(programs.map { ($0.hlsl, $0.dxsKey()) }) { first, _ in first }
         let pairs = try JSONDecoder().decode([Pair].self,
                                              from: Data(contentsOf: directory.appending(path: "dxs-pairs.json")))
@@ -40,6 +44,18 @@ struct WPEParityFixtureShaderCompiler: WPEParityShaderCompiling {
             captures[stem, default: [:]][pair.target, default: []].append(pair)
         }
         self.captures = captures
+    }
+
+    static func utilityPrograms(in plan: WPEParityFramePlan) throws -> Set<WPEHLSLProgram> {
+        var result: Set<WPEHLSLProgram> = []
+        for probe in try plan.probeFrames() {
+            for (index, description) in probe.frame.draws {
+                if case .post = description, let program = probe.programs[index] {
+                    result.insert(program.hlsl)
+                }
+            }
+        }
+        return result
     }
 
     func compile(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
@@ -56,7 +72,12 @@ struct WPEParityFixtureShaderCompiler: WPEParityShaderCompiling {
             let candidates = captures[dxs]?[target] ?? []
             guard let number = try candidates.first(where: {
                 try Array(Data(contentsOf: directory.appending(path: $0.hlsl))) == hlsl
-            })?.n else { throw Failure.noCapture(dxs: dxs, target: target) }
+            })?.n else {
+                guard uncapturedUtilityPrograms.contains(request.program), let geometryCompiler else {
+                    throw Failure.noCapture(dxs: dxs, target: target)
+                }
+                return try await geometryCompiler.compile(request)
+            }
             guard !request.stages.contains(.geometry) else { continue }
             stages[stage] = try .init(
                 metallib: Data(contentsOf: compiled.appending(path: "\(number).metallib")),
