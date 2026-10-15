@@ -60,7 +60,7 @@ public struct WPEParityCamera: Sendable, Equatable {
 
     public init(eye: SIMD3<Float>, center: SIMD3<Float>, up: SIMD3<Float>, size: SIMD2<Float>,
                 renderTargetSize: SIMD2<Float>, zoom: Float = 1, alignment: WPEParityCameraAlignment = .noCrop,
-                parallaxAmount: Float? = nil, perspectiveFOV: Float = 50, shake: WPEParityCameraShake? = nil,
+                parallaxAmount: Float? = nil, perspectiveFOV: Float = 95, shake: WPEParityCameraShake? = nil,
                 scenePerspective: WPEParityScenePerspective? = nil) {
         self.eye = eye
         self.center = center
@@ -93,7 +93,7 @@ public struct WPEParityCamera: Sendable, Equatable {
                   up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
-                  perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
+                  perspectiveFOV: WPEParityScriptProperty.sceneFloatValue(fromJSON: resolved["perspectiveoverridefov"]) ?? 95,
                   shake: WPEParityScriptProperty.sceneBoolValue(fromJSON: resolved["camerashake"]) == true
                       ? WPEParityCameraShake(general: resolved, orthographic: perspective == nil) : nil,
                   scenePerspective: perspective)
@@ -268,43 +268,77 @@ public struct WPEParityCamera: Sendable, Equatable {
         return view * Self.translation(SIMD3(offset, 0))
     }
 
-    private var perspectiveFOVRadians: Float {
-        min(max(perspectiveFOV, 0.1), 179.9) * .pi / 180
+    /// The finite selector-3 paths are translated; exceptional/native floating-point status remains unqualified.
+    public enum PerspectiveMathError: Error, Sendable, Equatable {
+        case unsupportedFieldOfView(inputBits: UInt32)
+        case unsupportedTangent(inputBits: UInt32)
+        case unsupportedArctangent(inputBits: UInt32)
     }
 
-    /// Distance at which the perspective frustum spans the ortho canvas height (0x1401e5b6e-c47).
+    /// Pre-tick C+0x110: ortho consumes O+0x144, perspective derives the angle from its base Pyy.
+    private var perspectiveAngle: Float {
+        get throws {
+            let rawFOV = scenePerspective?.fov ?? perspectiveFOV
+            guard rawFOV.isFinite else {
+                throw PerspectiveMathError.unsupportedFieldOfView(inputBits: rawFOV.bitPattern)
+            }
+            if scenePerspective != nil {
+                let inverseY = 1 / projection.columns.1.y
+                let input = inverseY / Float(bitPattern: 0x44FA_0000)
+                guard let angle = WPEParityPerspectiveMath.arctangent(input) else {
+                    throw PerspectiveMathError.unsupportedArctangent(inputBits: input.bitPattern)
+                }
+                return angle + angle
+            }
+            return min(max(perspectiveFOV, Float(bitPattern: 0x3DCC_CCCD)), Float(bitPattern: 0x4333_E666))
+                * WPEParityScriptProperty.degreesToRadians
+        }
+    }
+
+    /// 1401e5b79..1e5bb8: half angle, original Tan, then three separate DIVSS using the current/parent Pyy.
+    private func perspectiveDistance(angle: Float, projectionY: Float) throws -> Float {
+        let half = angle * Float(bitPattern: 0x3F00_0000)
+        guard let tangent = WPEParityPerspectiveMath.tangent(half) else {
+            throw PerspectiveMathError.unsupportedTangent(inputBits: half.bitPattern)
+        }
+        let inverseY = 1 / projectionY
+        let ratio = tangent / inverseY
+        return 1 / ratio
+    }
+
     public var perspectiveDistance: Float {
-        1 / projection.columns.1.y / tan(perspectiveFOVRadians / 2)
+        get throws {
+            try perspectiveDistance(angle: perspectiveAngle, projectionY: projection.columns.1.y)
+        }
     }
 
     /// Replacement P for a top-level `perspective` object (obj+0x120 bit 0x80).
     public var perspectiveProjection: simd_float4x4 {
-        pushPerspective(view: view, projection: projection).projection
+        get throws { try pushPerspective(view: view, projection: projection).projection }
     }
 
     /// Replacement V for a top-level `perspective` object.
     public var perspectiveView: simd_float4x4 {
-        pushPerspective(view: view, projection: projection).view
+        get throws { try pushPerspective(view: view, projection: projection).view }
     }
 
-    /// FUN_1401e5b60 on the V and P in force, the scene's or a parent composite's: V moves by the unmirrored crop
-    /// centre (W·cx, H·cy; 140183a70.c:136-138) and back by D = (1/P.m5)/tan(fov/2); P becomes the perspective,
-    /// its first column negated under fliph (1401e5b60.c:28-43).
+    /// FUN_1401e5b60 on the V and P in force, including a parent composite's current Pyy.
+    /// The selected camera value freezes the angle inputs before tick; no scene-wide distance is cached.
     public func pushPerspective(view: simd_float4x4, projection: simd_float4x4)
-        -> (view: simd_float4x4, projection: simd_float4x4) {
+        throws -> (view: simd_float4x4, projection: simd_float4x4) {
+        let angle = try perspectiveAngle
+        let distance = try perspectiveDistance(angle: angle, projectionY: projection.columns.1.y)
         let crop = alignmentCrop
         // A perspective scene zeroes the crop centre (140183a70.c:37).
         let centre = scenePerspective != nil ? .zero
             : SIMD2((size.x * 0.5 - (crop.y - crop.x) * 0.5) / size.x,
                     (size.y * 0.5 - (crop.w - crop.z) * 0.5) / size.y)
-        let distance = 1 / projection.columns.1.y / tan(perspectiveFOVRadians / 2)
         var pushed = view
         // W and H are the integer canvas size (ctx+0x84/0x88).
         pushed.columns.3.x -= size.x.rounded(.towardZero) * centre.x
         pushed.columns.3.y -= size.y.rounded(.towardZero) * centre.y
         pushed.columns.3.z = -distance
-        var perspective = Self.perspective(fovY: perspectiveFOVRadians,
-                                           aspect: renderTargetSize.x / renderTargetSize.y,
+        var perspective = Self.perspective(fovY: angle, aspect: renderTargetSize.x / renderTargetSize.y,
                                            near: 5, far: max(15000, distance + 1000))
         if alignment.flipHorizontal {
             perspective.columns.0 = -perspective.columns.0

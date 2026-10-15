@@ -106,18 +106,18 @@ struct ParitySceneLastEffectSegmentTests {
 }
 
 struct ParityLastEffectPassMatricesTests {
-    @Test func lastEffectPassTakesTheLayerMatricesOnTheTwoByTwoQuad() {
+    @Test func lastEffectPassTakesTheLayerMatricesOnTheTwoByTwoQuad() throws {
         let layer = WPEParityLayerTransform(id: "L", origin: SIMD3(300, 200, 0), scale: SIMD3(2, 1, 1),
                                             size: SIMD2(512, 256))
         let camera = WPEParityCamera(eye: SIMD3(960, 540, 1), center: SIMD3(960, 540, 0), up: SIMD3(0, 1, 0),
                                      size: SIMD2(1920, 1080), renderTargetSize: SIMD2(1920, 1080))
         let set = WPEParityLayerTransformSet(camera: camera, layers: [layer])
-        let last = set.draw("L", kind: .lastEffectPass, parallax: .zero)
-        let final = set.draw("L", kind: .layer, parallax: .zero)
+        let last = try set.draw("L", kind: .lastEffectPass, parallax: .zero)
+        let final = try set.draw("L", kind: .layer, parallax: .zero)
         #expect(last.matrices.modelViewProjection == final.matrices.modelViewProjection)
         #expect(last.effectPass?.isLastPass == true)
         #expect(set.quad("L", kind: .lastEffectPass) == .effectPass)
-        let intermediate = set.draw("L", kind: .effectPass, parallax: .zero)
+        let intermediate = try set.draw("L", kind: .effectPass, parallax: .zero)
         #expect(intermediate.matrices.modelViewProjection != final.matrices.modelViewProjection)
     }
 }

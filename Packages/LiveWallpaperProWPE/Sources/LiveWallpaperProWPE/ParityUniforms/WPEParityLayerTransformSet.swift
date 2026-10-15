@@ -163,10 +163,10 @@ public struct WPEParityLayerTransformSet: Sendable {
     }
 
     /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame.
-    public func view(_ id: String, parallax: SIMD2<Float>) -> simd_float4x4 {
+    public func view(_ id: String, parallax: SIMD2<Float>) throws -> simd_float4x4 {
         let view = sceneView(id, parallax: parallax)
         return layers[id]?.perspective == true
-            ? camera.pushPerspective(view: view, projection: camera.projection).view : view
+            ? try camera.pushPerspective(view: view, projection: camera.projection).view : view
     }
 
     /// The scene V with the object's parallax push (14018aac0.c:87-165), before any perspective replacement.
@@ -181,14 +181,14 @@ public struct WPEParityLayerTransformSet: Sendable {
                            smoothed: parallax)
     }
 
-    public func projection(_ id: String) -> simd_float4x4 {
-        layers[id]?.perspective == true ? camera.perspectiveProjection : camera.projection
+    public func projection(_ id: String) throws -> simd_float4x4 {
+        layers[id]?.perspective == true ? try camera.perspectiveProjection : camera.projection
     }
 
     /// Matrices and effect-pass values for one draw of `id`; `compositeOwnerID` places it in that layer's
     /// composite instead of the scene, also when the owner is a grandparent (140207b50.c:386-458).
     public func draw(_ id: String, kind: WPEParityLayerDrawKind, compositeOwnerID: String? = nil,
-                     parallax: SIMD2<Float>) -> WPEParityUniformDraw {
+                     parallax: SIMD2<Float>) throws -> WPEParityUniformDraw {
         var matrices = WPEParityUniformMatrices(model: model(id),
                                                 view: kind == .textClearAlpha ? camera.view : sceneView(id, parallax: parallax),
                                                 projection: camera.projection)
@@ -205,8 +205,8 @@ public struct WPEParityLayerTransformSet: Sendable {
         }
         // 1401e8aa0.c:998-1001: the perspective replaces whichever V and P are pushed, composite ones included.
         if kind != .textClearAlpha, layers[id]?.perspective == true {
-            (matrices.view, matrices.projection) = camera.pushPerspective(view: matrices.view,
-                                                                          projection: matrices.projection)
+            (matrices.view, matrices.projection) = try camera.pushPerspective(view: matrices.view,
+                                                                              projection: matrices.projection)
         }
         // 1401ebf60.c:201-333 branches on param_5, which every pass after the break carries.
         let effectPass = WPEParityUniformEffectPass(layerModel: matrices.model,

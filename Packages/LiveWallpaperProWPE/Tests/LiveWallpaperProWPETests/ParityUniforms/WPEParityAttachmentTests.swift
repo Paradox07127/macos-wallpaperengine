@@ -94,11 +94,11 @@ final class WPEParityAttachmentTests: XCTestCase {
 }
 
 final class WPEParityPerspectiveLayerTests: XCTestCase {
-    /// 1920×1080 canvas on a square target, alignment position 25: crop 630 left, 210 right.
+    /// Explicit 50° fixture on a square target, alignment position 25: crop 630 left, 210 right.
     private func camera(flip: Bool) -> WPEParityCamera {
         WPEParityCamera(eye: SIMD3(0, 0, 1), center: .zero, up: SIMD3(0, 1, 0), size: SIMD2(1920, 1080),
                         renderTargetSize: SIMD2(1000, 1000),
-                        alignment: WPEParityCameraAlignment(mode: 0, position: 25, flipHorizontal: flip))
+                        alignment: WPEParityCameraAlignment(mode: 0, position: 25, flipHorizontal: flip), perspectiveFOV: 50)
     }
 
     private func assertNear(_ lhs: SIMD4<Float>, _ rhs: SIMD4<Float>, accuracy: Float = 1e-3,
@@ -108,28 +108,28 @@ final class WPEParityPerspectiveLayerTests: XCTestCase {
 
     /// FUN_1401e5b60: V.x −= W·cx with the unmirrored crop centre, V.z = −(1/P.m5)/tan(fov/2), P perspective with
     /// its first column negated under fliph.
-    func testTopLevelPerspectiveUsesTheUnmirroredCropCentre() {
+    func testTopLevelPerspectiveUsesTheUnmirroredCropCentre() throws {
         let focal: Float = 2.1445069
         for flip in [false, true] {
             var flagged = WPEParityLayerTransform(id: "a", origin: SIMD3(960, 540, 0))
             flagged.perspective = true
             let layers = WPEParityLayerTransformSet(camera: camera(flip: flip), layers: [flagged])
-            let draw = layers.draw("a", kind: .layer, parallax: .zero).matrices
+            let draw = try layers.draw("a", kind: .layer, parallax: .zero).matrices
             assertNear(draw.view.columns.3, SIMD4(-1170, -540, -1158.0337, 1))
             assertNear(draw.projection.columns.0, SIMD4(flip ? -focal : focal, 0, 0, 0))
             assertNear(draw.projection.columns.1, SIMD4(0, focal, 0, 0))
             XCTAssertEqual(draw.projection.columns.2.w, -1)
-            assertNear(layers.view("a", parallax: .zero).columns.3, draw.view.columns.3)
+            try assertNear(layers.view("a", parallax: .zero).columns.3, draw.view.columns.3)
         }
     }
 
     /// A perspective child in its parent's composite pushes onto V = I and the composite ortho (1401e8aa0.c:998-1001).
-    func testPerspectiveChildInACompositeReplacesTheCompositeCamera() {
+    func testPerspectiveChildInACompositeReplacesTheCompositeCamera() throws {
         let parent = WPEParityLayerTransform(id: "p", origin: SIMD3(960, 540, 0), size: SIMD2(400, 200))
         var child = WPEParityLayerTransform(id: "c", parentID: "p", origin: SIMD3(10, 0, 0))
         child.perspective = true
         let layers = WPEParityLayerTransformSet(camera: camera(flip: false), layers: [parent, child])
-        let draw = layers.draw("c", kind: .layer, compositeOwnerID: "p", parallax: .zero).matrices
+        let draw = try layers.draw("c", kind: .layer, compositeOwnerID: "p", parallax: .zero).matrices
         assertNear(draw.view.columns.3, SIMD4(-1170, -540, -214.4507, 1))
         assertNear(draw.model.columns.3, SIMD4(10, 0, 0, 1))
         assertNear(draw.projection.columns.1, SIMD4(0, 2.1445069, 0, 0))

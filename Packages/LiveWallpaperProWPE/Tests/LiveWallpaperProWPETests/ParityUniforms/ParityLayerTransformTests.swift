@@ -13,14 +13,14 @@ final class ParityLayerTransformTests: XCTestCase {
         var layers = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100),
                                                 textSizes: ["1": SIMD2(40, 20)])
         XCTAssertEqual(layers.layers["1"]?.perspective, true)
-        XCTAssertEqual(layers.projection("1"), layers.camera.perspectiveProjection)
+        XCTAssertEqual(try layers.projection("1"), try layers.camera.perspectiveProjection)
         var state = WPEParitySceneState(document: document, hdr: false)
         XCTAssertFalse(layers.applyFields(state: state))
         state.setScriptField("perspective", of: "1", to: .vector(.zero), invalidating: .none)
         state.setScriptField("parallaxDepth", of: "1", to: .vector(SIMD4(0.5, 0.75, 0, 0)), invalidating: .none)
         XCTAssertTrue(layers.applyFields(state: state))
         XCTAssertEqual(layers.layers["1"]?.parallaxDepth, SIMD2(0.5, 0.75))
-        XCTAssertEqual(layers.projection("1"), layers.camera.projection)
+        XCTAssertEqual(try layers.projection("1"), layers.camera.projection)
         XCTAssertFalse(layers.applyFields(state: state), "unchanged state does not invalidate draw placement")
     }
 
@@ -62,7 +62,7 @@ final class ParityLayerTransformTests: XCTestCase {
             * simd_float4x4(diagonal: SIMD4(5.99649, 1.97301, 1, 1))
         assertEqual(layers.model("935"), expected, accuracy: 1e-5)
 
-        let draw = layers.draw("935", kind: .layer, parallax: canvas / 2)
+        let draw = try layers.draw("935", kind: .layer, parallax: canvas / 2)
         guard case let .matrix(packed)? = draw.matrices.values["g_ModelViewProjectionMatrix"] else {
             return XCTFail("no g_ModelViewProjectionMatrix")
         }
@@ -136,12 +136,12 @@ final class ParityLayerTransformTests: XCTestCase {
         XCTAssertFalse(simd_almost_equal_elements(layers.world("c"), child.local * parent.local, 1e-2))
     }
 
-    func testChildInParentCompositeUsesInverseParentModel() {
+    func testChildInParentCompositeUsesInverseParentModel() throws {
         let parent = layer("p", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, 0.4), size: SIMD2(400, 300),
                            alignment: .left)
         let child = layer("c", parent: "p", origin: SIMD3(30, 40, 0))
         let layers = set([parent, child])
-        let draw = layers.draw("c", kind: .layer, compositeOwnerID: "p", parallax: canvas / 2)
+        let draw = try layers.draw("c", kind: .layer, compositeOwnerID: "p", parallax: canvas / 2)
         assertEqual(draw.matrices.model, layers.model("p").inverse * layers.model("c"))
         assertEqual(draw.matrices.view, matrix_identity_float4x4)
         assertEqual(draw.matrices.projection, WPEParityUniformMatrices.ortho(halfWidth: 200, halfHeight: 150,
@@ -149,14 +149,14 @@ final class ParityLayerTransformTests: XCTestCase {
     }
 
     /// R10: a grandchild drawn through a parent without a composite is P_owner·inverse(W'_owner)·W'_grandchild.
-    func testGrandchildInGrandparentCompositeUsesOwnerMatrices() {
+    func testGrandchildInGrandparentCompositeUsesOwnerMatrices() throws {
         let owner = layer("g", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, 0.4), size: SIMD2(400, 300),
                           alignment: .left)
         let parent = layer("p", parent: "g", origin: SIMD3(-50, 20, 0), angles: SIMD3(0, 0, 0.2),
                            scale: SIMD3(1.5, 1.5, 1), size: SIMD2(100, 80))
         let child = layer("c", parent: "p", origin: SIMD3(30, 40, 0))
         let layers = set([owner, parent, child])
-        let draw = layers.draw("c", kind: .layer, compositeOwnerID: "g", parallax: canvas / 2)
+        let draw = try layers.draw("c", kind: .layer, compositeOwnerID: "g", parallax: canvas / 2)
         let expected = WPEParityUniformMatrices.ortho(halfWidth: 200, halfHeight: 150, depth: 1000)
             * layers.model("g").inverse * layers.model("c")
         assertEqual(draw.matrices.modelViewProjection, expected, accuracy: 1e-6)
@@ -167,10 +167,10 @@ final class ParityLayerTransformTests: XCTestCase {
     }
 
     /// R10 step 1, capture eid144: the albedo fills a 3756×1936 composite with M = V = I and a y-up ortho.
-    func testAlbedoIntoCompositeMatchesCaptureEid144() {
+    func testAlbedoIntoCompositeMatchesCaptureEid144() throws {
         let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(400, 200))])
         let kind = WPEParityLayerDrawKind.compositeFill(size: SIMD2(3756, 1936))
-        let draw = layers.draw("a", kind: kind, parallax: canvas / 2)
+        let draw = try layers.draw("a", kind: kind, parallax: canvas / 2)
         var expected = simd_float4x4(diagonal: SIMD4(2.0 / 3756, 2.0 / 1936, 1.0 / 2000, 1))
         expected.columns.3 = SIMD4(-1, -1, 0.5, 1)
         assertEqual(draw.matrices.modelViewProjection, expected, accuracy: 1e-7)
@@ -183,14 +183,14 @@ final class ParityLayerTransformTests: XCTestCase {
         XCTAssertEqual((expected * SIMD4(quad.vertices[0].position, 1)).y, 1, accuracy: 1e-6)
     }
 
-    func testLayerAndEffectPassDraws() {
+    func testLayerAndEffectPassDraws() throws {
         let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(400, 200))])
-        let final = layers.draw("a", kind: .layer, parallax: canvas / 2)
+        let final = try layers.draw("a", kind: .layer, parallax: canvas / 2)
         assertEqual(final.matrices.model, layers.model("a"))
         assertEqual(final.matrices.projection, layers.camera.projection)
         XCTAssertEqual(final.effectPass?.isLastPass, true)
         XCTAssertEqual(final.effectPass?.size, SIMD2(400, 200))
-        let pass = layers.draw("a", kind: .effectPass, parallax: canvas / 2)
+        let pass = try layers.draw("a", kind: .effectPass, parallax: canvas / 2)
         assertEqual(pass.matrices.modelViewProjection, WPEParityUniformMatrices.effectPass.modelViewProjection)
         XCTAssertEqual(pass.effectPass?.isLastPass, false)
         assertEqual(pass.effectPass?.layerModelViewProjection ?? .init(), final.matrices.modelViewProjection)
@@ -198,7 +198,7 @@ final class ParityLayerTransformTests: XCTestCase {
         XCTAssertEqual(layers.quad("a", kind: .effectPass), WPEParityLayerQuad.effectPass)
     }
 
-    func testParallaxUsesTopmostAncestor() {
+    func testParallaxUsesTopmostAncestor() throws {
         var root = layer("r", origin: SIMD3(1000, 500, 0))
         root.parallaxDepth = SIMD2(1, 1)
         var child = layer("c", parent: "r", origin: SIMD3(50, 0, 0))
@@ -206,15 +206,15 @@ final class ParityLayerTransformTests: XCTestCase {
         var camera = set([]).camera
         camera.parallaxAmount = 0.5
         let layers = WPEParityLayerTransformSet(camera: camera, layers: [root, child])
-        let view = layers.view("c", parallax: SIMD2(1920, 1080))
+        let view = try layers.view("c", parallax: SIMD2(1920, 1080))
         XCTAssertEqual(view * SIMD4<Float>(0, 0, 0, 1), SIMD4(-460, -290, 0, 1))
     }
 
-    func testPerspectiveLayerReplacesProjectionAndView() {
+    func testPerspectiveLayerReplacesProjectionAndView() throws {
         var flagged = layer("a")
         flagged.perspective = true
         let layers = set([flagged])
-        assertEqual(layers.projection("a"), layers.camera.perspectiveProjection)
-        assertEqual(layers.view("a", parallax: .zero), layers.camera.perspectiveView)
+        try assertEqual(layers.projection("a"), layers.camera.perspectiveProjection)
+        try assertEqual(layers.view("a", parallax: .zero), layers.camera.perspectiveView)
     }
 }

@@ -76,7 +76,7 @@ final class ParityCameraTests: XCTestCase {
         let orthographic = camera(renderTarget: canvas).applyingObject(world: transforms.world("1"), fov: 60,
                                                                        zoom: 2, generalZoom: 1)
         XCTAssertNil(orthographic.scenePerspective)
-        XCTAssertEqual(orthographic.perspectiveFOV, 50, "object FOV does not rewrite layer override FOV")
+        XCTAssertEqual(orthographic.perspectiveFOV, 95, "object FOV does not rewrite layer override FOV")
     }
 
     func testCursorWorldUsesViewportHalfDepthAndOnlyDropsOrthographicZ() {
@@ -211,20 +211,37 @@ final class ParityCameraTests: XCTestCase {
         XCTAssertEqual(view * SIMD4<Float>(0, 0, 0, 1), SIMD4(-460, -145, 0, 1))
     }
 
-    func testPerspectiveFillsTheOrthoCanvasAtDistance() {
-        var camera = camera(renderTarget: canvas)
-        camera.perspectiveFOV = 60
-        let distance = camera.perspectiveDistance
-        XCTAssertEqual(distance, 1080 / tan(Float.pi / 6), accuracy: 1e-2)
+    func testPerspectiveFillsTheOrthoCanvasAtDistance() throws {
+        let camera = camera(renderTarget: canvas)
+        XCTAssertEqual(camera.perspectiveFOV, 95)
+        let distance = try camera.perspectiveDistance
+        // Original CPU 16 paired calls: input 3f543b67 -> Tan return 3f8bafff. This is not a native D golden.
+        let nativeTangent = Float(bitPattern: 0x3F8B_AFFF)
+        XCTAssertEqual(distance * nativeTangent * camera.projection.columns.1.y, 1, accuracy: 1e-6)
+        let projection = try camera.perspectiveProjection
+        let view = try camera.perspectiveView
         let clip = { (point: SIMD4<Float>) -> SIMD3<Float> in
-            let value = camera.perspectiveProjection * camera.perspectiveView * point
+            let value = projection * view * point
             return SIMD3(value.x, value.y, value.z) / value.w
         }
         XCTAssertEqual(clip(SIMD4(1920, 1080, 0, 1)).x, 0, accuracy: 1e-5)
         XCTAssertEqual(clip(SIMD4(1920, 2160, 0, 1)).y, 1, accuracy: 1e-4)
         XCTAssertEqual(clip(SIMD4(3840, 1080, 0, 1)).x, 1, accuracy: 1e-4)
-        XCTAssertEqual(camera.perspectiveProjection.columns.2.w, -1)
-        XCTAssertEqual(camera.perspectiveView.columns.3.z, -distance)
+        XCTAssertEqual(projection.columns.2.w, -1)
+        XCTAssertEqual(view.columns.3.z, -distance)
+        var unsupported = camera
+        unsupported.perspectiveFOV = .infinity
+        XCTAssertThrowsError(try unsupported.perspectiveView) {
+            XCTAssertEqual($0 as? WPEParityCamera.PerspectiveMathError,
+                           .unsupportedFieldOfView(inputBits: Float.infinity.bitPattern))
+        }
+        unsupported.scenePerspective = .init(fov: 50)
+        XCTAssertNoThrow(try unsupported.perspectiveDistance, "perspective derives its angle without consuming O144")
+        unsupported.scenePerspective?.fov = .nan
+        XCTAssertThrowsError(try unsupported.perspectiveProjection) {
+            XCTAssertEqual($0 as? WPEParityCamera.PerspectiveMathError,
+                           .unsupportedFieldOfView(inputBits: Float.nan.bitPattern))
+        }
     }
 
     /// 3509243656 has `"orthogonalprojection": null`: lookAt V and FUN_14009a360's reversed-depth perspective.

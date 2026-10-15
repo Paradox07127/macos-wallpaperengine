@@ -1,5 +1,6 @@
-/// Experimental translation of the selector-3 perspective helpers. No camera consumer uses it yet.
-/// Output qualification awaits original CPU pairs; floating-point status and exceptional paths are open.
+/// Selector-3 finite perspective helpers translated from the original instructions. Four distinct input/return
+/// pairs (including ortho95 reduction) match original CPU observations and arm64 -O/WMO bits. The full finite
+/// domain, floating-point environment/status and exceptional paths remain unqualified.
 enum WPEParityPerspectiveMath {
     /// 14041b0d0: finite paths before the unqualified 1404720e0 argument-reduction table.
     static func tangent(_ input: Float) -> Float? {

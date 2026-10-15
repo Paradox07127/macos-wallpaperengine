@@ -5,17 +5,17 @@ public enum WPEParityParticleMatrices {
     /// `modelMatrix` is the walker's final D, including its native world/composite resets.
     public static func draw(_ transforms: WPEParityLayerTransformSet, objectID: String, modelMatrix: simd_float4x4,
                             perspective: Bool, compositeOwnerID: String?,
-                            parallax: SIMD2<Float>) -> WPEParityUniformMatrices {
-        var matrices = WPEParityUniformMatrices(model: modelMatrix, view: transforms.view(objectID, parallax: parallax),
-                                                projection: transforms.projection(objectID))
+                            parallax: SIMD2<Float>) throws -> WPEParityUniformMatrices {
+        var matrices = try WPEParityUniformMatrices(model: modelMatrix, view: transforms.view(objectID, parallax: parallax),
+                                                    projection: transforms.projection(objectID))
         if let ownerID = compositeOwnerID, let owner = transforms.layers[ownerID] {
             matrices.view = matrix_identity_float4x4
             matrices.projection = WPEParityUniformMatrices.ortho(halfWidth: owner.size.x / 2,
                                                                  halfHeight: owner.size.y / 2, depth: 1000)
         }
         if perspective {
-            (matrices.view, matrices.projection) = transforms.camera.pushPerspective(view: matrices.view,
-                                                                                     projection: matrices.projection)
+            (matrices.view, matrices.projection) = try transforms.camera.pushPerspective(view: matrices.view,
+                                                                                         projection: matrices.projection)
         }
         return matrices
     }
