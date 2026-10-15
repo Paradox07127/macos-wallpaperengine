@@ -43,7 +43,7 @@ final class ParitySoundConsumerTests: XCTestCase {
           if (aliasTimerQueued && !aliasTimerObserved) throw new Error('sound alias timer missing');
           if (!aliasTimerQueued) {
             aliasTimerQueued = true;
-            setTimeout(function () {
+            engine.setTimeout(function () {
               if (savedSoundGlobal !== null || thisObject === null || thisObject !== thisLayer)
                 throw new Error('sound timer aliases');
               aliasTimerObserved = true;
