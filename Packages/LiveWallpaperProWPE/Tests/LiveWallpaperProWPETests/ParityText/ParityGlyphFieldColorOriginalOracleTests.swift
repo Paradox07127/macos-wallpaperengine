@@ -90,6 +90,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         XCTAssertEqual(source.width, oracle.sourceWidth); XCTAssertEqual(source.rows, oracle.sourceRows)
         XCTAssertEqual(source.pixelMode, .bgra)
         try assertBytes(Data(source.pixels), oracle.data("bgra-packed.bin"), label: "existing FontFace original BGRA")
+        _ = try XCTUnwrap(face.layoutGlyph(oracle.gid, mode: .distanceField))
         let pair = try XCTUnwrap(face.colorGlyphField(oracle.gid, companionScale: oracle.scale, captureStages: true))
         let field = pair.primary
         XCTAssertEqual(pair.companionScale, oracle.scale)
@@ -108,7 +109,9 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                            companion: pair.companion.pixels, sourceBGRA: Data(source.pixels), oracle: oracle)
         try comparePlanner(oracle)
         XCTAssertNil(face.colorGlyphField(oracle.gid, companionScale: 3), "unqualified scales must not silently select a group")
+        let renders = face.renders
         XCTAssertNotNil(face.rasterize(oracle.gid), "existing serial face remains usable")
+        XCTAssertEqual(face.renders, renders + 1, "a successful pair consumes layout's pending BGRA; bitmap reuse renders anew")
     }
 
     private func comparePlanner(_ oracle: Oracle) throws {

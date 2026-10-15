@@ -199,6 +199,8 @@ public final class WPEParityFontFace {
         guard companionScale == 1 || companionScale == 2,
               let companion = WPEParityGlyphFieldProducer.companion(face: face, field: primary,
                                                                     scale: companionScale) else { return nil }
+        // Both outputs now own their pixels. Consume layout's temporary BGRA handover without reloading FT.
+        unpackedBitmaps.removeValue(forKey: glyph)
         return WPEParityColorGlyphField(primary: primary, companion: companion, companionScale: companionScale)
     }
 
@@ -227,8 +229,8 @@ public final class WPEParityFontFace {
             // Metadata must be qualified for NO_BITMAP, not reused from a rendered bitmap slot. Fields are
             // generated only if the shared atlas lacks the entry; no distance bitmap cache is added here.
             let prepared: LayoutGlyph? = if isColorFace {
-                // Preserve real classification so the planner can reject the entire unpaired COLOR update
-                // before releasing its previous references. Do not silently drop it into the mono list.
+                // Preserve actual classification and bearings for the planner's paired COLOR consumer.
+                // Do not silently drop a color glyph into the mono list.
                 layoutGlyph(glyph, mode: .bitmap)
             } else {
                 glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: false, quadPadding: 0) }
