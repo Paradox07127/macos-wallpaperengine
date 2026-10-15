@@ -5,6 +5,9 @@ enum WPEParityScriptPrelude {
     (function (host) {
     'use strict';
     const global = globalThis;
+    const assetIndexOf = Function.prototype.call.bind(String.prototype.indexOf);
+    const assetSlice = Function.prototype.call.bind(String.prototype.slice);
+    const assetWellFormed = Function.prototype.call.bind(String.prototype.toWellFormed);
     let F = host.floats, I = host.integers, D = host.dirtyFlags, L = host.dirty;
     const G = host.globals, S = [];
     const TO_RADIANS = Math.fround(0.017453292), TO_DEGREES = Math.fround(57.29578);
@@ -250,7 +253,9 @@ enum WPEParityScriptPrelude {
       registerAsset(path, flag) {
         if (current) throw new SyntaxError('registerAsset can only be called from global scope.');
         if (typeof path !== 'string' || compilingBinding < 0) return undefined;
-        return host.registerAsset(compilingBinding, path, typeof flag === 'boolean' ? flag : false) ? path : undefined;
+        const nul = assetIndexOf(path, '\u0000');
+        const canonical = assetWellFormed(nul < 0 ? path : assetSlice(path, 0, nul));
+        return host.registerAsset(compilingBinding, canonical, typeof flag === 'boolean' ? flag : false) ? canonical : undefined;
       },
       registerAudioBuffers(resolution) {
         if (!argument(resolution, 8)) return null;

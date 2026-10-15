@@ -3,6 +3,72 @@ import Foundation
 import XCTest
 
 final class ParityRegisteredAssetsTests: XCTestCase {
+    func testRegistrationCanonicalizesNativePathBeforeDuplicateAndPhaseMutation() async throws {
+        let script = #"""
+        const plain = 'materials/prefix.json';
+        if (engine.registerAsset(plain + '\u0000suffix', true) !== plain) throw Error('NUL return');
+        if (engine.registerAsset(plain + '\u0000other', false) !== undefined) throw Error('NUL duplicate');
+        if (engine.registerAsset(plain, false) !== undefined) throw Error('plain duplicate');
+        for (const path of ['materials/caf\u00e9.json', 'materials/cafe\u0301.json', 'materials/\ud83d\ude00.json']) {
+          if (engine.registerAsset(path, true) !== path) throw Error('Unicode identity');
+        }
+        const malformed = 'materials/\ud800-high-\udc00.json\u0000\ud800';
+        const repaired = 'materials/\ufffd-high-\ufffd.json';
+        if (engine.registerAsset(malformed, true) !== repaired) throw Error('surrogate replacement');
+        if (engine.registerAsset(repaired, false) !== undefined) throw Error('repaired duplicate');
+        export function init() {
+          try {
+            engine.registerAsset({toString(){throw Error('coercion');}}, true);
+          } catch (e) {
+            return e instanceof SyntaxError && e.message === 'registerAsset can only be called from global scope.' ? 7 : 99;
+          }
+          return 99;
+        }
+        """#
+        let source: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [["id": 1, "image": "models/a.json", "alpha": ["value": 1, "script": script]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let paths = ["materials/prefix.json", "materials/caf\u{e9}.json", "materials/cafe\u{301}.json",
+                     "materials/\u{1f600}.json", "materials/\u{fffd}-high-\u{fffd}.json"]
+        let pathBytes = paths.map { Data($0.utf8) }
+        let material = Data(#"{"passes":[{"shader":"native-path-consumer"}]}"#.utf8)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            if path == "scripts/jsclasses/baseclasses.js" {
+                return baseClasses
+            }
+            return pathBytes.contains(Data(path.utf8)) ? material : nil
+        }])
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64)
+        ))
+        let binding = try XCTUnwrap(engine.bindings.first)
+        XCTAssertEqual(binding.registeredAssets.map { Data($0.path.utf8) }, pathBytes)
+        XCTAssertTrue(binding.registeredAssets.allSatisfy(\.flag), "canonical duplicates preserve the first true flag")
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        var consumed: [Data] = []
+        try await engine.prepareRegisteredAssets { _, declarations in
+            for declaration in declarations {
+                let json = try XCTUnwrap(assets.json(declaration.path), "the actual asset consumer must read the canonical path")
+                XCTAssertEqual(json["passes"]?[0]?["shader"], .string("native-path-consumer"))
+                consumed.append(Data(declaration.path.utf8))
+            }
+        }
+        XCTAssertEqual(consumed, pathBytes)
+        XCTAssertNil(engine.start(state: &state))
+        XCTAssertEqual(state.object("1")?.alpha, 7)
+        XCTAssertEqual(engine.bindings[0].registeredAssets.map { Data($0.path.utf8) }, pathBytes,
+                       "non-global rejection precedes any declaration mutation")
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     /// This guards binding ownership and the load/init barrier with shipped JS. Shader/GPU preparation is the
     /// product owner's separate gate; reading a material JSON here does not qualify a rendered model.
     func testGlobalRegistrationBelongsToEachBindingAndInitRequiresSuccessfulPreparation() async throws {
