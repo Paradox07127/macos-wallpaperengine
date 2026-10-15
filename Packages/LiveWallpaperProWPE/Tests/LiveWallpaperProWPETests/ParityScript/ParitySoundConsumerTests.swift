@@ -55,7 +55,7 @@ final class ParitySoundConsumerTests: XCTestCase {
             return command == .isPlaying
         })
         var soundGeneration = 0
-        engine.withSoundConsumers(volume: { writes.append(("outer", $0, $1)) }, command: { id, command, fields in
+        try engine.withSoundConsumers(volume: { writes.append(("outer", $0, $1)) }, command: { id, command, fields in
             commands.append((id, command, fields))
             return command == .isPlaying
         }) {
