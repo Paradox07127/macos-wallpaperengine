@@ -274,7 +274,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                       scripts: Bool = true, bloom: Bool = true) throws -> WPESceneDocument {
             var general: [String: Any] = [
                 "orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0.5 0.5 0.5",
-                "clearenabled": true, "bloom": bloom, "hdr": hdr, "camerafade": false,
+                "clearenabled": true, "bloom": ["value": true, "user": "toggle"], "hdr": hdr, "camerafade": false,
                 "bloomstrength": 1, "bloomthreshold": 0, "bloomhdrstrength": 2,
                 "bloomhdrthreshold": 0, "bloomhdrfeather": 0.1, "bloomhdrscatter": 1.25,
                 "bloomhdriterations": iterations, "bloomtint": tint,
@@ -291,10 +291,13 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 """]
                 general["bloomtint"] = ["value": tint, "script": "export function update(value) { return value; }"]
             }
-            return try parse([
+            let source: [String: Any] = [
                 "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general,
                 "objects": [["id": 1, "camera": "capacity witness", "origin": "0 0 0", "angles": "0 0 0", "alpha": alpha]],
-            ])
+            ]
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
+                                                    userValues: ["toggle": .bool(bloom)],
+                                                    makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
         }
         func host(drive: Bool, iterations: Int = 2, blue: Bool = false) -> String {
             "{\"drive\":{\"type\":\"bool\",\"value\":\(drive)},\"iterations\":{\"type\":\"slider\",\"value\":\(iterations)},\"red\":{\"type\":\"slider\",\"value\":\(blue ? 0 : 1)},\"blue\":{\"type\":\"slider\",\"value\":\(blue ? 1 : 0)}}"
@@ -388,6 +391,9 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let cold = try document(hdr: true, iterations: 1e100, tint: "0.25 0.5 0.75", scripts: false, bloom: enabled)
             let plan = try WPEParityFramePlan(document: cold, assets: assets,
                                               settings: .init(bloom: quality, hdrPostProcessing: true), width: 32, height: 32)
+            XCTAssertTrue(plan.post.hdrEnabled, "Authored raw bloom controls HDR allocation independently of the resolved live Bool")
+            XCTAssertEqual(plan.post.sceneBloomEnabled, enabled)
+            XCTAssertEqual(plan.post.bloomEnabled, enabled && quality)
             XCTAssertEqual(plan.post.bloomSettings.hdrIterations, Int(Int32.min))
             let renderer = try await makeRenderer(plan, device: device, queue: queue)
             XCTAssertEqual(renderer.state.scriptField("bloomhdriterations", of: ""), .integer(.min))

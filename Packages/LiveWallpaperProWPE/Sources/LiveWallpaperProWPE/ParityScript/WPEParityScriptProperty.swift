@@ -154,7 +154,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     public static func bloomTintValue(fromJSON value: WPESceneJSONValue?) -> SIMD3<Float>? {
         switch bloomSeed(value) {
         case let .number(number)?: SIMD3(repeating: Float(number))
-        case let .string(text)?: WPEParityCameraPath.vector(.string(text))
+        case let .string(text)?: WPEParityCameraPaths.vector(.string(text))
         default: nil
         }
     }
