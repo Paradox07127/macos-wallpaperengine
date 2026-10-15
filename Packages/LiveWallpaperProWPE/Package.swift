@@ -5,10 +5,10 @@ let package = Package(
     name: "LiveWallpaperProWPE",
     platforms: [.macOS("14.6")],
     products: [
-        .library(name: "LiveWallpaperProWPE", targets: ["LiveWallpaperProWPE"])
+        .library(name: "LiveWallpaperProWPE", targets: ["LiveWallpaperProWPE"]),
     ],
     dependencies: [
-        .package(name: "LiveWallpaperCore", path: "../LiveWallpaperCore")
+        .package(name: "LiveWallpaperCore", path: "../LiveWallpaperCore"),
     ],
     targets: [
         .target(
@@ -21,7 +21,7 @@ let package = Package(
             ],
             path: "Sources/LiveWallpaperProWPE",
             swiftSettings: [
-                .swiftLanguageMode(.v6)
+                .swiftLanguageMode(.v6),
             ]
         ),
         // FreeType 2.14.3, default ftoption.h + HarfBuzz autofit; the default module set of docs/INSTALL.ANY.
@@ -110,7 +110,7 @@ let package = Package(
             name: "LiveWallpaperProWPETests",
             dependencies: ["LiveWallpaperProWPE", "CHarfBuzz", "CFreeType", "CWPESDF"],
             path: "Tests/LiveWallpaperProWPETests"
-        )
+        ),
     ],
     cxxLanguageStandard: .cxx17
 )

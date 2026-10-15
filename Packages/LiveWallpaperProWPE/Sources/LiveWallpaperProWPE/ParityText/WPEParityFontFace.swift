@@ -78,7 +78,9 @@ public final class WPEParityFontFace {
     /// FT_LOAD_RENDER calls so far.
     private(set) var renders = 0
 
-    var isColorFace: Bool { face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0 }
+    var isColorFace: Bool {
+        face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0
+    }
 
     /// Opens face `index` from `bytes`, or from `path` when `bytes` is nil.
     static func open(_ library: WPEParityFreeTypeLibrary, bytes: WPEParityFontBytes?, path: String?,
@@ -204,13 +206,12 @@ public final class WPEParityFontFace {
         if mode == .distanceField {
             // Metadata must be qualified for NO_BITMAP, not reused from a rendered bitmap slot. Fields are
             // generated only if the shared atlas lacks the entry; no distance bitmap cache is added here.
-            let prepared: LayoutGlyph?
-            if isColorFace {
+            let prepared: LayoutGlyph? = if isColorFace {
                 // Preserve real classification so the planner can reject the entire unpaired COLOR update
                 // before releasing its previous references. Do not silently drop it into the mono list.
-                prepared = layoutGlyph(glyph, mode: .bitmap)
+                layoutGlyph(glyph, mode: .bitmap)
             } else {
-                prepared = glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: false, quadPadding: 0) }
+                glyphBox(glyph).map { LayoutGlyph(box: $0, isColor: false, quadPadding: 0) }
             }
             let entry = prepared.map {
                 LayoutGlyph(box: $0.box, isColor: $0.isColor,

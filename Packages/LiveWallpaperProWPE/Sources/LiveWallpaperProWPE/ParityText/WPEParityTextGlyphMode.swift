@@ -44,7 +44,7 @@ public struct WPEParityTextDrawParameters: Hashable, Sendable {
         let offset = object.dropShadow ? object.dropShadowOffset : .zero
         let scale = (Float(32) / WPEParityFontLibrary.clampedPointSize(pointSize)) * 0.24
         // Original 14049285c is 0x40a33334, one ULP above the nearest Float literal 5.1.
-        let outlineLimit = Float(bitPattern: 0x40a33334)
+        let outlineLimit = Float(bitPattern: 0x40A3_3334)
         var outlineWidth = min(outline * scale, outlineLimit)
         let blurWidth = min(blur * scale, 6)
         if outlineWidth + blurWidth > outlineLimit {
@@ -55,11 +55,17 @@ public struct WPEParityTextDrawParameters: Hashable, Sendable {
         renderVar2 = SIMD4(object.dropShadowColor, min(offset.y * scale, 6))
         renderVar3X = object.dropShadowOpacity
         var combos: [String: Int] = [:]
-        if outline >= 1 { combos["OUTLINE_ENABLED"] = 1 }
-        if blur > 0 { combos["BLUR_ENABLED"] = 1 }
+        if outline >= 1 {
+            combos["OUTLINE_ENABLED"] = 1
+        }
+        if blur > 0 {
+            combos["BLUR_ENABLED"] = 1
+        }
         // Effective enabled shadow radius is at least .01, so the native offset-length alternative cannot
         // change the result for the finite authored fields admitted here. Disabled shadow offsets are zero.
-        if shadow > 0 { combos["DROP_SHADOW_ENABLED"] = 1 }
+        if shadow > 0 {
+            combos["DROP_SHADOW_ENABLED"] = 1
+        }
         self.combos = combos
     }
 }

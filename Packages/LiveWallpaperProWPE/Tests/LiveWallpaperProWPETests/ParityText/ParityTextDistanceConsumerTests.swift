@@ -109,7 +109,7 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertEqual(parameters.combos, ["OUTLINE_ENABLED": 1, "BLUR_ENABLED": 1, "DROP_SHADOW_ENABLED": 1])
         var capped = object; capped.blur = false; capped.outlineThickness = 100
         XCTAssertEqual(try XCTUnwrap(WPEParityTextDrawParameters(object: capped, pointSize: 32)).renderVar0.y.bitPattern,
-                       0x40a33334, "original rodata outline cap, not nearest Float literal5.1")
+                       0x40A3_3334, "original rodata outline cap, not nearest Float literal5.1")
         XCTAssertEqual(WPEParityTextGlyphMode.distanceField.materialPath(atlas: .mono, depth: true),
                        "materials/fonts/basefont_msdf_depth.json")
         XCTAssertEqual(WPEParityTextGlyphMode.distanceField.materialPath(atlas: .color, depth: false),
@@ -126,17 +126,19 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
 
     private func text() -> WPEParityTextObject {
         WPEParityTextObject(json: .object(["id": .string("T"), "text": .string("H"),
-            "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))
+                                           "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))
     }
 
     private func originalOutline() throws -> URL {
         try oracle(environment: "LOOMSCREEN_WPE_GLYPH_ORACLE_DIR",
                    manifestSHA: "ac47bffbf998d8ac6fb3bec69f2564b6f7578bb13509ffc575a759746a50da1f")
     }
+
     private func originalColor() throws -> URL {
         try oracle(environment: "LOOMSCREEN_WPE_COLOR_ORACLE_DIR",
                    manifestSHA: "3865f6694de4f06de499106f12eb614bea3bfc9562eeebcb0b9ade024cb451fc")
     }
+
     private func oracle(environment: String, manifestSHA: String) throws -> URL {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment[environment], "Pinned original oracle is required; no skip")
         let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -152,5 +154,8 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         }
         return root
     }
-    private func sha(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
+    private func sha(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
 }

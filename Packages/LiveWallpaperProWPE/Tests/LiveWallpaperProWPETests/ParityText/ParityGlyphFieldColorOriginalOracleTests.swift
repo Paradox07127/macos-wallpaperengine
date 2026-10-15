@@ -1,6 +1,6 @@
 import CFreeType
-import CWPESDF
 import CryptoKit
+import CWPESDF
 import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
@@ -13,7 +13,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         let source = try oracle.data("bgra-span.bin")
         let pitch = Int32(bitPattern: colorU32(header, 0x30))
         let rows = Int32(bitPattern: colorU32(header, 0x28))
-        let width = Int32(bitPattern: colorU32(header, 0x2c))
+        let width = Int32(bitPattern: colorU32(header, 0x2C))
         let left = Int32(bitPattern: colorU32(header, 0x20))
         let top = Int32(bitPattern: colorU32(header, 0x24))
         XCTAssertEqual(width, 32); XCTAssertEqual(rows, 30); XCTAssertEqual(pitch, 128)
@@ -25,12 +25,12 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         var rgba = [UInt8](repeating: 17, count: 56 * 54 * 4)
         let status = source.withUnsafeBytes { bytes in
             var bitmap = WPEFieldBGRA(bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                capacity: bytes.count, row0_offset: pitch < 0 ? Int(rows - 1) * -Int(pitch) : 0,
-                width: width, rows: rows, pitch: pitch, left: left, top: top)
+                                      capacity: bytes.count, row0_offset: pitch < 0 ? Int(rows - 1) * -Int(pitch) : 0,
+                                      width: width, rows: rows, pitch: pitch, left: left, top: top)
             return rgba.withUnsafeMutableBufferPointer { pixels in
                 post.withUnsafeMutableBufferPointer { after in
                     var output = WPEFieldOutput(width: 56, height: 54, rgba: pixels.baseAddress, rgba_capacity: pixels.count,
-                        before_correction: nil, before_capacity: 0, after_correction: after.baseAddress, after_capacity: after.count)
+                                                before_correction: nil, before_capacity: 0, after_correction: after.baseAddress, after_capacity: after.count)
                     return wpe_field_color(&bitmap, &transform, &output)
                 }
             }
@@ -45,7 +45,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         let face = try XCTUnwrap(library.chain(fontPath: "TwemojiMozilla.ttf", pointSize: 7.68).faces.first)
         let source = try XCTUnwrap(face.rasterize(166))
         XCTAssertEqual(source.width, 32); XCTAssertEqual(source.rows, 30); XCTAssertEqual(source.pixelMode, .bgra)
-        assertBytes(Data(source.pixels), try oracle.data("bgra-packed.bin"), label: "existing FontFace original BGRA")
+        try assertBytes(Data(source.pixels), oracle.data("bgra-packed.bin"), label: "existing FontFace original BGRA")
         let field = try XCTUnwrap(face.glyphField(166, captureStages: true))
         XCTAssertEqual(face.pointSize, 7.68)
         XCTAssertEqual(field.yPpem, 32); XCTAssertTrue(field.isColor)
@@ -61,7 +61,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
     }
 
     private func compareAndDump(label: String, post: [Float], rgba: [UInt8], sourceBGRA: Data, oracle: Oracle) throws {
-        let bits = post.map { $0.bitPattern.littleEndian }
+        let bits = post.map(\.bitPattern.littleEndian)
         let postBytes = bits.withUnsafeBytes { Data($0) }, rgbaBytes = Data(rgba)
         if let base = ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_COLOR_CANDIDATE_OUT"] {
             let directory = URL(fileURLWithPath: base).appendingPathComponent(label, isDirectory: true)
@@ -70,8 +70,8 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                 try data.write(to: directory.appendingPathComponent(name), options: .withoutOverwriting)
             }
         }
-        assertBytes(postBytes, try oracle.data("colorpost.bin"), label: label + " original float4")
-        assertBytes(rgbaBytes, try oracle.data("rgba-cell.bin"), label: label + " original RGBA cell")
+        try assertBytes(postBytes, oracle.data("colorpost.bin"), label: label + " original float4")
+        try assertBytes(rgbaBytes, oracle.data("rgba-cell.bin"), label: label + " original RGBA cell")
     }
 
     private func assertBytes(_ actual: Data, _ expected: Data, label: String) {
@@ -107,18 +107,28 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
             }
             files = pins
         }
+
         func data(_ name: String) throws -> Data {
             let bytes = try Data(contentsOf: root.appendingPathComponent(name))
             guard let pin = files[name], Self.sha(bytes) == pin else { throw NSError(domain: "OriginalColorGlyphOracle", code: 5) }
             return bytes
         }
+
         func transform() throws -> [Double] {
             let bytes = try data("numeric-transform.bin")
             return stride(from: 0, to: bytes.count, by: 8).map { Double(bitPattern: colorU64(bytes, $0)) }
         }
-        private static func sha(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
+        private static func sha(_ data: Data) -> String {
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
     }
 }
 
-private func colorU32(_ data: Data, _ at: Int) -> UInt32 { (0 ..< 4).reduce(0) { $0 | UInt32(data[at + $1]) << ($1 * 8) } }
-private func colorU64(_ data: Data, _ at: Int) -> UInt64 { (0 ..< 8).reduce(0) { $0 | UInt64(data[at + $1]) << ($1 * 8) } }
+private func colorU32(_ data: Data, _ at: Int) -> UInt32 {
+    (0 ..< 4).reduce(0) { $0 | UInt32(data[at + $1]) << ($1 * 8) }
+}
+
+private func colorU64(_ data: Data, _ at: Int) -> UInt64 {
+    (0 ..< 8).reduce(0) { $0 | UInt64(data[at + $1]) << ($1 * 8) }
+}

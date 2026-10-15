@@ -17,6 +17,7 @@ public final class WPEParityTextPlanner {
         var held: [String: HeldGlyphs] = [:]
         var resets: [String: Int] = [:]
     }
+
     fileprivate enum Disposition: Equatable { case pending, accepted, discarded }
     private var state = State()
     private var revision: UInt64 = 0
@@ -46,7 +47,10 @@ public final class WPEParityTextPlanner {
         get { state.atlases }
         set { state.atlases = newValue; revision &+= 1 }
     }
-    public var resets: [String: Int] { state.resets }
+
+    public var resets: [String: Int] {
+        state.resets
+    }
 
     public init(assets: WPEParityProgramAssets) {
         fonts = WPEParityFontLibrary(assets: assets)
@@ -165,7 +169,7 @@ public final class WPEParityTextPlanner {
         guard var mesh = layout.mesh else { return (layout, key) }
         let chain = fonts.chain(fontPath: object.font, pointSize: pointSize)
         var instance = state.atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
-                                                                 glyphMode: glyphMode)
+                                                                         glyphMode: glyphMode)
         precondition(instance.glyphMode == glyphMode)
         let mono = Self.pack(mesh.mono, .mono, chain: chain, into: &instance)
         let color = Self.pack(mesh.color, .color, chain: chain, into: &instance)
@@ -188,11 +192,11 @@ public final class WPEParityTextPlanner {
 
     private static func hold(objectID: String, mesh: WPEParityTextMesh?, atlasKey: String, state: inout State) {
         state.held[objectID] = HeldGlyphs(atlas: atlasKey, mono: mesh?.mono.glyphKeys ?? [],
-                                         color: mesh?.color.glyphKeys ?? [],
-                                         monoReset: mesh?.mono.atlasResetGeneration
-                                             ?? state.atlases[atlasKey]?.mono.resetGeneration ?? 0,
-                                         colorReset: mesh?.color.atlasResetGeneration
-                                             ?? state.atlases[atlasKey]?.color?.resetGeneration)
+                                          color: mesh?.color.glyphKeys ?? [],
+                                          monoReset: mesh?.mono.atlasResetGeneration
+                                              ?? state.atlases[atlasKey]?.mono.resetGeneration ?? 0,
+                                          colorReset: mesh?.color.atlasResetGeneration
+                                              ?? state.atlases[atlasKey]?.color?.resetGeneration)
     }
 
     private static func release(objectID: String, state: inout State) {

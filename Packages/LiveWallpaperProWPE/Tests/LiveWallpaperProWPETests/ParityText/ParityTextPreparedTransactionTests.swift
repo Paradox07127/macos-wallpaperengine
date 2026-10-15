@@ -6,14 +6,14 @@ import XCTest
 /// Same-owner value transactions. Synthetic atlas fill tests isolation, never an original pixel oracle.
 final class ParityTextPreparedTransactionTests: XCTestCase {
     func testDiscardedPlannerResetKeepsActivePixelsReferencesAndCounters() throws {
-        let assets = try self.assets(), planner = WPEParityTextPlanner(assets: assets)
+        let assets = try assets(), planner = WPEParityTextPlanner(assets: assets)
         let key = WPEParityGlyphAtlasInstance.key(fontPath: "NotoSans-Regular.ttf", pointSize: 8)
-        let protected: UInt32 = 0x00fffffe
+        let protected: UInt32 = 0x00FF_FFFE
         var instance = WPEParityGlyphAtlasInstance(fontPath: "NotoSans-Regular.ttf", pointSize: 8)
         // Deterministically full4096 R8, one protected cell. A real H insertion must take the existing reset path.
         _ = try XCTUnwrap(instance.mono.insert(key: protected,
-            bitmap: WPEParityGlyphBitmap(width: 4095, rows: 4095, pixelMode: .gray,
-                                         pixels: [UInt8](repeating: 77, count: 4095 * 4095))))
+                                               bitmap: WPEParityGlyphBitmap(width: 4095, rows: 4095, pixelMode: .gray,
+                                                                            pixels: [UInt8](repeating: 77, count: 4095 * 4095))))
         instance.mono.retain([protected])
         planner.atlases = [key: instance]
         var heldMesh = WPEParityTextMesh(minX: 0, bottom: 0, maxX: 4095, top: 4095,
@@ -21,27 +21,27 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         heldMesh.mono.appendQuad(key: protected, x0: 0, x1: 4095, top: 4095, bottom: 0)
         heldMesh.mono.atlasResetGeneration = instance.mono.resetGeneration
         planner.adopt(objectID: "protected", layout: .init(mesh: heldMesh, blockOffset: .zero,
-                                                          fboSize: SIMD2(4095, 4095)), atlasKey: key)
+                                                           fboSize: SIMD2(4095, 4095)), atlasKey: key)
         let oldPixels = hash(instance.mono.pixels), oldEntry = instance.mono.entry(forKey: protected)
         let pending = try planner.prepare(object("T", "H"), effectCount: 0)
         XCTAssertEqual(pending.resets[key], 1)
         XCTAssertEqual(pending.atlases[key]?.mono.resetGeneration, instance.mono.resetGeneration + 1)
         XCTAssertNil(pending.atlases[key]?.mono.entry(forKey: protected))
         XCTAssertNotNil(pending.atlases[key]?.mono.entry(forKey: 43))
-        XCTAssertNotEqual(hash(try XCTUnwrap(pending.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertNotEqual(try hash(XCTUnwrap(pending.atlases[key]).mono.pixels), oldPixels)
         XCTAssertTrue(planner.resets.isEmpty)
         XCTAssertEqual(planner.atlases[key]?.mono.entry(forKey: protected), oldEntry)
-        XCTAssertEqual(hash(try XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertEqual(try hash(XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
         XCTAssertEqual(planner.atlases[key]?.mono.resetGeneration, instance.mono.resetGeneration)
         try planner.discard(pending)
         assertError(.preparedUpdateConsumed) { _ = try planner.accept(pending) }
         XCTAssertTrue(planner.resets.isEmpty)
         XCTAssertEqual(planner.atlases[key]?.mono.entry(forKey: protected)?.references, 1)
-        XCTAssertEqual(hash(try XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertEqual(try hash(XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
     }
 
     func testPlannerRejectsLateDuplicateAndForeignAccepts() throws {
-        let assets = try self.assets(), planner = WPEParityTextPlanner(assets: assets)
+        let assets = try assets(), planner = WPEParityTextPlanner(assets: assets)
         let first = try planner.plan(object("T", "H"), effectCount: 0, glyphMode: .distanceField)
         let pending = try planner.prepare(object("T", "HH"), effectCount: 0, glyphMode: .distanceField)
         let newer = try planner.prepare(object("T", "HHH"), effectCount: 0, glyphMode: .distanceField)
@@ -58,7 +58,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
     }
 
     func testPipelineStagesLayoutAtlasAndReferencesUntilOneAccept() throws {
-        let pipeline = WPEParityTextPipeline(assets: try assets(), hdr: false, orthographic: true)
+        let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
         pipeline.add(object("T", "H"), effectCount: 0)
         pipeline.add(object("U", "H"), effectCount: 0)
         pipeline.refreshUVs()
@@ -73,12 +73,12 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(pending.texts["T"]?.layout.mesh?.mono.glyphKeys, [43, 43])
         XCTAssertTrue(try XCTUnwrap(pending.delta.changes.first).requiresFrameRebuild)
         // A GPU uploader receives values: mutating its private copy cannot change active or pending pixels/refs.
-        let stagedPixels = hash(try XCTUnwrap(pending.atlases[newKey]).mono.pixels)
+        let stagedPixels = try hash(XCTUnwrap(pending.atlases[newKey]).mono.pixels)
         var uploadCopy = pending.atlases
         uploadCopy[newKey]?.mono.reset()
         _ = uploadCopy[newKey]?.mono.insert(key: 999,
-            bitmap: WPEParityGlyphBitmap(width: 1, rows: 1, pixelMode: .rgba, pixels: [1, 2, 3, 4]))
-        XCTAssertEqual(hash(try XCTUnwrap(pending.atlases[newKey]).mono.pixels), stagedPixels)
+                                            bitmap: WPEParityGlyphBitmap(width: 1, rows: 1, pixelMode: .rgba, pixels: [1, 2, 3, 4]))
+        XCTAssertEqual(try hash(XCTUnwrap(pending.atlases[newKey]).mono.pixels), stagedPixels)
         XCTAssertEqual(pending.atlases[newKey]?.mono.entry(forKey: 43)?.references, 2)
         try pipeline.discard(pending) // Simulated material/texture/geometry preparation failure.
         XCTAssertEqual(pipeline.texts, before)
@@ -99,7 +99,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
     }
 
     func testPipelineParameterOnlyAcceptInvalidatesOlderGeometryWithoutRegeneratingFields() throws {
-        let pipeline = WPEParityTextPipeline(assets: try assets(), hdr: false, orthographic: true)
+        let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
         pipeline.add(object("T", "H"), effectCount: 0)
         let initial = try XCTUnwrap(pipeline.prepareRelayout(object("T", "H"), glyphMode: .distanceField))
         _ = try pipeline.accept(initial)
@@ -122,7 +122,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
     }
 
     func testAtlasWritebackAndForeignPipelineCannotPublishPendingState() throws {
-        let assets = try self.assets(), pipeline = WPEParityTextPipeline(assets: assets, hdr: false, orthographic: true)
+        let assets = try assets(), pipeline = WPEParityTextPipeline(assets: assets, hdr: false, orthographic: true)
         pipeline.add(object("T", "H"), effectCount: 0)
         let before = pipeline.texts
         let late = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH")))
@@ -150,7 +150,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         let first = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
         let newGlyph = try XCTUnwrap(first.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
         XCTAssertNotEqual(newGlyph, 43)
-        XCTAssertNotEqual(hash(try XCTUnwrap(first.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertNotEqual(try hash(XCTUnwrap(first.atlases[key]).mono.pixels), oldPixels)
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: 43)?.references, 1)
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
         try pipeline.discard(first)
@@ -161,7 +161,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
             ])
         }
         XCTAssertEqual(pipeline.texts, before)
-        XCTAssertEqual(hash(try XCTUnwrap(pipeline.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertEqual(try hash(XCTUnwrap(pipeline.atlases[key]).mono.pixels), oldPixels)
         XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldAtlas.mono.contentGeneration)
         XCTAssertEqual(pipeline.atlases[key]?.mono.resetGeneration, oldAtlas.mono.resetGeneration)
         XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: 43)?.references, 2)
@@ -211,7 +211,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
     }
 
     private func fieldPipeline() throws -> WPEParityTextPipeline {
-        let pipeline = WPEParityTextPipeline(assets: try assets(), hdr: false, orthographic: true)
+        let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
         pipeline.add(object("T", "H"), effectCount: 0)
         pipeline.add(object("U", "H"), effectCount: 0)
         let batch = try XCTUnwrap(pipeline.prepareRelayouts([
@@ -224,8 +224,9 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
 
     private func object(_ id: String, _ text: String) -> WPEParityTextObject {
         WPEParityTextObject(json: .object(["id": .string(id), "text": .string(text),
-            "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))
+                                           "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))
     }
+
     private func assets() throws -> WPEParityProgramAssets {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_GLYPH_ORACLE_DIR"], "Original font fixture required; no skip")
         let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -234,9 +235,11 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
                        "6b04c8dd65af6b73eb4279472ed1580b29102d6496a377340e80a40cdb3b22c9")
         return WPEParityProgramAssets(sources: [.directory(root)])
     }
+
     private func hash(_ pixels: [UInt8]) -> String {
         SHA256.hash(data: Data(pixels)).map { String(format: "%02x", $0) }.joined()
     }
+
     private func assertError(_ expected: WPEParityTextPreparationError, _ body: () throws -> Void,
                              file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertThrowsError(try body(), file: file, line: line) {

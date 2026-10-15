@@ -1,6 +1,6 @@
 import CFreeType
-import CWPESDF
 import CryptoKit
+import CWPESDF
 import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
@@ -15,7 +15,7 @@ final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
             FT_Vector(x: FT_Pos(Int32(bitPattern: u32(rawPoints, $0))),
                       y: FT_Pos(Int32(bitPattern: u32(rawPoints, $0 + 4))))
         }
-        var tags = [UInt8](try oracle.data("outline-tags.bin"))
+        var tags = try [UInt8](oracle.data("outline-tags.bin"))
         let ends = try oracle.data("outline-contours.bin")
         var contours = stride(from: 0, to: ends.count, by: 2).map { u16(ends, $0) }
         let t = try oracle.transform()
@@ -29,14 +29,14 @@ final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
             tags.withUnsafeMutableBufferPointer { tags in
                 contours.withUnsafeMutableBufferPointer { contours in
                     var outline = FT_Outline(n_contours: u16(header, 0), n_points: u16(header, 2),
-                        points: p.baseAddress, tags: tags.baseAddress, contours: contours.baseAddress,
-                        flags: Int32(bitPattern: u32(header, 32)))
+                                             points: p.baseAddress, tags: tags.baseAddress, contours: contours.baseAddress,
+                                             flags: Int32(bitPattern: u32(header, 32)))
                     return rgba.withUnsafeMutableBufferPointer { pixels in
                         pre.withUnsafeMutableBufferPointer { before in
                             post.withUnsafeMutableBufferPointer { after in
                                 var out = WPEFieldOutput(width: 42, height: 47, rgba: pixels.baseAddress,
-                                    rgba_capacity: pixels.count, before_correction: before.baseAddress,
-                                    before_capacity: before.count, after_correction: after.baseAddress, after_capacity: after.count)
+                                                         rgba_capacity: pixels.count, before_correction: before.baseAddress,
+                                                         before_capacity: before.count, after_correction: after.baseAddress, after_capacity: after.count)
                                 return wpe_field_outline(&outline, &transform, &out)
                             }
                         }
@@ -93,7 +93,7 @@ final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
     }
 
     private func floatBytes(_ values: [Float]) -> Data {
-        let bits = values.map { $0.bitPattern.littleEndian }
+        let bits = values.map(\.bitPattern.littleEndian)
         return bits.withUnsafeBytes { Data($0) }
     }
 
@@ -124,19 +124,32 @@ final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
             }
             files = pins
         }
+
         func data(_ name: String) throws -> Data {
             let bytes = try Data(contentsOf: root.appendingPathComponent(name))
             guard let pin = files[name], Self.sha(bytes) == pin else { throw NSError(domain: "OriginalGlyphOracle", code: 5) }
             return bytes
         }
+
         func transform() throws -> [Double] {
             let bytes = try data("transform.bin")
             return stride(from: 0, to: bytes.count, by: 8).map { Double(bitPattern: u64(bytes, $0)) }
         }
-        private static func sha(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
+        private static func sha(_ data: Data) -> String {
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
     }
 }
 
-private func u16(_ data: Data, _ at: Int) -> UInt16 { UInt16(data[at]) | UInt16(data[at + 1]) << 8 }
-private func u32(_ data: Data, _ at: Int) -> UInt32 { (0 ..< 4).reduce(0) { $0 | UInt32(data[at + $1]) << ($1 * 8) } }
-private func u64(_ data: Data, _ at: Int) -> UInt64 { (0 ..< 8).reduce(0) { $0 | UInt64(data[at + $1]) << ($1 * 8) } }
+private func u16(_ data: Data, _ at: Int) -> UInt16 {
+    UInt16(data[at]) | UInt16(data[at + 1]) << 8
+}
+
+private func u32(_ data: Data, _ at: Int) -> UInt32 {
+    (0 ..< 4).reduce(0) { $0 | UInt32(data[at + $1]) << ($1 * 8) }
+}
+
+private func u64(_ data: Data, _ at: Int) -> UInt64 {
+    (0 ..< 8).reduce(0) { $0 | UInt64(data[at + $1]) << ($1 * 8) }
+}

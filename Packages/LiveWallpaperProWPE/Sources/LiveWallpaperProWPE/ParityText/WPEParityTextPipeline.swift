@@ -170,14 +170,14 @@ public final class WPEParityTextPipeline {
             let beforeStep = next
             if !object.needsRebuild(from: current.object), effects == current.effectCount, glyphMode == previousMode {
                 next[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
-                                                   layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
-                                                   orthographic: orthographic)
+                                                     layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
+                                                     orthographic: orthographic)
             } else {
                 let resets = prepared?.resets ?? planner.resets
                 let plan = try planner.prepare(object, effectCount: effects, glyphMode: glyphMode, continuing: prepared)
                 prepared = plan
                 next[object.id] = WPEParitySceneText(object: object, effectCount: effects, layout: plan.layout,
-                                                   atlasKey: plan.atlasKey, hdr: hdr, orthographic: orthographic)
+                                                     atlasKey: plan.atlasKey, hdr: hdr, orthographic: orthographic)
                 let key = plan.atlasKey
                 let stale = plan.resets[key] != resets[key] ? key : nil
                 for id in order {
@@ -187,7 +187,9 @@ public final class WPEParityTextPipeline {
                     next[id] = text
                 }
             }
-            for id in order where beforeStep[id] != next[id] { changed.insert(id) }
+            for id in order where beforeStep[id] != next[id] {
+                changed.insert(id)
+            }
         }
         guard !changed.isEmpty else { return nil }
         let delta = WPEParityTextRelayoutDelta(changes: order.compactMap { id in
@@ -206,7 +208,9 @@ public final class WPEParityTextPipeline {
         guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
         guard !prepared.consumed else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
         guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
-        if let plan = prepared.plan { try planner.accept(plan) }
+        if let plan = prepared.plan {
+            try planner.accept(plan)
+        }
         texts = prepared.texts
         prepared.consumed = true; revision &+= 1
         return prepared.delta
@@ -215,17 +219,23 @@ public final class WPEParityTextPipeline {
     public func discard(_ prepared: PreparedUpdate) throws {
         guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
         guard !prepared.consumed else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
-        if let plan = prepared.plan { try planner.discard(plan) }
+        if let plan = prepared.plan {
+            try planner.discard(plan)
+        }
         prepared.consumed = true
     }
 
     private func mode(of text: WPEParitySceneText,
                       atlases: [String: WPEParityGlyphAtlasInstance]? = nil) -> WPEParityTextGlyphMode {
-        if let mesh = text.layout.mesh { return mesh.glyphMode }
-        if let instance = (atlases ?? planner.atlases)[text.atlasKey] { return instance.glyphMode }
+        if let mesh = text.layout.mesh {
+            return mesh.glyphMode
+        }
+        if let instance = (atlases ?? planner.atlases)[text.atlasKey] {
+            return instance.glyphMode
+        }
         // An empty prepared field has no mesh/allocated atlas; its exact native key still preserves mode.
         return text.atlasKey == WPEParityGlyphAtlasInstance.key(fontPath: text.object.font,
-            pointSize: WPEParityFontLibrary.clampedPointSize(text.object.pointSize), glyphMode: .distanceField)
+                                                                pointSize: WPEParityFontLibrary.clampedPointSize(text.object.pointSize), glyphMode: .distanceField)
             ? .distanceField : .bitmap
     }
 
