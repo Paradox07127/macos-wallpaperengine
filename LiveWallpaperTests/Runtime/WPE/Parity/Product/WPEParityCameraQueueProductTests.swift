@@ -9,6 +9,171 @@ import QuartzCore
 import XCTest
 
 extension WPEParitySceneDriverTests {
+    /// Native1891a0 reads before tick;18aac0 consumes the new Bool/amount with the existing smoother.
+    func testCameraParallaxUsesNativeReadPhasesOriginalPixelsAndLiveFrameActivity() async throws {
+        let original: WPEParityProgramAssets
+        do { original = try sceneInputs().1 } catch { throw NSError(domain: "Parallax.RequiredOriginal", code: 1) }
+        for (path, expected) in [
+            ("shaders/genericimage2.vert", "97370dbb18746d61629edf77ee2c30afe07605f5270f8a29a406b414932368bb"),
+            ("shaders/genericimage2.frag", "1e252e2271cae57fcfdecf3bd79d1685bb726e1e8afe09ba863dca2e1b12d68e"),
+            ("materials/util/white.tex", "ac8a6c0726bf5744e816300278cf42bbe660ea885088e77bbbfb136725a26bdd"),
+        ] {
+            XCTAssertEqual(try SHA256.hash(data: XCTUnwrap(original.data(path))).map { String(format: "%02x", $0) }.joined(), expected)
+        }
+        let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
+                    "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
+        guard keys.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {
+            throw NSError(domain: "Parallax.ToolOverride", code: 1)
+        }
+        let compiler = try makeCompiler()
+        let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
+        let hashes = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"].map { path in
+            let url = contents.appending(path: path).resolvingSymlinksInPath()
+            _ = try XCTUnwrap(url.path.hasPrefix(contents.path + "/") ? true : nil)
+            return try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        }
+        XCTAssertEqual(compiler.compilerIdentity, "wpe-shaderc " + hashes.joined(separator: " "))
+        let files = try [
+            "models/parallax-witness.json": ["material": "materials/parallax-witness.json"] as [String: Any],
+            "materials/parallax-witness.json": ["passes": [["shader": "genericimage2", "textures": ["util/white"],
+                                                            "blending": "normal", "cullmode": "nocull"]]],
+        ].mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        func document(enabled: Any = false, amount: Any = 0.5, delay: Any = 0, influence: Any = 1,
+                      scripts: Bool = true, witness: Bool = true, visible: Bool = true) throws -> WPESceneDocument {
+            var general: [String: Any] = ["orthogonalprojection": ["width": 16, "height": 16],
+                                          "clearenabled": true, "clearcolor": "0 0 0", "bloom": false,
+                                          "cameraparallax": enabled, "cameraparallaxamount": amount,
+                                          "cameraparallaxdelay": delay, "cameraparallaxmouseinfluence": influence]
+            if scripts {
+                general["cameraparallax"] = ["value": enabled, "script": """
+                shared.parallaxLoads = (shared.parallaxLoads || 0) + 1;
+                export function update(value) {
+                  if (shared.parallaxLoads !== 1) throw new Error('parallax module rerun');
+                  if (!engine.userProperties.drive) return value;
+                  thisScene.cameraparallaxamount = engine.userProperties.amount;
+                  thisScene.cameraparallaxdelay = engine.userProperties.delay;
+                  thisScene.cameraparallaxmouseinfluence = engine.userProperties.influence;
+                  return engine.userProperties.enabled;
+                }
+                """]
+                for (name, value) in [("cameraparallaxamount", amount), ("cameraparallaxdelay", delay),
+                                      ("cameraparallaxmouseinfluence", influence)] {
+                    general[name] = ["value": value, "script": "export function update(value) { return value; }"]
+                }
+            }
+            let object: [String: Any] = witness
+                ? ["id": 1, "image": "models/parallax-witness.json", "origin": "8 8 0", "size": "2 2",
+                   "parallaxDepth": "1 0", "color": "1 0 0", "visible": visible]
+                : ["id": 1, "camera": "activity witness", "origin": "0 0 0"]
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general, "objects": [object],
+            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        func host(drive: Bool, enabled: Bool = true, amount: Double = 0.5, delay: Double = 0,
+                  influence: Double = 1) throws -> String {
+            let values: [String: Any] = ["drive": ["type": "bool", "value": drive], "enabled": ["type": "bool", "value": enabled],
+                                         "amount": ["type": "slider", "value": amount], "delay": ["type": "slider", "value": delay],
+                                         "influence": ["type": "slider", "value": influence]]
+            return try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: values), encoding: .utf8))
+        }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        let initial = try document()
+        try await driver.load(document: initial, assets: assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 16, height: 16), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "parallax-cache")),
+                              scriptHost: .init(userPropertiesJSON: host(drive: false)))
+        let renderer = try XCTUnwrap(driver.renderer)
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 16, height: 16)
+        layer.framebufferOnly = false
+        layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: initial))
+        let backbuffer = renderer.backbuffer
+        let targets = renderer.targets.mapValues(ObjectIdentifier.init)
+        let pipelines = renderer.pipelineCreations
+        func frame(_ index: Int, _ x: Int) async throws {
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(index) * 0.1,
+                                                                     pointer: SIMD2(1, 0.5)))
+            await command.completed()
+            try await settle(driver, label: "parallax frame \(index)")
+            XCTAssertNil(command.error)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            let entry = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil })
+            let mvp = try XCTUnwrap(renderer.uniforms(entry.operation)).matrices.modelViewProjection
+            let clipX = Float(x) / 8 - 1
+            XCTAssertEqual(mvp.columns.3.x, clipX, accuracy: 0.000001)
+            guard case let .matrix(encoded)? = entry.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+                return XCTFail("original shader must receive the actual MVP")
+            }
+            XCTAssertEqual(encoded.columns[0][3], clipX, accuracy: 0.000001, "native register rows are uploaded explicitly")
+            let pixels = try readBack(renderer.backbuffer, device: device)
+            let offset = (8 * 16 + x) * 4
+            XCTAssertLessThanOrEqual(abs(Int(pixels[offset]) - 255), 1)
+            XCTAssertLessThanOrEqual(pixels[offset + 1], 1)
+            XCTAssertLessThanOrEqual(pixels[offset + 2], 1)
+            XCTAssertTrue(renderer.backbuffer === backbuffer)
+            XCTAssertEqual(renderer.targets.mapValues(ObjectIdentifier.init), targets)
+            XCTAssertEqual(renderer.pipelineCreations, pipelines)
+        }
+        // Independent native arithmetic for rootX8, pointerX1, ortho16, depthX1. Old smoother starts0.
+        let steps: [(Bool, Double, Double, Double, Int)] = [
+            (true, 0.5, 0, 1, 12), // old Booloff holds0; new amount shifts4 this frame
+            (true, 0.25, 3, 0, 6), // old influence1/delay0 reaches16; new amount shifts-2
+            (false, 0.75, 0, 0, 8), // old delay3 holds16; new Booloff removes the push
+            (true, 0.5, 0, 1, 4), // old Booloff still holds16; new Boolon shifts-4
+        ]
+        for (index, step) in steps.enumerated() {
+            let json = try host(drive: true, enabled: step.0, amount: step.1, delay: step.2, influence: step.3)
+            try renderer.applyUserProperties(unchanged, changedJSON: json, mergedJSON: json)
+            try await frame(index, step.4)
+        }
+        let invalid = try document(enabled: 1, amount: "0.5", delay: false, influence: [1], visible: false)
+        // Invalid typed scene seeds preserve live values while a real unrelated visibility write commits.
+        let invalidUpdate = try XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: invalid))
+        try renderer.applyUserProperties(invalidUpdate, changedJSON: host(drive: false), mergedJSON: host(drive: false))
+        XCTAssertEqual(renderer.state.scriptField("cameraparallax", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.5, 0, 0, 0)))
+        XCTAssertEqual(renderer.state.scriptField("cameraparallaxdelay", of: ""), .vector(.zero))
+        XCTAssertEqual(renderer.state.scriptField("cameraparallaxmouseinfluence", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.state.object("1")?.visible, false)
+        // Restore only the unrelated visible bit; the same invalid scene seeds still preserve live values.
+        let restored = try document(enabled: 1, amount: "0.5", delay: false, influence: [1])
+        try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: restored)))
+        try await frame(4, 4)
+        let recovered = try document(enabled: false, amount: 0.25)
+        try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: restored, to: recovered)))
+        try await frame(5, 8)
+        XCTAssertEqual(renderer.state.scriptField("cameraparallax", of: ""), .vector(.zero))
+        XCTAssertEqual(renderer.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.25, 0, 0, 0)))
+        let coldDriver = try WPEParitySceneDriver(device: device)
+        defer { coldDriver.cleanup() }
+        let cold = try document(amount: false, delay: "0.1", influence: [1], scripts: false, witness: false)
+        try await coldDriver.load(document: cold, assets: assets, settings: .init(bloom: false),
+                                  drawableSize: CGSize(width: 16, height: 16), pixelFormat: .bgra8Unorm_srgb,
+                                  compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "parallax-cold-cache")))
+        let coldRenderer = try XCTUnwrap(coldDriver.renderer)
+        XCTAssertTrue(coldRenderer.isStatic)
+        XCTAssertFalse(coldDriver.needsContinuousFrames)
+        for (name, value): (String, Float) in [("cameraparallaxamount", 0.5), ("cameraparallaxdelay", 0.1),
+                                               ("cameraparallaxmouseinfluence", 0.5)] {
+            XCTAssertEqual(coldRenderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        let enabled = try document(enabled: true, scripts: false, witness: false)
+        try coldRenderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: cold, to: enabled)))
+        XCTAssertFalse(coldRenderer.isStatic)
+        XCTAssertTrue(coldDriver.needsContinuousFrames)
+        let disabled = try document(scripts: false, witness: false)
+        try coldRenderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: enabled, to: disabled)))
+        XCTAssertTrue(coldRenderer.isStatic)
+        XCTAssertFalse(coldDriver.needsContinuousFrames)
+        XCTAssertTrue(coldDriver.renderer === coldRenderer)
+    }
+
     /// Actual object queue -> local transform -> selected camera -> original shader pixels, continued at resize.
     func testCameraQueueMovesOriginalDrawAndContinuesAcrossResizeAndHiddenParent() async throws {
         let original: WPEParityProgramAssets
