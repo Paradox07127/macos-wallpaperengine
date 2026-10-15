@@ -2,10 +2,7 @@
 /// keys share the font (1401b0410.c:274-349). FreeType faces retain actual sizes and one serial owner.
 public final class WPEParityTextPlanner {
     private let fonts: WPEParityFontLibrary
-    /// Keyed by `WPEParityGlyphAtlasInstance.key`; whoever uploads them clears their dirty state.
-    public var atlases: [String: WPEParityGlyphAtlasInstance] = [:]
-    /// The atlas and glyph keys each planned object holds a reference on, so eviction leaves them alone.
-    private struct HeldGlyphs {
+    fileprivate struct HeldGlyphs {
         let atlas: String
         let mono: [UInt32]
         let color: [UInt32]
@@ -13,9 +10,43 @@ public final class WPEParityTextPlanner {
         let colorReset: UInt64?
     }
 
-    private var held: [String: HeldGlyphs] = [:]
-    /// How often each atlas instance was reset because it was full at 4096.
-    public private(set) var resets: [String: Int] = [:]
+    /// Value state only. Atlas dictionaries, shelves, entries and pixel arrays are Swift COW values;
+    /// the one font library/FT faces remain on this planner and never enter a prepared snapshot.
+    fileprivate struct State {
+        var atlases: [String: WPEParityGlyphAtlasInstance] = [:]
+        var held: [String: HeldGlyphs] = [:]
+        var resets: [String: Int] = [:]
+    }
+    fileprivate enum Disposition: Equatable { case pending, accepted, discarded }
+    private var state = State()
+    private var revision: UInt64 = 0
+
+    /// One candidate value snapshot, not another atlas or font owner. Use only on the planner's serial owner.
+    /// Drop/discard it on a failed GPU preparation; old active layouts/references/pixels remain unchanged.
+    public final class PreparedPlan {
+        public let layout: WPEParityTextLayout
+        public let atlasKey: String
+        public let atlases: [String: WPEParityGlyphAtlasInstance]
+        let resets: [String: Int]
+        fileprivate weak var owner: WPEParityTextPlanner?
+        fileprivate let baseRevision: UInt64
+        fileprivate var staged: State?
+        fileprivate var disposition = Disposition.pending
+
+        fileprivate init(owner: WPEParityTextPlanner, revision: UInt64, state: State,
+                         layout: WPEParityTextLayout, atlasKey: String) {
+            self.owner = owner; baseRevision = revision; staged = state
+            self.layout = layout; self.atlasKey = atlasKey
+            atlases = state.atlases; resets = state.resets
+        }
+    }
+
+    /// Keyed by the existing atlas instance key. Even a dirty-state writeback invalidates older pending plans.
+    public var atlases: [String: WPEParityGlyphAtlasInstance] {
+        get { state.atlases }
+        set { state.atlases = newValue; revision &+= 1 }
+    }
+    public var resets: [String: Int] { state.resets }
 
     public init(assets: WPEParityProgramAssets) {
         fonts = WPEParityFontLibrary(assets: assets)
@@ -31,13 +62,17 @@ public final class WPEParityTextPlanner {
 
     /// Takes over `layout`, planned for `objectID` against `atlases`, whose glyph references it already holds.
     public func adopt(objectID: String, layout: WPEParityTextLayout, atlasKey: String) {
-        hold(objectID: objectID, mesh: layout.mesh, atlasKey: atlasKey)
+        Self.hold(objectID: objectID, mesh: layout.mesh, atlasKey: atlasKey, state: &state)
+        revision &+= 1
     }
 
     /// The layout of `object` with every quad's UVs taken from its atlas instance, and that instance's key. Glyphs
     /// already in the atlas are not rasterised again.
     public func plan(_ object: WPEParityTextObject, effectCount: Int) -> (layout: WPEParityTextLayout, atlasKey: String) {
-        pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap)
+        var next = state
+        let result = pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
+        state = next; revision &+= 1
+        return result
     }
 
     /// Explicit preparation for a caller that will atomically admit the matching font PSO, constants and
@@ -45,6 +80,13 @@ public final class WPEParityTextPlanner {
     /// Unsupported COLOR/zero-area inputs fail before releasing previous references or changing atlases.
     public func plan(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode)
         throws -> (layout: WPEParityTextLayout, atlasKey: String) {
+        try accept(prepare(object, effectCount: effectCount, glyphMode: glyphMode))
+    }
+
+    /// Stages through the very same layout and pack path, without publishing any atlas/ref/reset mutation.
+    /// FT metadata/scratch may be reused on this serial owner; no FT pointer is stored in the candidate.
+    public func prepare(_ object: WPEParityTextObject, effectCount: Int,
+                        glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> PreparedPlan {
         if glyphMode == .distanceField, !object.usesGlyphEffects {
             throw WPEParityTextPreparationError.distanceFieldNotRequested
         }
@@ -68,20 +110,44 @@ public final class WPEParityTextPlanner {
                 }
             }
         }
-        return pack(object, layout: layout, glyphMode: glyphMode)
+        var next = state
+        let result = pack(object, layout: layout, glyphMode: glyphMode, state: &next)
+        return PreparedPlan(owner: self, revision: revision, state: next,
+                            layout: result.layout, atlasKey: result.atlasKey)
+    }
+
+    /// All fallible GPU preparation must precede this call. After it succeeds, the caller publishes its GPU
+    /// candidate on the same serial owner without another throwing operation or suspension.
+    @discardableResult
+    public func accept(_ prepared: PreparedPlan) throws -> (layout: WPEParityTextLayout, atlasKey: String) {
+        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
+        guard prepared.disposition == .pending, let next = prepared.staged else {
+            throw WPEParityTextPreparationError.preparedUpdateConsumed
+        }
+        guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
+        state = next; revision &+= 1
+        prepared.staged = nil; prepared.disposition = .accepted
+        return (prepared.layout, prepared.atlasKey)
+    }
+
+    public func discard(_ prepared: PreparedPlan) throws {
+        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
+        guard prepared.disposition == .pending else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
+        prepared.staged = nil; prepared.disposition = .discarded
     }
 
     private func pack(_ object: WPEParityTextObject, layout: WPEParityTextLayout,
-                      glyphMode: WPEParityTextGlyphMode) -> (layout: WPEParityTextLayout, atlasKey: String) {
+                      glyphMode: WPEParityTextGlyphMode, state: inout State)
+        -> (layout: WPEParityTextLayout, atlasKey: String) {
         var layout = layout
         let pointSize = layout.mesh?.pointSize ?? WPEParityFontLibrary.clampedPointSize(object.pointSize)
         let key = WPEParityGlyphAtlasInstance.key(fontPath: object.font, pointSize: pointSize, glyphMode: glyphMode)
         // Release against the stored instance before copying it. Releasing the dictionary after the copy would
         // be lost when the same-key instance is written back. Empty text must release its previous mesh too.
-        release(objectID: object.id)
+        Self.release(objectID: object.id, state: &state)
         guard var mesh = layout.mesh else { return (layout, key) }
         let chain = fonts.chain(fontPath: object.font, pointSize: pointSize)
-        var instance = atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
+        var instance = state.atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
                                                                  glyphMode: glyphMode)
         precondition(instance.glyphMode == glyphMode)
         let mono = Self.pack(mesh.mono, .mono, chain: chain, into: &instance)
@@ -91,11 +157,11 @@ public final class WPEParityTextPlanner {
         mesh.mono.atlasResetGeneration = instance.mono.resetGeneration
         mesh.color.atlasResetGeneration = instance.color?.resetGeneration
         if mono.reset || color.reset {
-            resets[key, default: 0] += 1
+            state.resets[key, default: 0] += 1
         }
 
-        atlases[key] = instance
-        hold(objectID: object.id, mesh: mesh, atlasKey: key)
+        state.atlases[key] = instance
+        Self.hold(objectID: object.id, mesh: mesh, atlasKey: key, state: &state)
 
         Self.fillUVs(&mesh.mono, from: instance.mono)
         Self.fillUVs(&mesh.color, from: instance.color)
@@ -103,30 +169,39 @@ public final class WPEParityTextPlanner {
         return (layout, key)
     }
 
-    private func hold(objectID: String, mesh: WPEParityTextMesh?, atlasKey: String) {
-        held[objectID] = HeldGlyphs(atlas: atlasKey, mono: mesh?.mono.glyphKeys ?? [],
-                                    color: mesh?.color.glyphKeys ?? [],
-                                    monoReset: mesh?.mono.atlasResetGeneration
-                                        ?? atlases[atlasKey]?.mono.resetGeneration ?? 0,
-                                    colorReset: mesh?.color.atlasResetGeneration
-                                        ?? atlases[atlasKey]?.color?.resetGeneration)
+    private static func hold(objectID: String, mesh: WPEParityTextMesh?, atlasKey: String, state: inout State) {
+        state.held[objectID] = HeldGlyphs(atlas: atlasKey, mono: mesh?.mono.glyphKeys ?? [],
+                                         color: mesh?.color.glyphKeys ?? [],
+                                         monoReset: mesh?.mono.atlasResetGeneration
+                                             ?? state.atlases[atlasKey]?.mono.resetGeneration ?? 0,
+                                         colorReset: mesh?.color.atlasResetGeneration
+                                             ?? state.atlases[atlasKey]?.color?.resetGeneration)
     }
 
-    private func release(objectID: String) {
-        guard let previous = held.removeValue(forKey: objectID) else { return }
-        if atlases[previous.atlas]?.mono.resetGeneration == previous.monoReset {
-            atlases[previous.atlas]?.mono.release(previous.mono)
+    private static func release(objectID: String, state: inout State) {
+        guard let previous = state.held.removeValue(forKey: objectID) else { return }
+        if state.atlases[previous.atlas]?.mono.resetGeneration == previous.monoReset {
+            state.atlases[previous.atlas]?.mono.release(previous.mono)
         }
-        if atlases[previous.atlas]?.color?.resetGeneration == previous.colorReset {
-            atlases[previous.atlas]?.color?.release(previous.color)
+        if state.atlases[previous.atlas]?.color?.resetGeneration == previous.colorReset {
+            state.atlases[previous.atlas]?.color?.release(previous.color)
         }
     }
 
-    /// Re-reads every UV from the atlas as it is now: a later insert may have doubled it and halved the UVs.
+    /// Re-reads UVs from active state, or from one prepared value snapshot for a staged shared-reader update.
     public func refreshUVs(_ layout: inout WPEParityTextLayout, atlasKey: String) {
+        Self.refreshUVs(&layout, atlasKey: atlasKey, atlases: state.atlases)
+    }
+
+    func refreshUVs(_ layout: inout WPEParityTextLayout, atlasKey: String, prepared: PreparedPlan) {
+        Self.refreshUVs(&layout, atlasKey: atlasKey, atlases: prepared.atlases)
+    }
+
+    private static func refreshUVs(_ layout: inout WPEParityTextLayout, atlasKey: String,
+                                   atlases: [String: WPEParityGlyphAtlasInstance]) {
         guard var mesh = layout.mesh, let instance = atlases[atlasKey] else { return }
-        Self.fillUVs(&mesh.mono, from: instance.mono)
-        Self.fillUVs(&mesh.color, from: instance.color)
+        fillUVs(&mesh.mono, from: instance.mono)
+        fillUVs(&mesh.color, from: instance.color)
         layout.mesh = mesh
     }
 

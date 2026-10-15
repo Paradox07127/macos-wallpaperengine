@@ -17,6 +17,9 @@ public enum WPEParityTextPreparationError: Error, Equatable, Sendable {
     case colorRequiresPairedAtlas
     case zeroAreaDistanceGlyph
     case nonfiniteDrawParameters
+    case foreignPreparedUpdate
+    case stalePreparedUpdate
+    case preparedUpdateConsumed
 }
 
 /// 140258b80's effective fields and 1401b3b60's draw writes, before the shared scene RV store consumes them.

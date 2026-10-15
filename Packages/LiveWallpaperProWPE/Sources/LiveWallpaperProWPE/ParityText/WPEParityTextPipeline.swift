@@ -38,11 +38,31 @@ public final class WPEParityTextPipeline {
     private let planner: WPEParityTextPlanner
     private let hdr: Bool
     private let orthographic: Bool
+    private var revision: UInt64 = 0
+
+    /// One staged update of this pipeline's existing owner. No FT/HB/atlas publisher is cloned.
+    /// Its snapshots supply all inputs to the caller's candidate geometry/material/texture preparation.
+    public final class PreparedUpdate {
+        public let texts: [String: WPEParitySceneText]
+        public let atlases: [String: WPEParityGlyphAtlasInstance]
+        public let delta: WPEParityTextRelayoutDelta
+        fileprivate weak var owner: WPEParityTextPipeline?
+        fileprivate let baseRevision: UInt64
+        fileprivate let plan: WPEParityTextPlanner.PreparedPlan?
+        fileprivate var consumed = false
+
+        fileprivate init(owner: WPEParityTextPipeline, revision: UInt64,
+                         texts: [String: WPEParitySceneText], atlases: [String: WPEParityGlyphAtlasInstance],
+                         delta: WPEParityTextRelayoutDelta, plan: WPEParityTextPlanner.PreparedPlan?) {
+            self.owner = owner; baseRevision = revision
+            self.texts = texts; self.atlases = atlases; self.delta = delta; self.plan = plan
+        }
+    }
 
     /// Keyed by `WPEParityGlyphAtlasInstance.key`; whoever uploads them clears their dirty state.
     public var atlases: [String: WPEParityGlyphAtlasInstance] {
         get { planner.atlases }
-        set { planner.atlases = newValue }
+        set { planner.atlases = newValue; revision &+= 1 }
     }
 
     public init(assets: WPEParityProgramAssets, hdr: Bool, orthographic: Bool) {
@@ -69,6 +89,7 @@ public final class WPEParityTextPipeline {
             order.append(object.id)
         }
         place(object, effectCount: effectCount)
+        revision &+= 1
     }
 
     /// Re-reads every UV from the atlases as they are now: a later insert may have doubled one and halved the UVs.
@@ -78,6 +99,7 @@ public final class WPEParityTextPipeline {
             planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
             texts[id] = text
         }
+        revision &+= 1
     }
 
     /// The new values of `object`'s layer. A field FUN_140256f20's dirty check covers lays it out again and packs
@@ -92,32 +114,90 @@ public final class WPEParityTextPipeline {
     /// include any shared-atlas UV changes; the frame consumer need not run a speculative layout first.
     public func relayoutWithDelta(_ object: WPEParityTextObject, effectCount: Int? = nil)
         -> WPEParityTextRelayoutDelta {
-        guard let current = texts[object.id] else { return WPEParityTextRelayoutDelta(changes: []) }
-        let effects = effectCount ?? current.effectCount
-        guard object != current.object || effects != current.effectCount else {
-            return WPEParityTextRelayoutDelta(changes: [])
+        // Preserve the legacy bitmap entry through the same staging algorithm. Its preparation has no
+        // admission failures and the immediate accept cannot become stale on this serial owner.
+        do {
+            guard let prepared = try prepareRelayout(object, effectCount: effectCount, glyphMode: .bitmap) else {
+                return WPEParityTextRelayoutDelta(changes: [])
+            }
+            return try accept(prepared)
+        } catch {
+            preconditionFailure("Synchronous bitmap relayout failed its own fresh preparation: \(error)")
         }
-        let before = texts
-        if !object.needsRebuild(from: current.object), effects == current.effectCount {
-            texts[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
-                                                  layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
-                                                  orthographic: orthographic)
-        } else {
-            let resets = planner.resets
-            place(object, effectCount: effects)
-            let key = texts[object.id]?.atlasKey ?? current.atlasKey
-            let stale = planner.resets[key] != resets[key] ? key : nil
-            for id in order {
-                guard var text = texts[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
-                      id == object.id || text.atlasKey != stale else { continue }
-                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey)
-                texts[id] = text
+    }
+
+    /// Stages layouts, shared-reader UVs and the planner's atlas/ref/reset values without publishing them.
+    /// Callers use the returned snapshots for all fallible GPU work, then accept/publish on the same serial owner.
+    public func prepareRelayout(_ object: WPEParityTextObject, effectCount: Int? = nil,
+                                glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> PreparedUpdate? {
+        guard let current = texts[object.id] else { return nil }
+        let effects = effectCount ?? current.effectCount
+        let previousMode = mode(of: current)
+        guard object != current.object || effects != current.effectCount || glyphMode != previousMode else {
+            return nil
+        }
+        if glyphMode == .distanceField {
+            guard object.usesGlyphEffects else { throw WPEParityTextPreparationError.distanceFieldNotRequested }
+            guard WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) != nil else {
+                throw WPEParityTextPreparationError.nonfiniteDrawParameters
             }
         }
-        return WPEParityTextRelayoutDelta(changes: order.compactMap { id in
-            guard let previous = before[id], let current = texts[id], previous != current else { return nil }
+        var next = texts
+        let prepared: WPEParityTextPlanner.PreparedPlan?
+        if !object.needsRebuild(from: current.object), effects == current.effectCount, glyphMode == previousMode {
+            prepared = nil
+            next[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
+                                               layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
+                                               orthographic: orthographic)
+        } else {
+            let plan = try planner.prepare(object, effectCount: effects, glyphMode: glyphMode)
+            prepared = plan
+            next[object.id] = WPEParitySceneText(object: object, effectCount: effects, layout: plan.layout,
+                                               atlasKey: plan.atlasKey, hdr: hdr, orthographic: orthographic)
+            let key = plan.atlasKey
+            let stale = plan.resets[key] != planner.resets[key] ? key : nil
+            for id in order {
+                guard var text = next[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
+                      id == object.id || text.atlasKey != stale else { continue }
+                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey, prepared: plan)
+                next[id] = text
+            }
+        }
+        let delta = WPEParityTextRelayoutDelta(changes: order.compactMap { id in
+            guard let previous = texts[id], let current = next[id], previous != current else { return nil }
             return WPEParityTextRelayoutDelta.Change(previous: previous, current: current)
         })
+        return PreparedUpdate(owner: self, revision: revision, texts: next,
+                              atlases: prepared?.atlases ?? planner.atlases, delta: delta, plan: prepared)
+    }
+
+    /// The caller must publish its successful GPU candidate immediately after this, with no throw or await
+    /// on the same serial owner. A stale/foreign/reused candidate changes neither active layouts nor atlases.
+    @discardableResult
+    public func accept(_ prepared: PreparedUpdate) throws -> WPEParityTextRelayoutDelta {
+        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
+        guard !prepared.consumed else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
+        guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
+        if let plan = prepared.plan { try planner.accept(plan) }
+        texts = prepared.texts
+        prepared.consumed = true; revision &+= 1
+        return prepared.delta
+    }
+
+    public func discard(_ prepared: PreparedUpdate) throws {
+        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
+        guard !prepared.consumed else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
+        if let plan = prepared.plan { try planner.discard(plan) }
+        prepared.consumed = true
+    }
+
+    private func mode(of text: WPEParitySceneText) -> WPEParityTextGlyphMode {
+        if let mesh = text.layout.mesh { return mesh.glyphMode }
+        if let instance = planner.atlases[text.atlasKey] { return instance.glyphMode }
+        // An empty prepared field has no mesh/allocated atlas; its exact native key still preserves mode.
+        return text.atlasKey == WPEParityGlyphAtlasInstance.key(fontPath: text.object.font,
+            pointSize: WPEParityFontLibrary.clampedPointSize(text.object.pointSize), glyphMode: .distanceField)
+            ? .distanceField : .bitmap
     }
 
     /// Whether `object`'s new layout keeps the frame's shape: the same glyph lists, and the same FBO size when the
@@ -125,7 +205,7 @@ public final class WPEParityTextPipeline {
     public func keepsFrameShape(_ object: WPEParityTextObject) -> Bool {
         guard let current = texts[object.id] else { return false }
         let layout = object.needsRebuild(from: current.object)
-            ? planner.layout(object, effectCount: current.effectCount) : current.layout
+            ? planner.layout(object, effectCount: current.effectCount, glyphMode: mode(of: current)) : current.layout
         let proposed = WPEParitySceneText(object: object, effectCount: current.effectCount, layout: layout,
                                           atlasKey: current.atlasKey, hdr: hdr, orthographic: orthographic)
         return !WPEParityTextRelayoutDelta.Change(previous: current, current: proposed).requiresFrameRebuild
