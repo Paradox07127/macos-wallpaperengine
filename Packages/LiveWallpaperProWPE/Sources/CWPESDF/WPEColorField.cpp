@@ -128,15 +128,20 @@ extern "C" WPEFieldStatus wpe_field_color(const WPEFieldBGRA *b, const WPEFieldT
     }
 }
 
-extern "C" WPEFieldStatus wpe_field_color_companion_scale_one(const WPEFieldBGRA *b,
-                                                             const WPEFieldTransform *t,
-                                                             const WPEFieldOutput *out) {
-    if (!validBitmap(b) || !wpe_field::validTransform(t) || !wpe_field::validOutput(out, 4) ||
+extern "C" WPEFieldStatus wpe_field_color_companion(const WPEFieldBGRA *b,
+                                                   const WPEFieldTransform *t,
+                                                   int32_t companionScale,
+                                                   const WPEFieldOutput *out) {
+    if ((companionScale != 1 && companionScale != 2) || !validBitmap(b) ||
+        !wpe_field::validTransform(t) || !wpe_field::validOutput(out, 4) ||
         out->before_correction || out->before_capacity || out->after_correction || out->after_capacity)
         return WPE_FIELD_INVALID_INPUT;
     // 1401ae080 narrows colourScale * fieldScale to float32 before the double pixel-centre division.
-    // This entry point qualifies scale 1 only; the caller still owns first-glyph group selection.
-    const double scaleX = double(float(t->scale_x)), scaleY = double(float(t->scale_y));
+    // Only same-call scales 1/2 are qualified here; the caller still owns first-glyph group selection.
+    const double scaleX = double(float(companionScale) * float(t->scale_x));
+    const double scaleY = double(float(companionScale) * float(t->scale_y));
+    if (!std::isfinite(scaleX) || !std::isfinite(scaleY) || scaleX <= 0 || scaleY <= 0)
+        return WPE_FIELD_INVALID_INPUT;
     for (int y = 0; y < out->height; ++y) {
         const float sy = float(b->top) - float((double(out->height - y - 1) + .5) / scaleY - t->translate_y);
         for (int x = 0; x < out->width; ++x) {
@@ -166,4 +171,10 @@ extern "C" WPEFieldStatus wpe_field_color_companion_scale_one(const WPEFieldBGRA
         }
     }
     return WPE_FIELD_OK;
+}
+
+extern "C" WPEFieldStatus wpe_field_color_companion_scale_one(const WPEFieldBGRA *b,
+                                                             const WPEFieldTransform *t,
+                                                             const WPEFieldOutput *out) {
+    return wpe_field_color_companion(b, t, 1, out);
 }

@@ -56,9 +56,15 @@ typedef struct WPEFieldBGRA {
 WPEFieldStatus wpe_field_color(const WPEFieldBGRA *bitmap, const WPEFieldTransform *transform,
                               const WPEFieldOutput *output);
 
-/// Original 1401ac4e0 companion at the currently qualified colour scale 1. Top-first RGBA keeps the
+/// Original 1401ac4e0 companion at an explicitly qualified colour scale 1 or 2. Top-first RGBA keeps the
 /// source's premultiplied colour; no unpremultiply or distance-field quantizer is applied. Output width/height
-/// are the primary's logical cell dimensions. Float stages must be null. Borrows the same loaded BGRA slot.
+/// are the primary's logical cell dimensions multiplied by companion_scale. Float stages must be null.
+/// Borrows the same loaded BGRA slot; does not infer the native group's first-glyph scale or own an atlas.
+WPEFieldStatus wpe_field_color_companion(const WPEFieldBGRA *bitmap,
+                                        const WPEFieldTransform *transform, int32_t companion_scale,
+                                        const WPEFieldOutput *output);
+
+/// Retained scale-one ABI; forwards to the same resampler with companion_scale=1.
 WPEFieldStatus wpe_field_color_companion_scale_one(const WPEFieldBGRA *bitmap,
                                                   const WPEFieldTransform *transform,
                                                   const WPEFieldOutput *output);

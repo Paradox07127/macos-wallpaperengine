@@ -25,18 +25,19 @@ public struct WPEParityGlyphField: Sendable {
 public struct WPEParityColorGlyphField: Sendable {
     public let primary: WPEParityGlyphField
     public let companion: WPEParityGlyphBitmap
-    public let companionScale = 1
+    public let companionScale: Int
 }
 
 enum WPEParityGlyphFieldProducer {
-    /// Only the already-qualified scale-one group. Synchronously borrows glyphField's same loaded FT slot.
-    static func companionScaleOne(face: FT_Face, field: WPEParityGlyphField) -> WPEParityGlyphBitmap? {
-        guard field.isColor else { return nil }
+    /// Only explicitly qualified scales 1/2. Synchronously borrows glyphField's same loaded FT slot.
+    static func companion(face: FT_Face, field: WPEParityGlyphField, scale: Int) -> WPEParityGlyphBitmap? {
+        guard field.isColor, scale == 1 || scale == 2,
+              field.bitmap.width <= 4096 / scale, field.bitmap.rows <= 4096 / scale else { return nil }
         let t = field.transform
         var transform = WPEFieldTransform(scale_x: t.scaleX, scale_y: t.scaleY,
                                           translate_x: t.translateX, translate_y: t.translateY,
                                           distance_scale: t.distanceScale, distance_offset: t.distanceOffset)
-        let width = field.bitmap.width, height = field.bitmap.rows
+        let width = field.bitmap.width * scale, height = field.bitmap.rows * scale
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         let status = rgba.withUnsafeMutableBufferPointer { pixels in
             var output = WPEFieldOutput(width: Int32(width), height: Int32(height),
@@ -45,7 +46,7 @@ enum WPEParityGlyphFieldProducer {
                                         after_correction: nil, after_capacity: 0)
             return withColorBitmap(face.pointee.glyph.pointee) { bitmap in
                 var bitmap = bitmap
-                return wpe_field_color_companion_scale_one(&bitmap, &transform, &output)
+                return wpe_field_color_companion(&bitmap, &transform, Int32(scale), &output)
             } ?? WPE_FIELD_INVALID_INPUT
         }
         guard status == WPE_FIELD_OK else { return nil }
