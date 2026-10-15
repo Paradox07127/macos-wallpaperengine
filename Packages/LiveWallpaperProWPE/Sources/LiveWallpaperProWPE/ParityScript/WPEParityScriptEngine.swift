@@ -750,9 +750,9 @@ public final class WPEParityScriptEngine {
             refresh.append(.field(slot: slot, objectID: "", name: descriptor.fieldName))
             let key = WPEParitySceneState.ScriptFieldKey(objectID: "", name: descriptor.fieldName)
             let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
-            // Bloom's typed JSON must not be replaced by a generic number-derived product seed.
+            // Strict bloom JSON must not be replaced by a generic number-derived product seed.
             // Existing canonical fields are retained by seedMissingFields and mirror.
-            let value = descriptor.isSceneBloom ? parsed ?? Self.generalDefault(descriptor)
+            let value = descriptor.isSceneBloom || descriptor.isSceneHDRBloomFloat ? parsed ?? Self.generalDefault(descriptor)
                 : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
             if let value {
                 initialValues.append((slot, value))
@@ -1489,6 +1489,11 @@ public final class WPEParityScriptEngine {
         case "bloomstrength": .vector(SIMD4(2, 0, 0, 0))
         case "bloomthreshold": .vector(SIMD4(0.65, 0, 0, 0))
         case "bloom": .vector(SIMD4(1, 0, 0, 0))
+        // 1401870c2..1870ee: four DWORD defaults in SceneObject O, not context/Main offsets.
+        case "bloomhdrstrength": .vector(SIMD4(Float(bitPattern: 0x4000_0000), 0, 0, 0))
+        case "bloomhdrthreshold": .vector(SIMD4(Float(bitPattern: 0x3F80_0000), 0, 0, 0))
+        case "bloomhdrfeather": .vector(SIMD4(Float(bitPattern: 0x3DCC_CCCD), 0, 0, 0))
+        case "bloomhdrscatter": .vector(SIMD4(Float(bitPattern: 0x3FCF_3B64), 0, 0, 0))
         default: nil
         }
     }
@@ -1497,6 +1502,9 @@ public final class WPEParityScriptEngine {
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
         if descriptor.isSceneBloom {
             return WPEParityScriptProperty.bloomValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
+        }
+        if descriptor.isSceneHDRBloomFloat {
+            return WPEParityScriptProperty.bloomFloatValue(fromJSON: raw).map { .vector(SIMD4($0, 0, 0, 0)) }
         }
         guard var value = raw else { return nil }
         if case .object = value {

@@ -1,8 +1,100 @@
 import Foundation
+import LiveWallpaperCore
 @testable import LiveWallpaperProWPE
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testHDRBloomFloatBindingsAndDocumentDeltasPreserveCanonicalValues() throws {
+        let fields: [(name: String, bits: UInt32)] = [
+            ("bloomhdrstrength", 0x4000_0000), ("bloomhdrthreshold", 0x3F80_0000),
+            ("bloomhdrfeather", 0x3DCC_CCCD), ("bloomhdrscatter", 0x3FCF_3B64),
+        ]
+        let invalidSeeds: [Any] = [false, "0.5", ["value": 0.5], [0.5]]
+        var general: [String: Any] = ["orthogonalprojection": ["width": 32, "height": 32]]
+        for (field, seed) in zip(fields, invalidSeeds) {
+            general[field.name] = ["value": seed, "user": field.name, "script": """
+            export function init(v) {
+              if (typeof v !== 'number') throw new Error('HDR Float binding type');
+              thisScene.\(field.name) = v + 10;
+              return v + 20;
+            }
+            export function update(v) { return v + 1; }
+            """]
+        }
+        let source = try JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": general,
+            "objects": [["id": 1, "image": "models/surface.json", "alpha": ["value": 1, "user": "fade"]]],
+        ])
+        func document(_ values: [String: WallpaperEngineProjectPropertyValue] = [:], alpha: Double = 1) throws
+            -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: source, userValues: values.merging(["fade": .number(alpha)]) { _, new in new },
+                                             makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        let before = try document()
+        var state = WPEParitySceneState(document: before, hdr: true)
+        let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] =
+            Dictionary(uniqueKeysWithValues: fields.map { (.init(objectID: "", name: $0.name), .vector(SIMD4(999, 0, 0, 0))) })
+        let engine = try WPEParityScriptEngine.prepare(document: before, state: &state, configuration: .init(
+            assets: Self.fixedAssets(), canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32), fieldDefaults: untrusted
+        ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+        XCTAssertEqual(engine.bindings.map(\.path), fields.map(\.name))
+        XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
+        for field in fields {
+            guard case let .vector(value)? = state.scriptField(field.name, of: "") else {
+                XCTFail("Missing canonical HDR field \(field.name)"); continue
+            }
+            XCTAssertEqual(value.x.bitPattern, field.bits, field.name)
+        }
+        XCTAssertNil(engine.start(state: &state))
+        for field in fields {
+            XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(Float(bitPattern: field.bits) + 20, 0, 0, 0)))
+        }
+
+        // The real document resolver replaces the invalid seeds; accepted deltas reach those same State fields.
+        let values: [Float] = [-3, 4, -0.25, 2]
+        let validUsers = Dictionary(uniqueKeysWithValues: zip(fields, values).map {
+            ($0.0.name, WallpaperEngineProjectPropertyValue.number(Double($0.1)))
+        })
+        let changed = try document(validUsers)
+        let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
+        XCTAssertEqual(accepted.sceneBloomFloats.map(\.name), fields.map(\.name))
+        let previousGeneration = state.generation(.bloom)
+        accepted.apply(to: &state)
+        XCTAssertGreaterThan(state.generation(.bloom), previousGeneration)
+        for (field, value) in zip(fields, values) {
+            XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+
+        // A later script return wins over the authored seed. An unrelated alpha change cannot restore that seed.
+        engine.tick(dt: 0, state: &state)
+        let scriptGeneration = state.generation(.bloom)
+        let faded = try document(validUsers, alpha: 0.25)
+        let unrelated = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: faded))
+        XCTAssertTrue(unrelated.sceneBloomFloats.isEmpty)
+        unrelated.apply(to: &state)
+        XCTAssertEqual(state.object("1")?.alpha, 0.25)
+        XCTAssertEqual(state.generation(.bloom), scriptGeneration)
+        let invalid = try document([
+            fields[0].name: .bool(false), fields[1].name: .string("4"),
+            fields[2].name: .bool(true), fields[3].name: .string("2"),
+        ], alpha: 0.25)
+        let rejected = try XCTUnwrap(WPEParityUserPropertyUpdate(from: faded, to: invalid))
+        XCTAssertTrue(rejected.sceneBloomFloats.isEmpty)
+        rejected.apply(to: &state)
+        XCTAssertEqual(state.generation(.bloom), scriptGeneration)
+        for (field, value) in zip(fields, values) {
+            XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value + 1, 0, 0, 0)))
+        }
+        let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: faded))
+        XCTAssertEqual(recovered.sceneBloomFloats.count, 4, "Old invalid is not substituted with a constructor default")
+        recovered.apply(to: &state)
+        for (field, value) in zip(fields, values) {
+            XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testGeneralBloomStrictJSONSeedsAndBindingsReachCanonicalState() throws {
         let assets = try Self.fixedAssets()
         func document(_ general: [String: Any]) throws -> WPESceneDocument {

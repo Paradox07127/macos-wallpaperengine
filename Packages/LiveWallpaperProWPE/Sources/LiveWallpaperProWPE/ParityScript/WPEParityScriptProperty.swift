@@ -92,6 +92,14 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         owner == .scene && name == "bloom" && type == .flagBool && target == .field
     }
 
+    var isSceneHDRBloomFloat: Bool {
+        guard owner == .scene, type == .float, target == .field else { return false }
+        switch name {
+        case "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter": return true
+        default: return false
+        }
+    }
+
     /// 14019b4e0 accepts only a JSON Bool or an object's immediate Bool `value`.
     /// Nil means keep the existing bit (the scene constructor starts with mask2 set).
     public static func bloomValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
@@ -100,6 +108,21 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         case let .object(entries)?:
             if case let .bool(flag)? = entries["value"] {
                 flag
+            } else {
+                nil
+            }
+        default: nil
+        }
+    }
+
+    /// 1401a4b00 admits numeric JSON tags directly or at an object's immediate `value`.
+    /// Invalid seeds preserve storage; Bool, numeric strings and nested envelopes are not numbers here.
+    public static func bloomFloatValue(fromJSON value: WPESceneJSONValue?) -> Float? {
+        switch value {
+        case let .number(number)?: Float(number)
+        case let .object(entries)?:
+            if case let .number(number)? = entries["value"] {
+                Float(number)
             } else {
                 nil
             }
@@ -240,6 +263,10 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "ambientcolor", owner: .scene, type: .vec3, invalidation: .lighting),
         WPEParityScriptProperty(name: "skylightcolor", owner: .scene, type: .vec3, invalidation: .lighting),
         WPEParityScriptProperty(name: "bloom", owner: .scene, type: .flagBool),
+        WPEParityScriptProperty(name: "bloomhdrstrength", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomhdrthreshold", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomhdrfeather", owner: .scene, type: .float, invalidation: .bloom),
+        WPEParityScriptProperty(name: "bloomhdrscatter", owner: .scene, type: .float, invalidation: .bloom),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.

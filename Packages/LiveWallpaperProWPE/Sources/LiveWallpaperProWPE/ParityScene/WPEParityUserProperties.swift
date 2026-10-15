@@ -120,6 +120,11 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         public let visible: Bool
     }
 
+    public struct SceneFloatWrite: Sendable, Equatable {
+        public let name: String
+        public let value: Float
+    }
+
     public private(set) var objects: [ObjectWrite] = []
     public private(set) var effects: [EffectWrite] = []
     public private(set) var constants: [ConstantWrite] = []
@@ -130,6 +135,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public let bloom: WPEParityBloomSettings
     /// A valid changed JSON Bool seed, or nil to preserve the running script's current value.
     public let sceneBloom: Bool?
+    /// Accepted document deltas for the four HDR Float fields, not a second live settings owner.
+    public private(set) var sceneBloomFloats: [SceneFloatWrite] = []
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
@@ -138,6 +145,12 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let oldBloom = WPEParityScriptProperty.bloomValue(fromJSON: old.resolvedGeneralJSON["bloom"])
         let newBloom = WPEParityScriptProperty.bloomValue(fromJSON: new.resolvedGeneralJSON["bloom"])
         sceneBloom = oldBloom != newBloom ? newBloom : nil
+        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneHDRBloomFloat {
+            let previous = WPEParityScriptProperty.bloomFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
+            guard let value = WPEParityScriptProperty.bloomFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
+                  value != previous else { continue }
+            sceneBloomFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
+        }
         let before = WPEParitySceneState(document: old, hdr: false)
         let after = WPEParitySceneState(document: new, hdr: false)
         guard before.ids == after.ids, before.effects == after.effects else { return nil }
@@ -178,6 +191,9 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public func apply(to state: inout WPEParitySceneState) {
         if let sceneBloom {
             state.setScriptField("bloom", of: "", to: .vector(SIMD4(sceneBloom ? 1 : 0, 0, 0, 0)), invalidating: .none)
+        }
+        for write in sceneBloomFloats {
+            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .bloom)
         }
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)
