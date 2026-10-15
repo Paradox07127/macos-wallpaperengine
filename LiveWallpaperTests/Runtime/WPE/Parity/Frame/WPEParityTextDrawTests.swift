@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
@@ -294,6 +295,9 @@ final class WPEParityTextDrawTests: XCTestCase {
 
     func testBoundAtlasHoldsTheCPUPixelsAndIsClean() async throws {
         let fixture = try await makeSyntheticRenderer(effect: false)
+        XCTAssertFalse(fixture.plan.loadPrograms.contains { program in
+            program.shader == "font" && program.combos.contains { $0.name == "MSDF" && $0.value == "1" }
+        }, "Ordinary bitmap text must not precompile field variants")
         let renderer = fixture.renderer
         try await encode(renderer, label: "atlas")
         let text = try sceneText(fixture.plan)
@@ -366,6 +370,119 @@ final class WPEParityTextDrawTests: XCTestCase {
             await submission.commandBuffer.completed()
             XCTAssertNil(submission.commandBuffer.error)
             XCTAssertEqual(submission.result.contents().load(as: UInt8.self), submission.expected)
+        }
+    }
+
+    /// Authored effects enter the real mono font material; original GLSL compiles, consumes all four RVs and
+    /// presents changed outline/shadow pixels without replacing a parameter-only update's field texture/mesh.
+    func testRequestedMonoFieldsConsumeOriginalShaderRVsAndKeepParameterOnlyResources() async throws {
+        let assets: URL
+        do { assets = try wpeAssets() }
+        catch { throw NSError(domain: "WPEParityMono.RequiredInputs", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(error)"]) }
+        for (path, expected) in [
+            ("shaders/font.frag", "d9f4e7198e2cc417c50a62d65e7dd2a654a13657b4d61df358bb1c016d4d7b26"),
+            ("shaders/font.vert", "8b337706d01a9a7ee5919c3cd3e489190d753e26e191e68b4014cb732c26f944"),
+            ("materials/fonts/basefont_msdf.json", "50bbde8eb0424fdb36aa02d61ab8ae36dff70d99da78955f599ff372303e7dee"),
+            ("fonts/NotoSans-Regular.ttf", "6b04c8dd65af6b73eb4279472ed1580b29102d6496a377340e80a40cdb3b22c9"),
+        ] {
+            let bytes = try Data(contentsOf: assets.appending(path: path))
+            XCTAssertEqual(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(), expected, path)
+        }
+        for effect in [false, true] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: effect, text: "H")) as? [String: Any])
+            var object = try XCTUnwrap((json["objects"] as? [[String: Any]])?.first)
+            object["pointsize"] = 8
+            object["outline"] = true; object["outlinethickness"] = 2; object["outlinecolor"] = "1 0 0"
+            object["blur"] = true; object["blursize"] = 0.1
+            object["dropshadow"] = true; object["dropshadowcolor"] = "0 0 1"
+            object["dropshadowsize"] = 1; object["dropshadowopacity"] = 1; object["dropshadowoffset"] = "5 -4"
+            json["objects"] = [object]
+            let beforeJSON = try JSONSerialization.data(withJSONObject: json)
+            let fixture: Fixture
+            do { fixture = try await makeSyntheticRenderer(effect: effect, scene: beforeJSON) }
+            catch { throw NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"]) }
+            let renderer = fixture.renderer
+            let warmed = fixture.plan.loadPrograms.filter { $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" } }
+            XCTAssertGreaterThan(warmed.count, 0)
+            XCTAssertLessThanOrEqual(warmed.count, 16, "Existing HLSL view deduplicates the finite source variants")
+            print("mono authored effect=\(effect): unique field HLSL compile requests=\(warmed.count); all programs=\(fixture.plan.loadPrograms.count)")
+            try await encode(renderer, label: "mono initial effect=\(effect)")
+            XCTAssertTrue(renderer.skipped.isEmpty)
+            let before = renderer.textPreparationState
+            let text = try XCTUnwrap(before.texts[Self.textID])
+            let mesh = try XCTUnwrap(text.layout.mesh)
+            XCTAssertEqual(mesh.glyphMode, .distanceField)
+            let key = WPEParityTextAtlasTextures.Key(atlasKey: text.atlasKey, atlas: .mono)
+            let texture = try XCTUnwrap(before.atlases.textures[key])
+            XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+            let entry = try XCTUnwrap(before.atlases.atlases[text.atlasKey]?.mono.entry(forKey: 43))
+            XCTAssertEqual([entry.x0, entry.y0, entry.x1, entry.y1], [0, 0, 42, 47], "Original qualified H/33ppem cell dimensions")
+            let first = try textDraw(renderer, geometry: .textGlyphs(.mono))
+            let writes = try XCTUnwrap(text.fieldParameters)
+            try assertFontRVConstants(first, expected: writes)
+            let target = try XCTUnwrap(before.frames[0].draws.first { _, draw in
+                if case let .scene(scene) = draw {
+                    return scene.objectID == Self.textID && scene.geometry == .textGlyphs(.mono)
+                }
+                return false
+            }.flatMap { _, draw -> MTLTexture? in
+                if case let .scene(scene) = draw {
+                    return before.targets[scene.target]
+                }
+                return nil
+            })
+            let initial = try readBack(target, fixture)
+            XCTAssertGreaterThan(stride(from: 0, to: initial.count, by: 4).count { Int(initial[$0]) > Int(initial[$0 + 1]) + 30 }, 0,
+                                 "Actual outline RGB must reach the original font shader")
+            let blueBefore = stride(from: 0, to: initial.count, by: 4).count {
+                Int(initial[$0 + 2]) > max(Int(initial[$0]), Int(initial[$0 + 1])) + 30
+            }
+            XCTAssertGreaterThan(blueBefore, 0, "RV2 shadow colour and RV3 opacity must affect actual pixels")
+            object["outlinecolor"] = "0 1 0"; object["dropshadowopacity"] = 0
+            json["objects"] = [object]
+            let changed = try Self.parse(JSONSerialization.data(withJSONObject: json))
+            let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: Self.parse(beforeJSON), to: changed))
+            try renderer.applyUserProperties(update)
+            try await encode(renderer, label: "mono parameter only effect=\(effect)")
+            let after = renderer.textPreparationState
+            let current = try XCTUnwrap(after.texts[Self.textID])
+            XCTAssertEqual(current.layout, text.layout)
+            XCTAssertTrue(after.atlases.textures[key] === texture)
+            XCTAssertEqual(after.atlases.contentGenerations, before.atlases.contentGenerations)
+            let emitted = try textDraw(renderer, geometry: .textGlyphs(.mono))
+            XCTAssertTrue(emitted.vertexBuffer === first.vertexBuffer)
+            XCTAssertTrue(emitted.indexBuffer === first.indexBuffer)
+            XCTAssertTrue(emitted.pipeline.state === first.pipeline.state)
+            try assertFontRVConstants(emitted, expected: XCTUnwrap(current.fieldParameters))
+            let pixels = try readBack(target, fixture)
+            XCTAssertNotEqual(pixels, initial, "Live four-RV update must change actual GPU pixels")
+            XCTAssertGreaterThan(stride(from: 0, to: pixels.count, by: 4).count { Int(pixels[$0 + 1]) > Int(pixels[$0]) + 30 }, 0)
+            let blueAfter = stride(from: 0, to: pixels.count, by: 4).count {
+                Int(pixels[$0 + 2]) > max(Int(pixels[$0]), Int(pixels[$0 + 1])) + 30
+            }
+            XCTAssertEqual(blueAfter, 0, "RV3.x=0 removes the real blue shadow while the green outline remains")
+            XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.textures["g_Texture0"] === texture })
+            let presented = try readBack(renderer.backbuffer, fixture)
+            XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0 + 1] > 0 })
+        }
+    }
+
+    private func assertFontRVConstants(_ draw: WPEParityDraw, expected: WPEParityTextDrawParameters) throws {
+        let values = [expected.renderVar0, expected.renderVar1, expected.renderVar2, SIMD4(expected.renderVar3X, 0, 0, 0)]
+        for (index, expected) in values.enumerated() {
+            let name = "g_RenderVar\(index)"
+            let layout = try XCTUnwrap(draw.pipeline.fragment.cbuffers.first { $0[name] != nil }, "Real compiled fragment reflection: \(name)")
+            let value = try XCTUnwrap(draw.constants[.fragment]?[name], "Actual emitted draw constant: \(name)")
+            var pack = WPECBufferPacker(layout: layout)
+            try pack.write(value, to: name)
+            let offset = try XCTUnwrap(layout[name]).offset
+            guard offset <= pack.bytes.count - 16 else { return XCTFail("Required four-lane RV layout: \(name)") }
+            for lane in 0 ..< 4 {
+                let base = offset + lane * 4
+                let bits = UInt32(pack.bytes[base]) | UInt32(pack.bytes[base + 1]) << 8
+                    | UInt32(pack.bytes[base + 2]) << 16 | UInt32(pack.bytes[base + 3]) << 24
+                XCTAssertEqual(bits, expected[lane].bitPattern, "\(name)[\(lane)] CBuffer")
+            }
         }
     }
 

@@ -1105,7 +1105,14 @@ final class WPEParityFrameRenderer {
     private func replanRelaidTexts() throws {
         guard !textRequests.isEmpty else { return }
         let pipeline = textPipeline
-        guard let prepared = try pipeline.prepareRelayouts(textRequests) else {
+        let requested = try WPEParityTextFieldAdmission.requests(textRequests, texts: pipeline.texts,
+                                                                 qualifiedObjects: plan.scene.scene.objects.compactMap {
+                                                                     if case let .text(text) = $0.kind {
+                                                                         return text.object
+                                                                     }
+                                                                     return nil
+                                                                 })
+        guard let prepared = try pipeline.prepareRelayouts(requested) else {
             consumeTextRequests()
             return
         }
@@ -1131,7 +1138,11 @@ final class WPEParityFrameRenderer {
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let kept = current.draws.filter { index, _ in
             guard case let .scene(draw)? = current.frames[0].draws[index] else { return true }
-            return !changed.contains(draw.objectID)
+            guard changed.contains(draw.objectID) else { return true }
+            // makeLayout still checks the actual program/source, resources and frame compatibility before reuse.
+            guard case .textGlyphs = draw.geometry, let before = planner.texts[draw.objectID],
+                  let after = prepared.texts[draw.objectID] else { return false }
+            return before.layout == after.layout && before.atlasKey == after.atlasKey
         }
         let reuse = Layout(effects: current.effects, frames: current.frames, draws: kept,
                            skipped: current.skipped, fade: current.fade)
@@ -1153,6 +1164,7 @@ final class WPEParityFrameRenderer {
         }
         var rebound = layout.draws
         for index in rebound.keys {
+            candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
             candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
         }
         layout = Layout(effects: layout.effects, frames: layout.frames, draws: rebound,
@@ -1357,6 +1369,7 @@ final class WPEParityFrameRenderer {
                                                                                  constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
                                                                                  renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
+                                                                                 textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
                                                                                  mediaTexture: { mediaTextures?.texture(for: $0) },
                                                                                  userShortcutTexture: { shortcutTextures[$0] })
                                                 try encode(provided, operation: operation)
