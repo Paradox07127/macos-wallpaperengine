@@ -204,7 +204,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: cache) }
         let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
         let store = try WPEParityShaderStore(
-            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values,
+            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.loadPrograms,
                                                      geometryCompiler: geometryCompiler),
             diskCache: WPEParityShaderDiskCache(cachesURL: cache)
         )

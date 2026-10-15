@@ -377,7 +377,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
                                           width: Self.width, height: Self.height)
         let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         let store = try WPEParityShaderStore(
-            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.programs.values,
+            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.loadPrograms,
                                                      geometryCompiler: geometryCompiler),
             diskCache: WPEParityShaderDiskCache(cachesURL: scratch.appending(path: "cache"))
         )

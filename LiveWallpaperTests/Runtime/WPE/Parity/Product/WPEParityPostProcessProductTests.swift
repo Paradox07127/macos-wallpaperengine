@@ -127,7 +127,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                             shared.bloomLoads = (shared.bloomLoads || 0) + 1;
                             export function update(value) {
                               if (shared.bloomLoads !== 1) throw new Error('module rerun');
-                              thisScene.bloom = engine.userProperties.enable.value;
+                              thisScene.bloom = engine.userProperties.enable;
                               return value;
                             }
                             """]],
@@ -210,6 +210,104 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 XCTAssertLessThanOrEqual(abs(Int(pixels[channel]) - 128), hdr ? 2 : 1)
             }
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
+    func testResolvedBloomDocumentDeltaSwitchesHDRGraphWithoutReallocatingBackbuffer() async throws {
+        let engine = try engineAssets()
+        let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [engine])
+        let source: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                        "clearcolor": "0.5 0.5 0.5", "clearenabled": true, "camerafade": false,
+                        "bloom": ["value": true, "user": "toggle"], "hdr": true, "bloomhdrthreshold": 0],
+            "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
+        ]
+        func document(_ enabled: Bool) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
+                                             userValues: ["toggle": .bool(enabled)],
+                                             makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+        }
+        var previous = try document(false)
+        let plan = try WPEParityFramePlan(document: previous, assets: assets,
+                                          settings: .init(bloom: true, hdrPostProcessing: true), width: 32, height: 32)
+        XCTAssertTrue(plan.post.hdrEnabled, "Raw source Bool controls allocation independently of the resolved live Bool")
+        XCTAssertFalse(plan.post.bloomEnabled)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, device: device, queue: queue)
+        let backbuffer = renderer.backbuffer
+        var firstExecutors: [ObjectIdentifier] = []
+        for (step, enabled) in [false, true, false].enumerated() {
+            let next = try document(enabled)
+            let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: previous, to: next))
+            XCTAssertEqual(update.sceneBloom, step == 0 ? nil : enabled)
+            try renderer.applyUserProperties(update)
+            try await render(renderer)
+            let terminal = enabled ? "combine_hdr" : "combine_srgb"
+            XCTAssertTrue(renderer.frames[0].draws.values.contains {
+                if case let .post(post) = $0 {
+                    return post.shader == terminal
+                }; return false
+            })
+            XCTAssertTrue(renderer.backbuffer === backbuffer)
+            XCTAssertEqual(renderer.backbuffer.pixelFormat, .rgba16Float)
+            let pixels = try await present(renderer, device: device, queue: queue)
+            for channel in 0 ..< 3 {
+                if enabled {
+                    XCTAssertGreaterThan(Int(pixels[channel]), 130)
+                } else {
+                    XCTAssertLessThanOrEqual(abs(Int(pixels[channel]) - 128), 2)
+                }
+            }
+            if step == 0 {
+                firstExecutors = renderer.graphExecutorIdentities
+            }
+            if step == 2 {
+                XCTAssertEqual(renderer.graphExecutorIdentities, firstExecutors)
+            }
+            previous = next
+        }
+    }
+
+    func testInactiveHDRTerminalTransferIsRejectedDuringReachablePreparation() async throws {
+        let engine = try engineAssets()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        for initial in [false, true] {
+            let path = initial ? "materials/util/combine_srgb.json" : "materials/util/combine_hdr_upsample.json"
+            var material = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: engine.appendingPathComponent(path))) as? [String: Any])
+            var passes = try XCTUnwrap(material["passes"] as? [[String: Any]])
+            var combos = passes[0]["combos"] as? [String: Any] ?? [:]
+            combos["LINEAR"] = 1
+            passes[0]["combos"] = combos
+            material["passes"] = passes
+            let replacement = try JSONSerialization.data(withJSONObject: material)
+            let assets = WPEParityProgramAssets(sources: [.lookup(engine) { name in
+                name == path ? replacement : try? Data(contentsOf: engine.appendingPathComponent(name))
+            }])
+            let source: [String: Any] = [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                            "bloom": ["value": true, "user": "toggle"], "hdr": true, "camerafade": false],
+                "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
+            ]
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
+                                                            userValues: ["toggle": .bool(initial)],
+                                                            makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+            let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                              settings: .init(bloom: true, hdrPostProcessing: true), width: 32, height: 32)
+            XCTAssertTrue(plan.post.hdrEnabled)
+            XCTAssertEqual(plan.post.bloomEnabled, initial)
+            do {
+                _ = try await makeRenderer(plan, device: device, queue: queue)
+                XCTFail("The inactive terminal must be qualified before a later toggle can select it")
+            } catch let error as WPEParityFrameRenderError {
+                guard case let .requiredPostProcessUnavailable(pass, reason) = error,
+                      case let .program(message) = reason else { return XCTFail("unexpected failure: \(error)") }
+                XCTAssertEqual(pass, initial ? "combine_srgb" : "combine_hdr")
+                XCTAssertTrue(message.contains("Unsupported HDR presentation shader or transfer combo"))
+            }
         }
     }
 
