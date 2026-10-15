@@ -177,7 +177,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         }
         let initial = try document()
         for field in fields {
-            XCTAssertNil(WPEParityScriptProperty.bloomFloatValue(fromJSON: initial.resolvedGeneralJSON[field]),
+            XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: initial.resolvedGeneralJSON[field]),
                          "This fixture must reach the typed reader with an invalid seed after envelope resolution")
         }
         let plan = try WPEParityFramePlan(document: initial, assets: assets,

@@ -276,7 +276,7 @@ final class WPEParitySceneScript {
             return (WPEParitySceneState.ScriptFieldKey(objectID: "", name: name),
                     WPEParitySceneState.ScriptValue.vector(value))
         })
-        let bloom = WPEParityScriptProperty.bloomValue(fromJSON: general["bloom"]) ?? true
+        let bloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: general["bloom"]) ?? true
         fields[.init(objectID: "", name: "bloom")] = .vector(SIMD4(bloom ? 1 : 0, 0, 0, 0))
         return fields
     }
