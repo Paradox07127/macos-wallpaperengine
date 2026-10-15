@@ -58,7 +58,7 @@ final class ParityScriptEngineTests: XCTestCase {
                            "Public raw fields have no clamp or near/far reorder")
         }
         let values: [Float] = [60, 0.25, 200]
-        let validSeeds: [Any] = values.map(Double.init)
+        let validSeeds: [Any] = values.map { Double($0) }
         let changed = try document(validSeeds)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
         XCTAssertEqual(accepted.sceneProjectionFloats.map(\.name), names)
