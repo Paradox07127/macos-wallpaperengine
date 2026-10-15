@@ -17,11 +17,20 @@ public struct WPEParityClock: Sendable {
     /// Renderer +0x148 retains the binary64 sum independently of the published shader/script time.
     private var accumulatedTime: Double = 0
     public private(set) var pauseRamp: Float = 1
+    /// Host +0x190 stores this normalized rate. Convert an accepted percent value only at its setter.
+    public private(set) var normalizedRate: Float = 1
+    /// Main +0x164, published before the frame-step clamp and consumed with that update's frametime.
+    public private(set) var sceneScale: Float = 1
 
     public init() {}
 
     public static func rate(percent: Float) -> Float {
         max(percent / 100, 0.1)
+    }
+
+    /// The finite numeric setter boundary (115280); raw settings type admission belongs to the host.
+    public mutating func setRate(percent: Float) {
+        normalizedRate = Self.rate(percent: percent)
     }
 
     public static func daytime(hour: Int, minute: Int, second: Int, millisecond: Int) -> Float {
@@ -31,7 +40,7 @@ public struct WPEParityClock: Sendable {
 
     /// Returns false when the paused ramp has reached 0; WPE skips the frame and the clock holds.
     @discardableResult
-    public mutating func advance(elapsed: Double, ratePercent: Float, paused: Bool) -> Bool {
+    public mutating func advance(elapsed: Double, paused: Bool) -> Bool {
         let step = Self.clampStep(Float(elapsed))
         let target: Float = paused ? 0 : 1
         if abs(pauseRamp - target) >= Self.rampSnap {
@@ -44,13 +53,21 @@ public struct WPEParityClock: Sendable {
             return false
         }
         previousFrametime = frametime
-        frametime = Self.clampStep(Self.rate(percent: ratePercent) * pauseRamp * step)
+        sceneScale = normalizedRate * pauseRamp
+        frametime = Self.clampStep(sceneScale * step)
         // 14017fcaf–14017fce5: widen the binary32 step, add/store binary64, then publish binary32.
         accumulatedTime += Double(frametime)
         if timeUniform > Self.wrapTime {
             accumulatedTime = 0
         }
         return true
+    }
+
+    /// Compatibility for callers supplying a fresh rate. Product updates use the stored normalized owner.
+    @discardableResult
+    public mutating func advance(elapsed: Double, ratePercent: Float, paused: Bool) -> Bool {
+        setRate(percent: ratePercent)
+        return advance(elapsed: elapsed, paused: paused)
     }
 
     public var timeUniform: Float {
