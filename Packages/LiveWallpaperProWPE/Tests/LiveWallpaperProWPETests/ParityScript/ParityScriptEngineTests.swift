@@ -3,6 +3,88 @@ import Foundation
 import XCTest
 
 final class ParityScriptEngineTests: XCTestCase {
+    func testGeneralBloomStrictJSONSeedsAndBindingsReachCanonicalState() throws {
+        let assets = try Self.fixedAssets()
+        func document(_ general: [String: Any]) throws -> WPESceneDocument {
+            var generalJSON: [String: Any] = ["orthogonalprojection": ["width": 200, "height": 100]]
+            generalJSON.merge(general) { _, new in new }
+            let json: [String: Any] = [
+                "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+                "general": generalJSON,
+                "objects": [],
+            ]
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
+                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        // 14019b4e0 preserves constructor mask2 for invalid seeds; only immediate JSON Bool can replace it.
+        let seeds: [(String, Any?, Bool)] = [
+            ("absent", nil, true), ("false", false, false), ("true", true, true),
+            ("value false", ["value": false], false), ("value true", ["value": true], true),
+            ("number zero", 0, true), ("number one", 1, true), ("numeric string", "0", true),
+            ("string", "false", true), ("null", NSNull(), true), ("array", [false], true),
+            ("value number", ["value": 0], true), ("nested value", ["value": ["value": false]], true),
+        ]
+        for (name, seed, expected) in seeds {
+            let witness = """
+            if (typeof thisScene.bloom !== 'boolean' || thisScene.bloom !== \(expected)) throw new Error('global bloom seed');
+            export function init(v) {
+              if (thisScene.bloom !== \(expected)) throw new Error('init bloom seed');
+              return v;
+            }
+            """
+            var general: [String: Any] = ["bloomstrength": ["value": 2, "script": witness]]
+            if let seed {
+                general["bloom"] = seed
+            }
+            let scene = try document(general)
+            var state = WPEParitySceneState(document: scene, hdr: false)
+            let engine = try WPEParityScriptEngine.prepare(document: scene, state: &state, configuration: .init(
+                assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100),
+                fieldDefaults: [.init(objectID: "", name: "bloom"): .vector(.zero)]
+            ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+            XCTAssertNil(engine.start(state: &state), name)
+            XCTAssertEqual(state.scriptField("bloom", of: ""), .vector(SIMD4(expected ? 1 : 0, 0, 0, 0)), name)
+            XCTAssertEqual(engine.exceptionCount, 0, name + ": " + engine.exceptions.joined(separator: "\n"))
+        }
+
+        // The invalid seed still registers its real Bool property script. Existing canonical false survives it.
+        let script = """
+        if (thisScene.bloom !== false) throw new Error('retained canonical bloom');
+        let frame = 0;
+        export function init(v) {
+          if (typeof v !== 'boolean' || v !== false) throw new Error('typed binding input');
+          thisScene.bloom = true;
+          thisScene.bloom = 0;
+          if (thisScene.bloom !== true) throw new Error('invalid direct setter');
+          return false;
+        }
+        export function update(v) {
+          if (typeof v !== 'boolean') throw new Error('typed update input');
+          frame += 1;
+          if (frame === 1) { thisScene.bloom = true; return 0; }
+          if (frame === 2) return false;
+          return true;
+        }
+        """
+        let scene = try document(["bloom": ["value": ["value": true], "script": script]])
+        var state = WPEParitySceneState(document: scene, hdr: false)
+        state.setScriptField("bloom", of: "", to: .vector(.zero), invalidating: .none)
+        let engine = try WPEParityScriptEngine.prepare(document: scene, state: &state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+        XCTAssertEqual(engine.bindings.map(\.path), ["bloom"])
+        XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
+        let bloomConstantsGeneration = state.generation(.bloom)
+        XCTAssertNil(engine.start(state: &state))
+        XCTAssertEqual(state.scriptField("bloom", of: ""), .vector(.zero))
+        for expected: Float in [1, 0, 1] {
+            engine.tick(dt: 0, state: &state)
+            XCTAssertEqual(state.scriptField("bloom", of: ""), .vector(SIMD4(expected, 0, 0, 0)))
+        }
+        XCTAssertEqual(state.generation(.bloom), bloomConstantsGeneration, "Bool has no native Float-constant hook")
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testLookAtMethodsUseLocalTypedSlotsAndNativeCameraSign() throws {
         let imageScript = """
         const globalReturn = thisObject.lookAt(new Vec3(11, 20, 30));

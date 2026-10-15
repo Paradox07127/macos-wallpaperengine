@@ -49,9 +49,8 @@ final class ParitySoundFieldOrderTests: XCTestCase {
                 && $0["schema"] as? String == "lw.wpe.s11.cold-order.marker.v2"
         })
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-        // The original general module stays in the fixture. Its missing descriptor is a diagnosed parity gap.
-        XCTAssertTrue(diagnostics.contains { $0.contains("general.bloom script is unsupported") })
-        print("S10 cold-order missing general descriptor: " + diagnostics.filter { $0.contains("general.bloom") }.joined(separator: "\n"))
+        // Retain all original general markers without claiming native general early-init ordering here.
+        XCTAssertFalse(diagnostics.contains { $0.contains("general.bloom script is unsupported") })
         print("S10 cold-order actual JSC markers (Sound subset qualified only):\n" + messages.joined(separator: "\n"))
     }
 }

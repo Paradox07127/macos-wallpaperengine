@@ -749,9 +749,12 @@ public final class WPEParityScriptEngine {
             slots.append(Slot(layer: -1, descriptor: index(of: descriptor)))
             refresh.append(.field(slot: slot, objectID: "", name: descriptor.fieldName))
             let key = WPEParitySceneState.ScriptFieldKey(objectID: "", name: descriptor.fieldName)
-            if let value = configuration.fieldDefaults[key]
-                ?? Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
-                ?? Self.generalDefault(descriptor) {
+            let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
+            // Bloom's typed JSON must not be replaced by a generic number-derived product seed.
+            // Existing canonical fields are retained by seedMissingFields and mirror.
+            let value = descriptor.isSceneBloom ? parsed ?? Self.generalDefault(descriptor)
+                : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
+            if let value {
                 initialValues.append((slot, value))
             }
         }
@@ -1485,12 +1488,16 @@ public final class WPEParityScriptEngine {
         case "ambientcolor", "skylightcolor": .vector(.zero)
         case "bloomstrength": .vector(SIMD4(2, 0, 0, 0))
         case "bloomthreshold": .vector(SIMD4(0.65, 0, 0, 0))
+        case "bloom": .vector(SIMD4(1, 0, 0, 0))
         default: nil
         }
     }
 
     private static func parse(_ raw: WPESceneJSONValue?,
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
+        if descriptor.isSceneBloom {
+            return WPEParityScriptProperty.bloomValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
+        }
         guard var value = raw else { return nil }
         if case .object = value {
             guard let inner = value["value"] else { return nil }

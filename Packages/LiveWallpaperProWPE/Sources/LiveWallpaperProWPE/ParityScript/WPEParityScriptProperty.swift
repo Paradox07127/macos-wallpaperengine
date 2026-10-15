@@ -88,6 +88,25 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
             && !flags.contains(.notFromJSON)
     }
 
+    var isSceneBloom: Bool {
+        owner == .scene && name == "bloom" && type == .flagBool && target == .field
+    }
+
+    /// 14019b4e0 accepts only a JSON Bool or an object's immediate Bool `value`.
+    /// Nil means keep the existing bit (the scene constructor starts with mask2 set).
+    public static func bloomValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
+        switch value {
+        case let .bool(flag)?: flag
+        case let .object(entries)?:
+            if case let .bool(flag)? = entries["value"] {
+                flag
+            } else {
+                nil
+            }
+        default: nil
+        }
+    }
+
     /// π/180 as WPE multiplies it (DAT_140492628).
     public static let degreesToRadians: Float = 0.017_453_292
     public static let radiansToDegrees: Float = 57.295_78
@@ -213,13 +232,14 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "duration", owner: .video, type: .float, flags: .notFromJSON),
     ]
 
-    /// Scene fields under the IScene names of the official docs: bloom sets scene+0xe0 bit31 (R25/dis1.txt:154-156),
-    /// ambient and skylight copy to Main+0x1298 (:161-167).
+    /// Scene fields: Float bloom parameters set scene+0xe0 bit31; ambient/skylight update lighting.
+    /// 140199780 also registers bloom itself as type6/flags0, scene+0xe0 mask2, with no setter hook.
     public static let scene: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "bloomstrength", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "bloomthreshold", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "ambientcolor", owner: .scene, type: .vec3, invalidation: .lighting),
         WPEParityScriptProperty(name: "skylightcolor", owner: .scene, type: .vec3, invalidation: .lighting),
+        WPEParityScriptProperty(name: "bloom", owner: .scene, type: .flagBool),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.
