@@ -93,10 +93,15 @@ public struct WPEParityCamera: Sendable, Equatable {
                   up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
-                  perspectiveFOV: WPEParityScriptProperty.sceneFloatValue(fromJSON: resolved["perspectiveoverridefov"]) ?? 95,
+                  perspectiveFOV: Self.perspectiveOverrideFOV(general: resolved),
                   shake: WPEParityScriptProperty.sceneBoolValue(fromJSON: resolved["camerashake"]) == true
                       ? WPEParityCameraShake(general: resolved, orthographic: perspective == nil) : nil,
                   scenePerspective: perspective)
+    }
+
+    /// Raw O+0x144: strict fromJSON Float or the native constructor's 95 degrees, without effective-FOV clamping.
+    public static func perspectiveOverrideFOV(general: WPESceneJSONValue) -> Float {
+        WPEParityScriptProperty.sceneFloatValue(fromJSON: general["perspectiveoverridefov"]) ?? 95
     }
 
     /// Native constructor values and strict typed fromJSON seeds, before any SceneScript writes.
