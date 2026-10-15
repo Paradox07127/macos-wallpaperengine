@@ -263,7 +263,8 @@ private struct WPEParityTextField {
         case let .number(number):
             return Array(repeating: Float(number), count: count)
         case let .string(string):
-            let bytes = Array(string.utf8CString)
+            // Native separator scans stop at the first NUL, including one embedded in the JSON string.
+            let bytes = Array(string.utf8CString.prefix { $0 != 0 }) + [0]
             var parts = [Float](repeating: 0, count: count)
             var cursor = 0
             for index in parts.indices {
