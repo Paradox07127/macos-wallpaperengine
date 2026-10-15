@@ -17,7 +17,7 @@ public struct WPEParityCameraAlignment: Sendable, Equatable {
     public static let noCrop = Self()
 }
 
-/// General `fov` (degrees), `nearz` and `farz` of a scene whose `orthogonalprojection` is null (Main+0x140/0x14c/0x150,
+/// General `fov` (degrees), `nearz` and `farz` of a scene whose `orthogonalprojection` is null (SceneObject+0x140/0x14c/0x150,
 /// defaults from 140186c90.c:137-141).
 public struct WPEParityScenePerspective: Sendable, Equatable {
     public var fov: Float
@@ -28,6 +28,13 @@ public struct WPEParityScenePerspective: Sendable, Equatable {
         self.fov = fov
         self.near = near
         self.far = far
+    }
+
+    /// Raw constructor fields, before the separate effective FOV is selected and clamped.
+    public init(general: WPESceneJSONValue) {
+        self.init(fov: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["fov"]) ?? 50,
+                  near: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["nearz"]) ?? Float(bitPattern: 0x3DCC_CCCD),
+                  far: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["farz"]) ?? 10000)
     }
 }
 
@@ -77,16 +84,10 @@ public struct WPEParityCamera: Sendable, Equatable {
             ?? SIMD2(Float(ortho.width), Float(ortho.height))
         let parallax = Self.parallaxSettings(general: document.resolvedGeneralJSON)
         let resolved = document.resolvedGeneralJSON
-        func value(_ key: String, _ fallback: Float) -> Float {
-            let raw = resolved[key]
-            return WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? fallback
+        var perspective = general.usesPerspectiveProjection ? WPEParityScenePerspective(general: resolved) : nil
+        if document.cameraMotion != nil {
+            perspective?.fov = Float(document.camera.fov)
         }
-        let defaults = WPEParityScenePerspective()
-        let perspective = general.usesPerspectiveProjection
-            ? WPEParityScenePerspective(fov: document.cameraMotion == nil ? value("fov", defaults.fov) : Float(document.camera.fov),
-                                        near: value("nearz", defaults.near),
-                                        far: value("farz", defaults.far))
-            : nil
         // The V parallax push needs an orthographic scene (14018aac0.c:87).
         self.init(eye: SIMD3(document.camera.eye), center: SIMD3(document.camera.center),
                   up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
@@ -118,8 +119,7 @@ public struct WPEParityCamera: Sendable, Equatable {
         camera.center = SIMD3(document.staticCamera.center)
         camera.up = SIMD3(document.staticCamera.up)
         if camera.scenePerspective != nil {
-            let raw = document.resolvedGeneralJSON["fov"]
-            camera.scenePerspective?.fov = WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? 50
+            camera.scenePerspective?.fov = WPEParityScenePerspective(general: document.resolvedGeneralJSON).fov
         }
         return camera
     }
@@ -239,7 +239,8 @@ public struct WPEParityCamera: Sendable, Equatable {
     /// (140183a70.c:36-68); the fov clamp is 1401891a0.c:279-287.
     public var projection: simd_float4x4 {
         if let scenePerspective {
-            let fov = min(max(scenePerspective.fov, 0.1), 179.9) * (Float.pi / 180)
+            let fov = min(max(scenePerspective.fov, Float(bitPattern: 0x3DCC_CCCD)), Float(bitPattern: 0x4333_E666))
+                * WPEParityScriptProperty.degreesToRadians
             var perspective = Self.perspective(fovY: fov, aspect: renderTargetSize.x / renderTargetSize.y,
                                                near: scenePerspective.near, far: scenePerspective.far)
             if alignment.flipHorizontal {
@@ -335,9 +336,9 @@ public struct WPEParityCamera: Sendable, Equatable {
         ])
     }
 
-    /// FUN_14009a360, XMMatrixPerspectiveFovRH with near and far swapped: reversed depth, `near` maps to 1.
+    /// FUN_14009a360: scalar SSE cotangent polynomial and reversed depth, `near` maps to 1.
     static func perspective(fovY: Float, aspect: Float, near: Float, far: Float) -> simd_float4x4 {
-        let focal = 1 / tan(fovY / 2)
+        let focal = projectionCotangent(fovY)
         let range = near / (far - near)
         return simd_float4x4(rows: [
             SIMD4(focal / aspect, 0, 0, 0),
@@ -345,6 +346,36 @@ public struct WPEParityCamera: Sendable, Equatable {
             SIMD4(0, 0, range, range * far),
             SIMD4(0, 0, -1, 0),
         ])
+    }
+
+    /// The original helper's individual Float operations and pinned constants, without fused multiply-add.
+    /// Its assertion callee and the runtime floating-point environment remain separate native contracts.
+    private static func projectionCotangent(_ fov: Float) -> Float {
+        let half = fov * Float(bitPattern: 0x3F00_0000)
+        let scaled = half * Float(bitPattern: 0x3E22_F983)
+        let rounded = scaled + (half >= 0 ? Float(0.5) : Float(-0.5))
+        let turns = Float(WPEParityNumericConversion.cvttsd2si(Double(rounded)))
+        var reduced = half - turns * Float(bitPattern: 0x40C9_0FDB)
+        var sign: Float = 1
+        if reduced > Float(bitPattern: 0x3FC9_0FDB) {
+            reduced = Float(bitPattern: 0x4049_0FDB) - reduced
+            sign = -1
+        } else if reduced < Float(bitPattern: 0xBFC9_0FDB) {
+            reduced = Float(bitPattern: 0xC049_0FDB) - reduced
+            sign = -1
+        }
+        let square = reduced * reduced
+        var sine = Float(bitPattern: 0x3638_B88E) - Float(bitPattern: 0x32CD_365B) * square
+        sine = sine * square - Float(bitPattern: 0x3950_0BF1)
+        sine = sine * square + Float(bitPattern: 0x3C08_8886)
+        sine = sine * square - Float(bitPattern: 0x3E2A_AAAB)
+        sine = (sine * square + 1) * reduced
+        var cosine = Float(bitPattern: 0x37CF_B4C2) - Float(bitPattern: 0x348B_DD11) * square
+        cosine = cosine * square - Float(bitPattern: 0x3AB6_09AA)
+        cosine = cosine * square + Float(bitPattern: 0x3D2A_AAA3)
+        cosine = cosine * square - Float(bitPattern: 0x3F00_0000)
+        cosine = (cosine * square + 1) * sign
+        return cosine / sine
     }
 
     static func translation(_ offset: SIMD3<Float>) -> simd_float4x4 {

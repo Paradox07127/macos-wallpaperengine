@@ -971,6 +971,19 @@ final class WPEParityFrameRenderer {
     private func selectCamera(dt: Float) {
         let active = WPEParityCamera.activeObjectID(document: plan.document, state: state)
         var selected = rootCamera
+        // 1891a0 selects effective O148 from raw O140; 183a70 reads near/far before the manager tick.
+        // Camera objects and queues may replace only effective FOV after this canonical snapshot.
+        if selected.scenePerspective != nil {
+            if case let .vector(value)? = state.scriptField("fov", of: "") {
+                selected.scenePerspective?.fov = value.x
+            }
+            if case let .vector(value)? = state.scriptField("nearz", of: "") {
+                selected.scenePerspective?.near = value.x
+            }
+            if case let .vector(value)? = state.scriptField("farz", of: "") {
+                selected.scenePerspective?.far = value.x
+            }
+        }
         if let active {
             selected = selected.applyingObject(world: layers.world(active), objectID: active, document: plan.document,
                                                state: state, generalZoom: generalZoom)

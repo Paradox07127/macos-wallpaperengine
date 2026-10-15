@@ -251,6 +251,10 @@ struct WPEParityFramePlan {
                               ("camerashakeroughness", shake.roughness)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
         }
+        let projection = WPEParityScenePerspective(general: document.resolvedGeneralJSON)
+        for (name, value) in [("fov", projection.fov), ("nearz", projection.near), ("farz", projection.far)] {
+            loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
+        }
         for binding in constantBindings {
             guard let pass = binding.materialPass else { continue }
             for (stage, constants) in binding.materialConstants {
