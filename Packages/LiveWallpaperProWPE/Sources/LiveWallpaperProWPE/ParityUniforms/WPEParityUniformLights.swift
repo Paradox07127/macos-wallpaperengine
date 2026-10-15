@@ -78,10 +78,12 @@ public struct WPEParityUniformLights: Sendable, Equatable {
         func color(_ name: String) -> SIMD3<Float> {
             let raw = document.resolvedGeneralJSON[name]
             let value = raw?["value"] ?? raw
-            guard case let .string(text)? = value else { return .zero }
-            let components = text.split(separator: " ").compactMap { Float($0) }
-            guard components.count >= 3 else { return .zero }
-            return SIMD3(components[0], components[1], components[2])
+            // 140199780 binds both colours to 1a4230; do not use the generic vector parser here.
+            switch value {
+            case let .number(number)?: return SIMD3(repeating: Float(number))
+            case let .string(text)?: return WPEParityNumericConversion.asciiSpaceVector3(text)
+            default: return .zero
+            }
         }
         // 140186c90 initializes absent ambient/skylight to zero. The generic parser's legacy white fallback must
         // not create light in parity scenes.
