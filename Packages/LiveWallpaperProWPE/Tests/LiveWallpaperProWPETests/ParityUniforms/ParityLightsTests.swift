@@ -186,5 +186,34 @@ final class ParityLightsTests: XCTestCase {
         config.apply(to: &flags)
         XCTAssertEqual(flags.directionalLights, 1)
         XCTAssertEqual(WPEParityLightConfig(general: general, shadowQuality: 1).directionalShadow, 1)
+
+        // 088760 gates the 085f70 reader: direct numeric UInt32 range and integral finite Doubles.
+        // Keep the large real last so an old conversion trap retains the preceding assertion failures.
+        let cases: [(source: String, value: WPESceneJSONValue, expected: [Int32])] = [
+            ("4294967295", .number(4_294_967_295), [15, 3]),
+            ("4294967295.0", .number(4_294_967_295), [15, 3]),
+            ("4294967296", .number(4_294_967_296), [0, 0]),
+            ("4294967297", .number(4_294_967_297), [0, 0]),
+            ("-1", .number(-1), [0, 0]),
+            ("1.5", .number(1.5), [0, 0]),
+            ("true", .bool(true), [0, 0]),
+            (#"{"value":1}"#, .object(["value": .number(1)]), [0, 0]),
+            ("1e100", .number(1e100), [0, 0]),
+        ]
+        for sample in cases {
+            let document = try ParityCameraFixture.document(json: """
+            {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+             "general":{"lightconfig":{"point":\(sample.source),"spotcookie":\(sample.source)}},"objects":[]}
+            """)
+            let sourceGeneral = document.sourceJSON["general"]
+            for name in ["point", "spotcookie"] {
+                XCTAssertEqual(sourceGeneral?["lightconfig"]?[name], sample.value, "source \(name): \(sample.source)")
+            }
+            let counts = WPEParityLightConfig(general: sourceGeneral)
+            XCTAssertEqual([counts.point, counts.spotCookie], sample.expected, sample.source)
+            var actualFlags = WPEEngineComboFlags()
+            counts.apply(to: &actualFlags)
+            XCTAssertEqual([actualFlags.pointLights, actualFlags.spotCookieLights], sample.expected, sample.source)
+        }
     }
 }
