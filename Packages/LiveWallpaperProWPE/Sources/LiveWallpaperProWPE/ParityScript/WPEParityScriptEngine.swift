@@ -752,7 +752,8 @@ public final class WPEParityScriptEngine {
             let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
             // Strict scene JSON must not be replaced by a generic number-derived product seed.
             // Existing canonical fields are retained by seedMissingFields and mirror.
-            let strictSceneSeed = descriptor.isSceneBloomField || descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake
+            let strictSceneSeed = descriptor.isSceneBloomField || descriptor.isSceneCameraParallax
+                || descriptor.isSceneCameraShake || descriptor.isSceneProjection
             let value = strictSceneSeed ? parsed ?? Self.generalDefault(descriptor)
                 : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
             if let value {
@@ -1504,13 +1505,17 @@ public final class WPEParityScriptEngine {
         case "camerashakespeed": .vector(SIMD4(Float(bitPattern: 0x4040_0000), 0, 0, 0))
         case "camerashakeamplitude": .vector(SIMD4(Float(bitPattern: 0x3F00_0000), 0, 0, 0))
         case "camerashakeroughness": .vector(SIMD4(Float(bitPattern: 0x3F80_0000), 0, 0, 0))
+        // 140186d5c/186d7d/186d88: authored raw fields; projection clamps only the separate effective FOV.
+        case "fov": .vector(SIMD4(Float(bitPattern: 0x4248_0000), 0, 0, 0))
+        case "nearz": .vector(SIMD4(Float(bitPattern: 0x3DCC_CCCD), 0, 0, 0))
+        case "farz": .vector(SIMD4(Float(bitPattern: 0x461C_4000), 0, 0, 0))
         default: nil
         }
     }
 
     private static func parse(_ raw: WPESceneJSONValue?,
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
-        let sceneCameraField = descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake
+        let sceneCameraField = descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake || descriptor.isSceneProjection
         if descriptor.isSceneBloom || (sceneCameraField && descriptor.type == .flagBool) {
             return WPEParityScriptProperty.sceneBoolValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
         }

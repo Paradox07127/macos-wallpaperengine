@@ -130,6 +130,14 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         }
     }
 
+    var isSceneProjection: Bool {
+        guard owner == .scene, type == .float, target == .field else { return false }
+        switch name {
+        case "fov", "nearz", "farz": return true
+        default: return false
+        }
+    }
+
     /// 14019b4e0/19c620/19c850 accept only a JSON Bool or an object's immediate Bool `value`.
     /// Nil preserves storage; each descriptor supplies its own constructor bit and hook contract.
     public static func sceneBoolValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
@@ -334,6 +342,10 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "camerashakespeed", owner: .scene, type: .float),
         WPEParityScriptProperty(name: "camerashakeamplitude", owner: .scene, type: .float),
         WPEParityScriptProperty(name: "camerashakeroughness", owner: .scene, type: .float),
+        // 140199780: O140/14c/150, flags0/no hooks. Effective/clamped FOV is a separate O148 slot.
+        WPEParityScriptProperty(name: "fov", owner: .scene, type: .float),
+        WPEParityScriptProperty(name: "nearz", owner: .scene, type: .float),
+        WPEParityScriptProperty(name: "farz", owner: .scene, type: .float),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.
