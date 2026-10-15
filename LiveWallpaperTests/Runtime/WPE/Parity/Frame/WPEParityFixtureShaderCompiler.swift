@@ -76,6 +76,7 @@ struct WPEParityFixtureShaderCompiler: WPEParityShaderCompiling {
                 guard uncapturedUtilityPrograms.contains(request.program), let geometryCompiler else {
                     throw Failure.noCapture(dxs: dxs, target: target)
                 }
+                print("WPE capture fixture: original helper compiles uncaptured reachable utility dxs=\(dxs) target=\(target)")
                 return try await geometryCompiler.compile(request)
             }
             guard !request.stages.contains(.geometry) else { continue }
