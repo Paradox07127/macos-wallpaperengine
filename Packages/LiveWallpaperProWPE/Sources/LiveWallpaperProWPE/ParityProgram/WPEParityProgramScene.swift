@@ -411,10 +411,10 @@ public struct WPEParityProgramScene: Sendable {
         }
         settings.strength = value("bloomstrength") ?? settings.strength
         settings.threshold = value("bloomthreshold") ?? settings.threshold
-        settings.hdrStrength = value("bloomhdrstrength") ?? settings.hdrStrength
-        settings.hdrThreshold = value("bloomhdrthreshold") ?? settings.hdrThreshold
-        settings.hdrFeather = value("bloomhdrfeather") ?? settings.hdrFeather
-        settings.hdrScatter = value("bloomhdrscatter") ?? settings.hdrScatter
+        settings.hdrStrength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrstrength"]) ?? settings.hdrStrength
+        settings.hdrThreshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrthreshold"]) ?? settings.hdrThreshold
+        settings.hdrFeather = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrfeather"]) ?? settings.hdrFeather
+        settings.hdrScatter = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrscatter"]) ?? settings.hdrScatter
         settings.hdrIterations = value("bloomhdriterations").map { Int($0) } ?? settings.hdrIterations
         if let tintValue = general["bloomtint"],
            let tint = WPEParityProgramConstants.components(tintValue),

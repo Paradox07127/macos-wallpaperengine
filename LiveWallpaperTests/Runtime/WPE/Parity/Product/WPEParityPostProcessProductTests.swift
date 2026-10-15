@@ -3,6 +3,7 @@ import CryptoKit
 import Darwin
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -105,6 +106,114 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 XCTAssertLessThanOrEqual(abs(Int(channel) - expected), 1)
             }
         }
+    }
+
+    /// Strict native seeds and live HDR fields reach the original shader without replacing prepared resources.
+    func testHDRBloomFloatFieldsReachOriginalDrawsAndPreserveLiveValuesAcrossDocumentUpdates() async throws {
+        let engine = try engineAssets()
+        let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [engine])
+        let fields = ["bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter"]
+        let source: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                        "clearcolor": "0.5 0.5 0.5", "clearenabled": true,
+                        "bloom": true, "hdr": true, "camerafade": false,
+                        "bloomhdrstrength": ["value": false, "user": fields[0], "script": """
+                        shared.hdrLoads = (shared.hdrLoads || 0) + 1;
+                        export function update(value) {
+                          if (shared.hdrLoads !== 1) throw new Error('HDR module rerun');
+                          if (!engine.userProperties.animate) return value;
+                          thisScene.bloomhdrthreshold = engine.userProperties.threshold;
+                          thisScene.bloomhdrfeather = engine.userProperties.feather;
+                          thisScene.bloomhdrscatter = engine.userProperties.scatter;
+                          return engine.userProperties.strength;
+                        }
+                        """],
+                        "bloomhdrthreshold": ["value": "0.05", "user": fields[1]],
+                        "bloomhdrfeather": ["value": ["value": 0.2], "user": fields[2]],
+                        "bloomhdrscatter": ["value": [1.25], "user": fields[3]]],
+            "objects": [["id": 1, "camera": "HDR witness", "origin": "0 0 0", "angles": "0 0 0",
+                         "alpha": ["value": 1, "user": "fade"]]],
+        ]
+        func document(_ users: [String: WallpaperEngineProjectPropertyValue] = [:]) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: users,
+                                             makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+        }
+        func host(_ animate: Bool) throws -> String {
+            let values: [String: Any] = ["animate": ["type": "bool", "value": animate],
+                                         "strength": ["type": "slider", "value": 1],
+                                         "threshold": ["type": "slider", "value": 0.05],
+                                         "feather": ["type": "slider", "value": 0.2],
+                                         "scatter": ["type": "slider", "value": 1.25]]
+            return try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: values), encoding: .utf8))
+        }
+        let initial = try document()
+        let plan = try WPEParityFramePlan(document: initial, assets: assets,
+                                          settings: .init(bloom: true, hdrPostProcessing: true), width: 32, height: 32)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, device: device, queue: queue)
+        let script = try WPEParitySceneScript(document: initial, state: renderer.state, assets: assets,
+                                              canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32),
+                                              materialConstants: plan.materialConstants,
+                                              host: .init(userPropertiesJSON: host(false)))
+        try renderer.attachScript(script)
+        let defaultValues = [Float(2), 1, 0.1, 1.619]
+        for (field, value) in zip(fields, defaultValues) {
+            XCTAssertEqual(renderer.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+        }
+        let validUsers = Dictionary(uniqueKeysWithValues: zip(fields, [0.0, 0.3, 0.4, 2.0]).map { ($0, WallpaperEngineProjectPropertyValue.number($1)) })
+        let faded = try document(["fade": .number(0.25)])
+        let changed = try document(validUsers)
+        let invalid = try document(Dictionary(uniqueKeysWithValues: fields.map { ($0, WallpaperEngineProjectPropertyValue.bool(false)) }))
+        let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: initial))
+        let steps: [(WPEParityUserPropertyUpdate, Bool, [Float])] = try [
+            (unchanged, false, defaultValues), (unchanged, true, [1, 0.05, 0.2, 1.25]),
+            (XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: faded)), false, [1, 0.05, 0.2, 1.25]),
+            (XCTUnwrap(WPEParityUserPropertyUpdate(from: faded, to: changed)), false, [0, 0.3, 0.4, 2]),
+            (XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: invalid)), false, [0, 0.3, 0.4, 2]),
+        ]
+        let backbuffer = renderer.backbuffer
+        let executors = renderer.graphExecutorIdentities
+        let targets = renderer.targets.mapValues(ObjectIdentifier.init)
+        var firstPipelines: [Int: ObjectIdentifier] = [:]
+        var positivePixels: [UInt8] = []
+        for (step, entry) in steps.enumerated() {
+            let (update, animate, values) = entry
+            try renderer.applyUserProperties(update, changedJSON: host(animate), mergedJSON: host(animate))
+            try await render(renderer)
+            let down = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.fragment]?["g_BloomBlendParams"] != nil }?.draw)
+            let (threshold, feather, scatter) = (values[1], values[2], values[3])
+            let strength = values[0] / (pow(scatter, Float(max(plan.post.hdrBloomLevelCount, 2) - 2)) + 1)
+            XCTAssertEqual(components(down.constants[.fragment]?["g_BloomStrength"]), [strength])
+            XCTAssertEqual(components(down.constants[.fragment]?["g_BloomBlendParams"]),
+                           [threshold, threshold - threshold * feather, 2 * threshold * feather, 0.25 / (threshold * feather + 1e-5)])
+            let up = renderer.lastFrameDraws.compactMap { components($0.draw.constants[.fragment]?["g_BloomScatter"]) }
+            XCTAssertFalse(up.isEmpty)
+            XCTAssertTrue(up.allSatisfy { $0 == [scatter] })
+            for (field, value) in zip(fields, values) {
+                XCTAssertEqual(renderer.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            }
+            let pixels = try await present(renderer, device: device, queue: queue)
+            if step == 1 {
+                positivePixels = pixels
+                XCTAssertTrue(pixels.prefix(3).allSatisfy { $0 > 130 })
+            } else if step == 2 {
+                XCTAssertEqual(pixels, positivePixels, "Unrelated hot change must preserve script HDR values")
+            } else {
+                XCTAssertTrue(pixels.prefix(3).allSatisfy { abs(Int($0) - 128) <= 2 })
+            }
+            let pipelines = Dictionary(uniqueKeysWithValues: renderer.lastFrameDraws.map { ($0.operation, ObjectIdentifier($0.draw.pipeline.state)) })
+            if step == 0 {
+                firstPipelines = pipelines
+            }
+            XCTAssertEqual(pipelines, firstPipelines)
+            XCTAssertTrue(renderer.backbuffer === backbuffer)
+            XCTAssertEqual(renderer.graphExecutorIdentities, executors)
+            XCTAssertEqual(renderer.targets.mapValues(ObjectIdentifier.init), targets)
+            XCTAssertTrue(renderer.skipped.isEmpty)
+        }
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
     /// Native no-hook Bool -> canonical State -> actual post graph, including cold-off and HDR terminals.

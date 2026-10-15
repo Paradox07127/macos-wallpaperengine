@@ -791,8 +791,9 @@ final class WPEParityFrameRenderer {
                                          merged: Self.propertySnapshot(mergedJSON))
         update.apply(to: &state)
         cameraParallax = update.cameraParallax
-        if update.bloom != bloom {
-            bloom = update.bloom
+        let updatedBloom = hdrBloomSettings(update.bloom)
+        if updatedBloom != bloom {
+            bloom = updatedBloom
             repackBloom()
         }
         if !update.texts.isEmpty {
@@ -988,7 +989,26 @@ final class WPEParityFrameRenderer {
         seenLayerFields = state.scriptFieldsGeneration
     }
 
-    /// Bloom strength and threshold scripts wrote, rebuilt after the tick (14017fa70.c:478-481).
+    /// The four HDR fields share canonical State with scripts and accepted document deltas.
+    /// A full settings snapshot must not replace unchanged or rejected seeds over live values.
+    private func hdrBloomSettings(_ source: WPEParityBloomSettings) -> WPEParityBloomSettings {
+        var settings = source
+        if case let .vector(value)? = state.scriptField("bloomhdrstrength", of: "") {
+            settings.hdrStrength = value.x
+        }
+        if case let .vector(value)? = state.scriptField("bloomhdrthreshold", of: "") {
+            settings.hdrThreshold = value.x
+        }
+        if case let .vector(value)? = state.scriptField("bloomhdrfeather", of: "") {
+            settings.hdrFeather = value.x
+        }
+        if case let .vector(value)? = state.scriptField("bloomhdrscatter", of: "") {
+            settings.hdrScatter = value.x
+        }
+        return settings
+    }
+
+    /// LDR/HDR bloom fields scripts wrote, rebuilt after the tick (14017fa70.c:478-481).
     private func applyScriptBloom() {
         guard state.generation(.bloom) != seenScriptBloom else { return }
         seenScriptBloom = state.generation(.bloom)
@@ -999,6 +1019,7 @@ final class WPEParityFrameRenderer {
         if case let .vector(threshold)? = state.scriptField("bloomthreshold", of: "") {
             settings.threshold = threshold.x
         }
+        settings = hdrBloomSettings(settings)
         guard settings != bloom else { return }
         bloom = settings
         repackBloom()
