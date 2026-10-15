@@ -177,7 +177,11 @@ private struct WPEParityPostProcessStream {
         let (threshold, feather) = (bloom.hdrThreshold, bloom.hdrFeather)
         // 0x14017f847-0x14017f89b
         let strength = bloom.hdrStrength / (pow(bloom.hdrScatter, Float(max(levels, 2) - 2)) + 1)
-        resource(pyramid(2), divisor: 2, format: "rgba16float")
+        // Native capacity survives active-N changes. The renderer prepares these named pool targets once.
+        for level in 1 ... config.hdrBloomCapacity {
+            let divisor = 1 << level
+            resource(pyramid(divisor), divisor: divisor, format: "rgba16float", lifetime: .pooled)
+        }
         bind(pyramid(2))
         // 14017f1b0.c:364-371
         draw("hdr_downsample_bloom", reads: ["_rt_FullFrameBuffer"], constants: [
@@ -188,7 +192,6 @@ private struct WPEParityPostProcessStream {
         ])
         for level in 1 ..< levels {
             let scale = 1 << level
-            resource(pyramid(scale * 2), divisor: scale * 2, format: "rgba16float")
             bind(pyramid(scale * 2))
             draw("hdr_downsample", reads: [pyramid(scale)], constants: ["g_RenderVar0": texelVariable(scale)])
         }

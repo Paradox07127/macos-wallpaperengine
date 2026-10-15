@@ -406,21 +406,15 @@ public struct WPEParityProgramScene: Sendable {
     /// Only authored keys override WPE's defaults, after user-property resolution (1401730d0.c:35-49).
     static func bloomSettings(_ general: WPESceneJSONValue) -> WPEParityBloomSettings {
         var settings = WPEParityBloomSettings()
-        func value(_ key: String) -> Float? {
-            number(general[key]).map(Float.init)
-        }
         settings.strength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomstrength"]) ?? settings.strength
         settings.threshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomthreshold"]) ?? settings.threshold
         settings.hdrStrength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrstrength"]) ?? settings.hdrStrength
         settings.hdrThreshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrthreshold"]) ?? settings.hdrThreshold
         settings.hdrFeather = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrfeather"]) ?? settings.hdrFeather
         settings.hdrScatter = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrscatter"]) ?? settings.hdrScatter
-        settings.hdrIterations = value("bloomhdriterations").map { Int($0) } ?? settings.hdrIterations
-        if let tintValue = general["bloomtint"],
-           let tint = WPEParityProgramConstants.components(tintValue),
-           tint.count == 3 {
-            settings.tint = SIMD3<Float>(Float(tint[0]), Float(tint[1]), Float(tint[2]))
-        }
+        settings.hdrIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: general["bloomhdriterations"])
+            .map(Int.init) ?? settings.hdrIterations
+        settings.tint = WPEParityScriptProperty.bloomTintValue(fromJSON: general["bloomtint"]) ?? settings.tint
         return settings
     }
 

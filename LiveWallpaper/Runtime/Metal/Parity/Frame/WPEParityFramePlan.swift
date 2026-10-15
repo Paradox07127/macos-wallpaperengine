@@ -234,6 +234,9 @@ struct WPEParityFramePlan {
                               ("bloomhdrscatter", post.bloomSettings.hdrScatter)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .bloom)
         }
+        loadedState.setScriptField("bloomhdriterations", of: "",
+                                   to: .integer(Int32(truncatingIfNeeded: post.bloomSettings.hdrIterations)), invalidating: .bloom)
+        loadedState.setScriptField("bloomtint", of: "", to: .vector(SIMD4(post.bloomSettings.tint, 0)), invalidating: .bloom)
         for binding in constantBindings {
             guard let pass = binding.materialPass else { continue }
             for (stage, constants) in binding.materialConstants {
@@ -276,6 +279,9 @@ struct WPEParityFramePlan {
         var current = post
         if case let .vector(flag)? = state.scriptField("bloom", of: "") {
             current.sceneBloomEnabled = flag.x != 0
+        }
+        if case let .integer(iterations)? = state.scriptField("bloomhdriterations", of: "") {
+            current.bloomSettings.hdrIterations = Int(iterations)
         }
         current.objectTableNonEmpty = !state.commonOrder.isEmpty
         current.sceneMipMappedFrameBufferEnabled = mipMappedFrameBufferRequested
@@ -435,6 +441,11 @@ struct WPEParityFramePlan {
         var enabled = post, disabled = post
         enabled.sceneBloomEnabled = true
         enabled.objectTableNonEmpty = true
+        if enabled.hdrEnabled {
+            // The largest layout contains every downsample, linear/cubic upsample and terminal program needed
+            // by smaller active N. Reuse this existing probe rather than repeatedly composing the whole scene.
+            enabled.bloomSettings.hdrIterations = enabled.hdrBloomCapacity
+        }
         disabled.sceneBloomEnabled = false
         return [enabled, disabled]
     }

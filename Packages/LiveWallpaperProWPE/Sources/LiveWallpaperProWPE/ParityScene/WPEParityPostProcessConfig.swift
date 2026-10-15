@@ -61,16 +61,20 @@ public struct WPEParityPostProcessConfig: Sendable {
         sceneMipMappedFrameBufferEnabled && qualityMipMappedFrameBufferEnabled
     }
 
-    /// HDR pyramid depth N: the iterations, clamped to the halvings of min(W, H) that stay ≥ 1, at most 8
-    /// (14017f1b0.c:126-210, 340-355).
-    public var hdrBloomLevelCount: Int {
+    /// Main prepares dimension-available capacity before selecting the active iteration count (17f1b0:126–210).
+    public var hdrBloomCapacity: Int {
         var size = min(backbufferWidth, backbufferHeight)
         var halvings = 0
         while halvings < 8, size / 2 >= 1 {
             size /= 2
             halvings += 1
         }
-        return max(1, min(bloomSettings.hdrIterations, halvings))
+        return max(1, halvings)
+    }
+
+    /// The raw signed field stays unchanged; only active N is clamped (17f1b0:340–355,184020).
+    public var hdrBloomLevelCount: Int {
+        max(1, min(bloomSettings.hdrIterations, hdrBloomCapacity))
     }
 }
 

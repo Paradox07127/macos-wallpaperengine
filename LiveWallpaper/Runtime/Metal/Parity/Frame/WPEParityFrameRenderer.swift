@@ -589,6 +589,7 @@ final class WPEParityFrameRenderer {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
         var targets: [WPEResourceID: MTLTexture] = [:]
+        try Self.prepareHDRBloomTargets(plan.post, device: device, targets: &targets)
         let snapshotObjects = Set(particleFacts.filter { $0.value.values.contains(true) }.map(\.key))
         let graphs = try Self.makeGraphs(layout: layout, state: plan.state, device: device, encoder: encoder,
                                          arena: arena, targets: &targets, snapshotObjects: snapshotObjects)
@@ -989,7 +990,7 @@ final class WPEParityFrameRenderer {
         seenLayerFields = state.scriptFieldsGeneration
     }
 
-    /// The six Float fields share canonical State with scripts and accepted document deltas.
+    /// Bloom fields share canonical State with scripts and accepted document deltas.
     /// A full settings snapshot must not replace unchanged or rejected seeds over live values.
     private func bloomSettingsFromState(_ source: WPEParityBloomSettings) -> WPEParityBloomSettings {
         var settings = source
@@ -1010,6 +1011,12 @@ final class WPEParityFrameRenderer {
         }
         if case let .vector(value)? = state.scriptField("bloomhdrscatter", of: "") {
             settings.hdrScatter = value.x
+        }
+        if case let .integer(value)? = state.scriptField("bloomhdriterations", of: "") {
+            settings.hdrIterations = Int(value)
+        }
+        if case let .vector(value)? = state.scriptField("bloomtint", of: "") {
+            settings.tint = SIMD3(value.x, value.y, value.z)
         }
         return settings
     }
@@ -1511,7 +1518,12 @@ final class WPEParityFrameRenderer {
     /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
     /// previous set.
     private func selectGraphs() throws {
-        let bloomEnabled = plan.postConfig(state: state).bloomEnabled
+        let currentPost = plan.postConfig(state: state)
+        let effectiveN = currentPost.hdrEnabled && currentPost.bloomEnabled ? currentPost.hdrBloomLevelCount : 0
+        func matchesPost(_ post: WPEParityPostProcessConfig) -> Bool {
+            post.bloomEnabled == currentPost.bloomEnabled
+                && (post.hdrEnabled && post.bloomEnabled ? post.hdrBloomLevelCount : 0) == effectiveN
+        }
         if state.membershipGeneration == seenMembership, state.modelDataGeneration != seenModelData,
            refreshModelDataDrawVersions() {
             seenModelData = state.modelDataGeneration
@@ -1537,14 +1549,14 @@ final class WPEParityFrameRenderer {
             repackBloom()
         }
         guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects
-            || bloomEnabled != graphs.layout.post.bloomEnabled else {
+            || !matchesPost(graphs.layout.post) else {
             return
         }
         let hidden = state.objects.indices.map { !state.isVisible(at: $0) }
         let effects = state.effectVisibility
-        if hidden != graphs.hidden || effects != graphs.layout.effects || bloomEnabled != graphs.layout.post.bloomEnabled {
+        if hidden != graphs.hidden || effects != graphs.layout.effects || !matchesPost(graphs.layout.post) {
             if let previous = previousGraphs, previous.hidden == hidden, previous.layout.effects == effects,
-               previous.layout.post.bloomEnabled == bloomEnabled,
+               matchesPost(previous.layout.post),
                previous.executors.allSatisfy({ executor in
                    executor.graph.resources.values.allSatisfy { resource in
                        resource.lifetime == .imported || executor.transientTextures[resource.id] != nil
@@ -1555,7 +1567,7 @@ final class WPEParityFrameRenderer {
                 targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
             } else {
                 var layout = graphs.layout
-                if effects != layout.effects || bloomEnabled != layout.post.bloomEnabled {
+                if effects != layout.effects || !matchesPost(layout.post) {
                     layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts,
                                                              mipMappedFrameBufferRequested: mipMappedFrameBufferRequested), effects: effects,
                                                  artifacts: artifacts, planner: &planner, encoder: drawEncoder,
@@ -1702,6 +1714,10 @@ final class WPEParityFrameRenderer {
         guard bloom != layout.post.bloomSettings else { return }
         var config = layout.post
         config.bloomSettings = bloom
+        // A State write may precede this frame's selectGraphs. Its new N must first publish an admitted layout;
+        // otherwise index-zipping constants could apply to different down/up passes or silently drop the update.
+        guard !layout.post.hdrEnabled || !layout.post.bloomEnabled
+            || config.hdrBloomLevelCount == layout.post.hdrBloomLevelCount else { return }
         let operations = layout.frames[0].draws.compactMap { index, draw -> Int? in
             if case .post = draw {
                 index
@@ -1711,6 +1727,10 @@ final class WPEParityFrameRenderer {
         }.sorted()
         let rebuilt = WPEParityPostProcessBuilder.build(config).draws
         guard operations.count == rebuilt.count else { return }
+        guard zip(operations, rebuilt).allSatisfy({ operation, draw in
+            guard case let .post(planned)? = layout.frames[0].draws[operation] else { return false }
+            return planned.shader == draw.shader && planned.material == draw.material && planned.reads == draw.reads
+        }) else { return }
         for (operation, draw) in zip(operations, rebuilt) {
             guard case let .post(planned)? = layout.frames[0].draws[operation], planned.constants != draw.constants,
                   let constants = layout.draws[operation]?.constants else { continue }
@@ -1843,6 +1863,26 @@ final class WPEParityFrameRenderer {
             counts[pass, default: 0] += 1
         }
         return names
+    }
+
+    /// Prepare only the HDR pyramid on the existing target owner, including a reachable cold-off branch.
+    /// Declaring unused pooled resources does not give them a graph lifetime, so makeGraphs alone cannot do this.
+    private static func prepareHDRBloomTargets(_ post: WPEParityPostProcessConfig, device: MTLDevice,
+                                               targets: inout [WPEResourceID: MTLTexture]) throws {
+        guard post.hdrEnabled else { return }
+        var capacity = post
+        capacity.sceneBloomEnabled = true
+        capacity.userBloomEnabled = true
+        capacity.objectTableNonEmpty = true
+        capacity.bloomSettings.hdrIterations = capacity.hdrBloomCapacity
+        let ids = Set((1 ... capacity.hdrBloomCapacity).map { WPEResourceID("_rt_\(1 << $0)FrameBuffer") })
+        for resource in WPEParityPostProcessBuilder.build(capacity).resources where ids.contains(resource.id) {
+            guard resource.lifetime == .pooled else { continue }
+            if let texture = targets[resource.id], matches(texture, resource: resource) {
+                continue
+            }
+            targets[resource.id] = try makeTarget(resource, device: device)
+        }
     }
 
     /// Compiles each frame variant of `layout` without the operations of objects `state` hides, allocating the
