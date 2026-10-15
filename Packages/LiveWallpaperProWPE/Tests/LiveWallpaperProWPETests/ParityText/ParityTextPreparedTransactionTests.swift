@@ -143,6 +143,85 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         assertError(.preparedUpdateConsumed) { try pipeline.discard(fresh) }
     }
 
+    func testSecondBatchItemFailureKeepsFirstItemsPixelsReferencesAndLayoutsUnpublished() throws {
+        let pipeline = try fieldPipeline()
+        let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
+        let oldAtlas = try XCTUnwrap(pipeline.atlases[key]), oldPixels = hash(oldAtlas.mono.pixels)
+        let first = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+        let newGlyph = try XCTUnwrap(first.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
+        XCTAssertNotEqual(newGlyph, 43)
+        XCTAssertNotEqual(hash(try XCTUnwrap(first.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: 43)?.references, 1)
+        XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
+        try pipeline.discard(first)
+        assertError(.zeroAreaDistanceGlyph) {
+            _ = try pipeline.prepareRelayouts([
+                .init(self.object("T", "ii"), glyphMode: .distanceField),
+                .init(self.object("U", "H "), glyphMode: .distanceField),
+            ])
+        }
+        XCTAssertEqual(pipeline.texts, before)
+        XCTAssertEqual(hash(try XCTUnwrap(pipeline.atlases[key]).mono.pixels), oldPixels)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldAtlas.mono.contentGeneration)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.resetGeneration, oldAtlas.mono.resetGeneration)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: 43)?.references, 2)
+        XCTAssertNil(pipeline.atlases[key]?.mono.entry(forKey: newGlyph))
+        let batch = try XCTUnwrap(pipeline.prepareRelayouts([
+            .init(object("T", "ii"), glyphMode: .distanceField),
+            .init(object("U", "HHH"), glyphMode: .distanceField),
+        ]))
+        XCTAssertEqual(batch.changedObjectIDs, ["T", "U"])
+        XCTAssertEqual(pipeline.texts, before)
+        XCTAssertEqual(batch.atlases[key]?.mono.entry(forKey: 43)?.references, 3)
+        XCTAssertEqual(batch.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
+        let delta = try pipeline.accept(batch)
+        XCTAssertEqual(delta.changes.map(\.current.object.id), ["T", "U"])
+        XCTAssertEqual(pipeline.texts, batch.texts)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: 43)?.references, 3)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
+        assertError(.preparedUpdateConsumed) { _ = try pipeline.accept(batch) }
+    }
+
+    func testOrderedBatchKeepsIntermediateAtlasWritesWhenOneTextReturnsToItsOriginalValue() throws {
+        let pipeline = try fieldPipeline()
+        let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
+        let oldGeneration = try XCTUnwrap(pipeline.atlases[key]).mono.contentGeneration
+        let intermediate = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+        let newGlyph = try XCTUnwrap(intermediate.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
+        try pipeline.discard(intermediate)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldGeneration)
+        let batch = try XCTUnwrap(pipeline.prepareRelayouts([
+            .init(object("T", "ii"), glyphMode: .distanceField),
+            .init(object("U", "HH"), glyphMode: .distanceField),
+            .init(object("T", "H"), glyphMode: .distanceField),
+        ]))
+        XCTAssertEqual(pipeline.texts, before)
+        XCTAssertEqual(batch.texts["T"], before["T"])
+        XCTAssertEqual(batch.delta.changes.map(\.current.object.id), ["U"])
+        XCTAssertEqual(batch.changedObjectIDs, ["T", "U"], "intermediate dirty work is not lost with net-zero final text")
+        XCTAssertEqual(batch.atlases[key]?.mono.contentGeneration, oldGeneration + 1)
+        let zeroReferenceEntries = batch.atlases[key]?.mono.entry(forKey: newGlyph)
+        XCTAssertNotNil(zeroReferenceEntries, "the intermediate glyph remains in its existing atlas owner")
+        XCTAssertEqual(zeroReferenceEntries?.references, 0)
+        _ = try pipeline.accept(batch)
+        XCTAssertEqual(pipeline.texts["T"]?.object.text, "H")
+        XCTAssertEqual(pipeline.texts["U"]?.object.text, "HH")
+        XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: 43)?.references, 3)
+        XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldGeneration + 1)
+    }
+
+    private func fieldPipeline() throws -> WPEParityTextPipeline {
+        let pipeline = WPEParityTextPipeline(assets: try assets(), hdr: false, orthographic: true)
+        pipeline.add(object("T", "H"), effectCount: 0)
+        pipeline.add(object("U", "H"), effectCount: 0)
+        let batch = try XCTUnwrap(pipeline.prepareRelayouts([
+            .init(object("T", "H"), glyphMode: .distanceField),
+            .init(object("U", "H"), glyphMode: .distanceField),
+        ]))
+        _ = try pipeline.accept(batch)
+        return pipeline
+    }
+
     private func object(_ id: String, _ text: String) -> WPEParityTextObject {
         WPEParityTextObject(json: .object(["id": .string(id), "text": .string(text),
             "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))

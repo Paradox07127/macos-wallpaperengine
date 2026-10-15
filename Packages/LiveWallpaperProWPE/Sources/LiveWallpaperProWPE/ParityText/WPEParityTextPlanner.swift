@@ -87,6 +87,23 @@ public final class WPEParityTextPlanner {
     /// FT metadata/scratch may be reused on this serial owner; no FT pointer is stored in the candidate.
     public func prepare(_ object: WPEParityTextObject, effectCount: Int,
                         glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> PreparedPlan {
+        try prepare(object, effectCount: effectCount, glyphMode: glyphMode, continuing: nil)
+    }
+
+    /// Continues the pipeline's ordered batch on this same owner/value state. No intermediate active accept.
+    func prepare(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode,
+                 continuing prepared: PreparedPlan?) throws -> PreparedPlan {
+        let base: State
+        if let prepared {
+            guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
+            guard prepared.disposition == .pending, let staged = prepared.staged else {
+                throw WPEParityTextPreparationError.preparedUpdateConsumed
+            }
+            guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
+            base = staged
+        } else {
+            base = state
+        }
         if glyphMode == .distanceField, !object.usesGlyphEffects {
             throw WPEParityTextPreparationError.distanceFieldNotRequested
         }
@@ -110,7 +127,7 @@ public final class WPEParityTextPlanner {
                 }
             }
         }
-        var next = state
+        var next = base
         let result = pack(object, layout: layout, glyphMode: glyphMode, state: &next)
         return PreparedPlan(owner: self, revision: revision, state: next,
                             layout: result.layout, atlasKey: result.atlasKey)

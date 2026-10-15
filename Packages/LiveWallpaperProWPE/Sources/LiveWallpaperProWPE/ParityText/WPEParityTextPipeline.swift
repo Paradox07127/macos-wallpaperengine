@@ -40,12 +40,25 @@ public final class WPEParityTextPipeline {
     private let orthographic: Bool
     private var revision: UInt64 = 0
 
+    public struct RelayoutRequest: Sendable {
+        public let object: WPEParityTextObject
+        public let effectCount: Int?
+        public let glyphMode: WPEParityTextGlyphMode
+
+        public init(_ object: WPEParityTextObject, effectCount: Int? = nil,
+                    glyphMode: WPEParityTextGlyphMode = .bitmap) {
+            self.object = object; self.effectCount = effectCount; self.glyphMode = glyphMode
+        }
+    }
+
     /// One staged update of this pipeline's existing owner. No FT/HB/atlas publisher is cloned.
     /// Its snapshots supply all inputs to the caller's candidate geometry/material/texture preparation.
     public final class PreparedUpdate {
         public let texts: [String: WPEParitySceneText]
         public let atlases: [String: WPEParityGlyphAtlasInstance]
         public let delta: WPEParityTextRelayoutDelta
+        /// Union of actual intermediate changes in load order. Net-zero text changes can still add atlas pixels.
+        public let changedObjectIDs: [String]
         fileprivate weak var owner: WPEParityTextPipeline?
         fileprivate let baseRevision: UInt64
         fileprivate let plan: WPEParityTextPlanner.PreparedPlan?
@@ -53,9 +66,11 @@ public final class WPEParityTextPipeline {
 
         fileprivate init(owner: WPEParityTextPipeline, revision: UInt64,
                          texts: [String: WPEParitySceneText], atlases: [String: WPEParityGlyphAtlasInstance],
-                         delta: WPEParityTextRelayoutDelta, plan: WPEParityTextPlanner.PreparedPlan?) {
+                         delta: WPEParityTextRelayoutDelta, changedObjectIDs: [String],
+                         plan: WPEParityTextPlanner.PreparedPlan?) {
             self.owner = owner; baseRevision = revision
             self.texts = texts; self.atlases = atlases; self.delta = delta; self.plan = plan
+            self.changedObjectIDs = changedObjectIDs
         }
     }
 
@@ -130,45 +145,58 @@ public final class WPEParityTextPipeline {
     /// Callers use the returned snapshots for all fallible GPU work, then accept/publish on the same serial owner.
     public func prepareRelayout(_ object: WPEParityTextObject, effectCount: Int? = nil,
                                 glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> PreparedUpdate? {
-        guard let current = texts[object.id] else { return nil }
-        let effects = effectCount ?? current.effectCount
-        let previousMode = mode(of: current)
-        guard object != current.object || effects != current.effectCount || glyphMode != previousMode else {
-            return nil
-        }
-        if glyphMode == .distanceField {
-            guard object.usesGlyphEffects else { throw WPEParityTextPreparationError.distanceFieldNotRequested }
-            guard WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) != nil else {
-                throw WPEParityTextPreparationError.nonfiniteDrawParameters
-            }
-        }
+        try prepareRelayouts([RelayoutRequest(object, effectCount: effectCount, glyphMode: glyphMode)])
+    }
+
+    /// Requests are supplied in the caller's actual dirty/canonical order; repeated IDs keep that order.
+    /// Every item uses the same layout/pack/UV path against one working State, with one final accept token.
+    /// Any item throwing drops all earlier staged atlas/ref/layout changes without touching active state.
+    public func prepareRelayouts(_ requests: [RelayoutRequest]) throws -> PreparedUpdate? {
         var next = texts
-        let prepared: WPEParityTextPlanner.PreparedPlan?
-        if !object.needsRebuild(from: current.object), effects == current.effectCount, glyphMode == previousMode {
-            prepared = nil
-            next[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
-                                               layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
-                                               orthographic: orthographic)
-        } else {
-            let plan = try planner.prepare(object, effectCount: effects, glyphMode: glyphMode)
-            prepared = plan
-            next[object.id] = WPEParitySceneText(object: object, effectCount: effects, layout: plan.layout,
-                                               atlasKey: plan.atlasKey, hdr: hdr, orthographic: orthographic)
-            let key = plan.atlasKey
-            let stale = plan.resets[key] != planner.resets[key] ? key : nil
-            for id in order {
-                guard var text = next[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
-                      id == object.id || text.atlasKey != stale else { continue }
-                planner.refreshUVs(&text.layout, atlasKey: text.atlasKey, prepared: plan)
-                next[id] = text
+        var prepared: WPEParityTextPlanner.PreparedPlan? = nil
+        var changed: Set<String> = []
+        for request in requests {
+            let object = request.object, glyphMode = request.glyphMode
+            guard let current = next[object.id] else { continue }
+            let effects = request.effectCount ?? current.effectCount
+            let previousMode = mode(of: current, atlases: prepared?.atlases ?? planner.atlases)
+            guard object != current.object || effects != current.effectCount || glyphMode != previousMode else { continue }
+            if glyphMode == .distanceField {
+                guard object.usesGlyphEffects else { throw WPEParityTextPreparationError.distanceFieldNotRequested }
+                guard WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) != nil else {
+                    throw WPEParityTextPreparationError.nonfiniteDrawParameters
+                }
             }
+            let beforeStep = next
+            if !object.needsRebuild(from: current.object), effects == current.effectCount, glyphMode == previousMode {
+                next[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
+                                                   layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
+                                                   orthographic: orthographic)
+            } else {
+                let resets = prepared?.resets ?? planner.resets
+                let plan = try planner.prepare(object, effectCount: effects, glyphMode: glyphMode, continuing: prepared)
+                prepared = plan
+                next[object.id] = WPEParitySceneText(object: object, effectCount: effects, layout: plan.layout,
+                                                   atlasKey: plan.atlasKey, hdr: hdr, orthographic: orthographic)
+                let key = plan.atlasKey
+                let stale = plan.resets[key] != resets[key] ? key : nil
+                for id in order {
+                    guard var text = next[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
+                          id == object.id || text.atlasKey != stale else { continue }
+                    planner.refreshUVs(&text.layout, atlasKey: text.atlasKey, prepared: plan)
+                    next[id] = text
+                }
+            }
+            for id in order where beforeStep[id] != next[id] { changed.insert(id) }
         }
+        guard !changed.isEmpty else { return nil }
         let delta = WPEParityTextRelayoutDelta(changes: order.compactMap { id in
             guard let previous = texts[id], let current = next[id], previous != current else { return nil }
             return WPEParityTextRelayoutDelta.Change(previous: previous, current: current)
         })
         return PreparedUpdate(owner: self, revision: revision, texts: next,
-                              atlases: prepared?.atlases ?? planner.atlases, delta: delta, plan: prepared)
+                              atlases: prepared?.atlases ?? planner.atlases, delta: delta,
+                              changedObjectIDs: order.filter { changed.contains($0) }, plan: prepared)
     }
 
     /// The caller must publish its successful GPU candidate immediately after this, with no throw or await
@@ -191,9 +219,10 @@ public final class WPEParityTextPipeline {
         prepared.consumed = true
     }
 
-    private func mode(of text: WPEParitySceneText) -> WPEParityTextGlyphMode {
+    private func mode(of text: WPEParitySceneText,
+                      atlases: [String: WPEParityGlyphAtlasInstance]? = nil) -> WPEParityTextGlyphMode {
         if let mesh = text.layout.mesh { return mesh.glyphMode }
-        if let instance = planner.atlases[text.atlasKey] { return instance.glyphMode }
+        if let instance = (atlases ?? planner.atlases)[text.atlasKey] { return instance.glyphMode }
         // An empty prepared field has no mesh/allocated atlas; its exact native key still preserves mode.
         return text.atlasKey == WPEParityGlyphAtlasInstance.key(fontPath: text.object.font,
             pointSize: WPEParityFontLibrary.clampedPointSize(text.object.pointSize), glyphMode: .distanceField)
