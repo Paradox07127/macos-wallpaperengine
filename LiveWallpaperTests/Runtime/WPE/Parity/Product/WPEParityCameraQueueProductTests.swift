@@ -300,7 +300,7 @@ extension WPEParitySceneDriverTests {
         }
     }
 
-    private func cameraWitnessTexture(_ pixel: [UInt8]) -> Data {
+    func cameraWitnessTexture(_ pixel: [UInt8]) -> Data {
         var data = Data("TEXV0005\0TEXI0001\0".utf8)
         func word(_ value: UInt32) {
             withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }

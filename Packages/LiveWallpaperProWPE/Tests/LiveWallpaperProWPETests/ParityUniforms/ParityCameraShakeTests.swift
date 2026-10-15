@@ -58,18 +58,18 @@ final class ParityCameraShakeTests: XCTestCase {
     func testDocumentDefaultsAndDisabled() throws {
         let ortho = "\"orthogonalprojection\": {\"width\": 1920, \"height\": 1080}"
         let enabled = try document(general: "\(ortho), \"camerashake\": true")
-        XCTAssertEqual(WPEParityCameraShake(general: enabled.general),
+        XCTAssertEqual(WPEParityCamera(document: enabled, renderTargetSize: SIMD2(1920, 1080)).shake,
                        WPEParityCameraShake(speed: 3, amplitude: 0.5, roughness: 1, orthographic: true))
         let authored = try document(general: """
         \(ortho), "camerashake": true, "camerashakespeed": 2, "camerashakeamplitude": 1, "camerashakeroughness": 0.5
         """)
-        XCTAssertEqual(WPEParityCameraShake(general: authored.general),
+        XCTAssertEqual(WPEParityCamera(document: authored, renderTargetSize: SIMD2(1920, 1080)).shake,
                        WPEParityCameraShake(speed: 2, amplitude: 1, roughness: 0.5, orthographic: true))
         let perspective = try document(general: "\"orthogonalprojection\": null, \"camerashake\": true")
-        XCTAssertEqual(WPEParityCameraShake(general: perspective.general)?.orthographic, false)
+        XCTAssertEqual(WPEParityCamera(document: perspective, renderTargetSize: SIMD2(1920, 1080)).shake?.orthographic, false)
 
         let disabled = try document(general: "\(ortho), \"camerashake\": false, \"camerashakespeed\": 2")
-        XCTAssertNil(WPEParityCameraShake(general: disabled.general))
+        XCTAssertNil(WPEParityCamera(document: disabled, renderTargetSize: SIMD2(1920, 1080)).shake)
         let camera = WPEParityCamera(document: disabled, renderTargetSize: SIMD2(1920, 1080))
         XCTAssertNil(camera.shake)
         XCTAssertEqual(camera.shaken(time: 7), camera)

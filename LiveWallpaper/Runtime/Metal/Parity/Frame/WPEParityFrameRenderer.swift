@@ -130,6 +130,7 @@ final class WPEParityFrameRenderer {
     private let screen: WPEParityUniformScreen
     /// The scene camera; a camera path pose replaces it for the frame.
     private let rootCamera: WPEParityCamera
+    /// The camera pose published by the last camera update, including that update's shake.
     private var camera: WPEParityCamera
     private var activeCameraID: String?
     private var sceneRNG: WPEParityMT19937
@@ -173,6 +174,21 @@ final class WPEParityFrameRenderer {
         }
         if case let .vector(value)? = state.scriptField("cameraparallaxmouseinfluence", of: "") {
             settings.mouseInfluence = Double(value.x)
+        }
+        return settings
+    }
+
+    private var cameraShake: WPEParityCameraShake? {
+        guard case let .vector(enabled)? = state.scriptField("camerashake", of: ""), enabled.x != 0 else { return nil }
+        var settings = WPEParityCameraShake(orthographic: rootCamera.scenePerspective == nil)
+        if case let .vector(value)? = state.scriptField("camerashakespeed", of: "") {
+            settings.speed = value.x
+        }
+        if case let .vector(value)? = state.scriptField("camerashakeamplitude", of: "") {
+            settings.amplitude = value.x
+        }
+        if case let .vector(value)? = state.scriptField("camerashakeroughness", of: "") {
+            settings.roughness = value.x
         }
         return settings
     }
@@ -308,11 +324,11 @@ final class WPEParityFrameRenderer {
 
     /// The engine matrices draw `operation` packs for the current frame.
     func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
-        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera.shaken(time: clock.timeUniform),
+        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera,
                                         layers: layersMoved ? layers : nil)
     }
 
-    /// The camera before the shake: the last frame's path pose, or the scene camera.
+    /// The published camera pose with the layer renderer's current parallax controls.
     var pathCamera: WPEParityCamera {
         var selected = camera
         let parallax = cameraParallax
@@ -332,7 +348,7 @@ final class WPEParityFrameRenderer {
     /// camera shake or parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
     private let hasStaticBase: Bool
     var isStatic: Bool {
-        hasStaticBase && !cameraParallax.enabled && !cameraQueues.values.contains {
+        hasStaticBase && !cameraParallax.enabled && cameraShake == nil && !cameraQueues.values.contains {
             $0.hasEligibleItems && state.isAlive($0.objectID) && state.isVisible($0.objectID)
         }
     }
@@ -698,7 +714,7 @@ final class WPEParityFrameRenderer {
         let document = plan.document
         hasStaticBase = animations.isEmpty && particleObjects.isEmpty
             && !(mipRequested && plan.post.qualityMipMappedFrameBufferEnabled)
-            && videos.textures.isEmpty && skinned.isEmpty && planner.layers.camera.shake == nil
+            && videos.textures.isEmpty && skinned.isEmpty
             && plan.scene.cameraPaths.paths.isEmpty && !document.general.supportsAudioProcessing
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
             && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
@@ -761,8 +777,9 @@ final class WPEParityFrameRenderer {
                        colors: clearColors)
         state = previous.state
         animations = previous.animations
-        camera.perspectiveFOV = previous.camera.perspectiveFOV
-        camera.zoom = previous.camera.zoom
+        camera = previous.camera
+        camera.renderTargetSize = rootCamera.renderTargetSize
+        camera.size = rootCamera.size
         script = previous.script
         materialFunctionFailure = previous.materialFunctionFailure
         media = previous.media
@@ -969,6 +986,8 @@ final class WPEParityFrameRenderer {
                 selected = selected.posed(pose, generalZoom: generalZoom)
             }
         }
+        selected.shake = cameraShake
+        selected = selected.shaken(time: clock.timeUniform)
         if camera != selected || activeCameraID != active {
             layersMoved = true
         }
@@ -1300,7 +1319,7 @@ final class WPEParityFrameRenderer {
     func encodeFrame(elapsed: Double, paused: Bool = false,
                      input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
-        let objectCamera = pathCamera.shaken(time: clock.timeUniform)
+        let objectCamera = pathCamera
         guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
         let shortcutTextures = userShortcutIcons?.snapshot() ?? [:]
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
@@ -1317,7 +1336,7 @@ final class WPEParityFrameRenderer {
         updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
         selectCamera(dt: clock.frametime)
         let fadeAlpha = cameraPaths.fadeAlpha
-        let camera = pathCamera.shaken(time: clock.timeUniform)
+        let camera = pathCamera
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         let updateParallax = cameraParallax
         if updateParallax.enabled {
@@ -1351,7 +1370,7 @@ final class WPEParityFrameRenderer {
                         leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
         }
         // 18aac0 reads the post-tick Bool/amount with the smoother already advanced by 1891a0 above.
-        let renderCamera = pathCamera.shaken(time: clock.timeUniform)
+        let renderCamera = pathCamera
         videos.applyScriptFields(state: &state)
         applyTransforms()
         applyLayerFields()

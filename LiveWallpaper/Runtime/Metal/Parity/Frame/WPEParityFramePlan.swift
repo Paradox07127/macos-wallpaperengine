@@ -244,6 +244,13 @@ struct WPEParityFramePlan {
                               ("cameraparallaxmouseinfluence", parallax.mouseInfluence)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(Float(value), 0, 0, 0)), invalidating: .none)
         }
+        let shake = WPEParityCameraShake(general: document.resolvedGeneralJSON)
+        let shakeEnabled = WPEParityScriptProperty.sceneBoolValue(fromJSON: document.resolvedGeneralJSON["camerashake"]) == true
+        loadedState.setScriptField("camerashake", of: "", to: .vector(SIMD4(shakeEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
+        for (name, value) in [("camerashakespeed", shake.speed), ("camerashakeamplitude", shake.amplitude),
+                              ("camerashakeroughness", shake.roughness)] {
+            loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
+        }
         for binding in constantBindings {
             guard let pass = binding.materialPass else { continue }
             for (stage, constants) in binding.materialConstants {

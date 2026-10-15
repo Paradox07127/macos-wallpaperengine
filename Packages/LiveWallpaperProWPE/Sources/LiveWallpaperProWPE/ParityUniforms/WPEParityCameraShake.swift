@@ -6,7 +6,7 @@ public struct WPEParityCameraShake: Sendable, Equatable {
     public var speed: Float
     public var amplitude: Float
     public var roughness: Float
-    /// general+0xe0 bit 3: the shake stays in the canvas plane and scales with the ortho height.
+    /// SceneObject+0xe0 bit 3: the shake stays in the canvas plane and scales with the ortho height.
     public var orthographic: Bool
 
     public init(speed: Float = 3, amplitude: Float = 0.5, roughness: Float = 1, orthographic: Bool = true) {
@@ -16,15 +16,12 @@ public struct WPEParityCameraShake: Sendable, Equatable {
         self.orthographic = orthographic
     }
 
-    /// Nil when the scene leaves camerashake off.
-    public init?(general: WPESceneGeneral) {
-        let settings = general.cameraShake
-        guard settings.enabled.resolvedValue else { return nil }
-        func value(_ field: WPESceneAuthoredField<Double>, _ absent: Float) -> Float {
-            field.isAuthored ? Float(field.resolvedValue) : absent
-        }
-        self.init(speed: value(settings.speed, 3), amplitude: value(settings.amplitude, 0.5),
-                  roughness: value(settings.roughness, 1), orthographic: !general.usesPerspectiveProjection)
+    /// Native constructor defaults survive invalid authored values, even while shake is disabled.
+    public init(general: WPESceneJSONValue, orthographic: Bool = true) {
+        self.init(speed: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["camerashakespeed"]) ?? 3,
+                  amplitude: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["camerashakeamplitude"]) ?? 0.5,
+                  roughness: WPEParityScriptProperty.sceneFloatValue(fromJSON: general["camerashakeroughness"]) ?? 1,
+                  orthographic: orthographic)
     }
 
     /// FUN_140199580: one Lissajous offset added to both eye and center at g_Time `time`.
@@ -32,16 +29,18 @@ public struct WPEParityCameraShake: Sendable, Equatable {
         -> (eye: SIMD3<Float>, center: SIMD3<Float>) {
         let t = speed * speed * time
         var direction = SIMD3(cos(t), sin(1.333 * t), sin(t))
-        var scale = amplitude * 0.1
+        let amplitudeScale = amplitude * 0.1
         // The ortho flattening comes before the roughness remap, so |v| is the in-plane length.
         if orthographic {
             direction.z = 0
-            scale *= orthoHeight * 0.1
         }
-        let exponent = roughness * roughness * roughness
+        let scale = orthographic ? (orthoHeight * 0.1) * amplitudeScale : amplitudeScale
+        let exponent = pow(roughness, 3)
         if exponent > 0.001, exponent != 1 {
-            let length = simd_length(direction)
-            direction *= pow(length, exponent) / length
+            let length = sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+            let inverseLength: Float = 1 / length
+            let remapped = pow(length, exponent)
+            direction = (inverseLength * direction) * remapped
         }
         let offset = scale * direction
         return (eye + offset, center + offset)

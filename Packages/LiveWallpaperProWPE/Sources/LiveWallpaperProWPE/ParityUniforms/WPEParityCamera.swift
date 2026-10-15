@@ -93,7 +93,9 @@ public struct WPEParityCamera: Sendable, Equatable {
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
                   perspectiveFOV: Float(general.perspectiveOverrideFOV.resolvedValue),
-                  shake: WPEParityCameraShake(general: general), scenePerspective: perspective)
+                  shake: WPEParityScriptProperty.sceneBoolValue(fromJSON: resolved["camerashake"]) == true
+                      ? WPEParityCameraShake(general: resolved, orthographic: perspective == nil) : nil,
+                  scenePerspective: perspective)
     }
 
     /// Native constructor values and strict typed fromJSON seeds, before any SceneScript writes.
