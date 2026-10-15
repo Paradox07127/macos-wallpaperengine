@@ -163,7 +163,10 @@ extension WPEParitySceneDriverTests {
         layer.drawableSize = CGSize(width: 128, height: 64)
         try await frame(6, fov: 90, focal: focal90, near: 1, far: 9, reused: false)
         let current = try XCTUnwrap(driver.renderer)
-        let invalid = try document(fov: "50", near: false, far: ["value": 10000])
+        let invalid = try document(fov: "50", near: false, far: false)
+        for name in ["fov", "nearz", "farz"] {
+            XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: invalid.resolvedGeneralJSON[name]))
+        }
         let generation = current.state.scriptFieldsGeneration
         try current.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: queue, to: invalid)))
         XCTAssertEqual(current.state.scriptFieldsGeneration, generation)
