@@ -75,6 +75,7 @@ struct WPEParityFrameDrawPlan {
     let zeroConstants: [WPEHLSLStage: [String]]
     /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read (R22 Q3).
     let renderVarWrites: (rv0: SIMD4<Float>?, rv1: SIMD4<Float>?)
+    var textRenderVars: WPEParityTextDrawParameters?
     /// Native clip masks replace only RV0.x; the other lanes stay in the scene-wide store.
     var clipMaskInverted: Bool?
     /// Declared textures the frame does not have, bound to a transparent texel.
@@ -152,6 +153,7 @@ struct WPEParityFrameDrawPlan {
                   puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
                   layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
+                  textRenderVarState: WPEParityRenderVarState? = nil,
                   mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
                   userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
@@ -176,6 +178,14 @@ struct WPEParityFrameDrawPlan {
                                                           layers: layers),
                                   variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
                                   constants: constants ?? self.constants, replacementTextures: replacements)
+        if let textRenderVarState, textRenderVars != nil {
+            for (index, value) in [textRenderVarState.rv0, textRenderVarState.rv1,
+                                   textRenderVarState.rv2, textRenderVarState.rv3].enumerated() {
+                for stage in state.constants.keys {
+                    state.constants[stage]?["g_RenderVar\(index)"] = .vector([value.x, value.y, value.z, value.w])
+                }
+            }
+        }
         if let renderVar0 {
             let value = WPECBufferValue.vector([renderVar0.x, renderVar0.y, renderVar0.z, renderVar0.w])
             for stage in state.constants.keys {
@@ -201,6 +211,9 @@ struct WPEParityFrameDrawPlan {
     func applyRenderVarWrites(to state: inout WPEParityRenderVarState) {
         state.rv0 = renderVarWrites.rv0 ?? state.rv0
         state.rv1 = renderVarWrites.rv1 ?? state.rv1
+        if let textRenderVars {
+            state.apply(textRenderVars)
+        }
         if let clipMaskInverted {
             state.rv0.x = clipMaskInverted ? 1 : 0
         }
@@ -516,6 +529,12 @@ struct WPEParityFrameDrawPlanner {
             layers.setSize(text.object.id, size: SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
         }
         return true
+    }
+
+    /// A parameter-only field update keeps the admitted mesh/PSO and supplies new actual glyph RV writes.
+    func refreshTextParameters(_ draw: inout WPEParityFrameDrawPlan, operation: Int) {
+        guard case let .scene(description)? = frame.draws[operation], case .textGlyphs = description.geometry else { return }
+        draw.textRenderVars = texts[description.objectID]?.fieldParameters
     }
 
     /// Rebinds the current immutable atlas version without touching another layer's glyph mesh or UVs.
@@ -890,6 +909,9 @@ struct WPEParityFrameDrawPlanner {
             engine.formUnion(["g_OrientationForward", "g_OrientationRight", "g_OrientationUp", "g_RenderVar0",
                               "g_RenderVar1"])
         }
+        if binding.textRenderVars != nil {
+            engine.formUnion(["g_RenderVar0", "g_RenderVar1", "g_RenderVar2", "g_RenderVar3"])
+        }
         var zeroConstants: [WPEHLSLStage: [String]] = [:]
         for (stage, reflection) in reflections {
             let declared = Set(reflection.cbuffers.flatMap(\.variables).map(\.name))
@@ -927,6 +949,7 @@ struct WPEParityFrameDrawPlanner {
             constants: binding.constants,
             zeroConstants: zeroConstants,
             renderVarWrites: particleKey == nil ? (renderVar("g_RenderVar0"), renderVar("g_RenderVar1")) : (nil, nil),
+            textRenderVars: binding.textRenderVars,
             clipMaskInverted: clipMaskInverted,
             fallbackTextures: fallbackTextures
         )

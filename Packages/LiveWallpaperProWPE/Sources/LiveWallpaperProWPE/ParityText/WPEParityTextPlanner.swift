@@ -121,6 +121,8 @@ public final class WPEParityTextPlanner {
             let chain = fonts.chain(fontPath: object.font, pointSize: mesh.pointSize)
             for key in Set(mesh.mono.glyphKeys) {
                 let index = Int(key >> 24)
+                // Product qualification currently covers one actual primary face, not mixed fallback groups.
+                guard index == 0 else { throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup }
                 if index < chain.faces.count, chain.faces[index].isColorFace {
                     throw WPEParityTextPreparationError.colorRequiresPairedAtlas
                 }

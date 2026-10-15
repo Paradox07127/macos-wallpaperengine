@@ -106,10 +106,10 @@ public struct WPEParitySceneMaterialSource: Hashable, Sendable {
     }
 
     /// basefont(_depth) for grey glyphs, basefontrgba(_depth) for colour glyphs (1401b3430.c:145-244).
-    public static func textGlyphs(_ atlas: WPEParityGlyphAtlasInstance.Atlas,
-                                  depth: Bool) -> WPEParitySceneMaterialSource {
-        let name = atlas == .mono ? "basefont" : "basefontrgba"
-        return WPEParitySceneMaterialSource(materialPath: "materials/fonts/\(name)\(depth ? "_depth" : "").json")
+    public static func textGlyphs(_ atlas: WPEParityGlyphAtlasInstance.Atlas, depth: Bool,
+                                  mode: WPEParityTextGlyphMode = .bitmap,
+                                  combos: [String: Int] = [:]) -> WPEParitySceneMaterialSource {
+        WPEParitySceneMaterialSource(materialPath: mode.materialPath(atlas: atlas, depth: depth), combos: combos)
     }
 
     public static func textBackground(depth: Bool) -> WPEParitySceneMaterialSource {
@@ -129,6 +129,12 @@ public struct WPEParitySceneText: Hashable, Sendable {
     public var atlasKey: String
     /// Enabled effects (+0x320) the layout was made with.
     public var effectCount: Int
+    /// Parameters belong to the admitted mesh mode, not merely a JSON request.
+    public var fieldParameters: WPEParityTextDrawParameters? {
+        guard let mesh = layout.mesh, mesh.glyphMode == .distanceField else { return nil }
+        return WPEParityTextDrawParameters(object: object, pointSize: mesh.pointSize)
+    }
+
     /// p of the translations and the FBO size: min(padding, 512) with effects, bit4 or opaquebackground, else 0.
     public var padding: SIMD2<Float>
     /// Background colour × (HDR ? backgroundbrightness : 1) and the layer alpha (140258050.c:106-116).

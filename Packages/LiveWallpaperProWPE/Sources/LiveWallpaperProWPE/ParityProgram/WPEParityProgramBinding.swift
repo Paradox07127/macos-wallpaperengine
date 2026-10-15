@@ -37,6 +37,8 @@ public struct WPEParityProgramBinding: Sendable {
     /// HLSL name → value for each stage the program has, from that stage's own annotations; of the engine `g_*`
     /// values only the layer colour and alpha are included.
     public var constants: [WPEHLSLStage: [String: WPECBufferValue]]
+    /// The native full RV0/1/2 and partial RV3.x write of this admitted glyph draw.
+    public var textRenderVars: WPEParityTextDrawParameters?
     /// Bound slots, and unbound slots whose sampler annotation names a default texture.
     public var textures: [Int32: TextureSource]
     /// All original declaration loci, including ordinary user textures and unresolved merge diagnostics.
@@ -74,12 +76,14 @@ public extension WPEParityProgramBuilder {
                 var layerColor = draw.colorRole.usesLayerColor ? scene.layerColors[draw.objectID] : nil
                 var fixedColor = white
                 var atlas: WPEParityProgramBinding.TextureSource?
+                var textRenderVars: WPEParityTextDrawParameters?
                 if case let .text(text)? = object?.kind {
                     // 140258050.c:106-116, 184-191: glyphs take the live layer colour, the background quad its own.
                     switch draw.geometry {
                     case let .textGlyphs(list):
                         layerColor = scene.layerColors[draw.objectID]
                         atlas = .textAtlas(key: text.atlasKey, atlas: list)
+                        textRenderVars = text.fieldParameters
                     case .textBackground:
                         fixedColor = text.background
                     default:
@@ -91,7 +95,7 @@ public extension WPEParityProgramBuilder {
                 var slots = textures(names, draw: draw, object: object, imported: imported)
                 slots[0] = atlas ?? slots[0]
                 bindings[index] = WPEParityProgramBinding(
-                    constants: constants, textures: slots, userTextures: material.userTextures,
+                    constants: constants, textRenderVars: textRenderVars, textures: slots, userTextures: material.userTextures,
                     userTextureSlots: userTextureSlots(material.userTextures, textures: slots),
                     cullsBackFaces: material.cullsBackFaces, depthTest: draw.depthTest, depthWrite: draw.depthWrite,
                     layerColorObjectID: layerColor == nil ? nil : draw.objectID,

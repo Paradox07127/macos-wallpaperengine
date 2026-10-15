@@ -54,6 +54,8 @@ public struct WPEParityProgramScene: Sendable {
     public let models: [String: WPEPuppetModel]
     /// The glyph atlases of the text layers as planning left them, keyed by `WPEParitySceneText.atlasKey`.
     public let textAtlases: [String: WPEParityGlyphAtlasInstance]
+    /// The frame owner rejects this scene instead of displaying a bitmap beneath a requested field material.
+    public let textPreparationFailure: WPEParityTextPreparationError?
     /// Condition-accepted resource pass records, including commands and empty/failed materials, even when the
     /// effect is disabled. An absent key means the effect resource did not load; an empty array is a known zero.
     public let resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]]
@@ -228,7 +230,10 @@ public struct WPEParityProgramScene: Sendable {
         var diagnostics: [WPEParitySceneDiagnostic] = []
         let texts = WPEParityTextObject.textObjects(in: document)
         var textAtlases: [String: WPEParityGlyphAtlasInstance] = [:]
-        if !texts.isEmpty {
+        var textFailure: WPEParityTextPreparationError?
+        do { try WPEParityTextFieldAdmission.validate(texts) }
+        catch { textFailure = error as? WPEParityTextPreparationError ?? .unqualifiedDistanceFieldGroup }
+        if !texts.isEmpty, textFailure == nil {
             let pipeline = WPEParityTextPipeline(assets: assets, hdr: flags.hdr,
                                                  orthographic: flags.orthographicProjection)
             let schemas = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
@@ -239,11 +244,14 @@ public struct WPEParityProgramScene: Sendable {
                                            materials: &materials, overridePasses: &overridePasses,
                                            records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions,
                                            authored: authoredByID[text.id])
-                pipeline.add(text, effectCount: effects.count(where: \.enabled))
-                guard let sceneText = pipeline.texts[text.id] else { continue }
-                if text.msdf || text.outline || text.blur || text.dropShadow {
-                    diagnostics.append(.textGlyphEffectsIgnored(objectID: text.id))
+                do {
+                    try pipeline.add(text, effectCount: effects.count(where: \.enabled),
+                                     glyphMode: WPEParityTextFieldAdmission.mode(for: text))
+                } catch {
+                    textFailure = error as? WPEParityTextPreparationError ?? .unqualifiedDistanceFieldGroup
+                    break
                 }
+                guard let sceneText = pipeline.texts[text.id] else { continue }
                 let color = text.color * (flags.hdr ? text.brightness : 1)
                 layerColors[text.id] = SIMD4(color, text.alpha)
                 authoredObjects.append(WPEParityAuthoredObject(id: text.id, width: sceneText.layout.fboSize.x,
@@ -260,6 +268,7 @@ public struct WPEParityProgramScene: Sendable {
             textAtlases = pipeline.atlases
         }
         self.textAtlases = textAtlases
+        textPreparationFailure = textFailure
         let scope = WPEParitySceneFBOScope(authoredObjects, backbufferFormat: format)
         for index in sceneObjects.indices {
             sceneObjects[index].effects = scope.effects(of: authoredObjects[index], diagnostics: &diagnostics)

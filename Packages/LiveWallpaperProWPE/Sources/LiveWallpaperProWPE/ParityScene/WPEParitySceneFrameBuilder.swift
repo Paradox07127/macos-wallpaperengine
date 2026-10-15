@@ -498,7 +498,8 @@ private struct WPEParitySceneEmitter {
                            .textBackground))
         }
         for atlas in mesh.drawnLists {
-            passes.append((Self.glyphPass(object, atlas), "font", .textGlyphs(atlas, depth: depth), .textGlyphs(atlas)))
+            passes.append((Self.glyphPass(object, atlas), "font", .textGlyphs(atlas, depth: depth, mode: mesh.glyphMode,
+                                                                              combos: text.fieldParameters?.combos ?? [:]), .textGlyphs(atlas)))
         }
         for (identity, shader, source, geometry) in passes {
             bind(identity, destination.color, depth: destination.depth)
@@ -529,7 +530,8 @@ private struct WPEParitySceneEmitter {
             bind(identity, composite, depth: nil)
             let (width, height) = compositeExtent(object)
             draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "font",
-                                    source: .textGlyphs(atlas, depth: text.depthMaterials), reads: [],
+                                    source: .textGlyphs(atlas, depth: text.depthMaterials, mode: text.layout.mesh?.glyphMode ?? .bitmap,
+                                                        combos: text.fieldParameters?.combos ?? [:]), reads: [],
                                     target: composite, blend: .translucent, writeMask: .rgba,
                                     geometry: .textGlyphs(atlas), fillsComposite: true,
                                     logicalCompositeSize: SIMD2(width, height)))

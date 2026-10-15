@@ -59,6 +59,13 @@ public enum WPEParityParticleOrientation {
 public struct WPEParityRenderVarState: Equatable, Sendable {
     public var rv0: SIMD4<Float> = .zero
     public var rv1: SIMD4<Float> = .zero
+    public var rv2: SIMD4<Float> = .zero
+    public var rv3: SIMD4<Float> = .zero
+
+    public mutating func apply(_ text: WPEParityTextDrawParameters) {
+        rv0 = text.renderVar0; rv1 = text.renderVar1; rv2 = text.renderVar2
+        rv3.x = text.renderVar3X
+    }
 
     public init() {}
 

@@ -124,6 +124,25 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertNil(WPEParityTextDrawParameters(object: object, pointSize: 32))
     }
 
+    func testRequestedFieldAdmissionRejectsUnqualifiedGroupAndPreservesRV3OtherLanes() throws {
+        var object = text()
+        object.outline = true; object.dropShadow = true; object.dropShadowOpacity = 0.7
+        let writes = try XCTUnwrap(WPEParityTextDrawParameters(object: object, pointSize: 8))
+        var state = WPEParityRenderVarState()
+        state.rv3 = SIMD4(0, 71, 72, 73)
+        state.apply(writes)
+        XCTAssertEqual(state.rv0, writes.renderVar0)
+        XCTAssertEqual(state.rv1, writes.renderVar1)
+        XCTAssertEqual(state.rv2, writes.renderVar2)
+        XCTAssertEqual(state.rv3, SIMD4(0.7, 71, 72, 73))
+        let requests = try WPEParityTextFieldAdmission.requests([.init(object)], texts: [:], qualifiedObjects: [object])
+        XCTAssertEqual(requests.first?.glyphMode, .distanceField, "Real authored fields select the actual mode")
+        var different = object; different.pointSize = 9
+        XCTAssertThrowsError(try WPEParityTextFieldAdmission.requests([.init(different)], texts: [:], qualifiedObjects: [object]))
+        XCTAssertThrowsError(try WPEParityTextFieldAdmission.validate([object, different]))
+        XCTAssertThrowsError(try WPEParityTextFieldAdmission.requests([.init(object)], texts: [:], qualifiedObjects: []))
+    }
+
     private func text() -> WPEParityTextObject {
         WPEParityTextObject(json: .object(["id": .string("T"), "text": .string("H"),
                                            "font": .string("NotoSans-Regular.ttf"), "pointsize": .number(8), "msdf": .bool(true)]))

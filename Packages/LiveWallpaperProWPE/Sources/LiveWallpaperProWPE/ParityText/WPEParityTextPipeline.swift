@@ -107,6 +107,18 @@ public final class WPEParityTextPipeline {
         revision &+= 1
     }
 
+    /// Actual requested field mode at initial scene load, using this same font/atlas owner.
+    /// Any unsupported glyph fails the new scene admission; it is never silently rasterised instead.
+    public func add(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode) throws {
+        let result = try planner.plan(object, effectCount: effectCount, glyphMode: glyphMode)
+        if texts[object.id] == nil {
+            order.append(object.id)
+        }
+        texts[object.id] = WPEParitySceneText(object: object, effectCount: effectCount, layout: result.layout,
+                                              atlasKey: result.atlasKey, hdr: hdr, orthographic: orthographic)
+        revision &+= 1
+    }
+
     /// Re-reads every UV from the atlases as they are now: a later insert may have doubled one and halved the UVs.
     public func refreshUVs() {
         for id in order {

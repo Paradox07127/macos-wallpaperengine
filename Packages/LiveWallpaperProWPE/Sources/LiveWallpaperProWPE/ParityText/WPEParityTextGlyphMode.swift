@@ -17,6 +17,7 @@ public enum WPEParityTextPreparationError: Error, Equatable, Sendable {
     case colorRequiresPairedAtlas
     case zeroAreaDistanceGlyph
     case nonfiniteDrawParameters
+    case unqualifiedDistanceFieldGroup
     case foreignPreparedUpdate
     case stalePreparedUpdate
     case preparedUpdateConsumed
@@ -67,5 +68,50 @@ public struct WPEParityTextDrawParameters: Hashable, Sendable {
             combos["DROP_SHADOW_ENABLED"] = 1
         }
         self.combos = combos
+    }
+}
+
+/// Current product qualification: requested non-colour fields share one font and actual point size.
+/// This is an admission boundary, not a native font/atlas resource limit or a second planner.
+public enum WPEParityTextFieldAdmission {
+    public static func mode(for object: WPEParityTextObject) -> WPEParityTextGlyphMode {
+        object.usesGlyphEffects ? .distanceField : .bitmap
+    }
+
+    public static func validate(_ objects: [WPEParityTextObject]) throws {
+        var first: WPEParityTextObject?
+        for object in objects where object.usesGlyphEffects {
+            guard WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) != nil else {
+                throw WPEParityTextPreparationError.nonfiniteDrawParameters
+            }
+            if let first {
+                guard first.font.utf8.elementsEqual(object.font.utf8),
+                      WPEParityFontLibrary.clampedPointSize(first.pointSize) == WPEParityFontLibrary.clampedPointSize(object.pointSize) else {
+                    throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup
+                }
+            } else {
+                first = object
+            }
+        }
+    }
+
+    public static func requests(_ requests: [WPEParityTextPipeline.RelayoutRequest],
+                                texts: [String: WPEParitySceneText],
+                                qualifiedObjects: [WPEParityTextObject]) throws -> [WPEParityTextPipeline.RelayoutRequest] {
+        let qualified = qualifiedObjects.first(where: \.usesGlyphEffects)
+        var objects = texts.mapValues(\.object)
+        for request in requests {
+            objects[request.object.id] = request.object
+        }
+        try validate(Array(objects.values))
+        // Keep this finite product qualification at its loaded font/size. Cross-size reuse of the same native
+        // path_msdf atlas still needs original evidence, even when only one object changes size at a time.
+        for object in Array(objects.values) + requests.map(\.object) where object.usesGlyphEffects {
+            guard let qualified, qualified.font.utf8.elementsEqual(object.font.utf8),
+                  WPEParityFontLibrary.clampedPointSize(qualified.pointSize) == WPEParityFontLibrary.clampedPointSize(object.pointSize) else {
+                throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup
+            }
+        }
+        return requests.map { .init($0.object, effectCount: $0.effectCount, glyphMode: mode(for: $0.object)) }
     }
 }

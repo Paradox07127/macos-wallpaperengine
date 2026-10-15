@@ -137,6 +137,9 @@ struct WPEParityFramePlan {
             return SIMD2(Int(scaled.width), Int(scaled.height))
         }
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
+        if let failure = scene.textPreparationFailure {
+            throw failure
+        }
         particleMaterials = WPEParityParticleScene.materialProbes(document: document, assets: assets,
                                                                   engineFlags: scene.engineFlags)
         var post = scene.postProcess
@@ -162,13 +165,26 @@ struct WPEParityFramePlan {
 
         // Empty text and later colour/depth/background changes still use programs compiled once at load.
         for object in scene.scene.objects {
-            guard case .text = object.kind else { continue }
+            guard case let .text(text) = object.kind else { continue }
             for depth in [false, true] {
-                let variants: [(WPEParitySceneMaterialSource, WPEParitySceneDraw.Geometry)] = [
+                var variants: [(WPEParitySceneMaterialSource, WPEParitySceneDraw.Geometry)] = [
                     (.textGlyphs(.mono, depth: depth), .textGlyphs(.mono)),
                     (.textGlyphs(.color, depth: depth), .textGlyphs(.color)),
                     (.textBackground(depth: depth), .textBackground),
                 ]
+                // Only actual loaded field requests enter this finite warm set. The existing loadPrograms
+                // view deduplicates HLSL across objects; ordinary bitmap text adds no MSDF compile work.
+                if text.object.usesGlyphEffects {
+                    for bits in 0 ..< 8 {
+                        var combos: [String: Int] = [:]
+                        for (index, name) in ["OUTLINE_ENABLED", "BLUR_ENABLED", "DROP_SHADOW_ENABLED"].enumerated()
+                            where bits & (1 << index) != 0 {
+                            combos[name] = 1
+                        }
+                        variants.append((.textGlyphs(.mono, depth: depth, mode: .distanceField, combos: combos),
+                                         .textGlyphs(.mono)))
+                    }
+                }
                 for (source, geometry) in variants {
                     let draw = WPEParityFrameDraw.scene(WPEParitySceneDraw(
                         pass: WPEPassIdentity("\(object.id)/text-prewarm"), objectID: object.id,
