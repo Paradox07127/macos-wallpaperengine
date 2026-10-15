@@ -190,7 +190,6 @@ final class WPEParityFrameRenderer {
     private var targetSamplers: [ObjectIdentifier: WPEParitySamplerState] = [:]
     private var resourceBindings: WPEParityResourceBindings = [:]
     private var seenScriptText = 0
-    private var textsNeedFrameRebuild = false
     private struct MaterialClear {
         let texture: MTLTexture
         let color: WPEClearColor
@@ -416,8 +415,46 @@ final class WPEParityFrameRenderer {
         },
         atlases: planner.textAtlases.atlases
     )
-    /// Text layers re-laid since their draws were last planned.
-    private var relaidTexts: Set<String> = []
+    /// Requests remain ordered until the CPU/GPU cohort is accepted; repeated objects are meaningful.
+    private var textRequests: [WPEParityTextPipeline.RelayoutRequest] = []
+    private var pendingScriptTextGeneration: Int?
+    private var pendingTextEffectsGeneration: Int?
+
+    #if DEBUG
+    /// Value snapshots for the real Metal preparation guard, never an additional resource owner/cache.
+    struct TextPreparationSnapshot {
+        let texts: [String: WPEParitySceneText]
+        let atlases: WPEParityTextAtlasTextures
+        let pipelineAtlases: [String: WPEParityGlyphAtlasInstance]
+        let layers: WPEParityLayerTransformSet
+        let frames: [WPEParityFrame]
+        let draws: [Int: WPEParityFrameDrawPlan]
+        let targets: [WPEResourceID: MTLTexture]
+        let bindings: WPEParityResourceBindings
+        let executorIDs: [ObjectIdentifier]
+        let pendingRequests: Int
+        let initialization: MTLCommandBuffer?
+    }
+
+    /// Runs after all fallible GPU preparation, before CPU accept. Tests may inject one explicit failure.
+    var textPreparationCheckpoint: ((TextPreparationSnapshot) throws -> Void)?
+
+    var textPreparationState: TextPreparationSnapshot {
+        textSnapshot(planner: planner, layers: layers, graphs: graphs, targets: targets,
+                     pipelineAtlases: textPipeline.atlases, initialization: nil)
+    }
+
+    private func textSnapshot(planner: WPEParityFrameDrawPlanner, layers: WPEParityLayerTransformSet,
+                              graphs: Graphs, targets: [WPEResourceID: MTLTexture],
+                              pipelineAtlases: [String: WPEParityGlyphAtlasInstance],
+                              initialization: MTLCommandBuffer?) -> TextPreparationSnapshot {
+        TextPreparationSnapshot(texts: planner.texts, atlases: planner.textAtlases,
+                                pipelineAtlases: pipelineAtlases, layers: layers,
+                                frames: graphs.layout.frames, draws: graphs.layout.draws, targets: targets,
+                                bindings: resourceBindings, executorIDs: graphs.executors.map(ObjectIdentifier.init),
+                                pendingRequests: textRequests.count, initialization: initialization)
+    }
+    #endif
 
     /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
     /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
@@ -702,8 +739,9 @@ final class WPEParityFrameRenderer {
         seenMembership = -1
         seenModelData = -1
         bloom = previous.bloom
-        for text in previous.planner.texts.values {
-            recordTextDelta(textPipeline.relayoutWithDelta(text.object, effectCount: text.effectCount))
+        for object in previous.plan.scene.scene.objects {
+            guard let text = previous.planner.texts[object.id] else { continue }
+            textRequests.append(.init(text.object, effectCount: text.effectCount))
         }
         // Resize handlers may call material functions on dynamically relaid text FBOs. Prepare those actual
         // targets first, and only replace the engine callback after all throwing adoption work succeeds.
@@ -732,7 +770,7 @@ final class WPEParityFrameRenderer {
             repackBloom()
         }
         for text in update.texts {
-            recordTextDelta(textPipeline.relayoutWithDelta(text))
+            textRequests.append(.init(text))
             for (name, value) in WPEParityTextFields.seed(text) {
                 state.setScriptField(name, of: text.id, to: value, invalidating: .textLayout)
             }
@@ -1029,76 +1067,124 @@ final class WPEParityFrameRenderer {
                 corner(half.x, half.y), corner(-half.x, half.y))
     }
 
-    private func recordTextDelta(_ delta: WPEParityTextRelayoutDelta) {
-        for change in delta.changes {
-            relaidTexts.insert(change.current.object.id)
-            textsNeedFrameRebuild = textsNeedFrameRebuild || change.requiresFrameRebuild
-        }
-    }
-
-    /// The native text dirty hook is consumed once; unchanged frames perform no layout or atlas upload.
+    /// The native text dirty hook is consumed only after this ordered cohort is admitted.
     private func applyScriptText() {
-        let changed = state.generation(.textLayout) != seenScriptText
-        let effectsChanged = state.effectVisibilityGeneration != seenEffects
+        let textGeneration = state.generation(.textLayout)
+        let effectsGeneration = state.effectVisibilityGeneration
+        let changed = textGeneration != (pendingScriptTextGeneration ?? seenScriptText)
+        let effectsChanged = effectsGeneration != (pendingTextEffectsGeneration ?? seenEffects)
         guard changed || effectsChanged else { return }
-        for current in textPipeline.texts.values {
-            var object = current.object
+        var latest = textPipeline.texts.mapValues(\.object)
+        for request in textRequests {
+            latest[request.object.id] = request.object
+        }
+        for sceneObject in plan.scene.scene.objects {
+            guard var object = latest[sceneObject.id] else { continue }
             if changed {
                 object = WPEParityTextFields.applying(to: object, state: state)
             }
             let effects = state.effects.indices.count {
                 state.effects[$0].objectID == object.id && state.effectVisibility[$0]
             }
-            recordTextDelta(textPipeline.relayoutWithDelta(object, effectCount: effects))
+            textRequests.append(.init(object, effectCount: effects))
         }
-        seenScriptText = state.generation(.textLayout)
+        pendingScriptTextGeneration = textGeneration
+        pendingTextEffectsGeneration = effectsGeneration
     }
 
-    /// Re-plans only changed text geometry. Every shared atlas reader takes its new immutable texture version.
+    private func consumeTextRequests() {
+        textRequests.removeAll(keepingCapacity: true)
+        if let generation = pendingScriptTextGeneration {
+            seenScriptText = generation
+        }
+        pendingScriptTextGeneration = nil
+        pendingTextEffectsGeneration = nil
+    }
+
+    /// Prepare all text/atlas/geometry/RT values on this serial owner, then publish once after CPU accept.
     private func replanRelaidTexts() throws {
-        guard !relaidTexts.isEmpty else { return }
+        guard !textRequests.isEmpty else { return }
         let pipeline = textPipeline
-        guard planner.updateTexts(relaidTexts.compactMap { pipeline.texts[$0] }, atlases: pipeline.atlases) else {
+        guard let prepared = try pipeline.prepareRelayouts(textRequests) else {
+            consumeTextRequests()
+            return
+        }
+        var accepted = false
+        defer {
+            if !accepted {
+                try? pipeline.discard(prepared)
+            }
+        }
+        let changed = Set(prepared.changedObjectIDs)
+        var candidatePlanner = planner
+        guard candidatePlanner.updateTexts(prepared.changedObjectIDs.compactMap { prepared.texts[$0] },
+                                           atlases: prepared.atlases) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
-        pipeline.atlases = planner.textAtlases.atlases
-        for id in relaidTexts {
-            guard let text = pipeline.texts[id] else { continue }
-            layers.setSize(id, size: SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
+        var candidateLayers = layers
+        for id in prepared.changedObjectIDs {
+            guard let text = prepared.texts[id] else { continue }
+            candidateLayers.setSize(id, size: SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
         }
-        layersMoved = true
         let current = graphs.layout
-        let planned = try plan.layout(effects: state, texts: pipeline.texts,
+        let planned = try plan.layout(effects: state, texts: prepared.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let kept = current.draws.filter { index, _ in
             guard case let .scene(draw)? = current.frames[0].draws[index] else { return true }
-            return !relaidTexts.contains(draw.objectID)
+            return !changed.contains(draw.objectID)
         }
         let reuse = Layout(effects: current.effects, frames: current.frames, draws: kept,
                            skipped: current.skipped, fade: current.fade)
         var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
-                                         planner: &planner, encoder: drawEncoder,
+                                         planner: &candidatePlanner, encoder: drawEncoder,
                                          requiredPresentationPass: plan.requiredPresentationPass, reusing: reuse)
+        // makeLayout records per-draw failures as skips. Required readers of this changed text cohort cannot
+        // be silently dropped while its CPU atlas/ref/layout is accepted.
+        for (index, description) in planned.frames[0].draws {
+            guard case let .scene(draw) = description, changed.contains(draw.objectID) else { continue }
+            guard planned.programs[index] != nil, layout.draws[index] != nil else {
+                throw layout.skipped[index] ?? WPEParityFrameSkip.noMaterial
+            }
+        }
+        // A text layout must not publish a newly discovered video texture without its existing async decoder
+        // admission. This synchronous transaction never constructs a second video owner.
+        guard candidatePlanner.videos.count == planner.videos.count else {
+            throw WPEParityFrameSkip.videoTexture("Text preparation requires an unprepared video stream")
+        }
         var rebound = layout.draws
         for index in rebound.keys {
-            planner.refreshAtlasBindings(&rebound[index]!, operation: index)
+            candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
         }
         layout = Layout(effects: layout.effects, frames: layout.frames, draws: rebound,
                         skipped: layout.skipped, fade: layout.fade)
         let readinessChanged = Set(layout.draws.keys) != Set(current.draws.keys)
-        if textsNeedFrameRebuild || readinessChanged || layout.effects != current.effects {
-            try installGraphs(layout, cachePrevious: false)
+        let requiresRebuild = prepared.delta.changes.contains { $0.requiresFrameRebuild }
+        let gpu: PreparedGraphs = if requiresRebuild || readinessChanged || layout.effects != current.effects {
+            try prepareGraphs(layout)
         } else {
-            graphs = Graphs(layout: layout, hidden: graphs.hidden, executors: graphs.executors,
-                            operations: graphs.operations, particleDraws: graphs.particleDraws,
-                            particleSnapshotSkips: graphs.particleSnapshotSkips)
-            retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
-            previousGraphs = nil
+            PreparedGraphs(graphs: Graphs(layout: layout, hidden: graphs.hidden, executors: graphs.executors,
+                                          operations: graphs.operations, particleDraws: graphs.particleDraws,
+                                          particleSnapshotSkips: graphs.particleSnapshotSkips),
+                           targets: targets, samplers: targetSamplers, initialization: nil)
         }
+        #if DEBUG
+        try textPreparationCheckpoint?(textSnapshot(planner: candidatePlanner, layers: candidateLayers,
+                                                    graphs: gpu.graphs, targets: gpu.targets,
+                                                    pipelineAtlases: prepared.atlases,
+                                                    initialization: gpu.initialization))
+        #endif
+        // Last throwing operation. No await, GPU allocation, graph encode or other admission follows accept.
+        try pipeline.accept(prepared)
+        accepted = true
+        planner = candidatePlanner
+        layers = candidateLayers
+        layersMoved = true
+        publishGraphs(gpu, cachePrevious: false)
+        images = candidatePlanner.layerImages
+        pipeline.atlases = candidatePlanner.textAtlases.atlases
         packedConstants.removeAll()
         fadeConstants.removeAll()
-        relaidTexts.removeAll()
-        textsNeedFrameRebuild = false
+        consumeTextRequests()
         repackBloom()
     }
 
@@ -1443,8 +1529,15 @@ final class WPEParityFrameRenderer {
         return true
     }
 
-    /// Allocation and initialization form one transaction; a failed attempt leaves the previous graphs retryable.
-    private func installGraphs(_ layout: Layout, cachePrevious: Bool) throws {
+    /// Candidate values on the existing renderer. Initialization touches only newly allocated target versions.
+    private struct PreparedGraphs {
+        let graphs: Graphs
+        let targets: [WPEResourceID: MTLTexture]
+        let samplers: [ObjectIdentifier: WPEParitySamplerState]
+        let initialization: MTLCommandBuffer?
+    }
+
+    private func prepareGraphs(_ layout: Layout) throws -> PreparedGraphs {
         var candidateTargets = targets
         let made = try Self.makeGraphs(layout: layout, state: state, device: device, encoder: drawEncoder,
                                        arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings,
@@ -1452,14 +1545,27 @@ final class WPEParityFrameRenderer {
         let added = candidateTargets.filter { id, texture in
             targets[id].map { ObjectIdentifier($0) != ObjectIdentifier(texture) } ?? true
         }
-        try Self.clear(Array(added.values), queue: queue, colors: Self.clearColors(layout, targets: added))
+        let initialization = try Self.clear(Array(added.values), queue: queue,
+                                            colors: Self.clearColors(layout, targets: added))
+        return PreparedGraphs(graphs: made, targets: candidateTargets,
+                              samplers: Self.targetSamplers(layout, targets: candidateTargets),
+                              initialization: initialization)
+    }
+
+    /// All fallible preparation precedes this same-owner value publication.
+    private func publishGraphs(_ prepared: PreparedGraphs, cachePrevious: Bool) {
         retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
         previousGraphs = cachePrevious ? graphs : nil
-        graphs = made
-        // Named pool history outlives effect/visibility toggles. IDs are bounded by this loaded document;
-        // resizing replaces a value at its existing ID, and Metal retains the submitted texture version.
-        targets = candidateTargets
-        targetSamplers = Self.targetSamplers(layout, targets: targets)
+        graphs = prepared.graphs
+        // Named pool history survives graph changes; Metal retains submitted texture versions.
+        targets = prepared.targets
+        targetSamplers = prepared.samplers
+    }
+
+    /// Existing non-text callers use the same preparation and publication, with unchanged clear policy.
+    private func installGraphs(_ layout: Layout, cachePrevious: Bool) throws {
+        let prepared = try prepareGraphs(layout)
+        publishGraphs(prepared, cachePrevious: cachePrevious)
     }
 
     /// A resized non-unique FBO receives a new physical ID. Preserve the effect's binding permutation by the
@@ -1735,9 +1841,10 @@ final class WPEParityFrameRenderer {
 
     /// Pooled targets can be read before their first write. Initialize every readable mip as a Mac safety policy;
     /// the original quality-enabled first-frame contents remain an evidence boundary.
+    @discardableResult
     private static func clear(_ textures: [MTLTexture], queue: MTLCommandQueue,
-                              colors: [ObjectIdentifier: WPEClearColor] = [:]) throws {
-        guard !textures.isEmpty else { return }
+                              colors: [ObjectIdentifier: WPEClearColor] = [:]) throws -> MTLCommandBuffer? {
+        guard !textures.isEmpty else { return nil }
         guard let commandBuffer = queue.makeCommandBuffer() else { throw WPEParityFrameRenderError.encoderUnavailable }
         for texture in textures {
             let pass = MTLRenderPassDescriptor()
@@ -1767,6 +1874,7 @@ final class WPEParityFrameRenderer {
             blit.endEncoding()
         }
         commandBuffer.commit()
+        return commandBuffer
     }
 }
 #endif

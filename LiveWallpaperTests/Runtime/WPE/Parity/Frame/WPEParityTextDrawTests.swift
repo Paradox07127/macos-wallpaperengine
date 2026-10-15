@@ -369,6 +369,194 @@ final class WPEParityTextDrawTests: XCTestCase {
         }
     }
 
+    /// All allocations/uploads/graph initialization are real Metal. Only the final admission failure is
+    /// injected; the old reader waits on a separate queue so candidate initialization cannot deadlock behind it.
+    func testTextBatchPreparationFailureKeepsPublishedCohortAndRTContents() async throws {
+        enum Injected: Error { case beforeAccept }
+        let fixture = try await makeTextAdmissionFixture()
+        let renderer = fixture.renderer
+        try await encode(renderer, label: "text admission baseline")
+        XCTAssertTrue(renderer.skipped.isEmpty)
+        let before = renderer.textPreparationState
+        XCTAssertEqual(before.texts.count, 2)
+        XCTAssertEqual(before.atlases.atlases.count, 1, "Both objects must actually share one atlas")
+        let text = try XCTUnwrap(before.texts[Self.textID])
+        let key = WPEParityTextAtlasTextures.Key(atlasKey: text.atlasKey, atlas: .mono)
+        let oldAtlas = try XCTUnwrap(before.atlases.textures[key])
+        let oldPixels = try XCTUnwrap(before.atlases.atlases[text.atlasKey]).mono.pixels
+        XCTAssertTrue(oldPixels.contains { $0 != 0 }, "Required real glyph pixels")
+        XCTAssertEqual(oldAtlas.pixelFormat, .r8Unorm)
+        let historyID = try XCTUnwrap(before.frames[0].resources.first {
+            $0.id.rawValue == "History_7" && $0.initialClear != nil
+        }?.id)
+        let history = try XCTUnwrap(before.targets[historyID])
+        let seed = try XCTUnwrap(fixture.queue.makeCommandBuffer())
+        try WPEParityGraphExecutor.encodeColorClear(history, color: .init(red: 1, green: 0, blue: 1, alpha: 1),
+                                                    on: seed)
+        seed.commit()
+        await seed.completed()
+        XCTAssertNil(seed.error)
+        let historyPixels = try readBack(history, fixture)
+        XCTAssertEqual(Array(historyPixels.prefix(4)), [255, 0, 255, 255], "Different from authored green initialClear")
+        let oldPresented = try readBack(renderer.backbuffer, fixture)
+
+        let readQueue = try XCTUnwrap(fixture.device.makeCommandQueue())
+        let release = try XCTUnwrap(fixture.device.makeSharedEvent())
+        defer { release.signaledValue = 1 }
+        let oldRead = try XCTUnwrap(readQueue.makeCommandBuffer())
+        XCTAssertTrue(oldRead.retainedReferences)
+        let readStride = (oldAtlas.width + 255) / 256 * 256
+        let result = try XCTUnwrap(fixture.device.makeBuffer(length: readStride * oldAtlas.height, options: .storageModeShared))
+        oldRead.encodeWaitForEvent(release, value: 1)
+        let blit = try XCTUnwrap(oldRead.makeBlitCommandEncoder())
+        blit.copy(from: oldAtlas, sourceSlice: 0, sourceLevel: 0,
+                  sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: oldAtlas.width, height: oldAtlas.height, depth: 1), to: result,
+                  destinationOffset: 0, destinationBytesPerRow: readStride,
+                  destinationBytesPerImage: readStride * oldAtlas.height)
+        blit.endEncoding()
+        oldRead.commit()
+        XCTAssertNotEqual(oldRead.status, .completed)
+
+        var candidate: WPEParityFrameRenderer.TextPreparationSnapshot?
+        var hits = 0
+        renderer.textPreparationCheckpoint = { snapshot in
+            hits += 1
+            candidate = snapshot
+            throw Injected.beforeAccept
+        }
+        defer { renderer.textPreparationCheckpoint = nil }
+        renderer.state.setScriptField("text", of: Self.textID, to: .string("WWWW"), invalidating: .textLayout)
+        renderer.state.setScriptField("text", of: "6", to: .string("MMM"), invalidating: .textLayout)
+        XCTAssertThrowsError(try renderer.encodeFrame(elapsed: 1.0 / 60)) { error in
+            XCTAssertTrue(error is Injected, "Must reach the late checkpoint, not fail at prerequisites: \(error)")
+        }
+        XCTAssertEqual(hits, 1)
+        let prepared = try XCTUnwrap(candidate)
+        XCTAssertEqual(prepared.texts[Self.textID]?.object.text, "WWWW")
+        XCTAssertEqual(prepared.texts["6"]?.object.text, "MMM")
+        XCTAssertFalse(try XCTUnwrap(prepared.atlases.textures[key]) === oldAtlas, "Actual new immutable upload")
+        XCTAssertNotEqual(textGeometryIdentities(prepared), textGeometryIdentities(before), "Actual new Metal buffers")
+        XCTAssertNotEqual(prepared.executorIDs, before.executorIDs, "Changed FBO extent must prepare new graphs")
+        XCTAssertTrue(prepared.targets[historyID] === history, "Same descriptor retains the real history object")
+        XCTAssertTrue(prepared.targets.contains { id, target in
+            before.targets[id].map { $0 !== target } ?? true
+        }, "At least one actual new/replacement RT")
+        let initialization = try XCTUnwrap(prepared.initialization, "Real added-only initialization must be submitted")
+        await initialization.completed()
+        XCTAssertNil(initialization.error)
+        XCTAssertNotEqual(oldRead.status, .completed, "Old GPU reader must overlap candidate preparation")
+
+        let failed = renderer.textPreparationState
+        XCTAssertGreaterThan(failed.pendingRequests, 0, "Failed cohort remains retryable")
+        XCTAssertEqual(failed.texts, before.texts)
+        XCTAssertEqual(failed.layers.layers, before.layers.layers)
+        XCTAssertEqual(failed.frames, before.frames)
+        XCTAssertEqual(failed.executorIDs, before.executorIDs)
+        XCTAssertEqual(failed.bindings, before.bindings)
+        XCTAssertEqual(textGeometryIdentities(failed), textGeometryIdentities(before))
+        XCTAssertEqual(failed.targets.mapValues(ObjectIdentifier.init), before.targets.mapValues(ObjectIdentifier.init))
+        XCTAssertEqual(failed.atlases.textures.mapValues(ObjectIdentifier.init), before.atlases.textures.mapValues(ObjectIdentifier.init))
+        XCTAssertEqual(failed.atlases.contentGenerations, before.atlases.contentGenerations)
+        assertTextAtlasState(failed.atlases.atlases, equals: before.atlases.atlases,
+                             texts: Array(before.texts.values) + Array(prepared.texts.values))
+        assertTextAtlasState(failed.pipelineAtlases, equals: before.pipelineAtlases,
+                             texts: Array(before.texts.values) + Array(prepared.texts.values))
+        XCTAssertEqual(try readBack(history, fixture), historyPixels, "Failure must not reapply initialClear to active RT")
+        XCTAssertEqual(try readBack(renderer.backbuffer, fixture), oldPresented, "Failed preparation drew nothing into old targets")
+
+        renderer.textPreparationCheckpoint = nil
+        try await encode(renderer, label: "text admission retry")
+        let after = renderer.textPreparationState
+        XCTAssertEqual(after.pendingRequests, 0)
+        XCTAssertEqual(after.texts[Self.textID]?.object.text, "WWWW")
+        XCTAssertEqual(after.texts["6"]?.object.text, "MMM")
+        XCTAssertEqual(after.layers.layers[Self.textID]?.size,
+                       after.texts[Self.textID].map { SIMD2(Float($0.layout.fboSize.x), Float($0.layout.fboSize.y)) })
+        XCTAssertFalse(try XCTUnwrap(after.atlases.textures[key]) === oldAtlas)
+        XCTAssertTrue(after.targets[historyID] === history)
+        XCTAssertEqual(try readBack(history, fixture), historyPixels, "Successful graph rebuild also preserves history")
+        let presented = try readBack(renderer.backbuffer, fixture)
+        XCTAssertNotEqual(presented, oldPresented)
+        XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0] > 0 },
+                      "Actual new glyph draw must present non-background RGB pixels")
+        XCTAssertTrue(renderer.skipped.isEmpty)
+        for (index, description) in after.frames[0].draws {
+            guard case let .scene(draw) = description, case .textGlyphs = draw.geometry else { continue }
+            let emitted = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == index }?.draw)
+            XCTAssertTrue(emitted.textures["g_Texture0"] === after.atlases.textures[key], "Both real consumers use the accepted atlas")
+        }
+        release.signaledValue = 1
+        await oldRead.completed()
+        XCTAssertNil(oldRead.error)
+        var readPixels: [UInt8] = []
+        for row in 0 ..< oldAtlas.height {
+            readPixels += UnsafeRawBufferPointer(start: result.contents() + row * readStride, count: oldAtlas.width)
+        }
+        XCTAssertEqual(readPixels, oldPixels, "Old reader retains the entire earlier atlas, including areas that were empty")
+    }
+
+    private func textGeometryIdentities(_ snapshot: WPEParityFrameRenderer.TextPreparationSnapshot)
+        -> [Int: [ObjectIdentifier]] {
+        snapshot.draws.mapValues { draw in
+            if case let .mesh(vertices, indices, _) = draw.geometry {
+                return [ObjectIdentifier(vertices), ObjectIdentifier(indices)]
+            }
+            return []
+        }
+    }
+
+    private func assertTextAtlasState(_ actual: [String: WPEParityGlyphAtlasInstance],
+                                      equals expected: [String: WPEParityGlyphAtlasInstance],
+                                      texts: [WPEParitySceneText], file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(Set(actual.keys), Set(expected.keys), file: file, line: line)
+        for (key, instance) in expected {
+            guard let atlas = actual[key]?.mono else { return XCTFail("Missing atlas \(key)", file: file, line: line) }
+            let old = instance.mono
+            XCTAssertEqual(atlas.pixels, old.pixels, file: file, line: line)
+            XCTAssertEqual(atlas.width, old.width, file: file, line: line)
+            XCTAssertEqual(atlas.height, old.height, file: file, line: line)
+            XCTAssertEqual(atlas.isDirty, old.isDirty, file: file, line: line)
+            XCTAssertEqual(atlas.generation, old.generation, file: file, line: line)
+            XCTAssertEqual(atlas.contentGeneration, old.contentGeneration, file: file, line: line)
+            XCTAssertEqual(atlas.resetGeneration, old.resetGeneration, file: file, line: line)
+            for text in texts where text.atlasKey == key {
+                for glyph in text.layout.mesh?.mono.glyphKeys ?? [] {
+                    XCTAssertEqual(atlas.entry(forKey: glyph), old.entry(forKey: glyph), file: file, line: line)
+                }
+            }
+        }
+    }
+
+    private func makeTextAdmissionFixture() async throws -> Fixture {
+        do {
+            let effect: [String: Any] = [
+                "fbos": ["History", "HistoryOut"].map {
+                    ["name": $0, "format": "rgba8888", "unique": true, "width": 4, "height": 4,
+                     "clear": "0 1 0 1"] as [String: Any]
+                },
+                "passes": [["command": "copy", "source": "History", "target": "HistoryOut"],
+                           ["material": "materials/effects/tint.json"]],
+            ]
+            let effectURL = scratch.appending(path: "effects/text-admission.json")
+            try FileManager.default.createDirectory(at: effectURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: effect).write(to: effectURL)
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: true, text: "Hi")) as? [String: Any])
+            var first = try XCTUnwrap((json["objects"] as? [[String: Any]])?.first)
+            first["origin"] = "256 256 0"
+            first["effects"] = [["file": "effects/text-admission.json", "id": 7, "visible": true]]
+            var second = first
+            second["id"] = 6
+            second["origin"] = "768 256 0"
+            second["effects"] = [["file": "effects/text-admission.json", "id": 8, "visible": true]]
+            json["objects"] = [first, second]
+            return try await makeSyntheticRenderer(effect: true, scene: JSONSerialization.data(withJSONObject: json))
+        } catch {
+            throw NSError(domain: "WPEParityTextAdmission.RequiredInputs", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Required real font/shader/Metal fixture unavailable: \(error)"])
+        }
+    }
+
     func testTextUserPropertyRelaysTheLayerWithoutReloading() async throws {
         let wpeAssets = try wpeAssets()
         let scene = try Self.syntheticScene(effect: false, text: ["user": "caption", "value": "Hi"])
