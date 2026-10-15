@@ -204,6 +204,58 @@ extension WPEParitySceneDriverTests {
         XCTAssertLessThanOrEqual(abs(Int(pixels[offset]) - 255), 1)
         XCTAssertLessThanOrEqual(pixels[offset + 1], 1)
         XCTAssertLessThanOrEqual(pixels[offset + 2], 1)
+
+        let overrideDocument = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": [
+                "orthogonalprojection": ["width": 64, "height": 64],
+                "perspectiveoverridefov": ["value": false, "script": """
+                export function update(value) { return engine.userProperties.fov; }
+                """],
+                "clearenabled": true, "clearcolor": "0 0 0", "bloom": false,
+            ],
+            "objects": [["id": 1, "image": "models/projection-witness.json", "origin": "32 32 0",
+                         "size": "16 16", "perspective": true]],
+        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        try await cold.load(document: overrideDocument, assets: assets, settings: .init(bloom: false),
+                            drawableSize: CGSize(width: 64, height: 64), pixelFormat: .bgra8Unorm_srgb,
+                            compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "projection-override-cache")),
+                            scriptHost: .init(userPropertiesJSON: host(fov: 60)))
+        let overrideRenderer = try XCTUnwrap(cold.renderer)
+        XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, 95, "Bool cannot replace the native Float seed")
+        var distances: [Float] = []
+        for (index, expectedFOV): (Int, Float) in [(0, 95), (1, 60)] {
+            let command = try XCTUnwrap(cold.renderAndPresentFrame(layer: layer, timestamp: 200 + Double(index) * 0.25,
+                                                                   pointer: SIMD2(repeating: 0.5)))
+            await command.completed()
+            try await settle(cold, label: "perspective override frame \(index)")
+            XCTAssertNil(command.error)
+            XCTAssertTrue(cold.renderer === overrideRenderer)
+            XCTAssertTrue(overrideRenderer.skipped.isEmpty, "\(overrideRenderer.skipped)")
+            XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, expectedFOV)
+            XCTAssertEqual(overrideRenderer.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(60, 0, 0, 0)))
+            let draw = try XCTUnwrap(overrideRenderer.lastFrameDraws.first {
+                $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil
+            })
+            let mvp = try XCTUnwrap(overrideRenderer.uniforms(draw.operation)).matrices.modelViewProjection
+            guard case let .matrix(encoded)? = draw.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+                return XCTFail("Original shader must receive the selected override camera")
+            }
+            XCTAssertEqual(encoded.columns[3][3], mvp.columns.3.w)
+            distances.append(mvp.columns.3.w)
+            let output = try readBack(overrideRenderer.backbuffer, device: device)
+            let centre = (32 * 64 + 32) * 4
+            XCTAssertLessThanOrEqual(abs(Int(output[centre]) - 255), 1)
+            XCTAssertLessThanOrEqual(output[centre + 1], 1)
+            XCTAssertLessThanOrEqual(output[centre + 2], 1)
+        }
+        XCTAssertNotEqual(distances[0].bitPattern, distances[1].bitPattern, "Tick writes affect the following selected camera")
+        var unsupportedCamera = overrideRenderer.pathCamera
+        unsupportedCamera.perspectiveFOV = .infinity
+        XCTAssertThrowsError(try overrideRenderer.cursorQuad("1", camera: unsupportedCamera)) {
+            XCTAssertEqual($0 as? WPEParityCamera.PerspectiveMathError,
+                           .unsupportedFieldOfView(inputBits: Float.infinity.bitPattern))
+        }
     }
 }
 #endif
