@@ -67,6 +67,37 @@ final class ParityTextObjectTests: XCTestCase {
         XCTAssertEqual(try object(["text": "a", "padding": 7.5]).padding, SIMD2(7.5, 7.5))
     }
 
+    func testVectorStringsStopAtFirstNULBeforeLayoutAndDrawParameters() throws {
+        let scene = try document(objects: [
+            ["id": 1, "text": "H", "pointsize": 8, "outline": true, "dropshadow": true,
+             "padding": "12\u{0} 7", "spacing": "2 \u{0} 9",
+             "outlinecolor": ["value": "1\u{0} 0.5 0.25"],
+             "dropshadowcolor": "\u{0} 9 8", "dropshadowoffset": "5\u{0} -4"],
+            ["id": 2, "text": "H", "padding": " 2 3 4", "color": "2\t3 4"],
+            ["id": 3, "text": "H", "padding": 7.5, "color": 0.5],
+            ["id": 4, "text": "H", "padding": false, "color": true],
+        ])
+        let texts = WPEParityTextObject.textObjects(in: scene)
+        guard texts.count == 4 else { return XCTFail("Missing text objects from the parsed scene") }
+        let text = try XCTUnwrap(texts.first)
+        let layout = text.layoutInput(effectCount: 1)
+        XCTAssertTrue(layout.appliesPadding)
+        XCTAssertEqual(layout.padding, SIMD2(12, 0))
+        XCTAssertEqual(layout.spacing, SIMD2(2, 0))
+        let draw = try XCTUnwrap(WPEParityTextDrawParameters(object: text, pointSize: text.pointSize))
+        XCTAssertEqual(SIMD3(draw.renderVar1.x, draw.renderVar1.y, draw.renderVar1.z), SIMD3(1, 0, 0))
+        XCTAssertEqual(SIMD3(draw.renderVar2.x, draw.renderVar2.y, draw.renderVar2.z), .zero)
+        XCTAssertGreaterThan(draw.renderVar1.w, 0)
+        XCTAssertEqual(draw.renderVar2.w.bitPattern, Float(0).bitPattern)
+        // Preserve the original literal-space scan, numeric broadcast and wrong-type field defaults.
+        XCTAssertEqual(texts[1].padding, SIMD2(2, 2))
+        XCTAssertEqual(texts[1].color, SIMD3(2, 4, 0))
+        XCTAssertEqual(texts[2].padding, SIMD2(7.5, 7.5))
+        XCTAssertEqual(texts[2].color, SIMD3(repeating: 0.5))
+        XCTAssertEqual(texts[3].padding, SIMD2(32, 32))
+        XCTAssertEqual(texts[3].color, SIMD3(repeating: 1))
+    }
+
     func testUnknownOrObjectEnumValuesTakeTheTablesFirstEntry() throws {
         let unknown = try object([
             "text": "a", "horizontalalign": "middle", "verticalalign": "middle",
