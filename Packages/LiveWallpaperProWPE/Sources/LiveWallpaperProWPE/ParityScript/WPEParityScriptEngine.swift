@@ -1503,10 +1503,10 @@ public final class WPEParityScriptEngine {
     private static func parse(_ raw: WPESceneJSONValue?,
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
         if descriptor.isSceneBloom {
-            return WPEParityScriptProperty.bloomValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
+            return WPEParityScriptProperty.sceneBoolValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
         }
         if descriptor.isSceneBloomFloat {
-            return WPEParityScriptProperty.bloomFloatValue(fromJSON: raw).map { .vector(SIMD4($0, 0, 0, 0)) }
+            return WPEParityScriptProperty.sceneFloatValue(fromJSON: raw).map { .vector(SIMD4($0, 0, 0, 0)) }
         }
         if descriptor.isSceneBloomIterations {
             return WPEParityScriptProperty.bloomIterationsValue(fromJSON: raw).map { .integer($0) }

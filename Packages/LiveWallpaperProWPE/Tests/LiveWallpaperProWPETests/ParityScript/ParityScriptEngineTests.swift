@@ -138,7 +138,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         let before = try document()
         for field in fields {
-            XCTAssertNil(WPEParityScriptProperty.bloomFloatValue(fromJSON: before.resolvedGeneralJSON[field.name]), field.name)
+            XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: before.resolvedGeneralJSON[field.name]), field.name)
         }
         var state = WPEParitySceneState(document: before, hdr: true)
         let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] =

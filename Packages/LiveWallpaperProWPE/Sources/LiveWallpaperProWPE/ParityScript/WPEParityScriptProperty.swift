@@ -114,7 +114,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
 
     /// 14019b4e0 accepts only a JSON Bool or an object's immediate Bool `value`.
     /// Nil means keep the existing bit (the scene constructor starts with mask2 set).
-    public static func bloomValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
+    public static func sceneBoolValue(fromJSON value: WPESceneJSONValue?) -> Bool? {
         switch value {
         case let .bool(flag)?: flag
         case let .object(entries)?:
@@ -129,7 +129,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
 
     /// 1401a4b00 admits numeric JSON tags directly or at an object's immediate `value`.
     /// Invalid seeds preserve storage; Bool, numeric strings and nested envelopes are not numbers here.
-    public static func bloomFloatValue(fromJSON value: WPESceneJSONValue?) -> Float? {
+    public static func sceneFloatValue(fromJSON value: WPESceneJSONValue?) -> Float? {
         switch value {
         case let .number(number)?: Float(number)
         case let .object(entries)?:
@@ -145,21 +145,21 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     /// 1401a4930 admits numeric JSON directly or at the immediate `value` and truncates a Double with CVTTSD2SI.
     /// The JSON enum does not retain native signed/unsigned tags; their low-DWORD conversion remains unrepresented.
     public static func bloomIterationsValue(fromJSON value: WPESceneJSONValue?) -> Int32? {
-        guard case let .number(number)? = bloomSeed(value) else { return nil }
+        guard case let .number(number)? = sceneSeed(value) else { return nil }
         return WPEParityNumericConversion.cvttsd2si(number)
     }
 
     /// 1401a4230 broadcasts a number or reads up to three ASCII-space runs from a string; invalid shapes preserve storage.
     /// The string path shares the existing native-family parser; UCRT/Darwin locale and nonfinite grammar remain distinct.
     public static func bloomTintValue(fromJSON value: WPESceneJSONValue?) -> SIMD3<Float>? {
-        switch bloomSeed(value) {
+        switch sceneSeed(value) {
         case let .number(number)?: SIMD3(repeating: Float(number))
         case let .string(text)?: WPEParityCameraPaths.vector(.string(text))
         default: nil
         }
     }
 
-    private static func bloomSeed(_ value: WPESceneJSONValue?) -> WPESceneJSONValue? {
+    private static func sceneSeed(_ value: WPESceneJSONValue?) -> WPESceneJSONValue? {
         if case let .object(entries)? = value {
             entries["value"]
         } else {

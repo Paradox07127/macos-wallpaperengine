@@ -84,7 +84,7 @@ public struct WPEParityProgramScene: Sendable {
         flags.fogHeight = Self.flag(general?["fogheight"])
         WPEParityLightConfig(general: general).apply(to: &flags)
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
-        let sceneBloom = WPEParityScriptProperty.bloomValue(fromJSON: bloomGeneral["bloom"]) ?? true
+        let sceneBloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: bloomGeneral["bloom"]) ?? true
         // 14010df40.c:299-335, 365, 519-552
         flags.hdr = Self.hdrEnabled(document: document, settings: settings)
         // A serialized model:null is not a model object. Match the class that actually draws MDL meshes below.
@@ -406,12 +406,12 @@ public struct WPEParityProgramScene: Sendable {
     /// Only authored keys override WPE's defaults, after user-property resolution (1401730d0.c:35-49).
     static func bloomSettings(_ general: WPESceneJSONValue) -> WPEParityBloomSettings {
         var settings = WPEParityBloomSettings()
-        settings.strength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomstrength"]) ?? settings.strength
-        settings.threshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomthreshold"]) ?? settings.threshold
-        settings.hdrStrength = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrstrength"]) ?? settings.hdrStrength
-        settings.hdrThreshold = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrthreshold"]) ?? settings.hdrThreshold
-        settings.hdrFeather = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrfeather"]) ?? settings.hdrFeather
-        settings.hdrScatter = WPEParityScriptProperty.bloomFloatValue(fromJSON: general["bloomhdrscatter"]) ?? settings.hdrScatter
+        settings.strength = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomstrength"]) ?? settings.strength
+        settings.threshold = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomthreshold"]) ?? settings.threshold
+        settings.hdrStrength = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomhdrstrength"]) ?? settings.hdrStrength
+        settings.hdrThreshold = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomhdrthreshold"]) ?? settings.hdrThreshold
+        settings.hdrFeather = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomhdrfeather"]) ?? settings.hdrFeather
+        settings.hdrScatter = WPEParityScriptProperty.sceneFloatValue(fromJSON: general["bloomhdrscatter"]) ?? settings.hdrScatter
         settings.hdrIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: general["bloomhdriterations"])
             .map(Int.init) ?? settings.hdrIterations
         settings.tint = WPEParityScriptProperty.bloomTintValue(fromJSON: general["bloomtint"]) ?? settings.tint

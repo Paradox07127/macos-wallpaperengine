@@ -145,8 +145,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
         cameraParallax = new.general.cameraParallax
         bloom = WPEParityProgramScene.bloomSettings(new.resolvedGeneralJSON)
-        let oldBloom = WPEParityScriptProperty.bloomValue(fromJSON: old.resolvedGeneralJSON["bloom"])
-        let newBloom = WPEParityScriptProperty.bloomValue(fromJSON: new.resolvedGeneralJSON["bloom"])
+        let oldBloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: old.resolvedGeneralJSON["bloom"])
+        let newBloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: new.resolvedGeneralJSON["bloom"])
         sceneBloom = oldBloom != newBloom ? newBloom : nil
         let oldIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: old.resolvedGeneralJSON["bloomhdriterations"])
         let newIterations = WPEParityScriptProperty.bloomIterationsValue(fromJSON: new.resolvedGeneralJSON["bloomhdriterations"])
@@ -155,8 +155,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let newTint = WPEParityScriptProperty.bloomTintValue(fromJSON: new.resolvedGeneralJSON["bloomtint"])
         sceneBloomTint = oldTint != newTint ? newTint : nil
         for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
-            let previous = WPEParityScriptProperty.bloomFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
-            guard let value = WPEParityScriptProperty.bloomFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
+            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
+            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
                   value != previous else { continue }
             sceneBloomFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
         }
