@@ -100,7 +100,8 @@ extension WPEParitySceneDriverTests {
         let targets = renderer.targets.mapValues(ObjectIdentifier.init)
         let pipelines = renderer.pipelineCreations
         func frame(_ index: Int, eye: SIMD2<Float>, point: SIMD2<Float>) async throws {
-            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(index) * 0.25))
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(index) * 0.25,
+                                                                     pointer: SIMD2(repeating: 0.5)))
             await command.completed()
             try await settle(driver, label: "shake frame \(index)")
             XCTAssertNil(command.error)
