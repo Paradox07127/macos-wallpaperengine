@@ -396,6 +396,13 @@ final class WPEParityTextDrawTests: XCTestCase {
             object["blur"] = true; object["blursize"] = 0.1
             object["dropshadow"] = true; object["dropshadowcolor"] = "0 0 1"
             object["dropshadowsize"] = 1; object["dropshadowopacity"] = 1; object["dropshadowoffset"] = "5 -4"
+            if effect {
+                // Original tint defaults to full red tint (BlendTint=maxRGB*red). Its authored alpha=0
+                // preserves the font's RGB while retaining the real effect/FBO/publication path.
+                var effects = try XCTUnwrap(object["effects"] as? [[String: Any]])
+                effects[0]["passes"] = [["constantshadervalues": ["alpha": 0]]]
+                object["effects"] = effects
+            }
             json["objects"] = [object]
             let beforeJSON = try JSONSerialization.data(withJSONObject: json)
             let fixture: Fixture
@@ -463,6 +470,24 @@ final class WPEParityTextDrawTests: XCTestCase {
             XCTAssertEqual(blueAfter, 0, "RV3.x=0 removes the real blue shadow while the green outline remains")
             XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.textures["g_Texture0"] === texture })
             let presented = try readBack(renderer.backbuffer, fixture)
+            printTextPixels(initial, in: target, label: "mono effect=\(effect) initial font target")
+            printTextPixels(pixels, in: target, label: "mono effect=\(effect) updated font target")
+            printTextPixels(presented, in: renderer.backbuffer, label: "mono effect=\(effect) publication")
+            for (operation, description) in after.frames[0].draws.sorted(by: { $0.key < $1.key }).prefix(8) {
+                guard case let .scene(scene) = description, scene.objectID == Self.textID else { continue }
+                let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+                let source = draw.textures["g_Texture0"]
+                print("mono effect=\(effect) op=\(operation) geometry=\(scene.geometry) effectID=\(scene.effectID ?? "none") "
+                    + "target=\(scene.target.rawValue) source=\(source.map { "\($0.width)x\($0.height)" } ?? "none") "
+                    + "tint=\(String(describing: draw.constants[.fragment]?["g_TintColor"])) "
+                    + "blendAlpha=\(String(describing: draw.constants[.fragment]?["g_BlendAlpha"]))")
+                if scene.effectID == "7" {
+                    guard case let .float(alpha)? = draw.constants[.fragment]?["g_BlendAlpha"] else {
+                        return XCTFail("Real tint pass must consume authored passthrough alpha")
+                    }
+                    XCTAssertEqual(alpha, 0)
+                }
+            }
             XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0 + 1] > 0 })
 
             // A failed loaded8 ->32 cohort must not poison a later legal8 input with its old request prefix.
@@ -616,12 +641,31 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(try readBack(history, fixture), historyPixels, "Failure must not reapply initialClear to active RT")
         XCTAssertEqual(try readBack(renderer.backbuffer, fixture), oldPresented, "Failed preparation drew nothing into old targets")
 
+        // With no new input the same failed cohort remains retryable, without consuming its text generation.
+        XCTAssertThrowsError(try renderer.encodeFrame(elapsed: 1.0 / 60)) { error in
+            XCTAssertTrue(error is Injected)
+        }
+        XCTAssertEqual(hits, 2)
+        XCTAssertEqual(candidate?.texts[Self.textID]?.object.text, "WWWW")
+        XCTAssertEqual(candidate?.texts["6"]?.object.text, "MMM")
+        XCTAssertEqual(renderer.textPreparationState.texts, before.texts)
+        XCTAssertEqual(renderer.textPreparationState.pendingRequests, failed.pendingRequests)
+
+        // Only the effect generation advances after the failure. The unconsumed canonical text fields
+        // must be re-projected after discarding the failed prefix, rather than replacing WWWW/MMM with Hi.
         renderer.textPreparationCheckpoint = nil
-        try await encode(renderer, label: "text admission retry")
+        let textGeneration = renderer.state.generation(.textLayout)
+        let effectsGeneration = renderer.state.effectVisibilityGeneration
+        XCTAssertTrue(renderer.state.setEffect("7", of: Self.textID, visible: false))
+        XCTAssertEqual(renderer.state.generation(.textLayout), textGeneration)
+        XCTAssertEqual(renderer.state.effectVisibilityGeneration, effectsGeneration + 1)
+        try await encode(renderer, label: "text admission recovery after effect-only input")
         let after = renderer.textPreparationState
         XCTAssertEqual(after.pendingRequests, 0)
         XCTAssertEqual(after.texts[Self.textID]?.object.text, "WWWW")
         XCTAssertEqual(after.texts["6"]?.object.text, "MMM")
+        XCTAssertEqual(after.texts[Self.textID]?.effectCount, 0)
+        XCTAssertEqual(after.texts["6"]?.effectCount, 1)
         XCTAssertEqual(after.layers.layers[Self.textID]?.size,
                        after.texts[Self.textID].map { SIMD2(Float($0.layout.fboSize.x), Float($0.layout.fboSize.y)) })
         XCTAssertFalse(try XCTUnwrap(after.atlases.textures[key]) === oldAtlas)
@@ -636,7 +680,15 @@ final class WPEParityTextDrawTests: XCTestCase {
             guard case let .scene(draw) = description, case .textGlyphs = draw.geometry else { continue }
             let emitted = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == index }?.draw)
             XCTAssertTrue(emitted.textures["g_Texture0"] === after.atlases.textures[key], "Both real consumers use the accepted atlas")
+            XCTAssertEqual(emitted.indexCount, draw.objectID == Self.textID ? 24 : 18,
+                           "Actual submitted quads must draw WWWW/MMM, not the old two-glyph Hi")
         }
+        try await encode(renderer, label: "text admission recovered next frame")
+        let next = renderer.textPreparationState
+        XCTAssertEqual(next.pendingRequests, 0)
+        XCTAssertEqual(next.texts, after.texts, "The recovery must not mark a discarded old text as consumed")
+        XCTAssertTrue(next.atlases.textures[key] === after.atlases.textures[key])
+        XCTAssertEqual(try readBack(renderer.backbuffer, fixture), presented, "Recovered glyphs remain in the real next frame")
         release.signaledValue = 1
         await oldRead.completed()
         XCTAssertNil(oldRead.error)
@@ -645,6 +697,35 @@ final class WPEParityTextDrawTests: XCTestCase {
             readPixels += UnsafeRawBufferPointer(start: result.contents() + row * readStride, count: oldAtlas.width)
         }
         XCTAssertEqual(readPixels, oldPixels, "Old reader retains the entire earlier atlas, including areas that were empty")
+    }
+
+    /// Bounded diagnosis of already-read RGBA8 targets; no extra images, allocations or shader inputs.
+    private func printTextPixels(_ pixels: [UInt8], in texture: MTLTexture, label: String) {
+        guard texture.pixelFormat == .rgba8Unorm, pixels.count == texture.width * texture.height * 4 else { return }
+        var maxima = [UInt8](repeating: 0, count: 4)
+        var covered = 0, red = 0, green = 0
+        var minX = texture.width, minY = texture.height, maxX = -1, maxY = -1
+        var samples: [String] = []
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            for lane in 0 ..< 4 {
+                maxima[lane] = max(maxima[lane], pixels[offset + lane])
+            }
+            guard pixels[offset ..< offset + 3].contains(where: { $0 != 0 }) else { continue }
+            let x = offset / 4 % texture.width, y = offset / 4 / texture.width
+            covered += 1
+            if Int(pixels[offset]) > Int(pixels[offset + 1]) + 30 {
+                red += 1
+            }
+            if Int(pixels[offset + 1]) > Int(pixels[offset]) + 30 {
+                green += 1
+            }
+            minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y)
+            if samples.count < 3 {
+                samples.append("(\(x),\(y))=\(Array(pixels[offset ..< offset + 4]))")
+            }
+        }
+        print("\(label): \(texture.width)x\(texture.height) rgbPixels=\(covered) redDominant=\(red) greenDominant=\(green) "
+            + "maxRGBA=\(maxima) bounds=(\(minX),\(minY))...(\(maxX),\(maxY)) samples=\(samples)")
     }
 
     private func textGeometryIdentities(_ snapshot: WPEParityFrameRenderer.TextPreparationSnapshot)
