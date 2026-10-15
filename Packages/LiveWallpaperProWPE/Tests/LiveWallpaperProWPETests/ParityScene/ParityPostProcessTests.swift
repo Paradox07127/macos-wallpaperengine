@@ -51,7 +51,8 @@ struct ParityPostProcessTests {
             let resource = try #require(frame.resources.first { $0.id.rawValue == name })
             #expect(resource.width == width && resource.height == height)
             #expect(resource.format == "rgba16float")
-            #expect(resource.lifetime == .frameTransient)
+            // Native17f1b0 prepares capacity L independently of active N; the existing target owner retains it.
+            #expect(resource.lifetime == .pooled)
         }
         #expect(!frame.resources.contains { $0.id == "_rt_Bloom" })
         try verifyCompilation(frame)
