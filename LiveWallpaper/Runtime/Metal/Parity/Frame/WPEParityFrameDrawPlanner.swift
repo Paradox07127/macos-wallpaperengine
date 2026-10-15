@@ -138,7 +138,9 @@ struct WPEParityFrameDrawPlan {
     /// `layers` holds the live layer transforms once any moved; nil keeps the planned matrices.
     func frameUniforms(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
                        layers: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
-        guard let placement, cameraMoves || layers != nil else { return uniforms }
+        guard let placement else { return uniforms }
+        let cameraChanged = camera.map { $0 != placement.layers.camera } ?? false
+        guard cameraMoves || layers != nil || cameraChanged else { return uniforms }
         let placed = placement.draw(parallax: parallax, camera: camera, layers: layers)
         var uniforms = uniforms
         (uniforms.matrices, uniforms.effectPass) = (placed.matrices, placed.effectPass)
