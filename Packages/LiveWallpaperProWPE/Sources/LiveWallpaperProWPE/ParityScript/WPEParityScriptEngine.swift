@@ -1315,7 +1315,23 @@ public final class WPEParityScriptEngine {
                 configuration.log(1, "\(layer.id).\(name) script is unsupported: no registered writable descriptor")
             }
         }
-        for (rel, descriptor) in fields(layer.kind).enumerated() {
+        let layerFields = fields(layer.kind)
+        var bindingOrder = Array(layerFields.indices)
+        if layer.kind == .sound {
+            // Native v2 observes these three scalar scripts max→min→volume, independent of JSON insertion.
+            // Reorder traversal only: each descriptor keeps its existing relative slot and metadata ABI.
+            let positions = bindingOrder.filter {
+                let field = layerFields[$0]
+                return field.owner == .sound && field.type == .float
+                    && (field.name == "maxtime" || field.name == "mintime" || field.name == "volume")
+            }
+            let ordered = positions.sorted { layerFields[$0].name < layerFields[$1].name }
+            for (position, rel) in zip(positions, ordered) {
+                bindingOrder[position] = rel
+            }
+        }
+        for rel in bindingOrder {
+            let descriptor = layerFields[rel]
             guard !descriptor.flags.contains(.notFromJSON) else { continue }
             let path = descriptor.owner == .particleInstance ? "instanceoverride/\(descriptor.name)"
                 : descriptor.owner == .video ? "video/\(descriptor.name)" : descriptor.name

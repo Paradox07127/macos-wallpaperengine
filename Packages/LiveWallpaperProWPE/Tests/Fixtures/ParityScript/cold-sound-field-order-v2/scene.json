@@ -1,0 +1,69 @@
+{
+  "camera": {
+    "center": "0 0 -1",
+    "eye": "0 0 0",
+    "up": "0 1 0"
+  },
+  "general": {
+    "bloom": {
+      "value": false,
+      "script": "'use strict';\nconst auditNonce = \"ss-b3ed47df60a84112\";\nconst auditRole = \"general-bloom\";\nlet localSeq = 0;\nlet localFrame = 0;\nlet initObserved = false;\nlet firstUpdateObserved = false;\nfunction emitPhase(phase) {\n    console.error('AUDIT_SS_01A13310 ' + JSON.stringify({\n        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,\n        caseId:'cold-general-object', role:auditRole, phase:phase,\n        localSeq:++localSeq, frame:localFrame\n    }));\n}\nemitPhase('module-global');\nexport function init(value) {\n    if (!initObserved) {\n        initObserved = true;\n        emitPhase('init');\n    }\n}\nexport function update(value) {\n    ++localFrame;\n    if (!firstUpdateObserved) {\n        firstUpdateObserved = true;\n        emitPhase('first-update');\n    }\n}\n"
+    },
+    "cameraparallax": false,
+    "camerashake": false,
+    "clearcolor": "0 0 0",
+    "clearenabled": true,
+    "orthogonalprojection": {
+      "height": 32,
+      "width": 32
+    }
+  },
+  "objects": [
+    {
+      "attenuation": 1,
+      "id": 971001,
+      "mindistance": 16,
+      "name": "sound-a",
+      "origin": "8 16 0",
+      "playbackmode": "loop",
+      "sound": [
+        "sounds/ss-b3ed47df60a84112-silence.wav"
+      ],
+      "spatialization": true,
+      "startsilent": false,
+      "type": "sound",
+      "volume": {
+        "value": 0,
+        "script": "'use strict';\nconst auditNonce = \"ss-b3ed47df60a84112\";\nconst auditRole = \"sound-a-volume\";\nlet localSeq = 0;\nlet localFrame = 0;\nlet initObserved = false;\nlet firstUpdateObserved = false;\nfunction emitPhase(phase) {\n    console.error('AUDIT_SS_01A13310 ' + JSON.stringify({\n        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,\n        caseId:'cold-general-object', role:auditRole, phase:phase,\n        localSeq:++localSeq, frame:localFrame\n    }));\n}\nemitPhase('module-global');\nexport function init(value) {\n    if (!initObserved) {\n        initObserved = true;\n        emitPhase('init');\n    }\n}\nexport function update(value) {\n    ++localFrame;\n    if (!firstUpdateObserved) {\n        firstUpdateObserved = true;\n        emitPhase('first-update');\n    }\n}\n"
+      },
+      "mintime": {
+        "value": 2,
+        "script": "'use strict';\nconst auditNonce = \"ss-b3ed47df60a84112\";\nconst auditRole = \"sound-a-mintime\";\nlet localSeq = 0;\nlet localFrame = 0;\nlet initObserved = false;\nlet firstUpdateObserved = false;\nfunction emitPhase(phase) {\n    console.error('AUDIT_SS_01A13310 ' + JSON.stringify({\n        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,\n        caseId:'cold-general-object', role:auditRole, phase:phase,\n        localSeq:++localSeq, frame:localFrame\n    }));\n}\nemitPhase('module-global');\nexport function init(value) {\n    if (!initObserved) {\n        initObserved = true;\n        emitPhase('init');\n    }\n}\nexport function update(value) {\n    ++localFrame;\n    if (!firstUpdateObserved) {\n        firstUpdateObserved = true;\n        emitPhase('first-update');\n    }\n}\n"
+      },
+      "maxtime": {
+        "value": 4,
+        "script": "'use strict';\nconst auditNonce = \"ss-b3ed47df60a84112\";\nconst auditRole = \"sound-a-maxtime\";\nlet localSeq = 0;\nlet localFrame = 0;\nlet initObserved = false;\nlet firstUpdateObserved = false;\nfunction emitPhase(phase) {\n    console.error('AUDIT_SS_01A13310 ' + JSON.stringify({\n        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,\n        caseId:'cold-general-object', role:auditRole, phase:phase,\n        localSeq:++localSeq, frame:localFrame\n    }));\n}\nemitPhase('module-global');\nexport function init(value) {\n    if (!initObserved) {\n        initObserved = true;\n        emitPhase('init');\n    }\n}\nexport function update(value) {\n    ++localFrame;\n    if (!firstUpdateObserved) {\n        firstUpdateObserved = true;\n        emitPhase('first-update');\n    }\n}\n"
+      }
+    },
+    {
+      "attenuation": 1,
+      "id": 971002,
+      "maxtime": 0.75,
+      "mindistance": 16,
+      "mintime": 0.25,
+      "name": "sound-b",
+      "origin": "24 16 0",
+      "playbackmode": "loop",
+      "sound": [
+        "sounds/ss-b3ed47df60a84112-silence.wav"
+      ],
+      "spatialization": true,
+      "startsilent": false,
+      "type": "sound",
+      "volume": {
+        "value": 0,
+        "script": "'use strict';\nconst auditNonce = \"ss-b3ed47df60a84112\";\nconst auditRole = \"sound-b-volume\";\nlet localSeq = 0;\nlet localFrame = 0;\nlet initObserved = false;\nlet firstUpdateObserved = false;\nfunction emitPhase(phase) {\n    console.error('AUDIT_SS_01A13310 ' + JSON.stringify({\n        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,\n        caseId:'cold-general-object', role:auditRole, phase:phase,\n        localSeq:++localSeq, frame:localFrame\n    }));\n}\nemitPhase('module-global');\nexport function init(value) {\n    if (!initObserved) {\n        initObserved = true;\n        emitPhase('init');\n    }\n}\nexport function update(value) {\n    ++localFrame;\n    if (!firstUpdateObserved) {\n        firstUpdateObserved = true;\n        emitPhase('first-update');\n    }\n}\n"
+      }
+    }
+  ]
+}
