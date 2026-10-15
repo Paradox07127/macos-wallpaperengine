@@ -194,13 +194,17 @@ struct WPEParityFramePlan {
                 // Only actual loaded field requests enter this finite warm set. The existing loadPrograms
                 // view deduplicates HLSL across objects; ordinary bitmap text adds no MSDF compile work.
                 if text.object.usesGlyphEffects {
+                    // Current field admission uses the primary face. Unknown/empty and COLOR-capable
+                    // primaries preserve both lists; a resolved non-COLOR primary needs only mono fields.
+                    let lists: [WPEParityGlyphAtlasInstance.Atlas] = text.layout.mesh?.fieldPrimaryFaceIsColor == false
+                        ? [.mono] : [.mono, .color]
                     for bits in 0 ..< 8 {
                         var combos: [String: Int] = [:]
                         for (index, name) in ["OUTLINE_ENABLED", "BLUR_ENABLED", "DROP_SHADOW_ENABLED"].enumerated()
                             where bits & (1 << index) != 0 {
                             combos[name] = 1
                         }
-                        for list in [WPEParityGlyphAtlasInstance.Atlas.mono, .color] {
+                        for list in lists {
                             variants.append((.textGlyphs(list, depth: depth, mode: .distanceField, combos: combos),
                                              .textGlyphs(list)))
                         }

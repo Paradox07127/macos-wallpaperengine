@@ -550,6 +550,10 @@ final class WPEParityTextDrawTests: XCTestCase {
             }
             XCTAssertGreaterThan(warmed.count, 0)
             XCTAssertLessThanOrEqual(warmed.count, 16, "Existing HLSL view deduplicates the finite mono source variants")
+            XCTAssertFalse(fixture.plan.loadPrograms.contains {
+                $0.combos.contains { $0.name == "MSDF" && $0.value == "1" }
+                    && $0.combos.contains { $0.name == "COLORFONT" && $0.value == "1" }
+            }, "The resolved Noto primary cannot admit COLOR fields through fallback")
             print("mono authored effect=\(effect): unique field HLSL compile requests=\(warmed.count); all programs=\(fixture.plan.loadPrograms.count)")
             try await encode(renderer, label: "mono initial effect=\(effect)")
             XCTAssertTrue(renderer.skipped.isEmpty)
@@ -704,6 +708,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             let mesh = try XCTUnwrap(text.layout.mesh)
             XCTAssertEqual(mesh.glyphMode, .distanceField)
             XCTAssertEqual(mesh.colorAtlasScale, scale)
+            XCTAssertEqual(mesh.fieldPrimaryFaceIsColor, true)
             XCTAssertTrue(mesh.mono.glyphKeys.isEmpty)
             XCTAssertEqual(mesh.color.glyphKeys, [166])
             let group = try XCTUnwrap(before.atlases.atlases[text.atlasKey]?.colorGroups[scale])
