@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
-import LiveWallpaperProWPE
+@testable import LiveWallpaperProWPE
 import Metal
 import simd
 import XCTest
@@ -370,6 +370,141 @@ final class WPEParityTextDrawTests: XCTestCase {
             await submission.commandBuffer.completed()
             XCTAssertNil(submission.commandBuffer.error)
             XCTAssertEqual(submission.result.contents().load(as: UInt8.self), submission.expected)
+        }
+
+        // Transport inputs exercise the existing COLOR owner/uploader, not a generated algorithm golden.
+        // The original bitmap reader guard above remains; each pair below adds full-plane GPU witnesses.
+        func pair(scale: Int, seed: UInt8) -> WPEParityColorGlyphField {
+            let primary = WPEParityGlyphBitmap(width: 2, rows: 2, pixelMode: .rgba,
+                                               pixels: Array(repeating: seed, count: 16))
+            let field = WPEParityGlyphField(bitmap: primary, box: .init(xMin: 0, yMin: 0, xMax: 32 * Int32(scale), yMax: 30 * Int32(scale)),
+                                            yPpem: 32 * scale, isColor: true,
+                                            transform: .init(scaleX: 1, scaleY: 1, translateX: 0, translateY: 0,
+                                                             distanceScale: 1, distanceOffset: 0),
+                                            beforeCorrection: [], afterCorrection: [])
+            return WPEParityColorGlyphField(primary: field,
+                                            companion: .init(width: 2 * scale, rows: 2 * scale, pixelMode: .rgba,
+                                                             pixels: Array(repeating: seed + 19, count: 16 * scale * scale)),
+                                            companionScale: scale)
+        }
+        for scale in [1, 2] {
+            var color = WPEParityGlyphAtlasInstance(fontPath: "paired-readers-\(scale)", pointSize: 32, glyphMode: .distanceField)
+            _ = try XCTUnwrap(color.insertColorField(key: 1, field: pair(scale: scale, seed: 37)))
+            color.colorGroups[scale]?.retain([1])
+            var paired = WPEParityTextAtlasTextures(atlases: [:])
+            XCTAssertTrue(paired.replace([color.key: color], device: device))
+            let baseline = try XCTUnwrap(paired.atlases[color.key])
+            let group = try XCTUnwrap(baseline.colorGroups[scale])
+            let primaryKey = WPEParityTextAtlasTextures.Key(atlasKey: color.key, atlas: .color, colorScale: scale, plane: .primary)
+            let companionKey = WPEParityTextAtlasTextures.Key(atlasKey: color.key, atlas: .color, colorScale: scale, plane: .companion)
+            let planes: [(key: WPEParityTextAtlasTextures.Key, pixels: [UInt8], factor: Int)] = try [
+                (primaryKey, group.pixels, 1), (companionKey, XCTUnwrap(group.companionPixels), scale),
+            ]
+            let oldIDs = paired.textures.mapValues(ObjectIdentifier.init), oldGenerations = paired.contentGenerations
+            let release = try XCTUnwrap(device.makeSharedEvent())
+            defer { release.signaledValue = 1 }
+            let reader = try XCTUnwrap(queue.makeCommandBuffer())
+            XCTAssertTrue(reader.retainedReferences)
+            reader.encodeWaitForEvent(release, value: 1)
+            let blit = try XCTUnwrap(reader.makeBlitCommandEncoder())
+            var oldReads: [(buffer: MTLBuffer, expected: [UInt8])] = []
+            for plane in planes {
+                let texture = try XCTUnwrap(paired.textures[plane.key])
+                XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+                XCTAssertEqual([texture.width, texture.height, texture.mipmapLevelCount], [512 * plane.factor, 512 * plane.factor, 1])
+                XCTAssertEqual(paired.contentGenerations[plane.key], group.contentGeneration)
+                let stride = texture.width * 4
+                let buffer = try XCTUnwrap(device.makeBuffer(length: stride * texture.height, options: .storageModeShared))
+                blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                          sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer,
+                          destinationOffset: 0, destinationBytesPerRow: stride, destinationBytesPerImage: stride * texture.height)
+                oldReads.append((buffer, plane.pixels))
+            }
+            blit.endEncoding()
+            reader.commit()
+            XCTAssertNotEqual(reader.status, .completed)
+
+            color = baseline
+            _ = try XCTUnwrap(color.insertColorField(key: 2, field: pair(scale: scale, seed: 101)))
+            let changed = try XCTUnwrap(color.colorGroups[scale])
+            XCTAssertTrue(changed.isDirty)
+            XCTAssertGreaterThan(changed.contentGeneration, group.contentGeneration)
+            var primaryAllocations = 0, companionFailures = 0
+            XCTAssertFalse(paired.replace([color.key: color], device: device, makeTexture: { key, descriptor in
+                if key == companionKey {
+                    companionFailures += 1
+                    XCTAssertEqual(primaryAllocations, 1, "The target pair's primary really allocated first")
+                    return nil
+                }
+                let texture = device.makeTexture(descriptor: descriptor)
+                if key == primaryKey {
+                    primaryAllocations += 1
+                    XCTAssertNotNil(texture)
+                }
+                return texture
+            }))
+            XCTAssertEqual(primaryAllocations, 1)
+            XCTAssertEqual(companionFailures, 1)
+            XCTAssertEqual(paired.textures.mapValues(ObjectIdentifier.init), oldIDs, "Neither plane may partially publish")
+            XCTAssertEqual(paired.contentGenerations, oldGenerations)
+            let rejected = try XCTUnwrap(paired.atlases[color.key])
+            XCTAssertEqual(Set(paired.atlases.keys), [color.key])
+            XCTAssertEqual(Set(rejected.colorGroups.keys), Set(baseline.colorGroups.keys))
+            assertTextAtlasState(paired.atlases, equals: [color.key: baseline], texts: [])
+            let rejectedGroup = try XCTUnwrap(rejected.colorGroups[scale])
+            XCTAssertEqual([rejectedGroup.width, rejectedGroup.height, rejectedGroup.companionScale ?? 0], [group.width, group.height, scale])
+            XCTAssertEqual(rejectedGroup.pixels, group.pixels)
+            XCTAssertEqual(rejectedGroup.companionPixels, group.companionPixels)
+            XCTAssertEqual(rejectedGroup.isDirty, group.isDirty)
+            XCTAssertEqual(rejectedGroup.generation, group.generation)
+            XCTAssertEqual(rejectedGroup.contentGeneration, group.contentGeneration)
+            XCTAssertEqual(rejectedGroup.resetGeneration, group.resetGeneration)
+            XCTAssertEqual(rejectedGroup.entry(forKey: 1), group.entry(forKey: 1))
+            XCTAssertNil(rejectedGroup.entry(forKey: 2))
+            XCTAssertFalse(group.isDirty, "Baseline was actually uploaded before failure")
+            XCTAssertTrue(color.colorGroups[scale]?.isDirty == true, "The caller's failed candidate stays retryable")
+            XCTAssertNotEqual(reader.status, .completed)
+
+            var malformed = color
+            malformed.colorGroups[scale] = WPEParityGlyphAtlas(format: .rgba8)
+            XCTAssertFalse(paired.replace([malformed.key: malformed], device: device), "A field group must not omit its companion")
+            XCTAssertEqual(paired.textures.mapValues(ObjectIdentifier.init), oldIDs)
+            XCTAssertEqual(paired.contentGenerations, oldGenerations)
+            assertTextAtlasState(paired.atlases, equals: [color.key: baseline], texts: [])
+            let afterMalformed = try XCTUnwrap(paired.atlases[color.key]?.colorGroups[scale])
+            XCTAssertEqual(afterMalformed.pixels, group.pixels)
+            XCTAssertEqual(afterMalformed.companionPixels, group.companionPixels)
+            XCTAssertEqual(afterMalformed.isDirty, group.isDirty)
+            XCTAssertEqual(afterMalformed.contentGeneration, group.contentGeneration)
+            XCTAssertEqual(afterMalformed.entry(forKey: 1), group.entry(forKey: 1))
+
+            XCTAssertTrue(paired.replace([color.key: color], device: device))
+            let recovered = try XCTUnwrap(paired.atlases[color.key]?.colorGroups[scale])
+            XCTAssertFalse(recovered.isDirty)
+            XCTAssertEqual(recovered.contentGeneration, changed.contentGeneration)
+            for (key, expected, factor) in try [(primaryKey, changed.pixels, 1), (companionKey, XCTUnwrap(changed.companionPixels), scale)] {
+                let texture = try XCTUnwrap(paired.textures[key])
+                XCTAssertNotEqual(ObjectIdentifier(texture), oldIDs[key])
+                XCTAssertEqual([texture.width, texture.height, texture.mipmapLevelCount], [512 * factor, 512 * factor, 1])
+                XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+                XCTAssertEqual(paired.contentGenerations[key], changed.contentGeneration)
+                // Shared texture CPU read avoids enqueueing behind the intentionally blocked GPU reader.
+                var bytes = [UInt8](repeating: 0, count: expected.count)
+                texture.getBytes(&bytes, bytesPerRow: texture.width * 4,
+                                 from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+                XCTAssertEqual(bytes, expected)
+            }
+            let recoveredIDs = paired.textures.mapValues(ObjectIdentifier.init)
+            XCTAssertTrue(paired.upload(device: device))
+            XCTAssertEqual(paired.textures.mapValues(ObjectIdentifier.init), recoveredIDs, "Both clean plane versions reuse their textures")
+            XCTAssertNotEqual(reader.status, .completed, "Old pair readers overlap both failure and successful replacement")
+            release.signaledValue = 1
+            await reader.completed()
+            XCTAssertNil(reader.error)
+            for read in oldReads {
+                XCTAssertEqual(Array(UnsafeRawBufferPointer(start: read.buffer.contents(), count: read.expected.count)), read.expected,
+                               "Each old GPU reader retains its complete earlier plane, including empty cells")
+            }
         }
     }
 
