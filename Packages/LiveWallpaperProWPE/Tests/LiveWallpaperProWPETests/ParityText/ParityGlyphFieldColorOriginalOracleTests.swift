@@ -5,7 +5,7 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
 
-/// Root-applied draft. S09 did not compile/run it. Expected bytes are qualified Windows COLOR originals.
+/// Expected primary and companion bytes are qualified same-call Windows COLOR originals; no generated golden.
 final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
     func testRawWindowsColorMatchesOriginalFieldAndCell() throws {
         let oracle = try Oracle()
@@ -23,20 +23,28 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
                                           distance_scale: t[4], distance_offset: t[5])
         var post = [Float](repeating: .nan, count: 56 * 54 * 4)
         var rgba = [UInt8](repeating: 17, count: 56 * 54 * 4)
-        let status = source.withUnsafeBytes { bytes in
+        var companion = [UInt8](repeating: 17, count: 56 * 54 * 4)
+        let (status, companionStatus) = source.withUnsafeBytes { bytes in
             var bitmap = WPEFieldBGRA(bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
                                       capacity: bytes.count, row0_offset: pitch < 0 ? Int(rows - 1) * -Int(pitch) : 0,
                                       width: width, rows: rows, pitch: pitch, left: left, top: top)
-            return rgba.withUnsafeMutableBufferPointer { pixels in
+            let primaryStatus = rgba.withUnsafeMutableBufferPointer { pixels in
                 post.withUnsafeMutableBufferPointer { after in
                     var output = WPEFieldOutput(width: 56, height: 54, rgba: pixels.baseAddress, rgba_capacity: pixels.count,
                                                 before_correction: nil, before_capacity: 0, after_correction: after.baseAddress, after_capacity: after.count)
                     return wpe_field_color(&bitmap, &transform, &output)
                 }
             }
+            let companionStatus = companion.withUnsafeMutableBufferPointer { pixels in
+                var output = WPEFieldOutput(width: 56, height: 54, rgba: pixels.baseAddress, rgba_capacity: pixels.count,
+                                            before_correction: nil, before_capacity: 0, after_correction: nil, after_capacity: 0)
+                return wpe_field_color_companion_scale_one(&bitmap, &transform, &output)
+            }
+            return (primaryStatus, companionStatus)
         }
         XCTAssertEqual(status, WPE_FIELD_OK)
-        try compareAndDump(label: "raw-color-core", post: post, rgba: rgba, sourceBGRA: source, oracle: oracle)
+        XCTAssertEqual(companionStatus, WPE_FIELD_OK)
+        try compareAndDump(label: "raw-color-core", post: post, rgba: rgba, companion: companion, sourceBGRA: source, oracle: oracle)
     }
 
     func testExistingFontFaceColorMatchesOriginalBitmapFieldAndCell() throws {
@@ -46,7 +54,11 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         let source = try XCTUnwrap(face.rasterize(166))
         XCTAssertEqual(source.width, 32); XCTAssertEqual(source.rows, 30); XCTAssertEqual(source.pixelMode, .bgra)
         try assertBytes(Data(source.pixels), oracle.data("bgra-packed.bin"), label: "existing FontFace original BGRA")
-        let field = try XCTUnwrap(face.glyphField(166, captureStages: true))
+        let pair = try XCTUnwrap(face.colorGlyphField(166, companionScale: 1, captureStages: true))
+        let field = pair.primary
+        XCTAssertEqual(pair.companionScale, 1)
+        XCTAssertEqual(pair.companion.width, field.bitmap.width); XCTAssertEqual(pair.companion.rows, field.bitmap.rows)
+        XCTAssertEqual(pair.companion.pixelMode, .rgba)
         XCTAssertEqual(face.pointSize, 7.68)
         XCTAssertEqual(field.yPpem, 32); XCTAssertTrue(field.isColor)
         XCTAssertEqual(field.bitmap.width, 56); XCTAssertEqual(field.bitmap.rows, 54)
@@ -56,22 +68,23 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         XCTAssertEqual([t.scaleX, t.scaleY, t.translateX, t.translateY, t.distanceScale, t.distanceOffset].map(\.bitPattern),
                        try oracle.transform().map(\.bitPattern))
         try compareAndDump(label: "font-face-color", post: field.afterCorrection, rgba: field.bitmap.pixels,
-                           sourceBGRA: Data(source.pixels), oracle: oracle)
+                           companion: pair.companion.pixels, sourceBGRA: Data(source.pixels), oracle: oracle)
         XCTAssertNotNil(face.rasterize(166), "existing serial face remains usable")
     }
 
-    private func compareAndDump(label: String, post: [Float], rgba: [UInt8], sourceBGRA: Data, oracle: Oracle) throws {
+    private func compareAndDump(label: String, post: [Float], rgba: [UInt8], companion: [UInt8], sourceBGRA: Data, oracle: Oracle) throws {
         let bits = post.map(\.bitPattern.littleEndian)
         let postBytes = bits.withUnsafeBytes { Data($0) }, rgbaBytes = Data(rgba)
         if let base = ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_COLOR_CANDIDATE_OUT"] {
             let directory = URL(fileURLWithPath: base).appendingPathComponent(label, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-            for (name, data) in [("post.f32le", postBytes), ("rgba.bin", rgbaBytes), ("source-bgra.bin", sourceBGRA)] {
+            for (name, data) in [("post.f32le", postBytes), ("rgba.bin", rgbaBytes), ("source-bgra.bin", sourceBGRA), ("companion.bin", Data(companion))] {
                 try data.write(to: directory.appendingPathComponent(name), options: .withoutOverwriting)
             }
         }
         try assertBytes(postBytes, oracle.data("colorpost.bin"), label: label + " original float4")
         try assertBytes(rgbaBytes, oracle.data("rgba-cell.bin"), label: label + " original RGBA cell")
+        try assertBytes(Data(companion), oracle.data("companion-cell.bin"), label: label + " original companion RGBA cell")
     }
 
     private func assertBytes(_ actual: Data, _ expected: Data, label: String) {

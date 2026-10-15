@@ -127,3 +127,43 @@ extern "C" WPEFieldStatus wpe_field_color(const WPEFieldBGRA *b, const WPEFieldT
         return WPE_FIELD_GENERATION_FAILED;
     }
 }
+
+extern "C" WPEFieldStatus wpe_field_color_companion_scale_one(const WPEFieldBGRA *b,
+                                                             const WPEFieldTransform *t,
+                                                             const WPEFieldOutput *out) {
+    if (!validBitmap(b) || !wpe_field::validTransform(t) || !wpe_field::validOutput(out, 4) ||
+        out->before_correction || out->before_capacity || out->after_correction || out->after_capacity)
+        return WPE_FIELD_INVALID_INPUT;
+    // 1401ae080 narrows colourScale * fieldScale to float32 before the double pixel-centre division.
+    // This entry point qualifies scale 1 only; the caller still owns first-glyph group selection.
+    const double scaleX = double(float(t->scale_x)), scaleY = double(float(t->scale_y));
+    for (int y = 0; y < out->height; ++y) {
+        const float sy = float(b->top) - float((double(out->height - y - 1) + .5) / scaleY - t->translate_y);
+        for (int x = 0; x < out->width; ++x) {
+            uint8_t *pixel = out->rgba + (size_t(y) * out->width + x) * 4;
+            const float sx = float((double(x) + .5) / scaleX - t->translate_x) - float(b->left);
+            if (sx < 0 || sx > float(b->width - 1) || sy < 0 || sy > float(b->rows - 1)) {
+                std::fill_n(pixel, 4, 0);
+                continue;
+            }
+            const float floorX = std::floor(sx), floorY = std::floor(sy);
+            const int x0 = int(floorX), y0 = int(floorY);
+            const int x1 = std::min(x0 + 1, b->width - 1), y1 = std::min(y0 + 1, b->rows - 1);
+            const float fx = sx - floorX, fy = sy - floorY, gx = 1.f - fx, gy = 1.f - fy;
+            const float weights[] = {gy * fx, gy * gx, gx * fy, fy * fx};
+            const uint8_t *row0 = b->bytes + int64_t(b->row0_offset) + int64_t(y0) * b->pitch;
+            const uint8_t *row1 = b->bytes + int64_t(b->row0_offset) + int64_t(y1) * b->pitch;
+            for (int channel = 0; channel < 4; ++channel) {
+                const int sourceChannel = channel == 0 ? 2 : channel == 2 ? 0 : channel;
+                // Native TR, TL, BL, BR order with separate float32 multiply/add, then +.5/CVTT/clamp.
+                float value = float(row0[x1 * 4 + sourceChannel]) * weights[0];
+                value += float(row0[x0 * 4 + sourceChannel]) * weights[1];
+                value += float(row1[x0 * 4 + sourceChannel]) * weights[2];
+                value += float(row1[x1 * 4 + sourceChannel]) * weights[3];
+                const int quantized = int(value + .5f);
+                pixel[channel] = uint8_t(std::max(0, std::min(255, quantized)));
+            }
+        }
+    }
+    return WPE_FIELD_OK;
+}

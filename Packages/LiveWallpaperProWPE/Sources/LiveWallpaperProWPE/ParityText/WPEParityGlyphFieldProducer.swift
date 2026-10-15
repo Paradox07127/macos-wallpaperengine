@@ -20,7 +20,38 @@ public struct WPEParityGlyphField: Sendable {
     }
 }
 
+/// Two CPU planes from one loaded COLOR slot, before the existing atlas owns their bytes. The caller must
+/// qualify the native atlas group's colour scale; this value does not infer it or own glyph references.
+public struct WPEParityColorGlyphField: Sendable {
+    public let primary: WPEParityGlyphField
+    public let companion: WPEParityGlyphBitmap
+    public let companionScale = 1
+}
+
 enum WPEParityGlyphFieldProducer {
+    /// Only the already-qualified scale-one group. Synchronously borrows glyphField's same loaded FT slot.
+    static func companionScaleOne(face: FT_Face, field: WPEParityGlyphField) -> WPEParityGlyphBitmap? {
+        guard field.isColor else { return nil }
+        let t = field.transform
+        var transform = WPEFieldTransform(scale_x: t.scaleX, scale_y: t.scaleY,
+                                          translate_x: t.translateX, translate_y: t.translateY,
+                                          distance_scale: t.distanceScale, distance_offset: t.distanceOffset)
+        let width = field.bitmap.width, height = field.bitmap.rows
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let status = rgba.withUnsafeMutableBufferPointer { pixels in
+            var output = WPEFieldOutput(width: Int32(width), height: Int32(height),
+                                        rgba: pixels.baseAddress, rgba_capacity: pixels.count,
+                                        before_correction: nil, before_capacity: 0,
+                                        after_correction: nil, after_capacity: 0)
+            return withColorBitmap(face.pointee.glyph.pointee) { bitmap in
+                var bitmap = bitmap
+                return wpe_field_color_companion_scale_one(&bitmap, &transform, &output)
+            } ?? WPE_FIELD_INVALID_INPUT
+        }
+        guard status == WPE_FIELD_OK else { return nil }
+        return WPEParityGlyphBitmap(width: width, rows: height, pixelMode: .rgba, pixels: rgba)
+    }
+
     /// Called synchronously while FontFace owns the loaded slot. Never opens or retains another FT face.
     static func produce(face: FT_Face, box: WPEParityGlyphBox, isColor: Bool,
                         captureStages: Bool) -> WPEParityGlyphField? {

@@ -182,6 +182,17 @@ public final class WPEParityFontFace {
                                                    captureStages: captureStages)
     }
 
+    /// CPU preparation for an explicitly qualified scale-one COLOR group, using glyphField's same loaded
+    /// slot. It does not choose the native face's first-glyph scale, admit a material or mutate the atlas.
+    /// Other scales remain outside the consumer qualification; nil never means bitmap fallback.
+    public func colorGlyphField(_ glyph: UInt32, companionScale: Int,
+                                captureStages: Bool = false) -> WPEParityColorGlyphField? {
+        guard companionScale == 1, isColorFace,
+              let primary = glyphField(glyph, captureStages: captureStages),
+              let companion = WPEParityGlyphFieldProducer.companionScaleOne(face: face, field: primary) else { return nil }
+        return WPEParityColorGlyphField(primary: primary, companion: companion)
+    }
+
     private func render(_ glyph: UInt32) -> WPEParityGlyphBitmap? {
         guard let mode = renderedPixelMode(glyph) else { return nil }
         let bitmap = face.pointee.glyph.pointee.bitmap
