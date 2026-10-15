@@ -323,9 +323,9 @@ final class WPEParityFrameRenderer {
     }
 
     /// The engine matrices draw `operation` packs for the current frame.
-    func uniforms(_ operation: Int) -> WPEParityUniformDraw? {
-        draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera,
-                                        layers: layersMoved ? layers : nil)
+    func uniforms(_ operation: Int) throws -> WPEParityUniformDraw? {
+        try draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera,
+                                            layers: layersMoved ? layers : nil)
     }
 
     /// The published camera pose with the layer renderer's current parallax controls.
@@ -971,6 +971,9 @@ final class WPEParityFrameRenderer {
     private func selectCamera(dt: Float) {
         let active = WPEParityCamera.activeObjectID(document: plan.document, state: state)
         var selected = rootCamera
+        if case let .vector(value)? = state.scriptField("perspectiveoverridefov", of: "") {
+            selected.perspectiveFOV = value.x
+        }
         // 1891a0 selects effective O148 from raw O140; 183a70 reads near/far before the manager tick.
         // Camera objects and queues may replace only effective FOV after this canonical snapshot.
         if selected.scenePerspective != nil {
@@ -1141,9 +1144,9 @@ final class WPEParityFrameRenderer {
 
     /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
     private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, cursor: SIMD2<Float>,
-                                 buttonDown: Bool, timeOfDay: Float) {
+                                 buttonDown: Bool, timeOfDay: Float) throws {
         let world = cursorWorld(camera: camera)
-        script.updateCursorTargets(state: state, quad: { cursorQuad($0, camera: camera) })
+        try script.updateCursorTargets(state: state, quad: { try cursorQuad($0, camera: camera) })
         script.cursor(at: cursor, world: world, leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
         script.dispatchMedia(state: &state)
     }
@@ -1155,11 +1158,11 @@ final class WPEParityFrameRenderer {
 
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
     func cursorQuad(_ id: String,
-                    camera: WPEParityCamera) -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)? {
+                    camera: WPEParityCamera) throws -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)? {
         guard let size = layers.layers[id]?.size, size.x > 0, size.y > 0 else { return nil }
         var placed = layers
         placed.camera = camera
-        let matrix = placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * placed.model(id)
+        let matrix = try placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * placed.model(id)
         let pixels = logicalSize
         func corner(_ x: Float, _ y: Float) -> SIMD2<Float> {
             let clip = matrix * SIMD4(x, y, 0, 1)
@@ -1369,7 +1372,7 @@ final class WPEParityFrameRenderer {
                                 cursor: scriptCursor, world: cursorWorld(camera: camera),
                                 leftDown: input.buttonDown, timeOfDay: daytime)
             script.updateAudio(audio.bins)
-            runScriptEvents(script, camera: camera, cursor: scriptCursor, buttonDown: input.buttonDown, timeOfDay: daytime)
+            try runScriptEvents(script, camera: camera, cursor: scriptCursor, buttonDown: input.buttonDown, timeOfDay: daytime)
         }
         consumeMediaInputs()
         // R24 Q1: animations run after the object update and the camera, and render reads their values.

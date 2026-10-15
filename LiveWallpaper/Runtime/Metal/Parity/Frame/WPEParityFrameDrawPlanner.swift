@@ -89,12 +89,12 @@ struct WPEParityFrameDrawPlan {
         var text: TextPlacement?
 
         func draw(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
-                  layers live: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
+                  layers live: WPEParityLayerTransformSet? = nil) throws -> WPEParityUniformDraw {
             var layers = live ?? layers
             if let camera {
                 layers.camera = camera
             }
-            var placed = layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
+            var placed = try layers.draw(objectID, kind: kind, compositeOwnerID: compositeOwnerID, parallax: parallax)
             guard let text else { return placed }
             if case let .compositeFill(size) = kind {
                 placed.matrices = WPEParityTextMatrices.fbo(size: SIMD2(Int(size.x), Int(size.y)),
@@ -108,8 +108,11 @@ struct WPEParityFrameDrawPlan {
             // Keep the common draw's V/P: it selects the scene or composite camera before applying the layer's
             // perspective push (1401e8aa0.c:314-342, 998-1001). Rebuilding the composite here lost that push.
             let layerMatrices = kind == .layer || kind == .lastEffectPass
-            var matrices = layerMatrices ? placed.matrices
-                : layers.draw(objectID, kind: .layer, compositeOwnerID: compositeOwnerID, parallax: parallax).matrices
+            var matrices = if layerMatrices {
+                placed.matrices
+            } else {
+                try layers.draw(objectID, kind: .layer, compositeOwnerID: compositeOwnerID, parallax: parallax).matrices
+            }
             matrices.model = model
             if let ownerID = compositeOwnerID, let owner = layers.layers[ownerID] {
                 matrices.model = layers.model(owner.id).inverse * model
@@ -137,11 +140,11 @@ struct WPEParityFrameDrawPlan {
     /// `parallax` is `WPEParityUniformParallax.smoothed` for the frame; `camera` is the frame's shaken camera.
     /// `layers` holds the live layer transforms once any moved; nil keeps the planned matrices.
     func frameUniforms(parallax: SIMD2<Float>, camera: WPEParityCamera? = nil,
-                       layers: WPEParityLayerTransformSet? = nil) -> WPEParityUniformDraw {
+                       layers: WPEParityLayerTransformSet? = nil) throws -> WPEParityUniformDraw {
         guard let placement else { return uniforms }
         let cameraChanged = camera.map { $0 != placement.layers.camera } ?? false
         guard cameraMoves || layers != nil || cameraChanged else { return uniforms }
-        let placed = placement.draw(parallax: parallax, camera: camera, layers: layers)
+        let placed = try placement.draw(parallax: parallax, camera: camera, layers: layers)
         var uniforms = uniforms
         (uniforms.matrices, uniforms.effectPass) = (placed.matrices, placed.effectPass)
         return uniforms
@@ -241,7 +244,7 @@ struct WPEParityFrameDrawPlan {
         var layers = live ?? particle.layers
         layers.camera = camera
         var uniforms = uniforms
-        uniforms.matrices = WPEParityParticleMatrices.draw(
+        uniforms.matrices = try WPEParityParticleMatrices.draw(
             layers, objectID: particle.key.objectID,
             modelMatrix: batch.modelMatrix, perspective: particle.perspective,
             compositeOwnerID: particle.compositeOwnerID, parallax: frame.parallax.smoothed
@@ -829,7 +832,12 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         let geometry: WPEParityFrameDrawPlan.Geometry
-        let placed = placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        let placed: WPEParityUniformDraw
+        do {
+            placed = try placement?.draw(parallax: .zero) ?? WPEParityUniformDraw(matrices: .effectPass)
+        } catch {
+            throw .program("Perspective placement failed: \(error)")
+        }
         if let shape = layout.modelDataShapes[index] {
             guard let prepared = shape.prepared as? WPEParityModelDataMetalShape,
                   prepared.program.hlsl == layout.programs[index]?.hlsl else {
