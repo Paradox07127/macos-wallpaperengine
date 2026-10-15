@@ -54,7 +54,10 @@ extension WPEParitySceneDriverTests {
         _ = try XCTUnwrap(compiler.compilerIdentity == "wpe-shaderc " + toolHashes.joined(separator: " ") ? true : nil,
                           "actual compiler identity must match all three bundle components")
         let source = #"""
-        const material = engine.registerAsset('materials/opaque-model-data.json', true);
+        const material = engine.registerAsset('materials/opaque-model-data.json\u0000suffix', true);
+        if (material !== 'materials/opaque-model-data.json') throw Error('registered path was not canonical');
+        if (engine.registerAsset('materials/opaque-model-data.json\u0000other', false) !== undefined)
+          throw Error('canonical path duplicate changed its first declaration');
         let layer;
         export function init(value) {
           const vertices = new Float32Array(65539 * 5);
