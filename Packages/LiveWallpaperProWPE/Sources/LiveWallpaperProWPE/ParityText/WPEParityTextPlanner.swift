@@ -179,6 +179,9 @@ public final class WPEParityTextPlanner {
         Self.release(objectID: object.id, state: &state)
         guard var mesh = layout.mesh else { return (layout, key) }
         let chain = fonts.chain(fontPath: object.font, pointSize: pointSize)
+        if glyphMode == .distanceField {
+            mesh.fieldPrimaryFaceIsColor = chain.faces.first?.isColorFace
+        }
         var instance = state.atlases[key] ?? WPEParityGlyphAtlasInstance(fontPath: object.font, pointSize: pointSize,
                                                                          glyphMode: glyphMode)
         precondition(instance.glyphMode == glyphMode)

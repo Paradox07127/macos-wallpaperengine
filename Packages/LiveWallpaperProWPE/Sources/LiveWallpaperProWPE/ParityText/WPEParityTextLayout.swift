@@ -119,6 +119,8 @@ public struct WPEParityTextMesh: Hashable, Sendable {
     public var glyphMode: WPEParityTextGlyphMode = .bitmap
     /// The selected native COLOR group; bitmap's existing scale1 access does not need a field selection.
     public var colorAtlasScale: Int?
+    /// Existing primary face capability for finite field prewarming; nil preserves unknown/empty cases.
+    public internal(set) var fieldPrimaryFaceIsColor: Bool?
 }
 
 public struct WPEParityTextLayout: Hashable, Sendable {
