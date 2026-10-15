@@ -54,8 +54,10 @@ final class ParityFontChainTests: XCTestCase {
         let a = library.chain(fontPath: "bitmap.ttf", pointSize: first)
         let b = library.chain(fontPath: "bitmap.ttf", pointSize: second)
         XCTAssertFalse(a === b)
-        XCTAssertEqual(try XCTUnwrap(a.faces.first).pointSize, first)
-        XCTAssertEqual(try XCTUnwrap(b.faces.first).pointSize, second)
+        XCTAssertEqual(a.pointSize, first)
+        XCTAssertEqual(b.pointSize, second)
+        XCTAssertFalse(a.faces.isEmpty)
+        XCTAssertFalse(b.faces.isEmpty)
         XCTAssertTrue(a === library.chain(fontPath: "bitmap.ttf", pointSize: first))
         XCTAssertTrue(b === library.chain(fontPath: "bitmap.ttf", pointSize: second))
     }

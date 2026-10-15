@@ -32,10 +32,7 @@ public final class WPEParityFontLibrary {
     /// AD400 keys the chain record by Float size in both modes; the bitmap atlas's string key is separate.
     public func chain(fontPath: String, pointSize: Float) -> WPEParityFontChain {
         let clamped = Self.clampedPointSize(pointSize)
-        if !clamped.isFinite {
-            // Preserve the former conversion failure for invalid input; this is not a NaN fallback policy.
-            _ = Int64(clamped * 64)
-        }
+        precondition(clamped.isFinite, "Font size must resolve to a finite value")
         let key = ChainKey(fontPath: fontPath, pointSizeBits: clamped.bitPattern)
         if let cached = chains[key] {
             return cached
