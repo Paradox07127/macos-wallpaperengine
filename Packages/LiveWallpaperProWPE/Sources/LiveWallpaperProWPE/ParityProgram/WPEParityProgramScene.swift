@@ -141,7 +141,8 @@ public struct WPEParityProgramScene: Sendable {
             if !isModel {
                 // FUN_1402222a0 draws models with g_Color4 = 1.
                 let color = SIMD3<Float>(image.color) * (flags.hdr ? Float(image.brightness) : 1)
-                layerColors[image.id] = SIMD4(color.x, color.y, color.z, Float(image.alpha))
+                layerColors[image.id] = SIMD4(color.x, color.y, color.z,
+                                              WPEParitySceneState.nativeAlpha(image, authored: authoredByID[image.id]))
             }
             models[image.id] = modelFile
             let model = isModel ? nil : assets.json(image.imageRelativePath)

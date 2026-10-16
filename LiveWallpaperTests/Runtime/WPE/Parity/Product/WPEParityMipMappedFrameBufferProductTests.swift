@@ -533,8 +533,9 @@ extension WPEParitySceneDriverTests {
             readerObject,
         ]
         if lateFailure {
+            // ccsimple.vert skips the MVP, so its last pass covers the whole backbuffer; alpha 0 keeps it a no-op blend.
             objects.append(["id": 3, "image": "models/util/solidlayer.json", "name": "real late dimension failure",
-                            "size": "8 8", "origin": "48 16 0", "color": "0 0 0", "solid": true,
+                            "size": "8 8", "origin": "48 16 0", "color": "0 0 0", "alpha": 0, "solid": true,
                             "effects": [["id": 8, "file": "effects/mip-late-failure.json"]]])
         }
         let fixtureFiles = files

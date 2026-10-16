@@ -262,6 +262,11 @@ public struct WPEParitySceneState: Sendable {
         releaseModelData(token)
     }
 
+    /// The layer ctor seeds alpha 1 and only an authored "alpha" changes it (1401e6980.c:40); shape quads stay as parsed.
+    static func nativeAlpha(_ image: WPESceneImageObject, authored: WPESceneJSONValue?) -> Float {
+        authored != nil && authored?["alpha"] == nil && !image.isShapeQuad ? 1 : Float(image.alpha)
+    }
+
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
     /// object the parent chain names holds only its visible bit. `constants` seeds each material pass.
     public init(document: WPESceneDocument, hdr: Bool, constants: [WPEParityMaterialPassKey: [String: [Double]]] = [:]) {
@@ -278,14 +283,18 @@ public struct WPEParitySceneState: Sendable {
         let particles = Dictionary(document.particleObjects.map { ($0.id, $0) }) { first, _ in first }
         let texts = Dictionary(document.textObjects.map { ($0.id, $0) }) { first, _ in first }
         let lights = Dictionary(document.lightObjects.map { ($0.id, $0) }) { first, _ in first }
+        let authored = Dictionary(document.resolvedObjectsJSON.compactMap { object in
+            WPEParitySceneAnimations.id(object).map { ($0, object) }
+        }) { first, _ in first }
         lightIDs = Set(lights.keys)
         for layer in WPEParityLayerTransform.layers(document: document)
             + WPEParityLayerTransform.textLayers(document: document) {
             var object = Object(origin: layer.origin, scale: layer.scale, angles: layer.angles, alpha: 1, color: .one,
                                 brightness: 1, visible: document.ownVisibilityByID[layer.id] ?? true)
             if let image = images[layer.id] {
-                (object.alpha, object.color, object.brightness) = (Float(image.alpha), SIMD3(image.color),
-                                                                   Float(image.brightness))
+                (object.alpha, object.color, object.brightness) = (
+                    Self.nativeAlpha(image, authored: authored[layer.id]), SIMD3(image.color), Float(image.brightness)
+                )
             } else if let text = texts[layer.id] {
                 (object.alpha, object.color, object.brightness) = (Float(text.alpha), SIMD3(text.color),
                                                                    Float(text.brightness))
