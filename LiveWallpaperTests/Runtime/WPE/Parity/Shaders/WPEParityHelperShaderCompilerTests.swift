@@ -68,6 +68,39 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         }
     }
 
+    /// WPE's FXC expands macro arguments before `##`: `texSample2D(GRADIENT_SAMPLER, …)` pastes g_Texture4SamplerState.
+    func testSamplerMacroArgumentExpandsBeforeTokenPaste() async throws {
+        let compiler = try WPEParityShaderToolchain.makeCompiler().get()
+        func compileFragment(_ gradient: String, _ shadow: String) async throws -> WPEStageReflection {
+            let program = WPEHLSLProgram(fragment: Array("""
+            #define texSample2D(s, u) s.Sample(s ## SamplerState, u)
+            #define texSample2DLod(s, u, m) s.SampleLevel(s  ## SamplerState, u, m)
+            #define texSample2DCompare(s, u, d) s.SampleCmpLevelZero(s ## SamplerComparisonState, u, d)
+            #define GRADIENT_SAMPLER g_Texture4
+            #define SHADOW_ATLAS_SAMPLER g_Texture6
+            Texture2D g_Texture4:register(t4);
+            SamplerState g_Texture4SamplerState:register(s4);
+            Texture2D g_Texture6:register(t6);
+            SamplerComparisonState g_Texture6SamplerComparisonState:register(s6);
+            float4 main(float4 p : SV_Position) : SV_Target {
+                return texSample2D(\(gradient), p.xy) * texSample2DLod(\(gradient), p.xy, 0.0)
+                    * texSample2DCompare(\(shadow), p.xy, 0.5).r;
+            }
+            """.utf8))
+            let compiled = try await compiler.compile(WPEParityShaderCompileRequest(
+                program: program, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1
+            ))
+            let output = try XCTUnwrap(compiled.stages[.fragment])
+            return try JSONDecoder().decode(WPEStageReflection.self, from: output.reflectionJSON)
+        }
+        let expected: Set = ["g_Texture4", "g_Texture4SamplerState",
+                             "g_Texture6", "g_Texture6SamplerComparisonState"]
+        let direct = try await compileFragment("g_Texture4", "g_Texture6")
+        XCTAssertEqual(Set(direct.resources.map(\.name)), expected)
+        let viaMacro = try await compileFragment("GRADIENT_SAMPLER", "SHADOW_ATLAS_SAMPLER")
+        XCTAssertEqual(Set(viaMacro.resources.map(\.name)), expected)
+    }
+
     /// Exercise the actual HLSL Load through the helper and MSC; sampler clamping cannot satisfy this contract.
     /// https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-load
     func testDefaultCompilerPreservesOutOfBoundsLoadZero() async throws {

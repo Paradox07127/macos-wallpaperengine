@@ -105,7 +105,7 @@ build/wpe-shaderc/wpe-shaderc \
 
 The entry defaults to `main`, the MSC minimum deployment target to `14.6.0`, and bounds checking is
 enabled only with `--bounds-check`. Output parent directories must already exist.
-DXC uses `vs_6_0`, `ps_6_0`, or `gs_6_0` with `-HV 2016 -O3 -Ges`.
+DXC uses `vs_6_0`, `ps_6_0`, or `gs_6_0` with `-HV 2016 -O3 -Ges -flegacy-macro-expansion`.
 Reflection follows the supplied schema 1: DXC provides cbuffer layouts and
 resources; MSC provides argument offsets, input/output signatures, and its raw
 JSON object. DXC diagnostics go to stderr; compilation and output I/O failures

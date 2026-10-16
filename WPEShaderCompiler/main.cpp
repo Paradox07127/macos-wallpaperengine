@@ -499,7 +499,8 @@ void compile(const Options& options) {
     std::wstring includeDir = std::filesystem::absolute(options.input).parent_path().wstring();
     // WPE's FXC-era geometry HLSL requires the 2016 language rules.
     const wchar_t* args[] = {input.c_str(), L"-T", profile.c_str(), L"-E", entry.c_str(),
-                            L"-HV", L"2016", L"-O3", L"-Ges", L"-I", includeDir.c_str()};
+                            L"-HV", L"2016", L"-O3", L"-Ges", L"-flegacy-macro-expansion",
+                            L"-I", includeDir.c_str()};
     DxcBuffer buffer{source->GetBufferPointer(), source->GetBufferSize(), DXC_CP_UTF8};
     ComPtr<IDxcResult> result;
     check(compiler->Compile(&buffer, args, sizeof(args) / sizeof(args[0]), includes.value,
