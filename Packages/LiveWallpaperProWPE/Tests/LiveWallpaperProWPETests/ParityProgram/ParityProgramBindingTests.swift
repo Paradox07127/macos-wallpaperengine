@@ -500,6 +500,61 @@ final class ParityProgramBindingTests: XCTestCase {
                        "disabled effects retain native records; enabling draws must not redefine the count")
     }
 
+    /// constantshadervalues keys are byte-exact UTF-8 (140154480.c:555-563).
+    func testNonASCIIMaterialKeysReachEffectPassConstants() throws {
+        let resources: [String: Any] = [
+            "models/probe.json": ["material": "materials/base.json"],
+            "materials/base.json": ["passes": [["shader": "probe"]]],
+            "materials/line.json": ["passes": [["shader": "line"]]],
+            "effects/line.json": ["passes": [["material": "materials/line.json"]]],
+        ]
+        var bytes = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        bytes["shaders/probe.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/probe.frag"] = Data("void main() {}".utf8)
+        bytes["shaders/line.vert"] = Data("void main() {}".utf8)
+        bytes["shaders/line.frag"] = Data("""
+        uniform vec3 u_curveColor; // {"default":"1.0 1.0 1.0","material":"曲线颜色","type":"color"}
+        uniform float u_amplitude; // {"material":"整体振幅","default":0.4}
+        uniform float u_curveOpacity; // {"material":"曲线透明度","default":1.0}
+        uniform float u_curveThickness; // {"material":"曲线粗细","default":0.003}
+        // [COMBO] {"material":"包络","combo":"TRANSPARENCY","type":"options","default":1}
+        void main() {}
+        """.utf8)
+        let files = bytes
+        let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 200, "height": 100]],
+            "objects": [["id": 7, "image": "models/probe.json", "size": "200 100", "effects": [
+                ["id": 9, "file": "effects/line.json", "passes": [["constantshadervalues": [
+                    "曲线颜色": ["user": "newproperty", "value": "0.12941 0.89412 0.12941"],
+                    "曲线透明度": 0.85, "曲线粗细": 0.001, "整体振幅": 0.1,
+                ]]]],
+            ]]],
+        ]
+        func fragment(_ userValues: [String: WallpaperEngineProjectPropertyValue]) throws
+            -> (constants: [String: WPECBufferValue]?, materials: Set<String>) {
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                            userValues: userValues,
+                                                            makeTransformScriptResolver: { _, _ in NoScripts() })
+            let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let pass = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 0)
+            let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
+                $0.materialPass == pass
+            })
+            return (binding.constants[.fragment], Set(binding.materialConstants[.fragment]?.map(\.material) ?? []))
+        }
+        let authored = try fragment([:])
+        XCTAssertEqual(Self.floats(authored.constants?["u_curveColor"]), [0.12941, 0.89412, 0.12941])
+        XCTAssertEqual(Self.floats(authored.constants?["u_curveOpacity"]), [0.85])
+        XCTAssertEqual(Self.floats(authored.constants?["u_curveThickness"]), [0.001])
+        XCTAssertEqual(Self.floats(authored.constants?["u_amplitude"]), [0.1])
+        XCTAssertTrue(authored.materials.isSuperset(of: ["曲线颜色", "整体振幅"]))
+        let user = try fragment(["newproperty": .string("1 0 0")])
+        XCTAssertEqual(Self.floats(user.constants?["u_curveColor"]), [1, 0, 0])
+    }
+
     func testEffectWithoutIDKeepsItsAuthoredCombos() throws {
         let resources: [String: Any] = [
             "models/probe.json": ["material": "materials/base.json"],

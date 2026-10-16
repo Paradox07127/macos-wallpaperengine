@@ -32,6 +32,28 @@ final class ParityProgramAssetsTests: XCTestCase {
         XCTAssertEqual(assets.roots.map(\.lastPathComponent), ["2370640409", "wpe"])
     }
 
+    /// 幅 (e5 b9 85) and 包 (e5 8c 85) carry a 0x85 byte; annotation lines end only at CR/LF (140162100.c:113).
+    func testUTF8AnnotationNamesAndWholeLinesSurviveDeclarationParse() {
+        let assets = WPEParityProgramAssets(sources: [Self.lookup("line", [
+            "shaders/line.vert": "void main() {}",
+            "shaders/line.frag": """
+            uniform vec3 u_curveColor; // {"default":"1.0 1.0 1.0","material":"曲线颜色","type":"color"}
+            uniform float u_amplitude; // {"material":"整体振幅","default":0.4}
+            // [COMBO] {"material":"包络","combo":"TRANSPARENCY","type":"options","default":1}
+            uniform float u_separator; // {"material":"a\u{2028}b","default":0}
+            // [COMBO] {"material":"c\u{85}d","combo":"SEPARATOR","type":"options","default":2}
+            void main() {}
+            """,
+        ])])
+
+        let declarations = assets.shaderDeclarations("line")
+        XCTAssertEqual(declarations.uniforms[.fragment]?["u_curveColor"]?.material, "曲线颜色")
+        XCTAssertEqual(declarations.uniforms[.fragment]?["u_amplitude"]?.material, "整体振幅")
+        XCTAssertEqual(declarations.annotations.defaults["TRANSPARENCY"], 1)
+        XCTAssertEqual(declarations.uniforms[.fragment]?["u_separator"]?.material, "a\u{2028}b")
+        XCTAssertEqual(declarations.annotations.defaults["SEPARATOR"], 2)
+    }
+
     func testWallpaperSourceComesBeforeAssetsRoots() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

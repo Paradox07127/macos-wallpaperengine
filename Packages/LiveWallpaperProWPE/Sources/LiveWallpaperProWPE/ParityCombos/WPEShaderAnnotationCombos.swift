@@ -23,7 +23,9 @@ public struct WPEShaderAnnotationCombos: Sendable {
         var defaults = WPEMSVCUnorderedMap<String, Int32>()
         var samplers = WPEMSVCUnorderedMap<Int32, WPEShaderSamplerCombos>()
         for source in [vertexSource, fragmentSource] {
-            for line in source.components(separatedBy: .newlines) {
+            // Lines end only at CR/LF (140162100.c:113); `.newlines` would also cut at U+0085/U+2028.
+            for line in source.split(omittingEmptySubsequences: false,
+                                     whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }) {
                 let text = line.drop(while: { $0 == " " || $0 == "\t" })
                 if text.hasPrefix("uniform") {
                     guard let slot = Self.samplerSlot(String(text)),

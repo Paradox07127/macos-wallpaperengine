@@ -27,7 +27,9 @@ enum WPEParityProgramConstants {
     static func uniforms(_ source: String) -> [String: WPEParityMaterialUniform] {
         let pattern = try? NSRegularExpression(pattern: #"^uniform\s+(float|vec2|vec3|vec4)\s+(\w+)\s*;"#)
         var uniforms: [String: WPEParityMaterialUniform] = [:]
-        for line in source.components(separatedBy: .newlines) {
+        // Lines end only at CR/LF (140162100.c:113); `.newlines` would also cut at U+0085/U+2028.
+        for line in source.split(omittingEmptySubsequences: false,
+                                 whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }) {
             let text = String(line.drop(while: { $0 == " " || $0 == "\t" }))
             guard text.hasPrefix("uniform"), let pattern,
                   let match = pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),

@@ -69,7 +69,10 @@ public enum WPEParityProgramResolver {
         let loader = WPEShaderLoader(sources: sources)
         func expanded(_ name: String?) -> String {
             var included = Set<[UInt8]>()
-            return Latin1.string(loader.load(name.flatMap(sources.shaderSource(named:)), included: &included))
+            // Material names are byte-exact UTF-8 keys (140154480.c:555-563); lossy decode keeps the rest of a bad file.
+            // swiftlint:disable:next optional_data_string_conversion
+            return String(decoding: loader.load(name.flatMap(sources.shaderSource(named:)), included: &included),
+                          as: UTF8.self)
         }
         return (names, expanded(names.vertex), names.geometry.map(expanded), expanded(names.fragment))
     }
