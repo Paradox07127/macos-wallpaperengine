@@ -168,7 +168,9 @@ public enum WPEParityTextLayoutEngine {
     }
 
     static func fboSize(_ mesh: WPEParityTextMesh, input: WPEParityTextLayoutInput) -> SIMD2<Int> {
-        let padding = input.appliesPadding ? SIMD2(min(input.padding.x, 512), min(input.padding.y, 512)) : .zero
+        // Native clamps only the upper bound; the lower bound keeps Int(...) from trapping.
+        let padding = input.appliesPadding
+            ? input.padding.clamped(lowerBound: SIMD2(repeating: -512), upperBound: SIMD2(repeating: 512)) : .zero
         return SIMD2(
             Int(padding.x + padding.x + (mesh.maxX - mesh.minX)),
             Int(padding.y + padding.y + (mesh.top - mesh.bottom))
@@ -265,7 +267,7 @@ private struct WPEParityTextLayouter {
     }
 
     mutating func run() -> WPEParityTextMesh? {
-        guard let primary = chain.faces.first else { return nil }
+        let primary = chain.faces[0]
         let lineHeight = Float(primary.height) + input.spacing.y
         var laid: [LaidLine] = []
         var minX: Float = 0
@@ -335,7 +337,7 @@ private struct WPEParityTextLayouter {
             }
             var pen: Float = 0
             for glyph in line.runs.flatMap(\.glyphs) {
-                let key = UInt32(glyph.faceIndex) << 24 | glyph.gid
+                let key = WPEParityGlyphAtlas.entryKey(faceIndex: glyph.faceIndex, glyphID: glyph.gid)
                 // 1401b0410 expands only the written quad, after measuring/wrapping unexpanded ink.
                 let x0 = ((pen + glyph.x0) - glyph.quadPadding) + offset
                 let x1 = pen + glyph.x1 + glyph.quadPadding + offset

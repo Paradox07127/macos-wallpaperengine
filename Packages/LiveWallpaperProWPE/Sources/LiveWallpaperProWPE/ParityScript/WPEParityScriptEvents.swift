@@ -1,4 +1,4 @@
-/// SceneScript events by WPE's event id (R25 §4); a script receives an event only when it exports the function.
+/// SceneScript events by WPE's event id; a script receives an event only when it exports the function.
 public enum WPEParityScriptEvent: Int, Sendable, CaseIterable {
     case initialize = 0
     case update

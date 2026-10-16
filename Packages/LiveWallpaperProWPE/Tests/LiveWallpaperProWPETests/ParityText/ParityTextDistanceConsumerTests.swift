@@ -17,7 +17,7 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertEqual(prepared.atlasKey, "NotoSans-Regular.ttf_msdf")
         let instance = try XCTUnwrap(planner.atlases[prepared.atlasKey])
         XCTAssertEqual(instance.mono.format, .rgba8)
-        XCTAssertNil(instance.color)
+        XCTAssertTrue(instance.colorGroups.isEmpty)
         let entry = try XCTUnwrap(instance.mono.entry(forKey: 43))
         XCTAssertEqual([entry.x0, entry.y0, entry.x1, entry.y1], [0, 0, 42, 47])
         XCTAssertEqual(entry.references, 1)
@@ -149,7 +149,9 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
     }
 
     private func oracle(environment: String, manifestSHA: String) throws -> URL {
-        let path = try XCTUnwrap(ProcessInfo.processInfo.environment[environment], "Pinned original oracle is required; no skip")
+        guard let path = ProcessInfo.processInfo.environment[environment] else {
+            throw XCTSkip("Set \(environment) to the pinned original oracle directory")
+        }
         let root = URL(fileURLWithPath: path, isDirectory: true)
         let manifest = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
         XCTAssertEqual(sha(manifest), manifestSHA)

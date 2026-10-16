@@ -150,7 +150,6 @@ private struct Lowering {
             return true
         }
         var bindings: [String] = []
-        let module = "__wpeImport(%@)"
         var namespace: String?
         var defaultName: String?
         var named: [(String, String)] = []
@@ -185,7 +184,7 @@ private struct Lowering {
         }
         cursor.skipTrivia()
         guard let specifier = cursor.readString() else { return false }
-        let call = module.replacingOccurrences(of: "%@", with: Self.quoted(specifier))
+        let call = "__wpeImport(\(Self.quoted(specifier)))"
         if let namespace {
             bindings.append("const \(namespace) = \(call);")
         }
@@ -270,7 +269,19 @@ private struct Lowering {
             exportTail += "__wpeExport('default', () => __wpeDefault);\n"
             emit("const __wpeDefault = ", replacing: start, through: cursor.position)
             return true
-        case "function", "class", "async", "var", "let", "const":
+        case "var", "let", "const":
+            var probe = cursor
+            repeat {
+                probe.skipTrivia()
+                if let name = probe.readIdentifier() {
+                    exportTail += "__wpeExport(\(Self.quoted(name)), () => \(name));\n"
+                } else {
+                    exportTail += "console.warn('SceneScript: an exported destructuring declaration is not exported');\n"
+                }
+            } while probe.skipToNextDeclarator()
+            emit("", replacing: start, through: keywordStart)
+            return true
+        case "function", "class", "async":
             var probe = cursor
             probe.skipTrivia()
             if keyword == "async" {
@@ -502,6 +513,66 @@ private struct Cursor {
                 position += 1
             }
         }
+    }
+
+    /// Past the next top-level `,` of a declaration list. False at the list's end: `;`, an unmatched closer,
+    /// a top-level line break or comment (where ASI may end the statement), or the end of the text.
+    mutating func skipToNextDeclarator() -> Bool {
+        var depth = 0
+        while let unit = peek() {
+            let next = position + 1 < text.count ? text[position + 1] : nil
+            if depth == 0, unit == 0x2C {
+                position += 1
+                return true
+            } else if depth == 0, unit == 0x3B || Lowering.isLineBreak(unit) || (unit == 0x2F && next == 0x2F) {
+                return false
+            } else if unit == 0x28 || unit == 0x5B || unit == 0x7B {
+                depth += 1
+                position += 1
+            } else if unit == 0x29 || unit == 0x5D || unit == 0x7D {
+                guard depth > 0 else { return false }
+                depth -= 1
+                position += 1
+            } else if unit == 0x27 || unit == 0x22 {
+                _ = readString()
+            } else if unit == 0x60 {
+                skipTemplate()
+            } else if unit == 0x2F, next == 0x2A {
+                position += 2
+                while position + 1 < text.count, !(text[position] == 0x2A && text[position + 1] == 0x2F) {
+                    position += 1
+                }
+                position = min(position + 2, text.count)
+            } else if unit == 0x2F, next == 0x2F {
+                while position < text.count, !Lowering.isLineBreak(text[position]) {
+                    position += 1
+                }
+            } else {
+                position += 1
+            }
+        }
+        return false
+    }
+
+    /// From an opening backtick past its closing one; `${…}` substitutions are skipped by brace count.
+    private mutating func skipTemplate() {
+        position += 1
+        var braces = 0
+        while position < text.count, braces > 0 || text[position] != 0x60 {
+            let unit = text[position]
+            if unit == 0x5C {
+                position += 1
+            } else if braces == 0, unit == 0x24, position + 1 < text.count, text[position + 1] == 0x7B {
+                braces = 1
+                position += 1
+            } else if braces > 0, unit == 0x7B {
+                braces += 1
+            } else if braces > 0, unit == 0x7D {
+                braces -= 1
+            }
+            position += 1
+        }
+        position = min(position + 1, text.count)
     }
 
     /// Past an optional `;` on the declaration's line.

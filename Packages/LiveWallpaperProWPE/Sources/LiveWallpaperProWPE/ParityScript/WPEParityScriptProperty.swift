@@ -1,5 +1,5 @@
-/// One scriptable descriptor (R25 §2–§3): the state field a script write lands in and the hook WPE's onChanged runs.
-/// Every write overwrites the field (setNative copies, R25/dis1.txt:1-13); only flag 4 converts units.
+/// One scriptable descriptor: the state field a script write lands in and the hook WPE's onChanged runs.
+/// Every write overwrites the field (setNative copies); only flag 4 converts units.
 public struct WPEParityScriptProperty: Hashable, Sendable {
     /// Descriptor type codes.
     public enum ValueType: Int, Sendable {
@@ -212,7 +212,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "disablepropagation", owner: .object, type: .flagBool),
     ]
 
-    /// Layer visible: +0x120 bit0, no hook (R25/dis1.txt:110-124).
+    /// Layer visible: +0x120 bit0, no hook.
     public static let visible = WPEParityScriptProperty(name: "visible", owner: .object, type: .flagBool,
                                                         target: .object(.visible), invalidation: .visibility)
 
@@ -281,7 +281,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: $0, owner: .light, type: .float, invalidation: .lighting)
     }
 
-    /// Text fields whose hook re-lays the text out (R25/dis1.txt:134-135); the alpha/colour group has no hook.
+    /// Text fields whose hook re-lays the text out; the alpha/colour group has no hook.
     public static let text: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "alpha", owner: .text, type: .float, target: .object(.alpha)),
         WPEParityScriptProperty(name: "color", owner: .text, type: .vec3, target: .object(.color)),
@@ -311,7 +311,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "mindistance", owner: .sound, type: .float),
     ]
 
-    /// IVideoTexture rate and loop call the player at once (R25/dis1.txt:168-190).
+    /// IVideoTexture rate and loop call the player at once.
     public static let video: [WPEParityScriptProperty] = [
         WPEParityScriptProperty(name: "rate", owner: .video, type: .float, invalidation: .mediaPlayer),
         WPEParityScriptProperty(name: "loop", owner: .video, type: .byteBool, invalidation: .mediaPlayer),
@@ -373,41 +373,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         }
     }
 
-    /// Stored units of a script value: flag 4 degrees become radians.
-    public func stored(fromScript value: SIMD4<Float>) -> SIMD4<Float> {
-        flags.contains(.angle) && (type == .float || type == .vec3) ? value * Self.degreesToRadians : value
-    }
-
     public func script(fromStored value: SIMD4<Float>) -> SIMD4<Float> {
         flags.contains(.angle) && (type == .float || type == .vec3) ? value * Self.radiansToDegrees : value
-    }
-
-    /// Writes `value` (script units) to the object `objectID`; `pass` names the material pass of a constant.
-    public func write(_ value: WPEParitySceneState.ScriptValue, objectID: String, effectID: String? = nil,
-                      pass: WPEParityMaterialPassKey? = nil, to state: inout WPEParitySceneState) {
-        guard !flags.contains(.notFromJSON) else { return }
-        switch (target, value) {
-        case let (.object(property), .vector(vector)):
-            state.set(property, of: objectID, to: stored(fromScript: vector))
-        case let (.effectVisible, .vector(vector)):
-            if let effectID {
-                state.setEffect(effectID, of: objectID, visible: vector.x != 0)
-            }
-        case let (.constant, .vector(vector)):
-            if let pass {
-                state.setConstant(name, of: pass, to: WPEParitySceneState.Constant(
-                    value: stored(fromScript: vector), count: type.componentCount
-                ))
-            }
-        case (.field, .vector):
-            state.setScriptField(fieldName, of: objectID, to: value.map(stored(fromScript:)), invalidating: invalidation)
-        case let (.field, .string(string)):
-            state.setScriptField(fieldName, of: objectID, to: .string(canonicalString(string)), invalidating: invalidation)
-        case (.field, .integer):
-            state.setScriptField(fieldName, of: objectID, to: value, invalidating: invalidation)
-        default:
-            break
-        }
     }
 
     /// The field's value in script units; nil while the state holds none.

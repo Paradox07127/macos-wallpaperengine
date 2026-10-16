@@ -7,11 +7,6 @@ public struct WPEParityGlyphAtlasInstance: Sendable {
     public let glyphMode: WPEParityTextGlyphMode
     public var mono: WPEParityGlyphAtlas
     public var colorGroups: [Int: WPEParityGlyphAtlas] = [:]
-    /// Compatibility access to the one scale1 group, never a second stored owner.
-    public var color: WPEParityGlyphAtlas? {
-        get { colorGroups[1] }
-        set { colorGroups[1] = newValue }
-    }
 
     /// AD400's Float record belongs to this parent, not to an individual fallback FT face.
     private var recordColorScales: [UInt32: Int] = [:]
@@ -25,13 +20,6 @@ public struct WPEParityGlyphAtlasInstance: Sendable {
     public static func key(fontPath: String, pointSize: Float,
                            glyphMode: WPEParityTextGlyphMode = .bitmap) -> String {
         glyphMode == .distanceField ? "\(fontPath)_msdf" : "\(fontPath)_\(Int64(pointSize * 64))"
-    }
-
-    public func entry(forKey key: UInt32) -> (atlas: Atlas, entry: WPEParityGlyphAtlasEntry)? {
-        if let entry = mono.entry(forKey: key) {
-            return (.mono, entry)
-        }
-        return color?.entry(forKey: key).map { (.color, $0) }
     }
 
     public func colorScale(recordPointSize: Float) -> Int? {
@@ -60,8 +48,8 @@ public struct WPEParityGlyphAtlasInstance: Sendable {
     ) -> (atlas: Atlas, entry: WPEParityGlyphAtlasEntry)? {
         precondition(glyphMode == .bitmap, "Field primary uses its explicit distance insertion")
         if bitmap.pixelMode == .bgra {
-            var atlas = color ?? WPEParityGlyphAtlas(format: .rgba8)
-            defer { color = atlas }
+            var atlas = colorGroups[1] ?? WPEParityGlyphAtlas(format: .rgba8)
+            defer { colorGroups[1] = atlas }
             return atlas.insert(key: key, bitmap: bitmap).map { (.color, $0) }
         }
         return mono.insert(key: key, bitmap: bitmap).map { (.mono, $0) }

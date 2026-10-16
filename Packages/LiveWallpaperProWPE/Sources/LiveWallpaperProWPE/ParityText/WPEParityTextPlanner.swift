@@ -16,45 +16,30 @@ public final class WPEParityTextPlanner {
     fileprivate struct State {
         var atlases: [String: WPEParityGlyphAtlasInstance] = [:]
         var held: [String: HeldGlyphs] = [:]
-        var resets: [String: Int] = [:]
     }
 
-    fileprivate enum Disposition: Equatable { case pending, accepted, discarded }
     private var state = State()
-    private var revision: UInt64 = 0
     #if DEBUG
     /// Failure-path injection only. The actual face stays owned here and the callback is used synchronously.
     var fieldForTesting: ((WPEParityFontFace, UInt32) -> WPEParityGlyphField?)?
     #endif
 
-    /// One candidate value snapshot, not another atlas or font owner. Use only on the planner's serial owner.
-    /// Drop/discard it on a failed GPU preparation; old active layouts/references/pixels remain unchanged.
-    public final class PreparedPlan {
+    /// One candidate value snapshot, not another atlas or font owner. Dropping it leaves the active layouts,
+    /// references and pixels unchanged; the pipeline's prepared update guards which snapshot may be accepted.
+    public struct PreparedPlan {
         public let layout: WPEParityTextLayout
         public let atlasKey: String
-        public let atlases: [String: WPEParityGlyphAtlasInstance]
-        let resets: [String: Int]
-        fileprivate weak var owner: WPEParityTextPlanner?
-        fileprivate let baseRevision: UInt64
-        fileprivate var staged: State?
-        fileprivate var disposition = Disposition.pending
+        fileprivate let state: State
 
-        fileprivate init(owner: WPEParityTextPlanner, revision: UInt64, state: State,
-                         layout: WPEParityTextLayout, atlasKey: String) {
-            self.owner = owner; baseRevision = revision; staged = state
-            self.layout = layout; self.atlasKey = atlasKey
-            atlases = state.atlases; resets = state.resets
+        public var atlases: [String: WPEParityGlyphAtlasInstance] {
+            state.atlases
         }
     }
 
-    /// Keyed by the existing atlas instance key. Even a dirty-state writeback invalidates older pending plans.
+    /// Keyed by the existing atlas instance key.
     public var atlases: [String: WPEParityGlyphAtlasInstance] {
         get { state.atlases }
-        set { state.atlases = newValue; revision &+= 1 }
-    }
-
-    public var resets: [String: Int] {
-        state.resets
+        set { state.atlases = newValue }
     }
 
     public init(assets: WPEParityProgramAssets) {
@@ -72,7 +57,6 @@ public final class WPEParityTextPlanner {
     /// Takes over `layout`, planned for `objectID` against `atlases`, whose glyph references it already holds.
     public func adopt(objectID: String, layout: WPEParityTextLayout, atlasKey: String) {
         Self.hold(objectID: objectID, mesh: layout.mesh, atlasKey: atlasKey, state: &state)
-        revision &+= 1
     }
 
     /// The layout of `object` with every quad's UVs taken from its atlas instance, and that instance's key. Glyphs
@@ -81,7 +65,7 @@ public final class WPEParityTextPlanner {
         var next = state
         do {
             let result = try pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
-            state = next; revision &+= 1
+            state = next
             return result
         } catch {
             // Only distance-field generation/admission can throw; the original bitmap skip policy is unchanged.
@@ -97,27 +81,16 @@ public final class WPEParityTextPlanner {
         try accept(prepare(object, effectCount: effectCount, glyphMode: glyphMode))
     }
 
-    /// Stages through the very same layout and pack path, without publishing any atlas/ref/reset mutation.
+    /// Stages through the very same layout and pack path, without publishing any atlas/ref mutation.
     /// FT metadata/scratch may be reused on this serial owner; no FT pointer is stored in the candidate.
     public func prepare(_ object: WPEParityTextObject, effectCount: Int,
                         glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> PreparedPlan {
         try prepare(object, effectCount: effectCount, glyphMode: glyphMode, continuing: nil)
     }
 
-    /// Continues the pipeline's ordered batch on this same owner/value state. No intermediate active accept.
+    /// Continues the pipeline's ordered batch on `prepared`'s value state. No intermediate active accept.
     func prepare(_ object: WPEParityTextObject, effectCount: Int, glyphMode: WPEParityTextGlyphMode,
                  continuing prepared: PreparedPlan?) throws -> PreparedPlan {
-        let base: State
-        if let prepared {
-            guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
-            guard prepared.disposition == .pending, let staged = prepared.staged else {
-                throw WPEParityTextPreparationError.preparedUpdateConsumed
-            }
-            guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
-            base = staged
-        } else {
-            base = state
-        }
         if glyphMode == .distanceField, !object.usesGlyphEffects {
             throw WPEParityTextPreparationError.distanceFieldNotRequested
         }
@@ -142,30 +115,16 @@ public final class WPEParityTextPlanner {
                 }
             }
         }
-        var next = base
+        var next = prepared?.state ?? state
         let result = try pack(object, layout: layout, glyphMode: glyphMode, state: &next)
-        return PreparedPlan(owner: self, revision: revision, state: next,
-                            layout: result.layout, atlasKey: result.atlasKey)
+        return PreparedPlan(layout: result.layout, atlasKey: result.atlasKey, state: next)
     }
 
-    /// All fallible GPU preparation must precede this call. After it succeeds, the caller publishes its GPU
-    /// candidate on the same serial owner without another throwing operation or suspension.
+    /// Publishes a plan staged against the current state. All fallible GPU preparation must precede this call.
     @discardableResult
-    public func accept(_ prepared: PreparedPlan) throws -> (layout: WPEParityTextLayout, atlasKey: String) {
-        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
-        guard prepared.disposition == .pending, let next = prepared.staged else {
-            throw WPEParityTextPreparationError.preparedUpdateConsumed
-        }
-        guard prepared.baseRevision == revision else { throw WPEParityTextPreparationError.stalePreparedUpdate }
-        state = next; revision &+= 1
-        prepared.staged = nil; prepared.disposition = .accepted
+    public func accept(_ prepared: PreparedPlan) -> (layout: WPEParityTextLayout, atlasKey: String) {
+        state = prepared.state
         return (prepared.layout, prepared.atlasKey)
-    }
-
-    public func discard(_ prepared: PreparedPlan) throws {
-        guard prepared.owner === self else { throw WPEParityTextPreparationError.foreignPreparedUpdate }
-        guard prepared.disposition == .pending else { throw WPEParityTextPreparationError.preparedUpdateConsumed }
-        prepared.staged = nil; prepared.disposition = .discarded
     }
 
     private func pack(_ object: WPEParityTextObject, layout: WPEParityTextLayout,
@@ -192,10 +151,6 @@ public final class WPEParityTextPlanner {
         mesh.color.removeQuads(color.skipped)
         mesh.mono.atlasResetGeneration = instance.mono.resetGeneration
         mesh.color.atlasResetGeneration = instance.colorGroups[color.colorScale ?? 1]?.resetGeneration
-        if mono.reset || color.reset {
-            state.resets[key, default: 0] += 1
-        }
-
         state.atlases[key] = instance
         Self.hold(objectID: object.id, mesh: mesh, atlasKey: key, state: &state)
 
@@ -258,9 +213,8 @@ public final class WPEParityTextPlanner {
                              chain: WPEParityFontChain,
                              into instance: inout WPEParityGlyphAtlasInstance,
                              field: (WPEParityFontFace, UInt32) -> WPEParityGlyphField?)
-        throws -> (skipped: Set<Int>, reset: Bool, colorScale: Int?) {
+        throws -> (skipped: Set<Int>, colorScale: Int?) {
         var skipped: Set<Int> = []
-        var reset = false
         var colorScale: Int? = list == .color
             ? (instance.glyphMode == .bitmap ? 1 : instance.colorScale(recordPointSize: chain.pointSize)) : nil
         let counts = glyphs.glyphKeys.reduce(into: [UInt32: Int]()) { $0[$1, default: 0] += 1 }
@@ -330,7 +284,6 @@ public final class WPEParityTextPlanner {
                 }
             }
             guard full else { break }
-            reset = true
             if list == .mono {
                 instance.mono.reset()
             } else {
@@ -342,7 +295,7 @@ public final class WPEParityTextPlanner {
         if instance.glyphMode == .distanceField, !skipped.isEmpty {
             throw WPEParityTextPreparationError.distanceFieldAtlasAdmissionFailed
         }
-        return (skipped, reset, colorScale)
+        return (skipped, colorScale)
     }
 
     private static func entry(_ key: UInt32, in list: WPEParityGlyphAtlasInstance.Atlas,

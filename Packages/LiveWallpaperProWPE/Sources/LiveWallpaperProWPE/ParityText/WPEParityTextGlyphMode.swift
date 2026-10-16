@@ -106,8 +106,7 @@ public enum WPEParityTextFieldAdmission {
             objects[request.object.id] = request.object
         }
         try validate(Array(objects.values))
-        // Keep this finite product qualification at its loaded font/size. Cross-size reuse of the same native
-        // path_msdf atlas still needs original evidence, even when only one object changes size at a time.
+        // Keep this finite product qualification at its loaded font/size, even when only one object changes size.
         for object in Array(objects.values) + requests.map(\.object) where object.usesGlyphEffects {
             guard let qualified, qualified.font.utf8.elementsEqual(object.font.utf8),
                   WPEParityFontLibrary.clampedPointSize(qualified.pointSize) == WPEParityFontLibrary.clampedPointSize(object.pointSize) else {

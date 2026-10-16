@@ -177,8 +177,8 @@ public struct WPEParityTextObject: Hashable, Sendable {
     }
 }
 
-/// WPE's per-type field parsers. A value of the wrong type leaves the field unchanged; an object reads its
-/// `value` (bindings are already resolved), except for enums, whose deserialisers never bind.
+/// WPE's per-type field parsers. A value of the wrong type or a nonfinite number leaves the field unchanged; an
+/// object reads its `value` (bindings are already resolved), except for enums, whose deserialisers never bind.
 private struct WPEParityTextField {
     let fields: [String: WPESceneJSONValue]
 
@@ -208,7 +208,7 @@ private struct WPEParityTextField {
 
     /// 1401a4b00: int, uint and real.
     func read(_ key: String, into target: inout Float) {
-        if case let .number(value)? = lookup(key) {
+        if case let .number(value)? = lookup(key), Float(value).isFinite {
             target = Float(value)
         }
     }
@@ -259,13 +259,13 @@ private struct WPEParityTextField {
 
     /// atof on each part; the next part starts after the following run of spaces, and a missing part reads 0.
     private static func parts(_ value: WPESceneJSONValue, count: Int) -> [Float]? {
+        var parts = [Float](repeating: 0, count: count)
         switch value {
         case let .number(number):
-            return Array(repeating: Float(number), count: count)
+            parts = Array(repeating: Float(number), count: count)
         case let .string(string):
             // Native separator scans stop at the first NUL, including one embedded in the JSON string.
             let bytes = Array(string.utf8CString.prefix { $0 != 0 }) + [0]
-            var parts = [Float](repeating: 0, count: count)
             var cursor = 0
             for index in parts.indices {
                 if index > 0 {
@@ -274,9 +274,9 @@ private struct WPEParityTextField {
                 }
                 parts[index] = Float(atof(Array(bytes[cursor...])))
             }
-            return parts
         default:
             return nil
         }
+        return parts.allSatisfy(\.isFinite) ? parts : nil
     }
 }

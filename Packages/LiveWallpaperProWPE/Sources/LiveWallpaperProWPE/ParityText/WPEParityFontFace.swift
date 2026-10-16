@@ -163,13 +163,12 @@ public final class WPEParityFontFace {
     /// consumes it only at a missing atlas entry; ordinary bitmap consumers keep using rasterize.
     /// Captured stages are y-up; bitmap rows are top-first RGBA with no BGRA channel swap.
     public func glyphField(_ glyph: UInt32, captureStages: Bool = false) -> WPEParityGlyphField? {
-        let hasColor = face.pointee.face_flags & FT_Long(FT_FACE_FLAG_COLOR) != 0
-        let flags = hasColor ? FT_LOAD_RENDER | FT_LOAD_COLOR : FT_LOAD_NO_BITMAP
+        let flags = isColorFace ? FT_LOAD_RENDER | FT_LOAD_COLOR : FT_LOAD_NO_BITMAP
         guard FT_Load_Glyph(face, glyph, FT_Int32(flags)) == 0 else { return nil }
         let slot = face.pointee.glyph.pointee
         let isColor = UInt32(slot.bitmap.pixel_mode) == FT_PIXEL_MODE_BGRA.rawValue
         let box: WPEParityGlyphBox
-        if hasColor {
+        if isColorFace {
             guard isColor else { return nil }
             box = WPEParityGlyphBox(xMin: slot.bitmap_left,
                                     yMin: slot.bitmap_top - Int32(slot.bitmap.rows),

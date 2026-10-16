@@ -16,6 +16,19 @@ final class ParityTextPipelineTests: XCTestCase {
         ]))
     }
 
+    @discardableResult
+    private static func relayout(_ pipeline: WPEParityTextPipeline, _ object: WPEParityTextObject,
+                                 effectCount: Int? = nil) throws -> WPEParityTextRelayoutDelta {
+        guard let prepared = try pipeline.prepareRelayouts([.init(object, effectCount: effectCount)]) else {
+            return WPEParityTextRelayoutDelta(changes: [])
+        }
+        return try pipeline.accept(prepared)
+    }
+
+    private static func changedIDs(_ pipeline: WPEParityTextPipeline, _ object: WPEParityTextObject) throws -> [String] {
+        try relayout(pipeline, object).changes.map(\.current.object.id)
+    }
+
     /// Every quad's UVs are its glyph's entry in the atlas as it is now.
     private static func assertUVsMatchAtlas(_ pipeline: WPEParityTextPipeline, _ id: String,
                                             file: StaticString = #filePath, line: UInt = #line) throws {
@@ -32,16 +45,16 @@ final class ParityTextPipelineTests: XCTestCase {
 
     func testRelayoutReplacesOnlyTheChangedLayer() throws {
         let pipeline = try Self.makePipeline()
-        pipeline.add(Self.object("T", "Hi"), effectCount: 0)
-        pipeline.add(Self.object("U", "iH"), effectCount: 0)
+        try pipeline.add(Self.object("T", "Hi"), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(Self.object("U", "iH"), effectCount: 0, glyphMode: .bitmap)
         pipeline.refreshUVs()
         let other = pipeline.texts["U"]
         let key = try XCTUnwrap(pipeline.texts["T"]?.atlasKey)
         XCTAssertEqual(pipeline.atlases[key]?.mono.takeDirty(), true)
 
-        XCTAssertEqual(pipeline.relayout(Self.object("T", "Hello")), ["T"])
+        XCTAssertEqual(try Self.changedIDs(pipeline, Self.object("T", "Hello")), ["T"])
         let fresh = try Self.makePipeline()
-        fresh.add(Self.object("T", "Hello"), effectCount: 0)
+        try fresh.add(Self.object("T", "Hello"), effectCount: 0, glyphMode: .bitmap)
         let expected = try XCTUnwrap(fresh.texts["T"]?.layout.mesh)
         let relaid = try XCTUnwrap(pipeline.texts["T"]?.layout.mesh)
         XCTAssertEqual(relaid.mono.vertices.map { SIMD2($0.x, $0.y) }, expected.mono.vertices.map { SIMD2($0.x, $0.y) })
@@ -52,8 +65,8 @@ final class ParityTextPipelineTests: XCTestCase {
         try Self.assertUVsMatchAtlas(pipeline, "U")
 
         XCTAssertEqual(pipeline.atlases[key]?.mono.takeDirty(), true)
-        XCTAssertEqual(pipeline.relayout(Self.object("T", "Hello")), [], "the same fields change nothing")
-        XCTAssertEqual(pipeline.relayout(Self.object("T", "Hell")), ["T"])
+        XCTAssertEqual(try Self.changedIDs(pipeline, Self.object("T", "Hello")), [], "the same fields change nothing")
+        XCTAssertEqual(try Self.changedIDs(pipeline, Self.object("T", "Hell")), ["T"])
         XCTAssertEqual(pipeline.atlases[key]?.mono.isDirty, false, "glyphs already packed are not packed again")
     }
 
@@ -77,8 +90,8 @@ final class ParityTextPipelineTests: XCTestCase {
     /// (1401b0410.c:1095-1214), so B keeps UVs into the cleared atlas.
     func testAtlasResetLeavesOtherLayersAsTheyWere() throws {
         let pipeline = try Self.makePipeline()
-        pipeline.add(Self.object("A", "ABCDEFGHIJKLMNOP", pointSize: 256), effectCount: 0)
-        pipeline.add(Self.object("B", "ab", pointSize: 256), effectCount: 0)
+        try pipeline.add(Self.object("A", "ABCDEFGHIJKLMNOP", pointSize: 256), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(Self.object("B", "ab", pointSize: 256), effectCount: 0, glyphMode: .bitmap)
         pipeline.refreshUVs()
         let key = try XCTUnwrap(pipeline.texts["A"]?.atlasKey)
         let other = try XCTUnwrap(pipeline.texts["B"])
@@ -86,7 +99,7 @@ final class ParityTextPipelineTests: XCTestCase {
         var changed: [String] = []
         var reset = false
         for text in ["QRSTUVWXYZ0123456789", "WMQGOD@%&#$WMQGOD", "mwqgdbhkpyMWQGBDHK"] {
-            changed = pipeline.relayout(Self.object("A", text, pointSize: 256))
+            changed = try Self.changedIDs(pipeline, Self.object("A", text, pointSize: 256))
             let atlas = try XCTUnwrap(pipeline.atlases[key]).mono
             if otherGlyphs.contains(where: { atlas.entry(forKey: $0) == nil }) {
                 reset = true
@@ -101,31 +114,30 @@ final class ParityTextPipelineTests: XCTestCase {
 
     func testRelayoutDeltaCarriesDrawAndFBOChangesWithoutSpeculativeLayout() throws {
         let pipeline = try Self.makePipeline()
-        pipeline.add(Self.object("D", "Hi"), effectCount: 0)
-        pipeline.add(Self.object("F", "Hi"), effectCount: 1)
+        try pipeline.add(Self.object("D", "Hi"), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(Self.object("F", "Hi"), effectCount: 1, glyphMode: .bitmap)
         let key = try XCTUnwrap(pipeline.texts["D"]?.atlasKey)
         _ = pipeline.atlases[key]?.mono.takeDirty()
         let version = pipeline.atlases[key]?.mono.contentGeneration
-        XCTAssertTrue(pipeline.relayoutWithDelta(Self.object("D", "Hi")).changes.isEmpty)
+        XCTAssertTrue(try Self.relayout(pipeline, Self.object("D", "Hi")).changes.isEmpty)
         XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, version)
         XCTAssertFalse(try XCTUnwrap(pipeline.atlases[key]).mono.isDirty)
 
-        let direct = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("D", "Hello")).changes.first)
+        let direct = try XCTUnwrap(Self.relayout(pipeline, Self.object("D", "Hello")).changes.first)
         XCTAssertEqual(direct.previous.object.text, "Hi")
         XCTAssertEqual(direct.current.object.text, "Hello")
         XCTAssertFalse(direct.requiresFrameRebuild, "direct glyphs can be repacked in the existing draw")
         XCTAssertNotEqual(direct.current.layout.fboSize, direct.previous.layout.fboSize)
 
-        let composite = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("F", "Hello")).changes.first)
+        let composite = try XCTUnwrap(Self.relayout(pipeline, Self.object("F", "Hello")).changes.first)
         XCTAssertTrue(composite.requiresFrameRebuild, "the effect FBO must grow with its text")
         XCTAssertNotEqual(composite.current.layout.fboSize, composite.previous.layout.fboSize)
 
-        let empty = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("D", "")).changes.first)
+        let empty = try XCTUnwrap(Self.relayout(pipeline, Self.object("D", "")).changes.first)
         XCTAssertTrue(empty.requiresFrameRebuild, "the glyph draw goes away")
         XCTAssertNil(empty.current.layout.mesh)
 
-        let effects = try XCTUnwrap(pipeline.relayoutWithDelta(Self.object("F", "Hello"),
-                                                               effectCount: 0).changes.first)
+        let effects = try XCTUnwrap(Self.relayout(pipeline, Self.object("F", "Hello"), effectCount: 0).changes.first)
         XCTAssertTrue(effects.requiresFrameRebuild)
         XCTAssertEqual(effects.current.effectCount, 0)
         XCTAssertEqual(effects.current.padding, .zero)

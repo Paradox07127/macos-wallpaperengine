@@ -203,13 +203,14 @@ final class ParityGlyphAtlasTests: XCTestCase {
 
         let bgra = WPEParityGlyphBitmap(width: 1, rows: 1, pixelMode: .bgra, pixels: [1, 2, 3, 4])
         XCTAssertEqual(instance.insert(key: 1, bitmap: gray(2, 2))?.atlas, .mono)
-        XCTAssertNil(instance.color)
+        XCTAssertTrue(instance.colorGroups.isEmpty)
         XCTAssertEqual(instance.insert(key: 2, bitmap: bgra)?.atlas, .color)
-        XCTAssertEqual(instance.color.map { [$0.width, $0.height] }, [512, 512])
-        XCTAssertEqual(instance.color?.format, .rgba8)
-        XCTAssertEqual(instance.entry(forKey: 1)?.atlas, .mono)
-        XCTAssertEqual(instance.entry(forKey: 2)?.atlas, .color)
-        XCTAssertNil(instance.entry(forKey: 3))
+        XCTAssertEqual(Array(instance.colorGroups.keys), [1])
+        XCTAssertEqual(instance.colorGroups[1].map { [$0.width, $0.height] }, [512, 512])
+        XCTAssertEqual(instance.colorGroups[1]?.format, .rgba8)
+        XCTAssertNotNil(instance.mono.entry(forKey: 1))
+        XCTAssertNil(instance.mono.entry(forKey: 2))
+        XCTAssertNotNil(instance.colorGroups[1]?.entry(forKey: 2))
     }
 
     func testColorPairSharesPlacementGrowthReferencesAndReset() throws {

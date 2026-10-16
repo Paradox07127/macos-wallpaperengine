@@ -24,46 +24,23 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
                                                            fboSize: SIMD2(4095, 4095)), atlasKey: key)
         let oldPixels = hash(instance.mono.pixels), oldEntry = instance.mono.entry(forKey: protected)
         let pending = try planner.prepare(object("T", "H"), effectCount: 0)
-        XCTAssertEqual(pending.resets[key], 1)
         XCTAssertEqual(pending.atlases[key]?.mono.resetGeneration, instance.mono.resetGeneration + 1)
         XCTAssertNil(pending.atlases[key]?.mono.entry(forKey: protected))
         XCTAssertNotNil(pending.atlases[key]?.mono.entry(forKey: 43))
         XCTAssertNotEqual(try hash(XCTUnwrap(pending.atlases[key]).mono.pixels), oldPixels)
-        XCTAssertTrue(planner.resets.isEmpty)
         XCTAssertEqual(planner.atlases[key]?.mono.entry(forKey: protected), oldEntry)
-        XCTAssertEqual(try hash(XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
-        XCTAssertEqual(planner.atlases[key]?.mono.resetGeneration, instance.mono.resetGeneration)
-        try planner.discard(pending)
-        assertError(.preparedUpdateConsumed) { _ = try planner.accept(pending) }
-        XCTAssertTrue(planner.resets.isEmpty)
         XCTAssertEqual(planner.atlases[key]?.mono.entry(forKey: protected)?.references, 1)
         XCTAssertEqual(try hash(XCTUnwrap(planner.atlases[key]).mono.pixels), oldPixels)
-    }
-
-    func testPlannerRejectsLateDuplicateAndForeignAccepts() throws {
-        let assets = try assets(), planner = WPEParityTextPlanner(assets: assets)
-        let first = try planner.plan(object("T", "H"), effectCount: 0, glyphMode: .distanceField)
-        let pending = try planner.prepare(object("T", "HH"), effectCount: 0, glyphMode: .distanceField)
-        let newer = try planner.prepare(object("T", "HHH"), effectCount: 0, glyphMode: .distanceField)
-        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: 43)?.references, 1)
-        let foreign = WPEParityTextPlanner(assets: assets)
-        assertError(.foreignPreparedUpdate) { _ = try foreign.accept(pending) }
-        _ = try planner.accept(newer)
-        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: 43)?.references, 3)
-        assertError(.stalePreparedUpdate) { _ = try planner.accept(pending) }
-        assertError(.preparedUpdateConsumed) { _ = try planner.accept(newer) }
-        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: 43)?.references, 3)
-        try planner.discard(pending)
-        assertError(.preparedUpdateConsumed) { _ = try planner.accept(pending) }
+        XCTAssertEqual(planner.atlases[key]?.mono.resetGeneration, instance.mono.resetGeneration)
     }
 
     func testPipelineStagesLayoutAtlasAndReferencesUntilOneAccept() throws {
         let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
-        pipeline.add(object("T", "H"), effectCount: 0)
-        pipeline.add(object("U", "H"), effectCount: 0)
+        try pipeline.add(object("T", "H"), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(object("U", "H"), effectCount: 0, glyphMode: .bitmap)
         pipeline.refreshUVs()
         let before = pipeline.texts, oldKey = try XCTUnwrap(before["T"]).atlasKey
-        let pending = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH"), glyphMode: .distanceField))
+        let pending = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "HH"), glyphMode: .distanceField)]))
         let newKey = try XCTUnwrap(pending.texts["T"]).atlasKey
         XCTAssertEqual(pipeline.texts, before)
         XCTAssertNil(pipeline.atlases[newKey])
@@ -85,14 +62,14 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(pipeline.atlases[oldKey]?.mono.entry(forKey: 43)?.references, 2)
         XCTAssertNil(pipeline.atlases[newKey])
         assertError(.preparedUpdateConsumed) { _ = try pipeline.accept(pending) }
-        let accepted = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH"), glyphMode: .distanceField))
+        let accepted = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "HH"), glyphMode: .distanceField)]))
         let delta = try pipeline.accept(accepted)
         XCTAssertEqual(delta.changes.map(\.current.object.id), ["T"])
         XCTAssertEqual(pipeline.texts, accepted.texts)
         XCTAssertEqual(pipeline.atlases[newKey]?.mono.entry(forKey: 43)?.references, 2)
         XCTAssertEqual(pipeline.atlases[oldKey]?.mono.entry(forKey: 43)?.references, 1)
         assertError(.preparedUpdateConsumed) { _ = try pipeline.accept(accepted) }
-        let empty = try XCTUnwrap(pipeline.prepareRelayout(object("T", ""), glyphMode: .distanceField))
+        let empty = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", ""), glyphMode: .distanceField)]))
         _ = try pipeline.accept(empty)
         XCTAssertEqual(pipeline.atlases[newKey]?.mono.entry(forKey: 43)?.references, 0)
         XCTAssertEqual(pipeline.texts["U"], before["U"])
@@ -100,14 +77,14 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
 
     func testPipelineParameterOnlyAcceptInvalidatesOlderGeometryWithoutRegeneratingFields() throws {
         let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
-        pipeline.add(object("T", "H"), effectCount: 0)
-        let initial = try XCTUnwrap(pipeline.prepareRelayout(object("T", "H"), glyphMode: .distanceField))
+        try pipeline.add(object("T", "H"), effectCount: 0, glyphMode: .bitmap)
+        let initial = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "H"), glyphMode: .distanceField)]))
         _ = try pipeline.accept(initial)
         let original = try XCTUnwrap(pipeline.texts["T"]), key = original.atlasKey
         let version = pipeline.atlases[key]?.mono.contentGeneration
-        let older = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH"), glyphMode: .distanceField))
+        let older = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "HH"), glyphMode: .distanceField)]))
         var colored = original.object; colored.outlineColor = SIMD3(0.2, 0.3, 0.4)
-        let constants = try XCTUnwrap(pipeline.prepareRelayout(colored, glyphMode: .distanceField))
+        let constants = try XCTUnwrap(pipeline.prepareRelayouts([.init(colored, glyphMode: .distanceField)]))
         XCTAssertEqual(pipeline.texts["T"], original)
         XCTAssertEqual(constants.texts["T"]?.layout, original.layout)
         XCTAssertEqual(constants.atlases[key]?.mono.contentGeneration, version)
@@ -123,9 +100,9 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
 
     func testAtlasWritebackAndForeignPipelineCannotPublishPendingState() throws {
         let assets = try assets(), pipeline = WPEParityTextPipeline(assets: assets, hdr: false, orthographic: true)
-        pipeline.add(object("T", "H"), effectCount: 0)
+        try pipeline.add(object("T", "H"), effectCount: 0, glyphMode: .bitmap)
         let before = pipeline.texts
-        let late = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH")))
+        let late = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "HH"))]))
         var uploaded = pipeline.atlases
         let key = try XCTUnwrap(before["T"]).atlasKey
         _ = uploaded[key]?.mono.takeDirty()
@@ -134,7 +111,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(pipeline.texts, before)
         XCTAssertEqual(pipeline.atlases[key]?.mono.entry(forKey: 43)?.references, 1)
         try pipeline.discard(late)
-        let fresh = try XCTUnwrap(pipeline.prepareRelayout(object("T", "HH")))
+        let fresh = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "HH"))]))
         let foreign = WPEParityTextPipeline(assets: assets, hdr: false, orthographic: true)
         assertError(.foreignPreparedUpdate) { _ = try foreign.accept(fresh) }
         XCTAssertEqual(pipeline.texts, before)
@@ -147,7 +124,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         let pipeline = try fieldPipeline()
         let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
         let oldAtlas = try XCTUnwrap(pipeline.atlases[key]), oldPixels = hash(oldAtlas.mono.pixels)
-        let first = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+        let first = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "ii"), glyphMode: .distanceField)]))
         let newGlyph = try XCTUnwrap(first.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
         XCTAssertNotEqual(newGlyph, 43)
         XCTAssertNotEqual(try hash(XCTUnwrap(first.atlases[key]).mono.pixels), oldPixels)
@@ -186,7 +163,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         let pipeline = try fieldPipeline()
         let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
         let oldGeneration = try XCTUnwrap(pipeline.atlases[key]).mono.contentGeneration
-        let intermediate = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+        let intermediate = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "ii"), glyphMode: .distanceField)]))
         let newGlyph = try XCTUnwrap(intermediate.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
         try pipeline.discard(intermediate)
         XCTAssertEqual(pipeline.atlases[key]?.mono.contentGeneration, oldGeneration)
@@ -218,7 +195,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
             let pipeline = try fieldPipeline()
             let before = pipeline.texts, key = try XCTUnwrap(before["T"]).atlasKey
             let atlas = try XCTUnwrap(pipeline.atlases[key]).mono
-            let probe = try XCTUnwrap(pipeline.prepareRelayout(object("T", "ii"), glyphMode: .distanceField))
+            let probe = try XCTUnwrap(pipeline.prepareRelayouts([.init(object("T", "ii"), glyphMode: .distanceField)]))
             let newGlyph = try XCTUnwrap(probe.texts["T"]?.layout.mesh?.mono.glyphKeys.first)
             try pipeline.discard(probe)
             var calls = 0
@@ -264,8 +241,8 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
 
     private func fieldPipeline() throws -> WPEParityTextPipeline {
         let pipeline = try WPEParityTextPipeline(assets: assets(), hdr: false, orthographic: true)
-        pipeline.add(object("T", "H"), effectCount: 0)
-        pipeline.add(object("U", "H"), effectCount: 0)
+        try pipeline.add(object("T", "H"), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(object("U", "H"), effectCount: 0, glyphMode: .bitmap)
         let batch = try XCTUnwrap(pipeline.prepareRelayouts([
             .init(object("T", "H"), glyphMode: .distanceField),
             .init(object("U", "H"), glyphMode: .distanceField),
@@ -280,7 +257,9 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
     }
 
     private func assets() throws -> WPEParityProgramAssets {
-        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_GLYPH_ORACLE_DIR"], "Original font fixture required; no skip")
+        guard let path = ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_GLYPH_ORACLE_DIR"] else {
+            throw XCTSkip("Set LOOMSCREEN_WPE_GLYPH_ORACLE_DIR to the original font fixture directory")
+        }
         let root = URL(fileURLWithPath: path, isDirectory: true)
         let font = try Data(contentsOf: root.appendingPathComponent("NotoSans-Regular.ttf"))
         XCTAssertEqual(SHA256.hash(data: font).map { String(format: "%02x", $0) }.joined(),

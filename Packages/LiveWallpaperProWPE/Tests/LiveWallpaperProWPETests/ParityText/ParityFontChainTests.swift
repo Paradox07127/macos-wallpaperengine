@@ -132,6 +132,6 @@ final class ParityFontChainTests: XCTestCase {
         XCTAssertEqual(mesh.color.glyphKeys, [1])
         XCTAssertEqual(mesh.color.vertices.map { SIMD2($0.x, $0.y) },
                        [SIMD2(-1, 2), SIMD2(1, 2), SIMD2(-1, -1), SIMD2(1, -1)])
-        XCTAssertEqual(planner.atlases[planned.atlasKey]?.color?.entry(forKey: 1)?.references, 1)
+        XCTAssertEqual(planner.atlases[planned.atlasKey]?.colorGroups[1]?.entry(forKey: 1)?.references, 1)
     }
 }

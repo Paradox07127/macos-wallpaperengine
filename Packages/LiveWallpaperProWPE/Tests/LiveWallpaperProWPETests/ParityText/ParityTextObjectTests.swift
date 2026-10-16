@@ -155,6 +155,23 @@ final class ParityTextObjectTests: XCTestCase {
         XCTAssertEqual(text.layoutInput(effectCount: 0).pointSize, 300)
     }
 
+    func testNonfiniteJSONNumbersKeepThePreviousValue() throws {
+        let text = try object(["text": "a", "pointsize": 1e39, "maxwidth": -1e300, "padding": "nan 5",
+                               "spacing": "1e39 1", "outlinecolor": "inf 0 0"])
+        XCTAssertEqual(text.pointSize, 32)
+        XCTAssertEqual(text.maxWidth, 500)
+        XCTAssertEqual(text.padding, SIMD2(32, 32))
+        XCTAssertEqual(text.spacing, .zero)
+        XCTAssertEqual(text.outlineColor, .zero)
+    }
+
+    func testHugeFinitePaddingKeepsTheFBOSizeFinite() {
+        let mesh = WPEParityTextMesh(minX: 0, bottom: -10, maxX: 20, top: 10, lineHeight: 20, lineCount: 1, pointSize: 32)
+        var input = WPEParityTextObject(json: .object(["text": .string("a")])).layoutInput(effectCount: 1)
+        input.padding = SIMD2(-1e30, 1e30)
+        XCTAssertEqual(WPEParityTextLayoutEngine.fboSize(mesh, input: input), SIMD2(-1004, 1044))
+    }
+
     func testFontSizeAndLetterSpacingAreNotRead() throws {
         let text = try object(["text": "a", "fontsize": 64, "letterspacing": 5])
         XCTAssertEqual(text.pointSize, 32)

@@ -35,8 +35,8 @@ enum WPEParityScriptLayers {
       }
       return wrapper;
     }
-    // The material callback compares ASCII paths without slash/dot normalization. Locale/NUL behavior
-    // is not covered by H09; do not replace it with Unicode case conversion or object coercion.
+    // The material callback compares ASCII paths without slash/dot normalization; do not replace it with
+    // Unicode case conversion or object coercion.
     function materialPathSupported(path) {
       if (typeof path !== 'string') return false;
       for (let i = 0; i < path.length; i++) {
@@ -75,7 +75,7 @@ enum WPEParityScriptLayers {
             host.log(1, 'getMaterial is unsupported for an unverified argument type');
             return null;
           }
-          // H09b/c and the binder's default 0x200 slot: non-int32 inputs select the empty-path
+          // The binder's default 0x200 slot: non-int32 inputs select the empty-path
           // default, including missing/null/bool/nonintegral/nonfinite/object inputs. Never String(key).
           const path = a && a.type === 0x200 ? a.value : '';
           if (!materialPathSupported(path)) {
@@ -227,8 +227,7 @@ enum WPEParityScriptLayers {
         // The original bounded probe excludes pending name hits immediately. Number/wrapper pending
         // resolution is a separate branch; do not infer its admission from this observation.
         if (named) return pending.has(named) ? null : named;
-        // Canonical nonnegative decimal IDs are verified. The native C-runtime parser's signed,
-        // whitespace, partial and overflow cases need evidence; never substitute general JS coercion.
+        // Only canonical nonnegative decimal IDs are supported; never substitute general JS coercion.
         if (!/^(0|[1-9][0-9]*)$/.test(key) || key.length > 10
             || (key.length === 10 && key > '4294967295')) {
           host.log(1, 'scene layer ID parsing is unsupported outside verified canonical decimal IDs');

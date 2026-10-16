@@ -92,21 +92,24 @@ final class ParitySoundConsumerTests: XCTestCase {
         try engine.withSoundConsumers(volume: { writes.append(("outer", $0, $1)) }, command: { id, command, fields in
             commands.append((id, command, fields))
             return id == "1" && command == .isPlaying
-        }) {
+        }, body: {
             XCTAssertNil(engine.start(state: &state))
             soundGeneration = state.generation(.soundGain)
-            XCTAssertThrowsError(try engine.withSoundConsumers(volume: { writes.append(("inner", $0, $1)) },
-                                                               command: { _, _, _ in false }) {
-                    engine.dispatch(.animationEvent, payloadJSON: "{}", state: &state)
-                    throw ScopeExit.forced
-                })
+            let inner = {
+                try engine.withSoundConsumers(volume: { writes.append(("inner", $0, $1)) },
+                                              command: { _, _, _ in false }, body: {
+                                                  engine.dispatch(.animationEvent, payloadJSON: "{}", state: &state)
+                                                  throw ScopeExit.forced
+                                              })
+            }
+            XCTAssertThrowsError(try inner())
             engine.tick(dt: 0, state: &state)
-        }
+        })
         // Leaving a scope must not retain its consumer or replay an equal return at a later flush.
         engine.dispatch(.animationEvent, payloadJSON: "{}", state: &state)
-        engine.withSoundConsumers(volume: { writes.append(("final", $0, $1)) }, command: { _, _, _ in false }) {
+        engine.withSoundConsumers(volume: { writes.append(("final", $0, $1)) }, command: { _, _, _ in false }, body: {
             engine.dispatch(.animationEvent, payloadJSON: "{}", state: &state)
-        }
+        })
         XCTAssertEqual(writes.map(\.0), ["outer", "outer", "outer", "inner", "outer", "final"])
         XCTAssertEqual(writes.map(\.1), [String](repeating: "1", count: 6))
         XCTAssertEqual(writes.map(\.2.volume.bitPattern), [UInt32](repeating: Float(0.3).bitPattern, count: 6))

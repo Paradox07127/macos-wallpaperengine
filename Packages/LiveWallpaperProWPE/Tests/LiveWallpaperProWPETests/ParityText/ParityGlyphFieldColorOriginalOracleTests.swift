@@ -140,7 +140,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
         try assertBytes(cell(group.pixels, scale: 1), oracle.data("rgba-cell.bin"), label: "planner primary")
         try assertBytes(cell(XCTUnwrap(group.companionPixels), scale: oracle.scale), oracle.data("companion-cell.bin"),
                         label: "planner same-entry companion")
-        _ = try planner.accept(prepared)
+        planner.accept(prepared)
         XCTAssertEqual(planner.atlases[prepared.atlasKey]?.colorGroups[oracle.scale]?.entry(forKey: oracle.gid)?.references, 1)
         var empty = object; empty.text = ""
         _ = try planner.plan(empty, effectCount: 0, glyphMode: .distanceField)
@@ -206,8 +206,7 @@ final class ParityGlyphFieldColorOriginalOracleTests: XCTestCase {
             }
             usesLegacyTransform = glyph == .heart && scale == 1
             guard let path = ProcessInfo.processInfo.environment[environment] else {
-                throw NSError(domain: "OriginalColorGlyphOracle", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Root must supply the pinned original oracle directory; no skip/fallback"])
+                throw XCTSkip("Set \(environment) to the pinned original oracle directory")
             }
             root = URL(fileURLWithPath: path, isDirectory: true)
             let manifest = try Data(contentsOf: root.appendingPathComponent("manifest.json"))

@@ -52,6 +52,7 @@ enum WPEParityScriptPrelude {
       if (type === 4) {
         if (typeof v !== 'number') return;
         const n = Math.fround(Math.fround(v) * (angle ? TO_RADIANS : 1));
+        if (!Number.isFinite(n)) return;
         const changed = !Object.is(F[o], n);
         F[o] = n;
         if (changed) mark(s);
@@ -67,6 +68,7 @@ enum WPEParityScriptPrelude {
         if (values.some(n => typeof n !== 'number')) return;
         const k = type === 2 && angle && !scalar ? TO_RADIANS : 1;
         for (let lane = 0; lane < count; lane++) values[lane] = Math.fround(Math.fround(values[lane]) * k);
+        if (!values.every(n => Number.isFinite(n))) return;
         let changed = false;
         for (let lane = 0; lane < count; lane++) if (!Object.is(F[o + lane], values[lane])) changed = true;
         if (changed) { for (let lane = 0; lane < count; lane++) F[o + lane] = values[lane]; mark(s); }

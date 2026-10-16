@@ -1,7 +1,7 @@
 import Foundation
 import JavaScriptCore
 
-/// One scene's SceneScript engine (R25 §1): a JSContext with WPE's baseclasses.js, every property script of the
+/// One scene's SceneScript engine: a JSContext with WPE's baseclasses.js, every property script of the
 /// scene compiled as a module in binding order, and the host objects. Confined to its owner's thread.
 public final class WPEParityScriptEngine {
     public enum Failure: Error, Equatable {
@@ -171,7 +171,7 @@ public final class WPEParityScriptEngine {
 
     public struct RegisteredAsset: Equatable, Sendable {
         public let path: String
-        /// Strict native boolean byte. Its downstream meaning remains a separately verified loader contract.
+        /// Strict native boolean byte.
         public let flag: Bool
     }
 
@@ -182,8 +182,10 @@ public final class WPEParityScriptEngine {
         public let path: String
         /// WPE's compile name, "class_property".
         public let name: String
-        public let compiled: Bool
         public let exportBits: Int
+        public var compiled: Bool {
+            script >= 0
+        }
 
         public var assetContext: AssetContext {
             AssetContext(bindingIndex: bindingIndex, objectID: objectID, propertyPath: path,
@@ -234,8 +236,6 @@ public final class WPEParityScriptEngine {
 
     public private(set) var bindings: [Binding] = []
     public private(set) var frame: UInt64 = 0
-    public private(set) var frametime: Float = 0
-    public private(set) var runtime: Float = 0
     public private(set) var exceptionCount = 0
     /// The first 32 exception messages.
     public private(set) var exceptions: [String] = []
@@ -360,7 +360,7 @@ public final class WPEParityScriptEngine {
     }
 
     /// The `left`, `right` and `average` bins registerAudioBuffers(resolution) hands out, contiguous; nil for any
-    /// resolution but 16, 32 and 64 (R25 §4).
+    /// resolution but 16, 32 and 64.
     public func audioBuffer(resolution: Int) -> UnsafeMutableBufferPointer<Float>? {
         let start: Int
         switch resolution {
@@ -428,8 +428,6 @@ public final class WPEParityScriptEngine {
     /// The following tick consumes these values; its fallback dt/input apply only when no frame was prepared.
     public func prepareFrame(frame: UInt64, dt: Float, runtime: Float, input: Input) {
         self.frame = frame
-        frametime = dt
-        self.runtime = runtime
         clock = runtime
         globals[0] = dt
         globals[1] = runtime
@@ -494,7 +492,7 @@ public final class WPEParityScriptEngine {
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         run(state: &state) {
             host.invokeMethod("setUserProperties", withArguments: [mergedJSON])
-            for binding in bindings where binding.script >= 0 {
+            for binding in bindings where binding.compiled {
                 var vars: [String: Any] = [:]
                 for (key, names) in binding.userKeys {
                     guard let value = (changed[key] as? [String: Any])?["value"] else { continue }
@@ -730,18 +728,13 @@ public final class WPEParityScriptEngine {
         registered(WPEParityScriptProperty.scene)
     }
 
-    private static func kind(of id: String, object: WPESceneJSONValue,
-                             document: WPESceneDocument) -> WPEParityScriptLayerKind {
-        WPEParityScriptLayerKind.classify(id: id, object: object, document: document)
-    }
-
     private var initialValues: [(slot: Int, value: WPEParitySceneState.ScriptValue)] = []
 
     private func layout(document: WPESceneDocument, state: WPEParitySceneState) {
         for object in document.resolvedObjectsJSON {
             guard let id = WPEParitySceneAnimations.id(object) else { continue }
-            addLayer(id: id, kind: Self.kind(of: id, object: object, document: document), config: object, state: state,
-                     document: document)
+            addLayer(id: id, kind: WPEParityScriptLayerKind.classify(id: id, object: object, document: document),
+                     config: object, state: state, document: document)
         }
         sceneBase = slots.count
         for descriptor in sceneFields {
@@ -1389,7 +1382,7 @@ public final class WPEParityScriptEngine {
         let bindingIndex = bindings.count
         let assetContext = AssetContext(bindingIndex: bindingIndex, objectID: layerIndex < 0 ? "" : layers[layerIndex].id,
                                         propertyPath: path, modulePath: "scripts/\(name).js", registeredAssets: [], assetsPrepared: true)
-        bindings.append(Binding(objectID: assetContext.objectID, path: path, name: name, compiled: false,
+        bindings.append(Binding(objectID: assetContext.objectID, path: path, name: name,
                                 exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
         let function = context.evaluateScript(WPEParityScriptModule.lower(script),
@@ -1403,11 +1396,11 @@ public final class WPEParityScriptEngine {
                 layerIndex >= 0 && layers[layerIndex].kind == .sound && descriptor.owner == .sound,
             ]).toInt32())
             if bits >= 0 {
-                handle = bindings.filter { $0.script >= 0 }.count
+                handle = bindings.filter(\.compiled).count
             }
         }
         let registered = bindings[bindingIndex]
-        bindings[bindingIndex] = Binding(objectID: assetContext.objectID, path: path, name: name, compiled: handle >= 0,
+        bindings[bindingIndex] = Binding(objectID: assetContext.objectID, path: path, name: name,
                                          exportBits: max(bits, 0), bindingIndex: bindingIndex,
                                          registeredAssets: registered.registeredAssets, assetsPrepared: registered.assetsPrepared,
                                          script: handle, userKeys: userKeys)

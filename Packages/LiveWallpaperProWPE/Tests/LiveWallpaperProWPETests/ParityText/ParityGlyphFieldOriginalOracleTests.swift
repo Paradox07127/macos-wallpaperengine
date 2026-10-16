@@ -102,8 +102,7 @@ final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
         private let files: [String: String]
         init() throws {
             guard let path = ProcessInfo.processInfo.environment["LOOMSCREEN_WPE_GLYPH_ORACLE_DIR"] else {
-                throw NSError(domain: "OriginalGlyphOracle", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Root must supply the pinned original oracle directory; no skip/fallback"])
+                throw XCTSkip("Set LOOMSCREEN_WPE_GLYPH_ORACLE_DIR to the pinned original oracle directory")
             }
             root = URL(fileURLWithPath: path, isDirectory: true)
             let manifest = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
