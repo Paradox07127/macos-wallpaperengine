@@ -137,7 +137,7 @@ public struct WPEParitySceneState: Sendable {
     /// Common-scene membership changes require composition again, independently of visibility.
     public private(set) var membershipGeneration = 0
     /// Every image layer effect in scene order, then every text layer effect.
-    public let effects: [EffectKey]
+    public private(set) var effects: [EffectKey]
     /// The visible bit of each entry of `effects` (effect+0x118 bit0).
     public private(set) var effectVisibility: [Bool]
     /// Bumped by every effect visible change.
@@ -153,7 +153,7 @@ public struct WPEParitySceneState: Sendable {
     private var parents: [Int?]
     private var passes: [Pass]
     private var passIndexByKey: [WPEParityMaterialPassKey: Int]
-    private let effectIndexByKey: [EffectKey: Int]
+    private var effectIndexByKey: [EffectKey: Int]
     var modelDataValues: [UInt32: WPEParitySceneModelData] = [:]
     var lastModelDataToken: UInt32 = 0
     var modelDataRevision = 0
@@ -164,7 +164,9 @@ public struct WPEParitySceneState: Sendable {
 
     /// Appends a script-created image layer that copies `templateID`'s live fields before `configure`.
     /// 1401a38f0.c:21-41 keeps an explicit id; otherwise :44-102 advances the counter past reserved ids.
+    /// `loaded`: the load-time state whose template effects and pass constants the clone starts from; nil adopts none.
     public mutating func appendImageLayer(cloning templateID: String, id explicitID: UInt64?,
+                                          adopting loaded: WPEParitySceneState? = nil,
                                           configure: (inout Object) -> Void) throws -> UInt64 {
         guard let template = indexByID[templateID], objects[template].templateID == nil,
               objects[template].modelDataToken == nil else {
@@ -192,6 +194,21 @@ public struct WPEParitySceneState: Sendable {
         objects.append(object)
         parents.append(nil)
         commonOrder.append(id)
+        if let loaded {
+            // Append only: `effects` order is the load order every effect-visibility consumer indexes by.
+            for (index, key) in loaded.effects.enumerated() where key.objectID == templateID {
+                let clone = EffectKey(objectID: id, effectID: key.effectID)
+                effectIndexByKey[clone] = effects.count
+                effects.append(clone)
+                effectVisibility.append(loaded.effectVisibility[index])
+            }
+            let templatePasses = loaded.passIndexByKey.filter { $0.key.objectID == templateID }
+                .sorted { ($0.key.effectID ?? "", $0.key.pass) < ($1.key.effectID ?? "", $1.key.pass) }
+            for (key, index) in templatePasses {
+                passIndexByKey[.init(objectID: id, effectID: key.effectID, pass: key.pass)] = passes.count
+                passes.append(Pass(constants: loaded.passes[index].constants))
+            }
+        }
         membershipGeneration += 1
         transformGeneration += 1
         visibilityGeneration += 1

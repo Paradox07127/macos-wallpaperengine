@@ -331,6 +331,13 @@ struct WPEParityFramePlan {
                   var object = loadedObjects.first(where: { $0.id == templateID }) else { continue }
             object.id = id
             object.visible = state.isVisible(id)
+            // A clone draws only the effects its State adopted (1401e7170 per config entry).
+            object.effects = object.effects.compactMap { effect in
+                var effect = effect
+                guard let enabled = visible[.init(objectID: id, effectID: effect.id)] else { return nil }
+                effect.enabled = enabled
+                return effect
+            }
             description.objects.append(object)
             templates[id] = templateID
         }

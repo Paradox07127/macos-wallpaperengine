@@ -368,6 +368,96 @@ extension WPEParitySceneDriverTests {
                       "Destroying the clone retired the template's texture")
     }
 
+    @objc func testCreatedCloneOfEffectTemplateDrawsItsOwnEffectPass() async throws {
+        let source = """
+        let frame = 0;
+        let clone;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            clone = thisScene.createLayer(thisScene.getInitialLayerConfig(thisScene.getLayer('template')));
+            if (!clone) throw Error('effect clone admission');
+            clone.origin = new Vec3(136, 48, 0);
+          } else if (frame === 3) {
+            clone.getEffect(0).visible = false;
+          } else if (frame === 4) {
+            thisScene.destroyLayer(clone);
+          }
+          return value;
+        }
+        """
+        let (_, original) = try sceneInputs()
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "combos": ["VERSION": 2],
+                                                   "textures": ["clone-template"],
+                                                   "blending": "normal", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        var files = try [
+            "models/clone-template.json": JSONSerialization.data(withJSONObject: ["material": "materials/clone-template.json"]),
+            "materials/clone-template.json": JSONSerialization.data(withJSONObject: material),
+            "materials/clone-template.tex": XCTUnwrap(original.data("materials/util/white.tex")),
+        ]
+        // The install keeps the tint material and shaders under effects/tint/.
+        let tintAssets = try WPEParityProgramAssets(sources: [.directory(XCTUnwrap(original.roots.last).appending(path: "effects/tint"))])
+        for path in ["materials/effects/tint.json", "shaders/effects/tint.frag", "shaders/effects/tint.vert"] {
+            files[path] = try XCTUnwrap(tintAssets.data(path), path)
+        }
+        // BLENDMODE 30 with alpha 1 gives max(c) · red, so the green template draws red.
+        let tint: [String: Any] = ["id": 21, "file": "effects/tint/effect.json", "visible": true,
+                                   "passes": [["constantshadervalues": ["color": "1 0 0", "alpha": 1]]]]
+        let template: [String: Any] = ["id": 20, "name": "template", "image": "models/clone-template.json",
+                                       "origin": "80 48 0", "size": "12 12", "color": "0 1 0", "alpha": 1,
+                                       "effects": [tint]]
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source), template]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects, files: files)
+        defer { driver.cleanup() }
+        func rgb(_ pixels: [UInt8], x: Int) -> [Int] {
+            (0 ..< 3).map { Int(pixels[(48 * 160 + x) * 4 + $0]) }
+        }
+        func owned(_ id: String) throws -> [WPEParityDraw] {
+            let renderer = try XCTUnwrap(driver.renderer)
+            return renderer.lastFrameDraws.filter { item in
+                renderer.frames.contains { $0.owners[item.operation] == id }
+            }.map(\.draw)
+        }
+        func effectDraws(_ id: String) throws -> [WPEParityDraw] {
+            let renderer = try XCTUnwrap(driver.renderer)
+            let frame = try XCTUnwrap(renderer.frames.first)
+            return renderer.lastFrameDraws.filter { entry in
+                guard case let .scene(draw)? = frame.draws[entry.operation] else { return false }
+                return draw.objectID == id && draw.effectID == "21"
+            }.map(\.draw)
+        }
+        func createdID() throws -> String? {
+            try XCTUnwrap(driver.renderer).state.commonOrder.first { !["101", "20"].contains($0) }
+        }
+        func assertRed(_ pixel: [Int], _ label: String, line: UInt = #line) {
+            XCTAssertTrue(pixel[0] >= 200 && pixel[1] <= 8, "\(label) pixel \(pixel) is not red", line: line)
+        }
+        var pixels = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        assertRed(rgb(pixels, x: 80), "template")
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        let id = try XCTUnwrap(createdID(), "createLayer must admit a clone of a template with effects")
+        XCTAssertEqual(try effectDraws(id).count, 1, "The clone must draw its own effect pass")
+        XCTAssertEqual(try effectDraws("20").count, 1)
+        XCTAssertEqual(try owned(id).count, try owned("20").count)
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: rgb(pixels, x: 80))
+        assertRed(rgb(pixels, x: 136), "clone")
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "hide clone effect frame")
+        XCTAssertTrue(try effectDraws(id).isEmpty, "Hiding the clone's effect must drop only the clone's pass")
+        XCTAssertEqual(try effectDraws("20").count, 1)
+        // white.tex mips past 0 hold 0xfc, so the untinted green clone is about (0, 248, 0).
+        let clone = rgb(pixels, x: 136)
+        XCTAssertTrue(clone[0] <= 4 && clone[2] <= 4 && abs(clone[1] - 248) <= 8, "clone pixel \(clone) is not green")
+        assertRed(rgb(pixels, x: 80), "template")
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "destroy frame")
+        XCTAssertTrue(try owned(id).isEmpty, "The destroyed clone must leave the frame")
+        XCTAssertEqual(try effectDraws("20").count, 1, "Destroying the clone must keep the template's effect pass")
+        assertRed(rgb(pixels, x: 80), "template")
+    }
+
     @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
         // The ordinary helper below must use these actual bundled inputs; no environment fallback is admitted.
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",

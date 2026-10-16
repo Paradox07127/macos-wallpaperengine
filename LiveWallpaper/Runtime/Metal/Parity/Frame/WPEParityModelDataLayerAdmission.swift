@@ -43,7 +43,7 @@ enum WPEParityModelDataLayerAdmission {
     static func create(plan: WPEParityFramePlan, removable: @escaping (String, UInt32?) -> Bool)
         -> (String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
         let templates = plan.document.imageObjects.filter { image in
-            plan.scene.scene.objects.contains { $0.id == image.id && $0.kind == .image } && image.effects.isEmpty
+            plan.scene.scene.objects.contains { $0.id == image.id && $0.kind == .image }
                 && image.parentObjectID == nil && removable(image.id, nil)
         }
         return { json, state in
@@ -57,15 +57,33 @@ enum WPEParityModelDataLayerAdmission {
                 Logger.warning("Image layer admission: no loaded template qualifies for \(path)", category: .wpeRender)
                 return nil
             }
-            return Self.cloneImage(object, template: template.id, state: &state)
+            // 1401e7170.c:161, 441-464 rebuild each entry's descriptors and pass materials; only the template's
+            // loaded effects have prepared materials here.
+            let effects = (object["effects"] as? [Any]).flatMap { $0.isEmpty ? nil : WPESceneJSONValue(jsonValue: $0) }
+            if let effects {
+                let loaded = plan.document.resolvedObjectsJSON.first { entry in
+                    switch entry["id"] {
+                    case let .number(number)?: String(Int(number)) == template.id
+                    case let .string(id)?: id == template.id
+                    default: false
+                    }
+                }
+                guard loaded?["effects"] == effects else {
+                    Logger.warning("Image layer admission: effects differ from template \(template.id)", category: .wpeRender)
+                    return nil
+                }
+            }
+            return Self.cloneImage(object, template: template.id, adopting: effects == nil ? nil : plan.state,
+                                   state: &state)
         }
     }
 
     /// 14018ba00 parses the config before its factory; the clone starts from the template's live fields.
-    private static func cloneImage(_ config: [String: Any], template: String,
+    /// `loaded` holds the load-time effect visibility and constants a clone with effects starts from.
+    private static func cloneImage(_ config: [String: Any], template: String, adopting loaded: WPEParitySceneState?,
                                    state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
         let unsupported = ["parent", "video", "model", "text", "particle", "sound"].filter { config[$0] != nil }
-            + ["effects", "dependencies"].filter { (config[$0] as? [Any])?.isEmpty == false }
+            + ["dependencies"].filter { (config[$0] as? [Any])?.isEmpty == false }
         guard unsupported.isEmpty else {
             Logger.warning("Image layer admission: unsupported \(unsupported)", category: .wpeRender)
             return nil
@@ -79,7 +97,7 @@ enum WPEParityModelDataLayerAdmission {
             return (raw as? [String: Any]).map { $0["value"] } ?? raw
         }
         do {
-            let number = try state.appendImageLayer(cloning: template, id: explicitID) { object in
+            let number = try state.appendImageLayer(cloning: template, id: explicitID, adopting: loaded) { object in
                 if let origin = WPEValueParser.vector3(config["origin"]) {
                     object.origin = SIMD3(origin)
                 }

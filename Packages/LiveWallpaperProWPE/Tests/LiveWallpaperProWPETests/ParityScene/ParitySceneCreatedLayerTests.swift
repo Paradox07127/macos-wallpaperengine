@@ -37,6 +37,35 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
                        "An explicit created id is reserved like a loaded one")
         XCTAssertThrowsError(try state.appendImageLayer(cloning: "missing", id: nil) { _ in })
     }
+
+    func testCloneAdoptsLoadedEffectStateIndependently() throws {
+        let effect: [String: Any] = ["id": 5, "file": "effects/tint/effect.json", "visible": false,
+                                     "passes": [["constantshadervalues": ["k": 0.25]]]]
+        let source: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [["id": 1, "image": "models/a.json", "origin": "8 8 0", "effects": [effect]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in CreatedLayerNoScripts() })
+        let templatePass = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
+        let loaded = WPEParitySceneState(document: document, hdr: false, constants: [templatePass: ["k": [0.25]]])
+        var state = loaded
+        XCTAssertTrue(state.setConstant("k", of: templatePass, to: .init(value: SIMD4(0.75, 0, 0, 0), count: 1)))
+
+        let clone = try String(state.appendImageLayer(cloning: "1", id: 9, adopting: loaded) { _ in })
+        let clonePass = WPEParityMaterialPassKey(objectID: clone, effectID: "5", pass: 0)
+        XCTAssertEqual(state.isEffectVisible("5", of: clone), false, "The clone starts from the loaded visibility")
+        XCTAssertEqual(state.constant("k", of: clonePass)?.value.x, 0.25, "The clone starts from the loaded constants")
+        XCTAssertTrue(state.setEffect("5", of: clone, visible: true))
+        XCTAssertEqual(state.isEffectVisible("5", of: clone), true)
+        XCTAssertEqual(state.isEffectVisible("5", of: "1"), false, "A clone write must not reach its template")
+        XCTAssertEqual(state.constant("k", of: templatePass)?.value.x, 0.75)
+
+        let clone2 = try String(state.appendImageLayer(cloning: "1", id: 10) { _ in })
+        XCTAssertNil(state.isEffectVisible("5", of: clone2))
+        XCTAssertNil(state.passIndex(of: .init(objectID: clone2, effectID: "5", pass: 0)))
+    }
 }
 
 private struct CreatedLayerNoScripts: WPESceneTransformScriptResolving {
