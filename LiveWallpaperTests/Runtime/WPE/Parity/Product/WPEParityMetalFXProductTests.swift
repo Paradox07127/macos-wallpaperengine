@@ -439,12 +439,15 @@ extension WPEParitySceneDriverTests {
     @objc func testMetalFXReplanKeepsADeclineObservedWhileBuilding() async throws {
         let device = try requiredMetalFXDevice()
         let (baseAssets, compiler) = try requiredMetalFXInputs()
-        let (document, assets) = try metalFXDocument(baseAssets: baseAssets)
+        let (document, assets) = try metalFXDocument(baseAssets: baseAssets, missingAlbedo: true)
         let gate = MetalFXOneLookupGate()
-        // The first armed lookup is after replan selected its candidate, inside @concurrent makePlan.
+        // @concurrent makePlan re-reads the autosize layer's albedo for each candidate, after replan selected it;
+        // every other asset read of a re-plan is memoized on the shared assets.
         let guardedAssets = try WPEParityProgramAssets(sources: [
             .lookup(XCTUnwrap(assets.roots.first)) { path in
-                gate.blockOnceIfArmed()
+                if path == "materials/metalfx-missing-albedo.tex" {
+                    gate.blockOnceIfArmed()
+                }
                 return assets.data(path)
             },
         ])
@@ -591,7 +594,8 @@ extension WPEParitySceneDriverTests {
     }
 
     private func metalFXDocument(baseAssets: WPEParityProgramAssets, hdr: Bool = false, bloom: Bool = false,
-                                 targets: Bool = false, clippedPuppet: Bool = false, text: Bool = false)
+                                 targets: Bool = false, clippedPuppet: Bool = false, text: Bool = false,
+                                 missingAlbedo: Bool = false)
         throws -> (WPESceneDocument, WPEParityProgramAssets) {
         let wpeRoot = try XCTUnwrap(baseAssets.roots.last)
         var sources: [WPEParityProgramAssets.Source] = [.directory(scratch)] + baseAssets.sources
@@ -658,6 +662,16 @@ extension WPEParitySceneDriverTests {
                             "pointsize": 8, "padding": "8 8", "origin": "256 192 0", "color": "1 1 1",
                             "effects": [["id": 9, "file": "effects/tint/effect.json", "visible": true,
                                          "passes": [["constantshadervalues": ["color": "1 1 1", "alpha": 1]]]]]])
+        }
+        if missingAlbedo {
+            // Autosize layers size from their albedo file (missing: the 6×6 placeholder), read on every plan build.
+            try writeMetalFXJSON(["material": "materials/metalfx-autosize.json", "autosize": true],
+                                 path: "models/metalfx-autosize.json")
+            let albedoPass: [String: Any] = ["shader": "flat", "blending": "translucent", "cullmode": "nocull",
+                                             "depthtest": "disabled", "depthwrite": "disabled",
+                                             "textures": ["metalfx-missing-albedo"]]
+            try writeMetalFXJSON(["passes": [albedoPass]], path: "materials/metalfx-autosize.json")
+            objects.append(["id": 12, "image": "models/metalfx-autosize.json", "origin": "288 192 0"])
         }
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
