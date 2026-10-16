@@ -1521,7 +1521,8 @@ final class WPEParityFrameRenderer {
         return try executor.encodeFrame(on: queue, textures: targets.merging(planner.layerImages) { $1 },
                                         prepare: { commandBuffer in
                                             if !retiredTextures.isEmpty {
-                                                let retired = retiredTextures
+                                                // The handler only drops the last reference; releasing an MTLTexture is thread-safe.
+                                                nonisolated(unsafe) let retired = retiredTextures
                                                 retiredTextures.removeAll()
                                                 commandBuffer.addCompletedHandler { _ in withExtendedLifetime(retired) {} }
                                             }
