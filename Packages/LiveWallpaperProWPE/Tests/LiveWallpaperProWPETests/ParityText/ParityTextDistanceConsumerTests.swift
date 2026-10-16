@@ -42,16 +42,18 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
                        [SIMD2(0, 0), SIMD2(42.0 / 512, 0), SIMD2(0, 47.0 / 512), SIMD2(42.0 / 512, 47.0 / 512)])
     }
 
-    func testRejectedZeroAreaAndInvalidPreparationPreservesExistingReferences() throws {
+    func testZeroAreaSpaceReservesItsCellAndInvalidPreparationPreservesExistingReferences() throws {
         let outline = try originalOutline()
         let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(outline)]))
-        let prepared = try planner.plan(text(), effectCount: 0, glyphMode: .distanceField)
+        var spaced = text(); spaced.text = "H "
+        let prepared = try planner.plan(spaced, effectCount: 0, glyphMode: .distanceField)
+        let mesh = try XCTUnwrap(prepared.layout.mesh)
+        XCTAssertEqual(mesh.mono.vertices.count, 8)
+        XCTAssertEqual(Set(mesh.mono.glyphKeys), [43, 3])
         let before = try XCTUnwrap(planner.atlases[prepared.atlasKey])
-        var unsupported = text(); unsupported.text = "H "
-        XCTAssertThrowsError(try planner.plan(unsupported, effectCount: 0, glyphMode: .distanceField)) {
-            XCTAssertEqual($0 as? WPEParityTextPreparationError, .zeroAreaDistanceGlyph)
-        }
-        unsupported = text(); unsupported.msdf = false
+        let space = try XCTUnwrap(before.mono.entry(forKey: 3))
+        XCTAssertEqual([space.x1 - space.x0, space.y1 - space.y0], [24, 24])
+        var unsupported = text(); unsupported.msdf = false
         XCTAssertThrowsError(try planner.plan(unsupported, effectCount: 0, glyphMode: .distanceField)) {
             XCTAssertEqual($0 as? WPEParityTextPreparationError, .distanceFieldNotRequested)
         }
@@ -119,7 +121,7 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertNil(WPEParityTextDrawParameters(object: object, pointSize: 32))
     }
 
-    func testRequestedFieldAdmissionRejectsUnqualifiedGroupAndPreservesRV3OtherLanes() throws {
+    func testRequestedFieldAdmissionAcceptsMixedFontsAndSizesAndPreservesRV3OtherLanes() throws {
         var object = text()
         object.outline = true; object.dropShadow = true; object.dropShadowOpacity = 0.7
         let writes = try XCTUnwrap(WPEParityTextDrawParameters(object: object, pointSize: 8))
@@ -130,12 +132,16 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertEqual(state.rv1, writes.renderVar1)
         XCTAssertEqual(state.rv2, writes.renderVar2)
         XCTAssertEqual(state.rv3, SIMD4(0.7, 71, 72, 73))
-        let requests = try WPEParityTextFieldAdmission.requests([.init(object)], texts: [:], qualifiedObjects: [object])
+        let requests = try WPEParityTextFieldAdmission.requests([.init(object)], texts: [:])
         XCTAssertEqual(requests.first?.glyphMode, .distanceField, "Real authored fields select the actual mode")
-        var different = object; different.pointSize = 9
-        XCTAssertThrowsError(try WPEParityTextFieldAdmission.requests([.init(different)], texts: [:], qualifiedObjects: [object]))
-        XCTAssertThrowsError(try WPEParityTextFieldAdmission.validate([object, different]))
-        XCTAssertThrowsError(try WPEParityTextFieldAdmission.requests([.init(object)], texts: [:], qualifiedObjects: []))
+        var different = object; different.id = "U"; different.pointSize = 9; different.font = "RobotoMono-Regular.ttf"
+        let mixed = try WPEParityTextFieldAdmission.requests([.init(object), .init(different)], texts: [:])
+        XCTAssertEqual(mixed.map(\.glyphMode), [.distanceField, .distanceField])
+        XCTAssertNoThrow(try WPEParityTextFieldAdmission.validate([object, different]))
+        var nonfinite = different; nonfinite.dropShadowSize = .nan
+        XCTAssertThrowsError(try WPEParityTextFieldAdmission.validate([object, nonfinite])) {
+            XCTAssertEqual($0 as? WPEParityTextPreparationError, .nonfiniteDrawParameters)
+        }
     }
 
     private func text() -> WPEParityTextObject {

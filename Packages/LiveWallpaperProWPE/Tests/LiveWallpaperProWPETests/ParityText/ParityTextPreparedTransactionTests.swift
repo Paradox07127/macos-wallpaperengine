@@ -131,10 +131,10 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: 43)?.references, 1)
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
         try pipeline.discard(first)
-        assertError(.zeroAreaDistanceGlyph) {
+        assertError(.unqualifiedDistanceFieldGroup) {
             _ = try pipeline.prepareRelayouts([
                 .init(self.object("T", "ii"), glyphMode: .distanceField),
-                .init(self.object("U", "H "), glyphMode: .distanceField),
+                .init(self.object("U", "H你"), glyphMode: .distanceField),
             ])
         }
         XCTAssertEqual(pipeline.texts, before)

@@ -634,14 +634,29 @@ final class WPEParityTextDrawTests: XCTestCase {
             }
             XCTAssertTrue(stride(from: 0, to: presented.count, by: 4).contains { presented[$0 + 1] > 0 })
 
-            // A failed loaded8 ->32 cohort must not poison a later legal8 input with its old request prefix.
+            // The field atlas key carries no size, so 8 -> 32 reuses the loaded H field and its texture.
+            object["pointsize"] = 32
+            json["objects"] = [object]
+            let resized = try Self.parse(JSONSerialization.data(withJSONObject: json))
+            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: resized)))
+            try await encode(renderer, label: "mono 8 to 32 effect=\(effect)")
             let stable = renderer.textPreparationState
+            XCTAssertEqual(stable.pendingRequests, 0)
+            XCTAssertEqual(stable.texts[Self.textID]?.object.pointSize, 32)
+            XCTAssertEqual(stable.texts[Self.textID]?.atlasKey, text.atlasKey)
+            XCTAssertTrue(stable.atlases.textures[key] === texture)
+            XCTAssertEqual(stable.atlases.contentGenerations, before.atlases.contentGenerations)
+            XCTAssertTrue(renderer.skipped.isEmpty)
+            let resizedPixels = try readBack(renderer.backbuffer, fixture)
+            XCTAssertNotEqual(resizedPixels, presented, "The 32 pt layout must actually render")
+
+            // A failed fallback-face cohort must not poison a later legal input with its old request prefix.
             var invalidObject = object
-            invalidObject["pointsize"] = 32
+            invalidObject["text"] = "H你"
             var invalidJSON = json
             invalidJSON["objects"] = [invalidObject]
             let invalid = try Self.parse(JSONSerialization.data(withJSONObject: invalidJSON))
-            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: invalid)))
+            try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: resized, to: invalid)))
             XCTAssertThrowsError(try renderer.encodeFrame(elapsed: 1.0 / 60)) { error in
                 XCTAssertEqual(error as? WPEParityTextPreparationError, .unqualifiedDistanceFieldGroup)
             }
@@ -654,19 +669,19 @@ final class WPEParityTextDrawTests: XCTestCase {
             XCTAssertEqual(textGeometryIdentities(rejected), textGeometryIdentities(stable))
             XCTAssertEqual(rejected.atlases.textures.mapValues(ObjectIdentifier.init), stable.atlases.textures.mapValues(ObjectIdentifier.init))
             XCTAssertEqual(rejected.targets.mapValues(ObjectIdentifier.init), stable.targets.mapValues(ObjectIdentifier.init))
-            XCTAssertEqual(try readBack(renderer.backbuffer, fixture), presented)
-            object["text"] = "HH" // Still the loaded font/8pt, a real new legal layout rather than a discarded retry.
+            XCTAssertEqual(try readBack(renderer.backbuffer, fixture), resizedPixels)
+            object["text"] = "HH" // A real new legal layout rather than a discarded retry.
             json["objects"] = [object]
             let corrected = try Self.parse(JSONSerialization.data(withJSONObject: json))
             try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: corrected)))
-            try await encode(renderer, label: "mono rejected size then corrected input effect=\(effect)")
+            try await encode(renderer, label: "mono rejected fallback then corrected input effect=\(effect)")
             let recovered = renderer.textPreparationState
             XCTAssertEqual(recovered.pendingRequests, 0)
             XCTAssertEqual(recovered.texts[Self.textID]?.object.text, "HH")
-            XCTAssertEqual(recovered.texts[Self.textID]?.object.pointSize, 8)
+            XCTAssertEqual(recovered.texts[Self.textID]?.object.pointSize, 32)
             XCTAssertTrue(recovered.atlases.textures[key] === texture, "Correction reuses actual H fields")
             XCTAssertTrue(renderer.skipped.isEmpty)
-            XCTAssertNotEqual(try readBack(renderer.backbuffer, fixture), presented, "Legal correction must actually render")
+            XCTAssertNotEqual(try readBack(renderer.backbuffer, fixture), resizedPixels, "Legal correction must actually render")
         }
     }
 

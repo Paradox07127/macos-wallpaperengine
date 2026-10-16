@@ -107,7 +107,7 @@ public final class WPEParityTextPlanner {
                 guard index == 0 else { throw WPEParityTextPreparationError.unqualifiedDistanceFieldGroup }
                 guard index < chain.faces.count,
                       let glyph = chain.faces[index].layoutGlyph(key & 0xFFFFFF, mode: .distanceField),
-                      glyph.box.xMax > glyph.box.xMin, glyph.box.yMax > glyph.box.yMin else {
+                      !glyph.isColor || glyph.box.hasArea else {
                     throw WPEParityTextPreparationError.zeroAreaDistanceGlyph
                 }
                 guard glyph.isColor == mesh.color.glyphKeys.contains(key) else {
@@ -241,10 +241,15 @@ public final class WPEParityTextPlanner {
                 let inserted: Bool
                 if instance.glyphMode == .distanceField {
                     if list == .mono {
-                        guard let generated = field(chain.faces[face], key & 0xFFFFFF), !generated.isColor else {
-                            throw WPEParityTextPreparationError.distanceFieldGenerationFailed
+                        if chain.faces[face].layoutGlyph(key & 0xFFFFFF, mode: .distanceField)?.box.hasArea == false {
+                            // Zero content extents plus the 24 px border; no field is generated (0x1401ae080.c:266-294, :585).
+                            inserted = instance.mono.reserve(key: key, width: 24, height: 24) != nil
+                        } else {
+                            guard let generated = field(chain.faces[face], key & 0xFFFFFF), !generated.isColor else {
+                                throw WPEParityTextPreparationError.distanceFieldGenerationFailed
+                            }
+                            inserted = instance.insertDistanceField(key: key, field: generated) != nil
                         }
-                        inserted = instance.insertDistanceField(key: key, field: generated) != nil
                     } else {
                         let newlySelectedGroup = colorScale == nil
                         guard let generated = try chain.faces[face].colorGlyphField(key & 0xFFFFFF, companionScaleForBox: { box in
@@ -328,6 +333,12 @@ public final class WPEParityTextPlanner {
             (glyphs.vertices[base + 2].u, glyphs.vertices[base + 2].v) = (uv.x, uv.w)
             (glyphs.vertices[base + 3].u, glyphs.vertices[base + 3].v) = (uv.z, uv.w)
         }
+    }
+}
+
+private extension WPEParityGlyphBox {
+    var hasArea: Bool {
+        xMax > xMin && yMax > yMin
     }
 }
 

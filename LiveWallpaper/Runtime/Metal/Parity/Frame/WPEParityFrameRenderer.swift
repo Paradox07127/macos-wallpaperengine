@@ -1235,13 +1235,7 @@ final class WPEParityFrameRenderer {
             }
         }
         let pipeline = textPipeline
-        let requested = try WPEParityTextFieldAdmission.requests(textRequests, texts: pipeline.texts,
-                                                                 qualifiedObjects: plan.scene.scene.objects.compactMap {
-                                                                     if case let .text(text) = $0.kind {
-                                                                         return text.object
-                                                                     }
-                                                                     return nil
-                                                                 })
+        let requested = try WPEParityTextFieldAdmission.requests(textRequests, texts: pipeline.texts)
         guard let prepared = try pipeline.prepareRelayouts(requested) else {
             consumeTextRequests(attemptedCount)
             completed = true

@@ -267,4 +267,26 @@ final class ParityGlyphAtlasTests: XCTestCase {
         }
         XCTAssertNil(instance.colorScale(recordPointSize: 96))
     }
+
+    func testReservedCellClearsItsGapButKeepsInteriorBytes() throws {
+        var atlas = WPEParityGlyphAtlas(format: .rgba8)
+        let stale = WPEParityGlyphBitmap(width: 100, rows: 30, pixelMode: .rgba,
+                                         pixels: Array(repeating: 0x7F, count: 100 * 30 * 4))
+        XCTAssertNotNil(atlas.insert(key: 1, bitmap: stale))
+        atlas.reset()
+        _ = atlas.takeDirty()
+        let version = atlas.contentGeneration
+        let entry = try XCTUnwrap(atlas.reserve(key: 2, width: 24, height: 24))
+        XCTAssertEqual(rect(entry), [0, 0, 24, 24])
+        XCTAssertEqual(atlas.entry(forKey: 2), entry)
+        func rgba(_ x: Int, _ y: Int) -> [UInt8] {
+            let start = (y * atlas.width + x) * 4
+            return Array(atlas.pixels[start ..< start + 4])
+        }
+        XCTAssertTrue((0 ..< 24).allSatisfy { y in (0 ..< 24).allSatisfy { rgba($0, y) == [0x7F, 0x7F, 0x7F, 0x7F] } })
+        XCTAssertTrue((0 ..< 24).allSatisfy { rgba(24, $0) == [0, 0, 0, 0] && rgba($0, 24) == [0, 0, 0, 0] })
+        XCTAssertEqual(rgba(25, 0), [0x7F, 0x7F, 0x7F, 0x7F], "only the one-pixel gap is cleared")
+        XCTAssertEqual(atlas.contentGeneration, version + 1)
+        XCTAssertTrue(atlas.isDirty)
+    }
 }

@@ -164,6 +164,40 @@ final class ParitySceneTextTests: XCTestCase {
         XCTAssertEqual(state.object("5")?.alpha, 0.5)
         XCTAssertEqual(state.object("5")?.origin, SIMD3(960, 540, 0))
     }
+
+    func testProgramSceneAdmitsFieldTextsInTwoFontsWithZeroAreaSpaces() throws {
+        _ = try ParityTextPlannerTests.makePlanner()
+        let roboto = "fonts/RobotoMono-Regular.ttf"
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [
+                ["id": 41, "name": "date", "text": "16 OCT 2026", "font": ParityFontChainTests.notoSans,
+                 "pointsize": 32, "dropshadow": true, "origin": "960 540 0"],
+                ["id": 48, "name": "day", "text": "T H U", "font": roboto,
+                 "pointsize": 32, "dropshadow": true, "origin": "960 640 0"],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
+                                                        userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in TextNoScripts() })
+        let assets = WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)])
+        let program = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
+        XCTAssertNil(program.textPreparationFailure)
+        var texts: [String: WPEParitySceneText] = [:]
+        for object in program.scene.objects {
+            if case let .text(text) = object.kind {
+                texts[object.id] = text
+            }
+        }
+        XCTAssertEqual(Set(texts.keys), ["41", "48"])
+        XCTAssertEqual(texts.values.map { $0.layout.mesh?.glyphMode }, [.distanceField, .distanceField])
+        XCTAssertEqual(Set(program.textAtlases.keys), ["\(ParityFontChainTests.notoSans)_msdf", "\(roboto)_msdf"])
+        let noto = try XCTUnwrap(texts["41"])
+        let space = try XCTUnwrap(program.textAtlases[noto.atlasKey]?.mono.entry(forKey: 3))
+        XCTAssertEqual([space.x1 - space.x0, space.y1 - space.y0], [24, 24])
+        XCTAssertEqual(noto.layout.mesh?.mono.glyphKeys.filter { $0 == 3 }.count, 2)
+    }
 }
 
 private struct TextNoScripts: WPESceneTransformScriptResolving {

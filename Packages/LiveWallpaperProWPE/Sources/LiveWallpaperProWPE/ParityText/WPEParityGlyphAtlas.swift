@@ -106,14 +106,24 @@ public struct WPEParityGlyphAtlas: Sendable {
         return insert(key: key, bitmap: primary, companion: companion)
     }
 
+    /// Places a cell like insert and clears its gap, but never writes its interior (0x1401ae080.c:266-294, :585).
+    public mutating func reserve(key: UInt32, width: Int, height: Int) -> WPEParityGlyphAtlasEntry? {
+        precondition(companionScale == nil, "A paired COLOR atlas cannot publish only its primary plane")
+        return insert(key: key, width: width, height: height, bitmap: nil, companion: nil)
+    }
+
     private mutating func insert(key: UInt32, bitmap: WPEParityGlyphBitmap,
                                  companion: WPEParityGlyphBitmap?) -> WPEParityGlyphAtlasEntry? {
         precondition((bitmap.pixelMode != .gray) == (format == .rgba8), "Four-channel glyphs go to the RGBA8 atlas")
+        return insert(key: key, width: bitmap.width, height: bitmap.rows, bitmap: bitmap, companion: companion)
+    }
+
+    /// nil `bitmap` keeps the cell interior's existing bytes.
+    private mutating func insert(key: UInt32, width: Int, height: Int, bitmap: WPEParityGlyphBitmap?,
+                                 companion: WPEParityGlyphBitmap?) -> WPEParityGlyphAtlasEntry? {
         if let existing = entries[key] {
             return existing
         }
-        let width = bitmap.width
-        let height = bitmap.rows
         while !(fitOnShelf(key: key, width: width, height: height) || openShelf(key: key, width: width, height: height)) {
             if evictOne(width: width, height: height) {
                 continue
@@ -127,7 +137,9 @@ public struct WPEParityGlyphAtlas: Sendable {
             keyOrder.append(key)
         }
         let entry = entries[key]!
-        copy(bitmap, to: entry)
+        if let bitmap {
+            copy(bitmap, to: entry)
+        }
         clearGap(around: entry)
         if let companion, let scale = companionScale {
             copyCompanion(companion, to: entry, scale: scale)
