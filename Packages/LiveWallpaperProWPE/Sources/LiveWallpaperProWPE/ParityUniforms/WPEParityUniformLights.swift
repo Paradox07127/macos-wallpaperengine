@@ -67,6 +67,11 @@ public struct WPEParityUniformLights: Sendable, Equatable {
     public var directionalColor: [SIMD4<Float>] = []
     /// float3 in the cbuffer (lightsCBuffer); WPE stages it as a float4 with w = 0.
     public var directionalDirection: [SIMD3<Float>] = []
+    /// Shadow view-projections (P · V) and atlas rects by projection slot; see WPEParityShadowLayout.
+    public var shadowProjection: [simd_float4x4] = []
+    public var shadowProjectionTransform: [SIMD4<Float>] = []
+    public var shadowPointProjection: [SIMD4<Float>] = []
+    public var shadowPointProjectionTransform: [SIMD4<Float>] = []
 
     public init(ambient: SIMD3<Float>, skylight: SIMD3<Float>) {
         self.ambient = ambient
@@ -97,16 +102,40 @@ public struct WPEParityUniformLights: Sendable, Equatable {
 
     /// Rebuilds from one live state snapshot. Ancestor visibility, light fields and general colours are consumed
     /// together, so rebuilding moving lights cannot restore static ambient/skylight over a script write.
-    public init(document: WPESceneDocument, transforms: WPEParityLayerTransformSet, state: WPEParitySceneState?) {
+    /// With `shadowQuality` ≠ 0 casting lights fill each type's leading shadow section (140190c80.c:536-580).
+    public init(document: WPESceneDocument, transforms: WPEParityLayerTransformSet, state: WPEParitySceneState?,
+                shadowQuality: Int32 = 0, shadows: WPEParityShadowLayout? = nil) {
         self.init(document: document)
         for (name, keyPath) in [("ambientcolor", \Self.ambient), ("skylightcolor", \Self.skylight)] {
             if case let .vector(value)? = state?.scriptField(name, of: "") {
                 self[keyPath: keyPath] = SIMD3(value.x, value.y, value.z)
             }
         }
-        let config = WPEParityLightConfig(general: document.resolvedGeneralJSON)
+        if let shadows {
+            shadowProjection = shadows.projections
+            shadowProjectionTransform = shadows.projectionTransforms
+            shadowPointProjection = shadows.pointProjections
+            shadowPointProjectionTransform = shadows.pointProjectionTransforms
+        }
+        let config = WPEParityLightConfig(general: document.resolvedGeneralJSON, shadowQuality: shadowQuality)
         let degrees = Float.pi / 180
+        // Per type: lights left, next shadow slot, next plain slot. Spot cookie sections stay empty.
+        var point = (left: config.point, shadow: 0, plain: Int(config.pointShadow))
+        let spotShadowBase = Int(config.spotShadowCookie + config.spotCookie)
+        var spot = (left: config.spot, shadow: spotShadowBase,
+                    plain: shadowQuality == 0 ? 0 : spotShadowBase + Int(config.spotShadow))
+        var directional = (left: config.directional, shadow: 0, plain: Int(config.directionalShadow))
         for light in document.lightObjects where state?.isVisible(light.id) ?? light.visible {
+            let casts = shadowQuality != 0 && light.castShadow
+            func slot(_ cursor: inout (left: Int32, shadow: Int, plain: Int)) -> Int {
+                cursor.left -= 1
+                if casts {
+                    cursor.shadow += 1
+                    return cursor.shadow - 1
+                }
+                cursor.plain += 1
+                return cursor.plain - 1
+            }
             func scalar(_ name: String, _ fallback: Double) -> Float {
                 if case let .vector(value)? = state?.scriptField(name, of: light.id) {
                     return value.x
@@ -120,14 +149,18 @@ public struct WPEParityUniformLights: Sendable, Equatable {
             let axis = SIMD3(world.columns.0.x, world.columns.0.y, world.columns.0.z)
             let exponent = scalar("exponent", light.exponent)
             switch light.type {
-            case .point where pointColor.count < config.point:
-                pointColor.append(color)
-                pointOrigin.append(SIMD4(origin, exponent))
-            case .spot where spotColor.count < config.spot:
-                spotColor.append(color)
-                spotOrigin.append(SIMD4(origin, cos(scalar("innercone", light.innerConeDegrees) * degrees)))
-                spotDirection.append(SIMD4(axis, cos(scalar("outercone", light.outerConeDegrees) * degrees)))
-                spotExponent.append(SIMD4(exponent, 0, 0, 0))
+            case .point where point.left > 0:
+                let index = slot(&point), capacity = Int(config.point)
+                pointColor.setSlot(index, color, capacity: capacity, zero: .zero)
+                pointOrigin.setSlot(index, SIMD4(origin, exponent), capacity: capacity, zero: .zero)
+            case .spot where spot.left > 0:
+                let index = slot(&spot), capacity = Int(config.spot)
+                let inner = cos(scalar("innercone", light.innerConeDegrees) * degrees)
+                let outer = cos(scalar("outercone", light.outerConeDegrees) * degrees)
+                spotColor.setSlot(index, color, capacity: capacity, zero: .zero)
+                spotOrigin.setSlot(index, SIMD4(origin, inner), capacity: capacity, zero: .zero)
+                spotDirection.setSlot(index, SIMD4(axis, outer), capacity: capacity, zero: .zero)
+                spotExponent.setSlot(index, SIMD4(exponent, 0, 0, 0), capacity: capacity, zero: .zero)
             case .tube where tubeColor.count < config.tube:
                 // 140190c80.c:832–893: the second endpoint is W · (controlpoint, 1), not an axis or direction.
                 let point: SIMD3<Float> = if case let .vector(value)? = state?.scriptField("controlpoint", of: light.id) {
@@ -147,9 +180,10 @@ public struct WPEParityUniformLights: Sendable, Equatable {
                 tubeColor.append(color)
                 tubeOriginA.append(SIMD4(origin, exponent))
                 tubeOriginB.append(SIMD4(end.x, end.y, end.z, 0))
-            case .directional where directionalColor.count < config.directional:
-                directionalColor.append(SIMD4(color.x, color.y, color.z, 1))
-                directionalDirection.append(-axis)
+            case .directional where directional.left > 0:
+                let index = slot(&directional), capacity = Int(config.directional)
+                directionalColor.setSlot(index, SIMD4(color.x, color.y, color.z, 1), capacity: capacity, zero: .zero)
+                directionalDirection.setSlot(index, -axis, capacity: capacity, zero: .zero)
             default:
                 break
             }
@@ -166,9 +200,15 @@ public struct WPEParityUniformLights: Sendable, Equatable {
             ("g_LSpot_Origin", spotOrigin), ("g_LSpot_Direction", spotDirection), ("g_LSpot_Exponent", spotExponent),
             ("g_LTube_Color", tubeColor), ("g_LTube_OriginA", tubeOriginA),
             ("g_LDirectional_Color", directionalColor),
+            ("g_LFeature_ShadowProjectionTransform", shadowProjectionTransform),
+            ("g_LFeature_ShadowPointProjection", shadowPointProjection),
+            ("g_LFeature_ShadowPointProjectionTransform", shadowPointProjectionTransform),
         ]
         for (name, array) in arrays where !array.isEmpty {
             values[name] = .array(array.map { .vector([$0.x, $0.y, $0.z, $0.w]) })
+        }
+        if !shadowProjection.isEmpty {
+            values["g_LFeature_ShadowProjection"] = .array(shadowProjection.map { .wpeTransposed($0) })
         }
         // The shared HLSL lighting cbuffer stages endpoint B as float3, like directional direction.
         if !tubeOriginB.isEmpty {

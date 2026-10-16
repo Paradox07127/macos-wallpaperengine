@@ -175,6 +175,32 @@ final class ParityLightsTests: XCTestCase {
         XCTAssertNil(lights.values["g_LPoint_Color"])
     }
 
+    func testShadowQualityPutsCastingSpotsFirstAndAddsShadowArrays() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"lightconfig":{"spot":2,"spotshadow":1}},
+         "objects":[
+          {"id":1,"light":"lspot","color":"1 0 0","intensity":1,"castshadow":false},
+          {"id":2,"light":"lspot","color":"0 1 0","intensity":1,"castshadow":true}]}
+        """)
+        let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
+        let state = WPEParitySceneState(document: document, hdr: false)
+        let shadows = WPEParityShadowLayout(document: document, transforms: transforms, state: state, quality: 2,
+                                            eye: .zero, forward: SIMD3(0, 0, -1), orthographic: false)
+        let shadowed = WPEParityUniformLights(document: document, transforms: transforms, state: state,
+                                              shadowQuality: 2, shadows: shadows)
+        assertEqual(shadowed.spotColor, [SIMD4(0, 1, 0, 1), SIMD4(1, 0, 0, 1)])
+        assertEqual(shadowed.shadowProjectionTransform, [SIMD4(0, 0, 1, 1)])
+        guard case let .array(matrices)? = shadowed.values["g_LFeature_ShadowProjection"] else {
+            return XCTFail("missing shadow projection array")
+        }
+        XCTAssertEqual(matrices.count, 1)
+        XCTAssertNotNil(shadowed.values["g_LFeature_ShadowProjectionTransform"])
+        let plain = WPEParityUniformLights(document: document, transforms: transforms, state: state)
+        assertEqual(plain.spotColor, [SIMD4(1, 0, 0, 1), SIMD4(0, 1, 0, 1)])
+        XCTAssertNil(plain.values["g_LFeature_ShadowProjection"])
+    }
+
     func testLightConfigCountsAndMasks() throws {
         let general = try ParityCameraFixture.document(json: """
         {"camera": {"center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"},
