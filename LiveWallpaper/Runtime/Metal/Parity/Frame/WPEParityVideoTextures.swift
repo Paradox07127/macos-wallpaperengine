@@ -71,6 +71,15 @@ final class WPEParityVideoTextures {
         }
     }
 
+    #if DEBUG
+    /// Capture harness only: parks every decoder at `seconds` of media time instead of the wall clock.
+    nonisolated(nonsending) func seekForCapture(to seconds: Double) async {
+        for video in videos {
+            _ = await video.source.seekForCapture(to: seconds)
+        }
+    }
+    #endif
+
     func hasOwner(_ id: String) -> Bool {
         owners[id] != nil
     }

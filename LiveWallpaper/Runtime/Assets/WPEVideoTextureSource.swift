@@ -1097,6 +1097,35 @@ final class WPEVideoTextureSource {
             toleranceAfter: .zero
         )
     }
+
+    #if DEBUG
+    /// Capture harness only: parks the paused decoder at `seconds` of media time and stages that frame for the next
+    /// `texture(at:)`; script playback intent is left as is. False = no frame arrived.
+    nonisolated(nonsending) func seekForCapture(to seconds: Double) async -> Bool {
+        guard !isInvalidated, let player, #available(macOS 15.0, *),
+              let output = playerLevelOutput as? WPEPlayerLevelVideoOutput else { return false }
+        player.pause()
+        let duration = loopDurationSeconds
+        let landing = scriptLoop && duration > 0 ? seconds.truncatingRemainder(dividingBy: duration) : min(seconds, duration)
+        let target = CMTime(seconds: max(0, landing), preferredTimescale: 600)
+        let finished = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { continuation.resume(returning: $0) }
+        }
+        guard finished else { return false }
+        // A frame decoded before the seek is older than one frame interval (≥ 10 fps) and must not be staged.
+        let earliest = CMTimeSubtract(target, CMTime(value: 1, timescale: 10))
+        for _ in 0 ..< 100 {
+            if let frame = output.currentFrame(), CMTimeCompare(frame.presentationTime, target) <= 0,
+               CMTimeCompare(frame.presentationTime, earliest) >= 0 {
+                publishPlayerLevelFrame(pixelBuffer: frame.pixelBuffer, presentationTime: frame.presentationTime,
+                                        output: output)
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+    #endif
 }
 
 extension WPEVideoTextureSource: WPEDynamicTextureSource {}

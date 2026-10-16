@@ -239,6 +239,42 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(videos.playbackSnapshot(ownerID: "a")?.isPlaying, true)
     }
 
+    func testCaptureSeekStagesTheFrameAtTheRequestedTime() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        descriptor.storageMode = .shared
+        let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: texture, bytes: Data(contentsOf: url))],
+                                                      workshopID: "parity-video-seek-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["a": texture])
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, (videos.playbackSnapshot(ownerID: "a")?.duration ?? 0) <= 0.5 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        await videos.seekForCapture(to: 0.75)
+        let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
+        try videos.encode(into: commandBuffer)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
+        videos.finishFrame()
+        var pixel = [UInt8](repeating: 0, count: 4)
+        texture.getBytes(&pixel, bytesPerRow: 4 * 64, from: MTLRegionMake2D(32, 32, 1, 1), mipmapLevel: 0)
+        // Frame N of `writeVideo()` is gray 40 + 4N; 0.75 s at 24 fps is frame 18.
+        XCTAssertEqual(Double(pixel[1]), 112, accuracy: 8)
+
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(try XCTUnwrap(videos.playbackSnapshot(ownerID: "a")).currentTime, 0.75, accuracy: 0.02)
+    }
+
     private static func state() throws -> WPEParitySceneState {
         let json: [String: Any] = [
             "camera": ["center": "0 0 0"],

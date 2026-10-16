@@ -381,6 +381,12 @@ final class WPEParityFrameRenderer {
         videos.applyPerformanceProfile(profile)
     }
 
+    #if DEBUG
+    nonisolated(nonsending) func seekVideosForCapture(to seconds: Double) async {
+        await videos.seekForCapture(to: seconds)
+    }
+    #endif
+
     /// A resize reuses the video collection. Keeping that collection as the command target avoids retaining or
     /// calling the old renderer through a SceneScript engine that continues into the new frame plan.
     var scriptVideoPause: (String) -> Bool {
