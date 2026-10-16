@@ -1,14 +1,17 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 
 /// The parity pipeline's file lookup over what the old renderer is given: the wallpaper's files through the
 /// scene asset provider (scene.pkg or source folder; `nil` reads the extracted cache at `projectRoot`), with
 /// `../<workshop id>/` paths going to the dependency mounts, then the engine root's `assets` directory.
 enum WPEParitySceneAssets {
-    /// `provider` and `projectRoot` are `AmbientWallpaperSessionBuilder.sceneAssets(...)`'s result.
+    /// `provider` and `projectRoot` are `AmbientWallpaperSessionBuilder.sceneAssets(...)`'s result; `userValues` are the
+    /// load's effective property values, as the scene document is parsed with.
     static func make(provider: (any WPESceneAssetProvider)?, projectRoot: URL, dependencyMounts: [WPEAssetMount],
-                     engineAssetsRootURL: URL?) -> WPEParityProgramAssets {
+                     engineAssetsRootURL: URL?,
+                     userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) -> WPEParityProgramAssets {
         let wallpaper = if let provider {
             WPEMultiRootResourceResolver(primaryProvider: provider, dependencyMounts: dependencyMounts)
         } else {
@@ -26,7 +29,9 @@ enum WPEParitySceneAssets {
             )
             sources.append(.lookup(root) { try? engine.data(atRelativePath: $0) })
         }
-        return WPEParityProgramAssets(sources: sources)
+        var assets = WPEParityProgramAssets(sources: sources)
+        assets.userValues = userValues
+        return assets
     }
 }
 #endif

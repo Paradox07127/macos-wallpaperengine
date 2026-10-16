@@ -183,8 +183,11 @@ final class ParityCorpusCaptureTests: XCTestCase {
             descriptor: descriptor,
             entryResolver: SceneResourceResolver(provider: provider, cacheRootURL: projectRoot),
             projectRoot: projectRoot,
-            assets: WPEParitySceneAssets.make(provider: provider, projectRoot: projectRoot, dependencyMounts: [],
-                                              engineAssetsRootURL: engineAssetsRoot),
+            assets: WPEParitySceneAssets.make(
+                provider: provider, projectRoot: projectRoot, dependencyMounts: [], engineAssetsRootURL: engineAssetsRoot,
+                userValues: WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
+                                                                                      cacheRootURL: projectRoot)
+            ),
             settings: settings,
             compiler: compiler, device: device, presentLayer: WPEPresentLayer(layer: layer),
             mailbox: WPEPointerMailbox(), surfaceControl: IdleSurfaceControl(), drawableSize: size,

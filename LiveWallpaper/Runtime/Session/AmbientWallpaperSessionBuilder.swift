@@ -417,7 +417,10 @@ final class AmbientWallpaperSessionBuilder {
                     projectRoot: assets.projectRoot,
                     assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,
                                                       dependencyMounts: dependencyMounts,
-                                                      engineAssetsRootURL: engineAssetsRootURL),
+                                                      engineAssetsRootURL: engineAssetsRootURL,
+                                                      userValues: WallpaperEngineProjectPropertySchema.effectiveSceneValues(
+                                                          descriptor: descriptor, cacheRootURL: assets.projectRoot
+                                                      )),
                     settings: settings,
                     compiler: compiler,
                     device: device,
