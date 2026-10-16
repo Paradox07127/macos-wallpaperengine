@@ -160,11 +160,26 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                   })
     }
 
-    /// The colour colorn is measured against, 0–1: the first colorrandom midpoint (1401c45f0; c5490:809-845).
+    /// The colour colorn is measured against, 0–1: the last colorrandom midpoint or first colorlist entry, else the
+    /// first colorchange startvalue (1401c45f0:129-183, 241-322, 536-595); hsvcolorrandom is not scanned.
     var colornReference: SIMD3<Float> {
+        var reference: SIMD3<Float>?
         for initializer in initializers {
-            if case let .color(low, high, _) = initializer {
-                return (low + high) / 2 / 255
+            switch initializer {
+            case let .color(low, high, _):
+                reference = (low + high) / 2 / 255
+            case let .colorList(hsv, _):
+                reference = WPEParityParticleMath.hsvToRGB(hue: hsv[0].x * 360, saturation: hsv[0].y, value: hsv[0].z)
+            default:
+                break
+            }
+        }
+        if let reference {
+            return reference
+        }
+        for item in operators {
+            if case let .colorChange(_, _, start, _) = item.kind {
+                return start
             }
         }
         return SIMD3(repeating: 1)

@@ -1272,6 +1272,50 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
+    func testColornReferenceTakesTheLastColourInitializer() throws {
+        let first = #"{"name": "colorrandom", "min": "255 71 0", "max": "255 71 0"}"#
+        let cases: [(String, String, SIMD3<Float>)] = [
+            (#"{"name": "colorrandom", "min": "128 191 255", "max": "128 191 255"}"#, "0.5 0.75 1",
+             SIMD3(255 * 128, 71 * 191, 0) / (255 * 255)),
+            (#"{"name": "colorlist", "colors": ["0.5 1 0.5"]}"#, "0.5 1 0.5", SIMD3(0.5, 71.0 / 255, 0)),
+        ]
+        for (last, colorn, expected) in cases {
+            let particle = """
+            {"maxcount": 1, "material": "materials/plain.json",
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}, \(first), \(last)],
+             "renderer": [{"name": "sprite"}]}
+            """
+            let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                             "instanceoverride": ["colorn": colorn]]]
+            var scene = try Self.scene(objects, particles: ["particles/fx.json": particle])
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.liveCount, 1, last)
+            XCTAssertLessThan(simd_reduce_max(abs(root.initialColor[0] - expected)), 1e-4,
+                              "colorn at the last colour initializer's reference would re-hue: \(root.initialColor[0])")
+        }
+    }
+
+    func testColornReferenceFallsBackToTheColorChangeStartValue() throws {
+        let particle = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+         "operator": [{"name": "colorchange", "startvalue": "1 0 0", "endvalue": "0 1 0"}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        for (colorn, expected) in [("1 0 0", SIMD3<Float>(1, 1, 1)), ("0 0 1", SIMD3<Float>(0, 0, 1))] {
+            let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                             "instanceoverride": ["colorn": colorn]]]
+            var scene = try Self.scene(objects, particles: ["particles/fx.json": particle])
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.liveCount, 1, colorn)
+            XCTAssertEqual(root.initialColor[0], expected, "colorn \(colorn)")
+        }
+    }
+
     /// From scene version 5 a system with a colour source is seeded with brightness only (c5490:767-770, 6656-6663).
     func testSceneVersionFiveStopsTheColornSeedOnColorSystems() throws {
         let kid = """
