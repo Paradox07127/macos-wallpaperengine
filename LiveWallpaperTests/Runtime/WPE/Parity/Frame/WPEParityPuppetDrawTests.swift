@@ -363,9 +363,9 @@ final class WPEParityPuppetDrawTests: XCTestCase {
 
     private static func frame(clock: WPEParityClock = WPEParityClock()) -> WPEParityUniformFrame {
         WPEParityUniformFrame(clock: clock, daytime: 0,
-                                          screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
-                                          pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
-                                          eyePosition: .zero, view: matrix_identity_float4x4)
+                              screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
+                              pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
+                              eyePosition: .zero, view: matrix_identity_float4x4)
     }
 
     private static func reflection() throws -> WPEStageReflection {

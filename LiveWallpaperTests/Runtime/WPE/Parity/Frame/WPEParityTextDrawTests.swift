@@ -512,8 +512,9 @@ final class WPEParityTextDrawTests: XCTestCase {
     /// presents changed outline/shadow pixels without replacing a parameter-only update's field texture/mesh.
     func testRequestedMonoFieldsConsumeOriginalShaderRVsAndKeepParameterOnlyResources() async throws {
         let assets: URL
-        do { assets = try wpeAssets() }
-        catch { throw NSError(domain: "WPEParityMono.RequiredInputs", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(error)"]) }
+        do { assets = try wpeAssets() } catch {
+            throw NSError(domain: "WPEParityMono.RequiredInputs", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(error)"])
+        }
         for (path, expected) in [
             ("shaders/font.frag", "d9f4e7198e2cc417c50a62d65e7dd2a654a13657b4d61df358bb1c016d4d7b26"),
             ("shaders/font.vert", "8b337706d01a9a7ee5919c3cd3e489190d753e26e191e68b4014cb732c26f944"),
@@ -541,8 +542,9 @@ final class WPEParityTextDrawTests: XCTestCase {
             json["objects"] = [object]
             let beforeJSON = try JSONSerialization.data(withJSONObject: json)
             let fixture: Fixture
-            do { fixture = try await makeSyntheticRenderer(effect: effect, scene: beforeJSON) }
-            catch { throw NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"]) }
+            do { fixture = try await makeSyntheticRenderer(effect: effect, scene: beforeJSON) } catch {
+                throw NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"])
+            }
             let renderer = fixture.renderer
             let warmed = fixture.plan.loadPrograms.filter {
                 $0.shader == "font" && $0.combos.contains { $0.name == "MSDF" && $0.value == "1" }
