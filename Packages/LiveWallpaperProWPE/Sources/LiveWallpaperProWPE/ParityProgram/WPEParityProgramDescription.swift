@@ -67,9 +67,6 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
             // usertextures child is skipped by its containing object merge, preserving this pass.
             if let override, override != .null {
                 resolved = Self.mergeSelectedPass(pass, with: override)
-                if resolved == nil {
-                    diagnostics.append("usertextures instance array extension is unverified; authored fallback retained")
-                }
             } else {
                 resolved = pass
             }
@@ -84,7 +81,12 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
                 diagnostics.append("usertextures keepaspect transform is unverified at slot \(slot)")
             }
         }
-        for (locus, raw, _) in authored {
+        let hasResolvedArray = if case .array? = resolved {
+            true
+        } else {
+            false
+        }
+        for (locus, raw, _) in authored where !hasResolvedArray {
             if case .array? = raw {
                 continue
             }
@@ -97,35 +99,36 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
         self.diagnostics = diagnostics
     }
 
-    /// 153200: copy the base, recursively replace non-null object/array children, replace scalars.
-    /// New non-null array indices need the still-unverified 086540 growth contract; do not guess its holes/count.
+    /// 153200: same-type containers recurse per non-null child; a type change copies only non-null children.
+    /// 086540 inserts at the ordinal and 0863a0 counts largest ordinal + 1: holes stay, trailing nulls add nothing.
     private static func mergeSelectedPass(_ base: WPESceneJSONValue, with override: WPESceneJSONValue)
-        -> WPESceneJSONValue? {
+        -> WPESceneJSONValue {
         switch (base, override) {
         case let (.object(baseValues), .object(overrides)):
             var values = baseValues
             for (key, value) in overrides where value != .null {
-                if let existing = baseValues[key] {
-                    guard let merged = mergeSelectedPass(existing, with: value) else { return nil }
-                    values[key] = merged
-                } else {
-                    values[key] = value
-                }
+                values[key] = mergeSelectedPass(baseValues[key] ?? .null, with: value)
             }
             return .object(values)
         case let (.array(baseValues), .array(overrides)):
             var values = baseValues
             for (index, value) in overrides.enumerated() where value != .null {
-                guard values.indices.contains(index),
-                      let merged = mergeSelectedPass(baseValues[index], with: value) else { return nil }
-                values[index] = merged
+                if index >= values.count {
+                    values.append(contentsOf: repeatElement(.null, count: index + 1 - values.count))
+                }
+                let existing = baseValues.indices.contains(index) ? baseValues[index] : .null
+                values[index] = mergeSelectedPass(existing, with: value)
             }
             return .array(values)
         case let (_, .object(overrides)):
-            // A type change copies non-null children into an empty container rather than retaining the old type.
             return .object(overrides.filter { $0.value != .null })
-        case (_, .array):
-            return nil
+        case let (_, .array(overrides)):
+            var values: [WPESceneJSONValue] = []
+            for (index, value) in overrides.enumerated() where value != .null {
+                values.append(contentsOf: repeatElement(.null, count: index + 1 - values.count))
+                values[index] = value
+            }
+            return .array(values)
         default:
             return override
         }

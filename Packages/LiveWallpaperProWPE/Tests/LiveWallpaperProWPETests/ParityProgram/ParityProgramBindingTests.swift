@@ -224,11 +224,25 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertEqual(nullOverride.userTextureSlots[0]?.name, "$mediaThumbnail")
         XCTAssertTrue(nullOverride.userTextures.diagnostics.isEmpty)
 
-        let extensionUnknown = try Self.userTextureBinding(material: ["passes": [[
+        let grown = try Self.userTextureBinding(material: ["passes": [[
             "shader": "probe", "textures": ["util/base", "util/ordinary"], "usertextures": [base[0]],
-        ]]], instance: ["usertextures": [NSNull(), "ordinary"]])
-        XCTAssertTrue(extensionUnknown.userTextureSlots.isEmpty)
-        XCTAssertTrue(extensionUnknown.userTextures.diagnostics.contains { $0.contains("array extension") })
+        ]]], instance: ["usertextures": [NSNull(), "ordinary", NSNull(), NSNull()]])
+        XCTAssertEqual(grown.userTextureSlots, [
+            0: .init(name: "$mediaThumbnail", type: "system", slot: 0), 1: .init(name: "ordinary", slot: 1),
+        ])
+        XCTAssertTrue(grown.userTextures.diagnostics.isEmpty)
+
+        let holes = try Self.userTextureBinding(material: ["passes": [[
+            "shader": "probe", "textures": ["util/base", "util/ordinary"], "usertextures": [],
+        ]]], instance: ["usertextures": [NSNull(), "ordinary", NSNull()]])
+        XCTAssertEqual(holes.userTextureSlots, [1: .init(name: "ordinary", slot: 1)])
+        XCTAssertTrue(holes.userTextures.diagnostics.isEmpty)
+
+        let changedType = try Self.userTextureBinding(material: ["passes": [[
+            "shader": "probe", "textures": ["util/base", "util/ordinary"], "usertextures": "old-invalid-type",
+        ]]], instance: ["usertextures": [NSNull(), "ordinary", NSNull()]])
+        XCTAssertEqual(changedType.userTextureSlots, [1: .init(name: "ordinary", slot: 1)])
+        XCTAssertTrue(changedType.userTextures.diagnostics.isEmpty, "The instance replaces the invalid base type before use")
     }
 
     /// This guard protects explicit unsupported merge behavior, not a claim about native conflict precedence.

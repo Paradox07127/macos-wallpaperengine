@@ -497,11 +497,14 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                     ["material": "materials/\(name)-compose.json"],
                 ],
             ])
+            let baseDeclarations: [Any] = mergeUserTextures && name == "previous" ? [NSNull()] : [
+                NSNull(), ["name": shortcutIcons ? "shortcut-\(name)"
+                    : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
+                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false],
+            ]
             try json("materials/\(name)-effect.json", ["passes": [[
                 "shader": "combine", "textures": ["previous", "input/\(name)"],
-                "usertextures": [NSNull(), ["name": shortcutIcons ? "shortcut-\(name)"
-                        : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
-                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false]],
+                "usertextures": baseDeclarations,
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
             try json("materials/\(name)-compose.json", ["passes": [[
@@ -517,8 +520,10 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         func effect(_ id: Int, _ name: String) -> [String: Any] {
             var effect: [String: Any] = ["id": id, "file": "effects/\(name).json"]
             if mergeUserTextures {
-                effect["passes"] = [["usertextures": [NSNull(), ["name": name == "current" ? "$mediaThumbnail" : "$mediaPreviousThumbnail",
-                                                                 "type": NSNull()]]]]
+                let declarations: [Any] = name == "current"
+                    ? [NSNull(), ["name": "$mediaThumbnail", "type": NSNull()]]
+                    : [NSNull(), ["name": "$mediaPreviousThumbnail", "type": "system", "keepaspect": false], NSNull(), NSNull()]
+                effect["passes"] = [["usertextures": declarations]]
             }
             return effect
         }
