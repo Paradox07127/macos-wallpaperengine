@@ -971,7 +971,7 @@ final class WPEParityTextDrawTests: XCTestCase {
     private func textGeometryIdentities(_ snapshot: WPEParityFrameRenderer.TextPreparationSnapshot)
         -> [Int: [ObjectIdentifier]] {
         snapshot.draws.mapValues { draw in
-            if case let .mesh(vertices, indices, _) = draw.geometry {
+            if case let .mesh(vertices, indices, _, _) = draw.geometry {
                 return [ObjectIdentifier(vertices), ObjectIdentifier(indices)]
             }
             return []

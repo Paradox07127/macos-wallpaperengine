@@ -21,7 +21,7 @@ struct WPEParityFrameDrawPlan {
     }
 
     enum Geometry {
-        case mesh(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)
+        case mesh(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, indexType: MTLIndexType = .uint16)
         case modelData(WPEParityModelDataMetalShape)
         /// Point lists the particle systems write each frame, one draw per batch.
         case particles(Particles)
@@ -171,8 +171,8 @@ struct WPEParityFrameDrawPlan {
         let indexType: MTLIndexType
         let vertexCount: Int
         switch selectedGeometry {
-        case let .mesh(buffer, indexBuffer, count):
-            (vertices, indices, indexCount, indexType, vertexCount) = (buffer, indexBuffer, count, .uint16, 4)
+        case let .mesh(buffer, indexBuffer, count, type):
+            (vertices, indices, indexCount, indexType, vertexCount) = (buffer, indexBuffer, count, type, 4)
         case let .modelData(shape):
             (vertices, indices, indexCount, indexType, vertexCount) = (
                 shape.vertexBuffer, shape.indexBuffer, shape.indexCount, shape.indexType, shape.vertexCount
@@ -937,11 +937,15 @@ struct WPEParityFrameDrawPlanner {
                                                  frameCount: sprites[0]?.count ?? 0)
             geometry = .particles(particles)
             // A live batch supplies its final native D and current V/P in makeParticleDraw.
+        } else if let modelMesh {
+            guard let buffers = try Self.modelGeometry(modelMesh, inputs: artifact.vertex.reflection.vertexInputs,
+                                                       device: device)
+            else { throw .pipeline("vertex or index buffer allocation failed") }
+            geometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount,
+                             indexType: buffers.indexType)
         } else {
             let inputs = artifact.vertex.reflection.vertexInputs
-            let buffers = if let modelMesh {
-                try Self.modelGeometry(modelMesh, inputs: inputs, device: device)
-            } else if case let .scene(draw) = description, draw.geometry == .modelMesh {
+            let buffers = if case let .scene(draw) = description, draw.geometry == .modelMesh {
                 throw .pipeline("\(shader): \(draw.pass) has no model mesh")
             } else if let puppet {
                 // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
@@ -1303,19 +1307,32 @@ struct WPEParityFrameDrawPlanner {
         var normal = SIMD3<Float>(0, 0, 1)
     }
 
-    /// One model sub-mesh using the preserved MDLV stream. The current parser supplies R16 indices;
-    /// the separate native model index-type contract still needs verification.
+    /// One model sub-mesh using the preserved MDLV stream; u32 meshes upload R32 indices (14009a880.c:58-68).
     static func modelGeometry(_ mesh: WPEPuppetMesh, inputs: [WPEStageReflection.StageAttribute],
                               device: MTLDevice) throws(WPEParityFrameSkip)
-        -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+        -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, indexType: MTLIndexType)? {
+        switch mesh.indexElementWidth {
+        case .uint16:
+            guard let buffers = try modelGeometry(mesh, indices: WPEParityScenePuppet.indices(of: mesh),
+                                                  inputs: inputs, device: device) else { return nil }
+            return (buffers.vertices, buffers.indices, buffers.indexCount, .uint16)
+        case .uint32:
+            guard let buffers = try modelGeometry(mesh, indices: mesh.indices, inputs: inputs, device: device)
+            else { return nil }
+            return (buffers.vertices, buffers.indices, buffers.indexCount, .uint32)
+        }
+    }
+
+    private static func modelGeometry(
+        _ mesh: WPEPuppetMesh, indices: [some FixedWidthInteger], inputs: [WPEStageReflection.StageAttribute], device: MTLDevice
+    ) throws(WPEParityFrameSkip) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
         if let stream = mesh.vertexStream {
-            return try rawGeometry(stream, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs,
-                                   uvMax: .one, device: device)
+            return try rawGeometry(stream, indices: indices, inputs: inputs, uvMax: .one, device: device)
         }
         return geometry(mesh.vertices.map {
             Vertex(position: $0.position, texcoord: $0.uv, blendIndices: SIMD4(truncatingIfNeeded: $0.skinBlendIndices),
                    blendWeights: $0.skinBlendWeights, normal: $0.normal)
-        }, indices: WPEParityScenePuppet.indices(of: mesh), inputs: inputs, device: device)
+        }, indices: indices, inputs: inputs, device: device)
     }
 
     /// Mesh0 of a puppet layer, or one of its clip segments, with its texcoords scaled by `uvMax`.
@@ -1428,13 +1445,14 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    private static func rawGeometry(_ stream: WPEPuppetVertexStream, indices: [UInt16],
-                                    inputs: [WPEStageReflection.StageAttribute], uvMax: SIMD2<Float>,
-                                    device: MTLDevice) throws(WPEParityFrameSkip)
+    private static func rawGeometry<Index: FixedWidthInteger>(_ stream: WPEPuppetVertexStream, indices: [Index],
+                                                              inputs: [WPEStageReflection.StageAttribute],
+                                                              uvMax: SIMD2<Float>,
+                                                              device: MTLDevice) throws(WPEParityFrameSkip)
         -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
         let words = try rawVertexWords(stream, inputs: inputs, uvMax: uvMax)
         guard let vertices = device.makeBuffer(length: max(16, words.count * 4), options: .storageModeShared),
-              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * 2,
+              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<Index>.stride,
                                                   options: .storageModeShared) else { return nil }
         if !words.isEmpty {
             vertices.contents().copyMemory(from: words, byteCount: words.count * 4)
@@ -1462,10 +1480,11 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    private static func geometry(_ vertices: [Vertex], indices: [UInt16], inputs: [WPEStageReflection.StageAttribute],
-                                 device: MTLDevice) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
+    private static func geometry<Index: FixedWidthInteger>(
+        _ vertices: [Vertex], indices: [Index], inputs: [WPEStageReflection.StageAttribute], device: MTLDevice
+    ) -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
         guard let vertexBuffer = vertexBuffer(vertices, inputs: inputs, device: device),
-              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<UInt16>.stride,
+              let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<Index>.stride,
                                                   options: .storageModeShared)
         else { return nil }
         return (vertexBuffer, indexBuffer, indices.count)
