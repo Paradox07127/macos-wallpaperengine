@@ -612,6 +612,8 @@ final class WPEParityFrameRenderer {
                                          planner: &planner, encoder: encoder,
                                          reusing: nil)
         for probe in probes {
+            let targets = WPEParityFrameDrawPlanner.targets(probe.frame)
+            let resources = WPEParityFrameDrawPlanner.resources(probe.frame)
             for (index, description) in probe.frame.draws {
                 let required = Self.requiredPost(description)
                 guard let program = probe.programs[index],
@@ -629,7 +631,8 @@ final class WPEParityFrameRenderer {
                     continue
                 }
                 do {
-                    try planner.prewarmPipeline(probe.frame, index, program: program, artifact: artifact)
+                    try planner.prewarmPipeline(probe.frame, index, targets: targets, resources: resources,
+                                                program: program, artifact: artifact)
                 } catch {
                     if let required {
                         throw WPEParityFrameRenderError.requiredPostProcessUnavailable(pass: required, reason: error)

@@ -645,12 +645,15 @@ struct WPEParityFrameDrawPlanner {
     }
 
     /// Builds the pipeline draw `index` of `frame` needs, so a later plan of the same draw finds it.
-    mutating func prewarmPipeline(_ frame: WPEParityFrame, _ index: Int, program: WPEParityProgram,
+    /// `targets` and `resources` are `targets(frame)` and `resources(frame)`.
+    mutating func prewarmPipeline(_ frame: WPEParityFrame, _ index: Int,
+                                  targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)],
+                                  resources: [WPEResourceID: WPELogicalResource], program: WPEParityProgram,
                                   artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) {
-        guard let description = frame.draws[index], let target = Self.targets(frame)[index] else {
+        guard let description = frame.draws[index], let target = targets[index] else {
             throw .pipeline("Missing draw or target during pipeline preparation")
         }
-        _ = try pipeline(description, target: target, resources: Self.resources(frame), program: program,
+        _ = try pipeline(description, target: target, resources: resources, program: program,
                          artifact: artifact)
     }
 
@@ -687,11 +690,11 @@ struct WPEParityFrameDrawPlanner {
         }
     }
 
-    private static func resources(_ frame: WPEParityFrame) -> [WPEResourceID: WPELogicalResource] {
+    static func resources(_ frame: WPEParityFrame) -> [WPEResourceID: WPELogicalResource] {
         Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
     }
 
-    private static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID?, depth: WPEResourceID?)] {
+    static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID?, depth: WPEResourceID?)] {
         var targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)] = [:]
         var bound: (color: WPEResourceID?, depth: WPEResourceID?)?
         for (index, operation) in frame.operations.enumerated() {
