@@ -97,7 +97,7 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
         if let stored = declarations.withLock({ $0[shader] }) {
             return stored
         }
-        let sources = WPEParityProgramResolver.expandedSources(shader: shader, sources: self)
+        let sources = expandedSources(shader)
         var stages: [WPEHLSLStage: String] = [.vertex: sources.vertex, .fragment: sources.fragment]
         stages[.geometry] = sources.geometry
         let computed = ShaderDeclarations(
