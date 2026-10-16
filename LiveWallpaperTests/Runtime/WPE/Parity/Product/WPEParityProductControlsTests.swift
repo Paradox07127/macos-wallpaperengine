@@ -60,6 +60,7 @@ final class WPEParityProductControlsTests: XCTestCase {
         XCTAssertEqual([before.backbuffer.width, before.backbuffer.height], [1920, 1080])
 
         let small = CGSize(width: 1280, height: 720)
+        layer.drawableSize = small
         driver.updateSurfaceGeometry(drawableSize: small)
         XCTAssertTrue(driver.needsReplan)
         try await present("frame before the re-plan lands")
@@ -71,7 +72,6 @@ final class WPEParityProductControlsTests: XCTestCase {
         let after = try XCTUnwrap(driver.renderer)
         XCTAssertEqual([after.backbuffer.width, after.backbuffer.height], [1280, 720])
         XCTAssertEqual(after.clock.time, time, "the scene clock carries over")
-        layer.drawableSize = small
         for frame in 1 ... 2 {
             try await present("frame \(frame) at 1280x720")
         }
