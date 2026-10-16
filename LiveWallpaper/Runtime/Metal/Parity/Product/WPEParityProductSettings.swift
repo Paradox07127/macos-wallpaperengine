@@ -15,15 +15,19 @@ enum WPEParityProductSettings {
     /// The Mac preference retains that default and refreshes only snapshots requested by active shader slots.
     static let defaultMipMappedFrameBufferEnabled = true
 
+    /// `displayHDR`: the surface's drawable is the EDR format. `maximumPotentialEDR`: the target screen's potential
+    /// EDR value, not its brightness-dependent current headroom.
     static func make(descriptor: SceneDescriptor, device: MTLDevice,
-                     defaults: UserDefaults = .appScoped(), bloomEnabled: Bool = true) throws -> WPEParityProgramSettings {
+                     defaults: UserDefaults = .appScoped(), bloomEnabled: Bool = true,
+                     displayHDR: Bool = false, maximumPotentialEDR: CGFloat = 1) throws -> WPEParityProgramSettings {
         let correction = try WPEParityColorCorrection(presetSnapshot: descriptor.presetSnapshot)
         let samples = resolveMSAASampleCount(requested: requestedMSAASampleCount(defaults: defaults),
                                              supports: { device.supportsTextureSampleCount($0) })
         return WPEParityProgramSettings(bloom: bloomEnabled, hdrPostProcessing: true,
                                         msaaSampleCount: samples,
                                         mipMappedFrameBufferEnabled: requestedMipMappedFrameBuffer(defaults: defaults),
-                                        colorCorrection: correction)
+                                        colorCorrection: correction, displayHDR: displayHDR,
+                                        maximumPotentialEDR: Float(maximumPotentialEDR))
     }
 
     /// The picker offers only 1/2/4/8. Never increase a request to match a device capability.

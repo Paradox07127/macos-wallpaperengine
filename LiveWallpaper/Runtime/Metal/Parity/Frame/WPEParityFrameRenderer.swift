@@ -587,7 +587,7 @@ final class WPEParityFrameRenderer {
                     }
                 }
                 if plan.post.hdrEnabled, let required, required == "combine_hdr" || required == "combine_srgb" {
-                    try Self.validatePresentation(program, pass: required)
+                    try Self.validatePresentation(program, pass: required, post: plan.post)
                 }
             }
         }
@@ -1839,7 +1839,7 @@ final class WPEParityFrameRenderer {
                     pass: requiredPresentationPass, reason: terminalIndex.flatMap { skipped[$0] } ?? .noMaterial
                 )
             }
-            try validatePresentation(program, pass: requiredPresentationPass)
+            try validatePresentation(program, pass: requiredPresentationPass, post: planned.post)
         }
         let fade = planned.frames[0].draws.first { _, draw in
             if case let .post(post) = draw {
@@ -1856,10 +1856,16 @@ final class WPEParityFrameRenderer {
         return post.shader
     }
 
-    private static func validatePresentation(_ program: WPEParityProgram, pass: String) throws {
+    private static func validatePresentation(_ program: WPEParityProgram, pass: String,
+                                             post: WPEParityPostProcessConfig) throws {
         let expectedShader = pass == "combine_hdr" ? "combine_hdr" : "passthroughsrgb"
+        // DISPLAYHDR=1 writes above reference white, which only a half-float backbuffer keeps.
+        let displayHDR = pass == "combine_hdr" && post.displayHDREnabled
+            && WPEParityFrameDrawPlanner.pixelFormats[post.backbufferFormat] == .rgba16Float
         guard program.shader == expectedShader,
-              !program.combos.contains(where: { ($0.name == "LINEAR" || $0.name == "DISPLAYHDR") && $0.value == "1" }) else {
+              !program.combos.contains(where: { combo in
+                  combo.value == "1" && (combo.name == "LINEAR" || combo.name == "DISPLAYHDR" && !displayHDR)
+              }) else {
             throw WPEParityFrameRenderError.requiredPostProcessUnavailable(
                 pass: pass, reason: .program("Unsupported HDR presentation shader or transfer combo: \(program.shader)")
             )

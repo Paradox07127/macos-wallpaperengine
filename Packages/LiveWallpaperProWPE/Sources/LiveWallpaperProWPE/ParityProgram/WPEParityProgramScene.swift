@@ -20,12 +20,19 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
 
     /// The wallpaper's raw `wec_*` / `wcc_*` preset settings.
     public var colorCorrection: WPEParityColorCorrection
+    /// Postprocessing "displayhdr" on an HDR output (Main+0x128 bit14).
+    public var displayHDR: Bool
+    /// The target screen's maximum potential EDR value, in reference-white units (1 = SDR white).
+    public var maximumPotentialEDR: Float
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
                 msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
-                colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection()) {
+                colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection(),
+                displayHDR: Bool = false, maximumPotentialEDR: Float = 1) {
         self.bloom = bloom
         self.hdrPostProcessing = hdrPostProcessing
+        self.displayHDR = displayHDR
+        self.maximumPotentialEDR = maximumPotentialEDR
         self.msaaSampleCount = msaaSampleCount ?? (msaa ? 2 : 1)
         self.mipMappedFrameBufferEnabled = mipMappedFrameBufferEnabled
         self.colorCorrection = colorCorrection
@@ -305,6 +312,8 @@ public struct WPEParityProgramScene: Sendable {
         let cameraFade = bloomGeneral["camerafade"].map { Self.flag($0) } ?? true
         var post = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                               objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
+                                              displayHDREnabled: settings.displayHDR,
+                                              maximumPotentialEDR: settings.maximumPotentialEDR,
                                               msaaSampleCount: samples,
                                               qualityMipMappedFrameBufferEnabled: settings.mipMappedFrameBufferEnabled,
                                               bloomSettings: Self.bloomSettings(bloomGeneral),

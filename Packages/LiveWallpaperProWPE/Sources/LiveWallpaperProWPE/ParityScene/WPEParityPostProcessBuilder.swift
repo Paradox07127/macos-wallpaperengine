@@ -200,9 +200,10 @@ private struct WPEParityPostProcessStream {
         }
     }
 
-    /// combine_hdr's g_RenderVar0.xy: displayhdr would read SDR white and peak luminance here (14012ac60.c:189-191).
+    /// combine_hdr's g_RenderVar0.xy. Windows sets (sdrWhite, peak − sdrWhite) / 80 nits (14012ac60.c:189-191,
+    /// 545-555); the shader is linear in both, so EDR units (1 = SDR white) divide them by sdrWhite.
     var displayLuminanceScale: SIMD2<Float> {
-        SIMD2(1, 1)
+        config.displayHDREnabled ? SIMD2(1, max(config.maximumPotentialEDR - 1, 0)) : SIMD2(1, 1)
     }
 
     var tint: [Float] {

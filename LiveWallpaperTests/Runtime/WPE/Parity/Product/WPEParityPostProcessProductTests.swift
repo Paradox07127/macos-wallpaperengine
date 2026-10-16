@@ -590,12 +590,13 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let engine = try engineAssets()
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
-        for initial in [false, true] {
+        // DISPLAYHDR=1 stays rejected while the plan's displayhdr is off.
+        for (initial, transfer) in [(false, "LINEAR"), (true, "LINEAR"), (false, "DISPLAYHDR")] {
             let path = initial ? "materials/util/combine_srgb.json" : "materials/util/combine_hdr_upsample.json"
             var material = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: engine.appendingPathComponent(path))) as? [String: Any])
             var passes = try XCTUnwrap(material["passes"] as? [[String: Any]])
             var combos = passes[0]["combos"] as? [String: Any] ?? [:]
-            combos["LINEAR"] = 1
+            combos[transfer] = 1
             passes[0]["combos"] = combos
             material["passes"] = passes
             let replacement = try JSONSerialization.data(withJSONObject: material)

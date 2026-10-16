@@ -8,6 +8,8 @@ public struct WPEParityPostProcessConfig: Sendable {
     public var hdrEnabled: Bool
     /// Postprocessing "displayhdr" (Main+0x128 bit14): the HDR bloom combine uses `combine_dhdr_upsample.json`.
     public var displayHDREnabled: Bool
+    /// The target screen's maximum potential EDR value, in reference-white units (1 = SDR white).
+    public var maximumPotentialEDR: Float
     /// One disables MSAA; otherwise this is the scene target's sample count.
     public var msaaSampleCount: Int
     /// A prepared material's actual active slot requests the resource, independently of quality.
@@ -27,7 +29,7 @@ public struct WPEParityPostProcessConfig: Sendable {
 
     public init(sceneBloomEnabled: Bool = false, userBloomEnabled: Bool = false,
                 objectTableNonEmpty: Bool = false, hdrEnabled: Bool = false, displayHDREnabled: Bool = false,
-                msaaSampleCount: Int = 1,
+                maximumPotentialEDR: Float = 1, msaaSampleCount: Int = 1,
                 sceneMipMappedFrameBufferEnabled: Bool = false, qualityMipMappedFrameBufferEnabled: Bool = false,
                 bloomSettings: WPEParityBloomSettings = WPEParityBloomSettings(), colorCorrectionEnabled: Bool = false,
                 fadeActive: Bool = false, backbufferWidth: Int, backbufferHeight: Int,
@@ -37,6 +39,7 @@ public struct WPEParityPostProcessConfig: Sendable {
         self.objectTableNonEmpty = objectTableNonEmpty
         self.hdrEnabled = hdrEnabled
         self.displayHDREnabled = displayHDREnabled
+        self.maximumPotentialEDR = maximumPotentialEDR
         self.msaaSampleCount = msaaSampleCount
         self.sceneMipMappedFrameBufferEnabled = sceneMipMappedFrameBufferEnabled
         self.qualityMipMappedFrameBufferEnabled = qualityMipMappedFrameBufferEnabled

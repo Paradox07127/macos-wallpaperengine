@@ -108,6 +108,47 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         }
     }
 
+    /// A white layer under bloom: SDR combine saturates at reference white; displayhdr extends it into EDR headroom.
+    func testDisplayHDRCombineExtendsBrightBloomAboveReferenceWhiteWithinHeadroom() async throws {
+        let context = try makeContext()
+        for displayHDR in [false, true] {
+            let plan = try makePlan(width: 32, height: 32, color: SIMD3(repeating: 1), gradient: false,
+                                    engine: context.engine, displayHDR: displayHDR, maximumPotentialEDR: 4)
+            XCTAssertEqual(plan.post.displayHDREnabled, displayHDR)
+            let combine = try XCTUnwrap(plan.frames[0].draws.first { _, draw in
+                guard case let .post(post) = draw else { return false }
+                return post.shader == "combine_hdr"
+            }?.key)
+            let program = try XCTUnwrap(plan.programs[combine])
+            XCTAssertEqual(program.combos.contains { $0.name == "DISPLAYHDR" && $0.value == "1" }, displayHDR)
+            let renderer = try await WPEParityFrameRenderer(plan: plan, device: context.device, queue: context.queue,
+                                                            shaders: context.shaders)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            guard case let .committed(command) = try renderer.encodeFrame(elapsed: 0) else {
+                return XCTFail("displayhdr=\(displayHDR) frame was not committed")
+            }
+            await command.completed()
+            try requireCompleted(command)
+            let terminal = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == combine }?.draw)
+            let renderVar0 = try XCTUnwrap(components(terminal.constants[.fragment]?["g_RenderVar0"]))
+            XCTAssertEqual(Array(renderVar0.prefix(2)), displayHDR ? [1, 3] : [1, 1])
+            XCTAssertEqual(renderer.backbuffer.pixelFormat, .rgba16Float)
+            let bytes = try read(renderer.backbuffer, bytesPerPixel: 8, queue: context.queue)
+            let center = (16 * 32 + 16) * 8
+            for lane in 0 ..< 3 {
+                let bits = UInt16(bytes[center + lane * 2]) | UInt16(bytes[center + lane * 2 + 1]) << 8
+                let value = Float(Float16(bitPattern: bits))
+                print("displayhdr=\(displayHDR) centre lane \(lane) = \(value)")
+                if displayHDR {
+                    XCTAssertGreaterThan(value, 1, "displayhdr must reach above reference white")
+                    XCTAssertLessThanOrEqual(value, 4, "displayhdr must stay within the screen's EDR headroom")
+                } else {
+                    XCTAssertLessThanOrEqual(value, 1, "SDR combine must saturate at reference white")
+                }
+            }
+        }
+    }
+
     private struct Context {
         let engine: URL
         let device: MTLDevice
@@ -226,8 +267,8 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         print("HDR+bloom \(width)x\(height), gradient=\(gradient), color=\(color): original pyramid, linear and present checked")
     }
 
-    private func makePlan(width: Int, height: Int, color: SIMD3<Double>, gradient: Bool, engine: URL) throws
-        -> WPEParityFramePlan {
+    private func makePlan(width: Int, height: Int, color: SIMD3<Double>, gradient: Bool, engine: URL,
+                          displayHDR: Bool = false, maximumPotentialEDR: Float = 1) throws -> WPEParityFramePlan {
         let rgb = gradient ? """
         g_Color4.rgb * vec3(1.0,
             0.2 * v_TexCoord.x + 0.8 * step(0.37, v_TexCoord.x),
@@ -260,7 +301,9 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in HDRBloomNoScripts() })
         return try WPEParityFramePlan(document: document, assets: assets,
-                                      settings: .init(bloom: true, hdrPostProcessing: true), width: width, height: height)
+                                      settings: .init(bloom: true, hdrPostProcessing: true, displayHDR: displayHDR,
+                                                      maximumPotentialEDR: maximumPotentialEDR),
+                                      width: width, height: height)
     }
 
     private func makeContext() throws -> Context {

@@ -84,6 +84,21 @@ struct ParityPostProcessTests {
         #expect(WPEParityPostProcessConfig(backbufferWidth: 1, backbufferHeight: 1).displayHDREnabled == false)
     }
 
+    @Test(arguments: [false, true]) func displayHDRCombinePublishesReferenceWhiteAndHeadroom(displayHDR: Bool) throws {
+        var config = bloomConfig()
+        config.hdrEnabled = true
+        config.backbufferFormat = "rgba16float"
+        config.displayHDREnabled = displayHDR
+        config.maximumPotentialEDR = 4
+        let frame = WPEParityPostProcessBuilder.build(config)
+        let combine = try #require(frame.draws.first { $0.shader == "combine_hdr" })
+        let upsample = displayHDR ? "combine_dhdr_upsample" : "combine_hdr_upsample"
+        #expect(combine.material == "materials/util/\(upsample).json")
+        let renderVar0 = try #require(combine.constants["g_RenderVar0"])
+        #expect(Array(renderVar0.prefix(2)) == (displayHDR ? [1, 3] : [1, 1]))
+        try verifyCompilation(frame)
+    }
+
     @Test(arguments: [false, true], [false, true])
     func colorCorrectionAndFadeAreIndependent(cc: Bool, fade: Bool) throws {
         var config = baseConfig()

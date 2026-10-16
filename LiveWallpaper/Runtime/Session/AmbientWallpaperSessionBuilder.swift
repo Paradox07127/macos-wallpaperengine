@@ -346,7 +346,9 @@ final class AmbientWallpaperSessionBuilder {
                 do {
                     settings = try WPEParityProductSettings.make(
                         descriptor: descriptor, device: device,
-                        bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled
+                        bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled,
+                        displayHDR: WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: surface.mtkView.colorPixelFormat),
+                        maximumPotentialEDR: window.screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1
                     )
                 } catch {
                     Logger.warning("Parity renderer rejected preset for \(descriptor.workshopID): \(error)",
