@@ -45,6 +45,7 @@ final class WPEParityEffectToggleTests: XCTestCase {
         for _ in 1 ... 3 {
             try await encode(without.renderer)
         }
+        XCTAssertEqual(Self.drawnEffects(without.renderer), ["50"], "an authored hidden effect draws at load")
         let hidden = try readBack(renderer.backbuffer, toggled)
         XCTAssertTrue(try hidden == readBack(without.renderer.backbuffer, without),
                       "hiding effect 19 differs from a scene loaded without it")
@@ -80,7 +81,7 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertTrue(harness.driver.renderer === renderer, "the renderer is not rebuilt")
     }
 
-    func testBloomStrengthAppliesNextFrameAndTheBloomSwitchReloads() async throws {
+    func testBloomStrengthAndTheBloomSwitchApplyNextFrame() async throws {
         let harness = try await makeDriver { json in
             var general = json["general"] as? [String: Any] ?? [:]
             general["bloom"] = ["user": "glowing", "value": true]
@@ -97,8 +98,11 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Self.bloomStrength(renderer)), 5, accuracy: 1e-6)
         XCTAssertTrue(harness.driver.renderer === renderer, "the renderer is not rebuilt")
 
-        XCTAssertFalse(try change(harness, "glowing", from: .bool(true), to: .bool(false)),
-                       "the bloom switch reloads")
+        // general.bloom has no onChanged hook; Main polls its bit every frame (17fa70, 180a41..180a75).
+        XCTAssertTrue(try change(harness, "glowing", from: .bool(true), to: .bool(false)))
+        try await encode(renderer)
+        XCTAssertNil(Self.bloomStrength(renderer), "the bloom switch still draws bloom")
+        XCTAssertTrue(harness.driver.renderer === renderer, "the renderer is not rebuilt")
     }
 
     func testConditionalTextureChangeAfterACachedEffectReturnReachesItsReader() async throws {

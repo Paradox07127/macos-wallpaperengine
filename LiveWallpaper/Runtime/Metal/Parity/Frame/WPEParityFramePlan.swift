@@ -150,7 +150,10 @@ struct WPEParityFramePlan {
         var post = scene.postProcess
         (post.backbufferWidth, post.backbufferHeight) = (physicalBackbufferSize.x, physicalBackbufferSize.y)
         var cache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>] = [:]
-        layout = try Self.layout(Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), post: post, scene: scene,
+        var loadedState = WPEParitySceneState(scene: scene, document: document)
+        let authored = Dictionary(zip(loadedState.effects, loadedState.effectVisibility)) { first, _ in first }
+        layout = try Self.layout(Self.loaded(scene.scene(effectVisible: { authored[.init(objectID: $0, effectID: $1)] ?? true },
+                                                         logicalViewport: SIMD2(width, height))), post: post, scene: scene,
                                  physicalBackbufferSize: physicalBackbufferSize,
                                  physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale,
                                  cache: &cache)
@@ -227,7 +230,6 @@ struct WPEParityFramePlan {
             }
         }
         var metadata: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:]
-        var loadedState = WPEParitySceneState(scene: scene, document: document)
         loadedState.setScriptField("bloom", of: "", to: .vector(SIMD4(post.sceneBloomEnabled ? 1 : 0, 0, 0, 0)),
                                    invalidating: .none)
         for (name, value) in [("bloomstrength", post.bloomSettings.strength),
