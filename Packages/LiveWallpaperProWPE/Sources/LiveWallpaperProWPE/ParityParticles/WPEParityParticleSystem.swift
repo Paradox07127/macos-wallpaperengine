@@ -773,8 +773,8 @@ public struct WPEParityParticleSystem {
         lifetime[slot] = 1
         initialSize[slot] = 0.5
         let brightness = config.flags & 8 == 0 ? instance.brightness : 1
-        // Seed: brightness, times colorn only while it is valid and the system has no hascolor (1d15a0.c:68-72).
-        let seed = colornActive && !config.hasColor ? instance.color : SIMD3<Float>(repeating: 1)
+        // Seed: brightness, times colorn only while it is valid and the definition flag 0x200000 is set (1d15a0.c:68-72).
+        let seed = colornActive && config.multipliesColorn ? instance.color : SIMD3<Float>(repeating: 1)
         initialColor[slot] = seed * brightness
         initialAlpha[slot] = instance.alpha
         birthU[slot] = u

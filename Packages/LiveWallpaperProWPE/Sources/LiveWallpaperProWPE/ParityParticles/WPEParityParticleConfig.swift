@@ -118,14 +118,15 @@ private struct WPEParityParticleParseContext {
     var path: [WPEParityParticlePathElement] = []
     var underEventAncestor = false
     var issues: [WPEParityParticleChildRejection] = []
+    var sceneVersion = 0
 }
 
 struct WPEParityParticleConfig: Equatable, Sendable {
     var maxCount: Int
     var startTime: Float
     var flags: Int
-    /// JSON hascolor opts out of the direct instance colorn multiplier.
-    var hasColor: Bool
+    /// Birth seeds multiply colorn below scene version 5 or without a colour source (c5490:767-770, 6656-6663).
+    var multipliesColorn = true
     var randomFrame: Bool
     /// Scales the sprite-sheet phase age/lifetime.
     var sequenceMultiplier: Float
@@ -148,9 +149,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     private var nestedEligibilityIssues: [WPEParityParticleChildRejection] = []
 
     /// Program prototypes, probes and runtime systems share this resolved tree and its accepted-child indexes.
-    init?(path: String, assets: WPEParityProgramAssets, is3D: Bool) {
+    init?(path: String, assets: WPEParityProgramAssets, is3D: Bool, sceneVersion: Int = 0) {
         guard let json = assets.json(path) else { return nil }
-        self.init(json: json, context: .init(ancestors: [path]), is3D: is3D, resolveChild: assets.json,
+        self.init(json: json, context: .init(ancestors: [path], sceneVersion: sceneVersion), is3D: is3D,
+                  resolveChild: assets.json,
                   resolveMaterial: { materialPath in
                       WPEParityProgramMaterial(path: materialPath, assets: assets).map {
                           WPEParityParticleMaterial(texture0: $0.textures[0].flatMap(assets.textureHeader(named:)))
@@ -166,6 +168,22 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             }
         }
         return SIMD3(repeating: 1)
+    }
+
+    /// A colour source: a colorrandom, hsvcolorrandom or colorlist initializer, else a colorchange operator (1401c45f0).
+    var hasColor: Bool {
+        initializers.contains {
+            switch $0 {
+            case .color, .hsvColor, .colorList: true
+            default: false
+            }
+        } || operators.contains {
+            if case .colorChange = $0.kind {
+                true
+            } else {
+                false
+            }
+        }
     }
 
     func descendant(at path: ArraySlice<WPEParityParticlePathElement>) -> WPEParityParticleConfig? {
@@ -199,7 +217,6 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
         startTime = JSON.number(json["starttime"]) ?? 0
         flags = Int(JSON.number(json["flags"]) ?? 0)
-        hasColor = JSON.flag(json["hascolor"])
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
         sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
@@ -245,6 +262,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             appendChild(entry, context: descendants, is3D: is3D, resolveChild: resolveChild,
                         resolveMaterial: resolveMaterial)
         }
+        multipliesColorn = context.sceneVersion < 5 || !hasColor
     }
 
     private mutating func appendEmitter(_ entry: WPESceneJSONValue, is3D: Bool) {

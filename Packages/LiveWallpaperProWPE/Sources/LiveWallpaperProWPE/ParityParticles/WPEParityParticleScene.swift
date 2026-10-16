@@ -21,9 +21,16 @@ public struct WPEParityParticleScene {
         let rng = suppliedRNG ?? WPEParityMT19937(seed: seed)
         let crt = WPEParityCRTRandom()
         let is3D = !engineFlags.orthographicProjection
+        // Root "version" counts only as a uint32, otherwise 0 (140186c90.c:310-332).
+        let sceneVersion = if case let .number(value)? = document.sourceJSON["version"], value >= 0,
+                              value <= 4_294_967_295, value == value.rounded(.towardZero) {
+            Int(value)
+        } else {
+            0
+        }
         for particle in document.particleObjects {
             guard let config = WPEParityParticleConfig(path: particle.particleRelativePath, assets: assets,
-                                                       is3D: is3D) else { continue }
+                                                       is3D: is3D, sceneVersion: sceneVersion) else { continue }
             let frame = frames[particle.id] ?? WPEParityParticleFrameContext()
             var instance = WPEParityParticleSystem.Instance(particle.instanceOverride, hdr: engineFlags.hdr)
             // Load copies the CP block before 22bd40 and the root prewarm (D/14022af30.c:390-417).

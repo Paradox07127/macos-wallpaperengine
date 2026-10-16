@@ -22,7 +22,8 @@ final class ParityParticleSceneTests: XCTestCase {
 
     /// A wallpaper held in memory: particle objects by id and JSON path, plus particle and material files.
     private static func scene(_ objects: [[String: Any]], particles: [String: String], seed: UInt32 = 7,
-                              flags: WPEEngineComboFlags = WPEEngineComboFlags()) throws -> WPEParityParticleScene {
+                              flags: WPEEngineComboFlags = WPEEngineComboFlags(),
+                              version: Int? = nil) throws -> WPEParityParticleScene {
         var texture = Array("TEXV0005\0TEXI0001\0".utf8)
         // RG88 spritesheet, 64×64 texture holding a 48×48 image.
         for value: UInt32 in [8, 4, 64, 64, 48, 48] {
@@ -36,9 +37,12 @@ final class ParityParticleSceneTests: XCTestCase {
         for (path, text) in particles {
             files[path] = Data(text.utf8)
         }
-        let sceneJSON: [String: Any] = ["camera": ["center": "0 0 0"],
+        var sceneJSON: [String: Any] = ["camera": ["center": "0 0 0"],
                                         "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
                                         "objects": objects]
+        if let version {
+            sceneJSON["version"] = version
+        }
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: sceneJSON),
                                                         userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
@@ -130,9 +134,9 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(Support.floats(bytes, at: 44 + 28, count: 4), [0, 0, 3, 0.25])
         let childBytes = try XCTUnwrap(scene.batches(for: .init(objectID: "5", node: [0], renderer: 0)).first).bytes
         // 22f890 gives the static child the object's override (brightness 2, alpha 0.5) before its first birth.
-        XCTAssertEqual(Support.floats(childBytes, at: 28, count: 4), [2, 2, 2, 0.5])
-        XCTAssertEqual(Support.floats(childBytes, at: 44 + 28, count: 4), [3, 3, 3, 0.25],
-                       "child brightness changes at birth while hascolor keeps its own colour gate")
+        XCTAssertEqual(Support.floats(childBytes, at: 28, count: 4), [2, 0, 0, 0.5])
+        XCTAssertEqual(Support.floats(childBytes, at: 44 + 28, count: 4), [0, 0, 3, 0.25],
+                       "a child without a colour source would ignore the new colorn and brightness at birth")
     }
 
     func testRateWithoutDirtyHookChangesTheNextObjectUpdate() throws {
@@ -1190,7 +1194,7 @@ final class ParityParticleSceneTests: XCTestCase {
         for (flags, brightness) in [(WPEEngineComboFlags(), Float(1)), (hdr, 2)] {
             var scene = try Self.scene(objects, particles: files, flags: flags)
             scene.advance(dt: 0.1, frames: ["5": .init(), "6": .init()])
-            for (id, color) in [("5", SIMD3<Float>(1, 0, 0)), ("6", SIMD3<Float>(1, 1, 1))] {
+            for (id, color) in [("5", SIMD3<Float>(1, 0, 0)), ("6", SIMD3<Float>(1, 0, 0))] {
                 let bytes = scene.batches(for: WPEParityParticleDrawKey(objectID: id, renderer: 0)).first?.bytes ?? []
                 XCTAssertEqual(Support.floats(bytes, at: 28, count: 4),
                                [color.x * brightness, color.y * brightness, color.z * brightness, 0.5], id)
@@ -1244,20 +1248,19 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         let withChild = Self.burst(1, extra: #", "children": [{"name": "particles/kid.json"}]"#)
         let blue = "0.27843 0.47843 0.95294"
-        let cases: [(String, [String: String], String, Bool, SIMD3<Float>)] = [
-            ("re-hued", ["particles/fx.json": withChild, "particles/kid.json": colored("21 200 0")], blue, true,
+        let cases: [(String, [String: String], String, Bool, Int?, SIMD3<Float>)] = [
+            ("re-hued", ["particles/fx.json": withChild, "particles/kid.json": colored("21 200 0")], blue, true, nil,
              SIMD3(0.077523, 0.228895, 0.908095)),
-            ("hascolor", ["particles/fx.json": withChild,
-                          "particles/kid.json": colored("21 200 0", extra: #", "hascolor": true"#)], blue, true,
+            ("version 5", ["particles/fx.json": withChild, "particles/kid.json": colored("21 200 0")], blue, true, 5,
              SIMD3(0.27843, 0.47843, 0.95294)),
-            ("flags 8", ["particles/fx.json": colored("21 200 0", extra: #", "flags": 8"#)], blue, false,
+            ("flags 8", ["particles/fx.json": colored("21 200 0", extra: #", "flags": 8"#)], blue, false, nil,
              SIMD3(21, 200, 0) / 255),
-            ("white", ["particles/fx.json": colored("197 214 255")], "1 1 1", false, SIMD3(1, 1, 1)),
+            ("white", ["particles/fx.json": colored("197 214 255")], "1 1 1", false, nil, SIMD3(1, 1, 1)),
         ]
-        for (name, files, colorn, child, expected) in cases {
+        for (name, files, colorn, child, version, expected) in cases {
             let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
                                              "instanceoverride": ["colorn": colorn]]]
-            var scene = try Self.scene(objects, particles: files)
+            var scene = try Self.scene(objects, particles: files, version: version)
             scene.advance(dt: 0.1, frames: ["5": .init()])
             let root = try XCTUnwrap(Self.root(scene))
             let system = try XCTUnwrap(child ? root.children.first : root, name)
@@ -1265,6 +1268,41 @@ final class ParityParticleSceneTests: XCTestCase {
             for slot in 0 ..< system.capacity where system.lifetime[slot] != 0 {
                 let color = system.initialColor[slot]
                 XCTAssertLessThan(simd_reduce_max(abs(color - expected)), 1e-4, "\(name): \(color)")
+            }
+        }
+    }
+
+    /// From scene version 5 a system with a colour source is seeded with brightness only (c5490:767-770, 6656-6663).
+    func testSceneVersionFiveStopsTheColornSeedOnColorSystems() throws {
+        let kid = """
+        {"maxcount": 8, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 8, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                         {"name": "colorrandom", "min": "15 255 0", "max": "28 146 0"}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        let files = ["particles/fx.json": Self.burst(1, extra: #", "children": [{"name": "particles/kid.json"}]"#),
+                     "particles/kid.json": kid]
+        let colorn = SIMD3<Float>(0.20392, 0.41961, 0.93333)
+        let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                         "instanceoverride": ["colorn": "0.20392 0.41961 0.93333"]]]
+        let lines: [(Int, SIMD3<Float>, SIMD3<Float>)] = [
+            (5, SIMD3(0.218486, 0.411752, 1), SIMD3(0.157224, 0.371071, 0.719605)),
+            (1, SIMD3(0.044554, 0.172775, 0.933330), SIMD3(0.032061, 0.155705, 0.671628)),
+        ]
+        for (version, a, b) in lines {
+            var scene = try Self.scene(objects, particles: files, version: version)
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertLessThan(simd_reduce_max(abs(root.initialColor[0] - colorn)), 1e-4,
+                              "version \(version): a root without a colour source would lose its colorn seed")
+            let child = try XCTUnwrap(root.children.first)
+            XCTAssertEqual(child.liveCount, 8, "version \(version)")
+            for slot in 0 ..< child.capacity where child.lifetime[slot] != 0 {
+                let color = child.initialColor[slot]
+                let t = (color.z - a.z) / (b.z - a.z)
+                XCTAssertTrue((-1e-3 ... 1.001).contains(t), "version \(version): \(color)")
+                XCTAssertLessThan(simd_reduce_max(abs(a + t * (b - a) - color)), 1e-3, "version \(version): \(color)")
             }
         }
     }
