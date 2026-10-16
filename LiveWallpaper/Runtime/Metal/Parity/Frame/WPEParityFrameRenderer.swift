@@ -161,6 +161,9 @@ final class WPEParityFrameRenderer {
     private var seenLightTransforms = -1
     private var seenLightVisibility = -1
     private var seenLayerFields = -1
+    private var seenAnimationLayerFields = -1
+    /// Animation-layer script fields last pushed into `puppets`; an absent key compares with its scene JSON value.
+    private var pushedAnimationLayerFields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:]
     private var lights: WPEParityUniformLights
     /// This frame's shadow atlas layout; nil when shadow quality is 0 or the plan declares no atlas.
     private(set) var shadowLayout: WPEParityShadowLayout?
@@ -402,6 +405,25 @@ final class WPEParityFrameRenderer {
                 command, value: value, shared: WPEParityFrameDrawPlan.sharedSprite(steps, at: clock.time),
                 durations: steps.map { Float($0.duration) }
             )
+        }
+    }
+
+    /// Nil when the layer has no puppet or the puppet has no layer at that `animationlayers` index.
+    var scriptAnimationLayer: (String, Int, WPEParityScriptEngine.AnimationLayerCommand, Double) -> Double? {
+        { [weak self] id, index, command, value in
+            guard let self, let layer = puppets[id]?.layers.first(where: { $0.sceneIndex == index }) else { return nil }
+            switch command {
+            case .play: puppets[id]?.controlLayer(at: index, action: .play)
+            case .pause: puppets[id]?.controlLayer(at: index, action: .pause)
+            case .stop: puppets[id]?.controlLayer(at: index, action: .stop)
+            case .setFrame: puppets[id]?.controlLayer(at: index, action: .setFrame(Float(value)))
+            case .isPlaying: return layer.isPlaying ? 1 : 0
+            case .getFrame: return Double(layer.frame)
+            case .fps: return Double(layer.fps)
+            case .frameCount: return Double(layer.animation.frameCount)
+            case .duration: return Double(layer.duration)
+            }
+            return 0
         }
     }
 
@@ -809,6 +831,7 @@ final class WPEParityFrameRenderer {
         textureSlots = previous.textureSlots
         renderVars = previous.renderVars
         puppets = previous.puppets
+        pushedAnimationLayerFields = previous.pushedAnimationLayerFields
         textureAnimations = previous.textureAnimations
         particles = previous.particles
         sceneRNG = previous.sceneRNG
@@ -868,6 +891,7 @@ final class WPEParityFrameRenderer {
         script?.engine.materialFunctionHandler = scriptMaterialFunction
         script?.engine.transformMatrixHandler = scriptTransformMatrix
         script?.engine.textureAnimationHandler = scriptTextureAnimation
+        script?.engine.animationLayerHandler = scriptAnimationLayer
         script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
@@ -947,6 +971,7 @@ final class WPEParityFrameRenderer {
         script.engine.transformMatrixHandler = scriptTransformMatrix
         script.engine.videoTextureHandler = scriptVideoCommand
         script.engine.textureAnimationHandler = scriptTextureAnimation
+        script.engine.animationLayerHandler = scriptAnimationLayer
         script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         try script.start(state: &state)
@@ -1101,6 +1126,52 @@ final class WPEParityFrameRenderer {
             layersMoved = true
         }
         seenLayerFields = state.scriptFieldsGeneration
+    }
+
+    /// Only changed fields are pushed: replaying an unchanged blendin would re-arm a ramp the animator finished.
+    private func applyAnimationLayerFields() {
+        guard seenAnimationLayerFields != state.scriptFieldsGeneration else { return }
+        seenAnimationLayerFields = state.scriptFieldsGeneration
+        for (id, puppet) in puppets {
+            let authored = plan.document.imageObjects.first { $0.id == id }?.animationLayers ?? []
+            for layer in puppet.layers where authored.indices.contains(layer.sceneIndex) {
+                let scene = authored[layer.sceneIndex]
+                func scalar(_ value: Double) -> WPEParitySceneState.ScriptValue {
+                    .vector(SIMD4(Float(value), 0, 0, 0))
+                }
+                let seeds: [String: WPEParitySceneState.ScriptValue] = [
+                    "visible": scalar(scene.visible ? 1 : 0), "additive": scalar(scene.additive ? 1 : 0),
+                    "blendin": scalar(scene.blendIn ? 1 : 0), "blendout": scalar(scene.blendOut ? 1 : 0),
+                    "name": .string(scene.name), "rate": scalar(scene.rate), "blend": scalar(scene.blend),
+                    "blendtime": scalar(scene.blendTime),
+                ]
+                var changed: [String: WPEParitySceneState.ScriptValue] = [:]
+                for (name, seed) in seeds {
+                    let key = WPEParitySceneState.ScriptFieldKey(objectID: id,
+                                                                 name: "animationlayers.\(layer.sceneIndex).\(name)")
+                    guard let value = state.scriptField(key.name, of: id),
+                          value != (pushedAnimationLayerFields[key] ?? seed) else { continue }
+                    pushedAnimationLayerFields[key] = value
+                    changed[name] = value
+                }
+                guard !changed.isEmpty else { continue }
+                func float(_ name: String) -> Float? {
+                    guard case let .vector(value)? = changed[name] else { return nil }
+                    return value.x
+                }
+                func flag(_ name: String) -> Bool? {
+                    float(name).map { $0 != 0 }
+                }
+                var name: String?
+                if case let .string(value)? = changed["name"] {
+                    name = value
+                }
+                puppets[id]?.updateLayer(at: layer.sceneIndex, enabled: flag("visible"), rate: float("rate"),
+                                         blend: float("blend"), name: name, additive: flag("additive"),
+                                         blendIn: flag("blendin"), blendOut: flag("blendout"),
+                                         blendTime: float("blendtime"))
+            }
+        }
     }
 
     /// Bloom fields share canonical State with scripts and accepted document deltas.
@@ -1425,6 +1496,7 @@ final class WPEParityFrameRenderer {
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
+        applyAnimationLayerFields()
         // Scene time, so a paused clock holds the pose.
         for id in puppets.keys {
             puppets[id]?.advance(dt: Double(clock.frametime))

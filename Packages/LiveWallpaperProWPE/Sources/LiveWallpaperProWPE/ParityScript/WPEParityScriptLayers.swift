@@ -89,6 +89,34 @@ enum WPEParityScriptLayers {
       get frameCount() { return textureAnimationCommand(this, 9); },
       get duration() { return textureAnimationCommand(this, 10); }
     };
+    // IAnimationLayer: one wrapper per puppet animation layer. Op numbers are
+    // WPEParityScriptEngine.AnimationLayerCommand raw values; null from the host means no such puppet layer.
+    const animationLayerOwners = new WeakMap();
+    function animationLayerLive(wrapper) {
+      const owner = animationLayerOwners.get(wrapper);
+      return owner !== undefined && liveLayer(table[owner.layer]);
+    }
+    function animationLayerCommand(wrapper, op, value = 0) {
+      if (!animationLayerLive(wrapper)) return undefined;
+      const owner = animationLayerOwners.get(wrapper);
+      const r = host.animationLayerCommand(owner.layer, owner.index, op, value);
+      return r == null ? undefined : r;
+    }
+    const AnimationLayerProto = {
+      play() { animationLayerCommand(this, 0); },
+      pause() { animationLayerCommand(this, 1); },
+      stop() { animationLayerCommand(this, 2); },
+      isPlaying() { const r = animationLayerCommand(this, 3); return r === undefined ? undefined : r === 1; },
+      setFrame(frame) { const a = argument(frame, 4); if (a) animationLayerCommand(this, 4, a.value); },
+      getFrame() { return animationLayerCommand(this, 5); },
+      get fps() { return animationLayerCommand(this, 6); },
+      get frameCount() { return animationLayerCommand(this, 7); },
+      get duration() { return animationLayerCommand(this, 8); },
+      addEndedCallback() { host.log(1, 'addEndedCallback is unsupported without an ended-callback consumer'); }
+    };
+    for (const f of host.animationLayerFields) {
+      Object.defineProperty(AnimationLayerProto, f.name, accessor(o => o.__base, f, animationLayerLive));
+    }
     const materialWrapper = Symbol('materialWrapper');
     function material(fields) {
       if (fields[materialWrapper]) return fields[materialWrapper];
@@ -277,7 +305,7 @@ enum WPEParityScriptLayers {
       }
       return { proto, instance, video };
     });
-    host.addLayer = function (index, kind, base, parent, effects, baseMaterials, hasVideo) {
+    host.addLayer = function (index, kind, base, parent, effects, baseMaterials, hasVideo, animationLayers) {
       const p = protos[kind];
       const layer = hidden(Object.create(p.proto), { __base: base, __parent: parent, __effects: [], __video: null });
       Object.defineProperty(layer, '__index', { value: index });
@@ -295,6 +323,11 @@ enum WPEParityScriptLayers {
         for (const pass of e.passes) material(pass);
       }
       for (const pass of baseMaterials) material(pass);
+      for (const a of animationLayers) {
+        const wrapper = hidden(Object.create(AnimationLayerProto), { __base: a.base });
+        animationLayerOwners.set(wrapper, { layer: index, index: a.index });
+        for (const f of host.animationLayerFields) owners[a.base + f.rel] = wrapper;
+      }
       table[index] = layer;
       order.push(layer);
       return layer;

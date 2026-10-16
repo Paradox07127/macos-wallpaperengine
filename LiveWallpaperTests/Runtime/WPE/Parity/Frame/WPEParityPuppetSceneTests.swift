@@ -108,6 +108,57 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertTrue(shown.allSatisfy { encoded.contains($0.0) })
     }
 
+    /// Workshop 3808922316's wing-layer script, here on object 47's only animation layer at 50 %.
+    func testAnimationLayerScriptSeeksThePuppetLayer() async throws {
+        let script = """
+        'use strict';
+        export var scriptProperties = createScriptProperties()
+            .addSlider({ name: 'percentage', label: 'Initial progress', value: 1, min: 0, max: 1, integer: false })
+            .finish();
+        export function init(value) {
+            const ani = 'addEndedCallback' in thisObject ? thisObject : thisObject.getAnimation()
+            ani.play()
+            ani.setFrame(ani.frameCount * scriptProperties.percentage)
+            return value;
+        }
+        """
+        let compiler = try makeCompiler()
+        let plan = try makePlan { json in
+            Self.edit(&json, object: 47) { object in
+                var layers = object["animationlayers"] as? [[String: Any]] ?? []
+                layers[0]["visible"] = ["value": true, "script": script, "scriptproperties": ["percentage": 0.5]]
+                object["animationlayers"] = layers
+            }
+        }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, compiler: compiler,
+                                              cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
+                                              device: device, queue: queue)
+        let sceneScript = try WPEParitySceneScript(
+            document: plan.document, state: renderer.state, assets: plan.scene.assets,
+            canvasSize: renderer.pathCamera.size,
+            screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+            materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
+            host: .init()
+        )
+        try renderer.attachScript(sceneScript)
+        XCTAssertEqual(sceneScript.engine.exceptionCount, 0, sceneScript.engine.exceptions.joined(separator: "\n"))
+        let seeked = try XCTUnwrap(renderer.puppets["47"]?.layers[0])
+        XCTAssertEqual(seeked.frame, 0.5 * Float(seeked.animation.frameCount), accuracy: 1e-3)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
+        let advanced = try XCTUnwrap(renderer.puppets["47"]?.layers[0])
+        XCTAssertEqual(advanced.frame, seeked.frame + seeked.fps / 60, accuracy: 1e-3)
+    }
+
+    private static func edit(_ json: inout [String: Any], object id: Int, _ body: (inout [String: Any]) -> Void) {
+        var objects = json["objects"] as? [[String: Any]] ?? []
+        for index in objects.indices where objects[index]["id"] as? Int == id {
+            body(&objects[index])
+        }
+        json["objects"] = objects
+    }
+
     private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
         let environment = ProcessInfo.processInfo.environment
         func path(_ key: String, _ fallback: String) -> URL {
@@ -124,7 +175,8 @@ final class WPEParityPuppetSceneTests: XCTestCase {
                                                  workDirectory: scratch.appending(path: "shaderc"))
     }
 
-    private func makePlan(_ sceneID: String = sceneID) throws -> WPEParityFramePlan {
+    private func makePlan(_ sceneID: String = sceneID,
+                          edit: ((inout [String: Any]) -> Void)? = nil) throws -> WPEParityFramePlan {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
@@ -140,8 +192,14 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
+        var data = try XCTUnwrap(assets.data("scene.json"))
+        if let edit {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            edit(&json)
+            data = try JSONSerialization.data(withJSONObject: json)
+        }
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
+            data: data, userValues: [:],
             makeTransformScriptResolver: { _, _ in NoScripts() }
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),

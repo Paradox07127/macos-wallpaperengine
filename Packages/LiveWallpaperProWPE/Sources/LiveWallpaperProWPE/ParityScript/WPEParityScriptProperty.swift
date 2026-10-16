@@ -56,6 +56,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         /// The IVideoTexture of an image layer (140214050).
         case video
         case scene
+        /// One puppet `animationlayers[i]` entry (IAnimationLayer, 1401730d0.c:21-51).
+        case animationLayer
     }
 
     public enum Target: Hashable, Sendable {
@@ -318,6 +320,18 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "rate", owner: .video, type: .float, invalidation: .mediaPlayer),
         WPEParityScriptProperty(name: "loop", owner: .video, type: .byteBool, invalidation: .mediaPlayer),
         WPEParityScriptProperty(name: "duration", owner: .video, type: .float, flags: .notFromJSON),
+    ]
+
+    /// IAnimationLayer writable fields (14026c980.c:44-256); the puppet reads them at its next object update.
+    public static let animationLayer: [WPEParityScriptProperty] = [
+        WPEParityScriptProperty(name: "visible", owner: .animationLayer, type: .flagBool),
+        WPEParityScriptProperty(name: "additive", owner: .animationLayer, type: .flagBool),
+        WPEParityScriptProperty(name: "blendin", owner: .animationLayer, type: .flagBool),
+        WPEParityScriptProperty(name: "blendout", owner: .animationLayer, type: .flagBool),
+        WPEParityScriptProperty(name: "name", owner: .animationLayer, type: .string),
+        WPEParityScriptProperty(name: "rate", owner: .animationLayer, type: .float),
+        WPEParityScriptProperty(name: "blend", owner: .animationLayer, type: .float),
+        WPEParityScriptProperty(name: "blendtime", owner: .animationLayer, type: .float),
     ]
 
     /// Scene fields: Float bloom parameters set scene+0xe0 bit31; ambient/skylight update lighting.

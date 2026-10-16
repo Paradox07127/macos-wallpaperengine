@@ -25,6 +25,11 @@ public final class WPEParityScriptEngine {
         case play, pause, stop, isPlaying, getFrame, setFrame, join, getRate, setRate, frameCount, duration
     }
 
+    /// Native IAnimationLayer methods (14026c980.c:256-457); the Prelude's op numbers are these raw values.
+    public enum AnimationLayerCommand: Int, Sendable {
+        case play, pause, stop, isPlaying, setFrame, getFrame, fps, frameCount, duration
+    }
+
     /// A snapshot of the existing typed fields at this synchronous native-call boundary.
     public struct SoundFields: Sendable {
         public let volume: Float
@@ -226,6 +231,8 @@ public final class WPEParityScriptEngine {
         var descriptor: Int32
         var effect: Int32 = -1
         var materialPass: WPEParityMaterialPassKey?
+        /// The layer's `animationlayers` index; -1 = not an animation-layer field.
+        var animationLayer: Int32 = -1
     }
 
     private enum Refresh {
@@ -269,6 +276,9 @@ public final class WPEParityScriptEngine {
     /// Rebound like materialFunctionHandler. Arguments: image layer ID, command, setFrame frame or setRate rate
     /// (else 0). Returns 1/0 for isPlaying, a getter's value, 0 otherwise; nil = the layer's texture has no sprite sheet.
     public var textureAnimationHandler: ((String, TextureAnimationCommand, Double) -> Double?)?
+    /// Rebound like materialFunctionHandler. Arguments: image layer ID, `animationlayers` index, command, setFrame
+    /// frame (else 0). Returns 1/0 for isPlaying, a getter's value, 0 otherwise; nil = no such puppet layer.
+    public var animationLayerHandler: ((String, Int, AnimationLayerCommand, Double) -> Double?)?
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
     public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
     /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
@@ -696,9 +706,16 @@ public final class WPEParityScriptEngine {
             let descriptor = descriptors[Int(slot.descriptor)]
             guard descriptor.target == .field else { continue }
             let objectID = slot.layer < 0 ? "" : layers[Int(slot.layer)].id
-            guard state.scriptField(descriptor.fieldName, of: objectID) == nil else { continue }
-            state.setScriptField(descriptor.fieldName, of: objectID, to: value, invalidating: descriptor.invalidation)
+            let name = fieldName(slot: slotIndex)
+            guard state.scriptField(name, of: objectID) == nil else { continue }
+            state.setScriptField(name, of: objectID, to: value, invalidating: descriptor.invalidation)
         }
+    }
+
+    private func fieldName(slot index: Int) -> String {
+        let slot = slots[index]
+        let name = descriptors[Int(slot.descriptor)].fieldName
+        return slot.animationLayer >= 0 ? "animationlayers.\(slot.animationLayer).\(name)" : name
     }
 
     private func apply(slot index: Int, to state: inout WPEParitySceneState) {
@@ -730,7 +747,7 @@ public final class WPEParityScriptEngine {
             case .int: .integer(integers[index])
             default: .vector(value)
             }
-            state.setScriptField(descriptor.fieldName, of: layer?.id ?? "", to: stored,
+            state.setScriptField(fieldName(slot: index), of: layer?.id ?? "", to: stored,
                                  invalidating: descriptor.invalidation)
         }
     }
@@ -863,6 +880,24 @@ public final class WPEParityScriptEngine {
                 initialValues.append((slot, value))
             }
         }
+        if kind == .image {
+            for (index, entry) in WPEParityProgramScene.array(config["animationlayers"]).enumerated() {
+                animationLayerBases[Int(layerIndex), default: []].append(slots.count)
+                for descriptor in WPEParityScriptProperty.animationLayer {
+                    let slot = slots.count
+                    slots.append(Slot(layer: layerIndex, descriptor: self.index(of: descriptor), animationLayer: Int32(index)))
+                    refresh.append(.field(slot: slot, objectID: id, name: fieldName(slot: slot)))
+                    // Native defaults for an absent field (s08/animation-layer-contract-v1.md:9).
+                    let fallback: WPEParitySceneState.ScriptValue = switch descriptor.name {
+                    case "visible", "rate", "blend": .vector(SIMD4(1, 0, 0, 0))
+                    case "blendtime": .vector(SIMD4(0.5, 0, 0, 0))
+                    case "name": .string("")
+                    default: .vector(.zero)
+                    }
+                    initialValues.append((slot, Self.parse(entry[descriptor.name], descriptor) ?? fallback))
+                }
+            }
+        }
         guard let state else { return Int(layerIndex) }
         for effect in WPEParityProgramScene.array(config["effects"]) {
             guard let effectID = WPEParitySceneAnimations.id(effect) else { continue }
@@ -894,6 +929,8 @@ public final class WPEParityScriptEngine {
     private var constantSlots: [WPEParityMaterialPassKey: [String: Int]] = [:]
     /// Each layer's effect visible slots in effect order.
     private var effectSlots: [Int: [(id: String, slot: Int)]] = [:]
+    /// Each image layer's first animation-layer field slot, by `animationlayers` index.
+    private var animationLayerBases: [Int: [Int]] = [:]
 
     private func addConstants(_ values: WPESceneJSONValue?, layer: Int32, pass key: WPEParityMaterialPassKey,
                               state: WPEParitySceneState) {
@@ -1009,6 +1046,9 @@ public final class WPEParityScriptEngine {
             Self.fieldInfo(field, rel: rel)
         })
         set("sceneBase", sceneBase)
+        set("animationLayerFields", WPEParityScriptProperty.animationLayer.enumerated().map { rel, field in
+            Self.fieldInfo(field, rel: rel)
+        })
         let resolve: @convention(block) (String, String) -> String = { specifier, importer in
             WPEParityScriptModule.resolve(specifier, importer: importer)
         }
@@ -1102,6 +1142,16 @@ public final class WPEParityScriptEngine {
                 return nil
             }
             return handler(layers[index].id, command, value).map { NSNumber(value: $0) }
+        }
+        let animationLayerCommand: @convention(block) (Double, Double, Double, Double) -> NSNumber? = { [weak self] index, animationLayer, raw, value in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
+                  let animationLayer = Int(exactly: animationLayer),
+                  let raw = Int(exactly: raw), let command = AnimationLayerCommand(rawValue: raw) else { return nil }
+            guard let handler = animationLayerHandler else {
+                configuration.log(1, "IAnimationLayer is unsupported without a product puppet consumer")
+                return nil
+            }
+            return handler(layers[index].id, animationLayer, command, value).map { NSNumber(value: $0) }
         }
         let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
             guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
@@ -1227,6 +1277,7 @@ public final class WPEParityScriptEngine {
         set("soundKind", WPEParityScriptLayerKind.sound.rawValue)
         set("imageKind", WPEParityScriptLayerKind.image.rawValue)
         set("textureAnimationCommand", textureAnimationCommand)
+        set("animationLayerCommand", animationLayerCommand)
         set("executeMaterialFunction", executeMaterialFunction)
         set("findAnimation", findAnimation)
         set("animationCommand", animationCommand)
@@ -1317,7 +1368,9 @@ public final class WPEParityScriptEngine {
             $0.objectID == layer.id && $0.effectID == nil && state.passIndex(of: $0) != nil
         }
         .sorted { $0.pass < $1.pass }.map(materialInfo)
-        host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials, layer.hasVideo])
+        let animationLayers = (animationLayerBases[index] ?? []).enumerated().map { ["index": $0.offset, "base": $0.element] }
+        host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials,
+                                                      layer.hasVideo, animationLayers])
     }
 
     private func materialInfo(_ key: WPEParityMaterialPassKey) -> [String: Any] {
@@ -1517,6 +1570,12 @@ public final class WPEParityScriptEngine {
                                slot: slot, descriptor: descriptors[Int(slots[slot].descriptor)],
                                className: "material", source: source)
                 }
+            }
+        }
+        for (index, base) in (animationLayerBases[layerIndex] ?? []).enumerated() {
+            for (rel, descriptor) in WPEParityScriptProperty.animationLayer.enumerated() {
+                addBinding(layerIndex: layerIndex, path: "animationlayers/\(index)/\(descriptor.name)", slot: base + rel,
+                           descriptor: descriptor, className: "animationlayer", source: source)
             }
         }
         for (name, slot) in (constantSlots[WPEParityMaterialPassKey(objectID: layer.id)] ?? [:])
