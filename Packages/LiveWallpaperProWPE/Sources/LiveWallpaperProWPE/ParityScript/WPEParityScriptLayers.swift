@@ -355,7 +355,19 @@ enum WPEParityScriptLayers {
         if (modelOwners.has(config)) config = { model: config };
         const a = argument(config, 0x200 | 0x400);
         if (!a) return null;
-        const index = host.createLayer(a.type === 0x200 ? JSON.stringify({ image: a.value }) : a.value);
+        let text = a.value;
+        if (a.type === 0x200) {
+          // 181633290.c:384-406 strips leading separators; 181653460.c:187-384 moves the path under __workshopId.
+          let path = a.value.replace(/^[\/\\]+/, '');
+          if (current.workshopId) {
+            const parts = path.split(/[\/\\]+/);
+            if (parts[1] === 'workshop') parts.splice(1, 2);
+            path = [parts[0], 'workshop', current.workshopId, ...parts.slice(1)].join('/')
+              .replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+          }
+          text = JSON.stringify({ image: path });
+        }
+        const index = host.createLayer(text);
         return index < 0 ? null : table[index];
       },
       destroyLayer(key) {

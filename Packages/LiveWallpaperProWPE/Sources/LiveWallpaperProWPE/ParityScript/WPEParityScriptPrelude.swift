@@ -132,7 +132,9 @@ enum WPEParityScriptPrelude {
         if (nullGlobalAliases) aliases = setAliases;
       } catch (e) { report({ name }, e); return -1; }
       finally { current = previous; compilingBinding = previousCompile; currentEvent = previousEvent; }
-      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, soundVolume, aliases, exports, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
+      // 181647aa0.c:622-626 keeps __workshopId only when the export is a string.
+      const workshopId = typeof exports.__workshopId === 'string' ? exports.__workshopId : '';
+      const b = { name, path, index, layer, targetLayer, owner, slot, type, angle, readonly, soundVolume, aliases, exports, workshopId, fns: [], bits: 0, disabled: 0, dead: false, initialized: false, timers: new Map() };
       for (let id = 0; id < NAMES.length; id++) {
         const f = NAMES[id] && exports[NAMES[id]];
         if (typeof f === 'function') { b.fns[id] = f; b.bits |= 1 << id; }

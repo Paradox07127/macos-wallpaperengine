@@ -305,7 +305,9 @@ extension WPEParitySceneDriverTests {
         }
         """
         let (_, original) = try sceneInputs()
-        let material: [String: Any] = ["passes": [["shader": "genericimage2", "textures": ["clone-template"],
+        // Without VERSION, genericimage2 skips `color *= g_Color4` and the green template would draw white.
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "combos": ["VERSION": 2],
+                                                   "textures": ["clone-template"],
                                                    "blending": "normal", "cullmode": "nocull",
                                                    "depthtest": "disabled", "depthwrite": "disabled"]]]
         let files = try [
@@ -342,6 +344,9 @@ extension WPEParitySceneDriverTests {
         XCTAssertFalse(try owned(id).isEmpty, "The created layer must draw in the frame that created it")
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: templateColor)
         sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
+        // white.tex mips past 0 hold 0xfc, so the green clone is about (0, 248, 0).
+        let clone = rgb(pixels, x: 136)
+        XCTAssertTrue(clone[0] <= 4 && clone[2] <= 4 && abs(clone[1] - 248) <= 8, "clone pixel \(clone) is not green")
 
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 80, height: 48))
         XCTAssertTrue(driver.needsReplan)
