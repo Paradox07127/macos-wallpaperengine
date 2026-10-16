@@ -68,12 +68,15 @@ public extension WPEParityProgramBuilder {
         let imported = Set(frame.resources.filter { $0.lifetime == .imported }.map(\.id))
         let resources = Set(frame.resources.map(\.id))
         let white = SIMD4<Float>(repeating: 1)
+        // The first object with an id wins, as `first(where:)` would.
+        let objects = Dictionary((description ?? scene.scene).objects.map { ($0.id, $0) },
+                                 uniquingKeysWith: { first, _ in first })
         var bindings: [Int: WPEParityProgramBinding] = [:]
         for (index, draw) in frame.draws {
             switch draw {
             case let .scene(draw):
                 guard let material = scene.material(for: draw) else { continue }
-                let object = (description ?? scene.scene).objects.first { $0.id == draw.objectID }
+                let object = objects[draw.objectID]
                 // The producer assigns the native pass role once. Clip targets inherit their albedo/fill role;
                 // masks and composite publication cannot multiply the layer colour a second time.
                 var layerColor = draw.colorRole.usesLayerColor ? scene.layerColors[draw.objectID] : nil

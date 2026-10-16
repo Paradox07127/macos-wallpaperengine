@@ -42,6 +42,8 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
 
     /// Keyed by shader name; a wallpaper's shader files do not change while its assets live.
     private let declarations = OSAllocatedUnfairLock(initialState: [String: ShaderDeclarations]())
+    /// Keyed by path; a `nil` value records a missing or unparsable file.
+    private let parsedJSON = OSAllocatedUnfairLock(initialState: [String: WPESceneJSONValue?]())
 
     public var roots: [URL] {
         sources.map(\.root)
@@ -60,8 +62,20 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
     }
 
     public func json(_ path: String) -> WPESceneJSONValue? {
-        guard let data = data(path), let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
-        return WPESceneJSONValue(jsonValue: object)
+        if let stored = parsedJSON.withLock({ $0[path] }) {
+            return stored
+        }
+        let computed: WPESceneJSONValue? = if let data = data(path),
+                                              let object = try? JSONSerialization.jsonObject(with: data) {
+            WPESceneJSONValue(jsonValue: object)
+        } else {
+            nil
+        }
+        return parsedJSON.withLock { memo in
+            let first = memo[path] ?? computed
+            memo[path] = first
+            return first
+        }
     }
 
     public func shaderSource(named name: String) -> [UInt8]? {

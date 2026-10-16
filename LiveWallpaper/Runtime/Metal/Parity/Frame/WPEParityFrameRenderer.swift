@@ -1945,6 +1945,12 @@ final class WPEParityFrameRenderer {
         for (index, name) in previous.map({ drawNames($0.frames[0]) }) ?? [:] {
             earlier[name] = index
         }
+        // Per frame; the first resource with an id wins, as `first(where:)` would.
+        let byID: (WPEParityFrame) -> [WPEResourceID: WPELogicalResource] = { frame in
+            Dictionary(frame.resources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        let currentResources = previous == nil ? [] : planned.frames.map(byID)
+        let previousResources = previous?.frames.map(byID) ?? []
         var draws: [Int: WPEParityFrameDrawPlan] = [:]
         var skipped = planned.skipped
         for (index, program) in planned.programs.sorted(by: { $0.key < $1.key }) {
@@ -1953,7 +1959,8 @@ final class WPEParityFrameRenderer {
                Self.sameModelDataVersion(planned.modelDataShapes[index], geometry: plan.geometry),
                planned.frames.indices.allSatisfy({
                    planned.frames[$0].draws[index] == previous.frames[$0].draws[match]
-                       && Self.resourcesMatch(planned.frames[$0], previous.frames[$0], draw: index)
+                       && Self.resourcesMatch(planned.frames[$0], currentResources[$0], previous.frames[$0],
+                                              previousResources[$0], draw: index)
                }) {
                 draws[index] = plan
                 continue
@@ -2041,14 +2048,16 @@ final class WPEParityFrameRenderer {
         }
     }
 
-    private static func resourcesMatch(_ current: WPEParityFrame, _ previous: WPEParityFrame, draw: Int) -> Bool {
+    private static func resourcesMatch(_ current: WPEParityFrame, _ currentResources: [WPEResourceID: WPELogicalResource],
+                                       _ previous: WPEParityFrame,
+                                       _ previousResources: [WPEResourceID: WPELogicalResource], draw: Int) -> Bool {
         guard let description = current.draws[draw] else { return false }
         let ids: Set<WPEResourceID> = switch description {
         case let .scene(scene): Set(scene.reads + [scene.target])
         case let .post(post): Set(post.reads)
         }
         for id in ids {
-            guard current.resources.first(where: { $0.id == id }) == previous.resources.first(where: { $0.id == id }),
+            guard currentResources[id] == previousResources[id],
                   current.samplers[id] == previous.samplers[id] else { return false }
         }
         return true
