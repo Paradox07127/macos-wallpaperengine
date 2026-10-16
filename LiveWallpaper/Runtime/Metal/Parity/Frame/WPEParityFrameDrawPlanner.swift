@@ -1201,7 +1201,8 @@ struct WPEParityFrameDrawPlanner {
             image = try videoImage(span, info: info, path: path)
         } else {
             do {
-                image = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties)
+                image = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties,
+                                                        path: path)
             } catch WPETexDecodeError.unsupportedAnimation {
                 throw .videoTexture(path)
             } catch {

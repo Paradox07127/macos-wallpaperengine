@@ -566,6 +566,41 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
+    func testSharedUploadsKeyOnPathBytesAndSelectedVariantsAndHoldNoStrongReference() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        // Variants 8 and 9 share group 1, so "alt" changes the observations but not the selection while "on" holds.
+        let data = conditionalTex(format: 0, images: [[solid(1, 1, [10, 20, 30, 40])]],
+                                  table: [(1, 8, 0, #"{"condition":"on"}"#), (1, 9, 0, #"{"condition":"alt"}"#)],
+                                  records: [0: [[ConditionalRecord(id: 8, x: 0, y: 0, width: 1, height: 1, bytes: Data([1, 2, 3, 4])),
+                                                 ConditionalRecord(id: 9, x: 0, y: 0, width: 1, height: 1, bytes: Data([5, 6, 7, 8]))]]])
+        let path = "materials/share-\(UUID().uuidString).tex"
+        func properties(on: Bool, alt: Bool) -> WPESceneJSONValue {
+            .object(["on": .object(["value": .bool(on)]), "alt": .object(["value": .bool(alt)])])
+        }
+        func shared(_ properties: WPESceneJSONValue, path: String? = path) throws -> WPEParityFrameDrawPlanner.Image {
+            try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                            userProperties: properties, path: path)
+        }
+        let first = try shared(properties(on: true, alt: false))
+        let other = try shared(properties(on: false, alt: true))
+        XCTAssertFalse(first.texture === other.texture)
+        try assertPixel(read(other.texture, levels: [0], device: device)[0], SIMD4(5, 6, 7, 8) / 255)
+        let observed = try shared(properties(on: true, alt: true))
+        XCTAssertTrue(first.texture === observed.texture)
+        XCTAssertEqual(first.conditionalSelection?.flagsByVariantID, observed.conditionalSelection?.flagsByVariantID)
+        XCTAssertEqual(first.conditionalSelection?.observations[Data("alt".utf8)], Data("0".utf8))
+        XCTAssertEqual(observed.conditionalSelection?.observations[Data("alt".utf8)], Data("1".utf8))
+        XCTAssertFalse(try shared(properties(on: true, alt: false), path: nil).texture === first.texture)
+
+        weak var released: MTLTexture?
+        let unique = tex(format: 0, images: [[solid(1, 1, [91, 92, 93, 94])]])
+        try autoreleasepool {
+            released = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: unique), device: device,
+                                                       path: "materials/share-\(UUID().uuidString).tex").texture
+        }
+        XCTAssertNil(released)
+    }
+
     private struct ConditionalRecord {
         let id: UInt32
         let x: UInt32

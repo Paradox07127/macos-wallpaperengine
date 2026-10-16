@@ -1,7 +1,9 @@
 #if !LITE_BUILD
+import CryptoKit
 import Foundation
 import LiveWallpaperProWPE
 import Metal
+import os
 
 /// Uploads native TEX resources once while planning a scene. Raw formats retain their channels and authored
 /// mip chain; only TEXB's encoded-image payload uses the decoder's ImageIO bridge. No usage/path swizzle policy.
@@ -18,8 +20,116 @@ enum WPEParityTextureLoader {
         }
     }
 
+    private struct SharedKey: Hashable {
+        let registryID: UInt64
+        let path: String
+        let digest: SHA256.Digest
+        /// nil when the TEX has no conditional variants or no properties were given.
+        let selection: [UInt32: UInt32]?
+    }
+
+    private struct WeakTexture {
+        weak var texture: MTLTexture?
+    }
+
+    private struct SharedImage {
+        let textures: [Int: WeakTexture]
+        let primaryImageID: Int
+        let sprites: [(imageID: Int, frame: WPEParityUniformSpriteFrame, duration: Double)]
+
+        /// nil once any texture is gone or on another device.
+        func image(device: MTLDevice, info: WPETexInfo,
+                   selection: WPETexConditionalSelection?) -> WPEParityFrameDrawPlanner.Image? {
+            guard let texture = textures[primaryImageID]?.texture, texture.device === device else { return nil }
+            var steps: [WPEParityFrameDrawPlan.SpriteStep] = []
+            for sprite in sprites {
+                guard let spriteTexture = textures[sprite.imageID]?.texture else { return nil }
+                steps.append(.init(frame: sprite.frame, texture: spriteTexture, duration: sprite.duration))
+            }
+            return WPEParityFrameDrawPlanner.Image(texture: texture, info: info, sprites: steps,
+                                                   conditionalSelection: selection)
+        }
+    }
+
+    private enum Slot {
+        case loading(DispatchGroup)
+        case ready(SharedImage)
+    }
+
+    /// The lock orders all access; published textures are .shaderRead and written only by replace() before publication.
+    private static let shared = OSAllocatedUnfairLock<[SharedKey: Slot]>(uncheckedState: [:])
+
+    /// `path` is the asset path that keys a process-wide share of the upload; nil uploads a private copy.
     static func load(span: WPEMappedByteSpan, device: MTLDevice,
-                     userProperties: WPESceneJSONValue? = nil) throws -> WPEParityFrameDrawPlanner.Image {
+                     userProperties: WPESceneJSONValue? = nil, path: String? = nil) throws -> WPEParityFrameDrawPlanner.Image {
+        guard let path, let keyed = try? sharedKey(span: span, device: device, userProperties: userProperties,
+                                                   path: path) else {
+            return try upload(span: span, device: device, userProperties: userProperties).image
+        }
+        let (key, info, selection) = keyed
+        while true {
+            let group = DispatchGroup()
+            let (hit, pending) = withSlots { slots -> (WPEParityFrameDrawPlanner.Image?, DispatchGroup?) in
+                slots = slots.filter {
+                    guard case let .ready(image) = $0.value else { return true }
+                    return image.textures[image.primaryImageID]?.texture != nil
+                }
+                switch slots[key] {
+                case let .loading(other)?:
+                    return (nil, other)
+                case let .ready(image)?:
+                    if let hit = image.image(device: device, info: info, selection: selection) {
+                        return (hit, nil)
+                    }
+                case nil:
+                    break
+                }
+                group.enter()
+                slots[key] = .loading(group)
+                return (nil, nil)
+            }
+            if let hit {
+                return hit
+            }
+            if let pending {
+                pending.wait()
+                continue
+            }
+            defer { group.leave() }
+            do {
+                let uploaded = try upload(span: span, device: device, userProperties: userProperties)
+                withSlots { $0[key] = .ready(uploaded.shared) }
+                return uploaded.image
+            } catch {
+                withSlots { $0[key] = nil }
+                throw error
+            }
+        }
+    }
+
+    private static func withSlots<R>(_ body: (inout [SharedKey: Slot]) -> R) -> R {
+        shared.withLockUnchecked(body)
+    }
+
+    private static func sharedKey(
+        span: WPEMappedByteSpan, device: MTLDevice, userProperties: WPESceneJSONValue?, path: String
+    ) throws -> (SharedKey, WPETexInfo, WPETexConditionalSelection?) {
+        let decoder = WPETexDecoder()
+        let info = try decoder.probe(span: span).get()
+        let variants = try decoder.extractRawMetadata(span: span).get().bitmap.conditionalVariants
+        var selection: WPETexConditionalSelection?
+        if !variants.isEmpty, let userProperties {
+            selection = try WPETexConditionalSelection(variants: variants, properties: userProperties)
+        }
+        let digest = span.withUnsafeBytes { SHA256.hash(data: $0) }
+        let key = SharedKey(registryID: device.registryID, path: path, digest: digest,
+                            selection: selection?.flagsByVariantID)
+        return (key, info, selection)
+    }
+
+    private static func upload(span: WPEMappedByteSpan, device: MTLDevice,
+                               userProperties: WPESceneJSONValue?) throws
+        -> (image: WPEParityFrameDrawPlanner.Image, shared: SharedImage) {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
         if info.isVolume, info.width > 2048 || info.height > 2048 || info.depth > 2048 {
@@ -73,8 +183,13 @@ enum WPEParityTextureLoader {
         }
         guard let texture = first ?? sprites.first?.texture else { throw WPETexDecodeError.missingBitmapBlock }
         // The image retains only uploaded GPU resources and small metadata; decompressed mip bytes die here.
-        return WPEParityFrameDrawPlanner.Image(texture: texture, info: info, sprites: sprites,
-                                               conditionalSelection: payload.conditionalSelection)
+        let image = WPEParityFrameDrawPlanner.Image(texture: texture, info: info, sprites: sprites,
+                                                    conditionalSelection: payload.conditionalSelection)
+        let shared = SharedImage(
+            textures: textures.mapValues { WeakTexture(texture: $0) }, primaryImageID: first == nil ? frames[0].imageID : 0,
+            sprites: zip(frames, sprites).map { ($0.imageID, $1.frame, $1.duration) }
+        )
+        return (image, shared)
     }
 
     /// The texture WPE creates when a material texture has no payload (1400ec220.c:203-234): a 6×6 RGBA8 checker,
