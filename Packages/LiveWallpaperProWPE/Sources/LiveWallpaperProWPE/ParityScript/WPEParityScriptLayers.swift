@@ -144,8 +144,28 @@ enum WPEParityScriptLayers {
           return;
         }
         host.pauseVideoTexture(index);
+      },
+      play() { videoCommand(this, 'play', 0, 0); },
+      stop() { videoCommand(this, 'stop', 1, 0); },
+      isPlaying() { return videoCommand(this, 'isPlaying', 2, 0) === 1; },
+      getCurrentTime() {
+        const time = videoCommand(this, 'getCurrentTime', 3, 0);
+        return typeof time === 'number' ? Math.fround(time) : 0;
+      },
+      setCurrentTime(time) {
+        const a = argument(time, 4);
+        if (a && Number.isFinite(a.value)) videoCommand(this, 'setCurrentTime', 4, a.value);
       }
     };
+    // Command numbers are WPEParityScriptEngine.VideoCommand raw values. A missing consumer yields undefined.
+    function videoCommand(video, name, command, value) {
+      const index = videoOwners.get(video);
+      if (index === undefined) {
+        host.log(1, 'video.' + name + ' is unsupported for an invalid video wrapper');
+        return undefined;
+      }
+      return host.videoTextureCommand(index, command, value);
+    }
     // 1401e0530 registers void methods with two native Vec3 (0x20) parameters. They use current local slots.
     function orientLayer(layer, originField, anglesField, camera, target, up, yawOnly) {
       if (!liveLayer(layer)) return;

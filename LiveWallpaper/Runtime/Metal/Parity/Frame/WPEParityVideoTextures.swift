@@ -50,6 +50,20 @@ final class WPEParityVideoTextures {
         return true
     }
 
+    /// The other IVideoTexture methods on the same player; nil = `ownerID` has no video.
+    func command(ownerID: String, _ command: WPEParityScriptEngine.VideoCommand, argument: Double) -> Double? {
+        guard let index = owners[ownerID] else { return nil }
+        let source = videos[index].source
+        switch command {
+        case .play: source.scriptPlay()
+        case .stop: source.scriptStop()
+        case .setCurrentTime: source.scriptSetCurrentTime(argument)
+        case .isPlaying: return source.scriptPlaybackSnapshot?.isPlaying == true ? 1 : 0
+        case .getCurrentTime: return source.scriptPlaybackSnapshot?.currentTime ?? 0
+        }
+        return 0
+    }
+
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         for video in videos {
             video.source.applyPerformanceProfile(profile)

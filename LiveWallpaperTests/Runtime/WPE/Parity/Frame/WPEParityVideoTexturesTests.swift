@@ -92,6 +92,54 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testSceneScriptStopAndPlayReachThePlayerAndIsPlayingReadsIt() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: texture, bytes: Data(contentsOf: url))],
+                                                      workshopID: "parity-video-command-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["1": texture])
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, (videos.playbackSnapshot(ownerID: "1")?.duration ?? 0) <= 0.5 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "1")?.playbackRequested, true)
+
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[
+          {"id":1,"name":"A","image":"models/shared.json","size":"64 64","alpha":{"value":1,"script":"export function init(value) { thisLayer.getVideoTexture().stop(); return value; } export function update(value) { const video = thisLayer.getVideoTexture(); video.play(); thisLayer.color = new Vec3(video.isPlaying() === true ? 1 : 99, typeof video.getCurrentTime() === 'number' ? 1 : 99, 1); return value; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
+        let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
+        let assets = WPEParityProgramAssets(sources: [.lookup(root) {
+            $0 == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        let script = try WPEParitySceneScript(
+            document: document, state: state, assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64),
+            fieldDefaults: videos.scriptFieldDefaults, host: .init()
+        )
+        script.engine.videoTextureHandler = videos.command
+        try script.start(state: &state)
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "1")?.playbackRequested, false)
+
+        script.tick(dt: 0.01, cursor: .zero, world: .zero, leftDown: false, timeOfDay: 0, state: &state)
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "1")?.playbackRequested, true)
+        XCTAssertEqual(state.object("1")?.color, .one)
+        XCTAssertNil(videos.command(ownerID: "missing", .play, argument: 0))
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testSharedOwnersUseActualPlayerControlsAndPublishReadyDurationWithoutReplayingOldWrites() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())

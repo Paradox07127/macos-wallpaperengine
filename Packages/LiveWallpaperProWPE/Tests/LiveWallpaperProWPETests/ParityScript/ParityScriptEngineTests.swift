@@ -1067,6 +1067,45 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testVideoTextureCommandsReachTheHandlerAndRejectBorrowedReceivers() throws {
+        var calls: [String] = []
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function init(value) {
+                const video = thisLayer.getVideoTexture();
+                const results = [video.stop(), video.setCurrentTime(0.25), video.play()];
+                for (const name of ['play', 'stop', 'isPlaying', 'getCurrentTime', 'setCurrentTime']) {
+                    video[name].call({}, 1);
+                    video[name].call(Object.create(video), 1);
+                }
+                video.setCurrentTime(NaN);
+                video.setCurrentTime(Infinity);
+                video.setCurrentTime('1');
+                const playing = video.isPlaying(), time = video.getCurrentTime();
+                thisLayer.color = new Vec3(results.every(r => r === undefined) ? 1 : 99, playing === true ? 1 : 99, time);
+                return value;
+            }
+            """)]),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.fieldDefaults[.init(objectID: "1", name: "video.duration")] = .vector(SIMD4(1, 0, 0, 0))
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        scene.engine.videoTextureHandler = { owner, command, argument in
+            calls.append(command == .setCurrentTime ? "\(owner) \(command) \(argument)" : "\(owner) \(command)")
+            return switch command {
+            case .isPlaying: 1
+            case .getCurrentTime: 0.5
+            default: 0
+            }
+        }
+        try scene.engine.start(state: &scene.state)
+        XCTAssertEqual(calls, ["1 stop", "1 setCurrentTime 0.25", "1 play", "1 isPlaying", "1 getCurrentTime"])
+        XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 0.5))
+        XCTAssertEqual(diagnostics.filter { $0.contains("invalid video wrapper") }.count, 10)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testVideoPauseWithoutAConsumerStaysExplicitlyUnsupported() throws {
         for accepted: Bool? in [nil, false] {
             var attempts = 0

@@ -376,6 +376,10 @@ final class WPEParityFrameRenderer {
         { [weak videos] ownerID in videos?.pause(ownerID: ownerID) ?? false }
     }
 
+    var scriptVideoCommand: (String, WPEParityScriptEngine.VideoCommand, Double) -> Double? {
+        { [weak videos] ownerID, command, argument in videos?.command(ownerID: ownerID, command, argument: argument) }
+    }
+
     var scriptMaterialFunction: (WPEParitySceneState.EffectKey, String) -> Void {
         { [weak self] key, name in self?.executeMaterialFunction(key, name: name) }
     }
@@ -890,6 +894,7 @@ final class WPEParityFrameRenderer {
     func attachScript(_ script: WPEParitySceneScript) throws {
         self.script = script
         script.engine.materialFunctionHandler = scriptMaterialFunction
+        script.engine.videoTextureHandler = scriptVideoCommand
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         try script.start(state: &state)
     }

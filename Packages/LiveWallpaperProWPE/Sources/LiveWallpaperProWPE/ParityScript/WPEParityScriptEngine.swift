@@ -14,6 +14,11 @@ public final class WPEParityScriptEngine {
         case play, stop, pause, isPlaying
     }
 
+    /// Native IVideoTexture methods other than pause (140214050.c:107-208).
+    public enum VideoCommand: Int, Sendable {
+        case play, stop, isPlaying, getCurrentTime, setCurrentTime
+    }
+
     /// A snapshot of the existing typed fields at this synchronous native-call boundary.
     public struct SoundFields: Sendable {
         public let volume: Float
@@ -251,6 +256,9 @@ public final class WPEParityScriptEngine {
     public private(set) var audioResolutions: Set<Int> = []
     /// Rebound when a renderer takes over this engine; accepted calls belong to that consumer's queue.
     public var materialFunctionHandler: ((WPEParitySceneState.EffectKey, String) -> Void)?
+    /// Rebound like materialFunctionHandler. Arguments: owner layer ID, command, setCurrentTime seconds (else 0).
+    /// Returns 1/0 for isPlaying, seconds for getCurrentTime, 0 otherwise; nil = no product video consumer.
+    public var videoTextureHandler: ((String, VideoCommand, Double) -> Double?)?
 
     /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
     public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
@@ -1012,6 +1020,18 @@ public final class WPEParityScriptEngine {
                 return
             }
         }
+        let videoTextureCommand: @convention(block) (Double, Double, Double) -> NSNumber? = { [weak self] index, raw, argument in
+            guard let self, let raw = Int(exactly: raw), let command = VideoCommand(rawValue: raw) else { return nil }
+            guard let index = Self.checkedLayerIndex(index, count: layers.count), layers[index].hasVideo else {
+                configuration.log(1, "video.\(command) is unsupported for an invalid video owner")
+                return nil
+            }
+            guard let handler = videoTextureHandler, let result = handler(layers[index].id, command, argument) else {
+                configuration.log(1, "video.\(command) is unsupported without an existing product video consumer")
+                return nil
+            }
+            return NSNumber(value: result)
+        }
         let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
             guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
                   let effect = Self.checkedLayerIndex(Double(slots[slot].effect), count: effectKeys.count) else { return }
@@ -1065,6 +1085,7 @@ public final class WPEParityScriptEngine {
         set("registerAudio", registerAudio)
         set("initialConfig", initialConfig)
         set("pauseVideoTexture", pauseVideo)
+        set("videoTextureCommand", videoTextureCommand)
         set("soundVolumeWritten", soundVolumeWritten)
         set("soundCommand", soundCommand)
         set("soundKind", WPEParityScriptLayerKind.sound.rawValue)
