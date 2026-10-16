@@ -221,6 +221,8 @@ public struct WPEPuppetBone: Equatable, Sendable {
     /// MDLS0002 per-bone world-bind payload. Retained as file-authored evidence;
     /// palette evaluation must not consume it until the composition rule is oracle-proven.
     public let worldBindMatrix: [Float]?
+    /// MDLS0002 extras entry, the rest local (1401fdf90.c:583-593); nil = no extras block, rest is `rawMatrix`.
+    public let restMatrix: [Float]?
     public let name: String
     public let simulationType: Int32
     public let simulationJSON: String
@@ -232,6 +234,7 @@ public struct WPEPuppetBone: Equatable, Sendable {
         parentIndex: Int?,
         rawMatrix: [Float],
         worldBindMatrix: [Float]? = nil,
+        restMatrix: [Float]? = nil,
         name: String = "",
         simulationType: Int32 = 0,
         simulationJSON: String = ""
@@ -240,6 +243,7 @@ public struct WPEPuppetBone: Equatable, Sendable {
         self.parentIndex = parentIndex
         self.rawMatrix = rawMatrix
         self.worldBindMatrix = worldBindMatrix
+        self.restMatrix = restMatrix
         self.name = name
         self.simulationType = simulationType
         self.simulationJSON = simulationJSON
@@ -1689,6 +1693,7 @@ public enum WPEMdlParser {
                         parentIndex: bone.parentIndex,
                         rawMatrix: bone.rawMatrix,
                         worldBindMatrix: worldBind,
+                        restMatrix: worldBind,
                         name: bone.name,
                         simulationType: bone.simulationType,
                         simulationJSON: bone.simulationJSON
@@ -1769,6 +1774,7 @@ public enum WPEMdlParser {
                 parentIndex: bone.parentIndex,
                 rawMatrix: bone.rawMatrix,
                 worldBindMatrix: worldBind,
+                restMatrix: bone.restMatrix,
                 name: bone.name,
                 simulationType: bone.simulationType,
                 simulationJSON: bone.simulationJSON

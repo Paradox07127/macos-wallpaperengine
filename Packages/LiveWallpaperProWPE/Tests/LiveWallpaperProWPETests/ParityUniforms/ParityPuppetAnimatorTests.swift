@@ -389,6 +389,29 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         }
     }
 
+    /// 1401fdf90.c:583-593, 1050-1052 and 1401fbae0.c:356-464: extras are the rest pose, the bind stays raw.
+    private func sheetBone(_ animations: [WPEPuppetAnimation]) -> WPEPuppetModel {
+        WPEPuppetModel(version: 23, meshes: [], bones: [
+            WPEPuppetBone(index: 0, parentIndex: nil, rawMatrix: floats(translation(SIMD3(100, 0, 0))),
+                          restMatrix: floats(translation(SIMD3(0, 50, 0)))),
+        ], animations: animations)
+    }
+
+    func testExtrasRestIsTheAdditiveReferenceWhileTheBindStaysRaw() {
+        let assembled = animation(id: 1, channels: [(0 ... 1).map { key($0, SIMD3(0, 50, 0)) }])
+        let animator = WPEParityPuppetAnimator(model: sheetBone([assembled]), layers: [
+            layer(1, additive: true), layer(1, id: 2, additive: true),
+        ])
+        assertEqual(animator.boneWorld[0], translation(SIMD3(0, 50, 0)))
+        assertEqual(animator.palette[0], translation(SIMD3(-100, 50, 0)))
+    }
+
+    func testExtrasRestPosesABoneWithoutLayers() {
+        let animator = WPEParityPuppetAnimator(model: sheetBone([]), layers: [])
+        assertEqual(animator.boneWorld[0], translation(SIMD3(0, 50, 0)))
+        assertEqual(animator.palette[0], translation(SIMD3(-100, 50, 0)))
+    }
+
     func testBoneWorldComposesAlongParents() {
         var animator = WPEParityPuppetAnimator(model: rotatingChild(), layers: [layer(7)])
         animator.advance(dt: 0.1)

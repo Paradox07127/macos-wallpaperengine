@@ -550,6 +550,7 @@ struct WPEMdlParserTests {
         #expect(bone.rawMatrix[12] == 5)
         #expect(bone.rawMatrix[13] == -7)
         #expect(bone.worldBindMatrix == worldBind)
+        #expect(bone.restMatrix == worldBind)
     }
 
     @Test("Recovers mesh geometry when the MDLS skeleton section is malformed")
@@ -738,6 +739,7 @@ struct WPEMdlParserTests {
         #expect(model.bones[1].worldBindMatrix?[13] == -30)
         #expect(model.bones[2].worldBindMatrix?[12] == 25)
         #expect(model.bones[2].worldBindMatrix?[13] == 5)
+        #expect(model.bones.allSatisfy { $0.restMatrix == nil })
         #expect(mesh.vertices[3].position == SIMD3<Float>(20, 0, 0))
         #expect(mesh.vertices[4].position == SIMD3<Float>(30, 0, 0))
         #expect(mesh.vertices[5].position == SIMD3<Float>(20, 10, 0))

@@ -202,12 +202,16 @@ public struct WPEParityPuppetAnimator: Sendable {
         }
         // The MDLS parser keeps a parent only when it precedes the bone, so one forward pass composes worlds.
         parents = model.bones.enumerated().map { index, bone in bone.parentIndex.flatMap { $0 < index ? $0 : nil } }
-        restLocal = model.bones.map { WPEMdlParser.matrix(fromColumnMajorFloats: $0.rawMatrix) ?? matrix_identity_float4x4 }
+        let rawLocal = model.bones.map {
+            WPEMdlParser.matrix(fromColumnMajorFloats: $0.rawMatrix) ?? matrix_identity_float4x4
+        }
+        // 1401fdf90.c:583-593: the extras replace the rest pose only; 1401fbae0.c:356-464 binds from raw.
+        let extras = model.bones.compactMap { $0.restMatrix.flatMap(WPEMdlParser.matrix(fromColumnMajorFloats:)) }
+        restLocal = extras.count == rawLocal.count ? extras : rawLocal
         restPose = restLocal.map { Self.pose(of: $0) }
-        let bindWorld = Self.world(locals: restLocal, parents: parents)
-        inverseBindWorld = bindWorld.map(\.inverse)
-        boneWorld = bindWorld
-        palette = bindWorld
+        inverseBindWorld = Self.world(locals: rawLocal, parents: parents).map(\.inverse)
+        boneWorld = Self.world(locals: restLocal, parents: parents)
+        palette = boneWorld
         if model.meshes.first.map({ $0.flags & 4 != 0 }) == true {
             bonesAlpha = [Float](repeating: 1, count: restLocal.count)
         }
