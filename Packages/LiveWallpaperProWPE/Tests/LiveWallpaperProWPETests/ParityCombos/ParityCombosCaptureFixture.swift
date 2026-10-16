@@ -19,11 +19,11 @@ struct ParityCombosCaptureFixture {
         let flags: WPEEngineComboFlags
         let textures: [Int32: WPEBoundComboTexture]
 
-        func resolve(copyReversalEnabled: Bool) -> [WPEShaderDefine] {
+        func resolve() -> [WPEShaderDefine] {
             WPEComboResolver.resolve(
                 passJSONCombos: json, blendingMode: blending,
                 vertexSource: vertex, fragmentSource: fragment,
-                engineFlags: flags, boundTextures: textures, copyReversalEnabled: copyReversalEnabled
+                engineFlags: flags, boundTextures: textures
             )
         }
     }

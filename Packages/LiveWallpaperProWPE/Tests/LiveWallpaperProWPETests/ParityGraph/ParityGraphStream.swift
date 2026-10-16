@@ -62,10 +62,9 @@ enum ParityGraphStream {
     }
 
     static func depends(_ graph: WPECompiledRenderGraph, _ consumer: Int, on producer: Int, _ resource: WPEResourceID,
-                        mip: Int = 0, _ hazard: WPEStepDependency.Hazard) -> Bool {
+                        mip: Int = 0) -> Bool {
         graph.dependencies.contains {
-            $0.producer == producer && $0.consumer == consumer && $0.hazard == hazard
-                && $0.subresource == WPESubresource(resource, mip: mip)
+            $0.producer == producer && $0.consumer == consumer && $0.subresource == WPESubresource(resource, mip: mip)
         }
     }
 }

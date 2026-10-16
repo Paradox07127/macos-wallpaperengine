@@ -1,6 +1,6 @@
 import Foundation
 
-/// Script-created model indices retain their native width. Puppet MDLV's separate R16 path is unchanged.
+/// Script-created model indices retain their native width.
 public struct WPEParityModelDataIndices: Equatable, Sendable {
     public let data: Data
     public let elementWidth: WPEPuppetIndexElementWidth
@@ -14,7 +14,6 @@ public struct WPEParityModelDataIndices: Equatable, Sendable {
     }
 }
 
-/// Value input to the existing model resource owner, not a second model registry or GPU resource owner.
 public struct WPEParityModelDataShapePatch: Equatable, Sendable {
     public enum Indices: Equatable, Sendable {
         case unchanged, remove

@@ -25,11 +25,6 @@ final class ParityCombosMapTests: XCTestCase {
         XCTAssertEqual(copy.keys, ["a", "i", "q", "b", "c"])
         XCTAssertEqual(copy.copyAssigned().keys, map.keys)
         XCTAssertEqual(map.keys, ["q", "i", "a", "b", "c"])
-        var disabled = WPEMSVCUnorderedMap<String, Int32>(copyReversalEnabled: false)
-        for key in ["a", "b", "i", "c", "q"] {
-            disabled.set(key, value: 1)
-        }
-        XCTAssertEqual(disabled.copyAssigned().keys, ["q", "i", "a", "b", "c"])
     }
 
     func testGrowthAtEightAndSixtyFourThenPowerOfTwoGrowth() {

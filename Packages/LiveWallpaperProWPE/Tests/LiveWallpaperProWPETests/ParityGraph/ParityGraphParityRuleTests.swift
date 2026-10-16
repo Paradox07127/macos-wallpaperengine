@@ -139,7 +139,7 @@ struct ParityGraphMipCopyTests {
     @Test func singleMipSourceCopiesIntoMipZeroOfAMipmappedDestination() throws {
         let resources = [S.persistent("A"), S.transient("M", mips: 4)]
         let graph = try S.compile(resources, [S.bind("A"), S.clear("A"), S.copy("A", "M"), S.generateMips("M")])
-        #expect(S.depends(graph, 2, on: 1, "M", mip: 0, .readAfterWrite))
+        #expect(S.depends(graph, 2, on: 1, "M", mip: 0))
         #expect(!graph.dependencies.contains { $0.producer == 1 && $0.subresource.mip > 0 })
     }
 

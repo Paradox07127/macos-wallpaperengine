@@ -3,11 +3,9 @@ public struct WPEMSVCUnorderedMap<Key: Hashable & Sendable, Value: Sendable>: Se
     public private(set) var keys: [Key] = []
     private var values: [[UInt8]: Value] = [:]
     private let keyBytes: @Sendable (Key) -> [UInt8]
-    private let copyReversalEnabled: Bool
 
-    fileprivate init(keyBytes: @escaping @Sendable (Key) -> [UInt8], copyReversalEnabled: Bool) {
+    fileprivate init(keyBytes: @escaping @Sendable (Key) -> [UInt8]) {
         self.keyBytes = keyBytes
-        self.copyReversalEnabled = copyReversalEnabled
     }
 
     public subscript(key: Key) -> Value? {
@@ -38,9 +36,7 @@ public struct WPEMSVCUnorderedMap<Key: Hashable & Sendable, Value: Sendable>: Se
     /// FUN_1401a6c60 / FUN_140164850: copy into a fresh eight-bucket map, then force rehash.
     public func copyAssigned() -> Self {
         var result = self
-        if copyReversalEnabled {
-            result.rehash(Self.desiredBuckets(current: 8, count: keys.count))
-        }
+        result.rehash(Self.desiredBuckets(current: 8, count: keys.count))
         return result
     }
 
@@ -88,23 +84,15 @@ public struct WPEMSVCUnorderedMap<Key: Hashable & Sendable, Value: Sendable>: Se
 
 public extension WPEMSVCUnorderedMap where Key == String {
     init() {
-        self.init(copyReversalEnabled: true)
-    }
-
-    internal init(copyReversalEnabled: Bool) {
-        self.init(keyBytes: { Array($0.utf8) }, copyReversalEnabled: copyReversalEnabled)
+        self.init(keyBytes: { Array($0.utf8) })
     }
 }
 
 public extension WPEMSVCUnorderedMap where Key == Int32 {
     init() {
-        self.init(copyReversalEnabled: true)
-    }
-
-    internal init(copyReversalEnabled: Bool) {
         self.init(keyBytes: { key in
             let bits = UInt32(bitPattern: key)
             return (0 ..< 4).map { UInt8(truncatingIfNeeded: bits >> ($0 * 8)) }
-        }, copyReversalEnabled: copyReversalEnabled)
+        })
     }
 }

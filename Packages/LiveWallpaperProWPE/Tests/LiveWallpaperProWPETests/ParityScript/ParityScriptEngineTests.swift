@@ -61,7 +61,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let validSeeds: [Any] = values.map { Double($0) }
         let changed = try document(validSeeds)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
-        XCTAssertEqual(accepted.sceneProjectionFloats.map(\.name), names)
+        XCTAssertEqual(accepted.sceneFloats.map(\.name), names)
         accepted.apply(to: &state)
         for (name, value) in zip(names, values) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
@@ -80,7 +80,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         for next in rejectedDocuments {
             let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: next))
-            XCTAssertTrue(preserved.sceneProjectionFloats.isEmpty)
+            XCTAssertTrue(preserved.sceneFloats.isEmpty)
             preserved.apply(to: &state)
             for (name, value) in zip(names, values) {
                 XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 0.125, 0, 0, 0)))
@@ -94,7 +94,7 @@ final class ParityScriptEngineTests: XCTestCase {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 0.125, 0, 0, 0)))
         }
         let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: unrelated))
-        XCTAssertEqual(recovered.sceneProjectionFloats.count, names.count)
+        XCTAssertEqual(recovered.sceneFloats.count, names.count)
         recovered.apply(to: &state)
         for (name, value) in zip(names, values) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
@@ -173,7 +173,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let changed = try document(validSeeds)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
         XCTAssertEqual(accepted.sceneShakeEnabled, false, "Accepted false must replace the current true")
-        XCTAssertEqual(accepted.sceneShakeFloats.map(\.name), Array(names.dropFirst()))
+        XCTAssertEqual(accepted.sceneFloats.map(\.name), Array(names.dropFirst()))
         accepted.apply(to: &state)
         XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(.zero))
         for (name, value) in zip(names.dropFirst(), values) {
@@ -186,7 +186,7 @@ final class ParityScriptEngineTests: XCTestCase {
         for next in [changed, unrelated, invalid] {
             let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: next))
             XCTAssertNil(preserved.sceneShakeEnabled)
-            XCTAssertTrue(preserved.sceneShakeFloats.isEmpty)
+            XCTAssertTrue(preserved.sceneFloats.isEmpty)
             preserved.apply(to: &state)
             XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
             for (name, value) in zip(names.dropFirst(), values) {
@@ -197,7 +197,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(state.object("1")?.visible, false)
         let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: unrelated))
         XCTAssertEqual(recovered.sceneShakeEnabled, false)
-        XCTAssertEqual(recovered.sceneShakeFloats.count, 3)
+        XCTAssertEqual(recovered.sceneFloats.count, 3)
         recovered.apply(to: &state)
         for (name, value) in zip(names, [Float(0)] + values) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
@@ -274,7 +274,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let changed = try document(validSeeds)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
         XCTAssertEqual(accepted.sceneParallaxEnabled, false)
-        XCTAssertEqual(accepted.sceneParallaxFloats.map(\.name), Array(names.dropFirst()))
+        XCTAssertEqual(accepted.sceneFloats.map(\.name), Array(names.dropFirst()))
         accepted.apply(to: &state)
         XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(.zero))
         for (name, value) in zip(names.dropFirst(), values) {
@@ -287,7 +287,7 @@ final class ParityScriptEngineTests: XCTestCase {
         for next in [changed, unrelated, invalid] {
             let preserved = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: next))
             XCTAssertNil(preserved.sceneParallaxEnabled)
-            XCTAssertTrue(preserved.sceneParallaxFloats.isEmpty)
+            XCTAssertTrue(preserved.sceneFloats.isEmpty)
             preserved.apply(to: &state)
             XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
             for (name, value) in zip(names.dropFirst(), values) {
@@ -298,7 +298,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(state.object("1")?.visible, false)
         let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: unrelated))
         XCTAssertEqual(recovered.sceneParallaxEnabled, false)
-        XCTAssertEqual(recovered.sceneParallaxFloats.count, 3)
+        XCTAssertEqual(recovered.sceneFloats.count, 3)
         recovered.apply(to: &state)
         XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(.zero))
         for (name, value) in zip(names.dropFirst(), values) {
@@ -471,7 +471,7 @@ final class ParityScriptEngineTests: XCTestCase {
         })
         let changed = try document(validUsers)
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
-        XCTAssertEqual(accepted.sceneBloomFloats.map(\.name), fields.map(\.name))
+        XCTAssertEqual(accepted.sceneFloats.map(\.name), fields.map(\.name))
         let previousGeneration = state.generation(.bloom)
         accepted.apply(to: &state)
         XCTAssertGreaterThan(state.generation(.bloom), previousGeneration)
@@ -484,7 +484,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let scriptGeneration = state.generation(.bloom)
         let faded = try document(validUsers, alpha: 0.25)
         let unrelated = try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: faded))
-        XCTAssertTrue(unrelated.sceneBloomFloats.isEmpty)
+        XCTAssertTrue(unrelated.sceneFloats.isEmpty)
         unrelated.apply(to: &state)
         XCTAssertEqual(state.object("1")?.alpha, 0.25)
         XCTAssertEqual(state.generation(.bloom), scriptGeneration)
@@ -492,7 +492,7 @@ final class ParityScriptEngineTests: XCTestCase {
         for invalidValue: WallpaperEngineProjectPropertyValue in [.bool(false), .string("0.5")] {
             let invalid = try document(Dictionary(uniqueKeysWithValues: fields.map { ($0.name, invalidValue) }), alpha: 0.25)
             let rejected = try XCTUnwrap(WPEParityUserPropertyUpdate(from: previousDocument, to: invalid))
-            XCTAssertTrue(rejected.sceneBloomFloats.isEmpty)
+            XCTAssertTrue(rejected.sceneFloats.isEmpty)
             rejected.apply(to: &state)
             XCTAssertEqual(state.generation(.bloom), scriptGeneration)
             for (field, value) in zip(fields, values) {
@@ -501,7 +501,7 @@ final class ParityScriptEngineTests: XCTestCase {
             previousDocument = invalid
         }
         let recovered = try XCTUnwrap(WPEParityUserPropertyUpdate(from: previousDocument, to: faded))
-        XCTAssertEqual(recovered.sceneBloomFloats.count, fields.count, "Old invalid is not substituted with a constructor default")
+        XCTAssertEqual(recovered.sceneFloats.count, fields.count, "Old invalid is not substituted with a constructor default")
         recovered.apply(to: &state)
         for (field, value) in zip(fields, values) {
             XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(value, 0, 0, 0)))

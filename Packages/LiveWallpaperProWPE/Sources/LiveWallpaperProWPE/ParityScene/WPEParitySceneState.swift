@@ -14,7 +14,7 @@ public struct WPEParityMaterialPassKey: Hashable, Sendable {
     }
 }
 
-/// The live fields WPE keeps per object, per image layer effect and per material pass (R24 Q2, Q3, Q6). Animations, user properties and
+/// The live fields WPE keeps per object, per image layer effect and per material pass. Animations, user properties and
 /// scripts write them; the renderer reads them every frame. Writes that change nothing leave the dirty state alone.
 public struct WPEParitySceneState: Sendable {
     public enum Property: String, Sendable, CaseIterable {
@@ -80,7 +80,7 @@ public struct WPEParitySceneState: Sendable {
         var generation = 0
     }
 
-    /// The hook WPE's descriptor onChanged runs for a written field (R25 §2).
+    /// The hook WPE's descriptor onChanged runs for a written field.
     public enum Invalidation: Int, Sendable, CaseIterable {
         case none
         /// obj+0xd0 cleared; angles also rebuild the rotation first.
@@ -103,7 +103,7 @@ public struct WPEParitySceneState: Sendable {
         case soundGain
     }
 
-    /// A field only script descriptors write (R25 §3), keyed by descriptor name; `objectID` "" is the scene.
+    /// A field only script descriptors write, keyed by descriptor name; `objectID` "" is the scene.
     public struct ScriptFieldKey: Hashable, Sendable {
         public var objectID: String
         public var name: String
@@ -126,7 +126,7 @@ public struct WPEParitySceneState: Sendable {
     /// Actual common-scene members in current order; transform-only parent placeholders are not members.
     /// Stable object/descriptor slots in `ids` never move when this order changes.
     public private(set) var commonOrder: [String]
-    /// HDR frames multiply the layer colour by brightness (R24 Q6).
+    /// HDR frames multiply the layer colour by brightness.
     public let hdr: Bool
     /// Bumped by every origin, scale or angles change.
     public private(set) var transformGeneration = 0
@@ -136,7 +136,7 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var membershipGeneration = 0
     /// Every image layer effect in scene order, then every text layer effect.
     public let effects: [EffectKey]
-    /// The visible bit of each entry of `effects` (effect+0x118 bit0, R24 Q2).
+    /// The visible bit of each entry of `effects` (effect+0x118 bit0).
     public private(set) var effectVisibility: [Bool]
     /// Bumped by every effect visible change.
     public private(set) var effectVisibilityGeneration = 0
@@ -398,7 +398,7 @@ public struct WPEParitySceneState: Sendable {
         }
     }
 
-    /// The object's own bit ANDed with every ancestor's (R24 Q2).
+    /// The object's own bit ANDed with every ancestor's.
     public func isVisible(_ id: String) -> Bool {
         indexByID[id].map(isVisible(at:)) ?? true
     }
@@ -416,7 +416,7 @@ public struct WPEParitySceneState: Sendable {
         return true
     }
 
-    /// g_Color4 of the object's albedo draws: colour × (HDR ? brightness : 1), alpha (R24 Q6).
+    /// g_Color4 of the object's albedo draws: colour × (HDR ? brightness : 1), alpha.
     public func layerColor(at index: Int) -> SIMD4<Float> {
         let object = objects[index]
         return SIMD4(object.color * (hdr ? object.brightness : 1), object.alpha)

@@ -201,22 +201,6 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         XCTAssertTrue(resumed.resourceBindings.isEmpty, "three cumulative cycles restore physical identity")
     }
 
-    func testExcludedOverwriteLeavesHistoryAvailableToTheNextReader() throws {
-        let harness = try makeHarness()
-        let histories = [resource("P", .pooled), resource("O", .persistent)]
-        let (history, output) = try (makeTexture(harness), makeTexture(harness))
-        try execute(harness, WPERenderGraphCompiler.compile(resources: histories, operations: [
-            clear("P", .init(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)),
-        ]), external: ["P": history], draws: [:])
-        let graph = try WPERenderGraphCompiler.compile(
-            resources: histories, operations: [bind("P"), draw(overwrites: true), op(.copy(source: "P", destination: "O"))],
-            excludingDraws: [1]
-        )
-        let executor = try execute(harness, graph, external: ["P": history, "O": output], draws: [:])
-        XCTAssertNil(executor.transientTextures["P"])
-        try assertEvery(readBack(harness, output), equals: [51, 102, 153, 255])
-    }
-
     func testEffectSwapLeavesOtherEffectBindingsIntactWhileSharingWrittenContents() throws {
         let harness = try makeHarness()
         let resources = [resource("A", .pooled), resource("B", .pooled), resource("Inside", .persistent),
@@ -413,29 +397,6 @@ final class WPEParityGraphExecutionTests: XCTestCase {
             }
         }
         try assertPixels(readBack(harness, out2), equal: expected)
-    }
-
-    func testSkippedDrawEncodesNothingButItsPassStillClears() throws {
-        let harness = try makeHarness()
-        let graph = try WPERenderGraphCompiler.compile(
-            resources: [resource("I", .imported), resource("P", .persistent)],
-            operations: [bind("P"), clear("P", .init(red: 0, green: 1, blue: 0, alpha: 1)), draw(sampling: "I")],
-            excludingDraws: [2]
-        )
-        let target = try makeTexture(harness)
-        let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
-                                                  arena: harness.arena, pixelFormats: Self.formats)
-        var asked: [Int] = []
-        guard case let .committed(commandBuffer) = try executor.encodeFrame(
-            on: harness.queue, textures: ["I": makeInput(harness), "P": target], draw: { operation, _, _ in
-                asked.append(operation)
-                return []
-            }
-        ) else { return XCTFail("frame was skipped") }
-        commandBuffer.waitUntilCompleted()
-        XCTAssertNil(commandBuffer.error)
-        XCTAssertTrue(asked.isEmpty)
-        try assertEvery(readBack(harness, target), equals: [0, 255, 0, 255])
     }
 
     func testFrameIsSkippedWhileEveryArenaSlotIsInFlight() throws {

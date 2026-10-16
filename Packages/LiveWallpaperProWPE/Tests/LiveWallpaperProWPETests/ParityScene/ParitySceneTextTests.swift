@@ -2,7 +2,7 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
 
-/// R23 Q6 text layer operations on a synthetic scene with the WPE assets' NotoSans.
+/// Text layer operations on a synthetic scene with the WPE assets' NotoSans.
 final class ParitySceneTextTests: XCTestCase {
     private typealias Fixtures = ParitySceneFixtures
 

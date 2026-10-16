@@ -54,11 +54,9 @@ public enum WPEParitySceneDiagnostic: Hashable, Sendable {
     case compressedFBOFormat(fbo: String, format: String)
     /// A particle child omitted by the current depth-8/cycle product policy (native permits depth 0...10).
     case particleChildOmitted(objectID: String, path: String)
-    /// A new nested branch outside the bounded local/static N1 contract; healthy siblings remain accepted.
+    /// A new nested branch outside the bounded local/static contract; healthy siblings remain accepted.
     case particleChildUnsupported(objectID: String, path: [WPEParityParticlePathElement],
                                   asset: String, field: String, reason: String)
-    /// A text object with msdf, outline, blur or dropshadow on; it is drawn as plain grey glyphs without them.
-    case textGlyphEffectsIgnored(objectID: String)
 }
 
 /// The material JSON pass a draw comes from, and for an effect pass the effect file pass that names it.
@@ -579,14 +577,6 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.materialFrameReads = materialFrameReads
     }
 
-    public var isModel: Bool {
-        if case .model = kind {
-            true
-        } else {
-            false
-        }
-    }
-
     /// Layer bit4 (1401e6f50.c:24-29), without the global 0x1800000 flag.
     public var requiresLayerComposite: Bool {
         ![0, 31].contains(colorBlendMode) || ledSource || puppetForcesComposite
@@ -677,7 +667,7 @@ public struct WPEParityParticleDrawKey: Hashable, Sendable {
     }
 }
 
-/// A particle object's draws in WPE order (R16 Q4): a system's entries in JSON order, then its static children depth
+/// A particle object's draws in WPE order: a system's entries in JSON order, then its static children depth
 /// first, then one group per event child.
 public struct WPEParitySceneParticle: Hashable, Sendable {
     public var draws: [WPEParitySceneParticleDraw]
@@ -777,7 +767,7 @@ public struct WPEParitySceneFBO: Hashable, Sendable {
     public var format: String
     /// Another layer reads or declares it: every effect resolves the name to one scene-wide resource.
     public var shared: Bool
-    /// Compatibility metadata for FBO discovery. Ordered `.swap` passes, rather than this pair, drive exchanges.
+    /// A set partner registers the FBO as persistent; ordered `.swap` passes, not this pair, drive the exchanges.
     public var swapPartner: String?
     /// `"unique": true`: WPE names it after the effect's scene id, so no other effect shares its texture.
     public var unique: Bool

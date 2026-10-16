@@ -82,7 +82,7 @@ struct WPEParityPropertyAnimationTests {
         #expect(animation.direction == -1)
     }
 
-    /// R27: WPE divides by a stored 1/fps for the frame and the fraction; these are its values at dt 1/60, including
+    /// WPE divides by a stored 1/fps for the frame and the fraction; these are its values at dt 1/60, including
     /// the one-frame jumps at k = 6 and 10 and the last-bit differences from t·fps at k = 5 and 9.
     @Test func samplingDividesByTheStoredFrameDurationAsWPEDoes() throws {
         let animation = try #require(WPEParityPropertyAnimation(
@@ -97,7 +97,7 @@ struct WPEParityPropertyAnimationTests {
                            0.8664166, 0.88307, 0.8664166, 0.8499504, 0.7997922])
     }
 
-    /// R27 (1401a9f60): mirror adds the signed dt to t directly and reflects only at the ends.
+    /// 1401a9f60: mirror adds the signed dt to t directly and reflects only at the ends.
     @Test func mirrorStepsBackByExactlyDtUntilItReachesZero() throws {
         let animation = try #require(WPEParityPropertyAnimation(
             property: property(channels: [[key(0, 0), key(30, 1)]], fps: 30, length: 30,
@@ -255,7 +255,6 @@ struct WPEParityPropertyAnimationTests {
         ))
         animation.advance(dt: 5)
         #expect(animation.time == 0)
-        #expect(animation.random)
         try expectValue(animation, [2])
         #expect(animation.firedEvents.isEmpty)
     }
@@ -350,7 +349,7 @@ struct WPEParityPropertyAnimationTests {
     private func expectValue(_ animation: WPEParityPropertyAnimation, _ expected: [Float],
                              tolerance: Float = 0.04) throws {
         let value = try #require(animation.value)
-        #expect(animation.componentCount == expected.count)
+        #expect((expected.count ..< 4).allSatisfy { value[$0] == 0 })
         for (lane, golden) in expected.enumerated() {
             #expect(abs(value[lane] - golden) < tolerance)
         }

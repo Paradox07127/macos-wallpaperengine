@@ -85,11 +85,6 @@ final class ParityBindingStagePlanTests: XCTestCase {
         XCTAssertEqual(word(bytes, at: 88), bufferMetadata)
         XCTAssertEqual(Array(bytes[0 ..< 8]), [0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE])
         XCTAssertEqual(Array(bytes[96 ..< 104]), Array(repeating: 0xCC, count: 8))
-        let before = bytes
-        XCTAssertThrowsError(try plan.writeEntry(at: 8, gpuAddress: 0, resourceID: 0, metadata: 0, into: &bytes))
-        XCTAssertEqual(bytes, before)
-        var short = [UInt8](repeating: 0, count: 95)
-        XCTAssertThrowsError(try plan.writeEntry(at: 0, gpuAddress: 0, resourceID: 0, metadata: 0, into: &short))
     }
 
     func testMalformedPlansAreRejected() throws {
@@ -132,7 +127,7 @@ final class ParityBindingStagePlanTests: XCTestCase {
         XCTAssertEqual(reflected.mscReflection["null"], .null)
         XCTAssertEqual(reflected.mscReflection["id"], .unsignedInteger(.max))
         var packer = try WPECBufferPacker(layout: WPECBufferLayout(reflected.cbuffers[0]))
-        try packer.write(true, to: "flag")
+        try packer.write(.bool(true), to: "flag")
         XCTAssertEqual(packer.bytes[0], 1)
         XCTAssertEqual(try WPEStageBindingPlan(reflected).totalSize, 24)
         XCTAssertThrowsError(try JSONDecoder().decode(WPEStageReflection.self,
@@ -181,7 +176,6 @@ extension ParityBindingStagePlanTests {
         XCTAssertEqual(word(bytes, at: 0), 0x1234_5678_9ABC_DEF0)
         XCTAssertEqual(word(bytes, at: 8), 0)
         XCTAssertEqual(word(bytes, at: 16), 240)
-        XCTAssertThrowsError(try plan.writeEntry(at: 24, gpuAddress: 0, resourceID: 0, metadata: 0, into: &bytes))
     }
 
     func testExampleMSCFragmentReflection() throws {

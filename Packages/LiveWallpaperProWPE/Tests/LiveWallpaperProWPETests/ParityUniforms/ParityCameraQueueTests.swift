@@ -54,11 +54,11 @@ final class ParityCameraQueueTests: XCTestCase {
         let ortho = try XCTUnwrap(queue.advance(dt: 0.025, world: world, orthographic: true, state: state))
         XCTAssertEqual(ortho.origin, SIMD3(10, 30, 40))
         XCTAssertEqual(ortho.angles, .zero)
-        XCTAssertEqual(ortho.zoom, 2)
-        XCTAssertEqual(ortho.fov, 50, "native only evaluates item zoom in an orthographic scene")
-        let perspective = try XCTUnwrap(queue.advance(dt: 0.025, world: world, orthographic: false, state: state))
-        XCTAssertEqual(perspective.zoom, 2)
-        XCTAssertEqual(perspective.fov, 60)
+        XCTAssertEqual(queue.selectedZoom, 2)
+        XCTAssertEqual(queue.selectedFOV, 50, "native only evaluates item zoom in an orthographic scene")
+        XCTAssertNotNil(queue.advance(dt: 0.025, world: world, orthographic: false, state: state))
+        XCTAssertEqual(queue.selectedZoom, 2)
+        XCTAssertEqual(queue.selectedFOV, 60)
         XCTAssertEqual(queue.selectedTime, 0.05)
     }
 

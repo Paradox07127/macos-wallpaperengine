@@ -1,9 +1,8 @@
 /// Emits WPE's RenderScene (140183550) up to the end of the object loop: scene clear, image layers and their effect
 /// chains, and the MSAA resolve. Bloom, mip-mapped/HDR copies, ccsimple, fade and present are not part of it.
 public enum WPEParitySceneFrameBuilder {
-    /// `frameIndex` remains source-compatible; submitted command swaps now carry binding state in the executor.
-    /// The scene remains logical. Mac callers supply the physical backbuffer separately from the pure ordinary-RT
-    /// conversion (no scaler-input minimum), and its paired pixel scale for raw authored FBO fit values.
+    /// `frameIndex` is ignored. The scene stays logical: Mac callers supply the physical backbuffer separately, and
+    /// `pixelScale` converts raw authored FBO fit values.
     public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0,
                              physicalBackbufferSize: SIMD2<Int>? = nil,
                              physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
@@ -544,7 +543,7 @@ private struct WPEParitySceneEmitter {
     }
 
     /// FUN_1402366f0: each renderer entry draws with its material pass's state; a REFRACT object copies
-    /// `_rt_FullFrameBuffer` once per frame, before its first REFRACT draw (R16 Q3).
+    /// `_rt_FullFrameBuffer` once per frame, before its first REFRACT draw.
     private mutating func renderParticles(_ object: WPEParitySceneObject, _ particle: WPEParitySceneParticle,
                                           into destination: WPEParitySceneDestination) {
         let start = operations.count

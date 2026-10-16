@@ -20,12 +20,8 @@ public struct WPEShaderAnnotationCombos: Sendable {
     public let samplers: WPEMSVCUnorderedMap<Int32, WPEShaderSamplerCombos>
 
     public init(vertexSource: String, fragmentSource: String) {
-        self.init(vertexSource: vertexSource, fragmentSource: fragmentSource, copyReversalEnabled: true)
-    }
-
-    init(vertexSource: String, fragmentSource: String, copyReversalEnabled: Bool) {
-        var defaults = WPEMSVCUnorderedMap<String, Int32>(copyReversalEnabled: copyReversalEnabled)
-        var samplers = WPEMSVCUnorderedMap<Int32, WPEShaderSamplerCombos>(copyReversalEnabled: copyReversalEnabled)
+        var defaults = WPEMSVCUnorderedMap<String, Int32>()
+        var samplers = WPEMSVCUnorderedMap<Int32, WPEShaderSamplerCombos>()
         for source in [vertexSource, fragmentSource] {
             for line in source.components(separatedBy: .newlines) {
                 let text = line.drop(while: { $0 == " " || $0 == "\t" })

@@ -26,7 +26,6 @@ public enum WPEResourceLifetime: Hashable, Sendable {
     /// Caller-supplied; contents survive into the next frame and may be read outside the graph.
     case persistent
     /// A named RT in WPE's pool. Contents survive structural graph changes as well as frames.
-    /// Discarding its history requires the caller's explicit proof that no other graph can observe it.
     case pooled
     /// Owned outside the graph (images, video frames); never pooled or aliased.
     case imported
@@ -57,13 +56,6 @@ public struct WPELogicalResource: Hashable, Sendable {
         self.sampleCount = sampleCount
         self.lifetime = lifetime
         self.initialClear = initialClear
-    }
-
-    /// Stable identity and an identical allocation descriptor permit preserving GPU contents on rebuild.
-    /// Lifetime is a graph decision; changing it does not itself resize or reinterpret the texture.
-    public func canPreserveContents(of previous: WPELogicalResource) -> Bool {
-        id == previous.id && width == previous.width && height == previous.height && format == previous.format
-            && mipCount == previous.mipCount && sampleCount == previous.sampleCount
     }
 }
 

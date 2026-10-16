@@ -2,7 +2,7 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
 
-/// Camera paths, camerafade and ccsimple as WPE loads and steps them (R15, 1401891a0.c, FUN_140198e20).
+/// Camera paths, camerafade and ccsimple as WPE loads and steps them (1401891a0.c, FUN_140198e20).
 final class ParityPostCameraTests: XCTestCase {
     private var root: URL!
 

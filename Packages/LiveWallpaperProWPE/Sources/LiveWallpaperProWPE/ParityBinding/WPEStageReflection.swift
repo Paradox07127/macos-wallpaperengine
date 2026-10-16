@@ -174,5 +174,4 @@ public enum WPEParityBindingError: Error, Sendable, Equatable {
     case shapeMismatch(String)
     case typeMismatch(String)
     case invalidBinding(String)
-    case bufferTooSmall(required: Int, actual: Int)
 }

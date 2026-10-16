@@ -1,5 +1,5 @@
 /// Every keyframe animation of a scene's object properties and `constantshadervalues`, each bound to the state field
-/// it writes (R24 Q1). A property under a user binding is skipped: the parser replaces it, animation included, with
+/// it writes. A property under a user binding is skipped: the parser replaces it, animation included, with
 /// the user value.
 public struct WPEParitySceneAnimations {
     private enum Target {

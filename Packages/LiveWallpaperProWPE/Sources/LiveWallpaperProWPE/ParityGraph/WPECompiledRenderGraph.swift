@@ -87,21 +87,12 @@ public struct WPECompiledStep: Hashable, Sendable {
 }
 
 public struct WPEStepDependency: Hashable, Comparable, Sendable {
-    public enum Hazard: Int, Hashable, Comparable, Sendable {
-        case readAfterWrite, writeAfterRead, writeAfterWrite
-
-        public static func < (lhs: Self, rhs: Self) -> Bool {
-            lhs.rawValue < rhs.rawValue
-        }
-    }
-
     public let producer: Int
     public let consumer: Int
     public let subresource: WPESubresource
-    public let hazard: Hazard
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
-        (lhs.consumer, lhs.producer, lhs.subresource, lhs.hazard) < (rhs.consumer, rhs.producer, rhs.subresource, rhs.hazard)
+        (lhs.consumer, lhs.producer, lhs.subresource) < (rhs.consumer, rhs.producer, rhs.subresource)
     }
 }
 
@@ -124,8 +115,7 @@ public struct WPECompiledRenderGraph: Hashable, Sendable {
     public let dependencies: [WPEStepDependency]
     /// Inclusive step-index range over which each accessed resource must hold its contents.
     public let lifetimes: [WPEResourceID: ClosedRange<Int>]
-    /// Unaccessed frame-transient resources have no entry. A `.pooled` resource can become transient only when
-    /// the caller permits discarding its history and the compiler proves its entry contents are never observed.
+    /// Unaccessed frame-transient resources have no entry.
     public let storage: [WPEResourceID: WPEResourceStorage]
     /// Members of one group have pairwise disjoint lifetimes.
     public let allocationGroups: [[WPEResourceID]]

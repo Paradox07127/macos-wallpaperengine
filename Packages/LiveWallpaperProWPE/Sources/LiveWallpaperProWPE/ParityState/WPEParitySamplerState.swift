@@ -25,7 +25,6 @@ public enum WPEParitySamplerAddress: Sendable, Hashable, CaseIterable {
 }
 
 public extension WPEParitySamplerState {
-    /// `point` + `clamp` 未实测。
     static func wpe(filter: WPEParitySamplerFilter, address: WPEParitySamplerAddress) -> Self {
         let d3dFilter: D3D11Filter = switch filter {
         case .point: .minMagMipPoint
@@ -58,7 +57,7 @@ public extension WPEParitySamplerState {
                     maxAnisotropy: isPoint ? 1 : 8, comparisonFunc: .always)
     }
 
-    /// Shadow-atlas comparison sampler. 未实测。
+    /// Shadow-atlas comparison sampler.
     static func wpeComparison() -> Self {
         make(filter: .comparisonMinMagMipLinear, address: .border, maxAnisotropy: 1, comparisonFunc: .greater)
     }

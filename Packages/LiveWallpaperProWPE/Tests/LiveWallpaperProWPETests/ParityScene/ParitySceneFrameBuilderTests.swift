@@ -458,7 +458,10 @@ struct ParitySceneDocumentConversionTests {
     @Test func modelObjectHasItsOwnKindAndNoEffects() throws {
         let model = D.layer("9", image: "models/m.mdl", effects: [D.effect(passes: [D.pass("p")])])
         let object = try D.convert([model]).objects[0]
-        #expect(object.isModel)
+        guard case .model = object.kind else {
+            Issue.record("kind \(object.kind)")
+            return
+        }
         #expect(object.effects.isEmpty)
     }
 

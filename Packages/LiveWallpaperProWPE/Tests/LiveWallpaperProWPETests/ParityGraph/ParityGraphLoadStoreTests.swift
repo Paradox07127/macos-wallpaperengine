@@ -6,30 +6,13 @@ private typealias S = ParityGraphStream
 struct ParityGraphLoadStoreTests {
     private let clearBlack = WPELoadAction.clear(.color(S.black))
 
-    @Test func unavailableDrawCannotDiscardHistoryOrBecomeItsProducer() throws {
-        let history = WPELogicalResource(id: "P", width: 64, height: 64, lifetime: .pooled)
-        let graph = try WPERenderGraphCompiler.compile(
-            resources: [history, S.persistent("X")],
-            operations: [S.bind("P"), S.draw(overwrites: true), S.bind("X"), S.draw(sampling: ["P"])],
-            excludingDraws: [1]
-        )
-        #expect(graph.accesses[1].reads.isEmpty && graph.accesses[1].writes.isEmpty)
-        #expect(graph.steps.flatMap(\.operations) == [3])
-        #expect(graph.accesses[3].reads.first?.revision == 0)
-        #expect(graph.accesses[3].reads.first?.producer == nil)
-        #expect(graph.storage["P"] == .dedicated)
-    }
-
-    @Test func reflectedReadsObserveEntryHistoryWithoutReorderingTheWriter() throws {
-        let graph = try WPERenderGraphCompiler.compile(
-            resources: [S.persistent("P"), S.persistent("X")],
-            operations: [S.bind("X"), S.draw(), S.bind("P"), S.draw(overwrites: true)],
-            drawReads: [1: [WPETextureView("P")]]
-        )
+    @Test func readsObserveEntryHistoryWithoutReorderingTheWriter() throws {
+        let graph = try S.compile([S.persistent("P"), S.persistent("X")],
+                                  [S.bind("X"), S.draw(sampling: ["P"]), S.bind("P"), S.draw(overwrites: true)])
         #expect(graph.accesses[1].reads.map(\.subresource.resource) == ["P"])
         #expect(graph.accesses[1].reads.first?.revision == 0)
         #expect(graph.steps.map(\.operations) == [[1], [3]])
-        #expect(S.depends(graph, 1, on: 0, "P", .writeAfterRead))
+        #expect(S.depends(graph, 1, on: 0, "P"))
     }
 
     @Test func pooledWriterKeepsContentsForADifferentFutureGraph() throws {
@@ -38,11 +21,6 @@ struct ParityGraphLoadStoreTests {
                                                         operations: [S.bind("P"), S.draw(overwrites: true)])
         #expect(writer.storage["P"] == .dedicated)
         #expect(writer.encoders.first?.attachment("P")?.store == .store)
-        #expect(history.canPreserveContents(of: history))
-        let resized = WPELogicalResource(id: "P", width: 128, height: 64, lifetime: .pooled)
-        #expect(!resized.canPreserveContents(of: history))
-        let reformatted = WPELogicalResource(id: "P", width: 64, height: 64, format: "rgba16float", lifetime: .pooled)
-        #expect(!reformatted.canPreserveContents(of: history))
     }
 
     @Test func clearBeforeFirstDrawFoldsIntoLoadClear() throws {
@@ -110,11 +88,11 @@ struct ParityGraphLoadStoreTests {
         #expect(blended.encoders.count == 2)
         #expect(try #require(blended.encoders[0].attachment("A")).store == .store)
         #expect(try #require(blended.encoders[1].attachment("A")).load == .load)
-        #expect(S.depends(blended, 2, on: 0, "A", .readAfterWrite))
+        #expect(blended.steps[2].reads.map(\.subresource) == [WPESubresource("A")])
 
         let opaque = try compile(S.draw(overwrites: true))
         #expect(try #require(opaque.encoders[1].attachment("A")).load == .dontCare)
-        #expect(!S.depends(opaque, 2, on: 0, "A", .readAfterWrite))
+        #expect(opaque.steps[2].reads.isEmpty)
     }
 
     @Test func intermediateWithoutLaterReaderDiscardsContents() throws {
@@ -127,7 +105,7 @@ struct ParityGraphLoadStoreTests {
 
         let read = try compile(sampling: ["T"])
         #expect(try #require(read.encoders[0].attachment("T")).store == .store)
-        #expect(S.depends(read, 1, on: 0, "T", .readAfterWrite))
+        #expect(S.depends(read, 1, on: 0, "T"))
     }
 
     @Test func msaaWithoutLaterMultisampleReadResolvesOnly() throws {
@@ -137,7 +115,7 @@ struct ParityGraphLoadStoreTests {
         let resolveOnly = try S.compile(resources, prefix)
         #expect(resolveOnly.steps.count == 2)
         #expect(try #require(resolveOnly.encoders[0].attachment("M")).store == .multisampleResolve(into: "R"))
-        #expect(S.depends(resolveOnly, 1, on: 0, "R", .readAfterWrite))
+        #expect(S.depends(resolveOnly, 1, on: 0, "R"))
 
         let reread = try S.compile(resources, prefix + [S.bind("M"), S.draw(readsDestination: true)])
         #expect(try #require(reread.encoders[0].attachment("M")).store == .storeAndMultisampleResolve(into: "R"))
@@ -150,8 +128,8 @@ struct ParityGraphLoadStoreTests {
         #expect(separated.steps.count == 3)
         #expect(separated.steps[2].kind == .resolve(source: "M", destination: "R"))
         #expect(try #require(separated.encoders[0].attachment("M")).store == .store)
-        #expect(S.depends(separated, 2, on: 0, "M", .readAfterWrite))
-        #expect(S.depends(separated, 2, on: 1, "R", .writeAfterWrite))
+        #expect(S.depends(separated, 2, on: 0, "M"))
+        #expect(S.depends(separated, 2, on: 1, "R"))
 
         let adjacent = try S.compile(resources, [S.bind("R"), S.draw(), S.bind("M"), S.draw(), S.resolve("M", "R")])
         #expect(adjacent.steps.count == 2)

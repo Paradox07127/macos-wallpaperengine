@@ -22,12 +22,10 @@ public enum WPEParityBlendMode: UInt8, Sendable, Hashable, CaseIterable {
     case normal = 0
     case translucent = 1
     case additive = 2
-    /// 未实测
     case alphaToCoverage = 3
 }
 
 /// WPE blend-key flag bits; raw values are the engine's own bits.
-/// 未实测,`writeAlpha` 除外。
 public struct WPEParityBlendModifiers: OptionSet, Sendable, Hashable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) {

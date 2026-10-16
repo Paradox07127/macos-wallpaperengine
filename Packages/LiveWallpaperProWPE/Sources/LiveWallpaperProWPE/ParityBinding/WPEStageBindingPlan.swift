@@ -92,12 +92,6 @@ public struct WPEStageBindingPlan: Sendable {
     /// Fields match IRDescriptorTableEntry; metadata is already encoded by the caller.
     public func writeEntry(at offset: Int, gpuAddress: UInt64, resourceID: UInt64,
                            metadata: UInt64, into bytes: inout [UInt8]) throws {
-        guard offsets.values.contains(offset) else {
-            throw WPEParityBindingError.invalidBinding("unknown entry offset")
-        }
-        guard bytes.count >= totalSize else {
-            throw WPEParityBindingError.bufferTooSmall(required: totalSize, actual: bytes.count)
-        }
         for (field, value) in [gpuAddress, resourceID, metadata].enumerated() {
             for byte in 0 ..< 8 {
                 bytes[offset + field * 8 + byte] = UInt8(truncatingIfNeeded: value >> (byte * 8))

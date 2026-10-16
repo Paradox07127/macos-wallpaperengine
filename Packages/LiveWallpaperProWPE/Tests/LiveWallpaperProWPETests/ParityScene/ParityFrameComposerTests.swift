@@ -51,7 +51,7 @@ struct ParityFrameComposerTests {
             )
         }
         let conflicting = WPEParityPostProcessFrame(resources: transientDepth, operations: post.operations,
-                                                    draws: post.draws, present: post.present)
+                                                    draws: post.draws)
         #expect(throws: WPEParityFrameCompositionError.conflictingResource("backbufferDepth")) {
             try WPEParityFrameComposer.merge(scene, conflicting)
         }

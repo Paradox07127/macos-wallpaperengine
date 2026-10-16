@@ -25,9 +25,7 @@ struct ParityPostProcessTests {
         let frame = WPEParityPostProcessBuilder.build(config)
         #expect(sequence(frame) == ldrSequence + ["copy backbuffer -> _rt_FullFrameBuffer",
                                                   "draw ccsimple [_rt_FullFrameBuffer] normal",
-                                                  "draw fade [] translucent", "present backbuffer"])
-        #expect(frame.draws.last?.geometry == .fullScreenQuad)
-        #expect(frame.draws.first { $0.shader == "combine" }?.outputAlpha == 1)
+                                                  "draw fade [] translucent"])
         try verifyCompilation(frame)
     }
 
@@ -36,7 +34,7 @@ struct ParityPostProcessTests {
         config.hdrEnabled = true
         config.backbufferFormat = "rgba16float"
         let frame = WPEParityPostProcessBuilder.build(config)
-        #expect(sequence(frame) == hdrSequence + ["present backbuffer"])
+        #expect(sequence(frame) == hdrSequence)
         let expected: [(String, Int, Int)] = [
             ("_rt_2FrameBuffer", 1920, 1080),
             ("_rt_4FrameBuffer", 960, 540),
@@ -63,8 +61,8 @@ struct ParityPostProcessTests {
         config.hdrEnabled = hdr
         let frame = WPEParityPostProcessBuilder.build(config)
         let expected = hdr ? ["copy backbuffer -> _rt_FullFrameBuffer",
-                              "draw combine_srgb [_rt_FullFrameBuffer] normal", "present backbuffer"]
-            : ["present backbuffer"]
+                              "draw combine_srgb [_rt_FullFrameBuffer] normal"]
+            : []
         #expect(sequence(frame) == expected)
         #expect(!frame.resources.contains { $0.lifetime == .frameTransient && $0.id != "backbufferDepth" })
         try verifyCompilation(frame)
@@ -99,7 +97,7 @@ struct ParityPostProcessTests {
         if fade {
             expected.append("draw fade [] translucent")
         }
-        #expect(sequence(frame) == expected + ["present backbuffer"])
+        #expect(sequence(frame) == expected)
         try verifyCompilation(frame)
     }
 
@@ -113,8 +111,8 @@ struct ParityPostProcessTests {
         }
         let on = WPEParityPostProcessBuilder.build(enabled)
         let off = WPEParityPostProcessBuilder.build(disabled)
-        #expect(sequence(on) == ldrSequence + ["present backbuffer"])
-        #expect(sequence(off) == ["present backbuffer"])
+        #expect(sequence(on) == ldrSequence)
+        #expect(sequence(off).isEmpty)
         try verifyCompilation(on)
         try verifyCompilation(off)
     }
@@ -124,8 +122,8 @@ struct ParityPostProcessTests {
         let ldr = WPEParityPostProcessBuilder.build(config)
         config.hdrEnabled = true
         let hdr = WPEParityPostProcessBuilder.build(config)
-        #expect(sequence(ldr) == ldrSequence + ["present backbuffer"])
-        #expect(sequence(hdr) == hdrSequence + ["present backbuffer"])
+        #expect(sequence(ldr) == ldrSequence)
+        #expect(sequence(hdr) == hdrSequence)
         try verifyCompilation(ldr)
         try verifyCompilation(hdr)
     }
@@ -136,7 +134,7 @@ struct ParityPostProcessTests {
         config.msaaSampleCount = 4
         let msaa = WPEParityPostProcessBuilder.build(config)
         #expect(sequence(msaa) == sequence(singleSample))
-        #expect(sequence(singleSample) == (bloom ? ldrSequence : []) + ["present backbuffer"])
+        #expect(sequence(singleSample) == (bloom ? ldrSequence : []))
         try verifyCompilation(singleSample, msaaSamples: 1)
         try verifyCompilation(msaa, msaaSamples: 4)
     }
@@ -150,7 +148,7 @@ struct ParityPostProcessTests {
         let mipSequence = ["copy backbuffer -> _rt_MipMappedFrameBuffer", "mips _rt_MipMappedFrameBuffer"]
         let expected = bloom ? [hdrSequence[0]] + mipSequence + Array(hdrSequence.dropFirst())
             : mipSequence + ["copy backbuffer -> _rt_FullFrameBuffer", "draw combine_srgb [_rt_FullFrameBuffer] normal"]
-        #expect(sequence(frame) == expected + ["present backbuffer"])
+        #expect(sequence(frame) == expected)
         let mip = try #require(frame.resources.first { $0.id == "_rt_MipMappedFrameBuffer" })
         #expect(mip.width == 3840 && mip.height == 2160 && mip.mipCount == 9)
         #expect(mip.format == config.backbufferFormat && mip.lifetime == .pooled)
@@ -179,8 +177,8 @@ struct ParityPostProcessTests {
         #expect(config.mipMappedFrameBufferRequested == (gate == 1))
         #expect(!config.mipMappedFrameBufferRefreshEnabled)
         #expect(sequence(enabled) == [ldrSequence[0], "copy backbuffer -> _rt_MipMappedFrameBuffer",
-                                      "mips _rt_MipMappedFrameBuffer"] + Array(ldrSequence.dropFirst()) + ["present backbuffer"])
-        #expect(sequence(disabled) == ldrSequence + ["present backbuffer"])
+                                      "mips _rt_MipMappedFrameBuffer"] + Array(ldrSequence.dropFirst()))
+        #expect(sequence(disabled) == ldrSequence)
         try verifyCompilation(disabled)
         try verifyCompilation(enabled)
     }
@@ -311,7 +309,6 @@ struct ParityPostProcessTests {
             #expect(first.attachment(resource.id)?.load == .dontCare)
             #expect(first.attachment(resource.id)?.store == .store)
         }
-        #expect(frame.present.backbuffer == "backbuffer")
         let operations = frame.operations.compactMap { operation -> WPEDrawOperation? in
             if case let .draw(draw) = operation.kind {
                 return draw
@@ -325,7 +322,6 @@ struct ParityPostProcessTests {
             #expect(operation.readsDestination == (description.blend != .normal))
             #expect(operation.overwritesTargets == (description.blend == .normal))
             #expect(!operation.depthTest && !operation.depthWrite)
-            #expect(description.geometry == .fullScreenQuad)
         }
     }
 
@@ -346,7 +342,7 @@ struct ParityPostProcessTests {
             case let .resolve(source, destination): return "resolve \(source) -> \(destination)"
             case .clearColor, .clearDepth: return "unexpected clear"
             }
-        } + ["present \(frame.present.backbuffer)"]
+        }
     }
 
     private var ldrSequence: [String] {

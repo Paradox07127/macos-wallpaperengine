@@ -15,7 +15,7 @@ struct WPEParityAuthoredFBO: Sendable {
     var repeats = false
 
     /// FUN_1401e63b0: arrays and each object in them are AND groups. Missing combo values are integer zero;
-    /// nonarrays and nonobject elements are accepted. PE constants fix op/ge/gt/le/lt (see wave1 raw evidence).
+    /// nonarrays and nonobject elements are accepted. PE constants fix op/ge/gt/le/lt.
     static func conditionsMatch(_ conditions: WPESceneJSONValue?, combos: WPESceneJSONValue?) -> Bool {
         guard case let .array(groups)? = conditions else { return true }
         func integer(_ value: WPESceneJSONValue?) -> Int32 {

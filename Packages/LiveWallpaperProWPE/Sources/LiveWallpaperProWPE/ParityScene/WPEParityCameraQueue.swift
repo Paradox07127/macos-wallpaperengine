@@ -13,9 +13,6 @@ public final class WPEParityCameraQueue {
         /// Native writes these back to the camera object's local origin/angles, without a parent inverse.
         public let origin: SIMD3<Float>
         public let angles: SIMD3<Float>
-        /// Item scalars override the camera object's own fields only while an item is selected.
-        public let zoom: Float
-        public let fov: Float
     }
 
     private struct Item {
@@ -29,10 +26,6 @@ public final class WPEParityCameraQueue {
 
     public let objectID: String
     public let path: String
-    public var itemCount: Int {
-        items.count
-    }
-
     public var hasEligibleItems: Bool {
         !eligible.isEmpty
     }
@@ -143,8 +136,7 @@ public final class WPEParityCameraQueue {
             items[index].fov = item.channels[10]?.value?.x ?? 50
         }
         let angles = WPEParityLayerTransform.angles(fromLookAt: WPEParityCamera.lookAt(eye: origin, center: center, up: up))
-        return Output(origin: origin, angles: angles,
-                      zoom: items[index].zoom, fov: items[index].fov)
+        return Output(origin: origin, angles: angles)
     }
 
     private func select(state: WPEParitySceneState) {

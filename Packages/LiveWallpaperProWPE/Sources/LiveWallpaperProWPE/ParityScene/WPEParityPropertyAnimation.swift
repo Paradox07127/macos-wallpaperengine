@@ -11,8 +11,6 @@ public final class WPEParityPropertyAnimation {
     public let name: String?
     /// The authored parent binding key, if present.
     public let parentKey: String?
-    /// WPE preserves this flag but does not use it to advance property animations.
-    public let random: Bool
     /// Current root time in seconds.
     public var time: Float {
         root?.clockTime ?? clockTime
@@ -28,21 +26,11 @@ public final class WPEParityPropertyAnimation {
         root?.clockFinished ?? clockFinished
     }
 
-    /// The last explicit frame stamp processed by the root.
-    public var frameStamp: UInt64? {
-        root?.lastFrameStamp ?? lastFrameStamp
-    }
-
-    /// Components of the property type; `value` fills only these lanes.
-    public var componentCount: Int {
-        valueType.rawValue
-    }
-
     /// The sampled components, or nil when the authored channels cannot override the property.
     public var value: SIMD4<Float>? {
         guard samples.count == valueType.rawValue else { return nil }
         let time = time
-        // WPE divides by a stored 1/fps for both; t·fps rounds differently near frame boundaries (R27).
+        // WPE divides by a stored 1/fps for both; t·fps rounds differently near frame boundaries.
         let frameDuration = 1 / fps
         let frame = min(length - 1, max(0, Self.truncate(time / frameDuration)))
         let next = min(frame + 1, length)
@@ -65,7 +53,7 @@ public final class WPEParityPropertyAnimation {
     }
 
     /// The events the most recent advance crossed, in 1401a9f60's order: the step's span, then after a loop wrap
-    /// the span from the start. A child binding runs on its root's clock and fires none of its own [I].
+    /// the span from the start. A child binding runs on its root's clock and fires none of its own.
     public private(set) var firedEvents: [Event] = []
 
     /// binding+0xf8: multiplies the root's dt (14017fa70.c:727-734); WPE leaves it 1 unless something sets it.
@@ -128,7 +116,6 @@ public final class WPEParityPropertyAnimation {
         case "single": mode = .single
         default: mode = .loop
         }
-        random = options["random"] == .bool(true)
         startPaused = options["startpaused"] == .bool(true)
 
         var offsets = [Float](repeating: 0, count: 4)

@@ -5,10 +5,6 @@ public struct WPEFloatMatrix: Sendable {
         self.columns = columns
     }
 
-    public init(columns: [SIMD2<Float>]) {
-        self.columns = columns.map { [$0.x, $0.y] }
-    }
-
     public init(columns: [SIMD3<Float>]) {
         self.columns = columns.map { [$0.x, $0.y, $0.z] }
     }
@@ -121,87 +117,5 @@ public struct WPECBufferPacker: Sendable {
                 bytes[offset + byte] = UInt8(truncatingIfNeeded: word >> (byte * 8))
             }
         }
-    }
-}
-
-public extension WPECBufferPacker {
-    mutating func write(_ value: Float, to name: String) throws {
-        try write(.float(value), to: name)
-    }
-
-    mutating func write(_ values: [Float], to name: String) throws {
-        try write(.array(values.map { .float($0) }), to: name)
-    }
-
-    mutating func write(_ value: Int32, to name: String) throws {
-        try write(.int(value), to: name)
-    }
-
-    mutating func write(_ values: [Int32], to name: String) throws {
-        try write(.array(values.map { .int($0) }), to: name)
-    }
-
-    mutating func write(_ value: UInt32, to name: String) throws {
-        try write(.uint(value), to: name)
-    }
-
-    mutating func write(_ values: [UInt32], to name: String) throws {
-        try write(.array(values.map { .uint($0) }), to: name)
-    }
-
-    mutating func write(_ value: Bool, to name: String) throws {
-        try write(.bool(value), to: name)
-    }
-
-    mutating func write(_ values: [Bool], to name: String) throws {
-        try write(.array(values.map { .bool($0) }), to: name)
-    }
-
-    mutating func write(_ value: SIMD2<Float>, to name: String) throws {
-        try write(.vector([value.x, value.y]), to: name)
-    }
-
-    mutating func write(_ values: [SIMD2<Float>], to name: String) throws {
-        try write(.array(values.map { .vector([$0.x, $0.y]) }), to: name)
-    }
-
-    mutating func write(_ value: SIMD3<Float>, to name: String) throws {
-        try write(.vector([value.x, value.y, value.z]), to: name)
-    }
-
-    mutating func write(_ values: [SIMD3<Float>], to name: String) throws {
-        try write(.array(values.map { .vector([$0.x, $0.y, $0.z]) }), to: name)
-    }
-
-    mutating func write(_ value: SIMD4<Float>, to name: String) throws {
-        try write(.vector([value.x, value.y, value.z, value.w]), to: name)
-    }
-
-    mutating func write(_ values: [SIMD4<Float>], to name: String) throws {
-        try write(.array(values.map { .vector([$0.x, $0.y, $0.z, $0.w]) }), to: name)
-    }
-
-    mutating func write<V: SIMD>(_ value: V, to name: String) throws where V.Scalar == Int32 {
-        try write(.intVector(value.indices.map { value[$0] }), to: name)
-    }
-
-    mutating func write<V: SIMD>(_ values: [V], to name: String) throws where V.Scalar == Int32 {
-        try write(.array(values.map { value in .intVector(value.indices.map { value[$0] }) }), to: name)
-    }
-
-    mutating func write<V: SIMD>(_ value: V, to name: String) throws where V.Scalar == UInt32 {
-        try write(.uintVector(value.indices.map { value[$0] }), to: name)
-    }
-
-    mutating func write<V: SIMD>(_ values: [V], to name: String) throws where V.Scalar == UInt32 {
-        try write(.array(values.map { value in .uintVector(value.indices.map { value[$0] }) }), to: name)
-    }
-
-    mutating func write(_ value: WPEFloatMatrix, to name: String) throws {
-        try write(.matrix(value), to: name)
-    }
-
-    mutating func write(_ values: [WPEFloatMatrix], to name: String) throws {
-        try write(.array(values.map { .matrix($0) }), to: name)
     }
 }

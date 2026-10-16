@@ -17,9 +17,9 @@ struct ParityGraphEncoderTests {
                                   [S.bind("A"), S.draw(), S.copy("A", "B"), S.draw()])
         #expect(graph.steps.map(\.operations) == [[1], [2], [3]])
         #expect(graph.steps[1].kind == .copy(source: "A", destination: "B"))
-        #expect(S.depends(graph, 1, on: 0, "A", .readAfterWrite))
-        #expect(S.depends(graph, 2, on: 1, "A", .writeAfterRead))
-        #expect(S.depends(graph, 2, on: 0, "A", .writeAfterWrite))
+        #expect(S.depends(graph, 1, on: 0, "A"))
+        #expect(S.depends(graph, 2, on: 1, "A"))
+        #expect(S.depends(graph, 2, on: 0, "A"))
     }
 
     @Test func generateMipsBreaksTheEncoderAndOrdersBothSides() throws {
@@ -28,9 +28,9 @@ struct ParityGraphEncoderTests {
                                    S.bind("X"), S.draw(sampling: ["A"])])
         #expect(graph.steps.count == 4)
         #expect(graph.steps[1].kind == .generateMips("A"))
-        #expect(S.depends(graph, 1, on: 0, "A", .readAfterWrite))
-        #expect(S.depends(graph, 2, on: 1, "A", .writeAfterRead))
-        #expect(S.depends(graph, 3, on: 1, "A", mip: 2, .readAfterWrite))
+        #expect(S.depends(graph, 1, on: 0, "A"))
+        #expect(S.depends(graph, 2, on: 1, "A"))
+        #expect(S.depends(graph, 3, on: 1, "A", mip: 2))
     }
 
     @Test func resolveBreaksTheEncoder() throws {
@@ -38,7 +38,7 @@ struct ParityGraphEncoderTests {
                                   [S.bind("M"), S.draw(), S.resolve("M", "R"), S.draw(readsDestination: true)])
         #expect(graph.encoders.count == 2)
         #expect(graph.steps[0].operations == [1, 2])
-        #expect(S.depends(graph, 1, on: 0, "M", .readAfterWrite))
+        #expect(S.depends(graph, 1, on: 0, "M"))
     }
 
     @Test func drawsWithoutABoundaryStayMerged() throws {

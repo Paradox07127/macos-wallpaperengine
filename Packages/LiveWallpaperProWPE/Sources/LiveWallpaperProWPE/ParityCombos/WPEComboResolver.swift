@@ -9,25 +9,7 @@ public enum WPEComboResolver: Sendable {
         engineFlags: WPEEngineComboFlags,
         boundTextures: [Int32: WPEBoundComboTexture]
     ) -> [WPEShaderDefine] {
-        resolve(
-            passJSONCombos: passJSONCombos, blendingMode: blendingMode,
-            vertexSource: vertexSource, fragmentSource: fragmentSource,
-            engineFlags: engineFlags, boundTextures: boundTextures, copyReversalEnabled: true
-        )
-    }
-
-    static func resolve(
-        passJSONCombos: [WPEPassJSONCombo],
-        blendingMode: Int32,
-        vertexSource: String,
-        fragmentSource: String,
-        engineFlags: WPEEngineComboFlags,
-        boundTextures: [Int32: WPEBoundComboTexture],
-        copyReversalEnabled: Bool
-    ) -> [WPEShaderDefine] {
-        let annotations = WPEShaderAnnotationCombos(
-            vertexSource: vertexSource, fragmentSource: fragmentSource, copyReversalEnabled: copyReversalEnabled
-        )
+        let annotations = WPEShaderAnnotationCombos(vertexSource: vertexSource, fragmentSource: fragmentSource)
         var map = WPEMSVCUnorderedMap<String, Int32>()
         let sorted = passJSONCombos.enumerated().sorted {
             let left = Array($0.element.key.utf8), right = Array($1.element.key.utf8)

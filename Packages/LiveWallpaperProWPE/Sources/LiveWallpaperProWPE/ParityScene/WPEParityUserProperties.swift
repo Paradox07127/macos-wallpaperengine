@@ -1,4 +1,4 @@
-/// User-property bindings of a parity scene and the live writes a change makes (R24 Q5 step 1). SceneScript
+/// User-property bindings of a parity scene and the live writes a change makes. SceneScript
 /// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
 public enum WPEParityUserProperties {
     /// Live camera/bloom fields use canonical State consumers; changing `hdr` still reloads.
@@ -126,6 +126,7 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public struct SceneFloatWrite: Sendable, Equatable {
         public let name: String
         public let value: Float
+        public let invalidation: WPEParitySceneState.Invalidation
     }
 
     public private(set) var objects: [ObjectWrite] = []
@@ -138,19 +139,13 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public let bloom: WPEParityBloomSettings
     /// A valid changed JSON Bool seed, or nil to preserve the running script's current value.
     public let sceneBloom: Bool?
-    /// Accepted document deltas for the six LDR/HDR Float fields, not a second live settings owner.
-    public private(set) var sceneBloomFloats: [SceneFloatWrite] = []
+    /// Accepted document deltas of the bloom, camera parallax/shake and projection Float fields.
+    public private(set) var sceneFloats: [SceneFloatWrite] = []
     /// Accepted typed deltas; nil preserves the running script's value instead of restoring the authored seed.
     public let sceneBloomIterations: Int32?
     public let sceneBloomTint: SIMD3<Float>?
-    /// No-hook accepted deltas, consumed at the native camera-update and layer-render read points.
     public let sceneParallaxEnabled: Bool?
-    public private(set) var sceneParallaxFloats: [SceneFloatWrite] = []
-    /// Accepted no-hook fields, polled together by the next native camera-update step.
     public let sceneShakeEnabled: Bool?
-    public private(set) var sceneShakeFloats: [SceneFloatWrite] = []
-    /// Accepted raw projection fields; the camera publishes their effect before the next script tick.
-    public private(set) var sceneProjectionFloats: [SceneFloatWrite] = []
 
     /// Nil when the two parses do not hold the same objects and effects.
     public init?(from old: WPESceneDocument, to new: WPESceneDocument) {
@@ -168,32 +163,17 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         let oldParallax = WPEParityScriptProperty.sceneBoolValue(fromJSON: old.resolvedGeneralJSON["cameraparallax"])
         let newParallax = WPEParityScriptProperty.sceneBoolValue(fromJSON: new.resolvedGeneralJSON["cameraparallax"])
         sceneParallaxEnabled = oldParallax != newParallax ? newParallax : nil
-        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneCameraParallax && descriptor.type == .float {
-            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
-            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
-                  value != previous else { continue }
-            sceneParallaxFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
-        }
         let oldShake = WPEParityScriptProperty.sceneBoolValue(fromJSON: old.resolvedGeneralJSON["camerashake"])
         let newShake = WPEParityScriptProperty.sceneBoolValue(fromJSON: new.resolvedGeneralJSON["camerashake"])
         sceneShakeEnabled = oldShake != newShake ? newShake : nil
-        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneCameraShake && descriptor.type == .float {
+        for descriptor in WPEParityScriptProperty.scene where descriptor.type == .float
+            && (descriptor.isSceneBloomFloat || descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake
+                || descriptor.isSceneProjection) {
             let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
             guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
                   value != previous else { continue }
-            sceneShakeFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
-        }
-        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneProjection {
-            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
-            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
-                  value != previous else { continue }
-            sceneProjectionFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
-        }
-        for descriptor in WPEParityScriptProperty.scene where descriptor.isSceneBloomFloat {
-            let previous = WPEParityScriptProperty.sceneFloatValue(fromJSON: old.resolvedGeneralJSON[descriptor.name])
-            guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: new.resolvedGeneralJSON[descriptor.name]),
-                  value != previous else { continue }
-            sceneBloomFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value))
+            sceneFloats.append(SceneFloatWrite(name: descriptor.fieldName, value: value,
+                                               invalidation: descriptor.invalidation))
         }
         let before = WPEParitySceneState(document: old, hdr: false)
         let after = WPEParitySceneState(document: new, hdr: false)
@@ -236,8 +216,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         if let sceneBloom {
             state.setScriptField("bloom", of: "", to: .vector(SIMD4(sceneBloom ? 1 : 0, 0, 0, 0)), invalidating: .none)
         }
-        for write in sceneBloomFloats {
-            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .bloom)
+        for write in sceneFloats {
+            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: write.invalidation)
         }
         if let sceneBloomIterations {
             state.setScriptField("bloomhdriterations", of: "", to: .integer(sceneBloomIterations), invalidating: .bloom)
@@ -248,17 +228,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         if let sceneParallaxEnabled {
             state.setScriptField("cameraparallax", of: "", to: .vector(SIMD4(sceneParallaxEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
         }
-        for write in sceneParallaxFloats {
-            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
-        }
         if let sceneShakeEnabled {
             state.setScriptField("camerashake", of: "", to: .vector(SIMD4(sceneShakeEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
-        }
-        for write in sceneShakeFloats {
-            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
-        }
-        for write in sceneProjectionFloats {
-            state.setScriptField(write.name, of: "", to: .vector(SIMD4(write.value, 0, 0, 0)), invalidating: .none)
         }
         for write in objects {
             state.set(write.property, of: write.id, to: write.value)

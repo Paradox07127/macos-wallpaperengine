@@ -33,7 +33,7 @@ public enum WPEParityPostProcessBuilder {
                             constants: ["g_RenderVar0": [scale.x, scale.y, stream.renderVar0[2], stream.renderVar0[3]]])
             } else {
                 stream.draw("combine", material: "materials/util/combine_ldr.json",
-                            reads: ["_rt_FullFrameBuffer", "_rt_Bloom"], outputAlpha: 1)
+                            reads: ["_rt_FullFrameBuffer", "_rt_Bloom"])
             }
         } else {
             if config.hdrEnabled {
@@ -70,8 +70,7 @@ public enum WPEParityPostProcessBuilder {
         if config.fadeActive {
             stream.draw("fade", blend: .translucent)
         }
-        return WPEParityPostProcessFrame(resources: stream.resources, operations: stream.operations,
-                                         draws: stream.draws, present: .init(backbuffer: "backbuffer"))
+        return WPEParityPostProcessFrame(resources: stream.resources, operations: stream.operations, draws: stream.draws)
     }
 }
 
@@ -134,18 +133,15 @@ private struct WPEParityPostProcessStream {
     /// `material` defaults to `materials/util/<shader>.json`.
     mutating func draw(_ shader: String, material: String? = nil, reads: [WPEResourceID] = [],
                        blend: WPEParityPostProcessDraw.Blend = .normal, constants: [String: [Float]] = [:],
-                       outputAlpha: Float? = nil, combos: [String: Int32] = [:], textures: [Int32: String] = [:]) {
+                       combos: [String: Int32] = [:], textures: [Int32: String] = [:]) {
         let texels = reads.map { id in
             let resource = resources.first { $0.id == id }!
             return SIMD2<Float>(1 / Float(resource.width), 1 / Float(resource.height))
         }
         let description = WPEParityPostProcessDraw(shader: shader,
                                                    material: material ?? "materials/util/\(shader).json",
-                                                   reads: reads, blend: blend,
-                                                   geometry: .fullScreenQuad,
-                                                   constants: constants,
-                                                   texelSizes: texels, outputAlpha: outputAlpha,
-                                                   combos: combos, textures: textures)
+                                                   reads: reads, blend: blend, constants: constants,
+                                                   texelSizes: texels, combos: combos, textures: textures)
         draws.append(description)
         renderVar0 = constants["g_RenderVar0"] ?? renderVar0
         append(shader, .draw(WPEDrawOperation(reads: reads.map { WPETextureView($0) },
