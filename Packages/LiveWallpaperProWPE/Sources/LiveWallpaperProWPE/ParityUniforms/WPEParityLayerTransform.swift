@@ -66,13 +66,14 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
         self.attachment = attachment
     }
 
-    /// Image layers, groups and particle systems of a document with their local (not parent-baked) transforms.
-    public static func layers(document: WPESceneDocument) -> [Self] {
+    /// Image layers, groups and particle systems of a document with their local (not parent-baked) transforms;
+    /// `imageSizes` (`WPEParityProgramScene.imageSizes`) replaces an autosize image layer's authored size.
+    public static func layers(document: WPESceneDocument, imageSizes: [String: SIMD2<Float>] = [:]) -> [Self] {
         let ortho = document.general.orthogonalProjection
         let canvas = SIMD2(Float(ortho.width), Float(ortho.height))
         let autoID = WPEParityCamera.autoLayer(document)?.id
         var layers = document.imageObjects.map { image in
-            let size = image.size.map { SIMD2(Float($0.width), Float($0.height)) } ?? canvas
+            let size = imageSizes[image.id] ?? image.size.map { SIMD2(Float($0.width), Float($0.height)) } ?? canvas
             var origin = SIMD3<Float>(image.localOrigin)
             if image.id == autoID {
                 origin = SIMD3(size / 2, origin.z)

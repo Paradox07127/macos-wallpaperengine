@@ -112,16 +112,8 @@ extension WPEParitySceneDriverTests {
                 }
             }
             // Quad centred at (32, 16): 6 units cover pixels 29–34 × 13–18; 48×24 cover 8–55 × 4–27.
-            let region = {
-                XCTAssertEqual([minX, minY, maxX, maxY], hasAlbedo ? [8, 4, 55, 27] : [29, 13, 34, 18],
-                               "\(label) drawn region; corner \(clear), centre \(Array(raw[centre ..< centre + 4]))")
-            }
-            if hasAlbedo {
-                region()
-            } else {
-                // The quad size still comes from the document size (WPEParityLayerTransform.layers via the draw planner).
-                XCTExpectFailure("OPEN: the layer quad does not follow the object size yet", failingBlock: region)
-            }
+            XCTAssertEqual([minX, minY, maxX, maxY], hasAlbedo ? [8, 4, 55, 27] : [29, 13, 34, 18],
+                           "\(label) drawn region; corner \(clear), centre \(Array(raw[centre ..< centre + 4]))")
         }
     }
 

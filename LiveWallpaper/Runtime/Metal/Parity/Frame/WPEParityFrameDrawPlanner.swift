@@ -474,7 +474,8 @@ struct WPEParityFrameDrawPlanner {
         let renderTargetSize = SIMD2(Float(plan.width), Float(plan.height))
         layers = WPEParityLayerTransformSet(document: plan.document, renderTargetSize: renderTargetSize,
                                             alignment: plan.alignment, cameraZoom: 1,
-                                            textSizes: plan.scene.textSizes, puppetModels: plan.scene.puppetModels)
+                                            textSizes: plan.scene.textSizes, imageSizes: plan.scene.imageSizes,
+                                            puppetModels: plan.scene.puppetModels)
         layers.camera = WPEParityCamera(document: plan.document, renderTargetSize: renderTargetSize,
                                         alignment: plan.alignment,
                                         orthoWithoutPaths: plan.scene.engineFlags.orthographicProjection

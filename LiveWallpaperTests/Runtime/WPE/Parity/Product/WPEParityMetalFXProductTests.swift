@@ -90,7 +90,8 @@ extension WPEParitySceneDriverTests {
                 _ = try actualMetalFXTarget(renderer, id: "history_7", size: history)
                 _ = try actualMetalFXTarget(renderer, id: "scratch_7", size: history)
                 _ = try actualMetalFXTarget(renderer, id: "shared", size: history)
-                let composite = SIMD2(bb.x / 3, bb.y / 4) // authored128x64, independent fixed ratios
+                // An autosize layer takes its albedo TEXI size, 562×896, not the authored 128×64 (140209360.c:26-49).
+                let composite = SIMD2((562 * bb.x / 384) & ~1, (896 * bb.y / 256) & ~1)
                 _ = try actualMetalFXTarget(renderer, id: "_rt_imageLayerComposite_90_a", size: composite)
                 for (id, divisor): (WPEResourceID, Int) in [("_rt_4FrameBuffer", 4), ("_rt_8FrameBuffer", 8),
                                                             ("_rt_Bloom", 8)] {

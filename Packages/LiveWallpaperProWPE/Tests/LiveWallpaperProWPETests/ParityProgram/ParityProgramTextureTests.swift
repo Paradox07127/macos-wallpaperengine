@@ -48,6 +48,25 @@ final class ParityProgramTextureTests: XCTestCase {
             ])
             let object = try XCTUnwrap(scene.scene.objects.first)
             XCTAssertEqual([object.width, object.height], autosize ? [6, 6] : [400, 200], "autosize \(autosize)")
+            XCTAssertEqual(scene.imageSizes["7"], autosize ? SIMD2(6, 6) : nil, "autosize \(autosize)")
+        }
+    }
+
+    /// FUN_140209360 (140209360.c:26-49): a present autosize albedo gives the layer its TEXI image size.
+    func testPresentAutosizeAlbedoSizesTheLayerFromItsImageSize() throws {
+        var tex = Array("TEXV0005\0TEXI0001\0".utf8)
+        for value: UInt32 in [0, 0, 32, 16, 24, 12] {
+            withUnsafeBytes(of: value.littleEndian) { tex.append(contentsOf: $0) }
+        }
+        for autosize in [true, false] {
+            var layer = ParitySceneDocuments.layer("1", width: 48, height: 24)
+            layer.model = ["material": "materials/albedo.json", "autosize": autosize]
+            let scene = try ParitySceneDocuments.programScene([layer], files: [
+                "materials/albedo.json": #"{"passes":[{"shader":"genericimage2","textures":["present"]}]}"#,
+            ], binaries: ["materials/present.tex": Data(tex)])
+            let object = try XCTUnwrap(scene.scene.objects.first)
+            XCTAssertEqual([object.width, object.height], autosize ? [24, 12] : [48, 24], "autosize \(autosize)")
+            XCTAssertEqual(scene.imageSizes["1"], autosize ? SIMD2(24, 12) : nil, "autosize \(autosize)")
         }
     }
 

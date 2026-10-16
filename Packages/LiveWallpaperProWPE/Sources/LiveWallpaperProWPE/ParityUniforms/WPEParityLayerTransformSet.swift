@@ -143,13 +143,15 @@ public struct WPEParityLayerTransformSet: Sendable {
         }
     }
 
-    /// `textSizes` sizes the text layers (`WPEParityProgramScene.textSizes`); `puppetModels` resolves attachments.
+    /// `textSizes` and `imageSizes` size the text and autosize image layers (`WPEParityProgramScene.textSizes`,
+    /// `.imageSizes`); `puppetModels` resolves attachments.
     public init(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,
                 alignment: WPEParityCameraAlignment = .noCrop, cameraZoom: Float = 1,
-                textSizes: [String: SIMD2<Float>] = [:], puppetModels: [String: WPEPuppetModel] = [:]) {
+                textSizes: [String: SIMD2<Float>] = [:], imageSizes: [String: SIMD2<Float>] = [:],
+                puppetModels: [String: WPEPuppetModel] = [:]) {
         self.init(camera: WPEParityCamera(document: document, renderTargetSize: renderTargetSize,
                                           alignment: alignment, cameraZoom: cameraZoom),
-                  layers: WPEParityLayerTransform.layers(document: document)
+                  layers: WPEParityLayerTransform.layers(document: document, imageSizes: imageSizes)
                       + WPEParityLayerTransform.textLayers(document: document, sizes: textSizes),
                   puppetModels: puppetModels)
     }

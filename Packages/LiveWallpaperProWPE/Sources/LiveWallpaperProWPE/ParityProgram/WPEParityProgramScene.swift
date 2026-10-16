@@ -156,17 +156,23 @@ public struct WPEParityProgramScene: Sendable {
                 materials[MaterialKey(objectID: image.id, effectID: nil, source: albedoSource)] = material
             }
             let fullscreen = Self.flag(model?["fullscreen"])
-            // 140209360.c:26-49: an autosize model, not a projectlayer, takes its albedo's image size; a missing or
-            // "error" albedo is the 6×6 placeholder (1400ec220.c:164-165, 223-226).
-            let placeholderSize = Self.flag(model?["autosize"]) && !Self.flag(model?["projectlayer"])
-                && material?.textures[0].map {
-                    !$0.hasPrefix("_rt_") && ($0 == "error" || assets.data("materials/\($0).tex") == nil)
-                } == true
+            // 140209360.c:26-49: an autosize model, not a projectlayer, takes its albedo's TEXI image size; a missing
+            // or "error" albedo is the 6×6 placeholder (1400ec220.c:164-165, 223-226). A sprite sheet (TEXI flags & 4)
+            // would take its TEXS frame size, which the package does not parse, so it keeps the authored size.
+            let albedo = !fullscreen && Self.flag(model?["autosize"]) && !Self.flag(model?["projectlayer"])
+                ? material?.textures[0].flatMap { $0.hasPrefix("_rt_") ? nil : $0 } : nil
+            let albedoSize: SIMD2<Int>? = albedo.flatMap { name in
+                name == "error" || assets.data("materials/\(name).tex") == nil ? SIMD2(6, 6)
+                    : assets.textureHeader(named: name).flatMap {
+                        $0.flags & 4 != 0 ? nil : SIMD2(Int($0.imageWidth), Int($0.imageHeight))
+                    }
+            }
+            imageSizes[image.id] = albedoSize.map { SIMD2<Float>($0) }
             // catsout WPSceneParser.cpp binds a fullscreen layer's FBOs to the screen.
             let objectWidth = fullscreen ? width
-                : placeholderSize ? 6 : image.size.map { Int($0.width.rounded()) } ?? width
+                : albedoSize?.x ?? image.size.map { Int($0.width.rounded()) } ?? width
             let objectHeight = fullscreen ? height
-                : placeholderSize ? 6 : image.size.map { Int($0.height.rounded()) } ?? height
+                : albedoSize?.y ?? image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
                                        materials: &materials, overridePasses: &overridePasses,
                                        records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored)
@@ -394,6 +400,9 @@ public struct WPEParityProgramScene: Sendable {
         }
         return sizes
     }
+
+    /// Each image layer whose size its albedo gives (140209360.c:26-49): the placeholder's 6×6 or the TEXI image size.
+    public private(set) var imageSizes: [String: SIMD2<Float>] = [:]
 
     /// Loads each effect file and records the merged material of every pass under `objectID`.
     private static func effects(_ effects: [WPESceneImageEffect], objectID: String, assets: WPEParityProgramAssets,
