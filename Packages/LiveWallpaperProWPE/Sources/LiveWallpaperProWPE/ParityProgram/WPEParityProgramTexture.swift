@@ -77,8 +77,10 @@ public struct WPEParityProgramTextureHeader: Sendable, Equatable {
 public extension WPEParityProgramAssets {
     /// `materials/<name>.tex` from the first source that has it; render targets and missing files give nil.
     func textureHeader(named name: String) -> WPEParityProgramTextureHeader? {
-        data("materials/\(name).tex").flatMap {
-            WPEParityProgramTextureHeader(bytes: Array($0.prefix(WPEParityProgramTextureHeader.byteCount)))
+        memoizedTextureHeader(name) {
+            data("materials/\(name).tex").flatMap {
+                WPEParityProgramTextureHeader(bytes: Array($0.prefix(WPEParityProgramTextureHeader.byteCount)))
+            }
         }
     }
 }

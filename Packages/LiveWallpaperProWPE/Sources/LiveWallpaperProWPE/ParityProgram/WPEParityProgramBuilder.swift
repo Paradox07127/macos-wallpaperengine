@@ -15,8 +15,7 @@ public enum WPEParityProgramBuilder {
                             assets: WPEParityProgramAssets) -> WPEParityProgramDescription {
         var flags = engineFlags
         var bound = material.textures.mapValues { _ in WPEBoundComboTexture() }
-        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
-        let samplers = WPEShaderAnnotationCombos(vertexSource: sources.vertex, fragmentSource: sources.fragment).samplers
+        let samplers = assets.shaderDeclarations(material.shader).annotations.samplers
         for (slot, sampler) in samplers.entries {
             let name = material.textures[slot] ?? (sampler.defaultTexture.isEmpty ? nil : sampler.defaultTexture)
             guard let header = name.flatMap(assets.textureHeader(named:)) else { continue }

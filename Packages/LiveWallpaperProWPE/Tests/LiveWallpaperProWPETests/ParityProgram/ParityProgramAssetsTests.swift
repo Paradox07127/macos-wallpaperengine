@@ -78,6 +78,56 @@ final class ParityProgramAssetsTests: XCTestCase {
         XCTAssertEqual(first, uncached)
     }
 
+    func testDescriptionReadsShaderFilesAndTextureHeadersOncePerAssets() {
+        func tex(_ format: Character) -> String {
+            "TEXV0005\0TEXI0001\0\(format)\0\0\0\u{2}\0\0\0" + String(repeating: "\0", count: 16)
+        }
+        let files = [
+            "shaders/probe.vert": "void main() {}\n",
+            "shaders/probe.frag": """
+            #include "common.h"
+            uniform sampler2D g_Texture0; // {"formatcombo":true}
+            uniform sampler2D g_Texture1; // {"default":"util/noise"}
+            void main() {}
+
+            """,
+            "shaders/common.h": "// common\n",
+            "materials/a.tex": tex("\u{8}"),
+            "materials/b.tex": tex("\u{9}"),
+            "materials/util/noise.tex": tex("\u{7}"),
+        ]
+        let source = { (reads: OSAllocatedUnfairLock<[String: Int]>?) in
+            WPEParityProgramAssets.Source.lookup(URL(fileURLWithPath: "/lookup/describe", isDirectory: true)) { path in
+                reads?.withLock { $0[path, default: 0] += 1 }
+                return files[path].map { Data($0.utf8) }
+            }
+        }
+        let reads = OSAllocatedUnfairLock(initialState: [String: Int]())
+        let assets = WPEParityProgramAssets(sources: [source(reads)])
+        func shaderReads() -> Int {
+            reads.withLock { $0.filter { $0.key.hasPrefix("shaders/") }.values.reduce(0, +) }
+        }
+        func describe(_ texture: String, _ assets: WPEParityProgramAssets) -> WPEParityProgramDescription {
+            WPEParityProgramBuilder.description(WPEParityProgramMaterial(shader: "probe", textures: [0: texture]),
+                                                engineFlags: WPEEngineComboFlags(), assets: assets)
+        }
+
+        let first = describe("a", assets)
+        let shaderReadsAfterFirst = shaderReads()
+        let noiseReadsAfterFirst = reads.withLock { $0["materials/util/noise.tex"] }
+        let second = describe("b", assets)
+
+        XCTAssertGreaterThan(shaderReadsAfterFirst, 0)
+        XCTAssertEqual(shaderReads(), shaderReadsAfterFirst, "second description read the shader files again")
+        XCTAssertEqual(noiseReadsAfterFirst, 1)
+        XCTAssertEqual(reads.withLock { $0["materials/util/noise.tex"] }, 1,
+                       "second description read the default texture again")
+        XCTAssertEqual(first.engineFlags.textureFormats, [0: 8, 1: 7])
+        XCTAssertEqual(second.engineFlags.textureFormats, [0: 9, 1: 7])
+        XCTAssertEqual(first, describe("a", WPEParityProgramAssets(sources: [source(nil)])))
+        XCTAssertEqual(second, describe("b", WPEParityProgramAssets(sources: [source(nil)])))
+    }
+
     func testHLSLProgramEqualityFollowsEveryStageByte() {
         let a = WPEHLSLProgram(vertex: Array("vs".utf8), geometry: nil, fragment: Array("ps".utf8))
         var b = WPEHLSLProgram(vertex: Array("vs".utf8), geometry: nil, fragment: Array("ps".utf8))

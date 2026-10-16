@@ -44,6 +44,8 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
     private let declarations = OSAllocatedUnfairLock(initialState: [String: ShaderDeclarations]())
     /// Keyed by path; a `nil` value records a missing or unparsable file.
     private let parsedJSON = OSAllocatedUnfairLock(initialState: [String: WPESceneJSONValue?]())
+    /// Keyed by texture name; a nil value records a missing file or a render-target name.
+    private let textureHeaders = OSAllocatedUnfairLock(initialState: [String: WPEParityProgramTextureHeader?]())
     /// Keyed by shader name.
     private let expanded = OSAllocatedUnfairLock(
         initialState: [String: (names: WPEHLSLProgramSources, vertex: String, geometry: String?, fragment: String)]()
@@ -69,7 +71,12 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
     }
 
     public func data(_ path: String) -> Data? {
-        sources.lazy.compactMap { $0.data(path) }.first
+        for source in sources {
+            if let data = source.data(path) {
+                return data
+            }
+        }
+        return nil
     }
 
     public func json(_ path: String) -> WPESceneJSONValue? {
@@ -85,6 +92,19 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
         return parsedJSON.withLock { memo in
             let first = memo[path] ?? computed
             memo[path] = first
+            return first
+        }
+    }
+
+    func memoizedTextureHeader(_ name: String,
+                               _ read: () -> WPEParityProgramTextureHeader?) -> WPEParityProgramTextureHeader? {
+        if let stored = textureHeaders.withLock({ $0[name] }) {
+            return stored
+        }
+        let computed = read()
+        return textureHeaders.withLock { memo in
+            let first = memo[name] ?? computed
+            memo[name] = first
             return first
         }
     }
