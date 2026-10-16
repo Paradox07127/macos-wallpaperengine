@@ -802,6 +802,36 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testDateEpochMakesDateNowFollowEngineRuntime() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(0, """
+            export function update(value) { return (Date.now() - 1e12) / 1000; }
+            """)]),
+            Self.layer(2, "B", ["alpha": Self.scripted(0, """
+            export function update(value) { return new Date(2000, 0, 1).getFullYear(); }
+            """)]),
+        ], assets: Self.fixedAssets(), configure: { $0.dateEpochMillis = 1e12 })
+        try scene.engine.start(state: &scene.state)
+        for _ in 0 ..< 4 {
+            scene.engine.tick(dt: 0.25, state: &scene.state)
+        }
+        XCTAssertEqual(scene.state.object("1")?.alpha ?? 0, 1, accuracy: 1e-3)
+        XCTAssertEqual(scene.state.object("2")?.alpha, 2000)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testDateReadsTheWallClockWithoutAnEpoch() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(0, """
+            export function update(value) { return Date.now() / 1000 - \(Date().timeIntervalSince1970); }
+            """)]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.alpha ?? .infinity, 0, accuracy: 10)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// engine.setTimeout / setInterval return a function that cancels the timer, as Workshop 3326873240 calls it.
     func testTimersReturnACancelFunction() throws {
         var scene = try Self.scene([

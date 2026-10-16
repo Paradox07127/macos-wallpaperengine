@@ -45,6 +45,8 @@ final class WPEParitySceneScript {
         var pauseVideoTexture: ((String) -> Bool)?
         var executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)?
         var modelData: WPEParityScriptModelDataProvider?
+        /// nil = JS Date reads the wall clock; see `WPEParityScriptEngine.Configuration.dateEpochMillis`.
+        var dateEpochMillis: Double?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -105,7 +107,7 @@ final class WPEParitySceneScript {
                     Logger.warning("SceneScript: \(message)", category: .wpeRender)
                 }
             },
-            openUserShortcut: host.openUserShortcut
+            openUserShortcut: host.openUserShortcut, dateEpochMillis: host.dateEpochMillis
         ))
         let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }
         handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0

@@ -120,6 +120,9 @@ public final class WPEParityScriptEngine {
         /// Level 0 log, 1 warn, 2 error.
         public var log: (Int, String) -> Void
         public var openUserShortcut: (String) -> Bool
+        /// Unix ms that JS `Date.now()` and argument-less `Date()` read at engine.runtime 0; nil = JS Date reads the
+        /// wall clock.
+        public var dateEpochMillis: Double?
 
         public init(assets: WPEParityProgramAssets, canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
                     userPropertiesJSON: String = "{}", angleConstants: Set<ConstantKey> = [],
@@ -135,7 +138,7 @@ public final class WPEParityScriptEngine {
                     pauseVideoTexture: ((String) -> Bool)? = nil,
                     executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
-                    openUserShortcut: @escaping (String) -> Bool = { _ in false }) {
+                    openUserShortcut: @escaping (String) -> Bool = { _ in false }, dateEpochMillis: Double? = nil) {
             self.assets = assets
             self.canvasSize = canvasSize
             self.screenResolution = screenResolution
@@ -155,6 +158,7 @@ public final class WPEParityScriptEngine {
             self.executeMaterialFunction = executeMaterialFunction
             self.log = log
             self.openUserShortcut = openUserShortcut
+            self.dateEpochMillis = dateEpochMillis
         }
     }
 
@@ -393,7 +397,30 @@ public final class WPEParityScriptEngine {
                                withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
         layout(document: document, state: state)
         installHost(state: state)
+        if let epoch = configuration.dateEpochMillis {
+            context.evaluateScript(Self.dateShim, withSourceURL: URL(string: "parity-date.js"))
+                .call(withArguments: [host.forProperty("globals") as Any, epoch])
+        }
     }
+
+    /// G[1] is engine.runtime; each read adds 1 µs so busy-wait loops on Date.now() still advance.
+    private static let dateShim = #"""
+    (function (G, epoch) {
+    'use strict';
+    const NativeDate = Date;
+    let calls = 0;
+    const now = () => epoch + G[1] * 1000 + ++calls * 0.001;
+    function ParityDate(...args) {
+      if (!new.target) return new NativeDate(now()).toString();
+      return Reflect.construct(NativeDate, args.length ? args : [now()], new.target);
+    }
+    ParityDate.prototype = NativeDate.prototype;
+    ParityDate.now = now;
+    ParityDate.UTC = NativeDate.UTC;
+    ParityDate.parse = NativeDate.parse;
+    globalThis.Date = ParityDate;
+    })
+    """#
 
     deinit {
         context.exceptionHandler = nil
