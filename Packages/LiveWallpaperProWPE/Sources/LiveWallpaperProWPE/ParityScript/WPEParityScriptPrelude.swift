@@ -311,31 +311,26 @@ enum WPEParityScriptPrelude {
     function storageScope(location) { return location === 'global' ? 0 : 1; }
     function storageKey(key) { if (typeof key !== 'string') throw new TypeError('localStorage key must be a string'); return key; }
     function storagePhase() { if (!current) throw new SyntaxError('localStorage cannot be called from global scope.'); }
-    // This default store deliberately lives for one engine. A product backend can provide serialized values;
-    // cross-reload/screen persistence and the native special-value encoding remain separate contracts.
-    const stores = [new Map(), new Map()];
     const localStorage = {
       LOCATION_GLOBAL: 'global', LOCATION_SCREEN: 'screen',
       get(key, location) {
         storagePhase(); storageKey(key);
-        const text = host.storageEnabled ? host.storageGet(key, storageScope(location)) : stores[storageScope(location)].get(key);
+        const text = host.storageGet(key, storageScope(location));
         return text == null ? undefined : JSON.parse(text);
       },
       set(key, value, location) {
         storagePhase(); storageKey(key);
         const text = JSON.stringify(value);
         if (text === undefined) throw new TypeError('Unsupported localStorage value');
-        if (host.storageEnabled) host.storageSet(key, text, storageScope(location));
-        else stores[storageScope(location)].set(key, text);
+        host.storageSet(key, text, storageScope(location));
       },
       delete(key, location) {
         storagePhase(); storageKey(key);
-        return host.storageEnabled ? host.storageDelete(key, storageScope(location)) : stores[storageScope(location)].delete(key);
+        return host.storageDelete(key, storageScope(location));
       },
       clear(location) {
         storagePhase();
-        if (host.storageEnabled) return host.storageClear(storageScope(location));
-        stores[storageScope(location)].clear(); return true;
+        return host.storageClear(storageScope(location));
       }
     };
     const log = level => (...args) => host.log(level, args.map(a => typeof a === 'string' ? a : String(a)).join(' '));

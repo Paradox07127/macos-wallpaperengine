@@ -93,7 +93,7 @@ final class ParitySoundConsumerTests: XCTestCase {
             commands.append((id, command, fields))
             return id == "1" && command == .isPlaying
         }, body: {
-            XCTAssertNil(engine.start(state: &state))
+            try engine.start(state: &state)
             soundGeneration = state.generation(.soundGain)
             let inner = {
                 try engine.withSoundConsumers(volume: { writes.append(("inner", $0, $1)) },

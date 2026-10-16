@@ -182,8 +182,7 @@ actor WPEDisplayRenderActor {
         driver.spanFrames = inputs.span?.frames
         driver.executor.spanOutputTextureLimit = inputs.span?.outputTextureLimit
         parityInputs?.userShortcutIcons?.onChange = nil
-        parityDriver = driver
-        parityInputs = inputs
+        (parityDriver, parityInputs) = (driver, inputs)
         inputs.userShortcutIcons?.onChange = { [weak self, weak icons = inputs.userShortcutIcons] in
             guard let icons else { return }
             Task { await self?.parityIconsChanged(icons) }
@@ -348,18 +347,6 @@ actor WPEDisplayRenderActor {
 
     var hasDisplayLinkForTesting: Bool {
         displayLink != nil
-    }
-
-    var usesParityDriverForTesting: Bool {
-        parityDriver != nil
-    }
-
-    var parityPointerForTesting: WPEParityUniformPointer? {
-        parityDriver?.renderer?.pointer
-    }
-
-    var parityFitModeForTesting: WPEPresentFitMode? {
-        parityDriver?.fitMode
     }
 
     var parityDriverForTesting: WPEParitySceneDriver? {
@@ -619,12 +606,12 @@ actor WPEDisplayRenderActor {
         renderer = nil
         spanPresenter = nil
         parityDriver?.cleanup()
-        parityDriver = nil
-        parityInputs?.userShortcutIcons?.onChange = nil
-        if let media = parityInputs?.media {
+        let retiringInputs = parityInputs
+        (parityDriver, parityInputs) = (nil, nil)
+        retiringInputs?.userShortcutIcons?.onChange = nil
+        if let media = retiringInputs?.media {
             await MainActor.run { media.stop() }
         }
-        parityInputs = nil
         if let retiringRenderer {
             let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()
             let staticDrain = await retiringRenderer.staticTextureReloadTaskOwner.quiesce()

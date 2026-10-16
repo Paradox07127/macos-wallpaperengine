@@ -17,9 +17,7 @@ final class WPEParityFrameArena {
         }
     }
 
-    /// The encoder alone mutates a frame before commit. Its completion callback only releases the sampler
-    /// references after the GPU reader has finished; it never touches the cursor or encodes more work.
-    final class Frame: @unchecked Sendable {
+    final class Frame: @unchecked Sendable { // Encoder mutates before commit; completion only releases samplers after.
         let buffer: MTLBuffer
         private var cursor = 0
         private var samplers: [ObjectIdentifier: any MTLSamplerState] = [:]

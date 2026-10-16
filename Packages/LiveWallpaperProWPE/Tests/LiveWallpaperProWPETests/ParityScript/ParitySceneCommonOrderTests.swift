@@ -66,7 +66,7 @@ final class ParitySceneCommonOrderTests: XCTestCase {
                 return state.sortObject(id, to: position)
             }
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(state.object("1")?.color, .one)
         engine.tick(dt: 1 / 60, state: &state)
         XCTAssertEqual(state.commonOrder, ["3", "2", "1"])

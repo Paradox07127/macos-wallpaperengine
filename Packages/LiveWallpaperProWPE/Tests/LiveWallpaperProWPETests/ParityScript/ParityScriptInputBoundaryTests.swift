@@ -50,7 +50,7 @@ final class ParityScriptInputBoundaryTests: XCTestCase {
             configuration: .init(assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64)),
             volume: { _, _ in }, command: { _, _, _ in false }
         )
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField("pointsize", of: "1"), .vector(SIMD4(32, 0, 0, 0)))
         XCTAssertEqual(state.scriptField("maxwidth", of: "1"), .vector(SIMD4(500, 0, 0, 0)))
         XCTAssertEqual(state.scriptField("padding", of: "1"), .vector(SIMD4(32, 32, 0, 0)))

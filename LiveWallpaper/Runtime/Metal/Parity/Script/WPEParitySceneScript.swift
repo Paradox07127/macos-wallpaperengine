@@ -4,11 +4,11 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import simd
 
-/// One scene's SceneScript engine and the host inputs it reads each frame (R25 §1, §4). Confined to the renderer's
+/// One scene's SceneScript engine and the host inputs it reads each frame. Confined to the renderer's
 /// actor, like the renderer that drives it.
 final class WPEParitySceneScript {
-    /// Product policy keeps SceneScript storage within this scene lifetime (10-01 user decision).
-    /// Pass the same instance through a resize/replan; it deliberately writes no disk state.
+    /// SceneScript storage lives for this scene only and writes no disk state; pass the same instance through a
+    /// resize/replan.
     final class Storage {
         private var values = [[String: String](), [String: String]()]
 
@@ -55,7 +55,6 @@ final class WPEParitySceneScript {
     }
 
     let engine: WPEParityScriptEngine
-    let storage: Storage
     /// Some binding exports a cursor handler, which turns the cursor pass on (140175880.c:377-379).
     let handlesCursor: Bool
     /// Some binding exports a media handler, which subscribes the engine to media events (140175880.c:373-375).
@@ -72,7 +71,6 @@ final class WPEParitySceneScript {
     private var tracker = WPEParityCursorTracker()
     private var targets: [WPEParityCursorTarget] = []
     private var lastCursor: SIMD2<Float>?
-    private var destroyedSeen = 0
 
     /// Some object or the general block carries a property script.
     static func hasScripts(_ document: WPESceneDocument) -> Bool {
@@ -92,7 +90,6 @@ final class WPEParitySceneScript {
          materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:],
          resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
          fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:], host: Host) throws {
-        storage = host.storage
         let defaults = Self.generalFields(document.resolvedGeneralJSON).merging(fieldDefaults) { _, value in value }
         engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
@@ -135,9 +132,7 @@ final class WPEParitySceneScript {
 
     /// Event 0 once every object loaded, then the current media state to the media handlers (140172830.c:82-288).
     func start(state: inout WPEParitySceneState) throws {
-        if let failure = engine.start(state: &state) {
-            throw failure
-        }
+        try engine.start(state: &state)
         guard handlesMedia, hasMediaSource else { return }
         engine.dispatch(.mediaStatusChanged, payloadJSON: #"{"enabled":true}"#, state: &state)
         dispatchMedia(state: &state)
@@ -306,13 +301,6 @@ final class WPEParitySceneScript {
         pool(half, into: quarter, count: 16)
     }
 
-    /// Objects destroyLayer removed since the last call (14017fa70.c:477).
-    func takeDestroyed() -> ArraySlice<String> {
-        let ids = engine.destroyedObjectIDs
-        defer { destroyedSeen = ids.count }
-        return ids[destroyedSeen...]
-    }
-
     private func input(cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool,
                        timeOfDay: Float) -> WPEParityScriptEngine.Input {
         WPEParityScriptEngine.Input(cursorScreen: cursor, cursorWorld: world, leftDown: leftDown, timeOfDay: timeOfDay)
@@ -340,7 +328,7 @@ final class WPEParitySceneScript {
         }
     }
 
-    /// WPE's media event ids (R25 §4) with the payload fields `lib.sceneScript.d.ts` declares.
+    /// WPE's media event ids with the payload fields `lib.sceneScript.d.ts` declares.
     static func payload(_ event: WPESceneMediaEvent) -> (WPEParityScriptEvent, String) {
         switch event {
         case let .playbackChanged(state):

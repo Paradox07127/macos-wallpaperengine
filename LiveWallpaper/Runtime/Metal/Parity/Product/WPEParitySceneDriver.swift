@@ -87,7 +87,10 @@ final class WPEParitySceneDriver {
 
     let executor: WPEMetalRenderExecutor
     private(set) var renderer: WPEParityFrameRenderer?
-    private(set) var didLoad = false
+    var didLoad: Bool {
+        renderer != nil
+    }
+
     private(set) var drawableSize = CGSize.zero
     private(set) var fitMode = WPEPresentFitMode.cover
     private(set) var mouseInteractionEnabled = true
@@ -96,13 +99,19 @@ final class WPEParitySceneDriver {
     /// The scene flag or a program reading `g_AudioSpectrum*`, as `WPEMetalSceneRenderer.sceneSupportsAudioProcessing`.
     private var shaderRequiresAudio = false
     var requiresSystemAudioCapture: Bool {
-        shaderRequiresAudio || renderer?.script?.engine.audioResolutions.isEmpty == false
+        guard let renderer else { return false }
+        return shaderRequiresAudio || renderer.script?.engine.audioResolutions.isEmpty == false
     }
 
     private var planSource: PlanSource?
     private var plannedTarget: RenderTarget?
     /// The loaded scene's user-property bindings; `.incremental` ones apply without a reload.
-    private(set) var userPropertyBindings: [String: [WPEScenePropertyBinding]] = [:]
+    var userPropertyBindings: [String: [WPEScenePropertyBinding]] {
+        guard let renderer, let planSource else { return [:] }
+        return WPEParityUserProperties.bindings(document: planSource.document)
+            .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
+    }
+
     /// A change `prepareUserProperties` accepted, parsed with its new values, waiting for its commit.
     private var pendingUserProperties: (patch: WPEScenePropertyPatch, document: WPESceneDocument)?
     /// engine.userProperties as last applied: project.json's properties with the user's values.
@@ -138,7 +147,7 @@ final class WPEParitySceneDriver {
     }
 
     var diagnostics: WPEParityRuntimeDiagnostics? {
-        guard didLoad, let renderer else { return nil }
+        guard let renderer else { return nil }
         return WPEParityRuntimeDiagnostics(
             loadGeneration: loadGeneration, drawCount: renderer.drawCount,
             encodedDrawCount: renderer.lastFrameDraws.count,
@@ -222,7 +231,6 @@ final class WPEParitySceneDriver {
         mediaMailbox?.beginParityGeneration(generation)
         presentState.reset(generation: generation)
         spanFrames?.reset(generation: generation)
-        didLoad = false
         renderer?.destroyScript()
         renderer = nil
         executor.lastPresentPass = nil
@@ -231,7 +239,6 @@ final class WPEParitySceneDriver {
         executor.upscalePlan = .inactive
         executor.lastPresentedDrawableSize = .zero
         _ = executor.takePresentSideDemotion()
-        userPropertyBindings = [:]
         pendingUserProperties = nil
         shaderRequiresAudio = false
         loadDiagnostics = nil
@@ -298,8 +305,6 @@ final class WPEParitySceneDriver {
                                     renderScale: renderScale)
             plannedTarget = target
             adoptUpscalePlan(selection.upscale)
-            userPropertyBindings = WPEParityUserProperties.bindings(document: document)
-                .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
@@ -350,12 +355,12 @@ final class WPEParitySceneDriver {
                     if hasRegisteredAssets || error is CancellationError {
                         throw error
                     }
+                    loadDiagnostics = .other(layer: "scripts", message: String(describing: error))
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)
                 }
             }
             self.renderer = renderer
             lastTimestamp = nil
-            didLoad = true
         } catch {
             if let preparedSound {
                 preparedSound.stop()
@@ -376,7 +381,7 @@ final class WPEParitySceneDriver {
     /// False when the build failed or a load or cleanup superseded it.
     @discardableResult
     nonisolated(nonsending) func replan() async -> Bool {
-        guard didLoad, let planSource, let previous = renderer else { return false }
+        guard let planSource, let previous = renderer else { return false }
         let generation = loadGeneration
         let isHDR = WPEParityProgramScene.hdrEnabled(document: planSource.document, settings: planSource.settings)
         while true {
@@ -399,8 +404,6 @@ final class WPEParitySceneDriver {
                 guard current == selection else { continue }
                 try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
                 self.renderer = renderer
-                userPropertyBindings = WPEParityUserProperties.bindings(document: planSource.document)
-                    .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
                 plannedTarget = target
                 adoptUpscalePlan(selection.upscale)
                 return true
@@ -416,8 +419,9 @@ final class WPEParitySceneDriver {
 
     /// Every changed property is bound, and only to targets the renderer updates live.
     func canApplyUserPropertiesLive(_ patch: WPEScenePropertyPatch) -> Bool {
-        didLoad && patch.changedKeys.allSatisfy { key in
-            let bindings = userPropertyBindings[key] ?? []
+        let bindingsByKey = userPropertyBindings
+        return didLoad && patch.changedKeys.allSatisfy { key in
+            let bindings = bindingsByKey[key] ?? []
             return !bindings.isEmpty && bindings.allSatisfy { $0.action == .incremental }
         }
     }
@@ -451,8 +455,6 @@ final class WPEParitySceneDriver {
             return false
         }
         scriptUserProperties = merged
-        userPropertyBindings = WPEParityUserProperties.bindings(document: pending.document)
-            .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
         self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
@@ -482,7 +484,7 @@ final class WPEParitySceneDriver {
     func renderAndPresentFrame(layer: CAMetalLayer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                                buttonDown: Bool = false, audio: AudioSpectrumFrame? = nil,
                                date: Date = Date()) -> MTLCommandBuffer? {
-        guard didLoad, let renderer, let plannedTarget,
+        guard let renderer, let plannedTarget,
               encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
                           date: date) else { return nil }
         let backbuffer = renderer.backbuffer
@@ -527,7 +529,7 @@ final class WPEParitySceneDriver {
     func renderAndPublishSpanFrame(to frames: WPESceneSpanFrames, timestamp: CFTimeInterval,
                                    pointer: SIMD2<Double>, buttonDown: Bool = false,
                                    audio: AudioSpectrumFrame? = nil, date: Date = Date()) -> MTLCommandBuffer? {
-        guard didLoad, let renderer, let plannedTarget else { return nil }
+        guard let renderer, let plannedTarget else { return nil }
         let backbuffer = renderer.backbuffer
         let size = CGSize(width: backbuffer.width, height: backbuffer.height)
         executor.currentOutputPixelFormat = backbuffer.pixelFormat
@@ -700,7 +702,7 @@ final class WPEParitySceneDriver {
         adaptiveThrottleActive = active
     }
 
-    /// WPE has no letterbox (R8 Q1): cover is its default alignment, which crops the canvas to the target aspect about
+    /// WPE has no letterbox: cover is its default alignment, which crops the canvas to the target aspect about
     /// its centre, and stretch is mode 2, which never crops. Contain renders the largest fit of the scene's aspect and
     /// center the scene's ortho size; the present boxes or crops them, as the old renderer does.
     static func renderTarget(fitMode: WPEPresentFitMode, drawableSize: CGSize,
@@ -766,7 +768,6 @@ final class WPEParitySceneDriver {
 
     /// Drops the renderer and its video players; frames already on the GPU finish but no longer mark readiness.
     func cleanup() {
-        didLoad = false
         mediaMailbox?.invalidateParityGeneration(loadGeneration)
         mediaMailbox = nil
         loadGeneration &+= 1
@@ -776,7 +777,6 @@ final class WPEParitySceneDriver {
         renderer = nil
         planSource = nil
         plannedTarget = nil
-        userPropertyBindings = [:]
         pendingUserProperties = nil
         shaderRequiresAudio = false
         lastTimestamp = nil

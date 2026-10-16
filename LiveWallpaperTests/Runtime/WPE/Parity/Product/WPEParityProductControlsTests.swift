@@ -121,7 +121,7 @@ final class WPEParityProductControlsTests: XCTestCase {
 
     func testAdoptionSeedsTheSessionFitMode() async throws {
         let harness = try await makeHarness(sceneID: "3815666789", presentFitMode: .contain, load: false)
-        let fitMode = await harness.actor.parityFitModeForTesting
+        let fitMode = await harness.actor.run { $0.parityDriverForTesting?.fitMode }
         XCTAssertEqual(fitMode, .contain)
     }
 
@@ -144,7 +144,7 @@ final class WPEParityProductControlsTests: XCTestCase {
         func pointer(at location: CGPoint) async throws -> WPEParityUniformPointer {
             mailbox.publishMouseLocation(location, timestampNanos: 1)
             await actor.renderFrame()
-            let pointer = await actor.parityPointerForTesting
+            let pointer = await actor.run { $0.parityDriverForTesting?.renderer?.pointer }
             return try XCTUnwrap(pointer)
         }
 

@@ -237,6 +237,27 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.renderer)
         XCTAssertNil(driver.soundRuntime, "the failed load must stop and drop its own prepared sound")
         XCTAssertNotNil(driver.loadDiagnostics)
+        XCTAssertFalse(driver.requiresSystemAudioCapture, "a failed load must not keep its audio demand")
+        XCTAssertTrue(driver.userPropertyBindings.isEmpty)
+    }
+
+    func testScriptInitFailureLoadsSceneAndReportsScriptDiagnostic() async throws {
+        let fixture = try modelDataFixture(script: "export function init(value) { return value; }")
+        let assets = fixture.assets
+        let withoutBaseClasses = WPEParityProgramAssets(sources: [.lookup(scratch) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? nil : assets.data(path)
+        }])
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: withoutBaseClasses, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "no-base-cache")))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertNil(driver.renderer?.script)
+        guard case let .other(layer, _)? = driver.loadDiagnostics else {
+            return XCTFail("script init failure is missing from the load diagnostics: \(String(describing: driver.loadDiagnostics))")
+        }
+        XCTAssertEqual(layer, "scripts")
     }
 
     func testRegisteredMaterialCancellationAbortsOwnedLoadBeforeInit() async throws {
@@ -353,7 +374,8 @@ extension WPEParitySceneDriverTests {
             soundResolver = WPEMultiRootResourceResolver(primaryRootURL: directory, dependencyMounts: [])
         }
         let data = try JSONSerialization.data(withJSONObject: ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
-                                                               "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false], "clearcolor": "0 0 0", "bloom": false],
+                                                               "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false], "clearcolor": "0 0 0", "bloom": false,
+                                                                           "supportsaudioprocessing": withSound],
                                                                "objects": objects], options: [.sortedKeys])
         let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })

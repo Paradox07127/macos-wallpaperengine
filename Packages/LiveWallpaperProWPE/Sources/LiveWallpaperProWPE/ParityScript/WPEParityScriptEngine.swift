@@ -221,6 +221,12 @@ public final class WPEParityScriptEngine {
         case effect(slot: Int, key: WPEParitySceneState.EffectKey)
         case constant(slot: Int, key: WPEParityMaterialPassKey, name: String)
         case field(slot: Int, objectID: String, name: String)
+
+        var slot: Int {
+            switch self {
+            case let .object(slot, _, _), let .effect(slot, _), let .constant(slot, _, _), let .field(slot, _, _): slot
+            }
+        }
     }
 
     private struct Layer {
@@ -386,13 +392,12 @@ public final class WPEParityScriptEngine {
     }
 
     /// Event 0 to every binding that exports `init`, once, after all objects loaded (140186c90.c:689-738).
-    @discardableResult
-    public func start(state: inout WPEParitySceneState) -> Failure? {
-        guard !started else { return nil }
+    public func start(state: inout WPEParitySceneState) throws {
+        guard !started else { return }
         let pending = bindings.filter { $0.compiled && !$0.assetsPrepared }.flatMap { $0.registeredAssets.map(\.path) }
         guard pending.isEmpty else {
             configuration.log(2, "SceneScript dependencies were not prepared before init: \(pending.joined(separator: ", "))")
-            return .registeredAssetsNotPrepared(pending)
+            throw Failure.registeredAssetsNotPrepared(pending)
         }
         started = true
         seedMissingFields(state: &state)
@@ -400,7 +405,6 @@ public final class WPEParityScriptEngine {
             count(.initialize)
             host.invokeMethod("init", withArguments: [0])
         }
-        return nil
     }
 
     /// One frame of the manager tick's script step (140171440.c:888-896): timers, then event 1 in binding order.
@@ -572,7 +576,8 @@ public final class WPEParityScriptEngine {
             host.invokeMethod("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
             mirroredMembershipGeneration = state.membershipGeneration
         }
-        for entry in refresh {
+        // Module bodies run in the convenience init outside `run`; their unflushed writes must win over State.
+        for entry in refresh where dirtyFlags[entry.slot] == 0 {
             switch entry {
             case let .object(slot, objectID, property):
                 if let value = state.value(property, of: objectID) {
@@ -1071,7 +1076,6 @@ public final class WPEParityScriptEngine {
         set("createModelData", createModel)
         set("updateModelData", updateModel)
         set("releaseModelData", releaseModel)
-        set("storageEnabled", configuration.storage != nil)
         let storageGet: @convention(block) (String, Double) -> String? = { [weak self] key, location in
             self?.configuration.storage?.get(key, location == 0 ? .global : .screen)
         }

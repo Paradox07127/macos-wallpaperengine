@@ -33,7 +33,7 @@ final class ParitySoundFieldOrderTests: XCTestCase {
         let prepared = markers.filter { ($0["role"] as? String)?.hasPrefix("sound-") == true }
         XCTAssertEqual(prepared.compactMap { $0["role"] as? String }, roles)
         XCTAssertEqual(prepared.compactMap { $0["phase"] as? String }, [String](repeating: "module-global", count: 4))
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         engine.tick(dt: 0, state: &state)
 
         let sound = markers.filter { ($0["role"] as? String)?.hasPrefix("sound-") == true }

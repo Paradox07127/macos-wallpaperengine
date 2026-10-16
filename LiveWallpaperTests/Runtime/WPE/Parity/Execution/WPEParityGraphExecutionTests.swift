@@ -681,7 +681,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         let source = CallerMediaSource()
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         defer { dispatcher.stop() }
-        XCTAssertTrue(dispatcher.mailbox.beginParityGeneration(1))
+        dispatcher.mailbox.beginParityGeneration(1)
         XCTAssertTrue(dispatcher.configureParity(generation: 1, device: harness.device, textureDemand: true, onChange: {}))
         renderer.attachMedia(dispatcher.mailbox, generation: 1)
         try await submitCaller() // copy red, then A->physical B / B->physical A.

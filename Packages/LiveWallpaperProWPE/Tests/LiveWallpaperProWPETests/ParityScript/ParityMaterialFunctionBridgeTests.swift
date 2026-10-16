@@ -51,7 +51,7 @@ final class ParityMaterialFunctionBridgeTests: XCTestCase {
         ))
         XCTAssertEqual(initial.map(\.0), Array(repeating: key, count: 11))
         XCTAssertEqual(initial.map(\.1), ["Global"] + Array(repeating: "", count: 10))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(initial.last?.1, "Init")
         engine.materialFunctionHandler = { replacement.append(($0, $1)) }
         engine.tick(dt: 1 / 60, state: &state)

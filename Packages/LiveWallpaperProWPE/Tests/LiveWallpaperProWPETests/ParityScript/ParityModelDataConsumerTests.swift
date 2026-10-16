@@ -113,7 +113,7 @@ final class ParityModelDataConsumerTests: XCTestCase {
                 return state.sortObject(id, to: position)
             }
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         let initial = try XCTUnwrap(state.modelData(1))
         XCTAssertEqual(initial.references, 1)
         XCTAssertEqual(initial.bounds.minimum, SIMD3(-10, -20, -30))

@@ -57,7 +57,7 @@ final class ParityScriptPropertyTests: XCTestCase {
                                  ]]),
             volume: { _, _ in }, command: { _, _, _ in false }
         )
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         for row in rows {
             let before = Invalidation.allCases.map(state.generation)
             engine.tick(dt: 0, state: &state)

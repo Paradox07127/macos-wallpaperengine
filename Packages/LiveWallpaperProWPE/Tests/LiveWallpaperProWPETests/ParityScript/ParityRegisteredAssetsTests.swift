@@ -62,7 +62,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
             }
         }
         XCTAssertEqual(consumed, pathBytes)
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.object("1")?.alpha, 7)
         XCTAssertEqual(engine.bindings[0].registeredAssets.map { Data($0.path.utf8) }, pathBytes,
                        "non-global rejection precedes any declaration mutation")
@@ -123,13 +123,13 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         XCTAssertEqual(engine.bindings.map(\.registeredAssets.count), [1, 1])
         XCTAssertTrue(engine.bindings.allSatisfy { $0.registeredAssets.first?.flag == false }, "a duplicate keeps the first flag")
         let blocked = WPEParityScriptEngine.Failure.registeredAssetsNotPrepared(Array(repeating: "materials/registered.json", count: 2))
-        XCTAssertEqual(engine.start(state: &state), blocked)
+        XCTAssertThrowsError(try engine.start(state: &state)) { XCTAssertEqual($0 as? WPEParityScriptEngine.Failure, blocked) }
         XCTAssertFalse(engine.started)
         do {
             try await engine.prepareRegisteredAssets { _, _ in throw PreparationFailure.rejected }
             XCTFail("A resource failure must propagate to the owning load transaction")
         } catch PreparationFailure.rejected {}
-        XCTAssertEqual(engine.start(state: &state), blocked)
+        XCTAssertThrowsError(try engine.start(state: &state)) { XCTAssertEqual($0 as? WPEParityScriptEngine.Failure, blocked) }
         var prepared: [String] = []
         try await engine.prepareRegisteredAssets { context, declarations in
             XCTAssertEqual(state.object(context.objectID)?.alpha, 1, "init cannot precede this loader")
@@ -140,7 +140,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
             prepared.append(context.objectID)
         }
         XCTAssertEqual(prepared, ["1", "2"])
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.object("1")?.alpha, 3)
         XCTAssertEqual(state.object("2")?.alpha, 3)
         engine.tick(dt: 1 / 60, state: &state)

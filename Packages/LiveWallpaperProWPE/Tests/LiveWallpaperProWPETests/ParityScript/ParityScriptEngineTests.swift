@@ -52,7 +52,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         let bloomGeneration = state.generation(.bloom)
         let transformGeneration = state.generation(.transform)
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         for (name, value) in zip(names, initialReturns) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)),
                            "Public raw fields have no clamp or near/far reorder")
@@ -163,7 +163,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         let bloomGeneration = state.generation(.bloom)
         let transformGeneration = state.generation(.transform)
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
         for (name, value) in zip(names.dropFirst(), defaults.dropFirst()) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 0.5, 0, 0, 0)))
@@ -262,7 +262,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         let bloomGeneration = state.generation(.bloom)
         let transformGeneration = state.generation(.transform)
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField(names[0], of: ""), .vector(SIMD4(1, 0, 0, 0)))
         for (name, value) in zip(names.dropFirst(), defaults.dropFirst()) {
             XCTAssertEqual(state.scriptField(name, of: ""), .vector(SIMD4(value + 2, 0, 0, 0)))
@@ -368,7 +368,7 @@ final class ParityScriptEngineTests: XCTestCase {
             XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
             XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(seed.expectedInt))
             XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(seed.expectedTint, 0)))
-            XCTAssertNil(engine.start(state: &state))
+            try engine.start(state: &state)
             XCTAssertEqual(state.scriptField("bloomhdriterations", of: ""), .integer(seed.expectedInt + 2))
             XCTAssertEqual(state.scriptField("bloomtint", of: ""), .vector(SIMD4(seed.expectedTint + SIMD3(repeating: 2), 0)))
             XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
@@ -379,7 +379,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let engine = try WPEParityScriptEngine.prepare(document: before, state: &state, configuration: .init(
             assets: assets, canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32)
         ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         let changed = try document("4.9", "\"0.25 0.5 0.75\"")
         let accepted = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed))
         XCTAssertEqual(accepted.sceneBloomIterations, 4)
@@ -459,7 +459,7 @@ final class ParityScriptEngineTests: XCTestCase {
             }
             XCTAssertEqual(value.x.bitPattern, field.bits, field.name)
         }
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         for field in fields {
             XCTAssertEqual(state.scriptField(field.name, of: ""), .vector(SIMD4(Float(bitPattern: field.bits) + 20, 0, 0, 0)))
         }
@@ -548,7 +548,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100),
                 fieldDefaults: [.init(objectID: "", name: "bloom"): .vector(.zero)]
             ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
-            XCTAssertNil(engine.start(state: &state), name)
+            try engine.start(state: &state)
             XCTAssertEqual(state.scriptField("bloom", of: ""), .vector(SIMD4(expected ? 1 : 0, 0, 0, 0)), name)
             XCTAssertEqual(engine.exceptionCount, 0, name + ": " + engine.exceptions.joined(separator: "\n"))
         }
@@ -581,7 +581,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(engine.bindings.map(\.path), ["bloom"])
         XCTAssertTrue(engine.bindings.allSatisfy(\.compiled))
         let bloomConstantsGeneration = state.generation(.bloom)
-        XCTAssertNil(engine.start(state: &state))
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField("bloom", of: ""), .vector(.zero))
         for expected: Float in [1, 0, 1] {
             engine.tick(dt: 0, state: &state)
@@ -636,7 +636,7 @@ final class ParityScriptEngineTests: XCTestCase {
             assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100),
             log: { _, message in logs.append(message) }
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(state.object("1")?.origin, SIMD3(20, 30, 40))
         XCTAssertEqual(state.object("1")?.angles, .zero)
         let angles = try XCTUnwrap(state.object("2")?.angles)
@@ -662,7 +662,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField("queuemode", of: "1"), .string("sequential"))
         XCTAssertEqual(state.scriptField("text", of: "2"), .string("SEQUENTIAL"))
         engine.tick(dt: 0.1, state: &state)
@@ -685,7 +685,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField("controlpoint", of: "1"), .vector(SIMD4(4, 5, 6, 0)))
         var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)
         XCTAssertEqual(lights.tubeOriginB, [SIMD4(18, 35, 54, 0)])
@@ -714,7 +714,7 @@ final class ParityScriptEngineTests: XCTestCase {
             assets: Self.fixedAssets(),
             canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
         ))
-        engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(state.scriptField("intensity", of: "1"), .vector(SIMD4(53, 0, 0, 0)))
         XCTAssertEqual(state.object("1")?.color, SIMD3(0.25, 0.5, 1))
         XCTAssertEqual(state.scriptField("zoom", of: "2"), .vector(SIMD4(50, 0, 0, 0)))
@@ -793,7 +793,7 @@ final class ParityScriptEngineTests: XCTestCase {
             """)]),
             Self.layer(2, "B"),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         for frame in 1 ... 5 {
             scene.engine.tick(dt: 1 / 60, state: &scene.state)
             XCTAssertEqual(scene.state.object("1")?.alpha, Float(frame))
@@ -812,7 +812,7 @@ final class ParityScriptEngineTests: XCTestCase {
             export function update(value) { if (ticks === 2) stop(); return ticks; }
             """)]),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         for _ in 0 ..< 6 {
             scene.engine.tick(dt: 0.011, state: &scene.state)
         }
@@ -828,7 +828,7 @@ final class ParityScriptEngineTests: XCTestCase {
             export function update(value) { return original / 100; }
             """)]),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 1 / 60, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.alpha, 1)
     }
@@ -847,7 +847,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ])
         var animations = WPEParitySceneAnimations(document: scene.document, state: scene.state,
                                                   constantComponents: [:])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         for _ in 0 ..< 7 {
             animations.advance(dt: 0.13, state: &scene.state)
             let animated = try XCTUnwrap(scene.state.object("1")?.alpha)
@@ -883,7 +883,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ], configure: { configuration in
             configuration.destroyLayer = { id, state in state.removeObject(id) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(3, 2, -1))
         XCTAssertEqual(scene.state.object("1")?.brightness, -1)
@@ -906,7 +906,7 @@ final class ParityScriptEngineTests: XCTestCase {
             """)]),
             Self.layer(2, "B"),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
         XCTAssertEqual(scene.state.object("1")?.alpha, 2)
         XCTAssertTrue(scene.engine.createdLayers.isEmpty)
@@ -973,7 +973,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 }
                 configuration.log = { _, message in diagnostics.append(message) }
             })
-            scene.engine.start(state: &scene.state)
+            try scene.engine.start(state: &scene.state)
             XCTAssertEqual(attempts, 1, label)
             XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 2, 17), label)
             XCTAssertEqual(scene.state.object("2")?.brightness, 17, label)
@@ -1024,7 +1024,7 @@ final class ParityScriptEngineTests: XCTestCase {
             configuration.log = { _, message in diagnostics.append(message) }
         })
         scene.state = current
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(attempts, 1)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 17))
         XCTAssertEqual(scene.state.object("1")?.alpha, 1)
@@ -1060,7 +1060,7 @@ final class ParityScriptEngineTests: XCTestCase {
             configuration.pauseVideoTexture = { paused.append($0); return true }
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(paused, ["1"])
         XCTAssertEqual(scene.state.object("1")?.color, .one)
         XCTAssertEqual(diagnostics.filter { $0.contains("invalid video wrapper") }.count, 3)
@@ -1082,7 +1082,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 }
                 configuration.log = { _, message in diagnostics.append(message) }
             })
-            scene.engine.start(state: &scene.state)
+            try scene.engine.start(state: &scene.state)
             XCTAssertEqual(attempts, accepted == nil ? 0 : 1)
             XCTAssertEqual(scene.state.object("1")?.alpha, 1)
             XCTAssertEqual(diagnostics.filter { $0.contains("existing product video consumer") }.count, 1)
@@ -1114,7 +1114,7 @@ final class ParityScriptEngineTests: XCTestCase {
             """)]),
             Self.layer(2, "B"),
         ], assets: Self.fixedAssets())
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(6, 1, 0))
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
@@ -1138,7 +1138,7 @@ final class ParityScriptEngineTests: XCTestCase {
             ]),
         ], constants: [pass: ["turn": [0], "speed": [0]]],
         angleConstants: [WPEParityScriptEngine.ConstantKey(pass: pass, name: "turn")])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         let degrees = WPEParityScriptProperty.degreesToRadians
         XCTAssertEqual(scene.state.object("1")?.angles, SIMD3(0, 0, 90 * degrees))
@@ -1174,7 +1174,7 @@ final class ParityScriptEngineTests: XCTestCase {
             }
         }
         var scene = try Self.scene(objects)
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         let descriptors = WPEParityScriptProperty.base + [WPEParityScriptProperty.visible] + WPEParityScriptProperty.image
         for index in objects.indices {
@@ -1209,7 +1209,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ], configure: { configuration in
             configuration.fieldDefaults[.init(objectID: "1", name: "video.loop")] = .vector(SIMD4(1, 0, 0, 0))
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.scriptField("sortorder", of: "1"), .integer(16_777_217))
         XCTAssertEqual(scene.state.object("1")?.brightness, 1)
         XCTAssertEqual(scene.state.object("1")?.color, .one)
@@ -1218,6 +1218,15 @@ final class ParityScriptEngineTests: XCTestCase {
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.scriptField("sortorder", of: "1"), .integer(Int32.max))
         XCTAssertEqual(scene.state.object("1")?.alpha, 1)
+    }
+
+    func testModuleScopeWriteSurvivesStart() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": 1, "brightness": Self.scripted(1, "thisLayer.alpha = 0.25;")]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 0.25)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
     /// T03/T05b/T06b/T09b/T11/T12b: bounded timers, no callback-internal cancellation or Windows crash policy.
@@ -1252,7 +1261,7 @@ final class ParityScriptEngineTests: XCTestCase {
             export function update() { calls += 1; thisLayer.alpha = calls; throw Error('expected update'); }
             """)]),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.alpha, 1, "new child waits for the next sweep of its script")
         XCTAssertEqual(scene.state.object("1")?.color, .one)
@@ -1291,8 +1300,16 @@ final class ParityScriptEngineTests: XCTestCase {
                     && localStorage.clear('global') === true ? 7 : 99;
             }
             """)]),
-        ])
-        scene.engine.start(state: &scene.state)
+        ], configure: { configuration in
+            var values: [WPEParityScriptEngine.Storage.Location: [String: String]] = [:]
+            configuration.storage = .init(
+                get: { key, location in values[location]?[key] },
+                set: { key, text, location in values[location, default: [:]][key] = text },
+                delete: { key, location in values[location]?.removeValue(forKey: key) != nil },
+                clear: { location in values[location] = nil; return true }
+            )
+        })
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 2, 1))
         XCTAssertEqual(scene.state.object("1")?.origin, .one)
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
@@ -1356,7 +1373,7 @@ final class ParityScriptEngineTests: XCTestCase {
             configuration.propertyOverrides = [WPEParityScriptProperty(name: "brightness", owner: .image,
                                                                        type: .float, flags: .notFromJSON, target: .object(.brightness))]
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.origin, .one)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 1, 2))
         XCTAssertEqual(scene.state.object("1")?.alpha, 0.5)
@@ -1404,7 +1421,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ]), resolveEffectResources: true, configure: { configuration in
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(5, 3, 1))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
         XCTAssertEqual(scene.state.constant("Color", of: later)?.value.x, 8)
@@ -1471,7 +1488,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ]), resolveEffectResources: true, configure: { configuration in
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(4, 1, 8))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
         XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 1)
@@ -1510,7 +1527,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ]), resolveEffectResources: true, configure: { configuration in
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(3, 1, 1))
         XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 7)
         XCTAssertNil(scene.state.passIndex(of: .init(objectID: "1", effectID: "5", pass: 1)))
@@ -1557,7 +1574,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 }
                 configuration.log = { _, message in diagnostics.append(message) }
             })
-            scene.engine.start(state: &scene.state)
+            try scene.engine.start(state: &scene.state)
             XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
             XCTAssertNil(scene.state.passIndex(of: absent))
             XCTAssertNil(scene.state.constant("phantom", of: absent))
@@ -1609,7 +1626,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 }
                 configuration.log = { _, message in diagnostics.append(message) }
             })
-            scene.engine.start(state: &scene.state)
+            try scene.engine.start(state: &scene.state)
             XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
             XCTAssertEqual(scene.state.constant("Value", of: first)?.value.x, 7)
             XCTAssertEqual(scene.state.constant("Value", of: second)?.value.x, 2)
@@ -1652,7 +1669,7 @@ final class ParityScriptEngineTests: XCTestCase {
             }
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(2, 7, 1))
         XCTAssertNotNil(scene.state.passIndex(of: empty))
         XCTAssertEqual(diagnostics.filter { $0.contains("without verified material path metadata") }.count, 1)
@@ -1687,7 +1704,7 @@ final class ParityScriptEngineTests: XCTestCase {
             configuration.materialConstants = [.init(pass: base, name: "phantom"): .init(value: SIMD4(2, 0, 0, 0), components: 1)]
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
         XCTAssertNil(scene.state.passIndex(of: base))
         XCTAssertNil(scene.state.constant("phantom", of: base))
@@ -1722,7 +1739,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ], assets: Self.fixedAssets(), configure: { configuration in
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 0, 1))
         XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(2, -1, 1))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
@@ -1800,7 +1817,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ], assets: Self.fixedAssets(), configure: { configuration in
             configuration.log = { _, message in diagnostics.append(message) }
         })
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("2")?.color, SIMD3(42, 1, 0))
         XCTAssertEqual(scene.state.object("2")?.brightness, 7)
         XCTAssertTrue(diagnostics.isEmpty,
@@ -1825,7 +1842,7 @@ final class ParityScriptEngineTests: XCTestCase {
         }
         export function applyUserProperties() { thisScene.getLayer(0).alpha = thisObject.bloomstrength; }
         """)])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.origin, .one)
         scene.state.setScriptField("bloomstrength", of: "", to: .vector(SIMD4(0.75, 0, 0, 0)), invalidating: .bloom)
         scene.engine.applyUserProperties(changedJSON: "{}", mergedJSON: "{}", state: &scene.state)
@@ -1864,7 +1881,7 @@ final class ParityScriptEngineTests: XCTestCase {
              }
              """)],
         ], assets: Self.fixedAssets())
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         let initialLayout = scene.state.generation(.textLayout)
         let initialFields = scene.state.scriptFieldsGeneration
         scene.engine.tick(dt: 0.01, state: &scene.state)
@@ -1900,7 +1917,7 @@ final class ParityScriptEngineTests: XCTestCase {
             export function update() { return thisLayer.text.length; }
             """)],
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(32, 32, 32))
         XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(500, 1, 0))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
@@ -1925,7 +1942,7 @@ final class ParityScriptEngineTests: XCTestCase {
             ]],
             Self.layer(2, "witness"),
         ])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         XCTAssertEqual(scene.state.object("2")?.color, SIMD3(1, 0, 0))
         XCTAssertEqual(scene.state.object("2")?.origin, SIMD3(2, 3, 4))
         XCTAssertEqual(scene.state.object("2")?.brightness, 7)
@@ -1943,7 +1960,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ])
         XCTAssertEqual(scene.engine.bindings.map(\.compiled), [false, true])
         XCTAssertEqual(scene.engine.bindings.map(\.exportBits), [0, WPEParityScriptEvent.update.exportBit])
-        scene.engine.start(state: &scene.state)
+        try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 0.01, state: &scene.state)
         XCTAssertEqual(scene.state.object("1")?.alpha, 1)
         XCTAssertEqual(scene.state.object("2")?.alpha, 0.5)

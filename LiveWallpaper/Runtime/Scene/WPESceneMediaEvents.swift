@@ -342,16 +342,12 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
     private var parityGeneration: Int?
 
     /// Called by the driver before preparing a load.
-    @discardableResult
-    func beginParityGeneration(_ generation: Int) -> Bool {
+    func beginParityGeneration(_ generation: Int) {
         lock.lock()
         defer { lock.unlock() }
-        if parityGeneration == generation {
-            return true
-        }
+        guard parityGeneration != generation else { return }
         parityGeneration = generation
         pendingParity.removeAll(keepingCapacity: true)
-        return true
     }
 
     func isParityGeneration(_ generation: Int) -> Bool {

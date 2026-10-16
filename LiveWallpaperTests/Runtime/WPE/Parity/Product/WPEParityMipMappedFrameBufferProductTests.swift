@@ -317,7 +317,7 @@ extension WPEParitySceneDriverTests {
             let source = MipFailureMediaSource()
             let dispatcher = WPESceneMediaEventDispatcher(source: source)
             defer { dispatcher.stop() }
-            XCTAssertTrue(dispatcher.mailbox.beginParityGeneration(driver.loadGeneration))
+            dispatcher.mailbox.beginParityGeneration(driver.loadGeneration)
             XCTAssertTrue(dispatcher.configureParity(generation: driver.loadGeneration, device: device,
                                                      textureDemand: true, onChange: {}))
             renderer.attachMedia(dispatcher.mailbox, generation: driver.loadGeneration)

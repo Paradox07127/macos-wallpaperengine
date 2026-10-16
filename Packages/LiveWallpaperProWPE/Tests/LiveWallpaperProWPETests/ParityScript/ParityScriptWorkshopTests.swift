@@ -73,8 +73,8 @@ final class ParityScriptWorkshopTests: XCTestCase {
         let engine = try Self.engine(loaded, state: state)
         XCTAssertGreaterThan(engine.bindings.count, 200)
         XCTAssertEqual(engine.bindings.filter { !$0.compiled }.map(\.name), [])
-        engine.start(state: &state)
-        engine.start(state: &state)
+        try engine.start(state: &state)
+        try engine.start(state: &state)
         XCTAssertEqual(engine.dispatchCount(.initialize), 1)
         for _ in 0 ..< 60 {
             engine.tick(dt: 1 / 60, state: &state)
@@ -87,7 +87,7 @@ final class ParityScriptWorkshopTests: XCTestCase {
         let loaded = try Self.loadScene()
         var state = WPEParitySceneState(document: loaded.document, hdr: false)
         let engine = try Self.engine(loaded, state: state)
-        engine.start(state: &state)
+        try engine.start(state: &state)
         var total: UInt64 = 0
         for _ in 0 ..< 60 {
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)

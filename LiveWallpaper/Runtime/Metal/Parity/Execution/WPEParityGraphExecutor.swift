@@ -263,8 +263,8 @@ final class WPEParityGraphExecutor {
     }
 
     private static func boundTextures(_ physical: [WPEResourceID: MTLTexture],
-                               bindings: [WPEResourceID: WPEResourceID],
-                               resources: [WPEResourceID]? = nil) throws -> [WPEResourceID: MTLTexture] {
+                                      bindings: [WPEResourceID: WPEResourceID],
+                                      resources: [WPEResourceID]? = nil) throws -> [WPEResourceID: MTLTexture] {
         guard !bindings.isEmpty else { return physical }
         var textures = physical
         for id in resources ?? Array(bindings.keys) where physical[id] != nil {

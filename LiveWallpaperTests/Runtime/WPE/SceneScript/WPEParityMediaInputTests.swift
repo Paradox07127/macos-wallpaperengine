@@ -20,7 +20,7 @@ struct WPEParityMediaInputTests {
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         let mailbox = dispatcher.mailbox
         let wakes = OSAllocatedUnfairLock(initialState: 0)
-        #expect(mailbox.beginParityGeneration(1))
+        mailbox.beginParityGeneration(1)
         let configuredFirst = dispatcher.configureParity(generation: 1, device: device, textureDemand: true,
                                                          onChange: { wakes.withLock { $0 += 1 } })
         #expect(configuredFirst)
@@ -38,7 +38,7 @@ struct WPEParityMediaInputTests {
         #expect(coverB !== coverA)
         #expect(change.systemProperties["$mediaPreviousThumbnail"] == firstPair.currentSystemName)
 
-        #expect(mailbox.beginParityGeneration(2))
+        mailbox.beginParityGeneration(2)
         let configuredReload = dispatcher.configureParity(generation: 2, device: device, textureDemand: true,
                                                           onChange: { wakes.withLock { $0 += 1 } })
         #expect(configuredReload)
@@ -78,7 +78,7 @@ struct WPEParityMediaInputTests {
         source.push(.init(phase: .playing, title: "Same title", artwork: a))
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         let mailbox = dispatcher.mailbox
-        #expect(mailbox.beginParityGeneration(1))
+        mailbox.beginParityGeneration(1)
         let configuredScripts = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
         #expect(configuredScripts)
         defer { dispatcher.stop() }
@@ -119,12 +119,12 @@ struct WPEParityMediaInputTests {
         try source.push(.init(phase: .playing, title: "Current", artwork: artwork(width: 2, red: 64)))
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         let mailbox = dispatcher.mailbox
-        #expect(mailbox.beginParityGeneration(1))
+        mailbox.beginParityGeneration(1)
         let configuredFirst = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
         #expect(configuredFirst)
         defer { dispatcher.stop() }
         _ = try #require(mailbox.drainParityInputs(generation: 1).only)
-        #expect(mailbox.beginParityGeneration(2))
+        mailbox.beginParityGeneration(2)
         let rejectedRetired = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
         #expect(!rejectedRetired)
         mailbox.invalidateParityGeneration(1)
@@ -148,7 +148,7 @@ struct WPEParityMediaInputTests {
         source.push(.init(phase: .playing, title: "Transparent", artwork: bytes))
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         let mailbox = dispatcher.mailbox
-        #expect(mailbox.beginParityGeneration(1))
+        mailbox.beginParityGeneration(1)
         let configuredTransparent = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
         #expect(configuredTransparent)
         defer { dispatcher.stop() }
@@ -168,13 +168,13 @@ struct WPEParityMediaInputTests {
         #expect(!input.diagnostics.contains { $0.contains("undecodable") })
     }
 
-    @Test("Absent, empty and undecodable artwork stay explicit unknown inputs")
-    func unavailableArtworkDoesNotInventASystemTextureName() throws {
+    @Test("Absent, empty and undecodable artwork rotate raw names without uploaded textures")
+    func unavailableArtworkRotatesRawSystemNames() throws {
         let source = FakeNowPlayingSource()
         source.push(.init(phase: .playing, title: "No cover"))
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         let mailbox = dispatcher.mailbox
-        #expect(mailbox.beginParityGeneration(1))
+        mailbox.beginParityGeneration(1)
         let configuredUnavailable = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
         #expect(configuredUnavailable)
         defer { dispatcher.stop() }
@@ -187,14 +187,17 @@ struct WPEParityMediaInputTests {
                 false
             }
         })
+        var previousName = try #require(absent.textures?.currentSystemName)
         for (bytes, reason) in [(Data(), "empty"), (Data([1, 2, 3, 4]), "undecodable")] {
             source.push(.init(phase: .playing, title: "No cover", artwork: bytes))
             let input = try #require(mailbox.drainParityInputs(generation: 1).only)
             let pair = try #require(input.textures)
             #expect(pair.current == nil && pair.previous == nil)
-            #expect(pair.currentSystemName == nil && pair.previousSystemName == nil)
-            #expect(input.systemProperties.isEmpty)
+            let name = try #require(pair.currentSystemName)
+            #expect(name != previousName && pair.previousSystemName == previousName)
+            #expect(input.systemProperties == ["$mediaThumbnail": name, "$mediaPreviousThumbnail": previousName])
             #expect(input.diagnostics.contains { $0.contains(reason) })
+            previousName = name
         }
     }
 

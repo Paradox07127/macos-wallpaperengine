@@ -36,7 +36,7 @@ final class WPEParityProductPathTests: XCTestCase {
         let result = await session.prepareForDisplay(timeout: .seconds(120))
         XCTAssertEqual(result, .ready, "load error: \(String(describing: session.loadError))")
         let actor = session.spanRenderActor
-        let usesParity = await actor.usesParityDriverForTesting
+        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
         XCTAssertTrue(usesParity)
         let state = await actor.rendererStateSnapshot()
         let snapshot = try XCTUnwrap(state)
@@ -61,7 +61,7 @@ final class WPEParityProductPathTests: XCTestCase {
             adopted = await actor.rendererStateSnapshot() != nil
         }
         XCTAssertTrue(adopted, "no renderer adopted")
-        let usesParity = await actor.usesParityDriverForTesting
+        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
         XCTAssertFalse(usesParity)
     }
 
