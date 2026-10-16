@@ -401,7 +401,7 @@ struct WPESceneDocumentParserTests {
 
         let directional = try #require(document.lightObjects.first { $0.id == "259" })
         #expect(directional.type == .directional)
-        #expect(directional.type.knownShaderArrayValue == 2)
+        #expect(directional.type.knownShaderArrayValue == 3)
         #expect(directional.angles == SIMD3<Double>(7, 8, 9))
         #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
         #expect(!directional.visible)
