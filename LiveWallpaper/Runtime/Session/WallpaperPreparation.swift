@@ -182,6 +182,7 @@ enum WallpaperSessionTransaction {
         afterCommit: @MainActor () -> Void = {},
         beforeDiscard: @MainActor (WallpaperPreparationResult) async -> Void = { _ in }
     ) async -> WallpaperPreparationResult {
+        let preparationStart = ContinuousClock.now
         var screen = initialScreen
         // Display refresh replaces snapshots while preserving the physical display and live session.
         func resolveCommitScreen() -> Screen? {
@@ -299,7 +300,17 @@ enum WallpaperSessionTransaction {
             screen.startOpening(opening.effect, span: span)
         }
         afterCommit()
+        logSceneReady(candidate, since: preparationStart)
         return .ready
+    }
+
+    private static func logSceneReady(_ candidate: any WallpaperRuntimeSession, since start: ContinuousClock.Instant) {
+        #if !LITE_BUILD
+        guard let scene = (candidate as? SceneWallpaperSession)?.adoptedScene else { return }
+        let milliseconds = Int((ContinuousClock.now - start) / .milliseconds(1))
+        Logger.info("Scene ready (workshop \(scene.workshopID)) renderer=\(scene.renderer) after \(milliseconds) ms",
+                    category: .screenManager)
+        #endif
     }
 
     private static func mayPlayOpening(_ candidate: any WallpaperRuntimeSession) -> Bool {

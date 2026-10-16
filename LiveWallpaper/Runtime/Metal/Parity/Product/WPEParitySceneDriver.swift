@@ -222,7 +222,8 @@ final class WPEParitySceneDriver {
         diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
         workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
-        userShortcutIcons: WPEUserShortcutIconStore? = nil
+        userShortcutIcons: WPEUserShortcutIconStore? = nil,
+        particleSeed: UInt32 = WPEParityParticleScene.productSeed()
     ) async throws {
         mediaMailbox?.invalidateParityGeneration(loadGeneration)
         loadGeneration &+= 1
@@ -262,7 +263,7 @@ final class WPEParitySceneDriver {
                                                      bindingABIVersion: 1)
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
-                workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
+                particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
             )
             guard generation == loadGeneration else { throw CancellationError() }
             renderer.userShortcutIcons = userShortcutIcons

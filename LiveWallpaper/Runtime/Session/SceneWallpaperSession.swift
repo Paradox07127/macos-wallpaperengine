@@ -142,6 +142,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// Cached present flag from `pollRendererState()`: nil/false/true → idle/loading/presented.
     private(set) var hasPresentedFrame: Bool? = false
     private(set) var rendererDiagnostics: SceneRendererDiagnostics?
+    /// The scene the session adopted and the renderer it built, "parity" or "metal"; nil before adoption.
+    private(set) var adoptedScene: (workshopID: String, renderer: String)?
 
     init(
         window: NSWindow,
@@ -601,6 +603,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func startAdoptingRenderer(_ handoff: WPERendererHandoff) {
+        adoptedScene = (handoff.renderer.descriptor.workshopID, "metal")
         let generation = lifecycleGeneration
         startupTask = Task { [weak self, renderActor] in
             await renderActor.adopt(handoff.renderer)
@@ -611,6 +614,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func startAdoptingParityScene(_ inputs: WPEParitySceneInputs) {
+        adoptedScene = (inputs.descriptor.workshopID, "parity")
         let generation = lifecycleGeneration
         startupTask = Task { [weak self, renderActor] in
             do {
