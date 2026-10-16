@@ -909,6 +909,9 @@ struct WPEParityFrameDrawPlanner {
             switch placed.kind {
             case .compositeFill, .composeCapture:
                 layers.quad(placed.objectID, kind: placed.kind, uvMax: uvMax)
+            // 140209360.c:53-59: a plain layer's card mesh samples image/texture; sprite sheets keep 1.
+            case .layer where uniformTextures[0]?.spriteFrame == nil:
+                layers.quad(placed.objectID, kind: placed.kind, uvMax: uvMax)
             default:
                 layers.quad(placed.objectID, kind: placed.kind)
             }
@@ -988,18 +991,17 @@ struct WPEParityFrameDrawPlanner {
         var mediaGeometry: WPEParityFrameDrawPlan.Geometry?
         if mediaSlots[0] != nil || userShortcutSlots[0] != nil, uvMax != .one {
             let inputs = artifact.vertex.reflection.vertexInputs
-            let paddedComposite = placement.map {
-                if case .compositeFill = $0.kind {
-                    true
-                } else {
-                    false
+            let paddedQuad = placement.map {
+                switch $0.kind {
+                case .compositeFill, .layer: true
+                default: false
                 }
             } ?? false
             let buffers: (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)?
             if let puppet {
                 buffers = try Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: .one,
                                                   inputs: inputs, device: device)
-            } else if let placement, case .compositeFill = placement.kind {
+            } else if let placement, paddedQuad {
                 let full = layers.quad(placement.objectID, kind: placement.kind, uvMax: .one)
                 buffers = Self.geometry(full.vertices.map { Vertex(position: $0.position, texcoord: $0.texcoord) },
                                         indices: WPEParityLayerQuad.indices, inputs: inputs, device: device)
@@ -1008,7 +1010,7 @@ struct WPEParityFrameDrawPlanner {
             }
             if let buffers {
                 mediaGeometry = .mesh(vertices: buffers.vertices, indices: buffers.indices, indexCount: buffers.indexCount)
-            } else if puppet != nil || paddedComposite {
+            } else if puppet != nil || paddedQuad {
                 throw .pipeline("media vertex or index buffer allocation failed")
             }
         }

@@ -195,7 +195,7 @@ extension WPEParitySceneDriverTests {
         return (imported.key, direct.key)
     }
 
-    private func missingTextureInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {
+    func missingTextureInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {
         do {
             let (_, original) = try sceneInputs()
             for (path, expected) in [
