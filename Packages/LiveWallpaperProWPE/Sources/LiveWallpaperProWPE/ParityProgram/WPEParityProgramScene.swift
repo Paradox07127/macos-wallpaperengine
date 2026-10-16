@@ -24,12 +24,16 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var displayHDR: Bool
     /// The target screen's maximum potential EDR value, in reference-white units (1 = SDR white).
     public var maximumPotentialEDR: Float
+    /// User `general.shadows` quality (render context +0x1ac); 0 = off.
+    public var shadowQuality: Int32
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
                 msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection(),
-                displayHDR: Bool = false, maximumPotentialEDR: Float = 1) {
+                displayHDR: Bool = false, maximumPotentialEDR: Float = 1,
+                shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality) {
         self.bloom = bloom
+        self.shadowQuality = shadowQuality
         self.hdrPostProcessing = hdrPostProcessing
         self.displayHDR = displayHDR
         self.maximumPotentialEDR = maximumPotentialEDR
@@ -91,7 +95,8 @@ public struct WPEParityProgramScene: Sendable {
         // Main+0x118 bits 23/24 (140186440.c:28-39).
         flags.fogDistance = Self.flag(general?["fogdistance"])
         flags.fogHeight = Self.flag(general?["fogheight"])
-        WPEParityLightConfig(general: general).apply(to: &flags)
+        flags.shadowQuality = settings.shadowQuality
+        WPEParityLightConfig(general: general, shadowQuality: flags.shadowQuality).apply(to: &flags)
         // e0 starts at 0x26 (bloom on) and only keys present in the JSON change it (140186c90.c:130).
         let sceneBloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: bloomGeneral["bloom"]) ?? true
         // 14010df40.c:299-335, 365, 519-552
@@ -224,7 +229,9 @@ public struct WPEParityProgramScene: Sendable {
                         materialState: Self.materialState(assets.json(mesh.materialPath)?["passes"]?[0])
                     ))
                 }
-                kind = .model(WPEParitySceneModel(meshes: meshes))
+                kind = .model(WPEParitySceneModel(
+                    meshes: meshes, castsShadow: Self.number(authored?["castshadow"]).map { $0 != 0 } ?? true
+                ))
             }
             sceneObjects.append(WPEParitySceneObject(
                 id: image.id, kind: kind, sortKey: document.objectPaintOrder[image.id] ?? index,
@@ -321,6 +328,10 @@ public struct WPEParityProgramScene: Sendable {
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
                                           msaaSamples: samples,
                                           forcesLayerComposite: flags.fogDistance || flags.fogHeight,
+                                          shadowAtlas: flags.shadowQuality != 0 && [
+                                              flags.spotShadowCookieLights, flags.spotShadowLights,
+                                              flags.directionalShadowLights, flags.pointShadowLights,
+                                          ].contains { $0 != 0 },
                                           objects: sceneObjects, diagnostics: diagnostics)
         let cameraPaths = WPEParityCameraPaths(camera: document.sourceJSON["camera"], assets: assets)
         self.cameraPaths = cameraPaths
