@@ -196,5 +196,116 @@ extension WPEParitySceneDriverTests {
                                                          workDirectory: scratch.appending(path: "shadow-shaderc"))
         return (WPEParityProgramAssets(sources: [.directory(scratch)] + original.sources), compiler)
     }
+
+    func testShadowPlannerPreparesCastersAndComparisonReceivers() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "required product GPU")
+        let (assets, compiler) = try shadowInputs()
+        let document = try writeShadowScene()
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(
+            cachesURL: scratch.appending(path: "planner-cache")
+        ))
+        let factory = WPEParityPipelineFactory(device: device)
+        for quality: Int32 in [2, 0] {
+            let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                              settings: .init(bloom: false, shadowQuality: quality), width: 64, height: 64)
+            XCTAssertTrue(plan.skipped.isEmpty, "quality \(quality): \(plan.skipped)")
+            var planner = WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan)
+            var casters = 0
+            var floor: WPEParityFrameDrawPlan?
+            for (index, program) in plan.programs.sorted(by: { $0.key < $1.key }) {
+                guard case let .scene(draw)? = plan.frames[0].draws[index] else { continue }
+                let artifact = try await store.artifact(for: WPEParityShaderCompileRequest(
+                    program: program.hlsl, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1
+                ))
+                let made: WPEParityFrameDrawPlan
+                do throws(WPEParityFrameSkip) {
+                    made = try planner.makePlan(index, artifact: artifact)
+                } catch {
+                    // Rethrown untyped from this async test, the skip reaches XCTest as an unrelated NSError.
+                    return XCTFail("quality \(quality) operation \(index): \(error)")
+                }
+                if draw.target == WPEParitySceneResource.shadowAtlas {
+                    XCTAssertEqual(made.rasterizer.cullMode, .none)
+                    XCTAssertEqual(made.rasterizer.slopeScaledDepthBias, -4)
+                    casters += 1
+                } else if draw.objectID == "1" {
+                    floor = made
+                }
+            }
+            let receiver = try XCTUnwrap(floor, "quality \(quality): the floor has no scene draw")
+            if quality == 0 {
+                XCTAssertEqual(casters, 0)
+                XCTAssertFalse(receiver.pipeline.fragment.reflection.resources.contains { $0.name == "g_Texture6" })
+                continue
+            }
+            XCTAssertEqual(casters, 2, "floor and blocker each cast one sub-mesh")
+            XCTAssertEqual(receiver.samplers["g_Texture6SamplerComparisonState"], .wpeComparison())
+            for textures in receiver.textures {
+                XCTAssertNoThrow(try WPEParityDrawEncoder(factory: factory).prepare(
+                    pipeline: receiver.pipeline, depthStencil: receiver.depthStencil,
+                    textureNames: Set(textures.keys), samplers: receiver.samplers
+                ))
+            }
+            try planner.fillImportedImages()
+            XCTAssertNil(planner.layerImages[WPEParitySceneResource.shadowAtlas])
+        }
+    }
+
+    /// Ortho 64×64: a 64×64 floor (object 1) at z 0 and an 8×8 blocker (object 2) at z 10, both centred on (32, 32).
+    /// The spot at (8, 32, 30) looks down its x axis, which angles y 0.695 turns to (0.77, 0, -0.64), so the blocker's
+    /// shadow falls on open floor at x 38...50.
+    func writeShadowScene() throws -> WPESceneDocument {
+        for directory in ["models", "materials"] {
+            try FileManager.default.createDirectory(at: scratch.appending(path: directory),
+                                                    withIntermediateDirectories: true)
+        }
+        let material: [String: Any] = ["passes": [["shader": "generic4", "blending": "normal",
+                                                   "textures": ["util/white"], "combos": ["LIGHTING": 1]]]]
+        try JSONSerialization.data(withJSONObject: material).write(to: scratch.appending(path: "materials/shadowtest.json"))
+        try Self.shadowQuad(halfSize: 32).write(to: scratch.appending(path: "models/floor.mdl"))
+        try Self.shadowQuad(halfSize: 4).write(to: scratch.appending(path: "models/blocker.mdl"))
+        let scene: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64],
+                        "lightconfig": ["spot": 1, "spotshadow": 1],
+                        "ambientcolor": "0 0 0", "skylightcolor": "0 0 0", "clearenabled": true,
+                        "clearcolor": "0 0 0", "camerashake": false, "cameraparallax": false],
+            "objects": [
+                ["id": 1, "name": "floor", "image": "models/floor.mdl", "origin": "32 32 0"],
+                ["id": 2, "name": "blocker", "image": "models/blocker.mdl", "origin": "32 32 10"],
+                ["id": 3, "light": "lspot", "origin": "8 32 30", "angles": "0 0.695 0", "color": "1 1 1",
+                 "intensity": 1, "radius": 200, "innercone": 30, "outercone": 45, "castshadow": true],
+            ],
+        ]
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:],
+                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+    }
+
+    /// MDLV0016 static model: one materials/shadowtest.json sub-mesh, a z = 0 quad with +z normals in the 0x0F
+    /// layout (position, normal, tangent vec4, uv).
+    private static func shadowQuad(halfSize s: Float) -> Data {
+        var data = Data("MDLV0016".utf8)
+        func append(_ words: [UInt32]) {
+            for word in words {
+                withUnsafeBytes(of: word.littleEndian) { data.append(contentsOf: $0) }
+            }
+        }
+        append([0x0F00])
+        data.append(0)
+        append([1, 1])
+        data.append(contentsOf: Array("materials/shadowtest.json".utf8) + [0])
+        append([0, 0x0F])
+        let corners: [(Float, Float, Float, Float)] = [(-s, -s, 0, 1), (s, -s, 1, 1), (-s, s, 0, 0), (s, s, 1, 0)]
+        append([UInt32(corners.count * 12 * 4)])
+        for (x, y, u, v) in corners {
+            append([x, y, 0, 0, 0, 1, 1, 0, 0, 1, u, v].map(\.bitPattern))
+        }
+        let indices: [UInt16] = [0, 1, 2, 2, 1, 3]
+        append([UInt32(indices.count * 2)])
+        for index in indices {
+            withUnsafeBytes(of: index.littleEndian) { data.append(contentsOf: $0) }
+        }
+        return data
+    }
 }
 #endif

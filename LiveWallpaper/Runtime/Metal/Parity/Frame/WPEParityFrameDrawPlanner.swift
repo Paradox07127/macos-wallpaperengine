@@ -434,8 +434,8 @@ struct WPEParityFrameDrawPlanner {
     private(set) var layout: WPEParityFrameLayout
     private var frame: WPEParityFrame
     private var resources: [WPEResourceID: WPELogicalResource]
-    /// Colour and depth target bound at each draw operation.
-    private var targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)]
+    /// Colour and depth target bound at each draw operation; colour is nil for the depth-only shadow atlas.
+    private var targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)]
     /// The scene camera and every layer's world matrix.
     private(set) var layers: WPEParityLayerTransformSet
     private var assetImages: [String: Image] = [:]
@@ -646,18 +646,20 @@ struct WPEParityFrameDrawPlanner {
     }
 
     private mutating func pipeline(_ description: WPEParityFrameDraw,
-                                   target: (color: WPEResourceID, depth: WPEResourceID?),
+                                   target: (color: WPEResourceID?, depth: WPEResourceID?),
                                    resources: [WPEResourceID: WPELogicalResource], program: WPEParityProgram?,
                                    artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityPipeline {
         let shader = program?.shader ?? "operation"
-        guard let color = resources[target.color], let colorFormat = Self.pixelFormats[color.format] else {
+        guard let attachment = (target.color ?? target.depth).flatMap({ resources[$0] }),
+              let attachmentFormat = Self.pixelFormats[attachment.format] else {
             throw .pipeline("\(shader): unknown target format")
         }
+        let colorFormat = target.color == nil ? MTLPixelFormat.invalid : attachmentFormat
         let depthFormat = target.depth.flatMap { resources[$0] }.flatMap { Self.pixelFormats[$0.format] } ?? .invalid
         let blend = Self.blend(description)
         let key = program.map {
             PipelineKey(program: $0.hlsl, blend: blend, color: colorFormat, depth: depthFormat,
-                        samples: color.sampleCount)
+                        samples: attachment.sampleCount)
         }
         if let key, let cached = pipelines[key] {
             return cached
@@ -665,7 +667,7 @@ struct WPEParityFrameDrawPlanner {
         do {
             let pipeline = try factory.makePipeline(artifact: artifact, blend: blend, colorPixelFormat: colorFormat,
                                                     depthStencilPixelFormat: depthFormat,
-                                                    sampleCount: color.sampleCount)
+                                                    sampleCount: attachment.sampleCount)
             pipelineCreations += 1
             if let key {
                 pipelines[key] = pipeline
@@ -680,13 +682,14 @@ struct WPEParityFrameDrawPlanner {
         Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
     }
 
-    private static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID, depth: WPEResourceID?)] {
-        var targets: [Int: (color: WPEResourceID, depth: WPEResourceID?)] = [:]
-        var bound: (color: WPEResourceID, depth: WPEResourceID?)?
+    private static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID?, depth: WPEResourceID?)] {
+        var targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)] = [:]
+        var bound: (color: WPEResourceID?, depth: WPEResourceID?)?
         for (index, operation) in frame.operations.enumerated() {
             switch operation.kind {
             case let .setTargets(color, depth):
                 bound = color.first.map { (color: $0.resource, depth: depth?.resource) }
+                    ?? depth.map { (color: nil, depth: $0.resource) }
             case .draw:
                 targets[index] = bound
             default:
@@ -699,8 +702,9 @@ struct WPEParityFrameDrawPlanner {
     mutating func makePlan(_ index: Int,
                            artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan {
         let shader = layout.programs[index]?.shader ?? "operation \(index)"
-        guard let description = frame.draws[index], let target = targets[index], let color = resources[target.color],
-              Self.pixelFormats[color.format] != nil
+        guard let description = frame.draws[index], let target = targets[index],
+              let attachment = (target.color ?? target.depth).flatMap({ resources[$0] }),
+              Self.pixelFormats[attachment.format] != nil
         else { throw .pipeline("operation \(index) has no draw or known target format") }
         let bindings = layout.bindings.compactMap { $0[index] }
         guard let binding = bindings.first, bindings.count == layout.frames.count else { throw .noMaterial }
@@ -777,6 +781,7 @@ struct WPEParityFrameDrawPlanner {
             artifact.map { (stage, $0.reflection) }
         }
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
+        let samplerNames = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .sampler }.map(\.name))
         mediaSlots = mediaSlots.filter { names.contains("g_Texture\($0.key)") }
         userShortcutSlots = userShortcutSlots.filter { names.contains("g_Texture\($0.key)") }
         let text: WPEParitySceneText? = if case let .scene(draw) = description {
@@ -814,7 +819,12 @@ struct WPEParityFrameDrawPlanner {
                 }
             }
             guard let source = textures[0][name] else { continue }
-            samplers[name + "SamplerState"] = try sampler(source)
+            // The rewriter declares this only for the shadow atlas, whose texFlags 0x08000000 pick it (140190c80.c:1533-1541).
+            if samplerNames.contains(name + "SamplerComparisonState") {
+                samplers[name + "SamplerComparisonState"] = .wpeComparison()
+            } else {
+                samplers[name + "SamplerState"] = try sampler(source)
+            }
             if slot < uniformTextures.count {
                 uniformTextures[Int(slot)] = uniformTexture(source)
                 sprites[Int(slot)] = self.sprites(source)
@@ -856,7 +866,7 @@ struct WPEParityFrameDrawPlanner {
                 kind: draw.source == .textClearAlpha ? .textClearAlpha
                     : draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
                         SIMD2(Float($0.x), Float($0.y))
-                    } ?? SIMD2(Float(color.width), Float(color.height)))
+                    } ?? SIMD2(Float(attachment.width), Float(attachment.height)))
                     : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
                     : draw.fullscreenLayer ? .fullscreenLayer
                     : draw.geometry != .fullscreenQuad ? .layer
@@ -979,11 +989,16 @@ struct WPEParityFrameDrawPlanner {
             guard case let .vector(components)? = value else { return nil }
             return SIMD4((components + [0, 0, 0, 0]).prefix(4))
         }
+        let castsShadow = if case let .scene(draw) = description {
+            draw.target == WPEParitySceneResource.shadowAtlas
+        } else {
+            false
+        }
 
         return WPEParityFrameDrawPlan(
             pipeline: pipeline,
             depthStencil: .wpe(depthTest: binding.depthTest, depthWrite: binding.depthWrite),
-            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: false,
+            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: !binding.cullsBackFaces, slopeDepthBias: castsShadow,
                              multisample: false),
             geometry: geometry,
             puppetID: puppetID,
@@ -1056,9 +1071,11 @@ struct WPEParityFrameDrawPlanner {
         )
     }
 
-    /// Gives every imported resource without an image, such as a skipped draw's layer, a transparent texel.
+    /// Gives every imported colour resource without an image, such as a skipped draw's layer, a transparent texel.
+    /// A texel would replace the depth-only shadow atlas, so depth resources get none.
     mutating func fillImportedImages() throws(WPEParityFrameSkip) {
-        for resource in layout.frames.flatMap(\.resources) where resource.lifetime == .imported {
+        for resource in layout.frames.flatMap(\.resources)
+            where resource.lifetime == .imported && resource.format != WPEParitySceneResource.depthFormat {
             try loadLayerImage(resource.id, name: nil)
         }
     }
