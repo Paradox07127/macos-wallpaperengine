@@ -7,6 +7,9 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
     case textClearAlpha
     /// The albedo filling the layer's first composite of `size`.
     case compositeFill(size: SIMD2<Float>)
+    /// A passthrough's snapshot capture: W' with the scene V/P on the layer quad, so each texel samples the frame
+    /// under the layer (1401e8aa0.c:613-629, 1401ec720.c:64-81).
+    case composeCapture
     /// An intermediate effect pass on the 2×2 quad.
     case effectPass
     /// Ancestor clip-mask multiplication uses a 2×2 quad with identity M/V/P (14020d6a0.c:80-165).
@@ -196,7 +199,7 @@ public struct WPEParityLayerTransformSet: Sendable {
         var matrices = WPEParityUniformMatrices(model: model(id),
                                                 view: kind == .textClearAlpha ? camera.view : sceneView(id, parallax: parallax),
                                                 projection: camera.projection)
-        if let ownerID = compositeOwnerID, let owner = layers[ownerID] {
+        if kind != .composeCapture, let ownerID = compositeOwnerID, let owner = layers[ownerID] {
             if kind == .textClearAlpha {
                 // The parent supplies only the inherited camera; slot28 replaces its inverse model entirely.
                 matrices.view = matrix_identity_float4x4
@@ -208,7 +211,8 @@ public struct WPEParityLayerTransformSet: Sendable {
             }
         }
         // 1401e8aa0.c:998-1001: the perspective replaces whichever V and P are pushed, composite ones included.
-        if kind != .textClearAlpha, layers[id]?.perspective == true {
+        // The capture keeps the ortho VP for perspective layers too (composelayer-perspective windows-capture-20261007).
+        if kind != .textClearAlpha, kind != .composeCapture, layers[id]?.perspective == true {
             (matrices.view, matrices.projection) = try camera.pushPerspective(view: matrices.view,
                                                                               projection: matrices.projection)
         }
@@ -219,7 +223,7 @@ public struct WPEParityLayerTransformSet: Sendable {
                                                     isLastPass: kind == .layer || kind == .textClearAlpha
                                                         || kind == .lastEffectPass || kind == .fullscreenLayer)
         let drawn = switch kind {
-        case .layer, .textClearAlpha, .lastEffectPass: matrices
+        case .layer, .textClearAlpha, .lastEffectPass, .composeCapture: matrices
         case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
         case .effectPass, .fullscreenLayer: WPEParityUniformMatrices.effectPass
         case .clipMaskMerge: WPEParityUniformMatrices(model: matrix_identity_float4x4,
@@ -231,7 +235,7 @@ public struct WPEParityLayerTransformSet: Sendable {
 
     public func quad(_ id: String, kind: WPEParityLayerDrawKind, uvMax: SIMD2<Float> = .one) -> WPEParityLayerQuad {
         switch kind {
-        case .layer, .textClearAlpha: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
+        case .layer, .textClearAlpha, .composeCapture: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
         case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
         case .effectPass, .clipMaskMerge, .lastEffectPass, .fullscreenLayer: .effectPass
         }

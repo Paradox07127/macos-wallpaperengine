@@ -873,6 +873,7 @@ struct WPEParityFrameDrawPlanner {
             WPEParityFrameDrawPlan.Placement(
                 layers: layers, objectID: draw.objectID,
                 kind: draw.source == .textClearAlpha ? .textClearAlpha
+                    : draw.fillsComposite && draw.source == .composeLayer ? .composeCapture
                     : draw.fillsComposite ? .compositeFill(size: draw.logicalCompositeSize.map {
                         SIMD2(Float($0.x), Float($0.y))
                     } ?? SIMD2(Float(attachment.width), Float(attachment.height)))
@@ -890,9 +891,10 @@ struct WPEParityFrameDrawPlanner {
             SIMD2(Float($0.imageWidth) / Float($0.textureWidth), Float($0.imageHeight) / Float($0.textureHeight))
         } ?? .one
         let quad = placement.map { placed in
-            if case .compositeFill = placed.kind {
+            switch placed.kind {
+            case .compositeFill, .composeCapture:
                 layers.quad(placed.objectID, kind: placed.kind, uvMax: uvMax)
-            } else {
+            default:
                 layers.quad(placed.objectID, kind: placed.kind)
             }
         } ?? .effectPass

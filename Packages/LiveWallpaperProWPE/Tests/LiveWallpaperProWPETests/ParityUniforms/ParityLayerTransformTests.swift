@@ -183,6 +183,25 @@ final class ParityLayerTransformTests: XCTestCase {
         XCTAssertEqual((expected * SIMD4(quad.vertices[0].position, 1)).y, 1, accuracy: 1e-6)
     }
 
+    /// 1401e8aa0.c:613-629: a passthrough's capture keeps W' and the scene V/P, so it samples the snapshot under it.
+    func testComposeCaptureUsesTheLayerMatricesAndQuad() throws {
+        let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(2100, 4000))])
+        let capture = try layers.draw("a", kind: .composeCapture, parallax: canvas / 2)
+        let final = try layers.draw("a", kind: .layer, parallax: canvas / 2)
+        assertEqual(capture.matrices.modelViewProjection, final.matrices.modelViewProjection, accuracy: 1e-6)
+        let corners = layers.quad("a", kind: .composeCapture).vertices.map {
+            capture.matrices.modelViewProjection * SIMD4($0.position, 1)
+        }
+        let expected: [SIMD2<Float>] = [
+            SIMD2(-0.546875, 1.851852), SIMD2(0.546875, 1.851852), SIMD2(-0.546875, -1.851852), SIMD2(0.546875, -1.851852),
+        ]
+        XCTAssertEqual(corners.count, 4)
+        for (corner, point) in zip(corners, expected) {
+            XCTAssertEqual(corner.x / corner.w, point.x, accuracy: 1e-5)
+            XCTAssertEqual(corner.y / corner.w, point.y, accuracy: 1e-5)
+        }
+    }
+
     func testLayerAndEffectPassDraws() throws {
         let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(400, 200))])
         let final = try layers.draw("a", kind: .layer, parallax: canvas / 2)
