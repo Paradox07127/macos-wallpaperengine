@@ -406,14 +406,14 @@ private struct WPEParitySceneEmitter {
     }
 
     /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and a passthrough's
-    /// children follow into the same destination (1401e8aa0.c:177-220).
+    /// children follow into the same destination (1401e8aa0.c:177-220); a childless passthrough draws nothing (:185).
     private mutating func renderWithoutComposite(_ object: WPEParitySceneObject,
                                                  children: [WPEParitySceneObject],
                                                  into destination: WPEParitySceneDestination,
                                                  ancestors: [WPEResourceID]) {
         if case let .text(text) = object.kind {
             renderTextDirect(object, text, into: destination)
-        } else if !object.fullscreen, !object.passthrough || object.copyBackground {
+        } else if !object.fullscreen, !object.passthrough || (object.copyBackground && !children.isEmpty) {
             let identity = WPEPassIdentity("\(object.id)/albedo")
             let (shader, albedo, reads) = albedoSource(object)
             // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.

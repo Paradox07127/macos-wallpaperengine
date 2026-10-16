@@ -277,6 +277,19 @@ struct ParitySceneCompositionTests {
         ])
     }
 
+    /// 1401e8aa0.c:177-185: no effect, no bit4 and no children sends a passthrough to the end without a draw.
+    @Test func passthroughWithoutEffectsOrChildrenDrawsNothing() {
+        let lines = F.lines(F.scene([F.layer(passthrough: true, copyBackground: true)]))
+        #expect(!lines.contains { $0.hasPrefix("draw ") })
+        let plain = F.lines(F.scene([F.layer()]))
+        #expect(plain.contains("draw genericimage2 [L/image] translucent rgb mesh"))
+        let parent = F.lines(F.scene([
+            F.layer("C", sortKey: 0, parentID: "P"),
+            F.layer("P", sortKey: 1, passthrough: true, copyBackground: true),
+        ]))
+        #expect(parent.contains("draw genericimage2 [C/image] translucent rgb mesh"))
+    }
+
     @Test func passthroughWithoutCopyBackgroundClearsComposite() {
         let lines = F.lines(F.scene([F.layer(passthrough: true, copyBackground: false, effects: [F.effect("e1")])]))
         #expect(Array(lines.dropFirst(3)) == [
