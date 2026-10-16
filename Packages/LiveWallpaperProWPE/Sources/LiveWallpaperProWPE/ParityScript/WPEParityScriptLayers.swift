@@ -58,6 +58,37 @@ enum WPEParityScriptLayers {
         return handle === undefined ? undefined : host.animationName(handle);
       }
     };
+    // ITextureAnimation: one wrapper per image layer index. Op numbers are
+    // WPEParityScriptEngine.TextureAnimationCommand raw values; null from the host means no sprite sheet.
+    const textureAnimations = [], textureAnimationOwners = new WeakMap();
+    function getTextureAnimation(layer) {
+      if (textureAnimations[layer.__index]) return textureAnimations[layer.__index];
+      if (host.textureAnimationCommand(layer.__index, 9, 0) == null) return null;
+      const wrapper = Object.create(TextureAnimationProto);
+      textureAnimationOwners.set(wrapper, layer.__index);
+      return textureAnimations[layer.__index] = wrapper;
+    }
+    function textureAnimationCommand(wrapper, op, value = 0) {
+      const index = textureAnimationOwners.get(wrapper);
+      const r = index === undefined ? null : host.textureAnimationCommand(index, op, value);
+      return r == null ? undefined : r;
+    }
+    const TextureAnimationProto = {
+      play() { textureAnimationCommand(this, 0); },
+      pause() { textureAnimationCommand(this, 1); },
+      stop() { textureAnimationCommand(this, 2); },
+      isPlaying() { const r = textureAnimationCommand(this, 3); return r === undefined ? undefined : r === 1; },
+      getFrame() { return textureAnimationCommand(this, 4); },
+      setFrame(frame) { const a = argument(frame, 8); if (a) textureAnimationCommand(this, 5, a.value); },
+      join() { textureAnimationCommand(this, 6); },
+      get rate() { return textureAnimationCommand(this, 7); },
+      set rate(value) {
+        const n = typeof value === 'number' ? Math.fround(value) : NaN;
+        if (Number.isFinite(n)) textureAnimationCommand(this, 8, n);
+      },
+      get frameCount() { return textureAnimationCommand(this, 9); },
+      get duration() { return textureAnimationCommand(this, 10); }
+    };
     const materialWrapper = Symbol('materialWrapper');
     function material(fields) {
       if (fields[materialWrapper]) return fields[materialWrapper];
@@ -233,6 +264,9 @@ enum WPEParityScriptLayers {
         proto.stop = function () { if (liveLayer(this)) host.soundCommand(this.__index, 1); };
         proto.pause = function () { if (liveLayer(this)) host.soundCommand(this.__index, 2); };
         proto.isPlaying = function () { return liveLayer(this) ? host.soundCommand(this.__index, 3) : undefined; };
+      }
+      if (kind === host.imageKind) {
+        proto.getTextureAnimation = function () { return liveLayer(this) ? getTextureAnimation(this) : undefined; };
       }
       proto.lookAt = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, false); };
       proto.lookAtYaw = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, true); };

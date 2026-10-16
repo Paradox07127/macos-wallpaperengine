@@ -210,6 +210,8 @@ final class WPEParityFrameRenderer {
     private var renderVars = WPEParityRenderVarState()
     /// One bone animator per skinned puppet layer, keyed by object id.
     private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
+    /// Script texture animation of each image layer that asked for one, keyed by object id.
+    private(set) var textureAnimations: [String: WPEParityTextureAnimation] = [:]
     private var particles: WPEParityParticleFrame
     private let particleFullFrameBuffer: [String: [[WPEParityParticlePathElement]: Bool]]
     private let particleBaseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]]
@@ -382,6 +384,19 @@ final class WPEParityFrameRenderer {
 
     var scriptMaterialFunction: (WPEParitySceneState.EffectKey, String) -> Void {
         { [weak self] key, name in self?.executeMaterialFunction(key, name: name) }
+    }
+
+    /// Nil for a layer whose own image has no sprite sheet; the first call creates the layer's joined state.
+    var scriptTextureAnimation: (String, WPEParityScriptEngine.TextureAnimationCommand, Double) -> Double? {
+        { [weak self] id, command, value in
+            guard let self else { return nil }
+            let steps = planner.layerSprites(id)
+            guard !steps.isEmpty else { return nil }
+            return textureAnimations[id, default: WPEParityTextureAnimation()].perform(
+                command, value: value, shared: WPEParityFrameDrawPlan.sharedSprite(steps, at: clock.time),
+                durations: steps.map { Float($0.duration) }
+            )
+        }
     }
 
     /// Answers from the callback's own state on a copy of the layer worlds; `self.state` lags a callback's writes.
@@ -779,6 +794,7 @@ final class WPEParityFrameRenderer {
         textureSlots = previous.textureSlots
         renderVars = previous.renderVars
         puppets = previous.puppets
+        textureAnimations = previous.textureAnimations
         particles = previous.particles
         sceneRNG = previous.sceneRNG
         // Script registrations belong to the same scene and shader store; resizing changes draw targets only.
@@ -835,6 +851,7 @@ final class WPEParityFrameRenderer {
         }
         script?.engine.materialFunctionHandler = scriptMaterialFunction
         script?.engine.transformMatrixHandler = scriptTransformMatrix
+        script?.engine.textureAnimationHandler = scriptTextureAnimation
         script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
@@ -913,6 +930,7 @@ final class WPEParityFrameRenderer {
         script.engine.materialFunctionHandler = scriptMaterialFunction
         script.engine.transformMatrixHandler = scriptTransformMatrix
         script.engine.videoTextureHandler = scriptVideoCommand
+        script.engine.textureAnimationHandler = scriptTextureAnimation
         script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         try script.start(state: &state)
@@ -1366,6 +1384,9 @@ final class WPEParityFrameRenderer {
         for id in puppets.keys {
             puppets[id]?.advance(dt: Double(clock.frametime))
         }
+        for id in textureAnimations.keys {
+            textureAnimations[id]?.step(dt: clock.frametime, durations: planner.layerSprites(id).map { Float($0.duration) })
+        }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
         let scriptCursor = input.cursor * logicalSize / SIMD2(Float(backbuffer.width), Float(backbuffer.height))
         applyTransforms()
@@ -1524,7 +1545,8 @@ final class WPEParityFrameRenderer {
                                                 plan.applyRenderVarWrites(to: &renderVars)
                                                 let color = drawColor(operation: operation, variant: variant, plan: plan)
                                                 let provided = try plan.makeDraw(frame: uniforms, camera: renderCamera, variant: variant, textures: textures,
-                                                                                 textureSlots: &textureSlots, puppets: puppets, layers: live,
+                                                                                 textureSlots: &textureSlots, puppets: puppets,
+                                                                                 textureAnimations: textureAnimations, layers: live,
                                                                                  constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
                                                                                  renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,

@@ -29,6 +29,22 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
         XCTAssertNotEqual(try firstPixel(first, queue: queue), try firstPixel(second, queue: queue))
     }
 
+    /// A layer whose script stopped its texture animation at frame 1 binds image 1 whatever the scene clock shows.
+    func testStoppedTextureAnimationHoldsItsOwnFrame() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let image = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: Self.twoImageSheet()), device: device)
+        let plan = try makePlan(image, device: device, ownerID: "1")
+        var animation = WPEParityTextureAnimation()
+        animation.stop()
+        animation.setFrame(1)
+        let table = [WPEParitySceneResource.layerImage("1"): image.texture]
+
+        let first = try boundTexture(plan, advances: 1, table: table, textureAnimations: ["1": animation])
+        let second = try boundTexture(plan, advances: 3, table: table, textureAnimations: ["1": animation])
+        XCTAssertFalse(first === image.texture, "the stopped frame 1 binds image 1, not the clock's frame 0")
+        XCTAssertTrue(first === second)
+    }
+
     /// 14015e1d0.c:181-192: a TEXS frame's x and width-x terms divide by the image width, its y and width-y terms by
     /// the image height; heightX by the width and heightY by the height.
     func testRotatedFrameOnAWideImageUploadsWPERotation() throws {
@@ -50,7 +66,9 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
         XCTAssertEqual(translation, [0.25, 0.25])
     }
 
-    private func boundTexture(_ plan: WPEParityFrameDrawPlan, advances: Int) throws -> MTLTexture {
+    private func boundTexture(_ plan: WPEParityFrameDrawPlan, advances: Int,
+                              table: [WPEResourceID: MTLTexture] = [:],
+                              textureAnimations: [String: WPEParityTextureAnimation] = [:]) throws -> MTLTexture {
         var clock = WPEParityClock()
         for _ in 0 ..< advances {
             clock.advance(elapsed: 0.25, ratePercent: 100, paused: false)
@@ -60,12 +78,14 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
                                           pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
                                           eyePosition: .zero, view: matrix_identity_float4x4)
         var slots: [String: WPECBufferValue] = [:]
-        let draw = try plan.makeDraw(frame: frame, variant: 0, textures: [:], textureSlots: &slots, puppets: [:])
+        let draw = try plan.makeDraw(frame: frame, variant: 0, textures: table, textureSlots: &slots, puppets: [:],
+                                     textureAnimations: textureAnimations)
         return try XCTUnwrap(draw.textures["g_Texture0"])
     }
 
-    private func makePlan(_ image: WPEParityFrameDrawPlanner.Image,
-                          device: MTLDevice) throws -> WPEParityFrameDrawPlan {
+    /// `ownerID` places the draw on that layer and feeds slot 0 from its own image resource.
+    private func makePlan(_ image: WPEParityFrameDrawPlanner.Image, device: MTLDevice,
+                          ownerID: String? = nil) throws -> WPEParityFrameDrawPlan {
         let library = try device.makeLibrary(source: """
         #include <metal_stdlib>
         using namespace metal;
@@ -87,16 +107,25 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
         var textures = [WPEParityUniformTexture?](repeating: nil, count: WPEParityUniformTextures.slotCount)
         textures[0] = WPEParityUniformTexture(textureWidth: side, textureHeight: side, imageWidth: side,
                                               imageHeight: side, mipMapInfo: 1)
+        let size = SIMD2(Float(side), Float(side))
+        let camera = WPEParityCamera(eye: .zero, center: SIMD3(0, 0, -1), up: SIMD3(0, 1, 0), size: size,
+                                     renderTargetSize: size)
+        let placement = ownerID.map {
+            WPEParityFrameDrawPlan.Placement(layers: WPEParityLayerTransformSet(camera: camera, layers: []),
+                                             objectID: $0, kind: .layer, compositeOwnerID: nil)
+        }
+        let source: WPEParityFrameDrawPlan.TextureSource = ownerID.map { .resource(WPEParitySceneResource.layerImage($0)) }
+            ?? .image(image.texture)
         return WPEParityFrameDrawPlan(
             pipeline: pipeline,
             depthStencil: .wpe(depthTest: false, depthWrite: false),
             rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
             geometry: .mesh(vertices: buffer, indices: buffer, indexCount: 6),
             puppetID: nil,
-            textures: [["g_Texture0": .image(image.texture)]],
+            textures: [["g_Texture0": source]],
             samplers: [:],
             uniforms: WPEParityUniformDraw(matrices: .effectPass, textures: textures),
-            placement: nil,
+            placement: placement,
             sprites: [0: image.sprites],
             constants: [:],
             renderVarWrites: (nil, nil),

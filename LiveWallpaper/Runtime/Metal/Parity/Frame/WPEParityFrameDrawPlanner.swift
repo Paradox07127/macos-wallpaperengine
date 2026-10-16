@@ -150,11 +150,14 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// `textureSlots` holds the last TEXS rotation and translation written to each slot, across draws and frames.
-    /// `puppets` holds this frame's bone animator of each skinned puppet layer. `constants` replaces the planned
-    /// ones; a `layerColor` overrides g_Color4, g_Color and g_Alpha. Mesh draws only.
+    /// `puppets` holds this frame's bone animator of each skinned puppet layer, `textureAnimations` each image
+    /// layer's script sprite state. `constants` replaces the planned ones; a `layerColor` overrides g_Color4,
+    /// g_Color and g_Alpha. Mesh draws only.
     func makeDraw(frame: WPEParityUniformFrame, camera: WPEParityCamera? = nil, variant: Int,
                   textures table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
-                  puppets: [String: WPEParityPuppetAnimator], layers: WPEParityLayerTransformSet? = nil,
+                  puppets: [String: WPEParityPuppetAnimator],
+                  textureAnimations: [String: WPEParityTextureAnimation] = [:],
+                  layers: WPEParityLayerTransformSet? = nil,
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
                   layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
                   textRenderVarState: WPEParityRenderVarState? = nil,
@@ -181,7 +184,8 @@ struct WPEParityFrameDrawPlan {
                                   uniforms: frameUniforms(parallax: frame.parallax.smoothed, camera: camera,
                                                           layers: layers),
                                   variant: variant, table: table, textureSlots: &textureSlots, puppets: puppets,
-                                  constants: constants ?? self.constants, replacementTextures: replacements)
+                                  textureAnimations: textureAnimations, constants: constants ?? self.constants,
+                                  replacementTextures: replacements)
         if let textRenderVarState, textRenderVars != nil {
             for (index, value) in [textRenderVarState.rv0, textRenderVarState.rv1,
                                    textRenderVarState.rv2, textRenderVarState.rv3].enumerated() {
@@ -267,7 +271,7 @@ struct WPEParityFrameDrawPlan {
             return nil
         }
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
-                                  textureSlots: &textureSlots, puppets: [:], constants: constants,
+                                  textureSlots: &textureSlots, puppets: [:], textureAnimations: [:], constants: constants,
                                   engineExtras: orientation, replacementTextures: replacements)
         // RV1 (SPRITESHEET only), then the entry's partial RV0.
         if let renderVar1 = particle.renderVar1 {
@@ -303,6 +307,7 @@ struct WPEParityFrameDrawPlan {
     private func drawState(frame: WPEParityUniformFrame, uniforms: WPEParityUniformDraw, variant: Int,
                            table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                            puppets: [String: WPEParityPuppetAnimator],
+                           textureAnimations: [String: WPEParityTextureAnimation],
                            constants: [WPEHLSLStage: [String: WPECBufferValue]],
                            engineExtras: [String: WPECBufferValue] = [:],
                            replacementTextures: [Int: MTLTexture])
@@ -325,8 +330,19 @@ struct WPEParityFrameDrawPlan {
             }
             systemTextures["g_Texture\(slot)"] = texture
         }
+        // An individual texture animation picks the frame of the slots the layer's own image feeds; like 14015fdd0,
+        // a frame outside the sheet reads frame 0.
+        let own = placement.flatMap { placed in
+            textureAnimations[placed.objectID].flatMap {
+                $0.individual ? (image: WPEParitySceneResource.layerImage(placed.objectID), frame: $0.frame) : nil
+            }
+        }
         for (slot, steps) in sprites where slot < uniforms.textures.count && systemTextures["g_Texture\(slot)"] == nil {
-            let step = Self.sprite(steps, at: frame.clock.time)
+            let step = if let own, case let .resource(id)? = textures[variant]["g_Texture\(slot)"], id == own.image {
+                steps.indices.contains(own.frame) ? steps[own.frame] : steps.first
+            } else {
+                Self.sprite(steps, at: frame.clock.time)
+            }
             uniforms.textures[slot]?.spriteFrame = step?.frame
             spriteTextures["g_Texture\(slot)"] = step?.texture
         }
@@ -364,18 +380,22 @@ struct WPEParityFrameDrawPlan {
         return (stageConstants, boundTextures)
     }
 
-    /// The frame showing at `time`, looping over the whole sequence.
     private static func sprite(_ steps: [SpriteStep], at time: Double) -> SpriteStep? {
+        steps.isEmpty ? nil : steps[sharedSprite(steps, at: time).frame]
+    }
+
+    /// The frame showing at `time`, looping over the whole sequence, and the seconds into it.
+    static func sharedSprite(_ steps: [SpriteStep], at time: Double) -> (frame: Int, time: Float) {
         let total = steps.reduce(0) { $0 + $1.duration }
-        guard total > 0 else { return steps.first }
+        guard total > 0 else { return (0, 0) }
         var remaining = time.truncatingRemainder(dividingBy: total)
-        for step in steps {
-            if remaining < step.duration {
-                return step
+        for (index, step) in steps.enumerated() {
+            if remaining < step.duration || index == steps.count - 1 {
+                return (index, Float(remaining))
             }
             remaining -= step.duration
         }
-        return steps.last
+        return (0, 0)
     }
 }
 
@@ -463,6 +483,11 @@ struct WPEParityFrameDrawPlanner {
                 texts[object.id] = text
             }
         }
+    }
+
+    /// The TEXS frames of `objectID`'s own image; empty when it has no sprite sheet or no draw loaded it yet.
+    func layerSprites(_ objectID: String) -> [WPEParityFrameDrawPlan.SpriteStep] {
+        layerImageAssets[WPEParitySceneResource.layerImage(objectID)]?.sprites ?? []
     }
 
     var videoImages: [String: Image] {

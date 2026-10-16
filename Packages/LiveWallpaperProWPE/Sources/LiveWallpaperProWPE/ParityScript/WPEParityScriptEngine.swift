@@ -20,6 +20,11 @@ public final class WPEParityScriptEngine {
         case play, stop, isPlaying, getCurrentTime, setCurrentTime
     }
 
+    /// Native ITextureAnimation members (1402131a0.c:39-284); the Prelude's op numbers are these raw values.
+    public enum TextureAnimationCommand: Int, Sendable {
+        case play, pause, stop, isPlaying, getFrame, setFrame, join, getRate, setRate, frameCount, duration
+    }
+
     /// A snapshot of the existing typed fields at this synchronous native-call boundary.
     public struct SoundFields: Sendable {
         public let volume: Float
@@ -261,6 +266,9 @@ public final class WPEParityScriptEngine {
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, command, setCurrentTime seconds (else 0).
     /// Returns 1/0 for isPlaying, seconds for getCurrentTime, 0 otherwise; nil = no product video consumer.
     public var videoTextureHandler: ((String, VideoCommand, Double) -> Double?)?
+    /// Rebound like materialFunctionHandler. Arguments: image layer ID, command, setFrame frame or setRate rate
+    /// (else 0). Returns 1/0 for isPlaying, a getter's value, 0 otherwise; nil = the layer's texture has no sprite sheet.
+    public var textureAnimationHandler: ((String, TextureAnimationCommand, Double) -> Double?)?
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
     public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
     /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
@@ -1068,6 +1076,15 @@ public final class WPEParityScriptEngine {
             }
             return NSNumber(value: result)
         }
+        let textureAnimationCommand: @convention(block) (Double, Double, Double) -> NSNumber? = { [weak self] index, raw, value in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count),
+                  let raw = Int(exactly: raw), let command = TextureAnimationCommand(rawValue: raw) else { return nil }
+            guard let handler = textureAnimationHandler else {
+                configuration.log(1, "getTextureAnimation is unsupported without a product sprite consumer")
+                return nil
+            }
+            return handler(layers[index].id, command, value).map { NSNumber(value: $0) }
+        }
         let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
             guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
                   let effect = Self.checkedLayerIndex(Double(slots[slot].effect), count: effectKeys.count) else { return }
@@ -1190,6 +1207,8 @@ public final class WPEParityScriptEngine {
         set("soundVolumeWritten", soundVolumeWritten)
         set("soundCommand", soundCommand)
         set("soundKind", WPEParityScriptLayerKind.sound.rawValue)
+        set("imageKind", WPEParityScriptLayerKind.image.rawValue)
+        set("textureAnimationCommand", textureAnimationCommand)
         set("executeMaterialFunction", executeMaterialFunction)
         set("findAnimation", findAnimation)
         set("animationCommand", animationCommand)
