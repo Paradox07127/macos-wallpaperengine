@@ -1075,7 +1075,7 @@ final class WPEParityFrameRenderer {
     /// One common-scene sweep shares the native scene RNG across particle and camera queue consumers.
     private func updateSceneObjects(camera: WPEParityCamera, timeOfDay: Float) {
         particles.beginFrame()
-        _ = particles.scene.applyScriptInstanceFields(state: state)
+        particles.scene.applyScriptInstanceFields(state: state)
         let viewProjection = camera.projection * camera.view
         for id in state.commonOrder {
             if let queue = cameraQueues[id],
