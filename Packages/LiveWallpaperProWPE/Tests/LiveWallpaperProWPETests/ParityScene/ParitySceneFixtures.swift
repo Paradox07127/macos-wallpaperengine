@@ -11,9 +11,10 @@ enum ParitySceneFixtures {
     static let sceneClear = ["clear backbuffer 0.1,0.2,0.3,1.0", "clearDepth backbufferDepth 0.0"]
 
     static func scene(_ objects: [WPEParitySceneObject], clearEnabled: Bool = true,
-                      msaaSamples: Int = 1) -> WPEParitySceneDescription {
+                      msaaSamples: Int = 1, transparentSorting: Bool = false) -> WPEParitySceneDescription {
         WPEParitySceneDescription(width: sceneWidth, height: sceneHeight, clearColor: SIMD3(0.1, 0.2, 0.3),
-                                  clearEnabled: clearEnabled, msaaSamples: msaaSamples, objects: objects)
+                                  clearEnabled: clearEnabled, msaaSamples: msaaSamples,
+                                  transparentSorting: transparentSorting, objects: objects)
     }
 
     static func layer(_ id: String = "L", sortKey: Int = 0, visible: Bool = true, colorBlendMode: Int = 0,

@@ -45,7 +45,7 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
 
 /// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
 /// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
-/// with one resolved MSAA sample count and no transparent sorting.
+/// with one resolved MSAA sample count; transparent members keep paint order, without WPE's view-distance key.
 public struct WPEParityProgramScene: Sendable {
     struct MaterialKey: Hashable, Sendable {
         let objectID: String
@@ -193,12 +193,9 @@ public struct WPEParityProgramScene: Sendable {
             let puppetForcesComposite = puppet.map {
                 !effects.isEmpty || sequence == true || $0.blendMeshIndex != nil
             } ?? false
+            let baseBlend = material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
             // A model's state comes from its material alone.
-            let blend: WPEParitySceneBlend = if image.colorBlendMode == 31, !isModel {
-                .additive
-            } else {
-                material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
-            }
+            let blend: WPEParitySceneBlend = image.colorBlendMode == 31 && !isModel ? .additive : baseBlend
             var kind = WPEParitySceneObject.Kind.image
             var frameReads: [String: [WPEResourceID]] = [:]
             if let materialPath, let material {
@@ -233,6 +230,10 @@ public struct WPEParityProgramScene: Sendable {
                     meshes: meshes, castsShadow: Self.number(authored?["castshadow"]).map { $0 != 0 } ?? true
                 ))
             }
+            let passthrough = Self.flag(model?["passthrough"]) || image.config.passthrough
+            // 1401fac50.c:267-279: base material blend, not the mode-31 override; shapes and models never join.
+            let transparentMember = kind == .image
+                && (![.normal, .alphaToCoverage].contains(baseBlend) || passthrough && !image.copyBackground)
             sceneObjects.append(WPEParitySceneObject(
                 id: image.id, kind: kind, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
@@ -244,7 +245,7 @@ public struct WPEParityProgramScene: Sendable {
                 // draws never read.
                 colorBlendMode: image.isShapeQuad ? Self.number(authored?["colorBlendMode"]).map { Int($0) } ?? 0
                     : image.colorBlendMode,
-                passthrough: Self.flag(model?["passthrough"]) || image.config.passthrough,
+                passthrough: passthrough,
                 copyBackground: image.copyBackground, fullscreen: fullscreen,
                 ledSource: Self.flag(authored?["ledsource"]), puppetForcesComposite: puppetForcesComposite,
                 puppet: puppet,
@@ -253,7 +254,7 @@ public struct WPEParityProgramScene: Sendable {
                 parentID: image.parentObjectID,
                 // Only object types 1 and 4, image and text, take the flags.
                 dependencyTarget: kind == .image && dependencyTargets.contains(image.id),
-                materialFrameReads: frameReads
+                materialFrameReads: frameReads, transparentMember: transparentMember
             ))
         }
         // Text layers come next so `authoredObjects` still lines up with the leading scene objects.
@@ -312,7 +313,7 @@ public struct WPEParityProgramScene: Sendable {
             sceneObjects.append(WPEParitySceneObject(
                 id: particle.id, kind: .particle(WPEParitySceneParticle(draws: draws)),
                 sortKey: document.objectPaintOrder[particle.id] ?? index, visible: Self.visible(particle.id, document),
-                width: 0, height: 0, parentID: particle.parentObjectID
+                width: 0, height: 0, parentID: particle.parentObjectID, transparentMember: true
             ))
         }
         self.materials = materials
@@ -327,6 +328,8 @@ public struct WPEParityProgramScene: Sendable {
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
                                           msaaSamples: samples,
+                                          // Scene+0xe0 bit 0x1000 (140199780.c:1368-1370); bit 0x8 is treated as clear.
+                                          transparentSorting: Self.authoredBool(document, "transparentsorting"),
                                           forcesLayerComposite: flags.fogDistance || flags.fogHeight,
                                           shadowAtlas: flags.shadowQuality != 0 && [
                                               flags.spotShadowCookieLights, flags.spotShadowLights,
@@ -354,18 +357,19 @@ public struct WPEParityProgramScene: Sendable {
 
     /// The native HDR allocation predicate, also used before the product plans its physical render extent.
     public static func hdrEnabled(document: WPESceneDocument, settings: WPEParityProgramSettings) -> Bool {
-        /// 10df40 uses10d850: an object unwraps its immediate "value", then116b90 requires bool true.
-        /// This load-time getter does not read the runtime user-property override used by bloom setters.
-        func authoredBool(_ key: String) -> Bool {
-            let raw = document.sourceJSON["general"]?[key]
-            let value = if case .object? = raw {
-                raw?["value"]
-            } else {
-                raw
-            }
-            return value == .bool(true)
+        authoredBool(document, "bloom") && authoredBool(document, "hdr") && settings.hdrPostProcessing
+    }
+
+    /// 10df40 uses10d850: an object unwraps its immediate "value", then116b90 requires bool true.
+    /// This load-time getter does not read the runtime user-property override used by bloom setters.
+    private static func authoredBool(_ document: WPESceneDocument, _ key: String) -> Bool {
+        let raw = document.sourceJSON["general"]?[key]
+        let value = if case .object? = raw {
+            raw?["value"]
+        } else {
+            raw
         }
-        return authoredBool("bloom") && authoredBool("hdr") && settings.hdrPostProcessing
+        return value == .bool(true)
     }
 
     /// `scene` with each image and text layer effect enabled as `visible` says. FBO declarations follow the enabled set, as a

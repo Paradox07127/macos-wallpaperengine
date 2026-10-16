@@ -113,7 +113,11 @@ private struct WPEParitySceneEmitter {
                 roots.append(object)
             }
         }
-        self.roots = roots
+        // 14018aac0.c:169-221: non-members first, then the member vector, whose fullscreen key −Inf sorts last.
+        self.roots = scene.transparentSorting
+            ? roots.filter { !$0.transparentMember } + roots.filter { $0.transparentMember && !$0.fullscreen }
+            + roots.filter { $0.transparentMember && $0.fullscreen }
+            : roots
         childrenByParent = children
         var layerComposites: [WPEResourceID: WPEParitySceneObject] = [:]
         for object in scene.objects where object.hasLayerComposite(scene) {

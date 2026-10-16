@@ -149,6 +149,26 @@ struct ParitySceneFrameStructureTests {
         #expect(order == ["A1/albedo", "A2/albedo", "B/albedo"])
     }
 
+    @Test func transparentSortingDrawsMembersAfterOrdinaryRootsAndFullscreenMembersLast() {
+        var t = F.layer("T", sortKey: 0)
+        t.transparentMember = true
+        let o = F.layer("O", sortKey: 1)
+        // A fullscreen layer without effects draws nothing; its effect pass is its draw.
+        var f = F.layer("F", sortKey: 2, effects: [F.effect("fe")])
+        f.fullscreen = true
+        f.transparentMember = true
+        var u = F.layer("U", sortKey: 3)
+        u.transparentMember = true
+        for (sorting, expected) in [(true, ["O", "T", "U", "F"]), (false, ["T", "O", "F", "U"])] {
+            let frame = WPEParitySceneFrameBuilder.build(F.scene([t, o, f, u], transparentSorting: sorting))
+            let order = frame.operations.compactMap { operation -> String? in
+                guard case .draw = operation.kind else { return nil }
+                return frame.draws[operation.pass]?.objectID
+            }
+            #expect(order == expected, "transparentSorting \(sorting)")
+        }
+    }
+
     @Test func layerWithoutEffectsDrawsDirectlyIntoScene() {
         #expect(F.lines(F.scene([F.layer()])) == [F.sceneBind] + F.sceneClear + [
             F.sceneBind, "draw genericimage2 [L/image] translucent rgb mesh",

@@ -78,6 +78,18 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         }
     }
 
+    func testTransparentSortingDrawsTranslucentLayerAfterLaterOpaqueOne() async throws {
+        for sorting in [true, false] {
+            let fixture = try await makeSortingRenderer(transparentSorting: sorting)
+            _ = try await render(fixture)
+            // Half-alpha red over blue, or opaque blue over the earlier red.
+            let expected = sorting ? [128, 0, 127] : [0, 0, 255]
+            let actual = try pixel(fixture)
+            XCTAssertTrue(zip(actual, expected).allSatisfy { abs($0 - $1) <= 1 },
+                          "transparentsorting \(sorting): \(actual) != \(expected)")
+        }
+    }
+
     private struct Fixture {
         let plan: WPEParityFramePlan
         let renderer: WPEParityFrameRenderer
@@ -85,38 +97,65 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         let subject: Int
     }
 
-    private func makeRenderer(_ layer: Layer, depthTest: Bool, depthWrite: Bool = true,
-                              blending: String = "normal", subjectFirst: Bool = false,
-                              culls: Bool = false, reflected: Bool = false) async throws -> Fixture {
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        func material(shader: String, texture: String, depthTest: Bool, depthWrite: Bool,
-                      blending: String, culls: Bool) -> [String: Any] {
-            ["passes": [["shader": shader, "textures": [texture], "blending": blending,
-                         "depthtest": depthTest ? "enabled" : "disabled",
-                         "depthwrite": depthWrite ? "enabled" : "disabled",
-                         "cullmode": culls ? "normal" : "nocull"]]]
-        }
-        let root = scratch.appending(path: UUID().uuidString)
-        var files: [String: Data] = ["materials/red.tex": Self.texture([255, 0, 0, 255]),
+    private static func material(shader: String, texture: String, depthTest: Bool, depthWrite: Bool,
+                                 blending: String, culls: Bool) -> [String: Any] {
+        ["passes": [["shader": shader, "textures": [texture], "blending": blending,
+                     "depthtest": depthTest ? "enabled" : "disabled",
+                     "depthwrite": depthWrite ? "enabled" : "disabled",
+                     "cullmode": culls ? "normal" : "nocull"]]]
+    }
+
+    private func colorFiles() throws -> [String: Data] {
+        let files: [String: Data] = ["materials/red.tex": Self.texture([255, 0, 0, 255]),
                                      "materials/blue.tex": Self.texture([0, 0, 255, 255])]
         XCTAssertEqual(try Self.sha256(XCTUnwrap(files["materials/red.tex"])),
                        "9e441ee114603c6004c2f599e900ab89f93c3821dcbb227a58018cf38b9a4aea")
         XCTAssertEqual(try Self.sha256(XCTUnwrap(files["materials/blue.tex"])),
                        "7415de08c5065e8087d0ec98616f92bd19ec494370a2ae810af4885897d014db")
+        return files
+    }
+
+    /// A translucent red layer with texel alpha 128 authored before an opaque normal blue one, both centred, no depth.
+    private func makeSortingRenderer(transparentSorting: Bool) async throws -> Fixture {
+        var files = try colorFiles()
+        files["materials/halfred.tex"] = Self.texture([255, 0, 0, 128])
         func json(_ name: String, _ value: Any) throws {
             files[name] = try JSONSerialization.data(withJSONObject: value, options: .sortedKeys)
         }
         try json("models/red.json", ["material": "materials/red.json"])
         try json("models/blue.json", ["material": "materials/blue.json"])
-        try json("materials/red.json", material(shader: "genericimage2", texture: "red", depthTest: true,
-                                                depthWrite: true, blending: "normal", culls: false))
+        try json("materials/red.json", Self.material(shader: "genericimage2", texture: "halfred", depthTest: false,
+                                                     depthWrite: false, blending: "translucent", culls: false))
+        try json("materials/blue.json", Self.material(shader: "genericimage2", texture: "blue", depthTest: false,
+                                                      depthWrite: false, blending: "normal", culls: false))
+        let red: [String: Any] = ["id": 1, "image": "models/red.json", "size": "32 32", "origin": "16 16 0"]
+        let blue: [String: Any] = ["id": 2, "image": "models/blue.json", "size": "32 32", "origin": "16 16 0"]
+        let scene: [String: Any] = ["camera": ["eye": "0 0 1", "center": "0 0 0", "up": "0 1 0"],
+                                    "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                                                "clearcolor": "0 0 0", "cameraparallax": false, "camerashake": false,
+                                                "transparentsorting": transparentSorting],
+                                    "objects": [red, blue]]
+        return try await makeRenderer(scene: scene, files: files) { draw in
+            draw.objectID == "1" && draw.geometry == .layerMesh
+        }
+    }
+
+    private func makeRenderer(_ layer: Layer, depthTest: Bool, depthWrite: Bool = true,
+                              blending: String = "normal", subjectFirst: Bool = false,
+                              culls: Bool = false, reflected: Bool = false) async throws -> Fixture {
+        var files = try colorFiles()
+        func json(_ name: String, _ value: Any) throws {
+            files[name] = try JSONSerialization.data(withJSONObject: value, options: .sortedKeys)
+        }
+        try json("models/red.json", ["material": "materials/red.json"])
+        try json("models/blue.json", ["material": "materials/blue.json"])
+        try json("materials/red.json", Self.material(shader: "genericimage2", texture: "red", depthTest: true,
+                                                     depthWrite: true, blending: "normal", culls: false))
         // Shape's synthetic albedo has the opposite state, proving that its final pass is not an image override.
-        try json("materials/blue.json", material(shader: "genericimage2", texture: "blue",
-                                                 depthTest: layer == .shape ? !depthTest : depthTest,
-                                                 depthWrite: depthWrite, blending: blending,
-                                                 culls: layer == .effect ? !culls : culls))
+        try json("materials/blue.json", Self.material(shader: "genericimage2", texture: "blue",
+                                                      depthTest: layer == .shape ? !depthTest : depthTest,
+                                                      depthWrite: depthWrite, blending: blending,
+                                                      culls: layer == .effect ? !culls : culls))
         let subjectZ = subjectFirst ? 100 : 0
         let redZ = subjectFirst ? 0 : 100
         let red: [String: Any] = ["id": 1, "image": "models/red.json", "size": "32 32", "origin": "16 16 \(redZ)"]
@@ -130,9 +169,10 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         }
         if layer != .image {
             // The effect's own depth is deliberately opposite on an image; +0x108 must overwrite it.
-            try json("materials/state-effect.json", material(shader: "genericimage3", texture: layer == .shape ? "blue" : "previous",
-                                                             depthTest: layer == .shape ? depthTest : !depthTest,
-                                                             depthWrite: !depthWrite, blending: "normal", culls: culls))
+            try json("materials/state-effect.json", Self.material(shader: "genericimage3",
+                                                                  texture: layer == .shape ? "blue" : "previous",
+                                                                  depthTest: layer == .shape ? depthTest : !depthTest,
+                                                                  depthWrite: !depthWrite, blending: "normal", culls: culls))
             try json("effects/state.json", ["passes": [["material": "materials/state-effect.json"]]])
             blue["effects"] = [["id": 3, "file": "effects/state.json", "visible": true]]
         }
@@ -140,7 +180,18 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
                                     "general": ["orthogonalprojection": ["width": 32, "height": 32],
                                                 "clearcolor": "0 0 0", "cameraparallax": false, "camerashake": false],
                                     "objects": subjectFirst ? [blue, red] : [red, blue]]
-        let sourceFiles = files
+        return try await makeRenderer(scene: scene, files: files) { draw in
+            guard draw.objectID == "2" else { return false }
+            return layer == .image ? draw.geometry == .layerMesh : draw.effectID == "3"
+        }
+    }
+
+    private func makeRenderer(scene: [String: Any], files sourceFiles: [String: Data],
+                              subject isSubject: (WPEParitySceneDraw) -> Bool) async throws -> Fixture {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let root = scratch.appending(path: UUID().uuidString)
         let assets = WPEParityProgramAssets(sources: [.lookup(root) { sourceFiles[$0] }, .directory(engine)])
         for (path, expected) in Self.originalHashes {
             let data = try XCTUnwrap(assets.data(path), "Required original shader input \(path)")
@@ -153,8 +204,8 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
                                                         makeTransformScriptResolver: { _, _ in MaterialStateNoScripts() })
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 32, height: 32)
         let subject = try XCTUnwrap(plan.frames[0].draws.first { _, value in
-            guard case let .scene(draw) = value, draw.objectID == "2" else { return false }
-            return layer == .image ? draw.geometry == .layerMesh : draw.effectID == "3"
+            guard case let .scene(draw) = value else { return false }
+            return isSubject(draw)
         }?.key)
         let compiler = try bundledCompiler(workDirectory: root.appending(path: "shaderc"))
         let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))

@@ -477,7 +477,8 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var clearEnabled: Bool
     /// 1 renders straight into the backbuffer; more routes through `_rt_FullFrameBufferMultiSampled`.
     public var msaaSamples: Int
-    /// Carried but not applied: the report does not name the transparent-sorting comparator (U5).
+    /// `general.transparentsorting`: transparent members draw after every other root, fullscreen ones last, each group
+    /// in paint order; WPE's view-distance key (1401865c0) is not applied.
     public var transparentSorting: Bool
     /// Global fog flags 0x1800000 (`general.fogdistance` / `fogheight`) send every layer through its own `_a` composite.
     public var forcesLayerComposite: Bool
@@ -553,6 +554,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
     public var dependencyTarget: Bool
     /// Frame resources (`_rt_*` names the frame builds) each albedo or model material samples, keyed by material path.
     public var materialFrameReads: [String: [WPEResourceID]]
+    /// Common flag 0x100: in the scene's transparent member vector (14018ff60.c:347-350).
+    public var transparentMember: Bool
 
     public init(id: String, kind: Kind = .image, sortKey: Int = 0, visible: Bool = true, width: Int, height: Int,
                 materialShader: String = "genericimage2", material: WPEParitySceneMaterialSource? = nil,
@@ -562,7 +565,7 @@ public struct WPEParitySceneObject: Hashable, Sendable {
                 fullscreen: Bool = false, ledSource: Bool = false, puppetForcesComposite: Bool = false,
                 puppet: WPEParityScenePuppet? = nil, noInterpolation: Bool = false, clampUVs: Bool = true,
                 parentID: String? = nil, effects: [WPEParitySceneEffect] = [], dependencyTarget: Bool = false,
-                materialFrameReads: [String: [WPEResourceID]] = [:]) {
+                materialFrameReads: [String: [WPEResourceID]] = [:], transparentMember: Bool = false) {
         self.id = id
         self.kind = kind
         self.sortKey = sortKey
@@ -587,6 +590,7 @@ public struct WPEParitySceneObject: Hashable, Sendable {
         self.effects = effects
         self.dependencyTarget = dependencyTarget
         self.materialFrameReads = materialFrameReads
+        self.transparentMember = transparentMember
     }
 
     /// Layer bit4 (1401e6f50.c:24-29), without the global 0x1800000 flag.
@@ -596,6 +600,7 @@ public struct WPEParitySceneObject: Hashable, Sendable {
 
     /// A text layer sized to its FBO. Its glyphs blend translucent, additive for colorBlendMode 31; its bit4
     /// composite gets FOG_COMPUTED and, with the `_depth` materials, a depth test (140257840.c:28-124).
+    /// Always a transparent member (constructor 140256ae0).
     public static func text(_ text: WPEParitySceneText, sortKey: Int = 0, visible: Bool = true,
                             parentID: String? = nil, effects: [WPEParitySceneEffect] = []) -> Self {
         let colorBlendMode = text.object.colorBlendMode
@@ -606,7 +611,8 @@ public struct WPEParitySceneObject: Hashable, Sendable {
             blend: colorBlendMode == 31 ? .additive : .translucent,
             materialState: WPEParitySceneMaterialState(depthTest: text.depthMaterials, depthWrite: false,
                                                        cullsBackFaces: false),
-            materialFog: true, colorBlendMode: colorBlendMode, parentID: parentID, effects: effects
+            materialFog: true, colorBlendMode: colorBlendMode, parentID: parentID, effects: effects,
+            transparentMember: true
         )
     }
 }
