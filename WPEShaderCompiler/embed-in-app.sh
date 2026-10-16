@@ -25,6 +25,10 @@ Packages/LiveWallpaperProWPE/Sources/CWPESDF/vendor/msdfgen/LICENSE.txt msdfgen-
 ThirdPartyNotices/README.txt README.txt
 EOF
 
+# Xcode does not pass the shell environment; fall back to the inputs staged in this checkout.
+if [ -z "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ] && [ -d "$REPO_ROOT/build/wpe-shader-toolchain-inputs" ]; then
+    WPE_SHADER_TOOLCHAIN_ROOT="$REPO_ROOT/build/wpe-shader-toolchain-inputs"
+fi
 if [ -z "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ]; then
     if [ "${CONFIGURATION:-}" != Debug ]; then
         echo 'error: Release requires WPE_SHADER_TOOLCHAIN_ROOT with the pinned shader toolchain inputs' >&2
@@ -64,7 +68,12 @@ embed() {
     local source=$1 destination=$2
     shift 2
     local staged="$destination.embedding"
-    cp -f "$source" "$staged"
+    # The helper is arm64-only, so the x86_64 slice of a universal library is never loaded.
+    if [ "$(/usr/bin/lipo -archs "$source")" = arm64 ]; then
+        cp -f "$source" "$staged"
+    else
+        /usr/bin/lipo "$source" -thin arm64 -output "$staged"
+    fi
     chmod u+w "$staged"
     if [ "$(basename "$destination")" = libdxcompiler.dylib ]; then
         # libdxcompiler loads @rpath/libmetalirconverter.dylib; its build rpaths point outside the bundle.
