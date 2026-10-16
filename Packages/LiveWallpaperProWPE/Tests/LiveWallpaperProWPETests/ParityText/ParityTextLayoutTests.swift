@@ -289,6 +289,15 @@ final class ParityTextLayoutTests: XCTestCase {
         }
     }
 
+    /// Windows draws ：（） from msyh; Apple Symbols, the seguisym stand-in one slot earlier, must not take them.
+    func testFullWidthPunctuationComesFromTheCJKFace() throws {
+        let library = try ParityFontChainTests.makeLibrary()
+        let mesh = try XCTUnwrap(WPEParityTextLayoutEngine.layout(input("作：（）　"), fonts: library).mesh)
+        let faces = mesh.mono.glyphKeys.map { Int($0 >> 24) }
+        let families = library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.map(\.familyName)
+        XCTAssertEqual(faces.map { families[$0] }, Array(repeating: "PingFang SC", count: 5))
+    }
+
     /// A character no slot maps spends all eight slots, and every slot that loads stays in the chain.
     func testUnmappedCharacterAppendsEverySlotAndLaterCharactersUseThem() throws {
         let library = try ParityFontChainTests.makeLibrary()

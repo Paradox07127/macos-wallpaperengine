@@ -46,16 +46,19 @@ public final class WPEParityFontLibrary {
 /// The primary face followed by the fallback faces appended while laying out text (1401ad670.c:72-199).
 public final class WPEParityFontChain {
     private enum FallbackSlot {
-        case system(String)
+        case system(String, excluding: [ClosedRange<UInt32>] = [])
         case asset(String)
     }
 
     private static let twemojiPath = "fonts/TwemojiMozilla.ttf"
+    /// Apple Symbols maps the ideographic space and full-width forms; Windows draws them from msyh, the next slot.
+    private static let fullWidthForms: [ClosedRange<UInt32>] = [0x3000 ... 0x3000, 0xFF00 ... 0xFFEF]
     /// WPE's table 0x140484c40 with macOS stand-ins: arial, seguiemj, arialuni, segoeui, fonts/TwemojiMozilla.ttf,
     /// seguisym, msyh, Malgun. nil = no stand-in; the slot is still spent.
     private static let fallbackSlots: [FallbackSlot?] = [
         .system("Arial"), .asset(twemojiPath), nil, .system("Helvetica Neue"),
-        .asset(twemojiPath), .system("Apple Symbols"), .system("PingFang SC"), .system("Apple SD Gothic Neo"),
+        .asset(twemojiPath), .system("Apple Symbols", excluding: fullWidthForms), .system("PingFang SC"),
+        .system("Apple SD Gothic Neo"),
     ]
 
     public private(set) var faces: [WPEParityFontFace] = []
@@ -63,6 +66,8 @@ public final class WPEParityFontChain {
     private let loader: WPEParityFontLoader
     /// Slots of `fallbackSlots` already spent; WPE counts them per chain, not per character.
     private var fallbackAttempts = 0
+    /// Scalars a stand-in face must not take, by index in `faces`; kept per chain because faces are shared.
+    private var excludedScalars: [Int: [ClosedRange<UInt32>]] = [:]
 
     init(loader: WPEParityFontLoader, fontPath: String, pointSize: Float) {
         self.loader = loader
@@ -79,7 +84,7 @@ public final class WPEParityFontChain {
 
     /// The first face in the chain that maps `scalar`, appending fallback faces until one does or the attempts run out.
     func faceIndex(containing scalar: UInt32) -> Int? {
-        if let index = faces.firstIndex(where: { $0.hasCharacter(scalar) }) {
+        if let index = faces.indices.first(where: { maps($0, scalar) }) {
             return index
         }
         while fallbackAttempts < Self.fallbackSlots.count {
@@ -87,11 +92,18 @@ public final class WPEParityFontChain {
             fallbackAttempts += 1
             guard let face = slot.flatMap(fallbackFace), !faces.contains(where: { $0 === face }) else { continue }
             faces.append(face)
-            if face.hasCharacter(scalar) {
+            if case let .system(_, excluding)? = slot, !excluding.isEmpty {
+                excludedScalars[faces.count - 1] = excluding
+            }
+            if maps(faces.count - 1, scalar) {
                 return faces.count - 1
             }
         }
         return nil
+    }
+
+    private func maps(_ index: Int, _ scalar: UInt32) -> Bool {
+        faces[index].hasCharacter(scalar) && !(excludedScalars[index] ?? []).contains { $0.contains(scalar) }
     }
 
     private func appendSystemFont(_ families: [String]) {
@@ -105,7 +117,7 @@ public final class WPEParityFontChain {
 
     private func fallbackFace(_ slot: FallbackSlot) -> WPEParityFontFace? {
         switch slot {
-        case let .system(family): loader.systemFace(family: family, pointSize: pointSize)
+        case let .system(family, _): loader.systemFace(family: family, pointSize: pointSize)
         case let .asset(path): loader.assetFace(path: path, pointSize: pointSize)
         }
     }
