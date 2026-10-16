@@ -287,4 +287,22 @@ final class ParityParticleInitializerTests: XCTestCase {
         let mirrored = burst(7, initializers: between + #", "limitbehavior": "mirror"}"#, extra: points)
         XCTAssertEqual((0 ..< 7).map { mirrored.position[$0].x }, [0, 1, 2, 3, 4, 3, 2])
     }
+
+    /// count is a float: around steps 1/2.2, between steps 1/(2.5 − 1) (1c5490.c:7350-7435).
+    func testSequenceCountIsFractional() {
+        let around = burst(4, initializers: #"{"name": "mapsequencearoundcontrolpoint", "count": 2.2}"#,
+                           origin: "2 0 0")
+        let expectedAround: [SIMD3<Float>] = [
+            SIMD3(2, 0, 0), SIMD3(-1.918986, 0.563465, 0), SIMD3(1.682507, -1.081282, 0),
+            SIMD3(-1.309721, 1.511499, 0),
+        ]
+        for (slot, expected) in expectedAround.enumerated() {
+            assertEqual(around.position[slot], expected, accuracy: 1e-4)
+        }
+        let between = burst(4, initializers: #"{"name": "mapsequencebetweencontrolpoints", "count": 2.5}"#,
+                            extra: #", "controlpoint": [{"id": 1, "offset": "4 0 0"}]"#)
+        for (slot, x) in [Float(0), 2.666667, 0, 2.666667].enumerated() {
+            XCTAssertEqual(between.position[slot].x, x, accuracy: 1e-4, "slot \(slot)")
+        }
+    }
 }

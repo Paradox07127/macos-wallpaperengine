@@ -329,7 +329,7 @@ final class ParityParticleEmitterTests: XCTestCase {
         for shape in ["sphererandom", "boxrandom"] {
             let rng = WPEParityMT19937(seed: 7)
             var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
-            {"maxcount": 4, "emitter": [{"name": "\(shape)", "rate": 20, "instantaneous": 4,
+            {"maxcount": 4, "emitter": [{"name": "\(shape)", "rate": 20,
                                       "directions": "2 3 5", "distancemax": 0, "speedmin": 2, "speedmax": 6}],
              "initializer": [{"name": "lifetimerandom", "min": 2, "max": 2}]}
             """), instanceOverride: .init(count: 0), rng: rng)
@@ -337,6 +337,19 @@ final class ParityParticleEmitterTests: XCTestCase {
             XCTAssertEqual(particles.liveCount, 0)
             XCTAssertEqual(particles.capacity, 4, "count scales emission, not the maxcount slots")
             XCTAssertEqual(rng.next(), WPEParityMT19937(seed: 7).next(), "zero count leaves the shared stream at word1")
+        }
+    }
+
+    /// count binds only rate and maxtoemitperperiod; the burst reads the raw instantaneous (2378a0.c:423-427).
+    func testInstanceCountLeavesTheInstantaneousBurstUnscaled() {
+        for (instantaneous, count) in [(1, 0.2), (4, 0.5)] {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount": 4, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": \(instantaneous),
+                                      "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}]}
+            """), instanceOverride: .init(count: count), rng: WPEParityMT19937())
+            particles.advance(dt: 0.1)
+            XCTAssertEqual(particles.liveCount, instantaneous, "count \(count)")
         }
     }
 }

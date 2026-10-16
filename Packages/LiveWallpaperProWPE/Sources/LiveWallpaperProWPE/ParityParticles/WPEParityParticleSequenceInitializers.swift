@@ -72,7 +72,7 @@ struct WPEParityParticlePositionOffset: Equatable, Sendable {
 
 /// mapsequencearoundcontrolpoint (D/1401bbc90.c). `t` advances by 1/count per birth, shared by the system.
 struct WPEParityParticleSequenceAround: Equatable, Sendable {
-    var count: Int
+    var count: Float
     var bounds: SIMD2<Float>
     var speedMin: SIMD3<Float>
     var speedMax: SIMD3<Float>
@@ -84,7 +84,7 @@ struct WPEParityParticleSequenceAround: Equatable, Sendable {
     var controlPoint: Int
 
     init(_ entry: WPEParityParticleEntry) {
-        count = max(entry.integer("count", 32), 1)
+        count = entry.number("count", 32)
         let bounds = entry.vector("bounds", SIMD3(0, 1, 0))
         self.bounds = SIMD2(bounds.x, bounds.y)
         speedMin = entry.vector("speedmin", .zero)
@@ -100,7 +100,7 @@ struct WPEParityParticleSequenceAround: Equatable, Sendable {
 
 /// mapsequencebetweencontrolpoints (D/1401bc080.c). `t` advances by 1/(count − 1) per birth.
 struct WPEParityParticleSequenceBetween: Equatable, Sendable {
-    var count: Int
+    var count: Float
     var bounds: SIMD2<Float>
     var mirror: Bool
     var start: Int
@@ -111,7 +111,7 @@ struct WPEParityParticleSequenceBetween: Equatable, Sendable {
     var sizeReduction: Float
 
     init(_ entry: WPEParityParticleEntry) {
-        count = max(entry.integer("count", 32), 2)
+        count = entry.number("count", 32)
         let bounds = entry.vector("bounds", SIMD3(0, 1, 0))
         self.bounds = SIMD2(bounds.x, bounds.y)
         mirror = WPEParityParticleJSON.string(entry.json["limitbehavior"])?.lowercased() == "mirror"

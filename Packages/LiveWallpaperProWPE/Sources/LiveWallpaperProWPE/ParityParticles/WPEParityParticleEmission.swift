@@ -24,7 +24,8 @@ extension WPEParityParticleSystem {
                     }
                 }
             }
-            let burst = state.burstPending ? Int(Float(emitter.instantaneous) * instance.count) : 0
+            // count binds rate and maxtoemitperperiod only; the burst reads the raw value (2378a0.c:423-427).
+            let burst = state.burstPending ? emitter.instantaneous : 0
             state.burstPending = false
             let accumulated = state.accumulator + rate * dt
             var count = burst

@@ -1198,8 +1198,8 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
-    /// Every child gets the object's override (22f890 → 1d15a0) before its first birth; count scales emission
-    /// only, so slots stay at maxcount (ebe0.c:355).
+    /// Every child gets the object's override (22f890 → 1d15a0) before its first birth; count scales the rate
+    /// only, so slots stay at maxcount (ebe0.c:355) and bursts are unscaled (2378a0.c:423-427).
     func testChildrenUseTheObjectOverrideBeforeTheirFirstBirth() throws {
         let children = #", "children": [{"name": "particles/kid.json"}, {"name": "particles/one.json"}, "#
             + #"{"name": "particles/kid.json", "type": "eventspawn", "maxcount": 4}]"#
@@ -1216,17 +1216,17 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.1, frames: ["5": .init()])
         let root = try XCTUnwrap(Self.root(scene))
         XCTAssertEqual(root.capacity, 4)
-        XCTAssertEqual(root.liveCount, 2)
+        XCTAssertEqual(root.liveCount, 4)
         XCTAssertEqual(root.children.count, 2)
         let kid = try XCTUnwrap(root.children.first)
         XCTAssertEqual(kid.capacity, 4)
-        XCTAssertEqual(kid.liveCount, 2)
+        XCTAssertEqual(kid.liveCount, 4)
         XCTAssertEqual(kid.initialColor[0], SIMD3(0, 0, 1))
         XCTAssertEqual(root.children.last?.liveCount, 1, "a maxcount-1 child must keep its slot under count 0.5")
         let spawned = try XCTUnwrap(root.eventChildren.first)
-        XCTAssertEqual(spawned.count, 2)
+        XCTAssertEqual(spawned.count, 4)
         for child in spawned {
-            XCTAssertEqual(child.liveCount, 2)
+            XCTAssertEqual(child.liveCount, 4)
             XCTAssertEqual(child.initialColor[0], SIMD3(0, 0, 1))
         }
     }

@@ -273,10 +273,14 @@ public struct WPEParityParticleSystem {
     }
 
     private static func sequenceState(_ initializer: WPEParityParticleInitializer) -> WPEParityParticleSequenceState {
+        // 1c5490.c:7350-7435: a divisor ≤ 1e-4 becomes 1e-4; NaN fails that test and stays NaN.
+        func step(_ divisor: Float) -> Float {
+            1 / (divisor <= 1e-4 ? 1e-4 : divisor)
+        }
         switch initializer {
-        case let .sequenceAround(field): WPEParityParticleSequenceState(step: 1 / Float(field.count))
-        case let .sequenceBetween(field): WPEParityParticleSequenceState(step: 1 / Float(field.count - 1))
-        default: WPEParityParticleSequenceState()
+        case let .sequenceAround(field): return WPEParityParticleSequenceState(step: step(field.count))
+        case let .sequenceBetween(field): return WPEParityParticleSequenceState(step: step(field.count - 1))
+        default: return WPEParityParticleSequenceState()
         }
     }
 
@@ -711,7 +715,7 @@ public struct WPEParityParticleSystem {
         for (emitter, state) in zip(config.emitters, emitterStates) {
             // 2378a0:1771–1788 uses compiled rate/burst, after delay and duration complete.
             // A hot count=0 does not kill live slots, but it must allow the finished subtree into the pool.
-            let pendingBurst = state.burstPending && Float(emitter.instantaneous) * instance.count > 0
+            let pendingBurst = state.burstPending && emitter.instantaneous > 0
             let idle = state.delayLeft <= 0 && state.durationLeft <= 0
                 && emitter.rate * instance.count <= 0 && !pendingBurst && !emitter.periodic
             if !state.disabled, !idle {
