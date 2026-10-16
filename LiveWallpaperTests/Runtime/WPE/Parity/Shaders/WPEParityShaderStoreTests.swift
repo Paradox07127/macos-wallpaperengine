@@ -101,6 +101,45 @@ struct WPEParityShaderStoreTests {
         #expect(await compiler.calls == 1)
     }
 
+    @Test func statisticsSplitRequestsByOutcome() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = Compiler()
+        let first = request(1), second = request(2)
+        let storeA = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: directory))
+        _ = try await storeA.artifact(for: first)
+        #expect(storeA.statistics.compilations == 1)
+        _ = try await storeA.artifact(for: first)
+        #expect(storeA.statistics.memoryHits == 1)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0 ..< 8 {
+                group.addTask { _ = try await storeA.artifact(for: second) }
+            }
+            try await group.waitForAll()
+        }
+        let a = storeA.statistics
+        #expect(a.compilations == 2)
+        #expect(a.memoryHits + a.joinedRequests == 8)
+
+        let storeB = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: directory))
+        _ = try await storeB.artifact(for: first)
+        let b = storeB.statistics
+        #expect(b.diskHits == 1)
+        #expect(b.compilations == 0)
+
+        let fresh = try self.directory()
+        defer { try? FileManager.default.removeItem(at: fresh) }
+        let storeC = WPEParityShaderStore(compiler: Compiler(failuresRemaining: 1),
+                                          diskCache: WPEParityShaderDiskCache(cachesURL: fresh))
+        _ = try? await storeC.artifact(for: first)
+        let c = storeC.statistics
+        #expect(c.compilationFailures == 1)
+
+        for counts in [a, b, c] {
+            #expect(counts.requests == counts.memoryHits + counts.joinedRequests + counts.diskHits + counts.compilations)
+        }
+    }
+
     @Test func failedCompileReachesAllWaitersAndRetries() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }

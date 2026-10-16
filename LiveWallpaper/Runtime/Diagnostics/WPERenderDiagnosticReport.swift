@@ -85,6 +85,11 @@ enum WPERenderDiagnosticReport {
                 lines.append("Parity encoded draws (last frame): \(parity.encodedDrawCount) of \(parity.drawCount)")
                 let skipped = parity.skippedDraws.keys.sorted().map { "\($0)=\(parity.skippedDraws[$0, default: 0])" }
                 lines.append("Parity skipped draws: \(skipped.isEmpty ? "none" : skipped.joined(separator: ", "))")
+                if let cache = parity.shaderCache {
+                    lines.append("Parity shader cache: requests=\(cache.requests) memory=\(cache.memoryHits)"
+                        + " joined=\(cache.joinedRequests) disk=\(cache.diskHits) compiled=\(cache.compilations)"
+                        + " failed=\(cache.compilationFailures)")
+                }
             } else {
                 lines.append("Parity pipeline: no active snapshot")
             }

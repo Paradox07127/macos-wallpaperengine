@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperProWPE
+import os
 
 actor WPEParityShaderStore {
     enum ArtifactError: Error {
@@ -8,10 +9,27 @@ actor WPEParityShaderStore {
         case invalidReflection
     }
 
+    /// Each request has one outcome: memoryHits, joinedRequests, diskHits or compilations.
+    struct Statistics: Sendable, Equatable {
+        var requests = 0
+        var memoryHits = 0
+        var joinedRequests = 0
+        var diskHits = 0
+        /// Includes disk entries that failed decode.
+        var compilations = 0
+        /// Compilations that threw or whose output failed decode.
+        var compilationFailures = 0
+    }
+
     private let compiler: any WPEParityShaderCompiling
     private let diskCache: WPEParityShaderDiskCache
     private var memory: [WPEParityShaderKey: WPEParityShaderArtifact] = [:]
     private var inFlight: [WPEParityShaderKey: Task<WPEParityShaderArtifact, Error>] = [:]
+    private nonisolated let counts = OSAllocatedUnfairLock(initialState: Statistics())
+
+    nonisolated var statistics: Statistics {
+        counts.withLock { $0 }
+    }
 
     init(compiler: any WPEParityShaderCompiling, diskCache: WPEParityShaderDiskCache) {
         self.compiler = compiler
@@ -19,10 +37,13 @@ actor WPEParityShaderStore {
     }
 
     func artifact(for request: WPEParityShaderCompileRequest) async throws -> WPEParityShaderArtifact {
+        count(\.requests)
         if let artifact = memory[request.key] {
+            count(\.memoryHits)
             return artifact
         }
         if let task = inFlight[request.key] {
+            count(\.joinedRequests)
             return try await task.value
         }
         let task = Task { try await self.load(request) }
@@ -34,16 +55,29 @@ actor WPEParityShaderStore {
         defer { inFlight[request.key] = nil }
         if let compiled = await diskCache.read(request.key) {
             if let artifact = try? Self.decode(compiled, for: request) {
+                count(\.diskHits)
                 memory[request.key] = artifact
                 return artifact
             }
             await diskCache.remove(request.key)
         }
-        let compiled = try await compiler.compile(request)
-        let artifact = try Self.decode(compiled, for: request)
+        count(\.compilations)
+        let compiled: WPEParityCompiledStages
+        let artifact: WPEParityShaderArtifact
+        do {
+            compiled = try await compiler.compile(request)
+            artifact = try Self.decode(compiled, for: request)
+        } catch {
+            count(\.compilationFailures)
+            throw error
+        }
         await diskCache.write(compiled, for: request.key)
         memory[request.key] = artifact
         return artifact
+    }
+
+    private nonisolated func count(_ outcome: any WritableKeyPath<Statistics, Int> & Sendable) {
+        counts.withLock { $0[keyPath: outcome] += 1 }
     }
 
     private static func decode(_ compiled: WPEParityCompiledStages,

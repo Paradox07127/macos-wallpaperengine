@@ -154,7 +154,8 @@ final class WPEParitySceneDriver {
             skippedDraws: renderer.skipped.values.reduce(into: [:]) { $0[$1.category, default: 0] += 1 },
             encodeFrameCPUMeanMilliseconds: encodeCount == 0 ? nil : encodeSeconds / Double(encodeCount) * 1000,
             arenaBytes: renderer.arenaBytes, heapBytes: renderer.heapBytes,
-            dedicatedTextureBytes: renderer.dedicatedTextureBytes, isStatic: renderer.isStatic
+            dedicatedTextureBytes: renderer.dedicatedTextureBytes, isStatic: renderer.isStatic,
+            shaderCache: planSource?.shaders.store.statistics
         )
     }
 
@@ -846,13 +847,20 @@ struct WPEParityRuntimeDiagnostics: Sendable, Equatable {
     let heapBytes: Int
     let dedicatedTextureBytes: Int
     let isStatic: Bool
+    /// Counts of the loaded scene's shader store, which a resize re-plan keeps.
+    let shaderCache: WPEParityShaderStore.Statistics?
 
     var qaFields: [String: Any] {
-        [
+        let cache = shaderCache.map { cache in
+            ["requests": cache.requests, "memoryHits": cache.memoryHits, "joinedRequests": cache.joinedRequests,
+             "diskHits": cache.diskHits, "compilations": cache.compilations,
+             "compilationFailures": cache.compilationFailures]
+        }
+        return [
             "loadGeneration": loadGeneration, "drawCount": drawCount, "encodedDrawCount": encodedDrawCount,
             "skippedDraws": skippedDraws, "encodeFrameCPUMeanMs": encodeFrameCPUMeanMilliseconds ?? NSNull(),
             "arenaBytes": arenaBytes, "heapBytes": heapBytes, "dedicatedTextureBytes": dedicatedTextureBytes,
-            "static": isStatic,
+            "static": isStatic, "shaderCache": cache ?? NSNull(),
         ]
     }
 }

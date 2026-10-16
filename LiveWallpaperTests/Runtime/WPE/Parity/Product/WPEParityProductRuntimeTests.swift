@@ -92,6 +92,9 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         let woken = try XCTUnwrap(wokenState)
         XCTAssertTrue(woken.isLoaded)
         XCTAssertTrue(woken.hasPresentedFrame)
+        let cache = try XCTUnwrap(woken.parity?.shaderCache)
+        XCTAssertEqual(cache.compilations, cache.compilationFailures, "the wake recompiled a program the disk had")
+        XCTAssertGreaterThan(cache.diskHits, 0)
         XCTAssertEqual(harness.activity.latest?.producesFrames, true)
         print("parity wake: GPU allocated \(device.currentAllocatedSize) bytes")
     }
@@ -179,8 +182,11 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         XCTAssertFalse(parity.isStatic, "the waterripple and foliagesway effects read g_Time")
         XCTAssertEqual(Set(parity.qaFields.keys), [
             "loadGeneration", "drawCount", "encodedDrawCount", "skippedDraws", "encodeFrameCPUMeanMs", "arenaBytes",
-            "heapBytes", "dedicatedTextureBytes", "static",
+            "heapBytes", "dedicatedTextureBytes", "static", "shaderCache",
         ])
+        let cache = try XCTUnwrap(parity.shaderCache)
+        XCTAssertGreaterThan(cache.requests, 0)
+        XCTAssertEqual(cache.requests, cache.memoryHits + cache.joinedRequests + cache.diskHits + cache.compilations)
         let diagnostics = SceneRendererDiagnostics(loadDiagnostics: nil, resolution: snapshot.resolution,
                                                    shaderErrors: .init(count: 0, entries: []),
                                                    gpuErrors: .init(count: 0, last: nil), parity: snapshot.parity)

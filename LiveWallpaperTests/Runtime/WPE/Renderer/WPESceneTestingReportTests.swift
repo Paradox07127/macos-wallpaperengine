@@ -28,6 +28,24 @@ struct WPESceneTestingReportTests {
         #expect(report.contains("GPU errors: 0"))
     }
 
+    @Test("A parity snapshot reports its shader cache outcomes")
+    func paritySnapshotReportsShaderCache() {
+        let cache = WPEParityShaderStore.Statistics(requests: 12, memoryHits: 3, joinedRequests: 2, diskHits: 4,
+                                                    compilations: 3, compilationFailures: 1)
+        let parity = WPEParityRuntimeDiagnostics(
+            loadGeneration: 1, drawCount: 4, encodedDrawCount: 4, skippedDraws: [:],
+            encodeFrameCPUMeanMilliseconds: nil, arenaBytes: 0, heapBytes: 0, dedicatedTextureBytes: 0,
+            isStatic: false, shaderCache: cache
+        )
+        let diagnostics = SceneRendererDiagnostics(
+            loadDiagnostics: nil, resolution: .init(events: []), shaderErrors: .init(count: 0, entries: []),
+            gpuErrors: .init(count: 0, last: nil), parity: parity
+        )
+        let report = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: diagnostics, errorCode: nil,
+                                                    environmentLines: [])
+        #expect(report.contains("Parity shader cache: requests=12 memory=3 joined=2 disk=4 compiled=3 failed=1"))
+    }
+
     @Test("Polling updates an attempt, while switching and reloading retain separate reports")
     func attemptsSurviveSwitching() {
         let reports = WPESceneTestingReports()
