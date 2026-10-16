@@ -64,7 +64,7 @@ struct WPEParticleInstanceControlPointTests {
         return try #require(document.particleObjects.first)
     }
 
-    @Test("instanceoverride controlpointN parses; angles stay unread on purpose")
+    @Test("instanceoverride controlpointN and controlpointangleN parse into separate maps")
     func controlPointOverridesParse() throws {
         let object = try particleObject(
             #""size": 0.5, "controlpoint1": "-204.06 -81.03 0", "controlpoint7": "1 2 3", "controlpointangle1": "0 0 90""#
@@ -73,9 +73,8 @@ struct WPEParticleInstanceControlPointTests {
         #expect(override.controlPointOffsets[1] == SIMD3<Double>(-204.06, -81.03, 0))
         #expect(override.controlPointOffsets[7] == SIMD3<Double>(1, 2, 3))
         #expect(override.controlPointOffsets[8] == nil)
-        // `controlpointangle1` is an orientation, not an offset — nothing consumes
-        // angles yet, so it must NOT be folded in as if it were a position.
         #expect(override.controlPointOffsets.count == 2)
+        #expect(override.controlPointAngles[1] == SIMD3<Double>(0, 0, 90))
         #expect(override.size == 0.5, "control: sibling keys still parse")
     }
 }

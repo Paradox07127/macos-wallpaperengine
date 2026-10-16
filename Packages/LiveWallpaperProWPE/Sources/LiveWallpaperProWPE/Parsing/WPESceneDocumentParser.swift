@@ -1608,7 +1608,8 @@ public enum WPESceneDocumentParser {
             brightness: parseDouble(unwrap("brightness")),
             color: parseNormalizedParticleColor(unwrap("colorn")) ?? parseVector3(unwrap("color")),
             alphaAnimation: WPEValueParser.animatedValue(dict["alpha"]),
-            controlPointOffsets: parseInstanceControlPoints(dict),
+            controlPointOffsets: parseInstanceControlPoints(dict, prefix: "controlpoint"),
+            controlPointAngles: parseInstanceControlPoints(dict, prefix: "controlpointangle"),
             alphaScript: alphaScript,
             alphaScriptProperties: alphaScriptProperties
         )
@@ -1622,24 +1623,24 @@ public enum WPESceneDocumentParser {
             && value.color == nil
             && value.alphaAnimation == nil
             && value.controlPointOffsets.isEmpty
+            && value.controlPointAngles.isEmpty
             && value.alphaScript == nil
             && value.rateScript == nil
             ? nil
             : value
     }
 
-    /// `controlpointangleN` are orientations, not offsets, and are skipped on purpose.
-    private static func parseInstanceControlPoints(_ dict: [String: Any]) -> [Int: SIMD3<Double>] {
-        var offsets: [Int: SIMD3<Double>] = [:]
+    /// `<prefix>N` vectors keyed by N; under the bare `controlpoint` prefix `angleN` is not an Int, so angles stay out.
+    private static func parseInstanceControlPoints(_ dict: [String: Any], prefix: String) -> [Int: SIMD3<Double>] {
+        var values: [Int: SIMD3<Double>] = [:]
         for (key, raw) in dict {
             let lowered = key.lowercased()
-            guard lowered.hasPrefix("controlpoint"),
-                  !lowered.hasPrefix("controlpointangle"),
-                  let index = Int(lowered.dropFirst("controlpoint".count)),
-                  let offset = unwrapVector3(raw) else { continue }
-            offsets[index] = offset
+            guard lowered.hasPrefix(prefix),
+                  let index = Int(lowered.dropFirst(prefix.count)),
+                  let value = unwrapVector3(raw) else { continue }
+            values[index] = value
         }
-        return offsets
+        return values
     }
 
     private static func parseNormalizedParticleColor(_ raw: Any?) -> SIMD3<Double>? {

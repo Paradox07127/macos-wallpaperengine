@@ -360,6 +360,41 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
+    func testAuthoredInstanceControlPointReachesTheRootPrewarm() throws {
+        let particle = """
+        {"maxcount": 4, "starttime": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 20, "distancemax": 0, "controlpoint": 1,
+                      "directions": "1 0 0", "speedmin": 3, "speedmax": 3}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        let override = ["controlpoint1": "100 0 0", "controlpointangle1": "0 0 1.5707964"]
+        let scene = try Self.scene([["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                     "instanceoverride": override]],
+                                   particles: ["particles/fx.json": particle])
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.liveCount, 4)
+        XCTAssertEqual(root.controlPointTranslation(1), SIMD3(100, 0, 0))
+        for slot in 0 ..< root.liveCount {
+            XCTAssertEqual(root.position[slot], SIMD3(100, 0, 0), "prewarm births at the overridden CP")
+            XCTAssertEqual(abs(root.velocity[slot].y), 3, accuracy: 1e-5, "prewarm births along the CP angle")
+            XCTAssertEqual(root.velocity[slot].x, 0, accuracy: 1e-5)
+        }
+    }
+
+    func testInstanceOverrideWithOnlyAControlPointAngleParses() throws {
+        let sceneJSON: [String: Any] = [
+            "camera": ["center": "0 0 0"], "general": [:],
+            "objects": [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                         "instanceoverride": ["controlpointangle1": "0 0 1"]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: sceneJSON),
+                                                        userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let override = try XCTUnwrap(document.particleObjects.first?.instanceOverride)
+        XCTAssertEqual(override.controlPointAngles, [1: SIMD3(0, 0, 1)])
+    }
+
     func testParticleDrawKeysAndContainerNodesAgreeOnCaptureAndWorkshopScenes() throws {
         let install = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")

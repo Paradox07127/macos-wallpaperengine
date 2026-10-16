@@ -811,6 +811,8 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     public let alphaAnimation: WPESceneAnimatedValue?
     /// `controlpointN`: per-instance replacement of the definition's control-point offsets, keyed by N. An authored control point with no `offset` defaults to 0,0,0.
     public let controlPointOffsets: [Int: SIMD3<Double>]
+    /// `controlpointangleN` keyed by N, stored as authored: the same radians as script `instance.controlpointangleN`.
+    public let controlPointAngles: [Int: SIMD3<Double>]
     /// Script-driven `alpha` override; `alpha` above is only the seed.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
@@ -827,6 +829,7 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
         color: SIMD3<Double>? = nil,
         alphaAnimation: WPESceneAnimatedValue? = nil,
         controlPointOffsets: [Int: SIMD3<Double>] = [:],
+        controlPointAngles: [Int: SIMD3<Double>] = [:],
         alphaScript: String? = nil,
         alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
     ) {
@@ -841,6 +844,7 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
         self.color = color
         self.alphaAnimation = alphaAnimation
         self.controlPointOffsets = controlPointOffsets
+        self.controlPointAngles = controlPointAngles
         self.alphaScript = alphaScript
         self.alphaScriptProperties = alphaScriptProperties
     }
