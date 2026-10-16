@@ -76,6 +76,8 @@ public struct WPEParityParticleSystem {
     private(set) var colornActive = false
     /// Re-hued colorrandom endpoints (0–255) by initializer index; empty while colorn is invalid.
     private var colorRanges: [Int: (low: SIMD3<Float>, high: SIMD3<Float>)] = [:]
+    /// Re-hued colorchange operators by operator index; empty while colorn is invalid.
+    private var colorChanges: [Int: WPEParityParticleOperator.Kind] = [:]
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
@@ -483,18 +485,25 @@ public struct WPEParityParticleSystem {
             && simd_reduce_max(abs(instance.color - reference)) >= 0.0035294
         colornRootValid = rootColornValid ?? colornActive
         colorRanges.removeAll()
+        colorChanges.removeAll()
         guard colornActive else { return }
-        // Both endpoints move by colorn − reference in HSV: hue wraps, s/v clamp (1d15a0.c:248-402).
+        // Both endpoints move by colorn − reference in HSV: hue wraps, s/v clamp (1d15a0.c:248-402, 403-580).
         let shift = WPEParityParticleMath.rgbToHSV(instance.color) - WPEParityParticleMath.rgbToHSV(reference)
         func rehue(_ rgb: SIMD3<Float>) -> SIMD3<Float> {
-            let hsv = WPEParityParticleMath.rgbToHSV(rgb / 255) + shift
+            let hsv = WPEParityParticleMath.rgbToHSV(rgb) + shift
             let saturated = simd_clamp(hsv, .zero, SIMD3(repeating: 1))
             return WPEParityParticleMath.hsvToRGB(hue: (hsv.x - hsv.x.rounded(.down)) * 360,
-                                                  saturation: saturated.y, value: saturated.z) * 255
+                                                  saturation: saturated.y, value: saturated.z)
         }
         for (index, initializer) in config.initializers.enumerated() {
             if case let .color(low, high, _) = initializer {
-                colorRanges[index] = (rehue(low), rehue(high))
+                colorRanges[index] = (rehue(low / 255) * 255, rehue(high / 255) * 255)
+            }
+        }
+        for (index, entry) in config.operators.enumerated() {
+            if case let .colorChange(startTime, endTime, start, end) = entry.kind {
+                colorChanges[index] = .colorChange(startTime: startTime, endTime: endTime,
+                                                   start: rehue(start), end: rehue(end))
             }
         }
     }
@@ -873,14 +882,15 @@ public struct WPEParityParticleSystem {
             alpha[slot] = initialAlpha[slot]
             previousPosition[slot] = position[slot]
         }
-        for entry in config.operators {
+        for (index, entry) in config.operators.enumerated() {
             if case let .boids(field) = entry.kind {
                 applyBoids(field, blend: entry.blend, dt: dt)
                 continue
             }
+            let kind = colorChanges[index] ?? entry.kind
             for slot in 0 ..< highWater where lifetime[slot] != 0 {
                 let t = age[slot] / lifetime[slot]
-                apply(entry.kind, slot: slot, t: t, weight: entry.blend?.weight(t: t) ?? 1, dt: dt)
+                apply(kind, slot: slot, t: t, weight: entry.blend?.weight(t: t) ?? 1, dt: dt)
             }
         }
     }

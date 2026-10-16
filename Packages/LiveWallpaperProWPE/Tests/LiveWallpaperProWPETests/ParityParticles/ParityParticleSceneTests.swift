@@ -1316,6 +1316,37 @@ final class ParityParticleSceneTests: XCTestCase {
         }
     }
 
+    /// A valid colorn moves colorchange's start/end by colorn − reference in HSV (1d15a0.c:403-580).
+    func testColornRehuesColorChangeValues() throws {
+        let particle = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 1, "max": 1}],
+         "operator": [{"name": "colorchange", "startvalue": "1 0.749 0", "endvalue": "1 0 0",
+                       "starttime": 0, "endtime": 1}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        let cases: [(String, SIMD3<Float>, SIMD3<Float>)] = [
+            ("0.239 0.161 0.271", SIMD3(0.239, 0.161, 0.271), SIMD3(0.161, 0.16539, 0.271)),
+            ("1 0.749 0", SIMD3(1, 0.749, 0), SIMD3(1, 0, 0)),
+        ]
+        for (colorn, start, end) in cases {
+            let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                             "instanceoverride": ["colorn": colorn]]]
+            var scene = try Self.scene(objects, particles: ["particles/fx.json": particle], version: 5)
+            for _ in 0 ..< 3 {
+                scene.advance(dt: 0.1, frames: ["5": .init()])
+            }
+            let root = try XCTUnwrap(Self.root(scene))
+            XCTAssertEqual(root.liveCount, 1, colorn)
+            let t = root.age[0] / root.lifetime[0]
+            XCTAssertGreaterThan(t, 0.1, colorn)
+            let expected = root.initialColor[0] * (start + (end - start) * t)
+            XCTAssertLessThan(simd_reduce_max(abs(root.color[0] - expected)), 1e-4,
+                              "colorn \(colorn): \(root.color[0]) expected \(expected)")
+        }
+    }
+
     /// From scene version 5 a system with a colour source is seeded with brightness only (c5490:767-770, 6656-6663).
     func testSceneVersionFiveStopsTheColornSeedOnColorSystems() throws {
         let kid = """
