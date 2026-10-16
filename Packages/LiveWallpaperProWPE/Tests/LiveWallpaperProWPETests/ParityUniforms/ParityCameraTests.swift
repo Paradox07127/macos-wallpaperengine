@@ -294,4 +294,37 @@ final class ParityCameraTests: XCTestCase {
         let layers = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(1920, 1080))
         XCTAssertEqual(layers.layers["1"]?.origin, SIMD3(7, 9, 0))
     }
+
+    /// 140186c90.c:1045-1052: the ortho bit without camera paths loads the scene camera at eye 0.
+    func testOrthoSceneWithoutPathsResetsTheRootPose() throws {
+        func cameras(_ ortho: String, objects: String = "[]") throws -> (root: WPEParityCamera, initial: WPEParityCamera) {
+            let document = try ParityCameraFixture.document(json: """
+            {"camera": {"center": "100 200 -1", "eye": "100 200 0", "up": "0 1 0"},
+             "general": {"orthogonalprojection": \(ortho)}, "objects": \(objects)}
+            """)
+            let scene = WPEParityProgramScene(document: document,
+                                              assets: WPEParityProgramAssets(sceneDirectory: FileManager.default.temporaryDirectory,
+                                                                             assetRoots: []),
+                                              settings: .init())
+            let pathless = scene.engineFlags.orthographicProjection && scene.cameraPaths.paths.isEmpty
+            return (WPEParityCamera.root(document: document, renderTargetSize: SIMD2(1920, 1080), orthoWithoutPaths: pathless),
+                    WPEParityCamera(document: document, renderTargetSize: SIMD2(1920, 1080), orthoWithoutPaths: pathless))
+        }
+        let ortho = try cameras(#"{"width": 1920, "height": 1080}"#)
+        for camera in [ortho.root, ortho.initial] {
+            XCTAssertEqual(camera.eye, .zero)
+            XCTAssertEqual(camera.center, SIMD3(0, 0, -1))
+            XCTAssertEqual(camera.up, SIMD3(0, 1, 0))
+            XCTAssertEqual(camera.eyePosition, SIMD3(960, 540, 2000))
+        }
+        for authored in ["null", #"{"width": 0, "height": 1080}"#] {
+            let kept = try cameras(authored)
+            XCTAssertEqual(kept.root.eye, SIMD3(100, 200, 0), authored)
+            XCTAssertEqual(kept.initial.eye, SIMD3(100, 200, 0), authored)
+        }
+        let object = try cameras(#"{"width": 1920, "height": 1080}"#,
+                                 objects: #"[{"id": 1, "camera": "camera", "origin": "7 8 9"}]"#)
+        XCTAssertEqual(object.root.eye, .zero)
+        XCTAssertEqual(object.initial.eye, SIMD3(7, 8, 9), "a camera object keeps its own pose")
+    }
 }

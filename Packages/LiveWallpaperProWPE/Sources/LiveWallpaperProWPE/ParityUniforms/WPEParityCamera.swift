@@ -75,9 +75,10 @@ public struct WPEParityCamera: Sendable, Equatable {
         self.scenePerspective = scenePerspective
     }
 
-    /// `cameraZoom` is the camera path or camera object zoom for the frame.
+    /// `cameraZoom` is the camera path or camera object zoom for the frame. `orthoWithoutPaths`: the engine ortho bit
+    /// is set and `camera.paths` loaded none (`WPEParityProgramScene.engineFlags`, `.cameraPaths`).
     public init(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,
-                alignment: WPEParityCameraAlignment = .noCrop, cameraZoom: Float = 1) {
+                alignment: WPEParityCameraAlignment = .noCrop, cameraZoom: Float = 1, orthoWithoutPaths: Bool = false) {
         let general = document.general
         let ortho = general.orthogonalProjection
         let size = Self.autoLayer(document)?.size.map { SIMD2(Float($0.width), Float($0.height)) }
@@ -88,9 +89,10 @@ public struct WPEParityCamera: Sendable, Equatable {
         if document.cameraMotion != nil {
             perspective?.fov = Float(document.camera.fov)
         }
+        let (eye, center, up) = orthoWithoutPaths && document.cameraMotion == nil ? Self.originPose
+            : (SIMD3(document.camera.eye), SIMD3(document.camera.center), SIMD3(document.camera.up))
         // The V parallax push needs an orthographic scene (14018aac0.c:87).
-        self.init(eye: SIMD3(document.camera.eye), center: SIMD3(document.camera.center),
-                  up: SIMD3(document.camera.up), size: size, renderTargetSize: renderTargetSize,
+        self.init(eye: eye, center: center, up: up, size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
                   perspectiveFOV: Self.perspectiveOverrideFOV(general: resolved),
@@ -98,6 +100,9 @@ public struct WPEParityCamera: Sendable, Equatable {
                       ? WPEParityCameraShake(general: resolved, orthographic: perspective == nil) : nil,
                   scenePerspective: perspective)
     }
+
+    /// The scene camera an ortho scene without camera paths loads, whatever `camera` authored (140186c90.c:1045-1052).
+    private static let originPose = (eye: SIMD3<Float>.zero, center: SIMD3<Float>(0, 0, -1), up: SIMD3<Float>(0, 1, 0))
 
     /// Raw O+0x144: strict fromJSON Float or the native constructor's 95 degrees, without effective-FOV clamping.
     public static func perspectiveOverrideFOV(general: WPESceneJSONValue) -> Float {
@@ -118,11 +123,10 @@ public struct WPEParityCamera: Sendable, Equatable {
     /// The authored root camera, before any camera object takes control. A hidden camera object must not leave
     /// its parse-time pose behind when playback falls back to the root camera or its paths.
     public static func root(document: WPESceneDocument, renderTargetSize: SIMD2<Float>,
-                            alignment: WPEParityCameraAlignment = .noCrop) -> Self {
+                            alignment: WPEParityCameraAlignment = .noCrop, orthoWithoutPaths: Bool = false) -> Self {
         var camera = Self(document: document, renderTargetSize: renderTargetSize, alignment: alignment)
-        camera.eye = SIMD3(document.staticCamera.eye)
-        camera.center = SIMD3(document.staticCamera.center)
-        camera.up = SIMD3(document.staticCamera.up)
+        (camera.eye, camera.center, camera.up) = orthoWithoutPaths ? Self.originPose
+            : (SIMD3(document.staticCamera.eye), SIMD3(document.staticCamera.center), SIMD3(document.staticCamera.up))
         if camera.scenePerspective != nil {
             camera.scenePerspective?.fov = WPEParityScenePerspective(general: document.resolvedGeneralJSON).fov
         }

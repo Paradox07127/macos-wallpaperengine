@@ -471,10 +471,14 @@ struct WPEParityFrameDrawPlanner {
         resources = Self.resources(frame)
         targets = Self.targets(frame)
         // No camera path or camera object zoom yet.
-        layers = WPEParityLayerTransformSet(document: plan.document,
-                                            renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
+        let renderTargetSize = SIMD2(Float(plan.width), Float(plan.height))
+        layers = WPEParityLayerTransformSet(document: plan.document, renderTargetSize: renderTargetSize,
                                             alignment: plan.alignment, cameraZoom: 1,
                                             textSizes: plan.scene.textSizes, puppetModels: plan.scene.puppetModels)
+        layers.camera = WPEParityCamera(document: plan.document, renderTargetSize: renderTargetSize,
+                                        alignment: plan.alignment,
+                                        orthoWithoutPaths: plan.scene.engineFlags.orthographicProjection
+                                            && plan.scene.cameraPaths.paths.isEmpty)
         lights = WPEParityUniformLights(document: plan.document, transforms: layers)
         textAtlases = WPEParityTextAtlasTextures(atlases: plan.scene.textAtlases)
         textAtlases.upload(device: device)

@@ -717,7 +717,9 @@ final class WPEParityFrameRenderer {
         screen = WPEParityUniformScreen(clientWidth: backbuffer.width, clientHeight: backbuffer.height)
         rootCamera = WPEParityCamera.root(document: plan.document,
                                           renderTargetSize: SIMD2(Float(plan.width), Float(plan.height)),
-                                          alignment: plan.alignment)
+                                          alignment: plan.alignment,
+                                          orthoWithoutPaths: plan.scene.engineFlags.orthographicProjection
+                                              && plan.scene.cameraPaths.paths.isEmpty)
         camera = rootCamera
         generalZoom = Float(plan.document.general.zoom)
         cameraPaths = plan.scene.cameraPaths
