@@ -431,7 +431,8 @@ public struct WPEParityParticleSystem {
         if state.hdr, let value = scalar("brightness") {
             next.brightness = value
         }
-        if let value = vector("colorn") {
+        // The script engine seeds unwritten colorn with the current colour; only a changed value is a script write.
+        if let value = vector("colorn"), next.hasColorn || value != next.color {
             next.color = value
             next.hasColorn = true
         }

@@ -1268,6 +1268,29 @@ final class ParityParticleSceneTests: XCTestCase {
             }
         }
     }
+
+    func testSeededDefaultColornDoesNotRehueColorRandom() throws {
+        let particle = """
+        {"maxcount": 8, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 10, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                         {"name": "colorrandom", "min": "21 200 0", "max": "21 200 0"}],
+         "renderer": [{"name": "sprite"}]}
+        """
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": particle])
+        var state = try Self.state()
+        // The script engine seeds an unwritten colorn with the authored override or white.
+        state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(1, 1, 1, 0)),
+                             invalidating: .particleInstance)
+        scene.applyScriptInstanceFields(state: state)
+        scene.advance(dt: 0.35, frames: ["5": .init()])
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertGreaterThan(root.liveCount, 0)
+        for slot in 0 ..< root.capacity where root.lifetime[slot] != 0 {
+            XCTAssertLessThan(simd_reduce_max(abs(root.initialColor[slot] - SIMD3(21, 200, 0) / 255)), 1e-4,
+                              "\(root.initialColor[slot])")
+        }
+    }
 }
 
 private struct NoScripts: WPESceneTransformScriptResolving {
