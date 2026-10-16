@@ -1,6 +1,6 @@
 import simd
 
-/// turbulence (R19 算子 14; defaults D/1401beb80.c:20-126). Reads the birth u, draws nothing.
+/// turbulence (defaults D/1401beb80.c:20-126). Reads the birth u, draws nothing.
 struct WPEParityParticleTurbulence: Equatable, Sendable {
     var mask: SIMD3<Float>
     var scale: Float
@@ -21,7 +21,7 @@ struct WPEParityParticleTurbulence: Equatable, Sendable {
     }
 }
 
-/// controlpointattract (R19 算子 10; D/1401bdee0.c:20-140).
+/// controlpointattract (D/1401bdee0.c:20-140).
 struct WPEParityParticleAttract: Equatable, Sendable {
     var controlPoint: Int
     var scale: Float
@@ -39,7 +39,7 @@ struct WPEParityParticleAttract: Equatable, Sendable {
     }
 }
 
-/// vortex (R19 算子 15; D/1401bef00.c:19-142).
+/// vortex (D/1401bef00.c:19-142).
 struct WPEParityParticleVortex: Equatable, Sendable {
     var controlPoint: Int
     var offset: SIMD3<Float>
@@ -67,7 +67,7 @@ struct WPEParityParticleVortex: Equatable, Sendable {
     }
 }
 
-/// vortex_v2 (R19 算子 16; D/1401bf2d0.c:21-146).
+/// vortex_v2 (D/1401bf2d0.c:21-146).
 struct WPEParityParticleVortexRing: Equatable, Sendable {
     var controlPoint: Int
     var axis: SIMD3<Float>
@@ -98,7 +98,7 @@ struct WPEParityParticleVortexRing: Equatable, Sendable {
     }
 }
 
-/// boids (R19 算子 17; D/1401bf700.c:18-122).
+/// boids (D/1401bf700.c:18-122).
 struct WPEParityParticleBoids: Equatable, Sendable {
     var separationThreshold: Float
     var neighborThreshold: Float
@@ -271,7 +271,7 @@ extension WPEParityParticleSystem {
                 separation += (field.separationThreshold / distance - 1) * offset
                 separated += 1
             }
-            // The particle itself counts as a neighbour ([I] in R19).
+            // The particle itself counts as a neighbour.
             if distance < field.neighborThreshold {
                 velocitySum += velocity[other]
                 positionSum += position[other]
@@ -359,7 +359,7 @@ extension WPEParityParticleSystem {
         }
     }
 
-    /// [I] The sphere repels from outside: the plane rule on the tangent plane under the particle.
+    /// The sphere repels from outside: the plane rule on the tangent plane under the particle.
     mutating func applyCollisionSphere(_ field: WPEParityParticleCollision, slot: Int, weight: Float) {
         let center = field.flags & 1 != 0 ? controlPointTranslation(field.controlPoint) : field.vector
         let offset = position[slot] - center

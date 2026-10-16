@@ -1,5 +1,6 @@
 import Foundation
 @testable import LiveWallpaperProWPE
+import simd
 
 enum ParityParticleTestSupport {
     struct NoScripts: WPESceneTransformScriptResolving {
@@ -12,6 +13,14 @@ enum ParityParticleTestSupport {
     static func json(_ text: String) -> WPESceneJSONValue {
         let object = try? JSONSerialization.jsonObject(with: Data(text.utf8))
         return object.flatMap { WPESceneJSONValue(jsonValue: $0) } ?? .null
+    }
+
+    /// The product draw entry with the root's own placement, an identity world and every material ready.
+    static func drawBatches(_ scene: inout WPEParityParticleScene, _ objectID: String) -> [WPEParityParticleDrawBatch] {
+        let owner = scene.objects.first { $0.id == objectID }?.system.instanceTransform ?? matrix_identity_float4x4
+        return scene.drawStream(objectID: objectID, ownerModel: owner, worldModel: matrix_identity_float4x4) { _ in
+            false
+        }.batches
     }
 
     static func liveSlots(_ system: WPEParityParticleSystem) -> [Int] {

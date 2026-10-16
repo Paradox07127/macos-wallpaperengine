@@ -27,7 +27,7 @@ struct WPEParityParticleBlend: Equatable, Sendable {
 
 enum WPEParityParticleMath {
     /// Separate sinf/cosf calls, as WPE makes. Inlined, -O fuses a sin/cos pair of one angle into
-    /// __sincosf_stret, which rounds ~1.3% of inputs differently, so Debug and Release particles diverge.
+    /// __sincosf_stret, which rounds some inputs differently, so Debug and Release particles diverge.
     @inline(never) static func sin(_ x: Float) -> Float {
         sinf(x)
     }

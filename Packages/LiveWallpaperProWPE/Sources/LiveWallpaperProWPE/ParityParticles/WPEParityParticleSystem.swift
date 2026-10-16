@@ -1,10 +1,10 @@
 import Foundation
 import simd
 
-/// One particle object instance simulated in WPE 2.8.42's order (R18): SoA slots sized maxcount, children nested.
+/// One particle object instance simulated in WPE 2.8.42's order: SoA slots sized maxcount, children nested.
 /// Not Sendable because every system of a scene shares the scene's `WPEParityMT19937`.
 public struct WPEParityParticleSystem {
-    /// `instanceoverride` multipliers; color is 0–1 and alpha/color seed each birth (R18 初始化器).
+    /// `instanceoverride` multipliers; color is 0–1 and alpha/color seed each birth.
     struct Instance: Equatable {
         var rate: Float = 1
         var count: Float = 1
@@ -29,7 +29,7 @@ public struct WPEParityParticleSystem {
             size = Float(max(override.size ?? 1, 0))
             speed = Float(max(override.speed ?? 1, 0))
             alpha = Float(override.alpha ?? 1)
-            // R22 Q9: normalized colorn and the HDR brightness become the system's birth colour seed.
+            // Normalized colorn and the HDR brightness become the system's birth colour seed.
             color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
             if hdr {
                 brightness = Float(max(override.brightness ?? 1, 0))
@@ -142,8 +142,6 @@ public struct WPEParityParticleSystem {
     var boidsFrame = 0
     /// Event-child systems this system has constructed, for tests.
     var eventChildConstructions = 0
-    /// The emitter state `init` built; a hidden reset restores it without drawing (D/14022f6c0.c).
-    var builtEmitterStates: [EmitterState] = []
     /// inst+0x3f0, advanced by normal system updates, excluding construction prewarm (1402308a0:60).
     var simulationTime: Float = 0
     /// Owner +0x770: the root advances it; children receive that same owner time, including during prewarm.
@@ -218,8 +216,7 @@ public struct WPEParityParticleSystem {
         sequenceStates = config.initializers.map(Self.sequenceState)
         birthNext = Array(repeating: -1, count: capacity)
         birthPrevious = birthNext
-        emitterStates = config.emitters.map { Self.emitterState($0) }
-        builtEmitterStates = config.emitters.indices.map { emitterStates[$0] }
+        emitterStates = config.emitters.map(Self.emitterState)
         if let trail = config.renderers.first(where: { $0.kind == .ropeTrail }) {
             trailSegments = trail.segments
             trailInterval = trail.length / Float(trail.segments)
@@ -286,15 +283,9 @@ public struct WPEParityParticleSystem {
         simulationTime = 0
         prewarmStep = 0
         prewarmStepCount = 0
+        // In place, not `map`: steady-state event reuse must keep every buffer (no reallocation per reuse).
         for index in emitterStates.indices {
-            let emitter = config.emitters[index]
-            emitterStates[index].accumulator = 0
-            emitterStates[index].delayLeft = emitter.delay
-            emitterStates[index].durationLeft = emitter.duration
-            emitterStates[index].burstPending = emitter.instantaneous > 0
-            emitterStates[index].disabled = false
-            emitterStates[index].periodTimer = 0
-            emitterStates[index].emittedThisPeriod = 0
+            emitterStates[index] = Self.emitterState(config.emitters[index])
         }
         for index in sequenceStates.indices {
             sequenceStates[index].t = 0
@@ -318,10 +309,6 @@ public struct WPEParityParticleSystem {
             eventChildren[group].removeAll(keepingCapacity: true)
         }
         followReferences.removeAll(keepingCapacity: true)
-    }
-
-    var hasLiveParticles: Bool {
-        liveCount > 0 || children.contains(where: \.hasLiveParticles) || eventChildren.contains { !$0.isEmpty }
     }
 
     /// Live particles of this system and every descendant.
@@ -365,7 +352,7 @@ public struct WPEParityParticleSystem {
             sequenceStates[index].t = 0
         }
         for index in emitterStates.indices {
-            emitterStates[index] = builtEmitterStates[index]
+            emitterStates[index] = Self.emitterState(config.emitters[index])
         }
         trailTimer = trailInterval
         clear(&trailPoints, to: .zero)
@@ -385,7 +372,7 @@ public struct WPEParityParticleSystem {
 
     /// The hook updates compiled emitter/birth parameters and control points, not existing particle slots
     /// (14022bd40 → 1401d15a0). Count changes the emitter multiplier while the loaded slot capacity stays fixed.
-    mutating func applyScriptInstanceFields(state: WPEParitySceneState, objectID: String) -> Bool {
+    mutating func applyScriptInstanceFields(state: WPEParitySceneState, objectID: String) {
         var next = instance
         func scalar(_ name: String, nonnegative: Bool = false) -> Float? {
             guard case let .vector(value)? = state.scriptField("instance.\(name)", of: objectID),
@@ -423,21 +410,14 @@ public struct WPEParityParticleSystem {
         }
         for index in 0 ..< WPEParityParticleControlPoint.count {
             if let value = vector("controlpoint\(index)") {
-                let offset = value.x == Float.greatestFiniteMagnitude ? nil : value
-                if next.controlPointOffsets[index] != offset {
-                    next.controlPointOffsets[index] = offset
-                }
+                next.controlPointOffsets[index] = value.x == Float.greatestFiniteMagnitude ? nil : value
             }
             if let value = vector("controlpointangle\(index)") {
-                let angles = value.x == Float.greatestFiniteMagnitude ? nil : value
-                if next.controlPointAngles[index] != angles {
-                    next.controlPointAngles[index] = angles
-                }
+                next.controlPointAngles[index] = value.x == Float.greatestFiniteMagnitude ? nil : value
             }
         }
-        guard next != instance else { return false }
+        guard next != instance else { return }
         useScriptInstance(next)
-        return true
     }
 
     /// The native hook walks static children and both active/finished event pools with their shared owner.
@@ -532,7 +512,6 @@ public struct WPEParityParticleSystem {
     private mutating func simulate(dt: Float, parentControlPoints: [simd_float4x4]? = nil, parentCount: Int = 0,
                                    parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
                                    parentWorldSpace: Bool = false) {
-        guard dt > 0 else { return }
         for slot in 0 ..< highWater where lifetime[slot] != 0 {
             age[slot] += dt
             if age[slot] > lifetime[slot] {
@@ -914,7 +893,7 @@ public struct WPEParityParticleSystem {
         case .collisionBox:
             break
         case let .remap(field):
-            // [U] The blended variant (type 0x29) is not read; the weight is not applied.
+            // The blended variant (type 0x29) is not read; the weight is not applied.
             applyRemap(field, slot: slot, initializer: false)
         case let .inherit(field):
             if let parentSample, parentSample.alive {

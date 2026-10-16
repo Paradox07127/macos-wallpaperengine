@@ -1,4 +1,4 @@
-/// GS-path vertex packing, g_RenderVar0 and combos per renderer entry (R16 Q1-Q3).
+/// GS-path vertex packing, g_RenderVar0 and combos per renderer entry.
 public extension WPEParityParticleSystem {
     var shaderOverride: String? {
         Self.shaderOverride(renderers: renderers)
@@ -8,7 +8,7 @@ public extension WPEParityParticleSystem {
     mutating func vertices(for renderer: WPEParityParticleRenderer) -> WPEParityParticleVertexBatch {
         switch renderer.kind {
         case .sprite, .spriteTrail:
-            let stride = usesThickMainBuffer ? 60 : 44
+            let stride = Self.usesThickMainBuffer(config: config, material: material) ? 60 : 44
             packMain(stride: stride)
             return WPEParityParticleVertexBatch(bytes: mainBytes, stride: stride, count: liveCount,
                                                 renderVar0: Self.mainRenderVar0(renderer: renderer))
@@ -20,7 +20,7 @@ public extension WPEParityParticleSystem {
         case .ropeTrail:
             let segments = Float(renderer.segments)
             packRopeTrail(renderer)
-            // z = 1 − timer/(length/segments); uvscrolling writes x and scales w (R16 Q3, :115-129).
+            // z = 1 − timer/(length/segments); uvscrolling writes x and scales w (:115-129).
             let z = trailInterval > 0 ? 1 - max(trailTimer, 0) / trailInterval : 1
             let renderVar0 = renderer.uvScrolling
                 ? WPEParityRenderVar0(x: segments - 1, z: z, w: (segments - 1) * renderer.uvScale)
@@ -60,7 +60,7 @@ extension WPEParityParticleSystem {
         material.spriteSheet || config.renderers.contains { $0.kind == .spriteTrail }
     }
 
-    /// Combo values FUN_1401d2340 writes for this entry (R16 Q1).
+    /// Combo values FUN_1401d2340 writes for this entry.
     static func combos(config: WPEParityParticleConfig, material: WPEParityParticleMaterial,
                        renderer: WPEParityParticleRenderer) -> [String: Int] {
         var combos: [String: Int] = [:]
@@ -92,7 +92,7 @@ extension WPEParityParticleSystem {
         }
         if material.spriteSheet, renderer.kind == .sprite || renderer.kind == .spriteTrail {
             combos["SPRITESHEET"] = 1
-            // !(flags & 2) && def[0xc] == 0, def[0xc] read as "not randomframe" [I] (:129-140).
+            // !(flags & 2) && def[0xc] == 0, def[0xc] read as "not randomframe" (:129-140).
             if config.flags & 2 == 0, !config.randomFrame {
                 combos["SPRITESHEETBLEND"] = 1
                 combos["SPRITESHEETBLENDNPOT"] = material.spriteSheetNPOT ? 1 : 0
@@ -102,10 +102,6 @@ extension WPEParityParticleSystem {
             combos["TEX0FORMAT"] = format
         }
         return combos
-    }
-
-    var usesThickMainBuffer: Bool {
-        Self.usesThickMainBuffer(config: config, material: material)
     }
 
     /// POSITION f3 | TEXCOORD0 (rot, size) | [TEXCOORD1 (vel, life)] | COLOR, live slots in slot order.

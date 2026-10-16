@@ -67,7 +67,7 @@ final class ParityParticleInitializerTests: XCTestCase {
             """), is3D: true, resolveChild: { _ in nil })
             var particles = WPEParityParticleSystem(config: config, instance: .init(),
                                                     rng: WPEParityMT19937(seed: 7), crt: WPEParityCRTRandom(),
-                                                    context: .init(objectMatrix: owner, worldSpace: sample.world))
+                                                    context: .init(objectMatrix: owner))
             var state = WPEParitySceneState(document: document, hdr: false)
             state.setScriptField("instance.controlpoint\(sample.point)", of: "5", to: .vector(SIMD4(2, 0, 0, 0)),
                                  invalidating: .particleInstance)
@@ -77,8 +77,8 @@ final class ParityParticleInitializerTests: XCTestCase {
                 state.setScriptField("instance.controlpointangle\(sample.point)", of: "5",
                                      to: .vector(SIMD4<Float>(0, 0, Float.pi / 2, 0)), invalidating: .particleInstance)
             }
-            XCTAssertTrue(particles.applyScriptInstanceFields(state: state, objectID: "5"))
-            particles.advance(dt: 0.5, frame: .init(objectMatrix: owner, worldSpace: sample.world))
+            particles.applyScriptInstanceFields(state: state, objectID: "5")
+            particles.advance(dt: 0.5, frame: .init(objectMatrix: owner))
             XCTAssertEqual(particles.liveCount, 1)
             assertEqual(particles.velocity[0], sample.velocity, accuracy: 2e-4)
             let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)

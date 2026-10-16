@@ -2,40 +2,17 @@
 import XCTest
 
 final class ParityUniformClockTests: XCTestCase {
-    func testStoredRatePublishesUnclampedScaleForSoundTimers() {
+    func testStoredRateScalesTheClampedStep() {
         var clock = WPEParityClock()
         XCTAssertEqual(clock.normalizedRate, 1)
-        XCTAssertEqual(clock.sceneScale, 1)
         clock.setRate(percent: 1250)
         XCTAssertTrue(clock.advance(elapsed: 0.1, paused: false))
-        XCTAssertEqual(clock.sceneScale, 12.5)
         XCTAssertEqual(clock.frametime, 0.25)
-        XCTAssertEqual(clock.frametime / clock.sceneScale, 0.02)
         XCTAssertTrue(clock.advance(elapsed: 0.04, paused: false))
         XCTAssertEqual(clock.normalizedRate, 12.5, "an update without a settings write keeps the normalized rate")
-        XCTAssertEqual(clock.sceneScale, 12.5)
         clock.setRate(percent: 0)
         XCTAssertTrue(clock.advance(elapsed: 0.0001, paused: false))
-        XCTAssertEqual(clock.sceneScale, 0.1)
         XCTAssertEqual(clock.frametime, 0.0001)
-        XCTAssertEqual(clock.frametime / clock.sceneScale, 0.001, accuracy: 1e-9)
-    }
-
-    func testSkippedPauseHoldsTheScaleFromTheLastObjectSweep() {
-        var clock = WPEParityClock()
-        clock.setRate(percent: 250)
-        var publishedScale = clock.sceneScale
-        while clock.advance(elapsed: 1.0 / 60, paused: true) {
-            XCTAssertEqual(clock.sceneScale, clock.normalizedRate * clock.pauseRamp)
-            publishedScale = clock.sceneScale
-        }
-        XCTAssertEqual(clock.pauseRamp, 0)
-        XCTAssertGreaterThan(publishedScale, 0)
-        XCTAssertEqual(clock.sceneScale, publishedScale)
-        XCTAssertFalse(clock.advance(elapsed: 0.1, paused: true))
-        XCTAssertEqual(clock.sceneScale, publishedScale)
-        XCTAssertTrue(clock.advance(elapsed: 0.1, paused: false))
-        XCTAssertEqual(clock.sceneScale, 1.5)
     }
 
     func testStepIsClampedAtBothEnds() {

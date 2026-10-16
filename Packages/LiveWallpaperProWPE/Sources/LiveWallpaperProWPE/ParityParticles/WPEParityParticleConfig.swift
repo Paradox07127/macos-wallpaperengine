@@ -1,6 +1,6 @@
 import Foundation
 
-/// Emitter keys with R18's defaults (D/1401b8df0.c:16-104, D/1401b9100.c:62-155, D/1401b9520.c:98-157).
+/// Emitter keys with their native defaults (D/1401b8df0.c:16-104, D/1401b9100.c:62-155, D/1401b9520.c:98-157).
 struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     enum Shape: Equatable, Sendable { case sphere, box }
 
@@ -20,7 +20,7 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     var instantaneous: Int
     var duration: Float
     var delay: Float
-    /// Emitter flags bit 2 [I]: every authored periodic emitter carries `flags: 4`.
+    /// Emitter flags bit 2: every authored periodic emitter carries `flags: 4`.
     var periodic: Bool
     /// Native emitter flags bit 1 caps the rate portion to one particle per update, after accumulator subtraction.
     var maxOnePerFrame: Bool
@@ -124,10 +124,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var maxCount: Int
     var startTime: Float
     var flags: Int
-    /// JSON hascolor opts out of the direct instance colorn multiplier (R22 Q9).
+    /// JSON hascolor opts out of the direct instance colorn multiplier.
     var hasColor: Bool
     var randomFrame: Bool
-    /// Scales the sprite-sheet phase age/lifetime (R22 Q10).
+    /// Scales the sprite-sheet phase age/lifetime.
     var sequenceMultiplier: Float
     var emitters: [WPEParityParticleEmitterConfig] = []
     var initializers: [WPEParityParticleInitializer] = []
@@ -139,7 +139,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     /// Texture facts of this system's own `material`.
     var material = WPEParityParticleMaterial()
     var materialPath: String?
-    /// Children omitted at the native maximum system depth, retained for compatibility diagnostics.
+    /// Children omitted at the native maximum system depth.
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
@@ -174,7 +174,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         return candidates[index].config.descendant(at: path.dropFirst())
     }
 
-    /// `is3D` picks the 3D defaults of R18/R19 (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5, …).
+    /// `is3D` picks the 3D defaults (velocityrandom ±1, distancemax 1, oscillateposition scale 0.5, …).
     init(json: WPESceneJSONValue, is3D: Bool, resolveChild: (String) -> WPESceneJSONValue?) {
         self.init(json: json, context: .init(ancestors: [""]), is3D: is3D, resolveChild: resolveChild,
                   resolveMaterial: { _ in nil })
@@ -288,7 +288,6 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         ))
     }
 
-    /// Defaults per R19 其余 and 初始化器.
     private mutating func appendInitializer(_ entry: WPESceneJSONValue, is3D: Bool) {
         typealias JSON = WPEParityParticleJSON
         let name = JSON.string(entry["name"])?.lowercased() ?? ""
@@ -576,7 +575,6 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         // 22ebe0 creates children while the current system's depth is < 10; 22f890 assigns depth + 1.
         // A repeated asset is another instance, not a cycle error. The native depth also bounds such recursion.
         guard context.path.count < WPEParityProgramScene.particleChildDepthLimit else {
-            diagnostics.append("child \(path) omitted")
             omittedChildPaths.append(path)
             return
         }

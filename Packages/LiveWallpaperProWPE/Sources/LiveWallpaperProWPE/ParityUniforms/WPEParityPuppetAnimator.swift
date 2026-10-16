@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-/// Per-frame `g_Bones` of one puppet layer as WPE computes them (FUN_1401fdf90, R12).
+/// Per-frame `g_Bones` of one puppet layer as WPE computes them (FUN_1401fdf90).
 public struct WPEParityPuppetAnimator: Sendable {
     public enum Mode: Sendable, Equatable {
         case loop, mirror, single
@@ -30,7 +30,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         public fileprivate(set) var blendOut: Bool
         public fileprivate(set) var blendTime: Float
         public let frameDuration: Float
-        /// [I] frameCount × frameDuration.
+        /// frameCount × frameDuration.
         public let duration: Float
         /// Cleared once a non-single ramp completes (FUN_14026c8b0).
         public fileprivate(set) var blendIn: Bool
@@ -399,7 +399,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         Pose(translation: key.translation, rotation: rotation(euler: key.euler), scale: key.scale)
     }
 
-    /// The MDLS local split into T, R, S (1401fdf90.c:587-676); [I] the negative-determinant flip.
+    /// The MDLS local split into T, R, S (1401fdf90.c:587-676); the negative-determinant flip.
     private static func pose(of matrix: simd_float4x4) -> Pose {
         let axes = [matrix.columns.0, matrix.columns.1, matrix.columns.2].map { SIMD3($0.x, $0.y, $0.z) }
         var scale = SIMD3(simd_length(axes[0]), simd_length(axes[1]), simd_length(axes[2]))

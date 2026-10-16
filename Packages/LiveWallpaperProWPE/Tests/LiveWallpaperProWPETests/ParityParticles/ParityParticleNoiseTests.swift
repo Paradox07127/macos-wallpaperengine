@@ -31,6 +31,14 @@ final class ParityParticleNoiseTests: XCTestCase {
         XCTAssertEqual(Noise.simplex3(1, 2, 3), 0, accuracy: 1e-6)
     }
 
+    func testNonFiniteInputsDoNotTrap() {
+        for value in [Float.nan, .infinity, -.infinity] {
+            _ = Noise.simplex1(value)
+            _ = Noise.simplex2(value, 0)
+            _ = Noise.simplex3(value, 0, 0)
+        }
+    }
+
     func testMSVCRandSeedOne() {
         let crt = WPEParityCRTRandom()
         XCTAssertEqual(crt.next(), 41)

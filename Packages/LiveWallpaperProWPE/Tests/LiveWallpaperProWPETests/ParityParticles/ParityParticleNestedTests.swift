@@ -63,7 +63,7 @@ final class ParityParticleNestedTests: XCTestCase {
                                                engineFlags: WPEEngineComboFlags(), seed: 7)
             scene.advance(dt: 0.1, frames: ["5": WPEParityParticleFrameContext()])
             XCTAssertEqual(scene.liveCount("5"), 11)
-            let batches: [WPEParityParticleDrawBatch] = scene.drawBatches(for: "5")
+            let batches: [WPEParityParticleDrawBatch] = ParityParticleTestSupport.drawBatches(&scene, "5")
             XCTAssertEqual(batches.map(\.key.path), expected)
             for batch in batches {
                 let prototype = try XCTUnwrap(WPEParityParticleScene.prototype(for: batch.key,

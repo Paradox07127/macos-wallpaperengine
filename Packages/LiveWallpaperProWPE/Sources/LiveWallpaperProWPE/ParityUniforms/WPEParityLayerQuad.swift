@@ -8,11 +8,9 @@ public struct WPEParityLayerQuad: Sendable, Equatable {
     }
 
     public static let indices: [UInt16] = [0, 2, 1, 1, 2, 3]
-    /// Bytes per vertex: float3 position, float2 texcoord.
-    public static let stride = 20
 
     /// The 2×2 quad intermediate effect passes draw (obj+0x2e0). Main+0x118 bit0 is set on Windows, so flag
-    /// bit 2 never flips V (R10).
+    /// bit 2 never flips V.
     public static let effectPass = Self(size: SIMD2(2, 2))
 
     /// v0 top-left, v1 top-right, v2 bottom-left, v3 bottom-right.
@@ -42,10 +40,5 @@ public struct WPEParityLayerQuad: Sendable, Equatable {
     /// The albedo mesh into a layer composite (obj+0x2d8): (0, 0) to `size`, v = 0 on the y = size.y edge.
     public static func composite(size: SIMD2<Float>, uvMax: SIMD2<Float> = .one) -> Self {
         Self(size: size, center: size / 2, uvMax: uvMax)
-    }
-
-    /// Vertices packed at `stride`.
-    public var packed: [Float] {
-        vertices.flatMap { [$0.position.x, $0.position.y, $0.position.z, $0.texcoord.x, $0.texcoord.y] }
     }
 }

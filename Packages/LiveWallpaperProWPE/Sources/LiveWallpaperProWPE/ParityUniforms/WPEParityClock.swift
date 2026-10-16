@@ -19,8 +19,6 @@ public struct WPEParityClock: Sendable {
     public private(set) var pauseRamp: Float = 1
     /// Host +0x190 stores this normalized rate. Convert an accepted percent value only at its setter.
     public private(set) var normalizedRate: Float = 1
-    /// Main +0x164, published before the frame-step clamp and consumed with that update's frametime.
-    public private(set) var sceneScale: Float = 1
 
     public init() {}
 
@@ -53,8 +51,7 @@ public struct WPEParityClock: Sendable {
             return false
         }
         previousFrametime = frametime
-        sceneScale = normalizedRate * pauseRamp
-        frametime = Self.clampStep(sceneScale * step)
+        frametime = Self.clampStep(normalizedRate * pauseRamp * step)
         // 14017fcaf–14017fce5: widen the binary32 step, add/store binary64, then publish binary32.
         accumulatedTime += Double(frametime)
         if timeUniform > Self.wrapTime {

@@ -13,8 +13,6 @@ public struct WPEParityLightConfig: Sendable, Equatable {
     public var directionalShadow: Int32 = 0
     public var pointShadow: Int32 = 0
 
-    public init() {}
-
     /// With shadow quality 0 (render context +0x1ac) `spotshadowcookie` only adds cookies and the other shadow keys
     /// are not read.
     public init(general: WPESceneJSONValue?, shadowQuality: Int32 = 0) {

@@ -467,7 +467,10 @@ extension WPEParityParticleSystem {
             (v.y * v.y + v.x * v.x + v.z * v.z).squareRoot()
         }
         switch remap.output {
-        case .maxLifetime: lifetime[slot] = operation.apply(lifetime[slot], value.x)
+        case .maxLifetime:
+            // Zero would mark the slot free without `kill`; the next age check kills it instead.
+            let next = operation.apply(lifetime[slot], value.x)
+            lifetime[slot] = next == 0 ? .leastNonzeroMagnitude : next
         case .size:
             if initializer {
                 initialSize[slot] = operation.apply(initialSize[slot], value.x)
@@ -511,7 +514,7 @@ extension WPEParityParticleSystem {
         case .position: each(&position[slot])
         case .velocity: each(&velocity[slot])
         case .controlPoint:
-            // [I] Every 4-slot group writes its first lane; one write per live particle here.
+            // Every 4-slot group writes its first lane; one write per live particle here.
             var center = controlPointTranslation(remap.outputControlPoint0)
             each(&center)
             controlPoints[remap.outputControlPoint0].columns.3 = SIMD4(center, 1)

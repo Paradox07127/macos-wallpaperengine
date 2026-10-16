@@ -126,6 +126,23 @@ final class ParityParticleRemapTests: XCTestCase {
         XCTAssertEqual(particles.size[0], 5, accuracy: 1e-6)
     }
 
+    func testRemapToZeroMaxLifetimeKillsTheSlotSoItCanRespawn() {
+        var particles = WPEParityParticleSystem(json: Support.json("""
+        {"maxcount": 1,
+         "emitter": [{"name": "sphererandom", "rate": 100, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}],
+         "operator": [{"name": "remapvalue", "operation": "remap", "output": "maxlifetime",
+                       "outputrangemin": 0, "outputrangemax": 0}]}
+        """), rng: WPEParityMT19937())
+        particles.advance(dt: 0.1)
+        particles.advance(dt: 0.1)
+        XCTAssertEqual(particles.liveCount, 1)
+        XCTAssertEqual(Support.liveSlots(particles), [0])
+        XCTAssertEqual(particles.age[0], 0)
+        XCTAssertEqual(particles.birthHead, 0)
+        XCTAssertEqual(particles.birthTail, 0)
+    }
+
     func testMissingOutputControlPointOneUsesTheSecondPointForInitialAndOperatorRemap() {
         for initializer in [true, false] {
             let component = initializer

@@ -1,6 +1,6 @@
 import simd
 
-/// One `renderer` entry; WPE draws each entry once per frame in JSON order (R16 Q3).
+/// One `renderer` entry; WPE draws each entry once per frame in JSON order.
 public struct WPEParityParticleRenderer: Equatable, Sendable {
     public enum Kind: Equatable, Sendable { case sprite, spriteTrail, rope, ropeTrail }
 
@@ -18,7 +18,7 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
     public let axis: SIMD3<Float>
     /// normalize(axis × (Y × axis)), (0, 0, −1) when axis ∥ Y (D/1401c22e0.c:246-288).
     public let fixedUp: SIMD3<Float>
-    /// `flags` bit0: orientation axes are taken as world axes instead of being rotated by the model (R22 Q2).
+    /// `flags` bit0: orientation axes are taken as world axes instead of being rotated by the model.
     public let worldAxes: Bool
     public let uvScrolling: Bool
     public let uvScale: Float
@@ -74,7 +74,7 @@ public struct WPEParityParticleMaterial: Equatable, Sendable {
     }
 }
 
-/// g_RenderVar0 components a draw writes; nil keeps the previous draw's value (R16 Q3).
+/// g_RenderVar0 components a draw writes; nil keeps the previous draw's value.
 public struct WPEParityRenderVar0: Equatable, Sendable {
     public var x: Float?
     public var y: Float?

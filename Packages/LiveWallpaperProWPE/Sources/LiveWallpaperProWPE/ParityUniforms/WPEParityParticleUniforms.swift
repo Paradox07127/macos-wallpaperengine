@@ -1,6 +1,6 @@
 import simd
 
-/// g_ModelMatrix, g_ViewMatrix and g_ProjectionMatrix of one particle renderer draw (R16 Q3, R22 Q1/Q5).
+/// g_ModelMatrix, g_ViewMatrix and g_ProjectionMatrix of one particle renderer draw.
 public enum WPEParityParticleMatrices {
     /// `modelMatrix` is the walker's final D, including its native world/composite resets.
     public static func draw(_ transforms: WPEParityLayerTransformSet, objectID: String, modelMatrix: simd_float4x4,
@@ -55,7 +55,7 @@ public enum WPEParityParticleOrientation {
 }
 
 /// g_RenderVar0/1: one scene-wide store shared with the bloom, combine_hdr and text draws, zero at load and
-/// never reset per frame (R22 Q3).
+/// never reset per frame.
 public struct WPEParityRenderVarState: Equatable, Sendable {
     public var rv0: SIMD4<Float> = .zero
     public var rv1: SIMD4<Float> = .zero

@@ -99,8 +99,8 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)),
                              invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
+        scene.applyScriptInstanceFields(state: state)
+        scene.applyScriptInstanceFields(state: state)
         let applied = try XCTUnwrap(Self.root(scene))
         XCTAssertTrue(applied.rng === before.rng)
         XCTAssertEqual(applied.rng.next(), try XCTUnwrap(Self.root(control)).rng.next(), "the hook draws no RNG")
@@ -141,12 +141,11 @@ final class ParityParticleSceneTests: XCTestCase {
         let generation = state.generation(.particleInstance)
         state.setScriptField("instance.rate", of: "5", to: .vector(SIMD4(2, 0, 0, 0)), invalidating: .none)
         XCTAssertEqual(state.generation(.particleInstance), generation)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).age[0], 0, "the hook does not itself step the system")
         scene.advance(dt: 0.1, frames: ["5": .init()])
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).age[0], 0.2, accuracy: 1e-6)
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).objectTime, 0.3, accuracy: 1e-6)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
     }
 
     func testAlphaOnlyHotUpdatePreservesRemappedCurrentControlPointForTheNextBirth() throws {
@@ -172,7 +171,7 @@ final class ParityParticleSceneTests: XCTestCase {
         var state = try Self.state()
         state.setScriptField("instance.alpha", of: "5", to: .vector(SIMD4(0.5, 0, 0, 0)),
                              invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         let hooked = try XCTUnwrap(Self.root(scene))
         // 22bd40: absent offset AND angle overrides skip this CP, even though another instance field changed.
         XCTAssertEqual(hooked.controlPointTranslation(0), SIMD3(9, 0, 0), "Alpha must not restore the authored CP0")
@@ -191,7 +190,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(after.controlPointTranslation(0), SIMD3(9, 0, 0))
         XCTAssertEqual(after.previousControlPointTranslation(0), SIMD3(9, 0, 0))
         // The frame-end remap would hide a lost current if only the final CP were checked. Check its real draw data too.
-        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        let batch = try XCTUnwrap(Support.drawBatches(&scene, "5").first)
         XCTAssertEqual(batch.vertices.count, 2)
         XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [10, 0, 0])
         XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44 + 28, count: 4), [1, 1, 1, 0.5])
@@ -230,10 +229,10 @@ final class ParityParticleSceneTests: XCTestCase {
         var state = try Self.state()
         state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(2, 0, 0, 0)),
                              invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         let hooked = try XCTUnwrap(Self.root(scene)?.children.first)
         // 22bd40 pushes conditional229760: world U=E5, so current=E5*offset2=7, not normalU105*2=107.
-        XCTAssertEqual(hooked.controlPointBase(0).columns.3.x, 2)
+        XCTAssertEqual(hooked.controlPointBases[0].columns.3.x, 2)
         XCTAssertEqual(hooked.controlPointTranslation(0), SIMD3(7, 0, 0))
         XCTAssertEqual(hooked.previousControlPointTranslation(0), SIMD3(5, 0, 0), "Hot writes do not commit history")
         XCTAssertEqual(hooked.frameContext.objectMatrix.columns.3.x, 105, "The temporary hot stack must be restored")
@@ -249,7 +248,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(after.position[1], SIMD3(9, 0, 0), "No bulk source or ordinary overwrite hides the hot CP7")
         XCTAssertEqual(after.controlPointTranslation(0), SIMD3(7, 0, 0))
         XCTAssertEqual(after.previousControlPointTranslation(0), SIMD3(7, 0, 0))
-        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        let batch = try XCTUnwrap(Support.drawBatches(&scene, "5").first)
         XCTAssertEqual(batch.vertices.count, 2)
         XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [9, 0, 0])
         let expected = WPEParityMT19937(seed: 7)
@@ -270,7 +269,7 @@ final class ParityParticleSceneTests: XCTestCase {
         let sentinel = Float.greatestFiniteMagnitude
         state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(sentinel, sentinel, sentinel, 0)),
                              invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), [])
+        scene.applyScriptInstanceFields(state: state)
         scene.advance(dt: 0.1, frames: ["5": .init()])
         let before = try XCTUnwrap(Self.root(scene)).position[0]
         let initial = SIMD3<Float>(1, 2, 4)
@@ -284,7 +283,7 @@ final class ParityParticleSceneTests: XCTestCase {
                              invalidating: .particleInstance)
         state.setScriptField("instance.controlpoint1", of: "5", to: .vector(SIMD4(100, 200, 300, 0)),
                              invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).position[0], before)
         scene.advance(dt: 0.1, frames: ["5": .init()])
         let root = try XCTUnwrap(Self.root(scene))
@@ -319,7 +318,7 @@ final class ParityParticleSceneTests: XCTestCase {
                                  invalidating: .particleInstance)
             state.setScriptField("instance.controlpointangle\(point)", of: "5", to: .vector(SIMD4(0, 0, .pi / 2, 0)),
                                  invalidating: .particleInstance)
-            XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+            scene.applyScriptInstanceFields(state: state)
             let hooked = try XCTUnwrap(Self.root(scene))
             XCTAssertEqual(hooked.position[0], before.position[0])
             XCTAssertEqual(hooked.velocity[0], before.velocity[0])
@@ -334,7 +333,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(abs(after.velocity[1][axis]), 3, accuracy: 1e-5)
             XCTAssertEqual(after.velocity[1][1 - axis], 0, accuracy: 1e-5)
             XCTAssertEqual(after.velocity[1].z, 0)
-            let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+            let batch = try XCTUnwrap(Support.drawBatches(&scene, "5").first)
             XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 0, count: 3), [2, 0, 0])
             XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [12, 5, 0])
             // 22bd40 writes only supplied base fields: an offset with angle sentinel keeps the existing basis.
@@ -343,7 +342,7 @@ final class ParityParticleSceneTests: XCTestCase {
                                  invalidating: .particleInstance)
             state.setScriptField("instance.controlpointangle\(point)", of: "5",
                                  to: .vector(SIMD4(sentinel, sentinel, sentinel, 0)), invalidating: .particleInstance)
-            XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+            scene.applyScriptInstanceFields(state: state)
             scene.advance(dt: 0.1, frames: ["5": .init()])
             let partial = try XCTUnwrap(Self.root(scene))
             XCTAssertEqual(partial.liveCount, 3)
@@ -351,7 +350,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(abs(partial.velocity[2][axis]), 3, accuracy: 1e-5)
             XCTAssertEqual(partial.velocity[2][1 - axis], 0, accuracy: 1e-5)
             XCTAssertEqual(partial.controlPointBasis(point).columns.0.y, 1, accuracy: 1e-6)
-            let partialBatch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+            let partialBatch = try XCTUnwrap(Support.drawBatches(&scene, "5").first)
             XCTAssertEqual(Support.floats(partialBatch.vertices.bytes, at: 88, count: 3), [22, 15, 0])
             let expected = WPEParityMT19937(seed: 7)
             for _ in 0 ..< 27 {
@@ -406,9 +405,6 @@ final class ParityParticleSceneTests: XCTestCase {
                 keys(system, at: WPEParityParticleDrawKey(objectID: particle.id, renderer: 0), into: &nodes)
             }
             XCTAssertEqual(draws.map(\.key), nodes, "\(label) \(particle.id) \(particle.particleRelativePath)")
-            for key in nodes {
-                XCTAssertNotNil(scene.childLocal(for: key), "\(label) \(key)")
-            }
         }
         return document.particleObjects.count
     }
@@ -582,12 +578,10 @@ final class ParityParticleSceneTests: XCTestCase {
         let root = try XCTUnwrap(Self.root(scene))
         XCTAssertEqual(root.position[0], SIMD3(3, 4, 0))
         XCTAssertEqual(root.children.first?.position[0], SIMD3(1, 2, 0))
-        XCTAssertEqual(scene.childLocal(for: WPEParityParticleDrawKey(objectID: "5", renderer: 0)),
-                       matrix_identity_float4x4)
+        XCTAssertEqual(root.instanceTransform, matrix_identity_float4x4)
         var translation = matrix_identity_float4x4
         translation.columns.3 = SIMD4(10, 0, 0, 1)
-        XCTAssertEqual(scene.childLocal(for: WPEParityParticleDrawKey(objectID: "5", node: [0], renderer: 0)),
-                       translation)
+        XCTAssertEqual(root.children.first?.instanceTransform, translation)
     }
 
     func testWorldSpaceSystemBornThroughTheObjectMatrix() throws {
@@ -619,7 +613,7 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.1, frames: ["5": .init()])
         control.advance(dt: 0.1, frames: ["5": .init()])
         control.advance(dt: 0.1, frames: ["5": .init()])
-        let actual = scene.drawBatches(for: "5")
+        let actual = Support.drawBatches(&scene, "5")
         XCTAssertEqual(actual.map(\.key), [
             .init(objectID: "5", path: [.eventGroup(0)], renderer: 0),
             .init(objectID: "5", path: [.eventGroup(0)], renderer: 1),
@@ -637,7 +631,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next(),
                        "Neither object packing nor compatibility lookup consumes the shared RNG")
         XCTAssertEqual(scene.batches(for: WPEParityParticleDrawKey(objectID: "5", renderer: 0)), [])
-        XCTAssertTrue(scene.drawBatches(for: "missing").isEmpty)
+        XCTAssertTrue(Support.drawBatches(&scene, "missing").isEmpty)
     }
 
     /// 1402366f0 snapshots at a live system before renderer dispatch; one rope particle cannot draw but still
@@ -671,13 +665,14 @@ final class ParityParticleSceneTests: XCTestCase {
                                         worldModel: matrix_identity_float4x4,
                                         needsFullFrameBuffer: { _ in true }).snapshotBoundary, 0,
                        "the next owner draw entry resets the one-shot condition")
-        XCTAssertEqual(scene.drawBatches(for: "5").map(\.vertices), stream.batches.map(\.vertices))
+        XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.vertices), stream.batches.map(\.vertices))
         XCTAssertEqual(try XCTUnwrap(Self.root(scene)).rng.next(), try XCTUnwrap(Self.root(control)).rng.next())
-        XCTAssertEqual(scene.drawStream(objectID: "missing", ownerModel: matrix_identity_float4x4,
-                                        worldModel: matrix_identity_float4x4, needsFullFrameBuffer: { _ in
+        let missing = scene.drawStream(objectID: "missing", ownerModel: matrix_identity_float4x4,
+                                       worldModel: matrix_identity_float4x4) { _ in
             XCTFail("an unknown owner has no systems to inspect")
             return true
-        }).snapshotBoundary, nil)
+        }
+        XCTAssertNil(missing.snapshotBoundary)
     }
 
     func testSnapshotBoundaryUsesOwnLiveCountAndCanFollowEveryBatch() throws {
@@ -758,7 +753,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(visited, [[]])
         XCTAssertTrue(stream.batches.isEmpty)
         XCTAssertNil(stream.snapshotBoundary)
-        XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path), [[.staticChild(0)]],
+        XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path), [[.staticChild(0)]],
                        "the compatibility API assumes ready materials, proving the child is drawable")
     }
 
@@ -801,7 +796,7 @@ final class ParityParticleSceneTests: XCTestCase {
         }
         state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)), invalidating: .particleInstance)
         state.setScriptField("instance.controlpoint0", of: "5", to: .vector(SIMD4(4, 5, 6, 0)), invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         scene.advance(dt: 0.01, frames: ["5": .init()])
         let spawned = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first)
         let staticLeaf = try XCTUnwrap(spawned.children.first)
@@ -813,7 +808,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(system.position[0], SIMD3(4, 5, 6), "the hot CP snapshot reaches the prewarm birth")
             XCTAssertEqual(system.age[0], 0.01, accuracy: 1e-6)
         }
-        let batches = scene.drawBatches(for: "5")
+        let batches = Support.drawBatches(&scene, "5")
         XCTAssertEqual(batches.map(\.key.path), [[.eventGroup(0)], [.eventGroup(0), .staticChild(0)]])
     }
 
@@ -846,7 +841,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertTrue(eventConfig.unsupportedChildren.contains { $0.field.contains(field) && !$0.reason.isEmpty }, field)
             scene.advance(dt: 0.01, frames: ["5": .init()])
             scene.advance(dt: 0.01, frames: ["5": .init()])
-            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+            XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path),
                            [[.staticChild(0)], [.eventGroup(0), .staticChild(0)]], field)
         }
         // An event instance retains event descendants as well as its healthy static sibling (2308a0).
@@ -864,7 +859,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertTrue(eventConfig.children[0].config.unsupportedChildren.isEmpty)
             scene.advance(dt: 0.01, frames: ["5": .init()])
             scene.advance(dt: 0.01, frames: ["5": .init()])
-            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+            XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path),
                            [[.eventGroup(0), .staticChild(0)], [.eventGroup(0), .staticChild(0), .staticChild(0)],
                             [.eventGroup(0), .staticChild(0), .eventGroup(0)], [.eventGroup(0), .staticChild(1)]])
         }
@@ -883,7 +878,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertTrue(eventConfig.unsupportedChildren.isEmpty)
             scene.advance(dt: 0.01, frames: ["5": .init()])
             scene.advance(dt: 0.01, frames: ["5": .init()])
-            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+            XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path),
                            [[.staticChild(0)], [.eventGroup(0), .staticChild(0)]])
         }
     }
@@ -923,7 +918,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 if trigger == "eventdeath" {
                     scene.advance(dt: 0.01, frames: ["5": frame])
                 }
-                let batches = scene.drawBatches(for: "5")
+                let batches = Support.drawBatches(&scene, "5")
                 XCTAssertEqual(batches.map(\.key.path), [[.eventGroup(0), .staticChild(0)],
                                                          [.eventGroup(0), .staticChild(1)]])
                 XCTAssertEqual(batches.map(\.vertices.count), [1, 1])
@@ -951,7 +946,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(oldLeaf.liveCount, 1)
         var state = try Self.state()
         state.setScriptField("instance.count", of: "5", to: .vector(.zero), invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         let applied = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first?.children.first)
         XCTAssertEqual(applied.capacity, oldLeaf.capacity)
         XCTAssertEqual(applied.position, oldLeaf.position)
@@ -987,11 +982,11 @@ final class ParityParticleSceneTests: XCTestCase {
                                                           "leaf": Self.burst(1, lifetime: 0.25, origin: "2 0 0")])
         var state = try Self.state()
         state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(1, 0, 0, 0)), invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         scene.advance(dt: 0.1, frames: ["5": .init()])
         scene.advance(dt: 0.1, frames: ["5": .init()])
         state.setScriptField("instance.colorn", of: "5", to: .vector(SIMD4(0, 0, 1, 0)), invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         scene.advance(dt: 0.1, frames: ["5": .init()])
         let root = try XCTUnwrap(Self.root(scene))
         XCTAssertEqual(root.eventChildren[0].count, 2)
@@ -1012,7 +1007,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(child.initialColor[0], SIMD3(0, 0, 1), "fresh follow/static births see the existing hot snapshot")
         }
         state.setScriptField("instance.count", of: "5", to: .vector(.zero), invalidating: .particleInstance)
-        XCTAssertEqual(scene.applyScriptInstanceFields(state: state), ["5"])
+        scene.applyScriptInstanceFields(state: state)
         let applied = try XCTUnwrap(Self.root(scene))
         XCTAssertEqual(applied.capacity, 1)
         XCTAssertEqual(applied.eventChildren[0].map(\.liveCount), [1, 1], "hot count zero does not kill live follow slots")
@@ -1025,7 +1020,7 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertTrue(finished.eventChildren[0].isEmpty)
         XCTAssertEqual(finished.finishedEventChildren[0].count, 2)
         XCTAssertTrue(finished.followReferences.isEmpty)
-        XCTAssertTrue(scene.drawBatches(for: "5").isEmpty)
+        XCTAssertTrue(Support.drawBatches(&scene, "5").isEmpty)
     }
 
     func testN2RejectsAnUnprovedFollowEdgeWithFieldReasonsWithoutPruningHealthySiblings() throws {
@@ -1066,7 +1061,7 @@ final class ParityParticleSceneTests: XCTestCase {
             XCTAssertEqual(root.config.children.map(\.trigger), [.always, .follow, .spawn])
             XCTAssertTrue(root.config.unsupportedChildren.isEmpty)
             scene.advance(dt: 0.1, frames: ["5": .init()])
-            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path),
+            XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path),
                            [[], [.staticChild(0)], [.eventGroup(0)], [.eventGroup(1)]])
         }
         // A finite nonsingular local TRS ancestor now admits the follow branch as well as its healthy sibling.
@@ -1107,7 +1102,7 @@ final class ParityParticleSceneTests: XCTestCase {
         let child = try XCTUnwrap(root.children.first)
         XCTAssertEqual(child.position[0], SIMD3(2, 1, 3))
         XCTAssertEqual(child.velocity[0], SIMD3(4, 5, 6), "TRS must not rotate raw SoA velocity a second time")
-        let batch = try XCTUnwrap(scene.drawBatches(for: "5").first)
+        let batch = try XCTUnwrap(Support.drawBatches(&scene, "5").first)
         XCTAssertEqual(batch.key.path, [.staticChild(0)])
         // Rx90 -> Ry90 -> Rz90 maps (x,y,z) to (z,y,-x); scale applies first.
         let expected = simd_float4x4(SIMD4(0, 0, 2, 0), SIMD4(0, 3, 0, 0), SIMD4(4, 0, 0, 0), SIMD4(5, 7, 11, 1))
@@ -1142,7 +1137,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 $0.path == [.staticChild(0)] && $0.asset == "bad" && $0.field == field && !$0.reason.isEmpty
             })
             scene.advance(dt: 0.1, frames: ["5": .init()])
-            XCTAssertEqual(scene.drawBatches(for: "5").map(\.key.path), [[.staticChild(0)]])
+            XCTAssertEqual(Support.drawBatches(&scene, "5").map(\.key.path), [[.staticChild(0)]])
         }
     }
 

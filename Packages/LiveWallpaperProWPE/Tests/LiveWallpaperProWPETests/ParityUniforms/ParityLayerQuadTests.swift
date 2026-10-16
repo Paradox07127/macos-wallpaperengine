@@ -11,9 +11,6 @@ final class ParityLayerQuadTests: XCTestCase {
         ])
         XCTAssertEqual(quad.vertices.map(\.texcoord), [SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)])
         XCTAssertEqual(WPEParityLayerQuad.indices, [0, 2, 1, 1, 2, 3])
-        XCTAssertEqual(WPEParityLayerQuad.stride, 20)
-        XCTAssertEqual(quad.packed.count * MemoryLayout<Float>.stride, 4 * WPEParityLayerQuad.stride)
-        XCTAssertEqual(Array(quad.packed.prefix(5)), [-1920, 1080, 0, 0, 0])
     }
 
     func testMeshSizeIsTruncated() {

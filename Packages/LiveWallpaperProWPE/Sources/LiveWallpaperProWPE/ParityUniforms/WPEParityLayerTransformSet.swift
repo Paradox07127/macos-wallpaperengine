@@ -5,7 +5,7 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
     case layer
     /// Slot28 overwrites M with W' and inherits V/P before the text FBO/perspective pushes (140257c30.c).
     case textClearAlpha
-    /// The albedo filling the layer's first composite of `size` (R10 step 1).
+    /// The albedo filling the layer's first composite of `size`.
     case compositeFill(size: SIMD2<Float>)
     /// An intermediate effect pass on the 2×2 quad.
     case effectPass
@@ -95,7 +95,6 @@ public struct WPEParityLayerTransformSet: Sendable {
 
     /// Replaces a layer's own transform; the worlds follow on `refreshWorlds`.
     public mutating func setTransform(_ id: String, origin: SIMD3<Float>, angles: SIMD3<Float>, scale: SIMD3<Float>) {
-        guard layers[id] != nil else { return }
         layers[id]?.origin = origin
         layers[id]?.angles = angles
         layers[id]?.scale = scale
@@ -127,7 +126,7 @@ public struct WPEParityLayerTransformSet: Sendable {
 
     /// Recomputes every world matrix from the current local transforms, parents on the left. `boneWorlds` gives a
     /// puppet parent's bone worlds for this frame (`WPEParityPuppetAnimator.boneWorld`); attachments to a parent it
-    /// has none for use the rest pose. WPE recomputes attached worlds every frame (R24 Q4).
+    /// has none for use the rest pose. WPE recomputes attached worlds every frame.
     public mutating func refreshWorlds(boneWorlds: (String) -> [simd_float4x4]? = { _ in nil }) {
         for (id, parentID) in order {
             guard let local = layers[id]?.local else { continue }

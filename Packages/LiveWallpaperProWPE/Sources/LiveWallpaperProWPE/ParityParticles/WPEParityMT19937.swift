@@ -1,4 +1,4 @@
-/// std::mt19937 that WPE keeps once per scene (R18 RNG, D/14017c6d0.c:557-632).
+/// std::mt19937 that WPE keeps once per scene (D/14017c6d0.c:557-632).
 /// A class, not Sendable: every particle system of a scene draws from this one stream in WPE's order.
 public final class WPEParityMT19937 {
     private static let size = 624

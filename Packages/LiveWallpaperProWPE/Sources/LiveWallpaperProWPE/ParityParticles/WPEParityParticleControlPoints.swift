@@ -25,9 +25,7 @@ public struct WPEParityParticleFrameContext: Sendable {
         cursor: SIMD2<Float>? = nil,
         viewProjection: simd_float4x4 = matrix_identity_float4x4,
         objectMatrix: simd_float4x4 = matrix_identity_float4x4,
-        worldSpace: Bool = false,
         timeOfDay: Float = 0,
-        layerOrigin: SIMD3<Float>? = nil,
         previousFrametime: Float = Float(bitPattern: 0x3D08_8889)
     ) {
         self.time = time
@@ -35,8 +33,8 @@ public struct WPEParityParticleFrameContext: Sendable {
         self.cursor = cursor
         self.viewProjection = viewProjection
         self.objectMatrix = objectMatrix
-        self.layerOrigin = layerOrigin ?? SIMD3(objectMatrix.columns.3.x, objectMatrix.columns.3.y, objectMatrix.columns.3.z)
-        self.worldSpace = worldSpace
+        layerOrigin = SIMD3(objectMatrix.columns.3.x, objectMatrix.columns.3.y, objectMatrix.columns.3.z)
+        worldSpace = false
         self.timeOfDay = timeOfDay
     }
 }
@@ -71,10 +69,6 @@ extension WPEParityParticleSystem {
 
     var controlPointCount: Int {
         bulkControlPointStart == nil ? config.controlPointCount : 8
-    }
-
-    func controlPointBase(_ index: Int) -> simd_float4x4 {
-        controlPointBases[index]
     }
 
     /// 22c3c0 initializes authored current/base before constructing children; 22ebe0 seeds history later.
@@ -117,7 +111,7 @@ extension WPEParityParticleSystem {
             if let offset {
                 controlPointBases[index].columns.3 = SIMD4(offset, controlPointBases[index].columns.3.w)
             }
-            controlPoints[index] = controlPointBase(index)
+            controlPoints[index] = controlPointBases[index]
             updateOrdinaryControlPoint(index)
         }
     }
@@ -133,10 +127,10 @@ extension WPEParityParticleSystem {
         let flags = config.controlPoints[index].flags
         if frameContext.worldSpace {
             if flags & 2 == 0 || index == 0 {
-                controlPoints[index] = frameContext.objectMatrix * controlPointBase(index)
+                controlPoints[index] = frameContext.objectMatrix * controlPointBases[index]
             }
         } else if flags & 2 != 0 {
-            controlPoints[index] = frameContext.objectMatrix.inverse * controlPointBase(index)
+            controlPoints[index] = frameContext.objectMatrix.inverse * controlPointBases[index]
         }
     }
 
@@ -158,7 +152,7 @@ extension WPEParityParticleSystem {
                 if !frame.worldSpace {
                     world = frame.objectMatrix.inverse * world
                 }
-                var current = controlPointBase(index)
+                var current = controlPointBases[index]
                 current.columns.3.x = world.x
                 current.columns.3.y = world.y
                 current.columns.3.z = world.z

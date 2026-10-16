@@ -1,6 +1,6 @@
 import simd
 
-/// Gustavson simplex noise as WPE 2.8.42 evaluates it (R19 噪声): 3D for turbulence, 2D for
+/// Gustavson simplex noise as WPE 2.8.42 evaluates it: 3D for turbulence, 2D for
 /// positionoffsetrandom, 1D for turbulentvelocityrandom. 1D/2D hash gradients follow D/14027b090.c and D/14027b170.c.
 enum WPEParityParticleNoise {
     /// Ken Perlin's reference permutation.
@@ -34,7 +34,7 @@ enum WPEParityParticleNoise {
     }
 
     private static func lattice(_ value: Float) -> Int {
-        let truncated = Int(value)
+        let truncated = Int(WPEParityParticleRemapMath.sseInt(value))
         return Float(truncated) <= value ? truncated : truncated - 1
     }
 
