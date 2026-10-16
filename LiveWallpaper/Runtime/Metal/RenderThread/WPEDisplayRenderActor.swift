@@ -193,6 +193,32 @@ actor WPEDisplayRenderActor {
         startConfigConsumer()
     }
 
+    /// The parity driver already consumed the configuration commands, so its settings are replayed onto `renderer`.
+    func replaceParity(with renderer: sending WPEMetalSceneRenderer) async {
+        guard let driver = parityDriver, let inputs = parityInputs else {
+            preconditionFailure("replaceParity needs an adopted parity scene")
+        }
+        let profile: WallpaperPerformanceProfile = driver.isPaused ? .suspended : .quality
+        let clickCaptureEnabled = inputs.mailbox.read().clickCaptureEnabled
+        driver.cleanup()
+        (parityDriver, parityInputs) = (nil, nil)
+        inputs.userShortcutIcons?.onChange = nil
+        adopt(renderer)
+        // No suspension until the replay ends: a command applied in between would reach neither scene.
+        setFrameRateCeiling(driver.userPreferredFPS)
+        setAdaptiveFrameRateThrottle(driver.adaptiveThrottleActive)
+        setAudioMuted(driver.audioMuted)
+        setAudioVolume(driver.audioVolume)
+        setMouseInteractionEnabled(driver.mouseInteractionEnabled)
+        setClickCaptureEnabled(clickCaptureEnabled)
+        setPresentFitMode(driver.fitMode)
+        updateSurfaceGeometry(drawableSize: driver.drawableSize)
+        applyPerformanceProfile(profile)
+        if let media = inputs.media {
+            await MainActor.run { media.stop() }
+        }
+    }
+
     private func startConfigConsumer() {
         guard configConsumerTask == nil else { return }
         configConsumerTask = Task { [weak self, configStream] in

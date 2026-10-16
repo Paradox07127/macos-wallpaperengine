@@ -94,8 +94,8 @@ final class WPEParitySceneDriver {
     private(set) var drawableSize = CGSize.zero
     private(set) var fitMode = WPEPresentFitMode.cover
     private(set) var mouseInteractionEnabled = true
-    private var userPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
-    private var adaptiveThrottleActive = false
+    private(set) var userPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
+    private(set) var adaptiveThrottleActive = false
     /// The scene flag or a program reading `g_AudioSpectrum*`, as `WPEMetalSceneRenderer.sceneSupportsAudioProcessing`.
     private var shaderRequiresAudio = false
     var requiresSystemAudioCapture: Bool {
@@ -125,8 +125,8 @@ final class WPEParitySceneDriver {
     /// The scene's sound layers under WPE's rules; started by `load`, stopped by `cleanup()`.
     private(set) var soundRuntime: WPESoundRuntime?
     /// Kept so mute and volume set before the runtime exists apply once it starts.
-    private var audioMuted = false
-    private var audioVolume = 1.0
+    private(set) var audioMuted = false
+    private(set) var audioVolume = 1.0
     private var audioPreset: WPEEngineAudioSettings?
     /// Set on a span group's hidden producer: frames go to the members' presenters instead of a drawable.
     var spanFrames: WPESceneSpanFrames?
@@ -214,6 +214,12 @@ final class WPEParitySceneDriver {
                                               renderScale: planSource.renderScale).target
     }
 
+    #if DEBUG
+    /// Test seam: remaining `load` calls that throw at once.
+    nonisolated(unsafe) static var remainingForcedLoadFailuresForTesting = 0 // serial XCTest sets it before any load
+    struct ForcedLoadFailure: Error {}
+    #endif
+
     init(device: MTLDevice) throws {
         self.device = device
         executor = try WPEMetalRenderExecutor(device: device)
@@ -231,6 +237,12 @@ final class WPEParitySceneDriver {
         userShortcutIcons: WPEUserShortcutIconStore? = nil,
         particleSeed: UInt32 = WPEParityParticleScene.productSeed()
     ) async throws {
+        #if DEBUG
+        if Self.remainingForcedLoadFailuresForTesting > 0 {
+            Self.remainingForcedLoadFailuresForTesting -= 1
+            throw ForcedLoadFailure()
+        }
+        #endif
         mediaMailbox?.invalidateParityGeneration(loadGeneration)
         loadGeneration &+= 1
         let generation = loadGeneration
