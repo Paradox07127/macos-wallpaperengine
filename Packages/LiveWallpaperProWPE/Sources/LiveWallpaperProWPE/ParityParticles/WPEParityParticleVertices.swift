@@ -104,7 +104,8 @@ extension WPEParityParticleSystem {
         return combos
     }
 
-    /// POSITION f3 | TEXCOORD0 (rot, size) | [TEXCOORD1 (vel, life)] | COLOR, live slots in slot order.
+    /// POSITION f3 | TEXCOORD0 (rot, size) | COLOR | [TEXCOORD1 (vel, life)], live slots in slot order.
+    /// Stage-in packs inputs in genericparticle.vert's declaration order, which puts a_TexCoordVec4C1 last.
     private mutating func packMain(stride: Int) {
         var bytes = mainBytes
         mainBytes = []
@@ -115,12 +116,12 @@ extension WPEParityParticleSystem {
             for slot in 0 ..< highWater where lifetime[slot] != 0 {
                 writer.put(position[slot])
                 writer.put(rotation[slot], size[slot])
+                writer.put(color[slot], alpha[slot])
                 if thick {
                     let phase = config.randomFrame
                         ? frame[slot] : age[slot] / lifetime[slot] * config.sequenceMultiplier
                     writer.put(velocity[slot], phase)
                 }
-                writer.put(color[slot], alpha[slot])
             }
         }
         mainBytes = bytes

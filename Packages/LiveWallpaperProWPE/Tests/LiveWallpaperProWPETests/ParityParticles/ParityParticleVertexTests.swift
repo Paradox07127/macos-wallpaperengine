@@ -110,8 +110,8 @@ final class ParityParticleVertexTests: XCTestCase {
             let life = particles.age[slot] / particles.lifetime[slot]
             let expected = [particles.position[slot].x, particles.position[slot].y, particles.position[slot].z]
                 + vec4(particles.rotation[slot], particles.size[slot])
-                + vec4(particles.velocity[slot], life)
                 + vec4(particles.color[slot], particles.alpha[slot])
+                + vec4(particles.velocity[slot], life)
             XCTAssertEqual(Support.floats(trail.bytes, at: base, count: 15), expected)
         }
         XCTAssertEqual(particles.combos(for: particles.renderers[0]), ["THICKFORMAT": 1])
@@ -133,8 +133,8 @@ final class ParityParticleVertexTests: XCTestCase {
         XCTAssertEqual(particles.age[0], 0.5)
         let batch = particles.vertices(for: particles.renderers[0])
         XCTAssertEqual(batch.stride, 60)
-        // POSITION f3, TEXCOORD0 f4, then TEXCOORD1 (velocity, phase).
-        XCTAssertEqual(Support.float(batch.bytes, at: 40), 1)
+        // POSITION f3, TEXCOORD0 f4, COLOR f4, then TEXCOORD1 (velocity, phase).
+        XCTAssertEqual(Support.float(batch.bytes, at: 56), 1)
     }
 
     func testRopeWritesOneSegmentPerNeighbourPairInBirthOrder() {

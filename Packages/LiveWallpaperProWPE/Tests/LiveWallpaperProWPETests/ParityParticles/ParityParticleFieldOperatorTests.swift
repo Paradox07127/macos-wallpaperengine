@@ -60,7 +60,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
                 for axis in 0 ..< 3 {
                     XCTAssertEqual(Support.float(batch.vertices.bytes, at: axis * 4), sample.position[axis],
                                    accuracy: 1e-6)
-                    XCTAssertEqual(Support.float(batch.vertices.bytes, at: 28 + axis * 4), sample.velocity[axis],
+                    XCTAssertEqual(Support.float(batch.vertices.bytes, at: 44 + axis * 4), sample.velocity[axis],
                                    accuracy: 1e-6)
                 }
                 XCTAssertTrue(system.diagnostics.isEmpty)
@@ -95,7 +95,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         XCTAssertEqual(spawned.liveCount, 1)
         assertEqual(spawned.velocity[0], SIMD3(1, -4, 3))
         let batch = try XCTUnwrap(spawned.drawBatches(objectID: "5").first)
-        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 28, count: 3), [1, -4, 3])
+        XCTAssertEqual(Support.floats(batch.vertices.bytes, at: 44, count: 3), [1, -4, 3])
     }
 
     /// The original strict contact mask clears angular velocity only for flags2, before the next operator.
@@ -128,7 +128,7 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
             for axis in 0 ..< 3 {
                 XCTAssertEqual(Support.float(batch.vertices.bytes, at: 12 + axis * 4), sample.angular[axis] * 0.5,
                                accuracy: 1e-6)
-                XCTAssertEqual(Support.float(batch.vertices.bytes, at: 28 + axis * 4), sample.velocity[axis],
+                XCTAssertEqual(Support.float(batch.vertices.bytes, at: 44 + axis * 4), sample.velocity[axis],
                                accuracy: 1e-6)
             }
             let expected = WPEParityMT19937(seed: 7)

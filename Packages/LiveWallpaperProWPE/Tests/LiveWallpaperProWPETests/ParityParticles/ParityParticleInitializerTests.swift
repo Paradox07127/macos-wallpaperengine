@@ -34,7 +34,7 @@ final class ParityParticleInitializerTests: XCTestCase {
             let velocity = SIMD3(-y, x, z)
             assertEqual(particles.velocity[0], velocity)
             let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)
-            let packed = Support.floats(batch.vertices.bytes, at: 28, count: 3)
+            let packed = Support.floats(batch.vertices.bytes, at: 44, count: 3)
             assertEqual(SIMD3(packed[0], packed[1], packed[2]), velocity)
             XCTAssertEqual(particles.rng.next(), expected.next())
         }
@@ -108,7 +108,7 @@ final class ParityParticleInitializerTests: XCTestCase {
             assertEqual(particles.velocity[0], sample.velocity, accuracy: 2e-4)
             let batch = try XCTUnwrap(particles.drawBatches(objectID: "5").first)
             XCTAssertEqual(batch.vertices.stride, 60)
-            let packed = Support.floats(batch.vertices.bytes, at: 28, count: 3)
+            let packed = Support.floats(batch.vertices.bytes, at: 44, count: 3)
             assertEqual(SIMD3(packed[0], packed[1], packed[2]), sample.velocity, accuracy: 2e-4)
             let expected = WPEParityMT19937(seed: 7)
             for _ in 0 ..< 7 {
