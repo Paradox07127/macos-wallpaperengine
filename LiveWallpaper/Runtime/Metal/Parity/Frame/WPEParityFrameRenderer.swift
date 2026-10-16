@@ -384,6 +384,21 @@ final class WPEParityFrameRenderer {
         { [weak self] key, name in self?.executeMaterialFunction(key, name: name) }
     }
 
+    /// Answers from the callback's own state on a copy of the layer worlds; `self.state` lags a callback's writes.
+    var scriptTransformMatrix: (String, WPEParityScriptLayerKind, WPEParitySceneState) -> simd_float4x4? {
+        { [weak self] id, kind, state in
+            guard let self, layers.layers[id] != nil else { return nil }
+            var transforms = layers
+            for (index, objectID) in state.ids.enumerated() {
+                let object = state.objects[index]
+                transforms.setTransform(objectID, origin: object.origin, angles: object.angles, scale: object.scale)
+            }
+            transforms.refreshWorlds { self.puppets[$0]?.boneWorld }
+            // 1401fd3f0: an image answers its alignment-shifted W′; other objects answer W.
+            return kind == .image ? transforms.model(id) : transforms.world(id)
+        }
+    }
+
     private func executeMaterialFunction(_ key: WPEParitySceneState.EffectKey, name: String) {
         guard let metadata = plan.scene.resolvedMaterialFunctions[key] else { return }
         do {
@@ -819,6 +834,7 @@ final class WPEParityFrameRenderer {
             try replaceConditionalProperties(changed: snapshot, merged: snapshot)
         }
         script?.engine.materialFunctionHandler = scriptMaterialFunction
+        script?.engine.transformMatrixHandler = scriptTransformMatrix
         script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
@@ -895,6 +911,7 @@ final class WPEParityFrameRenderer {
     func attachScript(_ script: WPEParitySceneScript) throws {
         self.script = script
         script.engine.materialFunctionHandler = scriptMaterialFunction
+        script.engine.transformMatrixHandler = scriptTransformMatrix
         script.engine.videoTextureHandler = scriptVideoCommand
         script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission

@@ -173,7 +173,13 @@ enum WPEParityScriptLayers {
       },
       getEffectCount() { return liveLayer(this) ? this.__effects.length : undefined; },
       getAnimation(name) { return liveLayer(this) ? getAnimation(-1, this.__index, name) : undefined; },
-      getVideoTexture() { return liveLayer(this) ? this.__video : undefined; }
+      getVideoTexture() { return liveLayer(this) ? this.__video : undefined; },
+      // 1401df5e0: a zero-argument Mat4 (0x80) copied from vfunc+0x80; the host gives 16 column-major floats.
+      getTransformMatrix() {
+        if (!liveLayer(this)) return;
+        const m = host.transformMatrix(this.__index);
+        return m ? new Mat4(m) : undefined;
+      }
     };
     const VideoProto = {
       pause() {

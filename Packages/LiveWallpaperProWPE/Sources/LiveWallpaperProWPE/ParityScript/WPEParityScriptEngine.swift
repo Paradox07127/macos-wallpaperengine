@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import simd
 
 /// One scene's SceneScript engine: a JSContext with WPE's baseclasses.js, every property script of the
 /// scene compiled as a module in binding order, and the host objects. Confined to its owner's thread.
@@ -262,6 +263,9 @@ public final class WPEParityScriptEngine {
     public var videoTextureHandler: ((String, VideoCommand, Double) -> Double?)?
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
     public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
+    /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
+    /// native vfunc+0x80 matrix (images W′, others W), nil = no transform owner for the layer.
+    public var transformMatrixHandler: ((String, WPEParityScriptLayerKind, WPEParitySceneState) -> simd_float4x4?)?
 
     /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
     public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
@@ -1129,6 +1133,26 @@ public final class WPEParityScriptEngine {
             ) else { return nil }
             return [NSNumber(value: angles.x), NSNumber(value: angles.y), NSNumber(value: angles.z)] as NSArray
         }
+        let transformMatrix: @convention(block) (Double) -> NSArray? = { [weak self] index in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count) else { return nil }
+            let layer = layers[index]
+            guard layer.kind != .text else {
+                configuration.log(1, "getTransformMatrix is unsupported for text layers")
+                return nil
+            }
+            guard let state = activeState else {
+                configuration.log(1, "getTransformMatrix is unsupported outside a scene callback")
+                return nil
+            }
+            guard state.pointee.isAlive(layer.id) else { return nil }
+            flushWrites(to: &state.pointee)
+            guard let handler = transformMatrixHandler, let matrix = handler(layer.id, layer.kind, state.pointee) else {
+                configuration.log(1, "getTransformMatrix is unsupported without a product transform owner")
+                return nil
+            }
+            let columns = [matrix.columns.0, matrix.columns.1, matrix.columns.2, matrix.columns.3]
+            return columns.flatMap { [$0.x, $0.y, $0.z, $0.w] }.map { NSNumber(value: $0) } as NSArray
+        }
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
@@ -1171,6 +1195,7 @@ public final class WPEParityScriptEngine {
         set("animationCommand", animationCommand)
         set("animationName", animationName)
         set("lookAtAngles", lookAtAngles)
+        set("transformMatrix", transformMatrix)
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
