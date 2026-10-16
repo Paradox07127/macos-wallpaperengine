@@ -5,7 +5,7 @@ enum SuspendReasonText {
     static func primary(from reasons: Set<WallpaperSuspendReason>) -> WallpaperSuspendReason? {
         let order: [WallpaperSuspendReason] = [
             .thermal, .memoryPressure, .userAbsent,
-            .applicationRule, .lowPowerMode, .battery, .fullScreen, .windowOcclusion,
+            .applicationRule, .lowPowerMode, .battery, .fullScreen, .appWindow, .windowOcclusion,
         ]
         return order.first(where: reasons.contains)
     }
@@ -31,6 +31,8 @@ enum SuspendReasonText {
             String(localized: "Paused in Low Power Mode", bundle: .appLanguage)
         case .fullScreen:
             String(localized: "Paused for a full-screen app", bundle: .appLanguage)
+        case .appWindow:
+            String(localized: "Paused while an app window is visible", bundle: .appLanguage)
         case .windowOcclusion:
             String(localized: "Paused while covered", bundle: .appLanguage)
         case .userAbsent:

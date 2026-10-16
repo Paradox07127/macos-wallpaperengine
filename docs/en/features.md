@@ -212,6 +212,11 @@ safety suspends. Full-screen, window occlusion, battery, Low Power Mode and
 per-app rules are configurable policies; **never pause** app rules only veto
 the discretionary policies. Menu-bar and display status explain pause reasons.
 
+The separate **Pause when an app window is visible** option pauses only displays
+with an ordinary visible app window, regardless of its size. Other displays keep
+playing. It resumes when the last window is minimized, closed, or moved away.
+It is off by default and requires no additional privacy permissions.
+
 Moderate thermal pressure reduces scene/web frame rates and can suspend video.
 A manual pause retains a still frame and enters deeper resource hibernation
 after the dwell period. Pro adds adaptive scene frame rates and per-display

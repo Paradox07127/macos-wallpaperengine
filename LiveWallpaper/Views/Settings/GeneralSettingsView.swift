@@ -34,6 +34,7 @@ struct GeneralSettingsView: View {
     @State var preservePlaybackOnLock: Bool
     @State var pauseOnFullScreen: Bool
     @State var pauseOnWindowOcclusion: Bool
+    @State var pauseOnAppWindow: Bool
     @State var pauseInLowPowerMode: Bool
     @State var applicationRules: [ApplicationPerformanceRule]
     @State var showAppExceptions = false
@@ -82,6 +83,7 @@ struct GeneralSettingsView: View {
         _preservePlaybackOnLock = State(initialValue: settings.preservePlaybackOnLock)
         _pauseOnFullScreen = State(initialValue: settings.pauseOnFullScreen)
         _pauseOnWindowOcclusion = State(initialValue: settings.pauseOnWindowOcclusion)
+        _pauseOnAppWindow = State(initialValue: settings.pauseOnAppWindow)
         _pauseInLowPowerMode = State(initialValue: settings.pauseInLowPowerMode)
         _applicationRules = State(initialValue: settings.applicationPerformanceRules)
         _showInDock = State(initialValue: settings.showInDock)
@@ -359,6 +361,7 @@ struct GeneralSettingsView: View {
                 startOnLogin: startOnLogin,
                 pauseOnFullScreen: pauseOnFullScreen,
                 pauseOnWindowOcclusion: pauseOnWindowOcclusion,
+                pauseOnAppWindow: pauseOnAppWindow,
                 pauseInLowPowerMode: pauseInLowPowerMode,
                 applicationPerformanceRules: applicationRules,
                 showInDock: showInDock,

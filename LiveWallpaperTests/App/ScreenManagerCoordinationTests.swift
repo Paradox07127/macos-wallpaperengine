@@ -8,6 +8,53 @@ import WebKit
 @Suite("ScreenManager ↔ PlaybackCoordinator coordination", .serialized)
 @MainActor
 struct ScreenManagerCoordinationTests {
+    @Test("App-window policy pauses only the occupied display and resumes without changing user intent")
+    func appWindowPauseIsPerDisplay() {
+        let screens = [UInt32(0xEDFA_0101), UInt32(0xEDFA_0102)].map { id in
+            let display = AppWindowPauseTestScreen()
+            display.displayID = id
+            return Screen(nsScreen: display, displayPixelSize: { _ in nil })
+        }
+        let detector = FakeFullScreenDetector()
+        let previous = SettingsManager.shared.loadGlobalSettings()
+        defer { SettingsManager.shared.saveGlobalSettings(previous) }
+        var settings = GlobalSettings(pauseOnFullScreen: false, pauseOnWindowOcclusion: false, pauseOnAppWindow: true, pauseInLowPowerMode: false)
+        SettingsManager.shared.saveGlobalSettings(settings)
+        let state = ScreenManagerFixtureState()
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: detector,
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: screens),
+            configurationStore: WallpaperConfigurationStore(persistence: state), userPauseState: state,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { manager.tearDownForTermination() }
+        manager.wallpapersGloballyEnabled = true
+        let sessions = screens.map { screen in
+            let session = TestRuntimeSession(wallpaperType: .html)
+            screen.installRuntimeSession(session)
+            return session
+        }
+        for occupied in screens {
+            detector.appWindowScreens = [occupied.id: true]
+            for (screen, session) in zip(screens, sessions) {
+                manager.applyPerformancePolicy(to: screen)
+                #expect(session.appliedProfiles.last == (screen.id == occupied.id ? .suspended : .quality))
+            }
+        }
+        detector.appWindowScreens = [:]
+        for (screen, session) in zip(screens, sessions) {
+            manager.applyPerformancePolicy(to: screen)
+            #expect(session.appliedProfiles.last == .quality)
+        }
+        settings.pauseOnAppWindow = false
+        SettingsManager.shared.saveGlobalSettings(settings)
+        detector.appWindowScreens = [screens[0].id: true]
+        manager.applyPerformancePolicy(to: screens[0])
+        #expect(sessions[0].appliedProfiles.last == .quality)
+        #expect(state.loadGlobalSettings().pausedDisplayKeys.isEmpty)
+    }
+
     @Test("Display refresh preserves a live session unless a reload is explicitly requested", arguments: [false, true])
     func displayRefreshSessionLifetime(preserve: Bool) throws {
         let display = try #require(NSScreen.screens.first)
@@ -1958,6 +2005,7 @@ private struct ScreenChangeRecord: Sendable {
 @MainActor
 private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperConfigApplying {
     let wallpaperType: WallpaperType
+    private(set) var appliedProfiles: [WallpaperPerformanceProfile] = []
     private(set) var cleanupCount = 0
     private(set) var appliedHTMLConfigs: [HTMLConfig] = []
     var prepareAction: (@MainActor () async -> WallpaperPreparationResult)?
@@ -1979,7 +2027,11 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
     var wallpaperWindow: NSWindow? { nil }
 
     func show() {}
-    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
+
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        appliedProfiles.append(profile)
+    }
+
     func updateFrame(to frame: CGRect) {}
     func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
         await prepareAction?() ?? .ready
@@ -1990,5 +2042,22 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
     func applyHTMLConfig(_ config: HTMLConfig) -> Bool {
         appliedHTMLConfigs.append(config)
         return true
+    }
+}
+
+@MainActor
+private final class AppWindowPauseTestScreen: NSScreen {
+    var displayID: UInt32 = 0
+
+    override var frame: NSRect {
+        NSRect(x: 0, y: 0, width: 1000, height: 1000)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
+    }
+
+    override var localizedName: String {
+        "App-window pause fixture"
     }
 }

@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import ImageIO
 @testable import LiveWallpaper
-import LiveWallpaperCore
+@testable import LiveWallpaperCore
 import Metal
 import os
 import SwiftUI
@@ -162,6 +162,17 @@ struct WallpaperSessionSummaryCacheTests {
 
 @Suite("AppRuntimeOptions")
 struct AppRuntimeOptionsTests {
+    @Test("Manual testing can retain provider startup without restoring wallpapers")
+    func manualTestingRetainsProviderStartup() {
+        let options = AppRuntimeOptions(arguments: ["--no-wallpaper-restore", "--open-settings-for-ui-testing"],
+                                        environment: [:], isXCTestLoaded: false)
+        #expect(!options.isTesting)
+        #expect(!options.shouldRestoreSavedWallpapers)
+        #expect(!options.shouldStartAutomation)
+        #expect(!options.shouldShowOnboarding)
+        #expect(options.shouldOpenSettingsOnLaunch)
+    }
+
     @Test("UI testing argument disables live wallpaper startup")
     func uiTestingArgumentDisablesLiveWallpaperStartup() {
         let options = AppRuntimeOptions(
@@ -3978,3 +3989,65 @@ private final class TestWallpaperRuntimeSession: WallpaperRuntimeSession {
 }
 
 // MARK: - Infrastructure ↔ Runtime boundary
+
+@Suite("Per-display app window pause")
+@MainActor
+struct AppWindowPauseTests {
+    private let displays: [(id: CGDirectDisplayID, frame: CGRect)] = [
+        (1, CGRect(x: 0, y: 0, width: 1000, height: 1000)),
+        (2, CGRect(x: 1000, y: 0, width: 1000, height: 1000)),
+    ]
+
+    private func window(_ frame: CGRect, owner: String = "WhatsApp", layer: Int = 0, alpha: Double = 1) -> [String: Any] {
+        [
+            kCGWindowBounds as String: ["X": frame.minX, "Y": frame.minY, "Width": frame.width, "Height": frame.height],
+            kCGWindowOwnerName as String: owner,
+            kCGWindowLayer as String: layer,
+            kCGWindowAlpha as String: alpha,
+        ]
+    }
+
+    @Test("Small windows pause only their display; moving and removal restore the previous display")
+    func windowMovesAndDisappears() {
+        let detector = FullScreenDetector()
+        let settings = GlobalSettings(pauseOnFullScreen: false, pauseOnWindowOcclusion: false, pauseOnAppWindow: true)
+        for (rect, affected) in [
+            (CGRect(x: 20, y: 20, width: 20, height: 20), Set<CGDirectDisplayID>([1])),
+            (CGRect(x: 1200, y: 20, width: 300, height: 400), Set<CGDirectDisplayID>([2])),
+            (CGRect(x: 900, y: 20, width: 300, height: 400), Set<CGDirectDisplayID>([1, 2])),
+            (CGRect(x: 3000, y: 20, width: 300, height: 400), Set<CGDirectDisplayID>()),
+        ] {
+            detector.scanWindows([window(rect)], screenFrames: displays)
+            for (id, _) in displays {
+                var inputs = WallpaperPolicyInputs.test()
+                inputs.hasAppWindow = detector.appWindowScreens[id] ?? false
+                let decision = WallpaperPolicyEngine.decision(inputs: inputs, settings: settings)
+                #expect((decision.profile == .suspended) == affected.contains(id))
+                #expect(decision.suspendReasons == (affected.contains(id) ? [.appWindow] : []))
+            }
+        }
+        detector.scanWindows([], screenFrames: displays)
+        #expect(detector.appWindowScreens.values.allSatisfy { !$0 })
+    }
+
+    @Test("The new setting is opt-in, persists, and alone enables window detection")
+    func settingCompatibility() throws {
+        #expect(!GlobalSettings().pauseOnAppWindow)
+        #expect(try !JSONDecoder().decode(GlobalSettings.self, from: Data("{}".utf8)).pauseOnAppWindow)
+        for enabled in [false, true] {
+            let settings = GlobalSettings(pauseOnFullScreen: false, pauseOnWindowOcclusion: false, pauseOnAppWindow: enabled)
+            let decoded = try JSONDecoder().decode(GlobalSettings.self, from: JSONEncoder().encode(settings))
+            #expect(decoded.pauseOnAppWindow == enabled)
+            var inputs = WallpaperPolicyInputs.test()
+            inputs.hasAppWindow = true
+            #expect((WallpaperPolicyEngine.decision(inputs: inputs, settings: decoded).profile == .suspended) == enabled)
+            #expect(WallpaperPolicyEngine.shouldEnableFullScreenFallbackPolling(
+                globalSettings: decoded, hasConfiguredWallpaperSessions: true, hasConfiguredSceneSessions: false
+            ) == enabled)
+            inputs.isFrontmostExcludedByRule = true
+            #expect(WallpaperPolicyEngine.decision(inputs: inputs, settings: decoded).profile == .quality)
+            inputs.isUserAbsent = true
+            #expect(WallpaperPolicyEngine.decision(inputs: inputs, settings: decoded).suspendReasons == [.userAbsent])
+        }
+    }
+}

@@ -14,6 +14,7 @@ public enum WallpaperSuspendReason: String, Equatable, Hashable, Sendable, CaseI
     case battery
     case fullScreen
     case windowOcclusion
+    case appWindow
 
     /// While absent the user is not looking at the screen, so surfacing a reason
     /// for it would only ever be read after the fact.
