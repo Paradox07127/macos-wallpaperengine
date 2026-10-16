@@ -1044,7 +1044,7 @@ struct WPEParityFrameDrawPlanner {
             layerColor: binding.layerColorObjectID.flatMap { id in
                 state.index(of: id).map { (object: $0, loaded: plan.state.index(of: id).map(plan.state.layerColor(at:))) }
             },
-            materialPass: binding.materialPass.flatMap(plan.state.passIndex(of:)),
+            materialPass: binding.materialPass.flatMap(state.passIndex(of:)),
             materialConstants: binding.materialConstants,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,

@@ -75,14 +75,72 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(try XCTUnwrap(driver.renderer).state.object("20")?.alpha, 1)
     }
 
-    private func createdColorDriver(objects: [[String: Any]]) async throws -> (WPEParitySceneDriver, RecordingLayer) {
+    /// Script writes to a clone's effect constants reach only the clone's effect pass (1401e7170.c:441-464).
+    @objc func testCreatedEffectCloneConstantWriteReachesOnlyItsEffectPass() async throws {
+        let source = """
+        let frame = 0, clone;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            clone = thisScene.createLayer(thisScene.getInitialLayerConfig(thisScene.getLayer('template')));
+            if (!clone) throw Error('effect clone admission');
+            clone.origin = new Vec3(136, 48, 0);
+          } else if (frame === 3) {
+            clone.getEffect(0).setMaterialProperty('color', new Vec3(0, 0, 1));
+          }
+          return value;
+        }
+        """
+        let (_, original) = try sceneInputs()
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "combos": ["VERSION": 2],
+                                                   "textures": ["clone-template"],
+                                                   "blending": "normal", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        var files = try [
+            "models/clone-template.json": JSONSerialization.data(withJSONObject: ["material": "materials/clone-template.json"]),
+            "materials/clone-template.json": JSONSerialization.data(withJSONObject: material),
+            "materials/clone-template.tex": XCTUnwrap(original.data("materials/util/white.tex")),
+        ]
+        let tintAssets = try WPEParityProgramAssets(sources: [.directory(XCTUnwrap(original.roots.last).appending(path: "effects/tint"))])
+        for path in ["materials/effects/tint.json", "shaders/effects/tint.frag", "shaders/effects/tint.vert"] {
+            files[path] = try XCTUnwrap(tintAssets.data(path), path)
+        }
+        // BLENDMODE 30 with alpha 1 gives max(c) · tint colour.
+        let tint: [String: Any] = ["id": 21, "file": "effects/tint/effect.json", "visible": true,
+                                   "passes": [["constantshadervalues": ["color": "1 0 0", "alpha": 1]]]]
+        let objects: [[String: Any]] = [
+            ["id": 101, "name": "controller", "image": "models/util/solidlayer.json", "origin": "24 48 0",
+             "size": "12 12", "color": "0 0 1", "alpha": ["value": 1, "script": source]],
+            ["id": 20, "name": "template", "image": "models/clone-template.json", "origin": "80 48 0",
+             "size": "12 12", "color": "0 1 0", "alpha": 1, "effects": [tint]],
+        ]
+        let (driver, layer) = try await createdColorDriver(objects: objects, files: files)
+        defer { driver.cleanup() }
+        func rgb(_ pixels: [UInt8], x: Int) -> [Int] {
+            (0 ..< 3).map { Int(pixels[(48 * 160 + x) * 4 + $0]) }
+        }
+
+        _ = try await createdColorFrame(driver, layer: layer, label: "before create")
+        _ = try await createdColorFrame(driver, layer: layer, label: "create frame")
+        let pixels = try await createdColorFrame(driver, layer: layer, label: "write frame")
+        let clone = rgb(pixels, x: 136)
+        XCTAssertTrue(clone[2] >= 200 && clone[0] <= 8 && clone[1] <= 8, "clone pixel \(clone) is not blue")
+        let template = rgb(pixels, x: 80)
+        XCTAssertTrue(template[0] >= 200 && template[1] <= 8, "template pixel \(template) is not red")
+    }
+
+    private func createdColorDriver(objects: [[String: Any]],
+                                    files: [String: Data] = [:]) async throws -> (WPEParitySceneDriver, RecordingLayer) {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "required product GPU")
-        let assets: WPEParityProgramAssets
+        var assets: WPEParityProgramAssets
         do {
             (_, assets) = try sceneInputs()
         } catch {
             throw NSError(domain: "WPEParityCreatedLayerColorProductTests.RequiredInputs", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"])
+        }
+        if !files.isEmpty {
+            assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + assets.sources)
         }
         let compiler: WPEParityHelperShaderCompiler
         switch WPEParityShaderToolchain.makeCompiler() {
