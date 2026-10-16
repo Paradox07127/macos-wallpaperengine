@@ -40,10 +40,12 @@ public enum WPEParityProgramResolver {
         let assets = sources as? WPEParityProgramAssets
         let (names, vertex, _, fragment) = assets?.expandedSources(shader)
             ?? expandedSources(shader: shader, sources: sources)
+        let annotations = assets?.shaderDeclarations(shader).annotations
+            ?? WPEShaderAnnotationCombos(vertexSource: vertex, fragmentSource: fragment)
         func defines(_ textures: [Int32: WPEBoundComboTexture]) -> [WPEShaderDefine] {
             WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
                                      blendingMode: Int32(description.material.blending.rawValue),
-                                     vertexSource: vertex, fragmentSource: fragment,
+                                     annotations: annotations,
                                      engineFlags: description.engineFlags, boundTextures: textures)
         }
         let combos = defines([:])

@@ -523,12 +523,11 @@ public struct WPEParityProgramScene: Sendable {
 
     /// 0x14020744c: the material's own combos, shader defaults included, decide whether its composite keeps FOG.
     private static func programHasFog(_ material: WPEParityProgramMaterial, assets: WPEParityProgramAssets) -> Bool {
-        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
         let description = WPEParityProgramDescription(material: material, engineFlags: WPEEngineComboFlags(),
                                                       boundTextures: [:])
         let defines = WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
                                                blendingMode: Int32(material.blending.rawValue),
-                                               vertexSource: sources.vertex, fragmentSource: sources.fragment,
+                                               annotations: assets.shaderDeclarations(material.shader).annotations,
                                                engineFlags: description.engineFlags, boundTextures: [:])
         return defines.contains { $0.name == "FOG" && $0.value != "0" }
     }
@@ -556,8 +555,8 @@ public struct WPEParityProgramScene: Sendable {
         guard let effect, let source = effect.passes.first(where: { $0.source != nil })?.source,
               let material = materials[MaterialKey(objectID: objectID, effectID: effect.id, source: source)]
         else { return nil }
-        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
-        let uniforms = [sources.vertex, sources.fragment].flatMap { WPEParityProgramConstants.uniforms($0).values }
+        let declarations = assets.shaderDeclarations(material.shader)
+        let uniforms = [WPEHLSLStage.vertex, .fragment].flatMap { (declarations.uniforms[$0] ?? [:]).values }
         var points: [SIMD2<Float>] = []
         for index in 0 ..< 4 {
             let key = "point\(index)"

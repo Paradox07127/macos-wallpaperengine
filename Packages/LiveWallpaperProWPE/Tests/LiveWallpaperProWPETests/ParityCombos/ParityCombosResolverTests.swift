@@ -123,6 +123,40 @@ final class ParityCombosResolverTests: XCTestCase {
         XCTAssertEqual(unbound.count, 4)
     }
 
+    func testAnnotationOverloadMatchesSourceSignature() {
+        var lights = WPEEngineComboFlags()
+        lights.pointLights = 1
+        lights.shadowQuality = 2
+        lights.pointShadowLights = 1
+        lights.fogDistance = true
+        lights.hdr = true
+        var formats = WPEEngineComboFlags()
+        formats.textureFormats = [0: 8, 8: 9]
+        let samplers = """
+        uniform sampler2D g_Texture0; // {"combo":"MAIN","formatcombo":true,"components":[{"combo":"C0"},{"combo":"C1"}]}
+        uniform sampler2D g_Texture8; // {"combo":"OTHER","formatcombo":true}
+        """
+        let cases: [([WPEPassJSONCombo], Int32, String, WPEEngineComboFlags, [Int32: WPEBoundComboTexture])] = [
+            ([.init(key: "i", value: 4), .init(key: "B", value: 2)], 2,
+             "// [COMBO] {\"combo\":\"C\",\"default\":5}", .init(), [:]),
+            ([.init(key: "LIGHTING", value: 1), .init(key: "FOG", value: 1)], 3, "", lights, [:]),
+            ([], 0, samplers, formats, [0: .init(flags: 0x200000), 8: .init()]),
+        ]
+        for (combos, blending, source, flags, textures) in cases {
+            let annotations = WPEShaderAnnotationCombos(vertexSource: source, fragmentSource: "")
+            let memoized = WPEComboResolver.resolve(passJSONCombos: combos, blendingMode: blending,
+                                                    annotations: annotations, engineFlags: flags,
+                                                    boundTextures: textures)
+            let parsed = WPEComboResolver.resolve(passJSONCombos: combos, blendingMode: blending,
+                                                  vertexSource: source, fragmentSource: "", engineFlags: flags,
+                                                  boundTextures: textures)
+            XCTAssertEqual(memoized, parsed)
+            if flags.hdr {
+                XCTAssertTrue(memoized.contains(WPEShaderDefine(name: "HDR", value: "1")))
+            }
+        }
+    }
+
     private func defines(_ entries: [(String, Int32)]) -> [WPEShaderDefine] {
         entries.map { WPEShaderDefine(name: $0.0, value: String($0.1)) }
     }
