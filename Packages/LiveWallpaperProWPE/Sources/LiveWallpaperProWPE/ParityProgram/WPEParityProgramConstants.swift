@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 
 /// A `uniform` line whose trailing JSON names a material key (FUN_1401636a0).
 struct WPEParityMaterialUniform: Equatable, Sendable {
@@ -91,6 +92,19 @@ enum WPEParityProgramConstants {
             }
         case .object: value["value"].flatMap(components)
         case .null: nil
+        }
+    }
+
+    /// A `{"user": K, "value": V}` envelope takes `userValues[K]` when present; condition-form `user` objects keep V.
+    static func components(_ value: WPESceneJSONValue,
+                           userValues: [String: WallpaperEngineProjectPropertyValue]) -> [Double]? {
+        guard case let .string(key)? = value["user"], let user = userValues[key] else {
+            return components(value)
+        }
+        switch user {
+        case let .number(number): return [number]
+        case let .bool(flag): return [flag ? 1 : 0]
+        case let .string(text): return numbers(text)
         }
     }
 

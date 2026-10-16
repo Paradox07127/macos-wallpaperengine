@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 import os
 
 /// WPE's file lookup for one wallpaper: the wallpaper first, then each WPE `assets` root in order. The 2.8.42
@@ -39,6 +40,8 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
 
     /// Searched in order; the first source that has a file wins.
     public let sources: [Source]
+    /// The load's effective user property values; material-file `{"user": K, "value": V}` constants take `[K]`.
+    public var userValues: [String: WallpaperEngineProjectPropertyValue] = [:]
 
     /// Keyed by shader name; a wallpaper's shader files do not change while its assets live.
     private let declarations = OSAllocatedUnfairLock(initialState: [String: ShaderDeclarations]())

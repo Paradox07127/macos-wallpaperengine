@@ -822,7 +822,7 @@ extension WPEParityProgramMaterial {
         var constants: [String: [Double]] = [:]
         if case let .object(entries)? = pass["constantshadervalues"] {
             for (key, value) in entries {
-                constants[key] = WPEParityProgramConstants.components(value)
+                constants[key] = WPEParityProgramConstants.components(value, userValues: assets.userValues)
             }
         }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),

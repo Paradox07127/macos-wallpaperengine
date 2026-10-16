@@ -161,6 +161,29 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertEqual(try speed([:]), [1])
     }
 
+    func testMaterialFileConstantsTakeTheUserPropertyValue() throws {
+        func brightness(_ userValues: [String: WallpaperEngineProjectPropertyValue]) throws -> [Float]? {
+            let binding = try Self.probeBinding(vertex: "", fragment: """
+                                                uniform float g_EmissiveBrightness; // {"material":"emissivebrightness","default":1.0}
+                                                """,
+                                                material: ["emissivebrightness": ["user": "constellations", "value": 2.3]],
+                                                instance: [:], userValues: userValues)
+            return Self.floats(binding.constants[.fragment]?["g_EmissiveBrightness"])
+        }
+        XCTAssertEqual(try brightness(["constellations": .number(1)]), [1])
+        XCTAssertEqual(try brightness([:]), [2.3])
+    }
+
+    func testMaterialFileColourConstantsTakeTheUserColourProperty() throws {
+        let binding = try Self.probeBinding(vertex: "", fragment: """
+                                            uniform vec3 g_TintColor; // {"material":"color","default":"1 1 1"}
+                                            """,
+                                            material: ["color": ["user": "datacolor", "value": "0.85490 0 0"]],
+                                            instance: [:],
+                                            userValues: ["datacolor": .string("0.592157 0.764706 1")])
+        XCTAssertEqual(Self.floats(binding.constants[.fragment]?["g_TintColor"]), [0.592157, 0.764706, 1])
+    }
+
     /// The original ordinal, ordinary declarations and aspect flag survive the actual material→draw binding path.
     func testUserTextureDeclarationsKeepSlotsTypesAspectAndAuthoredFallback() throws {
         let declarations: [Any] = [NSNull(), "ordinary",
@@ -400,9 +423,9 @@ final class ParityProgramBindingTests: XCTestCase {
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
                                                         userValues: userValues,
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
-        let scene = WPEParityProgramScene(document: document,
-                                          assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
-                                          settings: WPEParityProgramSettings())
+        var assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [])
+        assets.userValues = userValues
+        let scene = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
         let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
         let bindings = WPEParityProgramBuilder.bindings(frame: frame, scene: scene)
         let index = try XCTUnwrap(frame.draws.first { _, draw in
