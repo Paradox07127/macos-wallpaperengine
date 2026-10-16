@@ -238,7 +238,13 @@ private struct WPEParitySceneEmitter {
         if ownBit4 || !children.isEmpty || (object.passthrough && object.copyBackground) || clearsAlpha {
             snapshot(WPEPassIdentity("\(object.id)/snapshot"))
         }
-        guard n > 0 || bit4 else {
+        // 1401e8aa0.c:186-257: without an effect or bit4 a passthrough still draws its children into composite 0.
+        let composesChildren: Bool = if case .text = object.kind {
+            false
+        } else {
+            n == 0 && !bit4 && object.passthrough && !object.fullscreen && !children.isEmpty
+        }
+        guard n > 0 || bit4 || composesChildren else {
             return renderWithoutComposite(object, children: children, into: destination, ancestors: ancestors)
         }
 
@@ -253,7 +259,7 @@ private struct WPEParitySceneEmitter {
             registerComposite(composite, of: object)
         }
         // 1401e8aa0.c:476-487: the last reader always lands on composites[0].
-        var current = bit4 ? n % 2 : (n - 1) % 2
+        var current = bit4 ? n % 2 : max(n - 1, 0) % 2
         fillComposite(object, composites[current], clearCameraOwnerID: destination.cameraOwnerID)
         let childDestination = WPEParitySceneDestination(color: composites[current], depth: nil,
                                                          alphaMax: destination.alphaMax || !object.copyBackground,
@@ -358,13 +364,15 @@ private struct WPEParitySceneEmitter {
             flips += 1
         }
 
-        guard bit4, object.visible else { return }
+        guard bit4 || composesChildren, object.visible else { return }
         owner = object.id
-        let publishBlend: WPEParitySceneBlend = object.colorBlendMode == 31 ? .additive : object.blend
+        // Without bit4 the publish is the passthrough's +0xf0 (140208670.c:50-59): blend mode 0, depth off.
+        let blendMode = bit4 ? object.colorBlendMode : 0
+        let publishBlend: WPEParitySceneBlend = blendMode == 31 ? .additive : object.blend
         // 1401e8aa0.c:1078-1115; a puppet's is FUN_140208c80.
-        puppetDraw(object, WPEParitySceneDraw(pass: WPEPassIdentity("\(object.id)/passthrough4"),
+        puppetDraw(object, WPEParitySceneDraw(pass: WPEPassIdentity("\(object.id)/\(bit4 ? "passthrough4" : "publish")"),
                                               objectID: object.id, shader: "effectpassthrough_4",
-                                              source: .layerPassthrough(colorBlendMode: object.colorBlendMode,
+                                              source: .layerPassthrough(colorBlendMode: blendMode,
                                                                         layerFog: object.materialFog,
                                                                         puppet: object.puppet),
                                               reads: [composites[current], Resource.fullFrameBuffer],
@@ -374,8 +382,9 @@ private struct WPEParitySceneEmitter {
                                               compositeOwnerID: destination.compositeOwnerID,
                                               writeMask: destination.writeMask,
                                               geometry: object.fullscreen ? .fullscreenQuad : object.layerGeometry,
-                                              depthTest: object.materialState.depthTest,
-                                              depthWrite: object.materialState.depthWrite && publishBlend.permitsDepthWrite,
+                                              depthTest: bit4 && object.materialState.depthTest,
+                                              depthWrite: bit4 && object.materialState.depthWrite
+                                                  && publishBlend.permitsDepthWrite,
                                               fullscreenLayer: object.fullscreen, colorRole: .compositePublish),
                    depth: destination.depth)
     }
@@ -405,15 +414,15 @@ private struct WPEParitySceneEmitter {
                                 logicalCompositeSize: SIMD2(width, height)))
     }
 
-    /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and a passthrough's
-    /// children follow into the same destination (1401e8aa0.c:177-220); a childless passthrough draws nothing (:185).
+    /// No enabled effect and no bit4: the layer draws its albedo straight into the destination. A passthrough draws
+    /// no albedo; a fullscreen one's children follow into the same destination, a childless one draws nothing (:185).
     private mutating func renderWithoutComposite(_ object: WPEParitySceneObject,
                                                  children: [WPEParitySceneObject],
                                                  into destination: WPEParitySceneDestination,
                                                  ancestors: [WPEResourceID]) {
         if case let .text(text) = object.kind {
             renderTextDirect(object, text, into: destination)
-        } else if !object.fullscreen, !object.passthrough || (object.copyBackground && !children.isEmpty) {
+        } else if !object.fullscreen, !object.passthrough {
             let identity = WPEPassIdentity("\(object.id)/albedo")
             let (shader, albedo, reads) = albedoSource(object)
             // FUN_140208670: a puppet draws its mesh with the layer material plus the skinning combos.
@@ -424,12 +433,11 @@ private struct WPEParitySceneEmitter {
                                                   alphaMax: destination.alphaMax,
                                                   compositeOwnerID: destination.compositeOwnerID,
                                                   writeMask: destination.writeMask, geometry: object.layerGeometry,
-                                                  // A passthrough uses composelayer, whose material disables depth.
-                                                  depthTest: !object.passthrough && object.materialState.depthTest,
-                                                  depthWrite: !object.passthrough && object.materialState.depthWrite
+                                                  depthTest: object.materialState.depthTest,
+                                                  depthWrite: object.materialState.depthWrite
                                                       && object.blend.permitsDepthWrite,
-                                                  cullsBackFaces: !object.passthrough && object.materialState.cullsBackFaces,
-                                                  colorRole: object.passthrough ? .none : .albedo),
+                                                  cullsBackFaces: object.materialState.cullsBackFaces,
+                                                  colorRole: .albedo),
                        depth: destination.depth)
         }
         for child in children where object.passthrough {

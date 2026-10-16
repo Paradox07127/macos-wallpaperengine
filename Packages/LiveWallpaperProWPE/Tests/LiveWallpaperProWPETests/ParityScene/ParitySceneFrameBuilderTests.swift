@@ -328,6 +328,37 @@ struct ParitySceneCompositionTests {
         ])
     }
 
+    /// 1401e8aa0.c:186-257: without an effect or bit4 a passthrough still draws its children into composite 0 and
+    /// publishes it on the layer quad (140208670).
+    @Test func passthroughWithChildrenAndNoEffectPublishesItsComposite() throws {
+        for copyBackground in [true, false] {
+            let frame = WPEParitySceneFrameBuilder.build(F.scene([
+                F.layer("C", sortKey: 0, parentID: "P"),
+                F.layer("P", sortKey: 1, passthrough: true, copyBackground: copyBackground),
+            ]))
+            #expect(!frame.draws.values.contains { $0.shader == "composelayer" && $0.target == "backbuffer" },
+                    "copyBackground \(copyBackground)")
+            let fill = copyBackground ? "draw composelayer [_rt_FullFrameBuffer] normal rgba quad"
+                : "clear \(F.bc0) 0.0,0.0,0.0,0.0"
+            let child = copyBackground ? "draw genericimage2 [C/image] translucent rgb mesh"
+                : "draw genericimage2 [C/image] translucent+max rgba mesh"
+            #expect(Array(F.lines(frame).dropFirst(3)) == [
+                "copy backbuffer->_rt_FullFrameBuffer",
+                "bind \(F.bc0)",
+                fill,
+                "bind \(F.bc0)",
+                child,
+                F.sceneBind,
+                "draw effectpassthrough_4 [\(F.bc0),_rt_FullFrameBuffer] translucent rgb mesh",
+            ])
+            #expect(frame.draws["C/albedo"]?.compositeOwnerID == "P")
+            let publish = try #require(frame.draws["P/publish"])
+            #expect(publish.source == .layerPassthrough(colorBlendMode: 0, layerFog: false))
+            #expect(!publish.depthTest && !publish.depthWrite)
+            #expect(Self.drawOrder(frame).last == "P/publish")
+        }
+    }
+
     @Test func nestedChildWithEffectsUsesItsOwnPooledPair() {
         let scene = F.scene([
             F.layer("P", passthrough: true, copyBackground: false, effects: [F.effect("pe")]),
