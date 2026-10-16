@@ -78,7 +78,8 @@ public struct WPEParityLayerTransform: Sendable, Equatable {
             if image.id == autoID {
                 origin = SIMD3(size / 2, origin.z)
             }
-            return Self(id: image.id, parentID: image.parentObjectID, origin: origin,
+            // Authored parent: the parser lifts images out of an attached group for the legacy renderer (1401850a0.c:49-67).
+            return Self(id: image.id, parentID: document.objectParentByID[image.id] ?? image.parentObjectID, origin: origin,
                         angles: SIMD3(image.localAngles), scale: SIMD3(image.localScale), size: size,
                         alignment: WPEParityLayerAlignment(image.alignment),
                         parallaxDepth: SIMD2(image.parallaxDepth), perspective: image.usesPerspectiveProjection)

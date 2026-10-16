@@ -91,6 +91,36 @@ final class WPEParityAttachmentTests: XCTestCase {
         layers.refreshWorlds()
         assertNear(position(layers, "c"), SIMD2(110, 200))
     }
+
+    /// W(child) = W(group) · L(child): a group's own attachment is applied once, nothing is inherited (1401850a0.c).
+    func testImageUnderAnAttachedGroupComposesWithTheGroupWorld() throws {
+        let document = try ParityCameraFixture.document(json: """
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":1920,"height":1080}},
+         "objects":[
+          {"id":1,"image":"models/body.json","origin":"100 200 0"},
+          {"id":2,"name":"hair","parent":1,"attachment":"hand","origin":"-1 -220 0"},
+          {"id":3,"image":"models/hair.json","parent":2,"origin":"89 -31 0"},
+          {"id":4,"image":"models/eye.json","parent":1,"attachment":"hand","origin":"-112 -281 0"}]}
+        """)
+        let model = puppet()
+        var layers = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(1920, 1080),
+                                                puppetModels: ["1": model])
+        assertNear(position(layers, "2"), SIMD2(321, 202))
+        assertNear(position(layers, "3"), SIMD2(352, 291))
+        assertNear(position(layers, "4"), SIMD2(382, 91))
+        let expected = floats(layers.world("2") * translation(SIMD3(89, -31, 0)))
+        for (value, want) in zip(floats(layers.world("3")), expected) {
+            XCTAssertEqual(value, want, accuracy: 1e-3)
+        }
+        var animator = WPEParityPuppetAnimator(model: model,
+                                               layers: [WPESceneAnimationLayer(id: 1, rate: 1, visible: true,
+                                                                               blend: 1, animation: 3,
+                                                                               additive: false)])
+        animator.advance(dt: 0.125)
+        layers.refreshWorlds { $0 == "1" ? animator.boneWorld : nil }
+        assertNear(position(layers, "3"), SIMD2(354, 291))
+    }
 }
 
 final class WPEParityPerspectiveLayerTests: XCTestCase {
