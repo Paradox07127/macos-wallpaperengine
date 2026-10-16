@@ -23,7 +23,7 @@ struct ParityScenePooledCompositeTests {
     @Test func nestedLayerCountsAncestorsWithTheSamePrefix() {
         let scene = F.scene([
             F.layer("P", passthrough: true, copyBackground: false, effects: [F.effect("pe")]),
-            F.layer("C", parentID: "P", effects: [F.effect("ce")]),
+            F.layer("C", passthrough: true, parentID: "P", effects: [F.effect("ce")]),
             F.layer("G", parentID: "C", effects: [F.effect("ge")]),
         ])
         let frame = WPEParitySceneFrameBuilder.build(scene)

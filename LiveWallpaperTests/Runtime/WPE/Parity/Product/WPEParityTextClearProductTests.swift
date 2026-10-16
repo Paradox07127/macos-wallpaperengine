@@ -324,6 +324,7 @@ extension WPEParitySceneDriverTests {
         case .topLevel: break
         case .parentComposite:
             objects.append(["id": 100, "image": "models/util/solidlayer.json", "size": "384 256",
+                            "config": ["passthrough": true],
                             "origin": "64 32 0", "color": "0 0 0", "solid": true, "effects": effect(10)])
             origin = "-48 64 32"
         case .fullscreenParent:
@@ -332,6 +333,7 @@ extension WPEParitySceneDriverTests {
             origin = "144 96 64"
         case .nestedFullscreenParent:
             objects.append(["id": 100, "image": "models/util/solidlayer.json", "size": "256 192",
+                            "config": ["passthrough": true],
                             "origin": "64 32 0", "color": "0 0 0", "solid": true, "effects": effect(10)])
             objects.append(["id": 101, "parent": 100, "image": "models/util/fullscreenlayer.json", "origin": "0 0 0",
                             "effects": effect(11)])

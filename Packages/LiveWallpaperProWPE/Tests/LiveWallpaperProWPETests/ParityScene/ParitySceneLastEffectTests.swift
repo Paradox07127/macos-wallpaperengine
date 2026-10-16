@@ -91,7 +91,8 @@ struct ParitySceneLastEffectSegmentTests {
         let child = F.layer("C", parentID: "P", effects: [WPEParitySceneEffect(id: "e", passes: [
             WPEParityScenePass(shader: "a"), WPEParityScenePass(shader: "b"),
         ])])
-        let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer("P", effects: [F.effect("pe")]), child]))
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([F.layer("P", passthrough: true, effects: [F.effect("pe")]),
+                                                              child]))
         #expect(frame.draws["C/e/0"]?.compositeOwnerID == "P")
         #expect(frame.draws["C/e/0"]?.layerMatrices == true)
     }

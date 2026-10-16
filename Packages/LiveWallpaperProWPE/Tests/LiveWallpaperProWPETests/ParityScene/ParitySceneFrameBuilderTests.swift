@@ -133,7 +133,7 @@ struct ParitySceneFrameStructureTests {
         let empty = F.lines(F.scene([]))
         #expect(F.lines(F.scene([F.layer(visible: false, effects: [F.effect("e1")])])) == empty)
         let hiddenParent = F.scene([
-            F.layer("P", visible: false, effects: [F.effect("pe")]),
+            F.layer("P", visible: false, passthrough: true, effects: [F.effect("pe")]),
             F.layer("C", parentID: "P"),
         ])
         #expect(F.lines(hiddenParent) == empty)
@@ -331,7 +331,7 @@ struct ParitySceneCompositionTests {
 
     @Test func onlyDrawsIntoTheParentCompositeAreMarked() {
         let frame = WPEParitySceneFrameBuilder.build(F.scene([
-            F.layer("P", copyBackground: true, effects: [F.effect("pe")]),
+            F.layer("P", passthrough: true, copyBackground: true, effects: [F.effect("pe")]),
             F.layer("C", parentID: "P"),
             F.layer("D", parentID: "P", effects: [F.effect("d1"), F.effect("d2")]),
             F.layer("G", parentID: "C"),
@@ -346,12 +346,50 @@ struct ParitySceneCompositionTests {
 
     @Test func onlyTheAlbedoIntoTheLayerCompositeFillsIt() {
         let frame = WPEParitySceneFrameBuilder.build(F.scene([
-            F.layer("P", copyBackground: true, effects: [F.effect("pe")]),
+            F.layer("P", passthrough: true, copyBackground: true, effects: [F.effect("pe")]),
             F.layer("C", parentID: "P"),
         ]))
         #expect(frame.draws["P/albedo"]?.fillsComposite == true)
         #expect(frame.draws["P/pe/0"]?.fillsComposite == false)
         #expect(frame.draws["C/albedo"]?.fillsComposite == false)
+    }
+
+    @Test func childOfANonPassthroughParentDrawsInTheSceneLoopByItsOwnSortKey() {
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([
+            F.layer("P", sortKey: 0, effects: [F.effect("pe")]),
+            F.layer("X", sortKey: 1),
+            F.layer("C", sortKey: 2, parentID: "P"),
+        ]))
+        #expect(frame.draws["C/albedo"]?.target == "backbuffer")
+        #expect(frame.draws["C/albedo"]?.compositeOwnerID == nil)
+        #expect(Self.drawOrder(frame) == ["P/albedo", "P/pe/0", "X/albedo", "C/albedo"])
+    }
+
+    @Test func nonPassthroughChildInAContainerIsFollowedByItsChildren() {
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([
+            F.layer("P", passthrough: true, copyBackground: false, effects: [F.effect("pe")]),
+            F.layer("C", parentID: "P", effects: [F.effect("ce")]),
+            F.layer("G", parentID: "C"),
+        ]))
+        #expect(frame.draws["G/albedo"]?.target == WPEResourceID(F.bc0))
+        #expect(frame.draws["G/albedo"]?.compositeOwnerID == "P")
+        let order = Self.drawOrder(frame)
+        #expect(order.firstIndex(of: "G/albedo").map { $0 > order.firstIndex(of: "C/ce/0") ?? .max } == true)
+    }
+
+    @Test func childOfAShapeDraws() {
+        let effect = WPEParitySceneEffect(id: "E", passes: [WPEParityScenePass(shader: "s")])
+        let shape = WPEParitySceneObject(id: "S", kind: .shape(WPEParitySceneShape()), width: 512, height: 256,
+                                         effects: [effect])
+        let frame = WPEParitySceneFrameBuilder.build(F.scene([shape, F.layer("L", parentID: "S")]))
+        #expect(frame.draws["L/albedo"] != nil)
+    }
+
+    private static func drawOrder(_ frame: WPEParitySceneFrame) -> [String] {
+        frame.operations.compactMap { operation in
+            guard case .draw = operation.kind else { return nil }
+            return operation.pass.rawValue
+        }
     }
 }
 

@@ -92,7 +92,7 @@ private struct WPEParitySceneEmitter {
         self.scene = scene
         self.physicalCanvasSize = physicalCanvasSize
         self.physicalBackbufferSize = physicalBackbufferSize ?? physicalCanvasSize(SIMD2(scene.width, scene.height))
-        let ids = Set(scene.objects.map(\.id))
+        let byID = Dictionary(scene.objects.map { ($0.id, $0) }) { first, _ in first }
         // 14018aac0.c:42-81 stable sort on obj+0x124.
         let ordered = scene.objects.enumerated()
             .sorted { ($0.element.sortKey, $0.offset) < ($1.element.sortKey, $1.offset) }
@@ -100,9 +100,16 @@ private struct WPEParitySceneEmitter {
         var roots: [WPEParitySceneObject] = []
         var children: [String: [WPEParitySceneObject]] = [:]
         for object in ordered {
-            if let parent = object.parentID, ids.contains(parent) {
+            if let parent = object.parentID, byID[parent] != nil {
                 children[parent, default: []].append(object)
-            } else {
+            }
+            // 1401dd9a0.c:14-45, 14018aac0.c:184: the scene loop skips only objects below a passthrough ancestor.
+            var ancestor = object.parentID.flatMap { byID[$0] }
+            var seen: Set<String> = []
+            while let current = ancestor, !current.passthrough, seen.insert(current.id).inserted {
+                ancestor = current.parentID.flatMap { byID[$0] }
+            }
+            if ancestor?.passthrough != true {
                 roots.append(object)
             }
         }
@@ -170,19 +177,24 @@ private struct WPEParitySceneEmitter {
         owner = object.dependencyTarget ? nil : object.id
         defer { owner = enclosing }
         let children = childrenByParent[object.id] ?? []
+        // 1401ecb20.c:150-163, 1401eca70.c:10-17: inside a container a non-passthrough's children follow it
+        // depth-first into the same target; at top level they are roots of the scene loop.
+        defer {
+            if !object.passthrough, destination.compositeOwnerID != nil {
+                for child in children {
+                    render(child, into: destination, ancestors: ancestors)
+                }
+            }
+        }
         if case let .shape(shape) = object.kind {
             return renderShape(object, shape, into: destination)
         }
         if case let .particle(particle) = object.kind {
-            renderParticles(object, particle, into: destination)
-            for child in children {
-                render(child, into: destination, ancestors: ancestors)
-            }
-            return
+            return renderParticles(object, particle, into: destination)
         }
         // FUN_1402222a0: a model draws into the bound target with no composite and no effects.
         if case let .model(model) = object.kind {
-            return renderModel(object, model, children: children, into: destination, ancestors: ancestors)
+            return renderModel(object, model, into: destination)
         }
         let effects = object.effects.filter(\.enabled)
         let lastPass = (effects.count - 1, effects.last?.passes.lastIndex { $0.kind == .draw } ?? -1)
@@ -220,7 +232,8 @@ private struct WPEParitySceneEmitter {
                                                          alphaMax: destination.alphaMax || !object.copyBackground,
                                                          compositeOwnerID: object.id,
                                                          cameraOwnerID: object.fullscreen ? destination.cameraOwnerID : object.id)
-        for child in children {
+        // 140207b50.c:443-458: only a passthrough fills its composite with its children.
+        for child in children where object.passthrough {
             render(child, into: childDestination, ancestors: ancestors + [composites[current]])
         }
 
@@ -361,8 +374,8 @@ private struct WPEParitySceneEmitter {
                                 logicalCompositeSize: SIMD2(width, height)))
     }
 
-    /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and its children
-    /// follow into the same destination.
+    /// No enabled effect and no bit4: the layer draws its albedo straight into the destination and a passthrough's
+    /// children follow into the same destination (1401e8aa0.c:177-220).
     private mutating func renderWithoutComposite(_ object: WPEParitySceneObject,
                                                  children: [WPEParitySceneObject],
                                                  into destination: WPEParitySceneDestination,
@@ -388,7 +401,7 @@ private struct WPEParitySceneEmitter {
                                                   colorRole: object.passthrough ? .none : .albedo),
                        depth: destination.depth)
         }
-        for child in children {
+        for child in children where object.passthrough {
             render(child, into: destination, ancestors: ancestors)
         }
     }
@@ -466,8 +479,7 @@ private struct WPEParitySceneEmitter {
     /// the model sets no target or state itself. Blending other than opaque (0, 3) turns depth writes off
     /// (140099f60.c:21-25). The draws read only the frame resources their materials name.
     private mutating func renderModel(_ object: WPEParitySceneObject, _ model: WPEParitySceneModel,
-                                      children: [WPEParitySceneObject],
-                                      into destination: WPEParitySceneDestination, ancestors: [WPEResourceID]) {
+                                      into destination: WPEParitySceneDestination) {
         for (index, mesh) in model.meshes.enumerated() {
             let identity = WPEParitySceneModel.pass(objectID: object.id, mesh: index)
             let state = mesh.materialState
@@ -479,9 +491,6 @@ private struct WPEParitySceneEmitter {
                                     writeMask: destination.writeMask(state), geometry: .modelMesh,
                                     depthTest: state.depthTest, depthWrite: state.depthWrite && mesh.blend.permitsDepthWrite,
                                     cullsBackFaces: state.cullsBackFaces))
-        }
-        for child in children {
-            render(child, into: destination, ancestors: ancestors)
         }
     }
 

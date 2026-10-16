@@ -604,8 +604,8 @@ final class WPEParityParticleSceneTests: XCTestCase {
                                        right: [1, 0, 0], up: [0, 1, 0])
             }
             XCTAssertEqual(try pixel(composite, queue: queue, at: SIMD2(59, 22)),
-                           missingBase ? [255, 0, 0, 255] : [255, 255, 255, 255])
-            XCTAssertEqual(try pixel(composite, queue: queue, at: SIMD2(47, 32)), [255, 0, 0, 255])
+                           missingBase ? [0, 0, 0, 0] : [255, 255, 255, 255])
+            XCTAssertEqual(try pixel(composite, queue: queue, at: SIMD2(47, 32)), [0, 0, 0, 0])
             XCTAssertGreaterThan(renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) == nil }, 0,
                                  "Material prune must retain the healthy image/effect draws")
             XCTAssertEqual(renderer.droppedParticleBatches, 0)
@@ -694,7 +694,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         await buffer.completed()
         XCTAssertNil(buffer.error)
         let snapshot = try XCTUnwrap(renderer.targets[WPEParitySceneResource.fullFrameBuffer])
-        XCTAssertEqual(try centerPixel(snapshot, queue: queue), [255, 0, 0, 255])
+        XCTAssertEqual(try centerPixel(snapshot, queue: queue), [0, 0, 0, 0])
     }
 
     func testIncompatibleParticleSnapshotIsExplicitAndKeepsHealthyParentAndHistory() async throws {
@@ -745,12 +745,13 @@ final class WPEParityParticleSceneTests: XCTestCase {
         if composited {
             sceneObjects = [
                 ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": parentOrigin, "color": "1 0 0",
-                 "effects": [["id": 7, "file": "effects/parent.json"]]],
+                 "copybackground": false, "effects": [["id": 7, "file": "effects/parent.json"]]],
                 ["id": 1, "parent": 2, "particle": "particles/root.json", "origin": compositeChildOrigin,
                  "angles": ownerAngles, "scale": ownerScale],
             ]
             for (path, value) in [
-                "models/parent.json": ["material": "materials/parent.json"],
+                // Only a passthrough parent draws its children into its composite, cleared to 0 without copybackground.
+                "models/parent.json": ["material": "materials/parent.json", "passthrough": true],
                 "materials/parent.json": ["passes": [["shader": "genericimage4", "textures": ["white"], "blending": "normal"]]],
                 "effects/parent.json": ["passes": [["material": "materials/pass.json"]]],
                 "materials/pass.json": ["passes": [["shader": "passthrough", "blending": "normal"]]],

@@ -1535,6 +1535,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         objects += [
             ["id": 2, "origin": "64 24 0", "angles": "0 0 0.08"],
             ["id": 1, "parent": 2, "image": "models/util/solidlayer.json", "size": "1024 512",
+             "config": ["passthrough": true], "copybackground": false,
              "origin": "448 232 0", "angles": "0 0 -0.12", "scale": "0.75 0.75 1", "color": "0 0 0", "alpha": 1,
              "effects": [["file": "effects/tint/effect.json", "id": 10, "visible": true,
                           "passes": [["constantshadervalues": ["alpha": 0]]]]]],

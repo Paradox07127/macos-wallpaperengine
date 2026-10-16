@@ -125,6 +125,26 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertTrue(imported === direct, "the effect restored from the graph cache must read the replaced texture")
     }
 
+    /// A solidlayer parent is not passthrough, so its child draws in the scene loop at its own place (40,8), outside
+    /// the parent's 32x16 composite.
+    func testChildOfANonPassthroughParentWithAnEffectDrawsIntoTheScene() async throws {
+        let tex = try XCTUnwrap(Data(base64Encoded: "VEVYVjAwMDUAVEVYSTAwMDEAAAAAAAMAAAACAAAAAgAAAAIAAAACAAAAAAAAAFRFWEIwMDA0AAEAAAD/////AQAAAEcAAAAoIwAAAgAAAHsiY29uZGl0aW9uIjoiZW5hYmxlZCJ9AAEAAAACAAAAAgAAAAAAAAAQAAAAEAAAAP8AAP//AAD//wAA//8AAP8BAAAAAQAAABMAAAAoIwAAAAAAAAAAAAACAAAAAgAAAP////8QAAAAAP8A/wD/AP8A/wD/AP8A/w=="))
+        let harness = try await makeSyntheticDriver(texture: tex, objects: [
+            ["id": 1, "name": "parent", "image": "models/util/solidlayer.json", "origin": "16 8 0", "size": "32 16",
+             "color": "0 0 0", "alpha": 1, "effects": [["id": 4, "file": "effects/toggle.json"]]],
+            ["id": 2, "name": "child", "image": "models/util/solidlayer.json", "parent": 1, "origin": "24 0 0",
+             "size": "16 16", "color": "1 1 1", "alpha": 1],
+        ], userPropertiesJSON: #"{"enabled":{"type":"bool","value":false}}"#)
+        defer { harness.driver.cleanup() }
+        let renderer = try XCTUnwrap(harness.driver.renderer)
+        try await encode(renderer)
+        let device = renderer.backbuffer.device
+        let fixture = try Fixture(renderer: renderer, device: device, queue: XCTUnwrap(device.makeCommandQueue()))
+        let pixels = try readBack(renderer.backbuffer, fixture)
+        let offset = (8 * renderer.backbuffer.width + 40) * 4
+        XCTAssertEqual(Array(pixels[offset ..< offset + 3]), [255, 255, 255])
+    }
+
     // MARK: Helpers
 
     private static func sampledTexture(_ renderer: WPEParityFrameRenderer, objectID: String,

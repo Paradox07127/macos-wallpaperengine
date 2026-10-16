@@ -28,7 +28,7 @@ struct ParitySceneParticleTests {
 
     @Test func particleUnderACompositedParentDrawsInsideItsComposite() {
         let frame = WPEParitySceneFrameBuilder.build(F.scene([
-            F.layer("P", effects: [F.effect("pe")]),
+            F.layer("P", passthrough: true, effects: [F.effect("pe")]),
             Self.particle("S", parentID: "P", draws: [Self.draw("S")]),
         ]))
         let draw = frame.draws["S/particle/r0"]
