@@ -13,6 +13,8 @@ public struct GlobalSettings: Codable, Sendable {
     public var pauseOnFullScreen: Bool
     /// Pause when non-system windows cover ≥85% of a display.
     public var pauseOnWindowOcclusion: Bool
+    /// Pause only displays with a visible ordinary app window. Opt-in.
+    public var pauseOnAppWindow: Bool
     public var pauseInLowPowerMode: Bool
     /// Dock + Cmd+Tab (`.regular`) vs menu-bar-only (`.accessory`); live, no relaunch.
     public var showInDock: Bool
@@ -87,6 +89,7 @@ public struct GlobalSettings: Codable, Sendable {
         startOnLogin: Bool = false,
         pauseOnFullScreen: Bool = true,
         pauseOnWindowOcclusion: Bool = true,
+        pauseOnAppWindow: Bool = false,
         pauseInLowPowerMode: Bool = true,
         showInDock: Bool = true,
         weatherLocation: WeatherLocationPreference = .default,
@@ -113,6 +116,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.startOnLogin = startOnLogin
         self.pauseOnFullScreen = pauseOnFullScreen
         self.pauseOnWindowOcclusion = pauseOnWindowOcclusion
+        self.pauseOnAppWindow = pauseOnAppWindow
         self.pauseInLowPowerMode = pauseInLowPowerMode
         self.showInDock = showInDock
         self.weatherLocation = weatherLocation
@@ -143,6 +147,7 @@ public struct GlobalSettings: Codable, Sendable {
         pauseOnFullScreen = try c.decodeIfPresent(Bool.self, forKey: .pauseOnFullScreen) ?? true
         // Predates-key installs → true; explicit false still wins once encoded.
         pauseOnWindowOcclusion = (try? c.decodeIfPresent(Bool.self, forKey: .pauseOnWindowOcclusion)) ?? true
+        pauseOnAppWindow = (try? c.decodeIfPresent(Bool.self, forKey: .pauseOnAppWindow)) ?? false
         // Absent → true. When the retired `pauseInGameMode` key is present, inherit it: switching
         // that off was opting out of this too. Read but never re-encoded.
         if let stored = (try? c.decodeIfPresent(Bool.self, forKey: .pauseInLowPowerMode)) ?? nil {

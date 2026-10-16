@@ -1,6 +1,111 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Pause when an app window is visible": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause when an app window is visible"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有应用窗口可见时暂停"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 App 視窗可見時暫停"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのウインドウが表示されているときに一時停止"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausar cuando haya una ventana de una app visible"
+          }
+        }
+      }
+    },
+    "Paused while an app window is visible": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused while an app window is visible"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停：有应用窗口可见"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暫停：有 App 視窗可見"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのウインドウが表示されているため一時停止中"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pausa mientras haya una ventana de una app visible"
+          }
+        }
+      }
+    },
+    "Pauses only displays with a visible app window, even a small one. Other displays keep playing. Resumes when the last window is minimized, closed, or moved away.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pauses only displays with a visible app window, even a small one. Other displays keep playing. Resumes when the last window is minimized, closed, or moved away."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅暂停有可见应用窗口的显示器，即使窗口很小。其他显示器继续播放。最后一个窗口最小化、关闭或移走后恢复播放。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只暫停有可見 App 視窗的顯示器，即使視窗很小。其他顯示器繼續播放。最後一個視窗最小化、關閉或移走後恢復播放。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小さなウインドウでも、アプリのウインドウが表示されているディスプレイだけを一時停止します。他のディスプレイでは再生を続けます。最後のウインドウを最小化、閉じる、または移動すると再開します。"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausa solo las pantallas con una ventana de una app visible, aunque sea pequeña. Las demás siguen reproduciendo. Se reanuda al minimizar, cerrar o mover fuera la última ventana."
+          }
+        }
+      }
+    },
     "Remove from download history": {
       "extractionState": "manual",
       "localizations": {

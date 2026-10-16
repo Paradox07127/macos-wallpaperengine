@@ -394,7 +394,7 @@ final class QAControlPlane {
 
     private static let generalKeys: Set<String> = [
         "globalPauseOnBattery", "preservePlaybackOnLock", "startOnLogin", "pauseOnFullScreen",
-        "pauseOnWindowOcclusion", "pauseInLowPowerMode", "applicationPerformanceRules",
+        "pauseOnWindowOcclusion", "pauseOnAppWindow", "pauseInLowPowerMode", "applicationPerformanceRules",
         "showInDock", "wallpaperVisibleInScreenCapture", "videoCacheMaxBytesPerScreen",
         "audioResponseEnabled", "adaptiveFrameRateEnabled", "weatherLocation",
     ]
@@ -448,6 +448,7 @@ final class QAControlPlane {
                     startOnLogin: merged.startOnLogin,
                     pauseOnFullScreen: merged.pauseOnFullScreen,
                     pauseOnWindowOcclusion: merged.pauseOnWindowOcclusion,
+                    pauseOnAppWindow: merged.pauseOnAppWindow,
                     pauseInLowPowerMode: merged.pauseInLowPowerMode,
                     applicationPerformanceRules: merged.applicationPerformanceRules,
                     showInDock: merged.showInDock,

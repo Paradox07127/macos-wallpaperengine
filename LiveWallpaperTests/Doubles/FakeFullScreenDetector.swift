@@ -8,6 +8,13 @@ final class FakeFullScreenDetector: FullScreenDetecting {
     private var storedOccludedScreens: [CGDirectDisplayID: Bool]
     private var storedOcclusionFractions: [CGDirectDisplayID: CGFloat]
 
+    var appWindowScreens: [CGDirectDisplayID: Bool] = [:]
+    private(set) var tracksAppWindows = false
+
+    func setAppWindowTrackingEnabled(_ enabled: Bool) {
+        tracksAppWindows = enabled
+    }
+
     private(set) var checkNowCallCount = 0
     private(set) var stopCallCount = 0
     private(set) var setFallbackPollingEnabledValues: [Bool] = []

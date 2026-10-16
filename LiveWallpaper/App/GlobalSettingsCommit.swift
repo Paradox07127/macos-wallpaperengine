@@ -11,6 +11,7 @@ enum GlobalSettingsCommit {
         var startOnLogin: Bool
         var pauseOnFullScreen: Bool
         var pauseOnWindowOcclusion: Bool
+        var pauseOnAppWindow: Bool = false
         var pauseInLowPowerMode: Bool
         var applicationPerformanceRules: [ApplicationPerformanceRule]
         var showInDock: Bool
@@ -42,6 +43,7 @@ enum GlobalSettingsCommit {
         settings.startOnLogin = fields.startOnLogin
         settings.pauseOnFullScreen = fields.pauseOnFullScreen
         settings.pauseOnWindowOcclusion = fields.pauseOnWindowOcclusion
+        settings.pauseOnAppWindow = fields.pauseOnAppWindow
         settings.pauseInLowPowerMode = fields.pauseInLowPowerMode
         settings.applicationPerformanceRules = fields.applicationPerformanceRules
         settings.showInDock = fields.showInDock

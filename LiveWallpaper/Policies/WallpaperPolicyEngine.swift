@@ -15,6 +15,7 @@ struct WallpaperPolicyInputs {
     var isFrontmostExcludedByRule: Bool = false
     /// Video has no throttle knob; a thermal throttle is escalated to the suspend that shipped before the throttle tier existed.
     var respondsToThermalThrottle: Bool = true
+    var hasAppWindow: Bool = false
 }
 
 enum WallpaperPolicyEngine {
@@ -48,6 +49,9 @@ enum WallpaperPolicyEngine {
         }
         if shouldApplyWindowOcclusionPolicy(globalSettings: settings, isWindowOccluding: inputs.isWindowOccluding) {
             discretionary.insert(.windowOcclusion)
+        }
+        if settings.pauseOnAppWindow, inputs.hasAppWindow {
+            discretionary.insert(.appWindow)
         }
         if inputs.isFrontmostExcludedByRule { discretionary.removeAll() }
 
@@ -115,7 +119,7 @@ enum WallpaperPolicyEngine {
         hasConfiguredSceneSessions: Bool
     ) -> Bool {
         // Adaptive FPS poll only when a scene session is live (skip video/HTML-only).
-        let coverageRule = (globalSettings.pauseOnFullScreen || globalSettings.pauseOnWindowOcclusion)
+        let coverageRule = (globalSettings.pauseOnFullScreen || globalSettings.pauseOnWindowOcclusion || globalSettings.pauseOnAppWindow)
             && hasConfiguredWallpaperSessions
         let adaptiveRule = globalSettings.adaptiveFrameRateEnabled && hasConfiguredSceneSessions
         return coverageRule || adaptiveRule
