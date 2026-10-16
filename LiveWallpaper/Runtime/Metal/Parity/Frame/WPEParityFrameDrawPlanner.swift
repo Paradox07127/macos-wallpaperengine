@@ -568,6 +568,40 @@ struct WPEParityFrameDrawPlanner {
         self.layers = layers
     }
 
+    /// Drops the layer images of `objectIDs` and the assets their draws in `previous` sampled that no draw of the
+    /// current layout samples; returns the dropped textures, which in-flight frames may still read.
+    mutating func releaseImages(of objectIDs: Set<String>, droppedFrom previous: WPEParityFrameLayout) -> [MTLTexture] {
+        func assets(_ layout: WPEParityFrameLayout, owned: (String?) -> Bool) -> Set<String> {
+            var names: Set<String> = []
+            for (frame, bindings) in zip(layout.frames, layout.bindings) {
+                for (operation, binding) in bindings where owned(frame.owners[operation]) {
+                    for source in binding.textures.values {
+                        if case let .asset(name) = source {
+                            names.insert(name)
+                        } else if case let .imported(_, name?) = source {
+                            names.insert(name)
+                        }
+                    }
+                }
+            }
+            return names
+        }
+        var released: [MTLTexture] = []
+        let dropped = assets(previous) { $0.map(objectIDs.contains) == true }
+        for name in dropped.subtracting(assets(layout) { _ in true }) {
+            if let image = assetImages.removeValue(forKey: name) {
+                released += [image.texture] + image.sprites.map(\.texture)
+            }
+        }
+        for id in objectIDs.map(WPEParitySceneResource.layerImage) {
+            layerImageAssets.removeValue(forKey: id)
+            if let texture = layerImages.removeValue(forKey: id) {
+                released.append(texture)
+            }
+        }
+        return released
+    }
+
     /// Builds the pipeline draw `index` of `frame` needs, so a later plan of the same draw finds it.
     mutating func prewarmPipeline(_ frame: WPEParityFrame, _ index: Int, program: WPEParityProgram,
                                   artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) {

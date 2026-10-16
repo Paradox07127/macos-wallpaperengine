@@ -6,6 +6,7 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
+import os
 import QuartzCore
 import XCTest
 
@@ -214,6 +215,79 @@ extension WPEParitySceneDriverTests {
         }
     }
 
+    @objc func testDestroyedLayerTexturesRetireOnlyAfterCommandCompletion() async throws {
+        let source = """
+        let frame = 0;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2 && !thisScene.destroyLayer('retired')) throw Error('retired layer destroy admission');
+          return value;
+        }
+        """
+        let (_, original) = try sceneInputs()
+        let white = try XCTUnwrap(original.data("materials/util/white.tex"))
+        var files: [String: Data] = [:]
+        for name in ["retire-target", "retire-control"] {
+            let material: [String: Any] = ["passes": [["shader": "genericimage2", "textures": [name], "blending": "normal",
+                                                       "cullmode": "nocull", "depthtest": "disabled",
+                                                       "depthwrite": "disabled"]]]
+            files["models/\(name).json"] = try JSONSerialization.data(withJSONObject: ["material": "materials/\(name).json"])
+            files["materials/\(name).json"] = try JSONSerialization.data(withJSONObject: material)
+            files["materials/\(name).tex"] = white
+        }
+        func image(id: Int, name: String, model: String, x: Int) -> [String: Any] {
+            ["id": id, "name": name, "image": "models/\(model).json", "origin": "\(x) 48 0", "size": "12 12",
+             "color": "1 1 1", "alpha": 1]
+        }
+        let reads = SceneProtocolAssetReads()
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, script: source),
+                       image(id: 20, name: "retired", model: "retire-target", x: 80),
+                       image(id: 30, name: "kept", model: "retire-control", x: 136)]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects, files: files, reads: reads)
+        defer { driver.cleanup() }
+        func owned(_ id: String) throws -> [WPEParityDraw] {
+            let renderer = try XCTUnwrap(driver.renderer)
+            return renderer.lastFrameDraws.filter { item in
+                renderer.frames.contains { $0.owners[item.operation] == id }
+            }.map(\.draw)
+        }
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "retire frame 1")
+        weak var retired: MTLTexture?
+        do {
+            retired = try XCTUnwrap(XCTUnwrap(owned("20").first).textures["g_Texture0"])
+        }
+        XCTAssertNotNil(retired)
+        let device = try XCTUnwrap(driver.renderer).backbuffer.device
+        let event = try XCTUnwrap(device.makeSharedEvent())
+        defer { event.signaledValue = 1 }
+        let blocked = try XCTUnwrap(driver.executor.textureSourceCommandQueue.makeCommandBuffer())
+        blocked.encodeWaitForEvent(event, value: 1)
+        blocked.commit()
+        let second = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
+                                                                pointer: SIMD2(0.5, 0.5)))
+        XCTAssertNil(try XCTUnwrap(driver.renderer).state.object("20"))
+        XCTAssertTrue(try owned("20").isEmpty, "The destroyed owner must leave the submitted frame")
+        XCTAssertFalse(try owned("30").isEmpty)
+        XCTAssertNotNil(retired, "The frame that dropped the texture has not completed on the GPU")
+        event.signaledValue = 1
+        await second.completed()
+        try await settle(driver, label: "retire frame 2")
+        XCTAssertNil(retired, "The renderer kept the destroyed layer's texture after its retiring frame completed")
+        let targetReads = reads.count("materials/retire-target.tex")
+        let controlReads = reads.count("materials/retire-control.tex")
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 80, height: 48))
+        XCTAssertTrue(driver.needsReplan)
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "retire replanned frame")
+        XCTAssertTrue(try owned("20").isEmpty)
+        XCTAssertFalse(try owned("30").isEmpty)
+        // Plan building probes both headers alike; only the live layer's image load reads more.
+        XCTAssertLessThan(reads.count("materials/retire-target.tex") - targetReads,
+                          reads.count("materials/retire-control.tex") - controlReads,
+                          "The re-planned renderer loaded the destroyed layer's texture again")
+    }
+
     @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
         // The ordinary helper below must use these actual bundled inputs; no environment fallback is admitted.
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
@@ -324,15 +398,22 @@ extension WPEParitySceneDriverTests {
         return object
     }
 
-    private func sceneProtocolDriver(objects: [[String: Any]], expectedScripts: Int = 1) async throws
+    private func sceneProtocolDriver(objects: [[String: Any]], expectedScripts: Int = 1, files: [String: Data] = [:],
+                                     reads: SceneProtocolAssetReads? = nil) async throws
         -> (WPEParitySceneDriver, RecordingLayer) {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "required product GPU")
-        let assets: WPEParityProgramAssets
+        var assets: WPEParityProgramAssets
         do {
             (_, assets) = try sceneInputs()
         } catch {
             throw NSError(domain: "WPEParitySceneProtocolProductTests.RequiredInputs", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"])
+        }
+        if !files.isEmpty {
+            assets = WPEParityProgramAssets(sources: [.lookup(scratch) { path in
+                reads?.record(path)
+                return files[path]
+            }] + assets.sources)
         }
         let compiler: WPEParityHelperShaderCompiler
         switch WPEParityShaderToolchain.makeCompiler() {
@@ -416,6 +497,17 @@ extension WPEParitySceneDriverTests {
                                      "x=\(x), y=\(y), channel=\(channel)", file: file, line: line)
         }
         XCTAssertEqual(pixels[offset + 3], 255, file: file, line: line)
+    }
+
+    private final class SceneProtocolAssetReads: Sendable {
+        private let counts = OSAllocatedUnfairLock(initialState: [String: Int]())
+        func record(_ path: String) {
+            counts.withLock { $0[path, default: 0] += 1 }
+        }
+
+        func count(_ path: String) -> Int {
+            counts.withLock { $0[path, default: 0] }
+        }
     }
 }
 #endif

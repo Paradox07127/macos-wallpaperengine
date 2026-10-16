@@ -237,6 +237,9 @@ final class WPEParityFrameRenderer {
 
     /// Calls retain the actual texture version and order until its clear has been encoded on a committed buffer.
     private var materialClears: [MaterialClear] = []
+    /// Images and targets of removed objects that frames already submitted may still read; the next committed
+    /// frame's completion releases them.
+    private var retiredTextures: [MTLTexture] = []
 
     /// The frames of the effects the state shows; draw operation indices refer to them.
     var frames: [WPEParityFrame] {
@@ -558,7 +561,13 @@ final class WPEParityFrameRenderer {
                 }
             }
         }
-        let planned = mipRequested ? try plan.layout(effects: plan.state, mipMappedFrameBufferRequested: true) : plan.layout
+        // Objects the continued scene removed must not be planned, or their images would load again.
+        var loaded = plan.state
+        for id in plan.state.ids where previous?.state.isAlive(id) == false {
+            loaded.removeObject(id)
+        }
+        let planned = mipRequested || loaded.membershipGeneration != plan.state.membershipGeneration
+            ? try plan.layout(effects: loaded, mipMappedFrameBufferRequested: mipRequested) : plan.layout
         let layout = try Self.makeLayout(planned, effects: plan.state.effectVisibility, artifacts: artifacts,
                                          planner: &planner, encoder: encoder,
                                          reusing: nil)
@@ -1433,6 +1442,11 @@ final class WPEParityFrameRenderer {
         }
         return try executor.encodeFrame(on: queue, textures: targets.merging(planner.layerImages) { $1 },
                                         prepare: { commandBuffer in
+                                            if !retiredTextures.isEmpty {
+                                                let retired = retiredTextures
+                                                retiredTextures.removeAll()
+                                                commandBuffer.addCompletedHandler { _ in withExtendedLifetime(retired) {} }
+                                            }
                                             try encodeMaterialClears(on: commandBuffer)
                                             try videos.encode(into: commandBuffer)
                                         }, shouldTransfer: { step in
@@ -1580,14 +1594,16 @@ final class WPEParityFrameRenderer {
                 planner.adoptModelDataTransforms(layers)
                 layersMoved = true
             }
+            let previous = graphs.layout
             let planned = try plan.layout(effects: state, texts: planner.texts,
                                           mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
             let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                              planner: &planner, encoder: drawEncoder,
-                                             reusing: graphs.layout)
+                                             reusing: previous)
             // Removed owners cannot return through the visibility cache. Existing command buffers retain
             // their submitted resource versions; this drops the renderer's obsolete draw/graph references.
             try installGraphs(layout, cachePrevious: false)
+            retireRemovedObjects(from: previous.planned)
             packedConstants.removeAll()
             fadeConstants.removeAll()
             seenMembership = state.membershipGeneration
@@ -1628,6 +1644,41 @@ final class WPEParityFrameRenderer {
         }
         seenVisibility = state.visibilityGeneration
         seenEffects = state.effectVisibilityGeneration
+    }
+
+    /// Drops the images and targets only objects removed since `previous` used; the next committed frame retires them.
+    private func retireRemovedObjects(from previous: WPEParityFrameLayout) {
+        let removed = Set(previous.frames.flatMap(\.owners.values).filter { !state.isAlive($0) })
+        guard !removed.isEmpty else { return }
+        retiredTextures += planner.releaseImages(of: removed, droppedFrom: previous)
+        var kept = Set(graphs.layout.frames.flatMap(\.resources).map(\.id))
+        var owned: Set<WPEResourceID> = []
+        for frame in previous.frames {
+            for (index, operation) in frame.operations.enumerated() {
+                if frame.owners[index].map(removed.contains) == true {
+                    owned.formUnion(Self.touchedResources(operation.kind))
+                } else {
+                    kept.formUnion(Self.touchedResources(operation.kind))
+                }
+            }
+        }
+        for id in owned.subtracting(kept) {
+            if let texture = targets.removeValue(forKey: id) {
+                retiredTextures.append(texture)
+            }
+        }
+    }
+
+    private static func touchedResources(_ kind: WPERenderOperation.Kind) -> [WPEResourceID] {
+        switch kind {
+        case let .setTargets(color, depth): (color + [depth].compactMap(\.self)).map(\.resource)
+        case let .clearColor(view, _), let .clearDepth(view, _): [view.resource]
+        case let .draw(draw): draw.reads.map(\.resource)
+        case let .copy(source, destination), let .resolve(source, destination),
+             let .swapResources(source, destination): [source, destination]
+        case let .resourceScope(_, resources): resources
+        case let .generateMips(id): [id]
+        }
     }
 
     /// Equal-layout buffer writes replace only the existing draw's immutable resource version. Membership,
