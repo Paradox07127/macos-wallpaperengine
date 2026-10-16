@@ -76,6 +76,7 @@ final class ParityCombosResolverTests: XCTestCase {
 
     func testEngineGatesAndZeroLightCounts() {
         var flags = WPEEngineComboFlags()
+        flags.shadowQuality = 0
         flags.spotShadowLights = 2
         flags.fogDistance = true
         flags.fogHeight = true

@@ -13,7 +13,8 @@ public struct WPEEngineComboFlags: Sendable, Equatable {
     public var spotCookieLights: Int32 = 0
     public var directionalShadowLights: Int32 = 0
     public var pointShadowLights: Int32 = 0
-    public var shadowQuality: Int32 = 0
+    /// An absent general.shadows reads as "medium" (14010efb0.c:120-153).
+    public var shadowQuality: Int32 = 2
     /// TEXI format values, including textures loaded from sampler defaults.
     public var textureFormats: [Int32: Int32] = [:]
 

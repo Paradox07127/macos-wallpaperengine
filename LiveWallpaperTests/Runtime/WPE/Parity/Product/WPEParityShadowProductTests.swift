@@ -326,7 +326,9 @@ extension WPEParitySceneDriverTests {
 
     /// Red of the floor pixels at (44.25, 40.25), inside the blocker's shadow, and its mirror (44.25, 23.75) across
     /// the light's y = 32 plane, at 64×64 and after a replan to 128×128.
-    private func renderShadowProbes(blockerCastsShadow: Bool) async throws -> [(Int, (inside: Int, open: Int))] {
+    private func renderShadowProbes(
+        blockerCastsShadow: Bool, settings: WPEParityProgramSettings = .init(bloom: false, shadowQuality: 2)
+    ) async throws -> [(Int, (inside: Int, open: Int))] {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "required product GPU")
         let (assets, compiler) = try shadowInputs()
         let document = try writeShadowScene(blockerCastsShadow: blockerCastsShadow)
@@ -344,7 +346,7 @@ extension WPEParitySceneDriverTests {
         }
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
-        try await driver.load(document: document, assets: assets, settings: .init(bloom: false, shadowQuality: 2),
+        try await driver.load(document: document, assets: assets, settings: settings,
                               drawableSize: CGSize(width: 64, height: 64), pixelFormat: .rgba8Unorm,
                               compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
         XCTAssertNil(driver.loadDiagnostics)
@@ -366,7 +368,9 @@ extension WPEParitySceneDriverTests {
             }
             let renderer = try XCTUnwrap(driver.renderer)
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
-            try assertShadowDraws(renderer, casters: blockerCastsShadow ? 2 : 1)
+            if settings.shadowQuality != 0 {
+                try assertShadowDraws(renderer, casters: blockerCastsShadow ? 2 : 1)
+            }
             let pixels = try readBack(XCTUnwrap(layer.lastTexture), device: device)
             let scale = Double(size) / 64
             func red(_ x: Double, _ y: Double) -> Int {
@@ -437,6 +441,20 @@ extension WPEParitySceneDriverTests {
         case let .matrix(matrix)?: matrix.columns.flatMap(\.self)
         case let .array(values)?: values.flatMap { floats($0) ?? [.nan] }
         default: nil
+        }
+    }
+
+    /// An absent general.shadows reads as quality 2 (14010efb0.c:120-153), so default settings draw shadows.
+    func testDefaultSettingsDrawShadows() async throws {
+        for (size, probe) in try await renderShadowProbes(blockerCastsShadow: true, settings: .init(bloom: false)) {
+            XCTAssertGreaterThan(probe.open, 64, "\(size)×\(size): the open floor probe is not lit")
+            XCTAssertLessThan(Double(probe.inside), Double(probe.open) * 0.75,
+                              "\(size)×\(size): default settings drew no shadow \(probe)")
+        }
+        let off = try await renderShadowProbes(blockerCastsShadow: true, settings: .init(bloom: false, shadowQuality: 0))
+        for (size, probe) in off {
+            XCTAssertLessThanOrEqual(abs(probe.inside - probe.open), 2,
+                                     "\(size)×\(size): shadow quality 0 still darkens the floor \(probe)")
         }
     }
 }

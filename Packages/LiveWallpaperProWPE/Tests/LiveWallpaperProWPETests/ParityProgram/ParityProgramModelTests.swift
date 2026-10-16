@@ -47,7 +47,8 @@ final class ParityProgramModelTests: XCTestCase {
         XCTAssertTrue(earth.cullsBackFaces)
         // This precompiled description retains the sampler default as a candidate. The real product's
         // REFLECTION=0 shader optimizes it out before request/allocation and graph reads are finalized.
-        XCTAssertEqual(earth.reads, ["_rt_MipMappedFrameBuffer"])
+        // Default shadow quality 2 with a shadow-casting spot makes the earth read the atlas (generic4.frag:21-26).
+        XCTAssertEqual(earth.reads, ["_rt_MipMappedFrameBuffer", "_rt_shadowAtlas"])
         let clouds = try XCTUnwrap(frame.draws["114/mesh0"])
         XCTAssertEqual(clouds.shader, "chroma4")
         XCTAssertEqual(clouds.source?.materialPath, "materials/models/Cloud_Cover/DefaultMaterial.json")
