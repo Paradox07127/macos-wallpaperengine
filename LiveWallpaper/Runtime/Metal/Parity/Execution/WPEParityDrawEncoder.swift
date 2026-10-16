@@ -21,6 +21,9 @@ struct WPEParityDraw {
     var indexCount = 0
     /// Puppet/file MDLV remains R16; script ModelData can independently supply R32.
     var indexType: MTLIndexType = .uint16
+    var instanceCount = 1
+    /// Indexed by SV_ViewportArrayIndex; empty leaves whatever viewports and scissors the encoder already holds.
+    var viewports: [MTLViewport] = []
     /// The executor skips and counts this draw when the frame arena cannot hold its arguments, instead of failing
     /// the frame.
     var dropsWhenArenaIsFull = false
@@ -103,6 +106,13 @@ struct WPEParityDrawEncoder {
         encoder.setFrontFacing(raster.frontFacing)
         encoder.setDepthBias(raster.depthBias, slopeScale: raster.depthSlopeScale, clamp: raster.depthBiasClamp)
         encoder.setDepthClipMode(raster.depthClipMode)
+        if !draw.viewports.isEmpty {
+            encoder.setViewports(draw.viewports)
+            // Metal selects the scissor rect by viewport index too; WPE never enables scissor, so each equals its viewport.
+            encoder.setScissorRects(draw.viewports.map {
+                MTLScissorRect(x: Int($0.originX), y: Int($0.originY), width: Int($0.width), height: Int($0.height))
+            })
+        }
 
         var textureStages: [ObjectIdentifier: (MTLTexture, MTLRenderStages)] = [:]
         if let offset = try encodeArguments(draw.pipeline.vertex, stages: emulation == nil ? .vertex : .object,
@@ -138,9 +148,9 @@ struct WPEParityDrawEncoder {
                                 index: WPEParityMSCRuntime.vertexBufferBindPoint)
         // IRRuntimeDrawParams is a union of IRRuntimeDrawArgument and the 20-byte IRRuntimeDrawIndexedArgument.
         let drawParams: [UInt32] = if draw.indexBuffer != nil {
-            [UInt32(draw.indexCount), 1, 0, 0, 0]
+            [UInt32(draw.indexCount), UInt32(draw.instanceCount), 0, 0, 0]
         } else {
-            [UInt32(draw.vertexCount), 1, UInt32(draw.vertexStart), 0, 0]
+            [UInt32(draw.vertexCount), UInt32(draw.instanceCount), UInt32(draw.vertexStart), 0, 0]
         }
         drawParams.withUnsafeBytes {
             encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: WPEParityMSCRuntime.drawArgumentsBindPoint)
@@ -153,10 +163,10 @@ struct WPEParityDrawEncoder {
         }
         if let indexBuffer = draw.indexBuffer {
             encoder.drawIndexedPrimitives(type: draw.primitiveType, indexCount: draw.indexCount, indexType: draw.indexType,
-                                          indexBuffer: indexBuffer, indexBufferOffset: 0)
+                                          indexBuffer: indexBuffer, indexBufferOffset: 0, instanceCount: draw.instanceCount)
         } else {
             encoder.drawPrimitives(type: draw.primitiveType, vertexStart: draw.vertexStart,
-                                   vertexCount: draw.vertexCount)
+                                   vertexCount: draw.vertexCount, instanceCount: draw.instanceCount)
         }
     }
 
