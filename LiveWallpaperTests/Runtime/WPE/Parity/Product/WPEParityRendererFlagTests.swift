@@ -17,12 +17,14 @@ final class WPEParityRendererFlagTests: XCTestCase {
     }
 
     func testAbsentKeyEnablesNoScene() {
+        WPEParityRendererFlag.setMode(.listed, defaults: suite.defaults)
         XCTAssertFalse(WPEParityRendererFlag.isEnabled(workshopID: "3815666789", defaults: suite.defaults))
         XCTAssertFalse(WPEParityRendererFlag.isEnabled(workshopID: nil, defaults: suite.defaults))
     }
 
     func testListEnablesOnlyListedScenes() {
         suite.defaults.set(["3815666789", "2370640409"], forKey: WPEParityRendererFlag.defaultsKey)
+        WPEParityRendererFlag.setMode(.listed, defaults: suite.defaults)
         XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: "3815666789", defaults: suite.defaults))
         XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: "2370640409", defaults: suite.defaults))
         XCTAssertFalse(WPEParityRendererFlag.isEnabled(workshopID: "3660962877", defaults: suite.defaults))
@@ -31,14 +33,41 @@ final class WPEParityRendererFlagTests: XCTestCase {
 
     func testWildcardEnablesEveryScene() {
         suite.defaults.set(["*"], forKey: WPEParityRendererFlag.defaultsKey)
+        WPEParityRendererFlag.setMode(.listed, defaults: suite.defaults)
         XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: "3815666789", defaults: suite.defaults))
         XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: nil, defaults: suite.defaults))
     }
 
-    func testAbsentModeReadsAsListed() {
-        XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .listed)
+    func testAbsentModeReadsAsAll() {
+        XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .all)
         suite.defaults.set("bogus", forKey: WPEParityRendererFlag.modeDefaultsKey)
+        XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .all)
+    }
+
+    func testAbsentModeAndListEnableEveryScene() {
+        XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: "3660962877", defaults: suite.defaults))
+        XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: nil, defaults: suite.defaults))
+        let state = WPEParityRendererFlag.menuState(workshopID: "3660962877", defaults: suite.defaults)
+        XCTAssertTrue(state.isChecked)
+        XCTAssertFalse(state.isEnabled)
+    }
+
+    func testStoredListedModeSurvivesTheDefault() {
+        suite.defaults.set("listed", forKey: WPEParityRendererFlag.modeDefaultsKey)
         XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .listed)
+        XCTAssertFalse(WPEParityRendererFlag.isEnabled(workshopID: "3660962877", defaults: suite.defaults))
+    }
+
+    func testStoredOffModeSurvivesTheDefault() {
+        suite.defaults.set("off", forKey: WPEParityRendererFlag.modeDefaultsKey)
+        XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .off)
+        XCTAssertFalse(WPEParityRendererFlag.isEnabled(workshopID: "3660962877", defaults: suite.defaults))
+    }
+
+    func testStoredAllModeSurvivesTheDefault() {
+        suite.defaults.set("all", forKey: WPEParityRendererFlag.modeDefaultsKey)
+        XCTAssertEqual(WPEParityRendererFlag.mode(defaults: suite.defaults), .all)
+        XCTAssertTrue(WPEParityRendererFlag.isEnabled(workshopID: "3660962877", defaults: suite.defaults))
     }
 
     func testOffModeDisablesListedScenes() {
@@ -63,6 +92,7 @@ final class WPEParityRendererFlagTests: XCTestCase {
     }
 
     func testSetListedRoundTripsWithoutDuplicates() {
+        WPEParityRendererFlag.setMode(.listed, defaults: suite.defaults)
         WPEParityRendererFlag.setListed(true, workshopID: "3815666789", defaults: suite.defaults)
         WPEParityRendererFlag.setListed(true, workshopID: "3815666789", defaults: suite.defaults)
         WPEParityRendererFlag.setListed(true, workshopID: "2370640409", defaults: suite.defaults)
@@ -76,6 +106,7 @@ final class WPEParityRendererFlagTests: XCTestCase {
 
     func testMenuStateFollowsTheMode() {
         suite.defaults.set(["3815666789"], forKey: WPEParityRendererFlag.defaultsKey)
+        WPEParityRendererFlag.setMode(.listed, defaults: suite.defaults)
 
         let listed = WPEParityRendererFlag.menuState(workshopID: "3815666789", defaults: suite.defaults)
         XCTAssertTrue(listed.isChecked)

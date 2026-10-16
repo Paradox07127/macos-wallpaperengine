@@ -19,6 +19,7 @@ final class WPEParityProductPathTests: XCTestCase {
 
     override func tearDown() async throws {
         UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.defaultsKey)
+        UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.modeDefaultsKey)
         try? FileManager.default.removeItem(at: scratch)
         try await super.tearDown()
     }
@@ -50,6 +51,7 @@ final class WPEParityProductPathTests: XCTestCase {
 
     func testUnflaggedSceneKeepsMetalSceneRenderer() async throws {
         let scene = try installScene()
+        WPEParityRendererFlag.setMode(.off)
         let session = try XCTUnwrap(makeSession(scene))
         defer { session.cleanup() }
 

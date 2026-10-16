@@ -9,11 +9,13 @@ enum WPEParityRendererFlag {
 
     /// Workshop id strings; `"*"` selects every scene. Absent ⇒ none. Read only in `.listed` mode.
     static let defaultsKey = "loomscreen.wallpapers.parityRenderer.v1"
-    /// A `Mode` raw value; absent ⇒ `.listed`.
+    /// A `Mode` raw value; absent or unrecognised ⇒ `defaultMode`.
     static let modeDefaultsKey = "loomscreen.wallpapers.parityRendererMode.v1"
+    /// Also the `@AppStorage` default of every view bound to `modeDefaultsKey`.
+    static let defaultMode: Mode = .all
 
     static func mode(defaults: UserDefaults = .appScoped()) -> Mode {
-        defaults.string(forKey: modeDefaultsKey).flatMap(Mode.init(rawValue:)) ?? .listed
+        defaults.string(forKey: modeDefaultsKey).flatMap(Mode.init(rawValue:)) ?? defaultMode
     }
 
     static func setMode(_ mode: Mode, defaults: UserDefaults = .appScoped()) {

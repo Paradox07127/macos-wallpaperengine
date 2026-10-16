@@ -2011,7 +2011,7 @@ private struct ParityRendererMenuToggle: View {
     let workshopID: String
     let reload: @MainActor () -> Void
     /// Observed so the row follows the Settings pipeline picker.
-    @AppStorage(WPEParityRendererFlag.modeDefaultsKey, store: .appScoped()) private var mode = WPEParityRendererFlag.Mode.listed
+    @AppStorage(WPEParityRendererFlag.modeDefaultsKey, store: .appScoped()) private var mode = WPEParityRendererFlag.defaultMode
 
     var body: some View {
         let state = WPEParityRendererFlag.menuState(workshopID: workshopID)
