@@ -346,6 +346,15 @@ struct WPEParityFrameDrawPlan {
             uniforms.textures[slot]?.spriteFrame = step?.frame
             spriteTextures["g_Texture\(slot)"] = step?.texture
         }
+        // The shadow atlas grows at frame time, and receivers read its live size from SHADOW_ATLAS_TEXEL (common_pbr_2.h:59-61).
+        for slot in uniforms.textures.indices {
+            guard case let .resource(id)? = textures[variant]["g_Texture\(slot)"], let texture = table[id],
+                  texture.pixelFormat == .depth32Float else { continue }
+            uniforms.textures[slot] = WPEParityUniformTexture(
+                textureWidth: UInt32(texture.width), textureHeight: UInt32(texture.height),
+                imageWidth: UInt32(texture.width), imageHeight: UInt32(texture.height), mipMapInfo: 1
+            )
+        }
         var engine = WPEParityUniformSet.values(frame: frame, draw: uniforms)
         // R6: only a bound sprite frame writes these; any other draw uploads what the slot last held.
         for slot in 0 ..< WPEParityUniformTextures.slotCount {

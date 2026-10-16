@@ -162,6 +162,8 @@ final class WPEParityFrameRenderer {
     private var seenLightVisibility = -1
     private var seenLayerFields = -1
     private var lights: WPEParityUniformLights
+    /// This frame's shadow atlas layout; nil when shadow quality is 0 or the plan declares no atlas.
+    private(set) var shadowLayout: WPEParityShadowLayout?
     private let generalZoom: Float
     private var cameraPaths: WPEParityCameraPaths
     private var cameraPose: WPEParityCameraPose?
@@ -252,6 +254,10 @@ final class WPEParityFrameRenderer {
     /// Actual executor identities for the ModelData immutable-version product guard; retains no resources.
     var graphExecutorIdentities: [ObjectIdentifier] {
         graphs.executors.map(ObjectIdentifier.init)
+    }
+
+    var compiledGraphs: [WPECompiledRenderGraph] {
+        graphs.executors.map(\.graph)
     }
 
     /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
@@ -675,6 +681,9 @@ final class WPEParityFrameRenderer {
         let snapshotObjects = Set(particleFacts.filter { $0.value.values.contains(true) }.map(\.key))
         let graphs = try Self.makeGraphs(layout: layout, state: plan.state, device: device, encoder: encoder,
                                          arena: arena, targets: &targets, snapshotObjects: snapshotObjects)
+        if let atlas = layout.frames.flatMap(\.resources).first(where: { $0.id == WPEParitySceneResource.shadowAtlas }) {
+            targets[atlas.id] = try Self.makeTarget(atlas, device: device)
+        }
         guard let backbuffer = targets[WPEParitySceneResource.backbuffer] else {
             throw WPEParityFrameRenderError.missingBackbuffer
         }
@@ -831,6 +840,7 @@ final class WPEParityFrameRenderer {
         seenSoundBoundsFields = previous.seenSoundBoundsFields
         seenScriptLighting = previous.seenScriptLighting
         lights = previous.lights
+        shadowLayout = previous.shadowLayout
         // A script's bloom write reaches `bloom` below; the generation only marks it consumed.
         seenScriptBloom = previous.seenScriptBloom
         // The next frame takes the transforms, visibility and effects over from the copied state.
@@ -1131,11 +1141,33 @@ final class WPEParityFrameRenderer {
     }
 
     /// Scene colour terms are consumed after the script tick, before this frame's lighting constants are packed.
-    private func applyScriptLighting() {
-        guard seenScriptLighting != state.generation(.lighting)
+    /// The shadow layout follows `camera`'s eye and forward, so it is rebuilt every frame (140190c80.c:938-967).
+    private func applyScriptLighting(camera: WPEParityCamera) throws {
+        let quality = plan.scene.engineFlags.shadowQuality
+        let atlasID = WPEParitySceneResource.shadowAtlas
+        let shadows = quality != 0 && targets[atlasID] != nil
+        guard shadows || seenScriptLighting != state.generation(.lighting)
             || seenLightTransforms != state.transformGeneration || seenLightVisibility != state.visibilityGeneration
             || layers.hasAttachments else { return }
-        lights = WPEParityUniformLights(document: plan.document, transforms: layers, state: state)
+        if shadows {
+            let layout = WPEParityShadowLayout(
+                document: plan.document, transforms: layers, state: state, quality: quality, eye: camera.eyePosition,
+                forward: WPEParityUniformParallax.viewVectors(view: camera.view).forward,
+                orthographic: plan.scene.engineFlags.orthographicProjection, previousAtlasSize: shadowLayout?.atlasSize
+            )
+            shadowLayout = layout
+            if layout.atlasSize != .zero, let atlas = targets[atlasID],
+               SIMD2(atlas.width, atlas.height) != layout.atlasSize {
+                targets[atlasID] = try Self.makeTarget(
+                    WPELogicalResource(id: atlasID, width: layout.atlasSize.x, height: layout.atlasSize.y,
+                                       format: WPEParitySceneResource.depthFormat, lifetime: .imported),
+                    device: device
+                )
+                retiredTextures.append(atlas)
+            }
+        }
+        lights = WPEParityUniformLights(document: plan.document, transforms: layers, state: state,
+                                        shadowQuality: quality, shadows: shadowLayout)
         seenScriptLighting = state.generation(.lighting)
         seenLightTransforms = state.transformGeneration
         seenLightVisibility = state.visibilityGeneration
@@ -1435,7 +1467,7 @@ final class WPEParityFrameRenderer {
         applyTransforms()
         applyLayerFields()
         applyScriptBloom()
-        applyScriptLighting()
+        try applyScriptLighting(camera: renderCamera)
         uniforms.lights = lights
         applyScriptText()
         try replanRelaidTexts()
@@ -1555,7 +1587,25 @@ final class WPEParityFrameRenderer {
                                                                                  textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
                                                                                  mediaTexture: { mediaTextures?.texture(for: $0) },
                                                                                  userShortcutTexture: { shortcutTextures[$0] })
-                                                try encode(provided, operation: operation)
+                                                guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
+                                                      description.target == WPEParitySceneResource.shadowAtlas else {
+                                                    try encode(provided, operation: operation)
+                                                    return
+                                                }
+                                                // Depth-only GREATER makes this caster-major order fill the atlas as WPE's batch-major
+                                                // order does (140196530.c:13-59).
+                                                for batch in shadowLayout?.batches ?? [] {
+                                                    var caster = provided
+                                                    caster.constants[.vertex, default: [:]]["g_ViewportViewProjectionMatrices"] =
+                                                        .array(batch.map { .wpeTransposed($0.viewProjection) })
+                                                    caster.instanceCount = batch.count
+                                                    caster.viewports = batch.map {
+                                                        MTLViewport(originX: Double($0.viewport.x), originY: Double($0.viewport.y),
+                                                                    width: Double($0.viewport.width), height: Double($0.viewport.height),
+                                                                    znear: 0, zfar: 1)
+                                                    }
+                                                    try encode(caster, operation: operation)
+                                                }
                                             case .particleSnapshot, .state: break
                                             }
                                         })
