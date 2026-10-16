@@ -13,13 +13,13 @@ extension WPEParitySceneDriverTests {
         let forbidden = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
                          "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
         guard forbidden.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {
-            throw NSError(domain: "S06.ToolOverride", code: 1)
+            throw NSError(domain: "WPEParityAnimationEventProductTests.ToolOverride", code: 1)
         }
         let original: WPEParityProgramAssets
         do {
             (_, original) = try sceneInputs()
         } catch {
-            throw NSError(domain: "S06.RequiredOriginalInputs", code: 1,
+            throw NSError(domain: "WPEParityAnimationEventProductTests.RequiredOriginalInputs", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: String(describing: error)])
         }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
@@ -32,13 +32,13 @@ extension WPEParitySceneDriverTests {
             _ = try XCTUnwrap(bytes.isEmpty ? nil : true)
             let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
             toolHashes.append(hash)
-            print("S06 app-bundle \(tool.path) SHA256=\(hash)")
+            print("app-bundle \(tool.path) SHA256=\(hash)")
         }
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1],
                                                          metalIRConverter: tools[2],
                                                          workDirectory: scratch.appending(path: "event-shaderc"))
         _ = try XCTUnwrap(compiler.compilerIdentity == "wpe-shaderc " + toolHashes.joined(separator: " ") ? true : nil)
-        print("S06 compilerIdentity=\(compiler.compilerIdentity)")
+        print("compilerIdentity=\(compiler.compilerIdentity)")
         for (path, expected) in [
             ("shaders/genericimage4.vert", "7cc66038ea106b213ae2b9103d0b3c6646e3b4d08f9821afbb24aa32f6186672"),
             ("shaders/genericimage4.frag", "6b5344953054ae853ff8a7942f716dd9eb67f61cc1526bd8b6bc67df92c76e1f"),

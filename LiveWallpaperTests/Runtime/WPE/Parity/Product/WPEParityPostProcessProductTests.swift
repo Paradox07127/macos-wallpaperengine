@@ -30,7 +30,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         do {
             engine = try engineAssets()
         } catch {
-            throw NSError(domain: "S06.RequiredBloomInputs", code: 1)
+            throw NSError(domain: "WPEParityPostProcessProductTests.RequiredBloomInputs", code: 1)
         }
         for (path, expected) in [
             ("materials/util/downsample_quarter_bloom.json", "bc240ebf7d1c74e7280d9c9101a274a0281f1bf65ab6c229c093b01827afd4a0"),
@@ -53,7 +53,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let keys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER", "TEST_RUNNER_WPE_SHADERC",
                     "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
         guard keys.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {
-            throw NSError(domain: "S06.BloomToolOverride", code: 1)
+            throw NSError(domain: "WPEParityPostProcessProductTests.BloomToolOverride", code: 1)
         }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
         let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]
@@ -67,7 +67,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let compiler = try WPEParityHelperShaderCompiler(helper: tools[0], dxcompiler: tools[1], metalIRConverter: tools[2],
                                                          workDirectory: scratch.appending(path: "scene-animation-shaderc"))
         _ = try XCTUnwrap(compiler.compilerIdentity == "wpe-shaderc " + hashes.joined(separator: " ") ? true : nil)
-        print("S06 general animation toolchain origin=app-bundle compilerIdentity=\(compiler.compilerIdentity)")
+        print("general animation toolchain origin=app-bundle compilerIdentity=\(compiler.compilerIdentity)")
         let document = try parse([
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0.5 0.5 0.5",

@@ -152,7 +152,7 @@ final class ParitySoundConsumerTests: XCTestCase {
                 let message = try XCTUnwrap(error["message"] as? String)
                 XCTAssertFalse(message.isEmpty)
                 // JavaScriptCore supplies this message; it is not manually matched to V8's wording.
-                print("S10 sound globals JSC \(event): \(message)")
+                print("sound globals JSC \(event): \(message)")
             } else if event.hasPrefix("init.this") || event.hasPrefix("update.this") {
                 XCTAssertEqual(detail["outcome"] as? String, "return")
                 if event.hasSuffix("volume") {

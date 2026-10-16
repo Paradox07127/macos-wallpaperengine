@@ -7,7 +7,7 @@ let initObserved = false;
 let firstUpdateObserved = false;
 function emitPhase(phase) {
     console.error('AUDIT_SS_01A13310 ' + JSON.stringify({
-        schema:'lw.wpe.s11.cold-order.marker.v2', nonce:auditNonce,
+        schema:'lw.wpe.cold-order.marker.v2', nonce:auditNonce,
         caseId:'cold-general-object', role:auditRole, phase:phase,
         localSeq:++localSeq, frame:localFrame
     }));

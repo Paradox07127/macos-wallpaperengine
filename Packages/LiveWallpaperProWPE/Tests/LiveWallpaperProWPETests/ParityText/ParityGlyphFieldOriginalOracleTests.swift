@@ -5,7 +5,7 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
 
-/// Root-applied test draft; not compiled or run by S09. Every expected byte comes from qualified Windows raw memory.
+/// Every expected byte comes from qualified Windows raw memory.
 final class ParityGlyphFieldOriginalOracleTests: XCTestCase {
     func testRawWindowsOutlineMatchesOriginalStagesAndCell() throws {
         let oracle = try Oracle()

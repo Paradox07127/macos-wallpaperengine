@@ -914,7 +914,7 @@ public final class WPEParityScriptEngine {
                     let slot = slots.count
                     slots.append(Slot(layer: layerIndex, descriptor: self.index(of: descriptor), animationLayer: Int32(index)))
                     refresh.append(.field(slot: slot, objectID: id, name: fieldName(slot: slot)))
-                    // Native defaults for an absent field (s08/animation-layer-contract-v1.md:9).
+                    // Native defaults for an absent field: the 14026c680 ctor sets visible, rate, blend 1 and blendtime 0.5.
                     let fallback: WPEParitySceneState.ScriptValue = switch descriptor.name {
                     case "visible", "rate", "blend": .vector(SIMD4(1, 0, 0, 0))
                     case "blendtime": .vector(SIMD4(0.5, 0, 0, 0))

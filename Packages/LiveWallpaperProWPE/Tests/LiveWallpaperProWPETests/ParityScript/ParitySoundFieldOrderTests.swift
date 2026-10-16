@@ -46,12 +46,12 @@ final class ParitySoundFieldOrderTests: XCTestCase {
             + [Int](repeating: 2, count: 4) + [Int](repeating: 3, count: 4))
         XCTAssertEqual(sound.compactMap { $0["frame"] as? Int }, [Int](repeating: 0, count: 8) + [Int](repeating: 1, count: 4))
         XCTAssertTrue(markers.allSatisfy { $0["nonce"] as? String == "ss-b3ed47df60a84112"
-                && $0["schema"] as? String == "lw.wpe.s11.cold-order.marker.v2"
+                && $0["schema"] as? String == "lw.wpe.cold-order.marker.v2"
         })
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
         // Retain all original general markers without claiming native general early-init ordering here.
         XCTAssertFalse(diagnostics.contains { $0.contains("general.bloom script is unsupported") })
-        print("S10 cold-order actual JSC markers (Sound subset qualified only):\n" + messages.joined(separator: "\n"))
+        print("cold-order actual JSC markers (Sound subset qualified only):\n" + messages.joined(separator: "\n"))
     }
 }
 
