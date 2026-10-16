@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -771,7 +772,7 @@ struct WPEParityFrameDrawPlanner {
                         fallbackTextures.append(name)
                     }
                 } else {
-                    // D3D unbound slots read zero. A bound but corrupt, unsupported or inaccessible resource
+                    // D3D unbound slots read zero. A bound but corrupt or unsupported resource
                     // is a different readiness failure; never report its transparent replacement as success.
                     let particleSnapshots: [WPEResourceID] = particleKey == nil ? [] : [
                         WPEParitySceneResource.fullFrameBuffer, WPEResourceID("_rt_MipMappedFrameBuffer"),
@@ -1084,8 +1085,17 @@ struct WPEParityFrameDrawPlanner {
             return cached
         }
         let path = "materials/\(name).tex"
-        guard let data = plan.scene.assets.data(path) else {
-            throw .texture("\(path) not found")
+        // WPE never reads a texture named "error" (1400ec220.c:164-165); either way the draw samples its checker.
+        guard name != "error", let data = plan.scene.assets.data(path) else {
+            Logger.warning("Parity texture \(path) is missing; drawing the checker placeholder", category: .wpeRender)
+            let image: Image
+            do {
+                image = try WPEParityTextureLoader.placeholder(device: device)
+            } catch {
+                throw .texture("\(path): \(error)")
+            }
+            assetImages[name] = image
+            return image
         }
         let span = WPEMappedByteSpan(data: data)
         let image: Image

@@ -77,6 +77,28 @@ enum WPEParityTextureLoader {
                                                conditionalSelection: payload.conditionalSelection)
     }
 
+    /// The texture WPE creates when a material texture has no payload (1400ec220.c:203-234): a 6×6 RGBA8 checker,
+    /// texel i yellow when row parity differs from i's parity, else black (140170510).
+    static func placeholder(device: MTLDevice) throws -> WPEParityFrameDrawPlanner.Image {
+        let size = 6
+        let bytes = (0 ..< size * size).flatMap { i -> [UInt8] in
+            let lit: UInt8 = (i / size) & 1 != i & 1 ? 255 : 0
+            return [lit, lit, 0, 255]
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: size, height: size,
+                                                                  mipmapped: false)
+        descriptor.usage = .shaderRead
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            throw WPEMetalTextureLoaderError.textureAllocationFailed
+        }
+        texture.replace(region: MTLRegionMake2D(0, 0, size, size), mipmapLevel: 0, withBytes: bytes,
+                        bytesPerRow: size * 4)
+        let info = WPETexInfo(containerVersion: 0, infoVersion: 0, width: size, height: size, textureFormatCode: 0,
+                              format: .rgba8888, mipmapCount: 1, flags: 9, imageWidth: size, imageHeight: size)
+        return WPEParityFrameDrawPlanner.Image(texture: texture, info: info)
+    }
+
     private static func makeTexture(mipmaps: [WPETexTextureMipmap], format: WPETexFormat,
                                     mapping: WPEMetalTextureFormatMapping, isVolume: Bool,
                                     device: MTLDevice) throws -> MTLTexture {
