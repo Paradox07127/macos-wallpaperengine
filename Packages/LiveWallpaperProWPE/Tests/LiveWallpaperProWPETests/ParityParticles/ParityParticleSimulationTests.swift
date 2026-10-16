@@ -637,8 +637,9 @@ final class ParityParticleSimulationTests: XCTestCase {
          "initializer": [{"name": "lifetimerandom", "min": \(lifetime), "max": \(lifetime)}
                          \(moving ? #", {"name": "velocityrandom", "min": "100 0 0", "max": "100 0 0"}"# : "")],
          "operator": [\(moving ? #"{"name": "movement"}"# : "")], "children": [\(entries)]}
-        """), instanceOverride: instanceOverride, rng: WPEParityMT19937(seed: 7),
-           resolveChild: { assets[$0].map(ParityParticleTestSupport.json) })
+        """), instanceOverride: instanceOverride, rng: WPEParityMT19937(seed: 7)) {
+            assets[$0].map(ParityParticleTestSupport.json)
+        }
     }
 
     private func followChild(lifetime: Float = 10, startTime: Float = 0, extra: String = "") -> String {
