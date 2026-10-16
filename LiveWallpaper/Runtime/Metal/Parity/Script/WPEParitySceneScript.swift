@@ -276,29 +276,9 @@ final class WPEParitySceneScript {
         return fields
     }
 
-    /// Refreshes the registerAudioBuffers bins from the frame's spectrum: 64 as published, 32 and 16 max-pooled
-    /// like the g_AudioSpectrum uniforms; `average` is the mean of both channels.
+    /// Refreshes the registerAudioBuffers bins from the frame's 128 spectrum bins (left 64, then right 64).
     func updateAudio(_ bins: [Float]) {
-        guard bins.count == 128, let full = engine.audioBuffer(resolution: 64),
-              let half = engine.audioBuffer(resolution: 32), let quarter = engine.audioBuffer(resolution: 16) else { return }
-        for index in 0 ..< 64 {
-            (full[index], full[64 + index]) = (bins[index], bins[64 + index])
-            full[128 + index] = (bins[index] + bins[64 + index]) * 0.5
-        }
-        func pool(_ source: UnsafeMutableBufferPointer<Float>, into target: UnsafeMutableBufferPointer<Float>,
-                  count: Int) {
-            for channel in 0 ..< 2 {
-                for index in 0 ..< count {
-                    let base = channel * count * 2 + index * 2
-                    target[channel * count + index] = max(source[base], source[base + 1])
-                }
-            }
-            for index in 0 ..< count {
-                target[2 * count + index] = (target[index] + target[count + index]) * 0.5
-            }
-        }
-        pool(full, into: half, count: 32)
-        pool(half, into: quarter, count: 16)
+        engine.updateAudio(bins)
     }
 
     private func input(cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool,

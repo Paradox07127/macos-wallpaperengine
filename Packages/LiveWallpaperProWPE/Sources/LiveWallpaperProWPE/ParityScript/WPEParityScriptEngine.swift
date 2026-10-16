@@ -408,6 +408,24 @@ public final class WPEParityScriptEngine {
         return UnsafeMutableBufferPointer(start: audio + start, count: 3 * resolution)
     }
 
+    /// Refreshes the registerAudioBuffers bins from the frame's 128 spectrum bins (left 64, then right 64).
+    /// 32 and 16 pairwise-max the whole left|right|average buffer, so `average` pools the 64-bin mean
+    /// (140110630.c:1704-2147).
+    public func updateAudio(_ bins: [Float]) {
+        guard bins.count == 128, let full = audioBuffer(resolution: 64),
+              let half = audioBuffer(resolution: 32), let quarter = audioBuffer(resolution: 16) else { return }
+        for index in 0 ..< 64 {
+            (full[index], full[64 + index]) = (bins[index], bins[64 + index])
+            full[128 + index] = (bins[index] + bins[64 + index]) * 0.5
+        }
+        for index in 0 ..< 96 {
+            half[index] = max(full[2 * index], full[2 * index + 1])
+        }
+        for index in 0 ..< 48 {
+            quarter[index] = max(half[2 * index], half[2 * index + 1])
+        }
+    }
+
     /// Runs the existing product loader once per unprepared binding. No VM or mutable State borrow spans await.
     /// The caller keeps this engine on its owning actor and validates its existing load generation before attach.
     public nonisolated(nonsending) func prepareRegisteredAssets(
