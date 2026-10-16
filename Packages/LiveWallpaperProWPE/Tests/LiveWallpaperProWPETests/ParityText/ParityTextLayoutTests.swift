@@ -288,4 +288,30 @@ final class ParityTextLayoutTests: XCTestCase {
             XCTAssertNotEqual(key & 0xFFFFFF, 0, "gid")
         }
     }
+
+    /// A character no slot maps spends all eight slots, and every slot that loads stays in the chain.
+    func testUnmappedCharacterAppendsEverySlotAndLaterCharactersUseThem() throws {
+        let library = try ParityFontChainTests.makeLibrary()
+        let mesh = try XCTUnwrap(WPEParityTextLayoutEngine.layout(input("\u{E000}你"), fonts: library).mesh)
+        let keys = mesh.mono.glyphKeys + mesh.color.glyphKeys
+        XCTAssertEqual(keys.count, 1)
+        XCTAssertGreaterThan(try XCTUnwrap(keys.first) >> 24, 0, "face index in the chain")
+        XCTAssertEqual(
+            library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.map(\.familyName),
+            ["Noto Sans", "Arial", "Twemoji Mozilla", "Helvetica Neue", "Apple Symbols", "PingFang SC",
+             "Apple SD Gothic Neo"]
+        )
+    }
+
+    func testEmojiComesFromTwemojiAsAColorGlyph() throws {
+        let mesh = try XCTUnwrap(layout(input("H😀")).mesh)
+        XCTAssertEqual(gids(mesh), [Self.capitalH.gid])
+        XCTAssertEqual(mesh.color.glyphKeys.map { $0 & 0xFFFFFF }, [883])
+    }
+
+    func testHeavyHeartComesFromTwemojiAsAColorGlyph() throws {
+        let mesh = try XCTUnwrap(layout(input("H\u{2764}")).mesh)
+        XCTAssertEqual(gids(mesh), [Self.capitalH.gid])
+        XCTAssertEqual(mesh.color.glyphKeys.count, 1)
+    }
 }

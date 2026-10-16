@@ -1,3 +1,4 @@
+import CFreeType
 import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
@@ -82,14 +83,31 @@ final class ParityFontChainTests: XCTestCase {
         XCTAssertEqual(chain.faces.first?.postScriptName, "ArialMT")
     }
 
+    func testSystemFontTableResolvesItsFamiliesAndConsolasStaysMonospace() throws {
+        let library = try Self.makeLibrary()
+        XCTAssertEqual(library.chain(fontPath: "systemfont_comicsans", pointSize: 32).faces.first?.postScriptName,
+                       "ComicSansMS")
+        XCTAssertEqual(library.chain(fontPath: "systemfont_sansserif", pointSize: 32).faces.first?.postScriptName,
+                       "MicrosoftSansSerif")
+        let consolas = try XCTUnwrap(library.chain(fontPath: "systemfont_consolas", pointSize: 32).faces.first)
+        XCTAssertNotEqual(consolas.face.pointee.face_flags & FT_Long(FT_FACE_FLAG_FIXED_WIDTH), 0)
+    }
+
+    func testSystemFontOutsideTheTableIsAnAssetPathEndingInArial() throws {
+        let chain = try Self.makeLibrary().chain(fontPath: "systemfont_helvetica_neue", pointSize: 32)
+        XCTAssertEqual(chain.faces.map(\.familyName), ["Arial"])
+    }
+
     /// System fonts are read by FreeType from their files instead of being copied whole into memory.
     func testSystemFontsOpenFromTheirFilesAndCollectionsPickThePostScriptFace() throws {
         let library = try Self.makeLibrary()
-        let collection = try XCTUnwrap(library.chain(fontPath: "systemfont_helvetica_neue", pointSize: 32).faces.first)
-        XCTAssertEqual(collection.postScriptName, "HelveticaNeue")
+        let chain = library.chain(fontPath: Self.notoSans, pointSize: 32)
+        let index = try XCTUnwrap(chain.faceIndex(containing: 0x4F60))
+        let collection = chain.faces[index]
+        XCTAssertEqual(collection.familyName, "PingFang SC")
+        XCTAssertEqual(collection.postScriptName, "PingFangSC-Regular")
         XCTAssertNil(collection.bytes)
-        let asset = try XCTUnwrap(library.chain(fontPath: Self.notoSans, pointSize: 32).faces.first)
-        XCTAssertNotNil(asset.bytes)
+        XCTAssertNotNil(chain.faces.first?.bytes)
     }
 
     func testGlyphBoxAndRasterOfCapitalH() throws {

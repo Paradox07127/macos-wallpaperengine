@@ -45,27 +45,35 @@ public final class WPEParityFontLibrary {
 
 /// The primary face followed by the fallback faces appended while laying out text (1401ad670.c:72-199).
 public final class WPEParityFontChain {
-    /// WPE tries at most eight fallback fonts per chain; its fifth is the assets' Twemoji.
-    private static let fallbackAttemptLimit = 8
-    private static let twemojiAttempt = 4
+    private enum FallbackSlot {
+        case system(String)
+        case asset(String)
+    }
+
     private static let twemojiPath = "fonts/TwemojiMozilla.ttf"
+    /// WPE's table 0x140484c40 with macOS stand-ins: arial, seguiemj, arialuni, segoeui, fonts/TwemojiMozilla.ttf,
+    /// seguisym, msyh, Malgun. nil = no stand-in; the slot is still spent.
+    private static let fallbackSlots: [FallbackSlot?] = [
+        .system("Arial"), .asset(twemojiPath), nil, .system("Helvetica Neue"),
+        .asset(twemojiPath), .system("Apple Symbols"), .system("PingFang SC"), .system("Apple SD Gothic Neo"),
+    ]
 
     public private(set) var faces: [WPEParityFontFace] = []
     public let pointSize: Float
     private let loader: WPEParityFontLoader
-    private var cascadeBase: CTFont?
+    /// Slots of `fallbackSlots` already spent; WPE counts them per chain, not per character.
     private var fallbackAttempts = 0
 
     init(loader: WPEParityFontLoader, fontPath: String, pointSize: Float) {
         self.loader = loader
         self.pointSize = pointSize
-        if WPEParityFontLoader.isSystemFont(fontPath) {
-            appendSystemFont(named: WPEParityFontLoader.systemFamilyName(fontPath))
+        if let families = WPEParityFontLoader.systemFontFamilies[fontPath] {
+            appendSystemFont(families)
         } else if let face = loader.assetFace(path: fontPath, pointSize: pointSize) {
             faces.append(face)
         }
         if faces.isEmpty {
-            appendSystemFont(named: WPEParityFontLoader.systemFamilyName("systemfont_arial"))
+            appendSystemFont(["Arial"])
         }
     }
 
@@ -74,11 +82,10 @@ public final class WPEParityFontChain {
         if let index = faces.firstIndex(where: { $0.hasCharacter(scalar) }) {
             return index
         }
-        while fallbackAttempts < Self.fallbackAttemptLimit {
-            let attempt = fallbackAttempts
+        while fallbackAttempts < Self.fallbackSlots.count {
+            let slot = Self.fallbackSlots[fallbackAttempts]
             fallbackAttempts += 1
-            guard let face = fallbackFace(attempt: attempt, for: scalar), !faces.contains(where: { $0 === face })
-            else { continue }
+            guard let face = slot.flatMap(fallbackFace), !faces.contains(where: { $0 === face }) else { continue }
             faces.append(face)
             if face.hasCharacter(scalar) {
                 return faces.count - 1
@@ -87,44 +94,37 @@ public final class WPEParityFontChain {
         return nil
     }
 
-    private func appendSystemFont(named family: String) {
-        let font = CTFontCreateWithName(family as CFString, CGFloat(pointSize * 300 / 72), nil)
-        guard let face = loader.face(for: font, pointSize: pointSize) else { return }
-        faces.append(face)
-        cascadeBase = font
+    private func appendSystemFont(_ families: [String]) {
+        for family in families {
+            if let face = loader.systemFace(family: family, pointSize: pointSize) {
+                faces.append(face)
+                return
+            }
+        }
     }
 
-    /// Windows fonts stand in WPE's table; on macOS CoreText's cascade font for the character takes those slots.
-    private func fallbackFace(attempt: Int, for scalar: UInt32) -> WPEParityFontFace? {
-        if attempt == Self.twemojiAttempt {
-            return loader.assetFace(path: Self.twemojiPath, pointSize: pointSize)
+    private func fallbackFace(_ slot: FallbackSlot) -> WPEParityFontFace? {
+        switch slot {
+        case let .system(family): loader.systemFace(family: family, pointSize: pointSize)
+        case let .asset(path): loader.assetFace(path: path, pointSize: pointSize)
         }
-        guard let base = primaryCoreTextFont(), let character = Unicode.Scalar(scalar) else { return nil }
-        let string = String(character)
-        let font = CTFontCreateForString(base, string as CFString, CFRange(location: 0, length: string.utf16.count))
-        // LastResort maps every code point to a placeholder; WPE's Windows fonts have no such face.
-        guard CTFontCopyPostScriptName(font) as String != "LastResort" else { return nil }
-        return loader.face(for: font, pointSize: pointSize)
-    }
-
-    private func primaryCoreTextFont() -> CTFont? {
-        if let cascadeBase {
-            return cascadeBase
-        }
-        guard let buffer = faces.first?.bytes?.buffer, let base = buffer.baseAddress,
-              let descriptor = CTFontManagerCreateFontDescriptorFromData(
-                  Data(bytesNoCopy: base, count: buffer.count, deallocator: .none) as CFData
-              )
-        else { return nil }
-        let font = CTFontCreateWithFontDescriptor(descriptor, CGFloat(pointSize * 300 / 72), nil)
-        cascadeBase = font
-        return font
     }
 }
 
 /// Reads font files (scene assets through `WPEParityProgramAssets`, system fonts by URL) and caches bytes and faces.
 final class WPEParityFontLoader {
-    private static let systemFontPrefix = "systemfont_"
+    /// WPE's eight system fonts by exact name (140256f20.c:129-198), as macOS families in preference order.
+    /// Other `systemfont_*` strings are asset paths (1401b0410.c:248-255).
+    static let systemFontFamilies: [String: [String]] = [
+        "systemfont_arial": ["Arial"],
+        "systemfont_calibri": ["Calibri", "Helvetica Neue"],
+        "systemfont_cambria": ["Cambria", "Georgia"],
+        "systemfont_comicsans": ["Comic Sans MS"],
+        "systemfont_consolas": ["Consolas", "Menlo"],
+        "systemfont_sansserif": ["Microsoft Sans Serif"],
+        "systemfont_segoe": ["Segoe UI", "Helvetica Neue"],
+        "systemfont_verdana": ["Verdana"],
+    ]
 
     private let library = WPEParityFreeTypeLibrary()
     private let assets: WPEParityProgramAssets
@@ -136,16 +136,14 @@ final class WPEParityFontLoader {
         self.assets = assets
     }
 
-    static func isSystemFont(_ path: String) -> Bool {
-        path.hasPrefix(systemFontPrefix)
-    }
-
-    /// The old renderer's mapping (WPESystemFont.familyName): `systemfont_arial` → "Arial".
-    static func systemFamilyName(_ path: String) -> String {
-        path.dropFirst(systemFontPrefix.count)
-            .split(separator: "_")
-            .map(\.capitalized)
-            .joined(separator: " ")
+    /// nil when `family` is not installed: CoreText then substitutes another family, which WPE never does.
+    func systemFace(family: String, pointSize: Float) -> WPEParityFontFace? {
+        // A family descriptor, not CTFontCreateWithName: by name "PingFang SC" resolves to the reserved
+        // PingFangUI.ttc, from which no face loads here, instead of PingFang.ttc.
+        let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: family] as CFDictionary)
+        let font = CTFontCreateWithFontDescriptor(descriptor, CGFloat(pointSize * 300 / 72), nil)
+        guard CTFontCopyFamilyName(font) as String == family else { return nil }
+        return face(for: font, pointSize: pointSize)
     }
 
     func assetFace(path: String, pointSize: Float) -> WPEParityFontFace? {
