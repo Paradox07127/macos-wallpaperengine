@@ -148,6 +148,15 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         return analyze()
     }
 
+    func latestSamples(count: Int) -> (left: [Float], right: [Float], sampleRate: Float, totalSamples: Int)? {
+        guard count <= configuration.fftSize else { return nil }
+        var left = [Float](repeating: 0, count: configuration.fftSize)
+        var right = [Float](repeating: 0, count: configuration.fftSize)
+        let cursor = exchange.copySealedWindow(into: &left, and: &right)
+        guard cursor.totalSamples >= count else { return nil }
+        return (Array(left.suffix(count)), Array(right.suffix(count)), configuration.sampleRate, cursor.totalSamples)
+    }
+
     private func analyze() -> AudioSpectrumFrame? {
         let cursor = exchange.copySealedWindow(into: &leftInput, and: &rightInput)
         #if DEBUG

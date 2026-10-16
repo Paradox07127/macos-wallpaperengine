@@ -48,6 +48,7 @@ actor WPEDisplayRenderActor {
     /// The current `.suspended` profile keeps the link running until the parity pause ramp holds scene time.
     private var parityPauseRampDown = false
     private var parityActivity: WPESceneRuntimeActivity?
+    private var parityAudioFeed = WPEParityAudioFeed()
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
@@ -221,8 +222,8 @@ actor WPEDisplayRenderActor {
             let start = CACurrentMediaTime()
             let pointer = parityDriver.pointerInput(parityInputs.mailbox.read())
             // As the old renderer: the shared system-audio capture, not the scene's own sounds.
-            let audio = SystemAudioCaptureManager.isCapturing
-                ? SystemAudioCaptureManager.broker.snapshot(clampedTo01: false) : nil
+            let audio = parityAudioFeed.frame(broker: SystemAudioCaptureManager.broker,
+                                              isCapturing: SystemAudioCaptureManager.isCapturing)
             let presented = if let frames = parityDriver.spanFrames {
                 parityDriver.renderAndPublishSpanFrame(to: frames, timestamp: start, pointer: pointer.position,
                                                        buttonDown: pointer.buttonDown, audio: audio)

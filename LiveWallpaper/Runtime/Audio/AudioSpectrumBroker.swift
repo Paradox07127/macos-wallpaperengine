@@ -5,6 +5,15 @@ import os
 /// frame is still current (no new samples, or inside the analyzer's cadence cap).
 protocol AudioSpectrumAnalyzing: AnyObject, Sendable {
     func analyzeIfDue(nowNanos: UInt64) -> AudioSpectrumFrame?
+    /// The newest `count` raw samples per channel, oldest first; nil when that many are not available.
+    /// `totalSamples` counts every sample published so far, so it changes exactly when new audio arrives.
+    func latestSamples(count: Int) -> (left: [Float], right: [Float], sampleRate: Float, totalSamples: Int)?
+}
+
+extension AudioSpectrumAnalyzing {
+    func latestSamples(count _: Int) -> (left: [Float], right: [Float], sampleRate: Float, totalSamples: Int)? {
+        nil
+    }
 }
 
 final class AudioSpectrumBroker: Sendable {
@@ -48,6 +57,10 @@ final class AudioSpectrumBroker: Sendable {
                 timestampNanos: state.timestampNanos
             )
         }
+    }
+
+    func latestSamples(count: Int) -> (left: [Float], right: [Float], sampleRate: Float, totalSamples: Int)? {
+        lock.withLock { $0.analyzer?.latestSamples(count: count) }
     }
 
     func resetToSilence() {
