@@ -45,6 +45,26 @@ final class ParitySceneTextTests: XCTestCase {
         XCTAssertEqual(text.padding, .zero)
     }
 
+    /// FUN_140258900: box + 2p, (2, 2) without a mesh; floats, not the Int FBO size.
+    func testScriptSizeIsTheUntruncatedPaddedBox() {
+        let mesh = WPEParityTextMesh(minX: -1.5, bottom: -20.25, maxX: 100.75, top: 30.5, lineHeight: 50,
+                                     lineCount: 1, pointSize: 32)
+        func size(_ mesh: WPEParityTextMesh?, effectCount: Int, padding: SIMD2<Float>? = nil) -> SIMD2<Float> {
+            var object = ParityTextPlannerTests.textObject()
+            if let padding {
+                object.padding = padding
+            }
+            let layout = WPEParityTextLayout(mesh: mesh, blockOffset: .zero, fboSize: SIMD2(1, 1))
+            return WPEParitySceneText(object: object, effectCount: effectCount, layout: layout, atlasKey: "",
+                                      hdr: false, orthographic: true).scriptSize
+        }
+        XCTAssertEqual(size(mesh, effectCount: 0), SIMD2(102.25, 50.75))
+        XCTAssertEqual(size(mesh, effectCount: 1), SIMD2(166.25, 114.75))
+        XCTAssertEqual(size(mesh, effectCount: 1, padding: SIMD2(600, 10)), SIMD2(1126.25, 70.75))
+        XCTAssertEqual(size(nil, effectCount: 0), SIMD2(2, 2))
+        XCTAssertEqual(size(nil, effectCount: 1), SIMD2(66, 66))
+    }
+
     func testTextWithAnEffectDrawsIntoItsPooledFBOFirst() throws {
         let text = try sceneText(ParityTextPlannerTests.textObject(), effectCount: 1)
         let frame = WPEParitySceneFrameBuilder.build(Fixtures.scene([.text(text, effects: [Fixtures.effect("E")])]))

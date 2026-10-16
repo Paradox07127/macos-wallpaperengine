@@ -1242,6 +1242,43 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// `thisLayer.size` on text is the measured box (FUN_140258900), re-seeded after each relayout.
+    func testScriptReadsTextSizeAsTheMeasuredBoxAcrossRelayout() async throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+        var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+        let script = """
+        let frame = 0;
+        export function update(value) {
+            frame += 1;
+            thisLayer.origin = new Vec3(thisLayer.size.x, thisLayer.size.y, frame);
+            if (frame === 2) thisLayer.text = 'Hi';
+            return value;
+        }
+        """
+        let fields: [String: Any] = ["text": "Hello big World", "alpha": ["value": 1, "script": script]]
+        objects[0].merge(fields) { _, next in next }
+        json["objects"] = objects
+        let fixture = try await makeSyntheticRenderer(effect: false, scene: JSONSerialization.data(withJSONObject: json),
+                                                      scripted: true)
+        let renderer = fixture.renderer
+        try await encode(renderer, label: "first size read")
+        let first = try XCTUnwrap(renderer.texts[Self.textID])
+        let mesh = try XCTUnwrap(first.layout.mesh)
+        let firstOrigin = try XCTUnwrap(renderer.state.object(Self.textID)?.origin)
+        XCTAssertEqual(SIMD2(firstOrigin.x, firstOrigin.y), first.scriptSize)
+        XCTAssertEqual(first.scriptSize, SIMD2(mesh.maxX - mesh.minX, mesh.top - mesh.bottom))
+
+        try await encode(renderer, label: "text write")
+        try await encode(renderer, label: "relaid size read")
+        let relaid = try XCTUnwrap(renderer.texts[Self.textID])
+        let origin = try XCTUnwrap(renderer.state.object(Self.textID)?.origin)
+        XCTAssertEqual(origin.z, 3)
+        XCTAssertEqual(SIMD2(origin.x, origin.y), relaid.scriptSize)
+        XCTAssertNotEqual(relaid.scriptSize, first.scriptSize)
+        let engine = try XCTUnwrap(renderer.script).engine
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     /// Native background color is scaled only in HDR, then flat/translucent blends RGB by the existing alpha.
     /// Read combine_srgb's real rgba16Float input so gamma conversion cannot hide incorrect linear values.
     func testScriptBackgroundBrightnessConsumesLiveHDRColorWithoutRebuildingText() async throws {

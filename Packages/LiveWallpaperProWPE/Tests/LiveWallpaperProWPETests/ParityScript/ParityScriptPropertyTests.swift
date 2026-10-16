@@ -123,6 +123,45 @@ final class ParityScriptPropertyTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    /// A text layer's `size` is the inherited renderable Vec2 (1401ee520.c:69-82): a read returns a copy.
+    func testTextLayerSizeReadsTheMeasuredBoxSeed() throws {
+        let script = "export function update(value) { let size = thisLayer.size; size.x *= 0.5; "
+            + "return new Vec3(size.x, thisLayer.size.x, thisLayer.size.y); }"
+        let json: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 100, "height": 100]],
+            "objects": [
+                ["id": 1, "name": "T", "text": "Hi", "size": "368 224", "origin": ["value": "0 0 0", "script": script]],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        func run(_ fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue])
+            throws -> WPEParitySceneState {
+            var state = WPEParitySceneState(document: document, hdr: false)
+            let engine = try WPEParityScriptEngine.prepare(
+                document: document, state: &state,
+                configuration: .init(assets: assets, canvasSize: SIMD2(100, 100), screenResolution: SIMD2(100, 100),
+                                     fieldDefaults: fieldDefaults),
+                volume: { _, _ in }, command: { _, _, _ in false }
+            )
+            try engine.start(state: &state)
+            engine.tick(dt: 0, state: &state)
+            XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+            return state
+        }
+        XCTAssertEqual(try run([:]).object("1")?.origin, SIMD3(184, 368, 224))
+        let seeded = try run([.init(objectID: "1", name: "size"): .vector(SIMD4(304, 160, 0, 0))])
+        XCTAssertEqual(seeded.object("1")?.origin, SIMD3(152, 304, 160))
+        XCTAssertEqual(seeded.scriptField("size", of: "1"), .vector(SIMD4(304, 160, 0, 0)))
+    }
+
     func testDegreesToRadiansIsTheNativeConstant() {
         XCTAssertEqual(WPEParityScriptProperty.degreesToRadians.bitPattern, 0x3C8E_FA35)
     }

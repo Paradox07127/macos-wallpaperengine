@@ -135,6 +135,11 @@ public struct WPEParitySceneText: Hashable, Sendable {
 
     /// p of the translations and the FBO size: min(padding, 512) with effects, bit4 or opaquebackground, else 0.
     public var padding: SIMD2<Float>
+    /// Script `size` (+0x2f0): the float box + 2p, (2, 2) without a mesh (FUN_140258900).
+    public var scriptSize: SIMD2<Float> {
+        (layout.mesh.map { SIMD2($0.maxX - $0.minX, $0.top - $0.bottom) } ?? SIMD2(2, 2)) + padding * 2
+    }
+
     /// Background colour × (HDR ? backgroundbrightness : 1) and the layer alpha (140258050.c:106-116).
     public var background: SIMD4<Float>
     /// The same background identity names the direct quad and the opaque composite clear.

@@ -300,6 +300,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "limitwidth", owner: .text, type: .flagBool, invalidation: .textLayout),
         WPEParityScriptProperty(name: "limitrows", owner: .text, type: .flagBool, invalidation: .textLayout),
         WPEParityScriptProperty(name: "limituseellipsis", owner: .text, type: .flagBool, invalidation: .textLayout),
+        // Inherited renderable size (1401ee520.c:69; text falls through at 0x14025c00d).
+        WPEParityScriptProperty(name: "size", owner: .text, type: .vec2),
     ]
 
     /// Sound: volume's hook sets each stream's gain to volume² × master (1401f7090.c:71).

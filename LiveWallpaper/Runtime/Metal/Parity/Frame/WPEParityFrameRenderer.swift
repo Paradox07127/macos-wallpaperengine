@@ -1183,6 +1183,8 @@ final class WPEParityFrameRenderer {
             for (name, value) in WPEParityTextFields.seed(text.object) {
                 defaults[.init(objectID: text.object.id, name: name)] = value
             }
+            defaults[.init(objectID: text.object.id, name: "size")] =
+                .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero))
         }
         defaults.merge(videos.scriptFieldDefaults) { _, actual in actual }
         return defaults
@@ -1402,6 +1404,11 @@ final class WPEParityFrameRenderer {
         pipeline.atlases = candidatePlanner.textAtlases.atlases
         packedConstants.removeAll()
         fadeConstants.removeAll()
+        for id in prepared.changedObjectIDs {
+            guard let text = prepared.texts[id] else { continue }
+            state.setScriptField("size", of: id, to: .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero)),
+                                 invalidating: .none)
+        }
         consumeTextRequests(attemptedCount)
         completed = true
         repackBloom()
