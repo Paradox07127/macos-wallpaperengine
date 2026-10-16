@@ -364,6 +364,16 @@ struct WPEParityPropertyAnimationTests {
         try expectValue(child, [12])
     }
 
+    @Test func childWithoutParentKeepsItsOwnClock() throws {
+        let orphan = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(8, 8)]], fps: 8, length: 8,
+                               options: ["parent": ["key": "missing"]]), valueType: .float
+        ))
+        orphan.advance(dt: 0.5)
+        #expect(orphan.duration == 1)
+        try expectValue(orphan, [4])
+    }
+
     @Test func parsingStopsAtChannelGapAndSkipsNonIncreasingIntegerFrames() throws {
         var raw = try #require(objectValue(property(channels: [], fps: 4, length: 4)))
         var animation = try #require(objectValue(raw["animation"]))

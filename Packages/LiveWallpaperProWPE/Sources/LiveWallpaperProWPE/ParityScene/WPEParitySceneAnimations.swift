@@ -14,11 +14,21 @@ public struct WPEParitySceneAnimations {
         let objectID: String
     }
 
+    /// The JSON object an animated property was read from; a child's parent.key resolves only within it.
+    private enum Owner: Hashable {
+        case object(String)
+        case instanceOverride(String)
+        case pass(WPEParityMaterialPassKey)
+    }
+
     private struct Authored {
         let property: WPESceneJSONValue
         let valueType: WPEParityPropertyAnimation.ValueType
         let target: Target
         let objectID: String
+        let owner: Owner
+        /// The JSON key the property was read from.
+        let key: String
     }
 
     /// One event a keyframe animation crossed, for the SceneScript event 6 dispatch.
@@ -53,13 +63,15 @@ public struct WPEParitySceneAnimations {
                 default: continue
                 }
                 let name = objectID.isEmpty ? descriptor.name.lowercased() : descriptor.name
-                let raw = descriptor.owner == .particleInstance ? config?["instanceoverride"]?[name] : config?[name]
+                let instance = descriptor.owner == .particleInstance
+                let raw = instance ? config?["instanceoverride"]?[name] : config?[name]
                 guard let raw,
                       let type = WPEParityPropertyAnimation.ValueType(rawValue: descriptor.type.componentCount)
                 else { continue }
                 authored.append(Authored(property: raw, valueType: type,
                                          target: .field(name: descriptor.fieldName, invalidation: descriptor.invalidation),
-                                         objectID: objectID))
+                                         objectID: objectID,
+                                         owner: instance ? .instanceOverride(objectID) : .object(objectID), key: name))
             }
         }
         // 140186c90 -> 1401730d0: scene fields use the same numeric animation reader as object descriptors.
@@ -71,7 +83,7 @@ public struct WPEParitySceneAnimations {
                       let valueType = WPEParityPropertyAnimation.ValueType(rawValue: property.componentCount)
                 else { continue }
                 authored.append(Authored(property: raw, valueType: valueType, target: .object(index, property),
-                                         objectID: id))
+                                         objectID: id, owner: .object(id), key: property.rawValue))
             }
             let kind = WPEParityScriptLayerKind.classify(id: id, object: object, document: document)
             switch kind {
@@ -91,7 +103,7 @@ public struct WPEParitySceneAnimations {
                     authored.append(Authored(property: raw, valueType: valueType,
                                              target: .constant(pass: pass, key: key, name: name,
                                                                components: components),
-                                             objectID: id))
+                                             objectID: id, owner: .pass(key), key: name))
                 }
             }
             constants(object["instance"]?["constantshadervalues"], WPEParityMaterialPassKey(objectID: id))
@@ -103,18 +115,21 @@ public struct WPEParitySceneAnimations {
                 }
             }
         }
-        // A child animation runs on its root's clock, so roots are parsed first.
+        // A child runs on the root of its owner whose property key equals parent.key (140175880.c:697-718, 939-958),
+        // so roots are parsed first; without one it keeps its own clock.
         var bindings: [Binding] = []
-        var byName: [String: WPEParityPropertyAnimation] = [:]
+        var roots: [Owner: [String: WPEParityPropertyAnimation]] = [:]
         for children in [false, true] {
-            for entry in authored where (entry.property["animation"]?["options"]?["parent"]?["key"] != nil) == children {
-                guard entry.property["animation"] != nil, entry.property["user"] == nil else { continue }
-                let parent = WPEParityProgramScene.string(entry.property["animation"]?["options"]?["parent"]?["key"])
-                    .flatMap { byName[$0] }
+            for entry in authored {
+                let parentKey = WPEParityProgramScene.string(entry.property["animation"]?["options"]?["parent"]?["key"])
+                    .flatMap { $0.isEmpty ? nil : $0 }
+                guard (parentKey != nil) == children,
+                      entry.property["animation"] != nil, entry.property["user"] == nil else { continue }
+                let parent = parentKey.flatMap { roots[entry.owner]?[$0] }
                 guard let animation = WPEParityPropertyAnimation(property: entry.property, valueType: entry.valueType,
                                                                  parent: parent) else { continue }
-                if let name = animation.name, byName[name] == nil {
-                    byName[name] = animation
+                if !children, roots[entry.owner]?[entry.key] == nil {
+                    roots[entry.owner, default: [:]][entry.key] = animation
                 }
                 bindings.append(Binding(animation: animation, target: entry.target, objectID: entry.objectID))
             }

@@ -7,7 +7,7 @@ public final class WPEParityPropertyAnimation {
         case float = 1, vec2, vec3, vec4
     }
 
-    /// The authored binding name used to resolve child animations.
+    /// options.name; the script lookup (14018db00) matches it, parent resolution does not.
     public let name: String?
     /// The authored parent binding key, if present.
     public let parentKey: String?
@@ -107,7 +107,7 @@ public final class WPEParityPropertyAnimation {
     private var lastFrameStamp: UInt64?
     private var collectsEvents = true
 
-    /// Parses a raw property; a supplied parent must match parent.key and already have its root resolved.
+    /// Parses a raw property; a supplied `parent` puts it on that parent's root clock, nil keeps its own clock.
     public init?(property: WPESceneJSONValue, valueType: ValueType,
                  parent: WPEParityPropertyAnimation? = nil,
                  sharingClock: WPEParityPropertyAnimation? = nil) {
@@ -124,11 +124,8 @@ public final class WPEParityPropertyAnimation {
         if let sharingClock {
             guard parent == nil, parentKey == nil else { return nil }
             root = sharingClock.root ?? sharingClock
-        } else if let parentKey {
-            guard let parent, parent.name == parentKey else { return nil }
-            root = parent.root ?? parent
         } else {
-            root = nil
+            root = parent.map { $0.root ?? $0 }
         }
         self.valueType = valueType
         framesPerSecond = root?.framesPerSecond ?? authoredFPS
