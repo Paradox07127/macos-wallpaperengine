@@ -24,6 +24,7 @@ final class ParityScriptPropertyTests: XCTestCase {
             ("thisScene.getLayer('P').instance.rate = 0.25", .none),
             ("thisScene.getLayer('C').fov = 0.25", .none),
             ("thisLayer.getVideoTexture().rate = 0.25", .mediaPlayer),
+            ("thisScene.getLayer('P').visible = false", .visibility),
         ]
         let script = "const rows = [\(rows.map { "() => { \($0.write); }" }.joined(separator: ", "))];\n"
             + "let row = 0;\nexport function update() { rows[row++](); }"
@@ -85,6 +86,41 @@ final class ParityScriptPropertyTests: XCTestCase {
         XCTAssertEqual(state.scriptField("instance.rate", of: "2"), .vector(SIMD4(0.25, 0, 0, 0)))
         XCTAssertEqual(state.scriptField("fov", of: "3"), .vector(SIMD4(0.25, 0, 0, 0)))
         XCTAssertEqual(state.scriptField("video.rate", of: "1"), .vector(SIMD4(0.25, 0, 0, 0)))
+        XCTAssertEqual(state.object("2")?.visible, false)
+    }
+
+    /// A particle's `visible` script compiles and its update writes the layer's visibility (14024cb00.c:41-48).
+    func testParticleVisibleScriptDrivesVisibility() throws {
+        let json: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 100, "height": 100]],
+            "objects": [
+                ["id": 2, "name": "P", "particle": "particles/p.json",
+                 "visible": ["value": true, "script": "export function update(value) { return false; }"]],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        var diagnostics: [String] = []
+        let engine = try WPEParityScriptEngine.prepare(
+            document: document, state: &state,
+            configuration: .init(assets: assets, canvasSize: SIMD2(100, 100), screenResolution: SIMD2(100, 100),
+                                 log: { _, message in diagnostics.append(message) }),
+            volume: { _, _ in }, command: { _, _, _ in false }
+        )
+        try engine.start(state: &state)
+        engine.tick(dt: 0, state: &state)
+        XCTAssertFalse(diagnostics.contains { $0.contains("visible script is unsupported") },
+                       diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(state.object("2")?.visible, false)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
     func testDegreesToRadiansIsTheNativeConstant() {

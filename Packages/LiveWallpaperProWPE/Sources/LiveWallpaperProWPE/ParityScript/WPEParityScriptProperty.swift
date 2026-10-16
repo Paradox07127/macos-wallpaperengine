@@ -363,9 +363,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         switch kind {
         case .image: base + [visible] + image
         case .text: base + [visible] + text
-        case .particle: base + [WPEParityScriptProperty(name: "visible", owner: .object, type: .flagBool,
-                                                        flags: .notFromJSON, target: .object(.visible),
-                                                        invalidation: .visibility)] + particleInstance
+        case .particle: base + [visible] + particleInstance
         case .sound: base + sound
         case .camera: base + [visible] + camera
         case .light: base + [visible] + light
