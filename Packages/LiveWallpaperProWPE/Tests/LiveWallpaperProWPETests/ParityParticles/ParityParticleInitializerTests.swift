@@ -40,6 +40,31 @@ final class ParityParticleInitializerTests: XCTestCase {
         }
     }
 
+    /// Case9 sends rotated forward·speed through the same emitter birth basis as velocityrandom (23b340:654-664).
+    func testTurbulentVelocityRandomUsesTheEmitterBirthBasis() {
+        let config = WPEParityParticleConfig(json: Support.json("""
+        {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,"controlpoint":1,
+          "distancemin":"1 1 1","distancemax":"1 1 1"}],
+         "initializer":[{"name":"lifetimerandom","min":100,"max":100},
+           {"name":"turbulentvelocityrandom","speedmin":100,"speedmax":100,"scale":0,"offset":0}],
+         "renderer":[{"name":"spritetrail"}]}
+        """), is3D: true, resolveChild: { _ in nil })
+        func particles(angle: Bool) -> WPEParityParticleSystem {
+            var instance = WPEParityParticleSystem.Instance()
+            if angle {
+                instance.controlPointAngles[1] = SIMD3(0, 0, Float.pi / 2)
+            }
+            var system = WPEParityParticleSystem(config: config, instance: instance,
+                                                 rng: WPEParityMT19937(seed: 7), crt: WPEParityCRTRandom())
+            system.advance(dt: 0.1)
+            return system
+        }
+        let rotated = particles(angle: true), plain = particles(angle: false)
+        XCTAssertEqual(rotated.liveCount, 1)
+        assertEqual(rotated.velocity[0], SIMD3(-100, 0, 0))
+        XCTAssertEqual(rotated.rng.next(), plain.rng.next())
+    }
+
     /// Original case8 reads the previous GLOBAL interval, then the emitter basis. The instance's rate-scaled
     /// update interval differs here; literal axis expectations also distinguish local CP0, CP1 and world flags2.
     func testInheritedControlPointVelocityReachesBirthAndPackedTrailWithOneSharedDraw() throws {

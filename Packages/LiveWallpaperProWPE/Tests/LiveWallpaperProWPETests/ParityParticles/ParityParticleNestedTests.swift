@@ -32,6 +32,40 @@ final class ParityParticleNestedTests: XCTestCase {
         XCTAssertTrue(box.config.unsupportedChildren.isEmpty)
     }
 
+    /// Starttime prewarm clears +0x41, so its births create no spawn/follow child and draw no probability word
+    /// (14022ebe0.c:352-367, 1402378a0.c:1796-1800); the first normal update does both.
+    func testStartTimePrewarmCreatesNoSpawnOrFollowChildren() {
+        let child = ParityParticleTestSupport.json("""
+        {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,
+          "distancemin":"1 1 1","distancemax":"1 1 1"}],
+         "initializer":[{"name":"lifetimerandom","min":10,"max":10}],
+         "operator":[],
+         "renderer":[{"name":"sprite"}]}
+        """)
+        func parent(_ children: String) -> WPEParityParticleSystem {
+            let json = ParityParticleTestSupport.json("""
+            {"maxcount":40,"starttime":1,"emitter":[{"name":"boxrandom","rate":20,
+              "distancemin":"0 0 0","distancemax":"0 0 0"}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10}],
+             "renderer":[]\(children)}
+            """)
+            return WPEParityParticleSystem(json: json, rng: WPEParityMT19937(seed: 7),
+                                           resolveChild: { $0 == "child" ? child : nil })
+        }
+        for type in ["eventfollow", "eventspawn"] {
+            var system = parent(#","children":[{"name":"child","type":"\#(type)"}]"#)
+            let plain = parent("")
+            XCTAssertGreaterThan(system.liveCount, 0, type)
+            XCTAssertTrue(system.eventChildren[0].isEmpty, type)
+            XCTAssertEqual(system.eventChildConstructions, 0, type)
+            XCTAssertEqual(system.rng.next(), plain.rng.next(), type)
+            let before = system.liveCount
+            system.advance(dt: 0.05)
+            XCTAssertGreaterThan(system.liveCount - before, 0, type)
+            XCTAssertEqual(system.eventChildren[0].count, system.liveCount - before, type)
+        }
+    }
+
     /// Native 22ebe0/22f890 permit the root and ten descendants, including repeated resource paths.
     /// Exercise the public scene producer, actual simulation, prototype lookup and packed draw stream together.
     func testRepeatedStaticAndEventAssetsProduceEveryDepthThroughTen() throws {

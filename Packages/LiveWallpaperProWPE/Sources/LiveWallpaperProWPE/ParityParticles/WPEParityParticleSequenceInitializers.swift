@@ -170,7 +170,8 @@ extension WPEParityParticleSystem {
     }
 
     /// θ = noise1(t)·π·scale + offset turns `forward` about `right`; U for phase, then U for speed (:622-667).
-    mutating func initializeTurbulentVelocity(_ field: WPEParityParticleTurbulentVelocity, slot: Int) {
+    mutating func initializeTurbulentVelocity(_ field: WPEParityParticleTurbulentVelocity, slot: Int,
+                                              birthBasis: simd_float3x3) {
         let phase = rng.unit()
         let t = (phase * (field.phaseMax - field.phaseMin) + field.phaseMin + frameContext.time) * field.timeScale
         let theta = WPEParityParticleNoise.simplex1(t) * .pi * field.scale + field.offset
@@ -178,7 +179,7 @@ extension WPEParityParticleSystem {
                                    imag: WPEParityParticleMath.sin(theta / 2) * simd_normalize(field.right))
             .act(field.forward)
         let speed = field.speedMin + rng.unit() * (field.speedMax - field.speedMin)
-        velocity[slot] += direction * speed
+        velocity[slot] += Self.transformVelocity(direction * speed, by: birthBasis)
     }
 
     /// fbm of 2D simplex per axis, no draws (D/14023b340.c:698-790).

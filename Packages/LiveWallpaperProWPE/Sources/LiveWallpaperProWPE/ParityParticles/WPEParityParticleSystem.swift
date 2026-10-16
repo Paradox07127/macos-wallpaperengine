@@ -107,6 +107,8 @@ public struct WPEParityParticleSystem {
     var emitterStates: [EmitterState]
     var childGroup: [Int] = []
     var pendingEvents: [PendingEvent] = []
+    /// Native system byte +0x41 & 0xc: births record spawn/follow events; starttime prewarm clears it (2378a0:1796).
+    var birthsRecordSpawnEvents = true
     var freeHint = 0
     var highWater = 0
     /// Birth-order list for the rope renderer (D/140236cd0.c:82-109).
@@ -448,6 +450,9 @@ public struct WPEParityParticleSystem {
                                   parentUpdateMatrix: simd_float4x4, parentWorldSpace: Bool) {
         guard config.startTime > 0 else { return }
         prewarmStep = capacity < 500 ? 0.05 : 0.2
+        let recorded = birthsRecordSpawnEvents
+        birthsRecordSpawnEvents = false
+        defer { birthsRecordSpawnEvents = recorded }
         var elapsed: Float = 0
         while elapsed < config.startTime {
             simulate(dt: prewarmStep, parentControlPoints: parent, parentCount: parentCount,
@@ -737,6 +742,7 @@ public struct WPEParityParticleSystem {
         if trailSegments > 0 {
             trailCount[slot] = 0
         }
+        guard birthsRecordSpawnEvents else { return }
         for (index, child) in config.children.enumerated() where child.trigger == .spawn || child.trigger == .follow {
             pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
@@ -758,7 +764,7 @@ public struct WPEParityParticleSystem {
         case let .colorList(colors, noise):
             initializeColorList(colors, noise: noise, slot: slot)
         case let .turbulentVelocity(field):
-            initializeTurbulentVelocity(field, slot: slot)
+            initializeTurbulentVelocity(field, slot: slot, birthBasis: birthBasis)
         case let .positionOffset(field):
             initializePositionOffset(field, slot: slot)
         case let .sequenceAround(field):
