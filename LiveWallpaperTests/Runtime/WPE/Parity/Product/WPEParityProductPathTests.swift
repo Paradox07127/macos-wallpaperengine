@@ -67,6 +67,28 @@ final class WPEParityProductPathTests: XCTestCase {
         XCTAssertFalse(usesParity)
     }
 
+    func testRejectedPresetFallsBackToMetalSceneRenderer() async throws {
+        if case let .failure(reason) = WPEParityShaderToolchain.makeCompiler() {
+            throw XCTSkip("\(reason)")
+        }
+        // `wec_e` must be a bool; the parity color-correction preset rejects a number.
+        let scene = try installScene(presetSnapshot: ["wec_e": .number(1)])
+        WPEParityRendererFlag.setMode(.all)
+        let session = try XCTUnwrap(makeSession(scene))
+        defer { session.cleanup() }
+
+        let actor = session.spanRenderActor
+        let deadline = Date().addingTimeInterval(10)
+        var adopted = await actor.rendererStateSnapshot() != nil
+        while !adopted, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            adopted = await actor.rendererStateSnapshot() != nil
+        }
+        XCTAssertTrue(adopted, "no renderer adopted")
+        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
+        XCTAssertFalse(usesParity)
+    }
+
     private struct InstalledScene {
         let descriptor: SceneDescriptor
         let supportRoot: URL
@@ -81,7 +103,9 @@ final class WPEParityProductPathTests: XCTestCase {
     }
 
     /// Copies the fixture scene into a scratch app-support root as an extracted `.cache` scene.
-    private func installScene() throws -> InstalledScene {
+    private func installScene(
+        presetSnapshot: [String: WallpaperEngineProjectPropertyValue] = [:]
+    ) throws -> InstalledScene {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
             throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
         }
@@ -99,7 +123,8 @@ final class WPEParityProductPathTests: XCTestCase {
         try FileManager.default.copyItem(at: root.appending(path: "scene-sources/\(Self.workshopID)"),
                                          to: sceneDirectory)
         let descriptor = SceneDescriptor(workshopID: Self.workshopID, cacheRelativePath: relativePath,
-                                         entryFile: "scene.json", capabilityTier: .degraded)
+                                         entryFile: "scene.json", capabilityTier: .degraded,
+                                         presetSnapshot: presetSnapshot)
         return InstalledScene(descriptor: descriptor, supportRoot: scratch,
                               engineRoot: wpeAssets.deletingLastPathComponent())
     }

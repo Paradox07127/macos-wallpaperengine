@@ -339,6 +339,42 @@ final class AmbientWallpaperSessionBuilder {
         // the layer here returns 0x0 — it stays zero until the first
         // `nextDrawable()`, whatever the window and layout have done.
         let seededDrawableSize = spanFrames == nil ? surface.backingDrawableSize : CGSize(width: frame.width * spanDensity, height: frame.height * spanDensity)
+        let makeMetalRenderer: @MainActor (SceneWallpaperSession) throws -> WPERendererHandoff = { session in
+            let renderer = try WPEMetalSceneRenderer(
+                descriptor: descriptor,
+                cacheRootURL: cacheURL,
+                assetProvider: assets.provider,
+                projectManifestRootURL: assets.projectRoot,
+                dependencyMounts: dependencyMounts,
+                engineAssetsRootURL: engineAssetsRootURL,
+                surfaceControl: surfaceControl,
+                mailbox: surface.mailbox,
+                presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+                drawableSize: seededDrawableSize,
+                presentFitMode: WPEPresentFitMode(fitMode),
+                device: device
+            )
+            renderer.spanFrames = spanFrames
+            UserShortcutRendererLink.shared.attach(
+                renderer.userShortcutBridge,
+                icons: renderer.userShortcutIconStore,
+                wallpaperID: descriptor.workshopID,
+                declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot)
+            )
+            if spanFrames != nil {
+                renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
+            }
+            // Unstructured MainActor hops aren't FIFO, so deliver latest-wins through a mailbox.
+            let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
+            renderer.onRuntimeActivityChange = { [weak session] activity in
+                activityMailbox.withLock { $0 = activity }
+                Task { @MainActor in
+                    guard let latest = activityMailbox.withLock({ $0 }) else { return }
+                    session?.noteRendererRuntimeActivity(latest)
+                }
+            }
+            return WPERendererHandoff(renderer: renderer)
+        }
         if WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
             switch WPEParityShaderToolchain.makeCompiler() {
             case let .success(compiler):
@@ -351,9 +387,9 @@ final class AmbientWallpaperSessionBuilder {
                         maximumPotentialEDR: window.screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1
                     )
                 } catch {
-                    Logger.warning("Parity renderer rejected preset for \(descriptor.workshopID): \(error)",
+                    Logger.warning("Parity renderer rejected preset for \(descriptor.workshopID), using the Metal scene renderer: \(error)",
                                    category: .screenManager)
-                    return nil
+                    break
                 }
                 let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
                 surface.attach(client: shim)
@@ -398,7 +434,7 @@ final class AmbientWallpaperSessionBuilder {
                                                       engineAssetsRootURL: engineAssetsRootURL),
                     presentFitMode: WPEPresentFitMode(fitMode),
                     span: spanFrames.map { ($0, max(spanMemberCount, 1) + 8) },
-                    // Latest-wins, as the Metal scene renderer's activity hop below.
+                    // Latest-wins, as the Metal scene renderer's activity hop in `makeMetalRenderer`.
                     onRuntimeActivityChange: { [weak session] activity in
                         activityMailbox.withLock { $0 = activity }
                         Task { @MainActor in
@@ -410,43 +446,20 @@ final class AmbientWallpaperSessionBuilder {
                 inputs.userShortcuts = userShortcuts
                 inputs.userShortcutIcons = userShortcutIcons
                 inputs.media = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
-                session.startAdoptingParityScene(inputs)
+                session.startAdoptingParityScene(inputs, metalFallback: makeMetalRenderer)
                 return session
             case let .failure(reason):
                 Logger.warning("Parity renderer unavailable for \(descriptor.workshopID), using the Metal scene renderer: \(reason)",
                                category: .screenManager)
             }
         }
-        let renderer: WPEMetalSceneRenderer
+        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+        let handoff: WPERendererHandoff
         do {
-            renderer = try WPEMetalSceneRenderer(
-                descriptor: descriptor,
-                cacheRootURL: cacheURL,
-                assetProvider: assets.provider,
-                projectManifestRootURL: assets.projectRoot,
-                dependencyMounts: dependencyMounts,
-                engineAssetsRootURL: engineAssetsRootURL,
-                surfaceControl: surfaceControl,
-                mailbox: surface.mailbox,
-                presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-                drawableSize: seededDrawableSize,
-                presentFitMode: WPEPresentFitMode(fitMode),
-                device: device
-            )
+            handoff = try makeMetalRenderer(session)
         } catch {
             Logger.warning("Metal scene renderer could not be created: \(error.localizedDescription)", category: .screenManager)
             return nil
-        }
-
-        renderer.spanFrames = spanFrames
-        UserShortcutRendererLink.shared.attach(
-            renderer.userShortcutBridge,
-            icons: renderer.userShortcutIconStore,
-            wallpaperID: descriptor.workshopID,
-            declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot)
-        )
-        if spanFrames != nil {
-            renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
         }
         let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
         surface.attach(client: shim)
@@ -461,17 +474,7 @@ final class AmbientWallpaperSessionBuilder {
             surface.startDisplayLinkDriver(renderActor: renderActor)
         }
 
-        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
-        // Unstructured MainActor hops aren't FIFO, so deliver latest-wins through a mailbox.
-        let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
-        renderer.onRuntimeActivityChange = { [weak session] activity in
-            activityMailbox.withLock { $0 = activity }
-            Task { @MainActor in
-                guard let latest = activityMailbox.withLock({ $0 }) else { return }
-                session?.noteRendererRuntimeActivity(latest)
-            }
-        }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingRenderer(handoff)
         return session
     }
 

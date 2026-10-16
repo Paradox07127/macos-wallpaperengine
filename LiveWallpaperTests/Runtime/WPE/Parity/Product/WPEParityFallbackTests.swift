@@ -23,6 +23,7 @@ final class WPEParityFallbackTests: XCTestCase {
 
     override func tearDown() async throws {
         WPEParitySceneDriver.remainingForcedLoadFailuresForTesting = 0
+        UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.modeDefaultsKey)
         for actor in actors {
             await actor.teardownRenderer()
             await actor.shutdown()
@@ -106,6 +107,74 @@ final class WPEParityFallbackTests: XCTestCase {
         XCTAssertEqual(volume, 0.25)
         let linkFPS = await actor.run { $0.linkPreferredFPSForTesting }
         XCTAssertEqual(linkFPS, 24)
+    }
+
+    @MainActor
+    func testSessionShowsTheOldRendererWhenTheParityLoadFails() async throws {
+        let scene = try installScene()
+        WPEParityRendererFlag.setMode(.all)
+        WPEParitySceneDriver.remainingForcedLoadFailuresForTesting = 1
+        let session = try XCTUnwrap(makeSession(scene))
+        defer { session.cleanup() }
+
+        let result = await session.prepareForDisplay(timeout: .seconds(60))
+        XCTAssertEqual(result, .ready, "load error: \(String(describing: session.loadError))")
+        XCTAssertEqual(session.adoptedScene?.renderer, "metal-fallback")
+        XCTAssertNil(session.loadError)
+    }
+
+    @MainActor
+    func testSessionFailsWhenTheOldRendererAlsoFails() async throws {
+        let scene = try installScene()
+        WPEParityRendererFlag.setMode(.all)
+        let session = try XCTUnwrap(makeSession(scene))
+        defer { session.cleanup() }
+        // The builder already checked the entry file; both renderers read it only when they load.
+        try FileManager.default.removeItem(at: scene.entryURL)
+
+        let result = await session.prepareForDisplay(timeout: .seconds(60))
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(session.adoptedScene?.renderer, "metal-fallback")
+        XCTAssertNotNil(session.loadError)
+    }
+
+    private struct InstalledScene {
+        let descriptor: SceneDescriptor
+        let entryURL: URL
+        let engineRoot: URL
+    }
+
+    @MainActor
+    private func makeSession(_ scene: InstalledScene) -> SceneWallpaperSession? {
+        AmbientWallpaperSessionBuilder().makeSceneSession(
+            descriptor: scene.descriptor, frame: CGRect(x: 0, y: 0, width: 960, height: 540),
+            engineAssetsRootURL: scene.engineRoot, applicationSupportRootURL: scratch
+        )
+    }
+
+    /// Copies the fixture scene into the scratch app-support root as an extracted `.cache` scene.
+    private func installScene() throws -> InstalledScene {
+        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
+            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
+        }
+        if case let .failure(reason) = WPEParityShaderToolchain.makeCompiler() {
+            throw XCTSkip("\(reason)")
+        }
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
+        }
+        let relativePath = "wpe-cache/\(Self.sceneID)"
+        let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: sceneDirectory.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: root.appending(path: "scene-sources/\(Self.sceneID)"), to: sceneDirectory)
+        let descriptor = SceneDescriptor(workshopID: Self.sceneID, cacheRelativePath: relativePath,
+                                         entryFile: "scene.json", capabilityTier: .degraded)
+        return InstalledScene(descriptor: descriptor, entryURL: sceneDirectory.appending(path: "scene.json"),
+                              engineRoot: wpeAssets.deletingLastPathComponent())
     }
 }
 
