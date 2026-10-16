@@ -317,6 +317,16 @@ public struct WPEParityProgramScene: Sendable {
                 width: 0, height: 0, parentID: particle.parentObjectID, transparentMember: true
             ))
         }
+        // Groups are not scene objects; WPE's passthrough container walks through them (1401ecb20.c:150-163, 1401eca70.c:10-17).
+        let ids = Set(sceneObjects.map(\.id))
+        for index in sceneObjects.indices {
+            var seen: Set<String> = [sceneObjects[index].id]
+            var parent = document.objectParentByID[sceneObjects[index].id]
+            while let id = parent, !ids.contains(id), seen.insert(id).inserted {
+                parent = document.objectParentByID[id]
+            }
+            sceneObjects[index].parentID = parent.flatMap { ids.contains($0) ? $0 : nil }
+        }
         self.materials = materials
         self.overridePasses = overridePasses
         self.resolvedEffectRecords = resolvedEffectRecords
