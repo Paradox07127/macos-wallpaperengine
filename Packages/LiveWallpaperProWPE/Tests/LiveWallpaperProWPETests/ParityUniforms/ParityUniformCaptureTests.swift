@@ -86,6 +86,40 @@ final class ParityUniformCaptureTests: XCTestCase {
         return (WPEParityUniformSet.values(frame: frame, draw: draw), matrices.modelViewProjection)
     }
 
+    func testFrameMutationsAfterInitReachDrawValues() throws {
+        func time(_ values: [String: WPECBufferValue]) -> Float? {
+            guard case let .float(value) = values["g_Time"] else { return nil }
+            return value
+        }
+        func spectrum16Left(_ values: [String: WPECBufferValue]) -> [Float]? {
+            guard case let .array(rows) = values["g_AudioSpectrum16Left"] else { return nil }
+            return rows.flatMap { row -> [Float] in
+                guard case let .vector(components) = row else { return [] }
+                return components
+            }
+        }
+        let screen = WPEParityUniformScreen(clientWidth: 1920, clientHeight: 1080)
+        var frame = WPEParityUniformFrame(
+            clock: WPEParityClock(), daytime: 0.5, screen: screen, pointer: WPEParityUniformPointer(),
+            parallax: WPEParityUniformParallax(), eyePosition: .zero, view: matrix_identity_float4x4
+        )
+        let draw = WPEParityUniformDraw(matrices: .effectPass)
+        XCTAssertEqual(spectrum16Left(WPEParityUniformSet.values(frame: frame, draw: draw)),
+                       [Float](repeating: 0, count: 16))
+
+        let bins = (0 ..< 64).map { Float($0 % 8 + 1) }
+        // Audio last: any later didSet would recompute every shared value and hide a missing audio refresh.
+        frame.clock.advance(elapsed: 0.5, ratePercent: 100, paused: false)
+        frame.audio.advance(left: bins, right: bins, dt: 1.0 / 30, silence: false)
+        let values = WPEParityUniformSet.values(frame: frame, draw: draw)
+
+        let expected = try XCTUnwrap(spectrum16Left(frame.audio.uniforms()))
+        XCTAssertTrue(expected.contains { $0 > 0 })
+        XCTAssertEqual(spectrum16Left(values), expected)
+        XCTAssertGreaterThan(frame.clock.timeUniform, 0)
+        XCTAssertEqual(time(values), frame.clock.timeUniform)
+    }
+
     func testPackIntoCapturedLayouts() throws {
         guard let directory = ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"],
               !directory.isEmpty else {
