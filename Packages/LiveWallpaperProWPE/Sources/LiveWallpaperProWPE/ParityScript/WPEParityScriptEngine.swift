@@ -201,7 +201,8 @@ public final class WPEParityScriptEngine {
         public fileprivate(set) var registeredAssets: [RegisteredAsset] = []
         fileprivate var assetsPrepared = true
         fileprivate let script: Int
-        fileprivate let userKeys: [String: [String]]
+        /// User key → its scriptproperties; an empty condition takes the value as is.
+        fileprivate let userKeys: [String: [(name: String, condition: String)]]
     }
 
     public struct CreatedLayer: Sendable {
@@ -413,6 +414,9 @@ public final class WPEParityScriptEngine {
             count(.initialize)
             host.invokeMethod("init", withArguments: [0])
         }
+        // Windows load order: every init, then one applyUserProperties per script with the full table, then update.
+        applyUserProperties(changedJSON: configuration.userPropertiesJSON, mergedJSON: configuration.userPropertiesJSON,
+                            state: &state)
     }
 
     /// One frame of the manager tick's script step (140171440.c:888-896): timers, then event 1 in binding order.
@@ -506,10 +510,10 @@ public final class WPEParityScriptEngine {
             host.invokeMethod("setUserProperties", withArguments: [mergedJSON])
             for binding in bindings where binding.compiled {
                 var vars: [String: Any] = [:]
-                for (key, names) in binding.userKeys {
+                for (key, properties) in binding.userKeys {
                     guard let value = (changed[key] as? [String: Any])?["value"] else { continue }
-                    for name in names {
-                        vars[name] = value
+                    for (name, condition) in properties {
+                        vars[name] = condition.isEmpty ? value : Self.asString(value).map { $0 == condition } ?? value
                     }
                 }
                 guard !vars.isEmpty, let data = try? JSONSerialization.data(withJSONObject: vars) else { continue }
@@ -519,6 +523,25 @@ public final class WPEParityScriptEngine {
             count(.applyUserProperties)
             host.invokeMethod("dispatch", withArguments: [WPEParityScriptEvent.applyUserProperties.rawValue, -1,
                                                           eventJSON])
+        }
+    }
+
+    /// jsoncpp asString of a changed value (140085cc0.c:12-37); nil for arrays and objects, which a conditional
+    /// scriptproperty takes as is (1401731d0.c:336-342).
+    private static func asString(_ value: Any) -> String? {
+        switch value {
+        case is NSNull: return ""
+        case let text as String: return text
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            let type = String(cString: number.objCType)
+            guard type == "f" || type == "d" else { return number.stringValue }
+            // valueToString(double, precision 17) appends ".0" to a mantissa-only result.
+            let text = String(format: "%.17g", number.doubleValue)
+            return text.contains(where: { $0 == "." || $0 == "e" }) ? text : text + ".0"
+        default: return nil
         }
     }
 
@@ -1393,12 +1416,13 @@ public final class WPEParityScriptEngine {
         }
         guard case let .string(script)? = resolved?["script"], !script.isEmpty else { return }
         let raw = components.reduce(source) { node, key in Int(key).flatMap { node?[$0] } ?? node?[key] }
-        var userKeys: [String: [String]] = [:]
+        var userKeys: [String: [(name: String, condition: String)]] = [:]
         if case let .object(entries)? = raw?["scriptproperties"] {
             for (name, entry) in entries {
                 if let key = WPEParityProgramScene.string(entry["user"])
                     ?? WPEParityProgramScene.string(entry["user"]?["name"]) {
-                    userKeys[key, default: []].append(name)
+                    let condition = WPEParityProgramScene.string(entry["user"]?["condition"]) ?? ""
+                    userKeys[key, default: []].append((name, condition))
                 }
             }
         }
