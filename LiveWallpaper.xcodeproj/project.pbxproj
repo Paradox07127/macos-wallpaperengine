@@ -17,6 +17,8 @@
 		F5C1C11330352D6F00FF0A00 /* SystemWallpaperProviderLite.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = F5C1C10C30352D6F00FF0A00 /* SystemWallpaperProviderLite.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F5C8FFB4301D663800D85832 /* SteamConnector.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = F5C8FFA9301D663800D85832 /* SteamConnector.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F5EA85A1303B3613009D91C4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = F5EA85A0303B3613009D91C4 /* Sparkle */; };
+		C0D000000000000000000101 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D000000000000000000102 /* LiveWallpaperCore */; };
+		C0D000000000000000000103 /* LiveWallpaperProWPE in Frameworks */ = {isa = PBXBuildFile; productRef = C0D000000000000000000104 /* LiveWallpaperProWPE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -148,14 +150,242 @@
 		F5C1C10630352D2A00FF0A00 /* Exceptions for "LiveWallpaper" folder in "SystemWallpaperProvider" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Models/SystemWallpaperManifest.swift,
-				Models/SystemWallpaperPlaybackPolicy.swift,
+				"Models/SystemWallpaperPreparationOptions.swift",
+				"Infrastructure/Persistence/ConfigurationDirectory.swift",
+				"Runtime/Assets/SystemWallpaperFramePool.swift",
+				"Infrastructure/Platform/UserPresenceProbe.swift",
+				"Runtime/Diagnostics/SceneRendererDiagnostics.swift",
+				"Infrastructure/Assets/SceneFailureCause.swift",
+				"Infrastructure/Assets/SceneResourceResolver.swift",
+				"Infrastructure/Assets/WPEAssetMount.swift",
+				"Infrastructure/Assets/WPEDirectorySceneAssetProvider.swift",
+				"Infrastructure/Assets/WPEMetalTextureFormatMapper.swift",
+				"Infrastructure/Assets/WPEMultiRootResourceResolver.swift",
+				"Infrastructure/Assets/WPEPackageIndexLoader.swift",
+				"Infrastructure/Assets/WPEPackageSceneAssetProvider.swift",
+				"Infrastructure/Assets/WPEPropertyLabelText.swift",
+				"Infrastructure/Assets/WPERasterImageAlpha.swift",
+				"Infrastructure/Assets/WPESceneAssetProvider.swift",
+				"Infrastructure/Assets/WPESceneCapabilityClassifier.swift",
+				"Infrastructure/Assets/WPESceneProjectSchemaLoader.swift",
+				"Infrastructure/Assets/WPETexByteReader.swift",
+				"Infrastructure/Assets/WPETexDecoder.swift",
+				"Infrastructure/Assets/WPETexMetalTranscoder.swift",
+				"Infrastructure/Assets/WPETexMipValidation.swift",
+				"Infrastructure/Assets/WPETexPixelDecoder.swift",
+				"Infrastructure/Assets/WPEVideoTextureDiskCache.swift",
+				"Infrastructure/Assets/WallpaperEnginePackage.swift",
+				"Infrastructure/Assets/WPEProjectError.swift",
+				"Infrastructure/Assets/WPEShaderImplementationInventory.swift",
+				"Infrastructure/Assets/WallpaperEngineProjectPropertySchema.swift",
+				"Infrastructure/Assets/WebFailureCause.swift",
+				"Infrastructure/Diagnostics/PreviewSignpost.swift",
+				"Infrastructure/Diagnostics/TestProcessScratch.swift",
+				"Infrastructure/Diagnostics/WPEImageCacheMeter.swift",
+				"Infrastructure/Diagnostics/WPEMetalTextureSnapshotter.swift",
+				"Infrastructure/Diagnostics/WPEOracleMode.swift",
+				"Infrastructure/Diagnostics/WPEResolutionDiagnostics+FailureResources.swift",
+				"Infrastructure/Diagnostics/WPEResolutionDiagnostics.swift",
+				"Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift",
+				"Infrastructure/Platform/AppDefaultsSuite.swift",
+				"Infrastructure/Services/CancellableBackgroundWork.swift",
+				"Models/SystemWallpaperManifest.swift",
+				"Models/SystemWallpaperPlaybackPolicy.swift",
+				"Models/SystemWallpaperSceneConfiguration.swift",
+				"Models/WPEAttachmentLoadContract.swift",
+				"Models/WPEAttachmentPlan.swift",
+				"Models/WPEBlendContract.swift",
+				"Models/WPEFrameOverlay.swift",
+				"Models/WPEPassColorContract.swift",
+				"Models/WPEPassRenderContract.swift",
+				"Models/WPEPassVertexPath.swift",
+				"Models/WPEPreparedPassAccess.swift",
+				"Models/WPEPreparedRenderPipeline+Contracts.swift",
+				"Models/WPERenderPipeline.swift",
+				"Models/WPEResourceSemantics.swift",
+				"Models/WPEShaderInterface.swift",
+				"Models/WPEUniformStageBinding.swift",
+				"Models/WallpaperLoadFailure.swift",
+				"Monitor/Types.swift",
+				"Playback/Assets/InMemoryVideoAssetLoader.swift",
+				"Runtime/Assets/WPEAnimatedFrameByteCache.swift",
+				"Runtime/Assets/WPEDynamicTextureSource.swift",
+				"Runtime/Assets/WPETexAnimatedTextureSource.swift",
+				"Runtime/Assets/WPETexLazyAnimatedTextureSource.swift",
+				"Runtime/Assets/WPEVideoPhaseOffset.swift",
+				"Runtime/Assets/WPEVideoTextureSource.swift",
+				"Runtime/Audio/AudioSpectrumBroker.swift",
+				"Runtime/Audio/AudioSpectrumFrame.swift",
+				"Runtime/Audio/AudioSpectrumProcessor.swift",
+				"Runtime/Audio/AudioSpectrumWindowExchange.swift",
+				"Runtime/Audio/OggAudioTranscoder.swift",
+				"Runtime/Audio/OggSourceAccess.swift",
+				"Runtime/Diagnostics/WPECanonicalTraceRecorder.swift",
+				"Runtime/Diagnostics/WPECanonicalUniformTrace.swift",
+				"Runtime/Diagnostics/WPERenderDiagnosticReport.swift",
+				"Runtime/Diagnostics/WPESceneTestingReports.swift",
+				"Runtime/Diagnostics/WPEShaderSemanticCoverage.swift",
+				"Runtime/Diagnostics/WPEUniformSourceTrace.swift",
+				"Runtime/Metal/RenderThread/WPEAdaptiveRenderQoS.swift",
+				"Runtime/Metal/RenderThread/WPEDisplayLinkFrameDriver.swift",
+				"Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift",
+				"Runtime/Metal/RenderThread/WPEOffMainRenderFlag.swift",
+				"Runtime/Metal/RenderThread/WPERenderSurface.swift",
+				"Runtime/Metal/RenderThread/WPERenderSurfaceClientShim.swift",
+				"Runtime/Metal/RenderThread/WPERenderThread.swift",
+				"Runtime/Metal/RenderThread/WPERenderThreadExecutor.swift",
+				"Runtime/Metal/WPEAuthoredVertexAdmission.swift",
+				"Runtime/Metal/WPEBuiltinShaderName.swift",
+				"Runtime/Metal/WPECameraMotionPlayback.swift",
+				"Runtime/Metal/WPECameraMotionProjection.swift",
+				"Runtime/Metal/WPECameraPathPlayback.swift",
+				"Runtime/Metal/WPEFrameInputs.swift",
+				"Runtime/Metal/WPEFrameOccupancyMeter.swift",
+				"Runtime/Metal/WPEFrameReadiness.swift",
+				"Runtime/Metal/WPEFrameUniformContext.swift",
+				"Runtime/Metal/WPEInteractiveMTKView.swift",
+				"Runtime/Metal/WPEMetalBootstrapInitialization.swift",
+				"Runtime/Metal/WPEMetalBuiltins.metal",
+				"Runtime/Metal/WPEMetalColorOutput.swift",
+				"Runtime/Metal/WPEMetalDepthStateCache.swift",
+				"Runtime/Metal/WPEMetalEffectDispatchTable.swift",
+				"Runtime/Metal/WPEMetalFBOAliasPlanner.swift",
+				"Runtime/Metal/WPEMetalFXSpatialUpscaler.swift",
+				"Runtime/Metal/WPEMetalFrameState.swift",
+				"Runtime/Metal/WPEMetalFrameSubmission.swift",
+				"Runtime/Metal/WPEMetalLRUByteBudget.swift",
+				"Runtime/Metal/WPEMetalLibraryRegistry.swift",
+				"Runtime/Metal/WPEMetalObjectUniforms.swift",
+				"Runtime/Metal/WPEMetalPassGPUProfiler.swift",
+				"Runtime/Metal/WPEMetalPipelineCache.swift",
+				"Runtime/Metal/WPEMetalRenderErrors+Uniforms.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+DisplayedFrameCapture.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+EffectTextureProjection.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+FBOSwap.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+ParticlePipeline.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+Particles.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+Present.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+ProjectedQuad.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+Puppet.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+Targets.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+Text.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+TextureCopy.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor+UniformPlan.swift",
+				"Runtime/Metal/WPEMetalRenderExecutor.swift",
+				"Runtime/Metal/WPEMetalRenderExecutorTypes.swift",
+				"Runtime/Metal/WPEMetalRenderTargetPool.swift",
+				"Runtime/Metal/WPEMetalRuntimeUniforms.swift",
+				"Runtime/Metal/WPEMetalSceneLighting.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Configuration.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Debug.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Frame.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+FrameContext.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+LayerOrder.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Lifecycle.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+LivePoster.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Load.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+ParticlePlayback.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Particles.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Readiness.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+ScriptFailClose.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+ScriptTicks.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Scripts.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Span.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+StaticTextureReload.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+TestSupport.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+TestingReport.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Text.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+Textures.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer+VertexStages.swift",
+				"Runtime/Metal/WPEMetalSceneRenderer.swift",
+				"Runtime/Metal/WPEMetalShaderDispatcher+CanonicalTrace.swift",
+				"Runtime/Metal/WPEMetalShaderDispatcher.swift",
+				"Runtime/Metal/WPEMetalShaderInputs.swift",
+				"Runtime/Metal/WPEMetalStaticLayerCache.swift",
+				"Runtime/Metal/WPEMetalTextureByteEstimator.swift",
+				"Runtime/Metal/WPEMetalTextureCacheBudget.swift",
+				"Runtime/Metal/WPEMetalTextureLoader.swift",
+				"Runtime/Metal/WPEMetalTextureMetadataRegistry.swift",
+				"Runtime/Metal/WPEMetalTextureUploadQueue.swift",
+				"Runtime/Metal/WPEMetalUniformArena.swift",
+				"Runtime/Metal/WPEMetalUpscalePlan.swift",
+				"Runtime/Metal/WPEParticleDrawBatch.swift",
+				"Runtime/Metal/WPEPointerMailbox.swift",
+				"Runtime/Metal/WPEPointerPublisher.swift",
+				"Runtime/Metal/WPEProjectedComposeQuad.swift",
+				"Runtime/Metal/WPERenderGraphBuilder.swift",
+				"Runtime/Metal/WPERenderPipelineBuilder.swift",
+				"Runtime/Metal/WPESceneSpanFrames.swift",
+				"Runtime/Metal/WPESceneSpanPresenter.swift",
+				"Runtime/Metal/WPEShaderBuiltinMacros.swift",
+				"Runtime/Metal/WPEShaderCompiler.swift",
+				"Runtime/Metal/WPEShaderInterfaceParser.swift",
+				"Runtime/Metal/WPEShaderPreprocessMemo.swift",
+				"Runtime/Metal/WPEShaderPreprocessor.swift",
+				"Runtime/Metal/WPEShaderStageLink.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Helpers.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Main.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Math.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Preprocessor.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Render.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Substitutions.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Uniforms.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Varyings.swift",
+				"Runtime/Metal/WPEShaderTranspiler+Vertex.swift",
+				"Runtime/Metal/WPEShaderTranspiler.swift",
+				"Runtime/Metal/WPEShaderTranspilerTypes.swift",
+				"Runtime/Metal/WPEStaticTextureReloadTaskOwner.swift",
+				"Runtime/Metal/WPESwiftShaderCompiler.swift",
+				"Runtime/Metal/WPEUniformPacking.swift",
+				"Runtime/Metal/WPEUniformType.swift",
+				"Runtime/Scene/SystemWallpaperSceneRuntime.swift",
+				"Models/SystemWallpaperClockPolicy.swift",
+				"Runtime/Scene/WPECreatedLayerBridgeConfiguration.swift",
+				"Runtime/Scene/WPELayerScriptRuntime.swift",
+				"Runtime/Scene/WPEMediaArtworkPalette.swift",
+				"Runtime/Scene/WPEMediaTextureProvider.swift",
+				"Runtime/Scene/WPEParticleCPUStorage.swift",
+				"Runtime/Scene/WPEParticleEvents.swift",
+				"Runtime/Scene/WPEParticleFrameArena.swift",
+				"Runtime/Scene/WPEParticleInstanceCoordinator.swift",
+				"Runtime/Scene/WPEParticleInstanceValues.swift",
+				"Runtime/Scene/WPEParticleSystem.swift",
+				"Runtime/Scene/WPESceneDocumentParser+TransformScripts.swift",
+				"Runtime/Scene/WPESceneMediaEvents.swift",
+				"Runtime/Scene/WPESceneParallaxBindingInference.swift",
+				"Runtime/Scene/WPESceneScriptBaseclasses.swift",
+				"Runtime/Scene/WPESceneScriptCameraBridge.swift",
+				"Runtime/Scene/WPESceneScriptContainment.swift",
+				"Runtime/Scene/WPESceneScriptInitialLayerConfiguration.swift",
+				"Runtime/Scene/WPESceneScriptInventory.swift",
+				"Runtime/Scene/WPESceneScriptParticleBridge.swift",
+				"Runtime/Scene/WPESceneScriptResourceBudget.swift",
+				"Runtime/Scene/WPESceneScriptModelData.swift",
+				"Runtime/Scene/WPEUserShortcutIconStore.swift",
+				"Runtime/Scene/WPEUserShortcutScriptBridge.swift",
+				"Runtime/Scene/WPESceneScriptRuntime.swift",
+				"Runtime/Scene/WPESceneScriptVideoBridge.swift",
+				"Runtime/Scene/WPESceneScriptVideoCommandBuffer.swift",
+				"Runtime/Scene/WPESceneTimelineStore.swift",
+				"Runtime/Scene/WPEScriptFaultPolicy.swift",
+				"Runtime/Scene/WPESoundRuntime.swift",
+				"Runtime/Session/ScenePropertyMutationAuthority.swift",
+				"Runtime/Text/WPETextFontResolver.swift",
+				"Runtime/Text/WPETextGlyphAtlas.swift",
+				"Runtime/Text/WPETextLayerSynthesis.swift",
+				"Runtime/Text/WPETextLayoutEngine.swift",
+				"Runtime/Text/WPETextMeshRenderer.swift",
+				"Runtime/Text/WPETextRenderPlanner.swift",
+				"Runtime/WPEMemoryTier.swift",
 			);
 			target = F5C1C0DB30351DA700FF0A00 /* SystemWallpaperProvider */;
 		};
 		F5C1C20030352D6F00FF0A00 /* Exceptions for "LiveWallpaper" folder in "SystemWallpaperProviderLite" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Models/SystemWallpaperPreparationOptions.swift",
+				"Infrastructure/Platform/UserPresenceProbe.swift",
 				Models/SystemWallpaperManifest.swift,
 				Models/SystemWallpaperPlaybackPolicy.swift,
 			);
@@ -262,6 +492,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0D000000000000000000101 /* LiveWallpaperCore in Frameworks */,
+				C0D000000000000000000103 /* LiveWallpaperProWPE in Frameworks */,
+
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -438,6 +671,9 @@
 			);
 			name = SystemWallpaperProvider;
 			packageProductDependencies = (
+				C0D000000000000000000102 /* LiveWallpaperCore */,
+				C0D000000000000000000104 /* LiveWallpaperProWPE */,
+
 			);
 			productName = SystemWallpaperProvider;
 			productReference = F5C1C0DC30351DA700FF0A00 /* SystemWallpaperProvider.appex */;
@@ -1118,6 +1354,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SYSTEM_WALLPAPER_EXTENSION";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -1146,6 +1383,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SYSTEM_WALLPAPER_EXTENSION";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1175,6 +1413,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -1204,6 +1443,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1437,6 +1677,8 @@
 			package = F5EA859F303B3613009D91C4 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
+		C0D000000000000000000102 /* LiveWallpaperCore */ = {isa = XCSwiftPackageProductDependency; productName = LiveWallpaperCore; };
+		C0D000000000000000000104 /* LiveWallpaperProWPE */ = {isa = XCSwiftPackageProductDependency; productName = LiveWallpaperProWPE; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0C322BE72D6950480033C48B /* Project object */;
