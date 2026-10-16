@@ -42,6 +42,8 @@ public struct WPEParitySceneState: Sendable {
         public fileprivate(set) var alive = true
         /// One native model reference held by this admitted layer, independent of its script wrapper.
         public internal(set) var modelDataToken: UInt32?
+        /// The loaded image object whose materials and textures a script-created image layer draws with.
+        public internal(set) var templateID: String?
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
@@ -155,6 +157,46 @@ public struct WPEParitySceneState: Sendable {
     var modelDataValues: [UInt32: WPEParitySceneModelData] = [:]
     var lastModelDataToken: UInt32 = 0
     var modelDataRevision = 0
+    /// Every object id the document declares, including objects this state holds no slot for.
+    public let loadedIDs: Set<String>
+    /// The last id 1401a38f0's counter handed out; 0 before any automatic id.
+    private var lastAutomaticID: UInt64 = 0
+
+    /// Appends a script-created image layer that copies `templateID`'s live fields before `configure`.
+    /// 1401a38f0.c:21-41 keeps an explicit id; otherwise :44-102 advances the counter past reserved ids.
+    public mutating func appendImageLayer(cloning templateID: String, id explicitID: UInt64?,
+                                          configure: (inout Object) -> Void) throws -> UInt64 {
+        guard let template = indexByID[templateID], objects[template].templateID == nil,
+              objects[template].modelDataToken == nil else {
+            throw WPEParityModelDataFailure.safety("created image layer requires a loaded image template")
+        }
+        let number: UInt64
+        if let explicitID {
+            guard !loadedIDs.contains(String(explicitID)), indexByID[String(explicitID)] == nil else {
+                throw WPEParityModelDataFailure.safety("created image layer reuses a reserved id")
+            }
+            number = explicitID
+        } else {
+            repeat {
+                lastAutomaticID += 1
+            } while loadedIDs.contains(String(lastAutomaticID)) || indexByID[String(lastAutomaticID)] != nil
+            number = lastAutomaticID
+        }
+        let id = String(number)
+        var object = objects[template]
+        object.alive = true
+        object.templateID = templateID
+        configure(&object)
+        indexByID[id] = ids.count
+        ids.append(id)
+        objects.append(object)
+        parents.append(nil)
+        commonOrder.append(id)
+        membershipGeneration += 1
+        transformGeneration += 1
+        visibilityGeneration += 1
+        return number
+    }
 
     /// Appends one already parsed, admitted ModelData layer to a private candidate; all previous slots, values
     /// and retirements survive. The existing Engine transaction publishes the candidate and config together.
@@ -245,6 +287,7 @@ public struct WPEParitySceneState: Sendable {
         self.ids = ids
         self.objects = objects
         self.indexByID = indexByID
+        loadedIDs = Set(document.resolvedObjectsJSON.compactMap(WPEParitySceneAnimations.id))
         var commonIDs: Set<String> = []
         commonOrder = document.resolvedObjectsJSON.compactMap { object in
             guard let id = WPEParitySceneAnimations.id(object), indexByID[id] != nil,

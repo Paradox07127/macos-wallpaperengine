@@ -322,7 +322,20 @@ struct WPEParityFramePlan {
         var description = scene.scene(effectVisible: {
             visible[.init(objectID: $0, effectID: $1)] ?? true
         }, textSizes: texts.mapValues { $0.layout.fboSize }, logicalViewport: SIMD2(width, height))
+        // A destroyed template still lends its loaded description to the clones it already made.
+        let loadedObjects = description.objects
         description.objects.removeAll { !state.isAlive($0.id) }
+        var templates: [String: String] = [:]
+        for id in state.commonOrder {
+            guard let templateID = state.object(id)?.templateID,
+                  var object = loadedObjects.first(where: { $0.id == templateID }) else { continue }
+            object.id = id
+            object.visible = state.isVisible(id)
+            description.objects.append(object)
+            templates[id] = templateID
+        }
+        var scene = scene
+        scene.adoptCreatedLayers(templates)
         for id in state.commonOrder {
             guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
             let previous = description.objects.first { $0.id == id }
@@ -379,7 +392,15 @@ struct WPEParityFramePlan {
         var transforms = Array(existing.layers.values)
         let loaded = Set(transforms.map(\.id))
         for id in state.commonOrder where !loaded.contains(id) {
-            guard let object = state.object(id), object.modelDataToken != nil else { continue }
+            guard let object = state.object(id) else { continue }
+            if let templateID = object.templateID, var transform = existing.layers[templateID] {
+                // Size, alignment, parallax depth and perspective come from the template.
+                (transform.id, transform.origin) = (id, object.origin)
+                (transform.angles, transform.scale) = (object.angles, object.scale)
+                transforms.append(transform)
+                continue
+            }
+            guard object.modelDataToken != nil else { continue }
             transforms.append(WPEParityLayerTransform(
                 id: id, origin: object.origin, angles: object.angles, scale: object.scale
             ))

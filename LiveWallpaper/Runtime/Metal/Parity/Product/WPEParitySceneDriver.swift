@@ -316,7 +316,9 @@ final class WPEParitySceneDriver {
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
                     connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
-                    connectedHost.createLayer = WPEParityModelDataLayerAdmission.create
+                    connectedHost.createLayer = WPEParityModelDataLayerAdmission.create(
+                        plan: plan, removable: renderer.scriptLayerRemovalAdmission
+                    )
                     connectedHost.destroyLayer = { id, state in
                         guard state.removeObject(id) else { return false }
                         state.releaseLayerModelData(id)

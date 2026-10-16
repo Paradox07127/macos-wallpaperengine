@@ -939,8 +939,10 @@ final class WPEParityFrameRenderer {
         let objects = plan.scene.scene.objects
         let parents = plan.document.objectParentByID
         let videoIDs = objects.filter { videos.hasOwner($0.id) }.map(\.id)
+        let loadedIDs = plan.state.loadedIDs
         return { id, modelDataToken in
-            if modelDataToken != nil {
+            // Created image clones own no class resource beyond their template's shared images.
+            if modelDataToken != nil || !loadedIDs.contains(id) {
                 return true
             }
             guard let object = objects.first(where: { $0.id == id }), case .image = object.kind,

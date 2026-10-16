@@ -73,7 +73,9 @@ public struct WPEParityProgramScene: Sendable {
     let overridePasses: [MaterialKey: Int]
     /// Image and text layer `g_Color4` (140207b50.c:81-100, 140258050.c:184-191): colour × (HDR ? brightness : 1),
     /// alpha.
-    let layerColors: [String: SIMD4<Float>]
+    private(set) var layerColors: [String: SIMD4<Float>]
+    /// Script-created image layer id → the loaded template whose materials and colour its draws use.
+    public private(set) var createdTemplates: [String: String] = [:]
     /// The image then text layers leading `scene.objects`, in the same order, as their files declare them.
     private let authoredObjects: [WPEParityAuthoredObject]
 
@@ -427,12 +429,21 @@ public struct WPEParityProgramScene: Sendable {
         return settings
     }
 
+    /// Maps each created layer to its template for the material and colour lookups below.
+    public mutating func adoptCreatedLayers(_ templates: [String: String]) {
+        createdTemplates = templates
+        for (id, template) in templates {
+            layerColors[id] = layerColors[template]
+        }
+    }
+
     /// The merged pass JSON `draw` uses; an engine (util) material is read from its file with the engine's combos.
     func material(for draw: WPEParitySceneDraw) -> WPEParityProgramMaterial? {
         guard let source = draw.source else { return nil }
         var stored = source
         (stored.combos, stored.textures) = ([:], [:])
-        var material = materials[MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)]
+        let objectID = createdTemplates[draw.objectID] ?? draw.objectID
+        var material = materials[MaterialKey(objectID: objectID, effectID: draw.effectID, source: stored)]
             ?? WPEParityProgramMaterial(path: source.materialPath, pass: source.materialPass, assets: assets)
         material?.merge(combos: source.combos, textures: source.textures)
         if let shader = source.shader {
@@ -462,7 +473,8 @@ public struct WPEParityProgramScene: Sendable {
     func passKey(for draw: WPEParitySceneDraw) -> WPEParityMaterialPassKey? {
         guard var stored = draw.source else { return nil }
         (stored.combos, stored.textures) = ([:], [:])
-        let key = MaterialKey(objectID: draw.objectID, effectID: draw.effectID, source: stored)
+        let key = MaterialKey(objectID: createdTemplates[draw.objectID] ?? draw.objectID, effectID: draw.effectID,
+                              source: stored)
         guard materials[key] != nil else { return nil }
         return WPEParityMaterialPassKey(objectID: draw.objectID, effectID: draw.effectID, pass: overridePasses[key] ?? 0)
     }

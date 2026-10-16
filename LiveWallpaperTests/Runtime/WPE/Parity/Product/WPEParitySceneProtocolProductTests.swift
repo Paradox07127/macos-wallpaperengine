@@ -288,6 +288,81 @@ extension WPEParitySceneDriverTests {
                           "The re-planned renderer loaded the destroyed layer's texture again")
     }
 
+    @objc func testCreatedImageLayerDrawsThisFrameSurvivesReplanAndDestroys() async throws {
+        let source = """
+        let frame = 0;
+        let clone;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            clone = thisScene.createLayer('models/clone-template.json');
+            if (!clone) throw Error('created image layer admission');
+            clone.origin = new Vec3(136, 48, 0);
+          } else if (frame === 4 && !thisScene.destroyLayer(clone)) {
+            throw Error('created image layer destroy admission');
+          }
+          return value;
+        }
+        """
+        let (_, original) = try sceneInputs()
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "textures": ["clone-template"],
+                                                   "blending": "normal", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        let files = try [
+            "models/clone-template.json": JSONSerialization.data(withJSONObject: ["material": "materials/clone-template.json"]),
+            "materials/clone-template.json": JSONSerialization.data(withJSONObject: material),
+            "materials/clone-template.tex": XCTUnwrap(original.data("materials/util/white.tex")),
+        ]
+        let template: [String: Any] = ["id": 20, "name": "template", "image": "models/clone-template.json",
+                                       "origin": "80 48 0", "size": "12 12", "color": "0 1 0", "alpha": 1]
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source), template]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects, files: files)
+        defer { driver.cleanup() }
+        func rgb(_ pixels: [UInt8], x: Int) -> [Int] {
+            (0 ..< 3).map { Int(pixels[(48 * 160 + x) * 4 + $0]) }
+        }
+        func owned(_ id: String) throws -> [WPEParityDraw] {
+            let renderer = try XCTUnwrap(driver.renderer)
+            return renderer.lastFrameDraws.filter { item in
+                renderer.frames.contains { $0.owners[item.operation] == id }
+            }.map(\.draw)
+        }
+        func createdID() throws -> String? {
+            try XCTUnwrap(driver.renderer).state.commonOrder.first { !["101", "20"].contains($0) }
+        }
+        var pixels = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
+        let templateColor = rgb(pixels, x: 80)
+        XCTAssertNotEqual(templateColor, [0, 0, 0])
+        let loadedDraws = try XCTUnwrap(driver.renderer).lastFrameDraws.count
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        let id = try XCTUnwrap(createdID(), "createLayer must admit an image layer cloned from the loaded template")
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).lastFrameDraws.count, loadedDraws + 1)
+        XCTAssertFalse(try owned(id).isEmpty, "The created layer must draw in the frame that created it")
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: templateColor)
+        sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
+
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 80, height: 48))
+        XCTAssertTrue(driver.needsReplan)
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "replanned frame")
+        XCTAssertFalse(try owned(id).isEmpty, "The re-planned renderer must keep the created layer")
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: templateColor)
+        // The re-planned renderer loads its own images; the clone shares the template's.
+        let templateTexture = try XCTUnwrap(XCTUnwrap(owned("20").first).textures["g_Texture0"])
+        XCTAssertTrue(try XCTUnwrap(owned(id).first).textures["g_Texture0"] === templateTexture)
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "destroy frame")
+        XCTAssertNil(try XCTUnwrap(driver.renderer).state.object(id))
+        XCTAssertTrue(try owned(id).isEmpty, "The destroyed created layer must leave the frame")
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
+        sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
+        XCTAssertTrue(try XCTUnwrap(owned("20").first).textures["g_Texture0"] === templateTexture,
+                      "Destroying the clone retired the template's texture")
+    }
+
     @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
         // The ordinary helper below must use these actual bundled inputs; no environment fallback is admitted.
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",

@@ -38,6 +38,79 @@ enum WPEParityModelDataLayerAdmission {
         )
     }
 
+    /// Image configs clone a loaded template; `removable` is the removal admission, whose class, puppet, video,
+    /// child and dependency limits a template also needs. Other configs keep the ModelData transaction.
+    static func create(plan: WPEParityFramePlan, removable: @escaping (String, UInt32?) -> Bool)
+        -> (String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
+        let templates = plan.document.imageObjects.filter { image in
+            plan.scene.scene.objects.contains { $0.id == image.id && $0.kind == .image } && image.effects.isEmpty
+                && image.parentObjectID == nil && removable(image.id, nil)
+        }
+        return { json, state in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+                  let path = object["image"] as? String else {
+                return Self.create(json, state: &state)
+            }
+            let name = object["name"] as? String
+            guard let template = templates.first(where: { $0.imageRelativePath == path && $0.name == name })
+                ?? templates.first(where: { $0.imageRelativePath == path }) else {
+                Logger.warning("Image layer admission: no loaded template qualifies for \(path)", category: .wpeRender)
+                return nil
+            }
+            return Self.cloneImage(object, template: template.id, state: &state)
+        }
+    }
+
+    /// 14018ba00 parses the config before its factory; the clone starts from the template's live fields.
+    private static func cloneImage(_ config: [String: Any], template: String,
+                                   state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
+        let unsupported = ["parent", "video", "model", "text", "particle", "sound"].filter { config[$0] != nil }
+            + ["effects", "dependencies"].filter { (config[$0] as? [Any])?.isEmpty == false }
+        guard unsupported.isEmpty else {
+            Logger.warning("Image layer admission: unsupported \(unsupported)", category: .wpeRender)
+            return nil
+        }
+        // 1401a38f0.c:21-41: only a nonzero numeric id is explicit.
+        let explicitID = (config["id"] as? NSNumber).flatMap { number in
+            CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : UInt64(exactly: number.doubleValue)
+        }.flatMap { $0 > 0 ? $0 : nil }
+        func value(_ key: String) -> Any? {
+            let raw = config[key]
+            return (raw as? [String: Any]).map { $0["value"] } ?? raw
+        }
+        do {
+            let number = try state.appendImageLayer(cloning: template, id: explicitID) { object in
+                if let origin = WPEValueParser.vector3(config["origin"]) {
+                    object.origin = SIMD3(origin)
+                }
+                if let scale = WPEValueParser.vector3(config["scale"]) ?? WPEValueParser.double(value("scale")).map({
+                    SIMD3(repeating: $0)
+                }) {
+                    object.scale = SIMD3(scale)
+                }
+                if let angles = WPEValueParser.vector3(config["angles"]) {
+                    object.angles = SIMD3(angles)
+                }
+                if let color = WPEValueParser.vector3(config["color"]) {
+                    object.color = SIMD3(color)
+                }
+                if let alpha = WPEValueParser.double(value("alpha")) {
+                    object.alpha = Float(alpha)
+                }
+                if let visible = WPEValueParser.bool(value("visible")) {
+                    object.visible = visible
+                }
+            }
+            var prepared = config
+            prepared["id"] = NSNumber(value: number)
+            let data = try JSONSerialization.data(withJSONObject: prepared)
+            return String(bytes: data, encoding: .utf8).map { .init(id: String(number), configJSON: $0) }
+        } catch {
+            Logger.warning("Image layer admission: \(error)", category: .wpeRender)
+            return nil
+        }
+    }
+
     /// Explicit numeric identity and literal TRS form the bounded warm model transaction. Other classes,
     /// parents/effects/placement and new scripted dependencies require their actual resource adoption first.
     static func create(_ json: String, state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
