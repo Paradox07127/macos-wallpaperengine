@@ -192,6 +192,11 @@ final class WPEParitySceneDriver {
         paused
     }
 
+    /// Suspended while the pause ramp still moves scene time; the frame that ends it is skipped (140110630.c:671-707).
+    var isPauseRamping: Bool {
+        paused && (renderer?.clock.pauseRamp ?? 0) > 0
+    }
+
     /// As `WPEMetalSceneRenderer.effectiveFPS`.
     var effectiveFPS: Int {
         guard adaptiveThrottleActive else { return userPreferredFPS }

@@ -27,7 +27,11 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
-        renderActor.submitConfig(.performanceProfile(profile))
+        applyPerformanceProfile(profile, rampDown: false)
+    }
+
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile, rampDown: Bool) {
+        renderActor.submitConfig(.performanceProfile(profile, rampDown: rampDown))
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
@@ -88,6 +92,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var hotZoneRouter = SceneHotZoneRouter()
     private var hotZoneScreenObserver: NSObjectProtocol?
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
+    private var lastAppliedPauseRampDown = false
     private var requiresSystemAudioCapture = false
     private var lastLoggedAudioDemandInputs = ""
 
@@ -377,15 +382,24 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         applyEffectivePerformanceProfile()
     }
 
+    /// Rule, battery and low-power pauses ease scene time to a hold; any other reason stops it at once.
+    nonisolated static func pauseRampsDown(_ reasons: Set<WallpaperSuspendReason>) -> Bool {
+        !reasons.isEmpty && reasons.isSubset(of: [.applicationRule, .battery, .lowPowerMode])
+    }
+
     private func applyEffectivePerformanceProfile() {
         let effective = effectivePerformanceProfile
         if effective == .quality {
             absenceDwell.cancel()
             pressureDwell.cancel()
         }
-        if lastAppliedPerformanceProfile != effective {
+        // The playback machine carries the policy reasons of the profile ScreenManager just applied.
+        let rampDown = effective == .suspended && !transitionHold && userIntendsToPlay
+            && Self.pauseRampsDown(playbackMachine.outputs.suspendReasons)
+        if lastAppliedPerformanceProfile != effective || lastAppliedPauseRampDown != rampDown {
             lastAppliedPerformanceProfile = effective
-            rendererConfigAdapter.applyPerformanceProfile(effective)
+            lastAppliedPauseRampDown = rampDown
+            rendererConfigAdapter.applyPerformanceProfile(effective, rampDown: rampDown)
         }
         if effective == .quality, isHibernated {
             isHibernated = false

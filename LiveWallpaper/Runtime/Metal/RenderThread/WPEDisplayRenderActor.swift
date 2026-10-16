@@ -45,6 +45,8 @@ actor WPEDisplayRenderActor {
     private var parityReplanning = false
     /// A static parity scene runs the link until one frame after a change presents, then parks it.
     private var parityFramePending = false
+    /// The current `.suspended` profile keeps the link running until the parity pause ramp holds scene time.
+    private var parityPauseRampDown = false
     private var parityActivity: WPESceneRuntimeActivity?
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
@@ -147,7 +149,7 @@ actor WPEDisplayRenderActor {
 
     private func applyConfigCommand(_ command: WPERendererConfigCommand) {
         switch command {
-        case let .performanceProfile(profile): applyPerformanceProfile(profile)
+        case let .performanceProfile(profile, rampDown): applyPerformanceProfile(profile, rampDown: rampDown)
         case let .frameRateCeiling(fps): setFrameRateCeiling(fps)
         case let .adaptiveFrameRateThrottle(active): setAdaptiveFrameRateThrottle(active)
         case let .audioMuted(muted): setAudioMuted(muted)
@@ -233,6 +235,9 @@ actor WPEDisplayRenderActor {
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             if parityFramePending, presented != nil {
                 parityFramePending = false
+                applyParityPacing()
+            } else if parityPauseRampDown, !parityDriver.isPauseRamping {
+                // The ramp's last frame presents nothing, so parking follows the clock.
                 applyParityPacing()
             }
             replanParityIfNeeded()
@@ -567,12 +572,13 @@ actor WPEDisplayRenderActor {
         requestParityFrame()
     }
 
-    /// The display link starts paused; the parity scene runs it while loaded and not suspended, and a static one
-    /// only until its pending frame presents. The frame-rate ceiling and pointer monitoring follow the old renderer:
-    /// neither applies while suspended.
+    /// The display link starts paused; the parity scene runs it while loaded and not suspended (or still ramping a
+    /// suspend down), and a static one only until its pending frame presents. The frame-rate ceiling and pointer
+    /// monitoring follow the old renderer: neither applies while suspended.
     private func applyParityPacing() {
         guard let parityDriver, let parityInputs else { return }
-        let running = parityDriver.didLoad && !parityDriver.isPaused
+        let running = parityDriver.didLoad
+            && (!parityDriver.isPaused || (parityPauseRampDown && parityDriver.isPauseRamping))
             && (parityDriver.needsContinuousFrames || parityFramePending)
         let pointerDemand = parityDriver.mouseInteractionEnabled || parityInputs.mailbox.read().clickCaptureEnabled
         parityInputs.surfaceControl.applyPacing(WPERenderPacingUpdate(
@@ -625,9 +631,10 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Configuration Forwarders
 
-    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile, rampDown: Bool = false) {
         if let parityDriver {
             parityDriver.applyPerformanceProfile(profile)
+            parityPauseRampDown = profile == .suspended && rampDown
             parityFramePending = parityFramePending || profile != .suspended
             applyParityPacing()
             return
@@ -887,7 +894,8 @@ actor WPEDisplayRenderActor {
 
 #if !LITE_BUILD
 enum WPERendererConfigCommand: Sendable {
-    case performanceProfile(WallpaperPerformanceProfile)
+    /// `rampDown`: a parity scene keeps drawing a `.suspended` profile until its pause ramp holds scene time.
+    case performanceProfile(WallpaperPerformanceProfile, rampDown: Bool = false)
     case frameRateCeiling(Int)
     case adaptiveFrameRateThrottle(Bool)
     case audioMuted(Bool)
