@@ -420,7 +420,6 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         let metadata = try WPETexDecoder().extractRawMetadata(data: data).get()
         XCTAssertEqual(metadata.bitmap.conditionalVariants.map(\.groupKey), [7, 7, 9])
         XCTAssertEqual(metadata.bitmap.conditionalVariants.map(\.variantID), [9000, 5, 60000])
-        XCTAssertEqual(metadata.bitmap.conditionalRecords.map(\.leadingWord), [1, 1, 37, 1])
         XCTAssertEqual(metadata.bitmap.conditionalRecords.map(\.mipIndex), [0, 0, 0, 1])
         XCTAssertThrowsError(try load(data, device)) {
             guard let failure = $0 as? WPEParityTextureLoader.Failure,
@@ -549,6 +548,21 @@ final class WPEParityTextureLoaderTests: XCTestCase {
                                         from: MTLRegionMake2D(0, 0, 2, 1), mipmapLevel: 0)
             }
             XCTAssertEqual(bytes, Data(expected), "A bad or insufficient compressed patch skips only that record for format \(code)")
+        }
+    }
+
+    func testConditionalPatchOnShortCompressedBaseMipThrows() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let properties: WPESceneJSONValue = .object(["on": .object(["value": .bool(true)])])
+        // The authored decompressed count (4) is smaller than the 4x4 RGBA layout (64); both payloads are LZ4 literals.
+        let base = Mip(width: 4, height: 4, bytes: Data([0x40, 10, 20, 30, 40]), compressionFlags: 1, decompressedByteCount: 4)
+        let packet = conditionalTex(format: 0, images: [[base]], table: [(1, 8, 0, #"{"condition":"on"}"#)],
+                                    records: [0: [[ConditionalRecord(id: 8, x: 3, y: 3, width: 1, height: 1,
+                                                                     bytes: Data([0x40, 1, 2, 3, 4]))]]])
+        XCTAssertThrowsError(try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: packet), device: device,
+                                                             userProperties: properties)) {
+            // The materializer must reject the short base before a patch writes past it, not the later upload check.
+            XCTAssertEqual($0 as? WPETexDecodeError, .decodeFailed(mipmap: 0, detail: "Truncated conditional base mip"))
         }
     }
 

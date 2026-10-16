@@ -35,14 +35,9 @@ public struct WPEParityProgramMaterial: Sendable, Equatable {
 public struct WPEParityProgramUserTextures: Sendable, Equatable {
     public let material: WPESceneJSONValue?
     public let pass: WPESceneJSONValue?
-    public let override: WPESceneJSONValue?
     public let bindings: WPERenderUserTextureBindings
-    /// The selected pass after the native recursive instance merge; unverified root/pass conflicts remain nil.
-    public let resolved: WPESceneJSONValue?
     /// Slots retain authored ordinals and still require an authored texture fallback.
     public let slots: [Int32: WPESceneUserTextureBinding]
-    /// Native reads a Boolean; missing or other shapes do not enable the flag. Its aspect transform is still unverified.
-    public let keepAspect: [Int32: Bool]
     public let diagnostics: [String]
 
     public init(material: WPESceneJSONValue? = nil, pass: WPESceneJSONValue? = nil,
@@ -50,7 +45,6 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
                 overrideBindings: [WPESceneUserTextureBinding]? = nil) {
         self.material = material
         self.pass = pass
-        self.override = override
         let materialEntries = Self.entries(material)
         let passEntries = Self.entries(pass)
         let overrideEntries = Self.entries(override)
@@ -62,7 +56,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
                         ("override", override, overrideEntries)].filter { $0.1 != nil }
         var diagnostics: [String] = []
         var slots: [Int32: WPESceneUserTextureBinding] = [:]
-        var keepAspect: [Int32: Bool] = [:]
+        // The selected pass after the native recursive instance merge; unverified root/pass conflicts remain nil.
         var resolved: WPESceneJSONValue?
         if override == nil, let overrideBindings, !overrideBindings.isEmpty {
             diagnostics.append("usertextures override has typed bindings without raw array/keepaspect provenance")
@@ -85,7 +79,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
         for entry in Self.entries(resolved) {
             guard let slot = entry.binding.slot, let key = Int32(exactly: slot) else { continue }
             slots[key] = entry.binding
-            keepAspect[key] = entry.keepAspect
+            // Native reads a Boolean; missing or other shapes do not enable the flag.
             if entry.keepAspect {
                 diagnostics.append("usertextures keepaspect transform is unverified at slot \(slot)")
             }
@@ -99,9 +93,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
             }
             diagnostics.append("usertextures \(locus) has an unsupported non-array declaration")
         }
-        self.resolved = resolved
         self.slots = slots
-        self.keepAspect = keepAspect
         self.diagnostics = diagnostics
     }
 
@@ -179,13 +171,4 @@ public struct WPEParityProgramDescription: Sendable, Equatable {
     public var passJSONCombos: [WPEPassJSONCombo] {
         material.combos.map { WPEPassJSONCombo(key: $0.key, value: $0.value) }
     }
-}
-
-/// One frame draw and the program it needs.
-public struct WPEParityProgramDraw: Sendable, Equatable {
-    /// Index of the draw operation in `WPEParityFrame.operations`.
-    public let operationIndex: Int
-    public let pass: WPEPassIdentity
-    /// Nil when the draw's material file is missing.
-    public let description: WPEParityProgramDescription?
 }

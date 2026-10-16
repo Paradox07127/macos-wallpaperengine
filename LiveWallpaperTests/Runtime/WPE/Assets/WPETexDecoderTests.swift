@@ -846,12 +846,13 @@ extension WPETexDecoderTests {
         #expect(metadata.bitmap.frames.count == 1)
         #expect(metadata.bitmap.isVideoPayload == false)
         let variants = metadata.bitmap.conditionalVariants
-        #expect(variants.map(\.imageID) == [1, 2])
-        #expect(variants[0].condition.contains("blank"))
-        #expect(variants[1].condition.contains("discord"))
-        #expect(variants.map(\.mipmaps.count) == [1, 1])
-        #expect(variants[1].mipmaps[0].x == 1 && variants[1].mipmaps[0].y == 1)
-        #expect(variants[1].mipmaps[0].width == 2 && variants[1].mipmaps[0].height == 2)
+        #expect(variants.map(\.variantID) == [1, 2])
+        #expect(String(bytes: variants[0].conditionBytes, encoding: .utf8)?.contains("blank") == true)
+        #expect(String(bytes: variants[1].conditionBytes, encoding: .utf8)?.contains("discord") == true)
+        let records = metadata.bitmap.conditionalRecords
+        #expect(records.map(\.variantID) == [1, 2])
+        #expect(records[1].x == 1 && records[1].y == 1)
+        #expect(records[1].width == 2 && records[1].height == 2)
 
         let payload = try WPETexDecoder().extractTexturePayload(data: buffer).get()
         #expect(payload.hasConditionalVariants)

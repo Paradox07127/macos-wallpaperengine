@@ -30,12 +30,6 @@ public struct WPEParityProgram: Sendable, Equatable {
         }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-
-    public func cacheKey(compilerIdentity: String, options: WPEParityShaderCompileOptions,
-                         bindingABIVersion: Int) -> WPEParityShaderKey {
-        WPEParityShaderKey(program: hlsl, compilerIdentity: compilerIdentity, options: options,
-                           bindingABIVersion: bindingABIVersion)
-    }
 }
 
 public enum WPEParityProgramResolver {

@@ -45,8 +45,7 @@ final class ParityProgramPuppetTests: XCTestCase {
                 false
             }
         })
-        let program = try XCTUnwrap(WPEParityProgramBuilder.draws(frame: frame, scene: scene)
-            .first { $0.operationIndex == index }?.description)
+        let program = try XCTUnwrap(frame.draws[index].flatMap { WPEParityProgramBuilder.description(of: $0, scene: scene) })
         XCTAssertEqual(program.material.shader, "genericimage2")
         XCTAssertEqual(program.material.combos["SKINNING"], 1)
         XCTAssertEqual(program.material.combos["BONECOUNT"], 2)
@@ -148,9 +147,8 @@ final class ParityProgramPuppetTests: XCTestCase {
         }
         XCTAssertEqual(Set(puppetDraws.map(\.1.pass.rawValue)),
                        ["43/albedo", "47/passthrough4", "51/passthrough4"])
-        let programs = WPEParityProgramBuilder.draws(frame: frame, scene: scene)
-        for (index, draw) in puppetDraws {
-            let description = try XCTUnwrap(programs.first { $0.operationIndex == index }?.description,
+        for (_, draw) in puppetDraws {
+            let description = try XCTUnwrap(WPEParityProgramBuilder.description(of: .scene(draw), scene: scene),
                                             draw.pass.rawValue)
             let program = try WPEParityProgramResolver.resolve(description, sources: assets)
             XCTAssertTrue(program.combos.contains { $0.name == "SKINNING" && $0.value == "1" }, draw.pass.rawValue)

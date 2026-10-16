@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 @Suite("WPE parity media inputs", .serialized)
 @MainActor
 struct WPEParityMediaInputTests {
-    @Test("Reload seeds the same source ordinal and uploaded pair to a new loaded consumer")
+    @Test("Reload seeds the same uploaded pair to a new loaded consumer")
     func reloadReplaysTheCurrentPairWithoutRotatingIt() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let source = FakeNowPlayingSource()
@@ -44,8 +44,6 @@ struct WPEParityMediaInputTests {
         #expect(configuredReload)
         let reload = try #require(mailbox.drainParityInputs(generation: 2).only)
         let reloadedPair = try #require(reload.textures)
-        #expect(reload.isReplay)
-        #expect(reload.sourceOrdinal == change.sourceOrdinal)
         #expect(reloadedPair.revision == changedPair.revision)
         #expect(reloadedPair.current === coverB)
         #expect(reloadedPair.previous === coverA)
@@ -111,7 +109,6 @@ struct WPEParityMediaInputTests {
         #expect(current.width == 3 && previous.width == 2)
         #expect(uploaded.revision == namePair.revision)
         #expect(uploaded.currentSystemName == secondName && uploaded.previousSystemName == firstName)
-        #expect(demand.sourceOrdinal == change.sourceOrdinal)
         #expect(demand.systemProperties == change.systemProperties)
         #expect(source.subscriberCount == 1)
     }
@@ -135,9 +132,8 @@ struct WPEParityMediaInputTests {
         #expect(configuredCurrent)
         #expect(mailbox.drainParityInputs(generation: 1).isEmpty)
         let current = try #require(mailbox.drainParityInputs(generation: 2).only)
-        #expect(current.generation == 2 && current.isReplay)
+        #expect(current.generation == 2)
         mailbox.invalidateParityGeneration(2)
-        #expect(!mailbox.beginParityGeneration(2))
         let rejectedInvalidated = dispatcher.configureParity(generation: 2, device: nil, textureDemand: false, onChange: {})
         #expect(!rejectedInvalidated)
         #expect(!dispatcher.replayGeneration(2))

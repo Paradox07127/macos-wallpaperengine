@@ -236,22 +236,6 @@ public struct WPETexInfo: Sendable, Equatable {
     }
 }
 
-/// `condition` is a NUL-terminated ASCII run used as a conditional-mip predicate in the official engine.
-public struct WPETexMipmapV4Fields: Sendable, Equatable {
-    public let param1: Int32
-    public let param2: Int32
-    public let condition: String
-    public let param3: Int32
-
-    public init(param1: Int32, param2: Int32, condition: String, param3: Int32) {
-        self.param1 = param1
-        self.param2 = param2
-        self.condition = condition
-        self.param3 = param3
-    }
-}
-
-/// `v4Fields` is populated only when parent `WPETexBitmapBlock.version == 4`; older containers leave it nil.
 public struct WPETexMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
@@ -264,7 +248,6 @@ public struct WPETexMipmap: Sendable, Equatable {
     public let payload: WPEMappedByteSpan
     public let isCompressed: Bool
     public let compressionFlags: UInt32
-    public let v4Fields: WPETexMipmapV4Fields?
 
     public init(
         index: Int,
@@ -274,7 +257,6 @@ public struct WPETexMipmap: Sendable, Equatable {
         decompressedByteCount: Int?,
         payload: WPEMappedByteSpan,
         isCompressed: Bool,
-        v4Fields: WPETexMipmapV4Fields? = nil,
         depth: Int = 1,
         compressionFlags: UInt32 = 0
     ) {
@@ -287,7 +269,6 @@ public struct WPETexMipmap: Sendable, Equatable {
         self.payload = payload
         self.isCompressed = isCompressed
         self.compressionFlags = compressionFlags
-        self.v4Fields = v4Fields
     }
 }
 
@@ -302,14 +283,11 @@ public struct WPETexRawMetadata: Sendable, Equatable {
 }
 
 /// One TEXB0004 record. Selection is by variantID; replacement comes from the table flags,
-/// never from the rectangle. The ordinal fields retain ordering across groups, images and mips.
+/// never from the rectangle.
 public struct WPETexConditionalVariantMipmap: Sendable, Equatable {
-    public let leadingWord: UInt32
     public let variantID: UInt32
     public let imageIndex: Int
     public let mipIndex: Int
-    public let groupIndex: Int
-    public let recordIndex: Int
     public let x: Int
     public let y: Int
     public let width: Int
@@ -319,14 +297,10 @@ public struct WPETexConditionalVariantMipmap: Sendable, Equatable {
     public let payload: WPEMappedByteSpan
 
     public init(x: Int, y: Int, width: Int, height: Int, formatCode: Int, payload: WPEMappedByteSpan,
-                leadingWord: UInt32 = 1, variantID: UInt32 = 0, imageIndex: Int = 0, mipIndex: Int = 0,
-                groupIndex: Int = 0, recordIndex: Int = 0) {
-        self.leadingWord = leadingWord
+                variantID: UInt32 = 0, imageIndex: Int = 0, mipIndex: Int = 0) {
         self.variantID = variantID
         self.imageIndex = imageIndex
         self.mipIndex = mipIndex
-        self.groupIndex = groupIndex
-        self.recordIndex = recordIndex
         self.x = x
         self.y = y
         self.width = width
@@ -342,29 +316,12 @@ public struct WPETexConditionalVariant: Sendable, Equatable {
     public let variantID: UInt32
     public let flags: UInt32
     public let conditionBytes: Data
-    /// Legacy diagnostics view; consumers use the byte-preserving fields above.
-    public var imageID: Int {
-        Int(variantID)
-    }
 
-    public var condition: String {
-        String(bytes: conditionBytes, encoding: .utf8) ?? "<invalid UTF-8 condition>"
-    }
-
-    public let mipmaps: [WPETexConditionalVariantMipmap]
-
-    public init(groupKey: UInt32, variantID: UInt32, flags: UInt32, conditionBytes: Data,
-                mipmaps: [WPETexConditionalVariantMipmap] = []) {
+    public init(groupKey: UInt32, variantID: UInt32, flags: UInt32, conditionBytes: Data) {
         self.groupKey = groupKey
         self.variantID = variantID
         self.flags = flags
         self.conditionBytes = conditionBytes
-        self.mipmaps = mipmaps
-    }
-
-    public init(imageID: Int, condition: String, mipmaps: [WPETexConditionalVariantMipmap]) {
-        self.init(groupKey: 1, variantID: UInt32(truncatingIfNeeded: imageID), flags: 0,
-                  conditionBytes: Data(condition.utf8), mipmaps: mipmaps)
     }
 }
 

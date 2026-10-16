@@ -2,13 +2,11 @@ import CryptoKit
 import Foundation
 
 public struct WPEParityShaderCompileOptions: Sendable, Hashable {
-    public let hlslVersion: String
     public let minimumMacOS: String
     public let boundsCheck: Bool
 
     /// Direct3D Load guarantees zero outside the resource; MSC must preserve that contract on Metal.
-    public init(hlslVersion: String = "2016", minimumMacOS: String = "14.6.0", boundsCheck: Bool = true) {
-        self.hlslVersion = hlslVersion
+    public init(minimumMacOS: String = "14.6.0", boundsCheck: Bool = true) {
         self.minimumMacOS = minimumMacOS
         self.boundsCheck = boundsCheck
     }
@@ -44,7 +42,8 @@ public struct WPEParityShaderKey: Sendable, Hashable {
             append(Data(bytes))
         }
         appendText(compilerIdentity)
-        appendText(options.hlslVersion)
+        // The helper always compiles with `-HV 2016`; keeping the field keeps existing cache keys valid.
+        appendText("2016")
         appendText(options.minimumMacOS)
         appendText(options.boundsCheck ? "1" : "0")
         appendText(String(bindingABIVersion))

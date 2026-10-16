@@ -69,9 +69,11 @@ struct ParityProgramCaptureFixture {
         let scene = try WPEParityProgramScene(document: document(sceneID), assets: assets,
                                               settings: Self.captureSettings)
         let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
-        return WPEParityProgramBuilder.draws(frame: frame, scene: scene).map { draw in
-            guard var description = draw.description else {
-                return DrawResult(pass: draw.pass, shader: "?", program: nil, matches: [:],
+        return frame.draws.keys.sorted().map { index in
+            let pass = frame.operations[index].pass
+            guard var description = frame.draws[index].flatMap({ WPEParityProgramBuilder.description(of: $0, scene: scene) })
+            else {
+                return DrawResult(pass: pass, shader: "?", program: nil, matches: [:],
                                   problems: ["no material file"], keyMatch: nil)
             }
             adjust(&description, assets)
@@ -83,10 +85,10 @@ struct ParityProgramCaptureFixture {
                 let keyMatch = problems.isEmpty ? nil : captureRange.first { n in
                     captures[n]?.target == "ps_5_0" && dxsKey(n) == key
                 }
-                return DrawResult(pass: draw.pass, shader: shader, program: program, matches: matches,
+                return DrawResult(pass: pass, shader: shader, program: program, matches: matches,
                                   problems: problems, keyMatch: keyMatch)
             } catch {
-                return DrawResult(pass: draw.pass, shader: shader, program: nil, matches: [:],
+                return DrawResult(pass: pass, shader: shader, program: nil, matches: [:],
                                   problems: ["\(error)"], keyMatch: nil)
             }
         }

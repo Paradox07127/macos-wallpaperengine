@@ -16,12 +16,12 @@ struct WPEMdlVertexFormatTests {
         ]
         for (flag, size) in sizes {
             let withPosition = flag == 0x10000 ? flag : flag | 0x1
-            #expect(WPEMdlParser.vertexStride(for: withPosition) == size + (withPosition == flag ? 0 : 12),
+            #expect(WPEPuppetVertexLayout(format: withPosition).stride == size + (withPosition == flag ? 0 : 12),
                     "format \(String(flag, radix: 16))")
         }
-        #expect(WPEMdlParser.vertexStride(for: 0x180000F) == 80)
-        #expect(WPEMdlParser.vertexStride(for: 0x181000E) == 84)
-        #expect(WPEMdlParser.vertexStride(for: 0x1800009) == 52)
+        #expect(WPEPuppetVertexLayout(format: 0x180000F).stride == 80)
+        #expect(WPEPuppetVertexLayout(format: 0x181000E).stride == 84)
+        #expect(WPEPuppetVertexLayout(format: 0x1800009).stride == 52)
     }
 
     @Test("0x10000 is a float4 position right after 0x1, ahead of the normal")
@@ -101,7 +101,6 @@ struct WPEMdlVertexFormatTests {
         let mesh = try #require(WPEMdlParser.parse(data: mdl(format: 9, flags: 0, vertex: vertex,
                                                              version: 22, tail: tail)).meshes.first)
         let group = try #require(mesh.clipGroups.first)
-        #expect(group.rawHeader == SIMD3(0x1122_3344, 0xAABB_CCDD, 0x0F))
         #expect(group.flags == 0x0F)
         #expect(group.targetPartIndices == [1])
         #expect(group.sourcePartIndices == [0])

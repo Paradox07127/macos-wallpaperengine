@@ -31,10 +31,8 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
 
     /// Full-resolution path: debug-artifacts first-frame capture
     /// (`WPEMetalSceneRenderer+Load.swift`) and format tests.
-    func snapshot(
-        from texture: MTLTexture, colorTransfer: WPEPresentColorTransfer = .authored
-    ) -> NSImage? {
-        Self.makeImage(from: texture, colorTransfer: colorTransfer, maxDimension: nil)
+    func snapshot(from texture: MTLTexture) -> NSImage? {
+        Self.makeImage(from: texture, colorTransfer: .authored, maxDimension: nil)
     }
 
     /// Poster path (`SceneRenderer+LivePoster`): downsampled before readback.

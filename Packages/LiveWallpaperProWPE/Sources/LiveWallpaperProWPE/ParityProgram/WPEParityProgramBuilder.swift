@@ -1,12 +1,4 @@
 public enum WPEParityProgramBuilder {
-    /// One entry per draw operation, in frame order.
-    public static func draws(frame: WPEParityFrame, scene: WPEParityProgramScene) -> [WPEParityProgramDraw] {
-        frame.draws.keys.sorted().map { index in
-            WPEParityProgramDraw(operationIndex: index, pass: frame.operations[index].pass,
-                                 description: frame.draws[index].flatMap { description(of: $0, scene: scene) })
-        }
-    }
-
     /// Nil for a scene draw without a material file.
     public static func description(of draw: WPEParityFrameDraw,
                                    scene: WPEParityProgramScene) -> WPEParityProgramDescription? {

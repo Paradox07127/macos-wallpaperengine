@@ -82,14 +82,6 @@ struct WPETexByteReader {
         return span
     }
 
-    mutating func readNullTerminatedString(blockName: String) throws -> String {
-        let span = try readNullTerminatedSpan(blockName: blockName)
-        guard let value = String(data: span.materializedData(), encoding: .utf8) else {
-            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Invalid UTF-8 in \(blockName)")
-        }
-        return value
-    }
-
     private func ensure(byteCount: Int, blockName: String) throws {
         guard byteCount >= 0, cursor <= endBound, byteCount <= endBound - cursor else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)

@@ -327,8 +327,6 @@ struct WPESceneMediaDiffGate {
 /// with its events; a renderer must keep the textures it submits until their last GPU reader completes.
 struct WPESceneParityMediaInput: Sendable {
     let generation: Int
-    let sourceOrdinal: UInt64
-    let isReplay: Bool
     let textures: WPEMediaTextureStore.ParitySnapshot?
     /// Property key → generated system texture name; the host wraps each name in `{value: name}`.
     let systemProperties: [String: String]
@@ -342,9 +340,8 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
     private var pending: [WPESceneMediaEvent] = []
     private var pendingParity: [WPESceneParityMediaInput] = []
     private var parityGeneration: Int?
-    private var latestParityGeneration: Int?
 
-    /// Called by the driver before preparing a load. A retired load ID cannot admit itself again.
+    /// Called by the driver before preparing a load.
     @discardableResult
     func beginParityGeneration(_ generation: Int) -> Bool {
         lock.lock()
@@ -352,10 +349,6 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
         if parityGeneration == generation {
             return true
         }
-        if let latestParityGeneration, generation <= latestParityGeneration {
-            return false
-        }
-        latestParityGeneration = generation
         parityGeneration = generation
         pendingParity.removeAll(keepingCapacity: true)
         return true
@@ -435,19 +428,7 @@ final class WPESceneMediaEventDispatcher {
     private var palette = WPEMediaArtworkPaletteCache()
     private var lastOrdinal: UInt64?
     private var isSubscribed = false
-    private var latest: (ordinal: UInt64, state: MonitorNowPlayingState)?
-
-    private struct ParityConfiguration {
-        let generation: Int
-        let textureDemand: Bool
-        let onChange: @Sendable () -> Void
-    }
-
-    private var parityConfiguration: ParityConfiguration?
-    private var parityStore: WPEMediaTextureStore?
-    private var parityDevice: ObjectIdentifier?
-    private var parityGate = WPESceneMediaDiffGate()
-    private var parityHasPublished = false
+    private var latest: MonitorNowPlayingState?
 
     private enum ParityArtworkIdentity: Equatable {
         case absent
@@ -455,14 +436,33 @@ final class WPESceneMediaEventDispatcher {
         case bytes(String)
     }
 
-    // Names follow raw observations; their upload bytes are retained only when qualified by the Mac decoder.
-    private var parityArtworkIdentity: ParityArtworkIdentity?
+    /// The configured parity consumer; nil before `configureParity` and after `stop()`.
+    private final class ParityState {
+        var generation: Int
+        var textureDemand: Bool
+        var onChange: @Sendable () -> Void
+        var store: WPEMediaTextureStore?
+        var device: ObjectIdentifier?
+        var gate = WPESceneMediaDiffGate()
+        var hasPublished = false
+        // Names follow raw observations; their upload bytes are retained only when qualified by the Mac decoder.
+        var artworkIdentity: ParityArtworkIdentity?
+        var currentArtwork: Data?
+        var previousArtwork: Data?
+        var currentSystemName: String?
+        var previousSystemName: String?
+        var artworkDiagnostics: [String] = []
+
+        init(generation: Int, textureDemand: Bool, onChange: @escaping @Sendable () -> Void) {
+            self.generation = generation
+            self.textureDemand = textureDemand
+            self.onChange = onChange
+        }
+    }
+
+    private var parity: ParityState?
+    /// Outlives `parity`: `stop()` does not restart the generated system texture names.
     private var parityArtworkRevision: UInt64 = 0
-    private var parityCurrentArtwork: Data?
-    private var parityPreviousArtwork: Data?
-    private var parityCurrentSystemName: String?
-    private var parityPreviousSystemName: String?
-    private var parityArtworkDiagnostics: [String] = []
 
     nonisolated static func isNeeded(by document: WPESceneDocument) -> Bool {
         WPESceneScriptInstanceInventory.usesMediaAPI(in: document)
@@ -482,24 +482,27 @@ final class WPESceneMediaEventDispatcher {
     func configureParity(generation: Int, device: (any MTLDevice)?, textureDemand: Bool,
                          onChange: @escaping @Sendable () -> Void) -> Bool {
         guard mailbox.isParityGeneration(generation), !textureDemand || device != nil else { return false }
-        let previous = parityConfiguration
-        let newConsumer = previous?.generation != generation
+        let newConsumer = parity?.generation != generation
+        let demandChanged = parity?.textureDemand != textureDemand
+        let state = parity ?? ParityState(generation: generation, textureDemand: textureDemand, onChange: onChange)
         var newStore = false
         if textureDemand, let device {
             let identity = ObjectIdentifier(device)
-            if parityStore == nil || parityDevice != identity {
-                parityStore = WPEMediaTextureStore(device: device)
-                parityDevice = identity
+            if state.store == nil || state.device != identity {
+                state.store = WPEMediaTextureStore(device: device)
+                state.device = identity
                 newStore = true
             }
         }
-        parityConfiguration = ParityConfiguration(generation: generation, textureDemand: textureDemand,
-                                                  onChange: onChange)
+        state.generation = generation
+        state.textureDemand = textureDemand
+        state.onChange = onChange
+        parity = state
         if newConsumer {
-            parityGate = WPESceneMediaDiffGate()
-            parityHasPublished = false
-        } else if previous?.textureDemand != textureDemand || newStore {
-            parityHasPublished = false
+            state.gate = WPESceneMediaDiffGate()
+            state.hasPublished = false
+        } else if demandChanged || newStore {
+            state.hasPublished = false
         }
         start()
         _ = replayGeneration(generation)
@@ -509,13 +512,12 @@ final class WPESceneMediaEventDispatcher {
     /// A normal reload needs a current-state delivery even when the source ordinal did not change.
     @discardableResult
     func replayGeneration(_ generation: Int) -> Bool {
-        guard let configuration = parityConfiguration, configuration.generation == generation,
-              mailbox.isParityGeneration(generation) else { return false }
-        if parityHasPublished {
+        guard let parity, parity.generation == generation, mailbox.isParityGeneration(generation) else { return false }
+        if parity.hasPublished {
             return true
         }
         guard let latest else { return false }
-        return publishParity(ordinal: latest.ordinal, state: latest.state, isReplay: true)
+        return publishParity(state: latest, isReplay: true)
     }
 
     func start() {
@@ -535,19 +537,9 @@ final class WPESceneMediaEventDispatcher {
         guard isSubscribed else { return }
         isSubscribed = false
         source.unsubscribe(id: id)
-        if let configuration = parityConfiguration {
-            mailbox.invalidateParityGeneration(configuration.generation)
-            parityConfiguration = nil
-            parityStore = nil
-            parityDevice = nil
-            parityHasPublished = false
-            parityGate = WPESceneMediaDiffGate()
-            parityArtworkIdentity = nil
-            parityCurrentArtwork = nil
-            parityPreviousArtwork = nil
-            parityCurrentSystemName = nil
-            parityPreviousSystemName = nil
-            parityArtworkDiagnostics = []
+        if let parity {
+            mailbox.invalidateParityGeneration(parity.generation)
+            self.parity = nil
             latest = nil
         }
     }
@@ -558,9 +550,9 @@ final class WPESceneMediaEventDispatcher {
             return
         }
         lastOrdinal = ordinal
-        latest = (ordinal, state)
-        if parityConfiguration != nil {
-            _ = publishParity(ordinal: ordinal, state: state, isReplay: false)
+        latest = state
+        if parity != nil {
+            _ = publishParity(state: state, isReplay: false)
             return
         }
         let snapshot = WPESceneMediaSnapshot(
@@ -572,11 +564,11 @@ final class WPESceneMediaEventDispatcher {
     }
 
     @discardableResult
-    private func publishParity(ordinal: UInt64, state: MonitorNowPlayingState, isReplay: Bool) -> Bool {
-        guard let configuration = parityConfiguration, state.phase != .awaitingFirstEvent else { return false }
+    private func publishParity(state: MonitorNowPlayingState, isReplay: Bool) -> Bool {
+        guard let parity, state.phase != .awaitingFirstEvent else { return false }
         var thumbnail = palette.thumbnail(for: state.artwork)
-        let artworkChanged = updateParityArtwork(state.artwork, thumbnail: thumbnail)
-        var diagnostics = parityArtworkDiagnostics
+        let artworkChanged = updateParityArtwork(parity, artwork: state.artwork, thumbnail: thumbnail)
+        var diagnostics = parity.artworkDiagnostics
         let hasRawArtwork = state.artwork?.isEmpty == false
         if hasRawArtwork, !thumbnail.hasThumbnail {
             // Native hasThumbnail tests the byte range, not whether colour analysis found opaque samples.
@@ -588,23 +580,23 @@ final class WPESceneMediaEventDispatcher {
         )
         // While a replacement load prepares, keep the source's pair current for its eventual seed, but do not
         // upload or dispatch on behalf of the previous, no longer admitted consumer.
-        guard mailbox.isParityGeneration(configuration.generation) else { return false }
+        guard mailbox.isParityGeneration(parity.generation) else { return false }
         var textures = WPEMediaTextureStore.ParitySnapshot(
             revision: parityArtworkRevision, current: nil, previous: nil,
-            currentSystemName: parityCurrentSystemName, previousSystemName: parityPreviousSystemName
+            currentSystemName: parity.currentSystemName, previousSystemName: parity.previousSystemName
         )
-        if configuration.textureDemand, let parityStore {
-            let uploaded = parityStore.paritySnapshot(
-                revision: parityArtworkRevision, currentArtwork: parityCurrentArtwork,
-                previousArtwork: parityPreviousArtwork, currentSystemName: parityCurrentSystemName,
-                previousSystemName: parityPreviousSystemName
+        if parity.textureDemand, let store = parity.store {
+            let uploaded = store.paritySnapshot(
+                revision: parityArtworkRevision,
+                currentArtwork: parity.currentArtwork, previousArtwork: parity.previousArtwork,
+                currentSystemName: parity.currentSystemName, previousSystemName: parity.previousSystemName
             )
             textures = uploaded.snapshot
             diagnostics += uploaded.diagnostics
         }
-        var events = parityGate.events(for: snapshot)
+        var events = parity.gate.events(for: snapshot)
         // 140172830:253–272 only seeds an initial thumbnail when image bytes exist.
-        if !parityHasPublished, !snapshot.thumbnail.hasThumbnail {
+        if !parity.hasPublished, !snapshot.thumbnail.hasThumbnail {
             events.removeAll {
                 if case .thumbnailChanged = $0 {
                     true
@@ -633,47 +625,46 @@ final class WPESceneMediaEventDispatcher {
         }
         guard isReplay || artworkChanged || !events.isEmpty else { return false }
         var properties: [String: String] = [:]
-        if isReplay || artworkChanged || !parityHasPublished {
-            properties["$mediaThumbnail"] = parityCurrentSystemName
-            properties["$mediaPreviousThumbnail"] = parityPreviousSystemName
+        if isReplay || artworkChanged || !parity.hasPublished {
+            properties["$mediaThumbnail"] = parity.currentSystemName
+            properties["$mediaPreviousThumbnail"] = parity.previousSystemName
         }
-        let input = WPESceneParityMediaInput(generation: configuration.generation, sourceOrdinal: ordinal,
-                                             isReplay: isReplay, textures: textures,
+        let input = WPESceneParityMediaInput(generation: parity.generation, textures: textures,
                                              systemProperties: properties, events: events,
                                              diagnostics: diagnostics)
         guard mailbox.postParityInput(input) else { return false }
-        parityHasPublished = true
-        configuration.onChange()
+        parity.hasPublished = true
+        parity.onChange()
         return true
     }
 
-    private func updateParityArtwork(_ artwork: Data?, thumbnail: WPESceneMediaThumbnail) -> Bool {
+    private func updateParityArtwork(_ parity: ParityState, artwork: Data?, thumbnail: WPESceneMediaThumbnail) -> Bool {
         let identity: ParityArtworkIdentity = if let artwork {
             artwork.isEmpty ? .empty : .bytes(WPEMediaArtworkPaletteCache.identity(of: artwork))
         } else {
             .absent
         }
-        guard identity != parityArtworkIdentity else { return false }
-        parityArtworkIdentity = identity
+        guard identity != parity.artworkIdentity else { return false }
+        parity.artworkIdentity = identity
         parityArtworkRevision &+= 1
         // 140171440:213–387 rotates raw identities before decode, including an artwork change to an empty range.
-        parityPreviousSystemName = parityCurrentSystemName
-        parityCurrentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
-        parityPreviousArtwork = parityCurrentArtwork
+        parity.previousSystemName = parity.currentSystemName
+        parity.currentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
+        parity.previousArtwork = parity.currentArtwork
         if let artwork, !artwork.isEmpty,
            thumbnail.hasThumbnail || WPEMediaTextureStore.hasDecodableParityArtwork(artwork) {
-            parityCurrentArtwork = artwork
-            parityArtworkDiagnostics = []
+            parity.currentArtwork = artwork
+            parity.artworkDiagnostics = []
         } else {
             // This observation still has a raw name. Only its Mac upload qualification fails; the previous
             // observation keeps its own qualified bytes/name, without claiming Windows' factory result.
-            parityCurrentArtwork = nil
+            parity.currentArtwork = nil
             let reason = switch identity {
             case .absent: "absent"
             case .empty: "empty"
             case .bytes: "undecodable"
             }
-            parityArtworkDiagnostics = ["media.artwork-\(reason)-native-behavior-unverified"]
+            parity.artworkDiagnostics = ["media.artwork-\(reason)-native-behavior-unverified"]
         }
         return true
     }

@@ -231,8 +231,11 @@ public struct WPEParityProgramScene: Sendable {
         let texts = WPEParityTextObject.textObjects(in: document)
         var textAtlases: [String: WPEParityGlyphAtlasInstance] = [:]
         var textFailure: WPEParityTextPreparationError?
-        do { try WPEParityTextFieldAdmission.validate(texts) }
-        catch { textFailure = error as? WPEParityTextPreparationError ?? .unqualifiedDistanceFieldGroup }
+        do {
+            try WPEParityTextFieldAdmission.validate(texts)
+        } catch {
+            textFailure = error as? WPEParityTextPreparationError ?? .unqualifiedDistanceFieldGroup
+        }
         if !texts.isEmpty, textFailure == nil {
             let pipeline = WPEParityTextPipeline(assets: assets, hdr: flags.hdr,
                                                  orthographic: flags.orthographicProjection)
@@ -383,14 +386,11 @@ public struct WPEParityProgramScene: Sendable {
         var loaded: [WPEParityAuthoredEffect] = []
         for effect in effects {
             guard let file = assets.json(effect.fileRelativePath) else { continue }
-            let configuration = Self.array(authored?["effects"]).first {
-                (Self.string($0["id"]) ?? Self.number($0["id"]).map { String(Int($0)) }) == effect.id
-            }
-            let userTextureConfiguration = Self.array(authored?["effects"]).enumerated().first { index, value in
+            let configuration = Self.array(authored?["effects"]).enumerated().first { index, value in
                 (Self.string(value["id"]) ?? Self.number(value["id"]).map { String(Int($0)) } ?? "\(index)") == effect.id
             }?.element
             let result = Self.effect(effect, objectID: objectID, file: file, assets: assets,
-                                     combos: configuration?["combos"], userTextureConfiguration: userTextureConfiguration)
+                                     combos: configuration?["combos"], userTextureConfiguration: configuration)
             records[.init(objectID: objectID, effectID: effect.id)] = result.records
             functions[.init(objectID: objectID, effectID: effect.id)] = result.effect.materialFunctions
             loaded.append(result.effect)

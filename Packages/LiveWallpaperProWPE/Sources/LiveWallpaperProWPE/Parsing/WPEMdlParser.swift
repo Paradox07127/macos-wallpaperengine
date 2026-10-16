@@ -92,7 +92,7 @@ public struct WPEPuppetMesh: Equatable, Sendable {
     public let clipMaskName: String?
     /// Stored integers are mesh part-table indices, not `WPEPuppetMeshPart.id` (IDs may repeat). WPE stores the target list before the source list; every target is clipped by the union of every source.
     public let clipGroups: [WPEPuppetClipGroup]
-    /// Vertex format bits (WPE mesh record +0x38); `WPEMdlParser.vertexStride(for:)` gives the stride.
+    /// Vertex format bits (WPE mesh record +0x38); `WPEPuppetVertexLayout(format:)` gives the stride.
     public let vertexFormat: UInt32
     /// Mesh flags (record +0x18): bit 1 marks the blend mesh (puppet+0x390), bit 3 the segmented draw.
     public let flags: UInt32
@@ -130,19 +130,14 @@ public struct WPEPuppetClipGroup: Equatable, Sendable {
     public let maskName: String
     public let sourcePartIndices: [Int]
     public let targetPartIndices: [Int]
-    /// Two identity words before the mask name (native entry +0x0) and the flags word after it (+0x44).
-    public let rawHeader: SIMD3<UInt32>
     /// 140261880:355–361,525–529 copies the word immediately after the name to entry +0x44.
-    public var flags: UInt32 {
-        rawHeader.z
-    }
+    public let flags: UInt32
 
-    public init(maskName: String, sourcePartIndices: [Int], targetPartIndices: [Int],
-                rawHeader: SIMD3<UInt32> = .zero) {
+    public init(maskName: String, sourcePartIndices: [Int], targetPartIndices: [Int], flags: UInt32 = 0) {
         self.maskName = maskName
         self.sourcePartIndices = sourcePartIndices
         self.targetPartIndices = targetPartIndices
-        self.rawHeader = rawHeader
+        self.flags = flags
     }
 }
 
@@ -1319,7 +1314,7 @@ public enum WPEMdlParser {
 
         for _ in 0..<vertexCount {
             vertices.append(try parseVertex(
-                meshFlags: meshFlags,
+                attributes: vertexLayout.attributes,
                 auditRecorder: auditRecorder,
                 reader: &reader
             ))
@@ -1399,12 +1394,13 @@ public enum WPEMdlParser {
         var groups: [WPEPuppetClipGroup] = []
         groups.reserveCapacity(Int(groupCount))
         for _ in 0..<groupCount {
-            guard let header0 = try? r.readUInt32(),
-                  let header1 = try? r.readUInt32(),
+            // Two identity words (native entry +0x0) precede the mask name.
+            guard (try? r.readUInt32()) != nil,
+                  (try? r.readUInt32()) != nil,
                   let name = try? r.readCString(),
                   !name.isEmpty,
                   name.utf8.count <= 1_024,
-                  let header2 = try? r.readUInt32(),
+                  let flags = try? r.readUInt32(),
                   let targetCount = try? r.readUInt32(),
                   targetCount <= UInt32(partCount),
                   targetCount <= UInt32((r.dataCount - r.currentOffset) / MemoryLayout<UInt32>.size) else {
@@ -1431,7 +1427,7 @@ public enum WPEMdlParser {
                 maskName: name,
                 sourcePartIndices: sources,
                 targetPartIndices: targets,
-                rawHeader: SIMD3(header0, header1, header2)
+                flags: flags
             ))
         }
         reader = r
@@ -1439,7 +1435,7 @@ public enum WPEMdlParser {
     }
 
     private static func parseVertex(
-        meshFlags: UInt32,
+        attributes: [WPEPuppetVertexAttribute],
         auditRecorder: WPEMdlParseAuditRecorder?,
         reader: inout WPEMdlBinaryReader
     ) throws -> WPEPuppetVertex {
@@ -1452,8 +1448,8 @@ public enum WPEMdlParser {
         var uv = SIMD2<Float>(0, 0)
         var hasPosition = false
         var hasTexcoord0 = false
-        let format = WPEMdlMeshFlags.withPosition(meshFlags)
-        for (flag, size) in WPEMdlMeshFlags.table where format & flag != 0 {
+        for attribute in attributes {
+            let (flag, size) = (attribute.flag, attribute.byteSize)
             switch flag {
             case WPEMdlMeshFlags.position where !hasPosition, WPEMdlMeshFlags.positionVec4 where !hasPosition:
                 position = try SIMD3<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat())
@@ -1496,11 +1492,6 @@ public enum WPEMdlParser {
             skinBlendWeights: skinBlendWeights,
             normal: normal
         )
-    }
-
-    /// 140261880.c:290-319.
-    static func vertexStride(for meshFlags: UInt32) -> Int {
-        WPEPuppetVertexLayout(format: meshFlags).stride
     }
 
     private static func parseVersion21Parts(
@@ -2171,18 +2162,6 @@ private enum WPEMdlMeshFlags {
     static let skinBlendWeights: UInt32 = 0x1000000
     static let texcoord0: [UInt32] = [0x8, 0x10, 0x20]
     static let flagPayload: UInt32 = 0x2
-
-    /// A format with neither position bit has no POSITION for WPE to draw; such (synthetic) meshes keep the
-    /// parser's older reading of a leading float3 position.
-    static func withPosition(_ format: UInt32) -> UInt32 {
-        format & (position | positionVec4) == 0 ? format | position : format
-    }
-
-    /// WPE's vertex format table in attribute order (exe 0x140484a20 flags, 0x1404849b0 byte sizes); the input
-    /// layout places each set bit at the running sum (1400d7f90.c:81-97).
-    static let table: [(flag: UInt32, size: Int)] = WPEPuppetVertexLayout(format: .max).attributes.map {
-        ($0.flag, $0.byteSize)
-    }
 }
 
 public enum WPEMdlParserError: Error, Equatable, Sendable {

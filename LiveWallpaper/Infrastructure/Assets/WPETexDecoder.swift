@@ -775,17 +775,12 @@ struct WPETexDecoder: Sendable {
             }
             frames.append(frameMipmaps)
         }
-        let recordsByVariant = Dictionary(grouping: records, by: \.variantID)
         let bitmap = WPETexBitmapBlock(
             version: bitmapVersion,
             sourceImageFormatCode: sourceImageFormatCode,
             isVideoPayload: info.flags & 0x20 != 0,
             frames: frames,
-            conditionalVariants: variants.map { variant in
-                WPETexConditionalVariant(groupKey: variant.groupKey, variantID: variant.variantID,
-                                         flags: variant.flags, conditionBytes: variant.conditionBytes,
-                                         mipmaps: recordsByVariant[variant.variantID] ?? [])
-            },
+            conditionalVariants: variants,
             conditionalRecords: records
         )
         // Encoded image/video payloads have their own decoder geometry contract.
@@ -807,13 +802,13 @@ struct WPETexDecoder: Sendable {
     ) throws {
         let groupCount = try Int(reader.readUInt32(blockName: "TEXB.conditionalGroupCount"))
         guard groupCount <= 4096 else { throw WPETexDecodeError.mipmapOutOfBounds(index: groupCount) }
-        for groupIndex in 0 ..< groupCount {
+        for _ in 0 ..< groupCount {
             let count = try Int(reader.readUInt32(blockName: "TEXB.conditionalRecordCount"))
             guard count <= 4096, records.count <= 65536 - count else {
                 throw WPETexDecodeError.decodeFailed(mipmap: mipmapIndex, detail: "Conditional record budget exceeded")
             }
-            for recordIndex in 0 ..< count {
-                let leadingWord = try reader.readUInt32(blockName: "TEXB.conditionalMipWord")
+            for _ in 0 ..< count {
+                _ = try reader.readUInt32(blockName: "TEXB.conditionalMipWord")
                 let id = try reader.readUInt32(blockName: "TEXB.conditionalMipImageID")
                 let x = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipX"))
                 let y = try Int(reader.readUInt32(blockName: "TEXB.conditionalMipY"))
@@ -824,8 +819,7 @@ struct WPETexDecoder: Sendable {
                 let span = try reader.readSpan(count: count, blockName: "TEXB.conditionalMipPayload")
                 records.append(WPETexConditionalVariantMipmap(
                     x: x, y: y, width: width, height: height, formatCode: format, payload: span,
-                    leadingWord: leadingWord, variantID: id, imageIndex: imageIndex, mipIndex: mipmapIndex,
-                    groupIndex: groupIndex, recordIndex: recordIndex
+                    variantID: id, imageIndex: imageIndex, mipIndex: mipmapIndex
                 ))
             }
         }

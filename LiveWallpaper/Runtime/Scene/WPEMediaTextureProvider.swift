@@ -67,8 +67,8 @@ enum WPEUserShortcutIconDemand {
 /// isn't `Sendable`, which rules out `OSAllocatedUnfairLock`; a texture is fully written by
 /// `replaceRegion` before being published under the lock, then immutable.
 final class WPEMediaTextureStore: @unchecked Sendable {
-    /// A fully uploaded pair for one parity input. Textures remain immutable after publication.
-    struct ParitySnapshot: @unchecked Sendable {
+    /// A fully uploaded pair for one parity input.
+    struct ParitySnapshot: @unchecked Sendable { // MTLTexture: fully uploaded before paritySnapshot publishes it, never written after
         let revision: UInt64
         let current: (any MTLTexture)?
         let previous: (any MTLTexture)?

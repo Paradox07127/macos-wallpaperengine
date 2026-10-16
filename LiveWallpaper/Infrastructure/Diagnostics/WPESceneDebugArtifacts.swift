@@ -575,16 +575,15 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         lines.append("bitmapVersion=\(bitmap.version) sourceImageFormatCode=\(sourceFormat) isVideo=\(bitmap.isVideoPayload) usesEncoded=\(bitmap.usesEncodedImagePayload)")
         lines.append("frames=\(bitmap.frames.count)")
         for variant in bitmap.conditionalVariants {
-            lines.append("  conditional imageID=\(variant.imageID) mips=\(variant.mipmaps.count) condition=\(variant.condition)")
+            let mips = bitmap.conditionalRecords.count(where: { $0.variantID == variant.variantID })
+            let condition = String(bytes: variant.conditionBytes, encoding: .utf8) ?? "<invalid UTF-8 condition>"
+            lines.append("  conditional variantID=\(variant.variantID) mips=\(mips) condition=\(condition)")
         }
         for (frameIndex, mipmaps) in bitmap.frames.enumerated() {
             for mipmap in mipmaps {
                 var line = "  frame=\(frameIndex) mip=\(mipmap.index) size=\(mipmap.width)x\(mipmap.height) stored=\(mipmap.storedByteCount) compressed=\(mipmap.isCompressed)"
                 if let decompressed = mipmap.decompressedByteCount {
                     line += " decompressed=\(decompressed)"
-                }
-                if let v4 = mipmap.v4Fields {
-                    line += " v4{p1=\(v4.param1) p2=\(v4.param2) cond=\"\(v4.condition)\" p3=\(v4.param3)}"
                 }
                 lines.append(line)
             }

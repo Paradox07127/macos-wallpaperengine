@@ -276,8 +276,7 @@ public enum WPESceneDocumentParser {
         let camera = runtimeCameraObjectOverride(
             rawObjects,
             scriptOrigins: scriptResolvedOrigins,
-            base: authoredCamera,
-            diagnostics: &diagnostics
+            base: authoredCamera
         )
         // Later duplicate ids win, matching the paint-order map below, so a malformed
         // document resolves every field from one source object.
@@ -1830,8 +1829,7 @@ public enum WPESceneDocumentParser {
     private static func runtimeCameraObjectOverride(
         _ rawObjects: [[String: Any]],
         scriptOrigins: [String: SIMD3<Double>],
-        base: WPESceneCamera,
-        diagnostics _: inout [WPESceneDiagnostic]
+        base: WPESceneCamera
     ) -> WPESceneCamera {
         guard let entry = activeCameraObject(rawObjects) else { return base }
         let objects = indexObjectsByID(rawObjects)

@@ -16,10 +16,6 @@ enum WPETexMipValidation {
         let byteCount: Int
     }
 
-    static func geometry(_ levels: [(index: Int, width: Int, height: Int)]) throws {
-        try geometry(levels.map { ($0.index, $0.width, $0.height, 1) })
-    }
-
     static func geometry(_ levels: [(index: Int, width: Int, height: Int, depth: Int)]) throws {
         guard let first = levels.first, first.width > 0, first.height > 0, first.depth > 0 else {
             throw Invalid(detail: "Missing or nonpositive base mip geometry")

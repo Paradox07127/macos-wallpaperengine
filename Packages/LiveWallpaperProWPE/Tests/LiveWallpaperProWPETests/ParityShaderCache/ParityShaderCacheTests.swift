@@ -47,8 +47,8 @@ final class ParityShaderCacheTests: XCTestCase {
         XCTAssertNotEqual(key(program: .init(vertex: [1])), key(program: .init(fragment: [1])))
         XCTAssertNotEqual(key(program: .init(vertex: [1], fragment: [2, 3])),
                           key(program: .init(vertex: [1, 2], fragment: [3])))
-        XCTAssertNotEqual(key(identity: "ab", options: .init(hlslVersion: "c")),
-                          key(identity: "a", options: .init(hlslVersion: "bc")))
+        XCTAssertNotEqual(key(identity: "ab", options: .init(minimumMacOS: "c")),
+                          key(identity: "a", options: .init(minimumMacOS: "bc")))
     }
 
     func testBothCompilerVersionsChangeKey() {
@@ -57,7 +57,6 @@ final class ParityShaderCacheTests: XCTestCase {
     }
 
     func testEachCompileOptionChangesKey() {
-        XCTAssertNotEqual(key(), key(options: .init(hlslVersion: "2021")))
         XCTAssertNotEqual(key(), key(options: .init(minimumMacOS: "15.0.0")))
         XCTAssertTrue(WPEParityShaderCompileOptions().boundsCheck)
         XCTAssertNotEqual(key(), key(options: .init(boundsCheck: false)))

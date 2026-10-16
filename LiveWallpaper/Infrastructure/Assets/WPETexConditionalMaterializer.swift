@@ -32,14 +32,14 @@ enum WPETexConditionalMaterializer {
             let recordsByMip = Dictionary(grouping: recordsByImage[imageIndex] ?? [], by: \.mipIndex)
             return try levels.map { mip in
                 var bytes = try decode(mip)
+                guard try bytes.count >= WPETexMipValidation.layout(format: format, width: mip.width, height: mip.height).byteCount else {
+                    throw WPETexDecodeError.decodeFailed(mipmap: mip.index, detail: "Truncated conditional base mip")
+                }
                 let selected = (recordsByMip[mip.index] ?? []).compactMap { record -> (record: WPETexConditionalVariantMipmap, flags: UInt32)? in
                     selection.flagsByVariantID[record.variantID].map { (record, $0) }
                 }
-                // Native replacement checks byte&2 and the raw patch primitive byte&1. Preserve the
-                // complete authored flags; higher bits do not reject an otherwise supported raw patch.
-                // Native 15d824..15d875 trims to one record before the last replacement, then its
-                // forward loop stops at the first replacement in that suffix. Adjacent replacements
-                // therefore do not have simple last-wins semantics.
+                // Replacement is flags&2, blend is flags&1; higher bits never reject a patch. 15d824..15d875 starts one
+                // record before the last replacement and stops at the first replacement from there: not last-wins.
                 let last = selected.lastIndex { $0.flags & 2 != 0 }
                 let start = last.map { max($0 - 1, 0) } ?? 0
                 for (record, flags) in selected.dropFirst(start) {

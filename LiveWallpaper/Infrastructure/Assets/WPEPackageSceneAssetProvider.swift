@@ -74,7 +74,7 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
 
     deinit {
         try? handle.close()
-        // Removing an absent directory here replaced the error an async caller was throwing when it freed the provider.
+        // Without the check, a failed removeItem would replace the error an async caller is throwing as it frees this.
         if FileManager.default.fileExists(atPath: stagingRoot.path) {
             try? FileManager.default.removeItem(at: stagingRoot)
         }

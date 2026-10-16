@@ -10,16 +10,16 @@ struct WPETexMipValidationTests {
           arguments: [[(8, 8), (8, 8)], [(8, 8), (2, 2)], [(8, 8), (4, 5)], [(1, 1), (1, 1)]])
     func malformedGeometry(sizes: [(Int, Int)]) {
         #expect(throws: WPETexMipValidation.Invalid.self) {
-            try WPETexMipValidation.geometry(sizes.enumerated().map { ($0.offset, $0.element.0, $0.element.1) })
+            try WPETexMipValidation.geometry(sizes.enumerated().map { ($0.offset, $0.element.0, $0.element.1, 1) })
         }
     }
 
     @Test("NPOT, one-dimensional and partial chains use floor-halved geometry")
     func validGeometry() throws {
-        try WPETexMipValidation.geometry([(0, 7, 3), (1, 3, 1), (2, 1, 1)])
-        try WPETexMipValidation.geometry([(0, 1, 8), (1, 1, 4)])
+        try WPETexMipValidation.geometry([(0, 7, 3, 1), (1, 3, 1, 1), (2, 1, 1, 1)])
+        try WPETexMipValidation.geometry([(0, 1, 8, 1), (1, 1, 4, 1)])
         #expect(throws: WPETexMipValidation.Invalid.self) {
-            try WPETexMipValidation.geometry([(1, 8, 8)])
+            try WPETexMipValidation.geometry([(1, 8, 8, 1)])
         }
     }
 

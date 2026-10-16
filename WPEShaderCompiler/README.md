@@ -121,20 +121,6 @@ usual. The VS reflection's `state.vertex_output_size_in_bytes` and the GS's
 draw (`IRRuntimeGeometryPipelineConfig`). Without `--output-stage-in`, vertex
 and fragment output is unchanged.
 
-The legacy `verify_captures.py` diagnostic still depends on its external capture
-and local-installation paths; it is not the staged build or Release acceptance
-gate. That standard-library-only verifier uses the supplied 145 captures, enables
-bounds checking, and removes temporary artifacts from the ignored build
-directory after verification. It compares same-name cbuffers and variables in
-the matching FXC stage. `X/Y` counts matching versus compared shared variables;
-optimized-away declarations are not counted. The captured geometry RDEF uses
-`18259` (`0x4753`, ASCII `GS`), although the schema notes specify `65533`.
-The paired DXBC SHEX stage tokens confirm geometry type `2` for all seven;
-the verifier accepts both tags. Timing and metallib size statistics go to
-stderr; the required summary and any layout mismatches go to stdout. The median
-measures the complete short-lived helper process, including library loading,
-DXC, MSC, and output I/O, once per capture.
-
 ## Library license notices
 
 The Pro bundle includes the pinned DXC `LICENSE.TXT` (University of Illinois/NCSA
