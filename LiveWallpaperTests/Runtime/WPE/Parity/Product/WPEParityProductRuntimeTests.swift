@@ -144,6 +144,22 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         XCTAssertEqual(harness.surface.lastIsPaused, false, "a sound layer keeps the link running")
     }
 
+    func testScriptPlayStartsAStartSilentSound() async throws {
+        let sound: [String: Any] = [
+            "id": 901, "name": "sfx", "sound": ["sounds/Melodysheep - Ether.flac"], "playbackmode": "loop",
+            "startsilent": true,
+            "volume": ["value": 1, "script": "export function init(value){ thisLayer.play(); return value; }"],
+        ]
+        let harness = try await makeHarness(withSound: true) { json in
+            json["objects"] = (json["objects"] as? [[String: Any]] ?? []) + [sound]
+        }
+        try await renderFrame(harness)
+        let enabled = await harness.actor.run { actor in
+            actor.parityDriverForTesting?.soundRuntime?.debugTrackSnapshots().first { $0.id == "901" }?.isEnabled
+        }
+        XCTAssertEqual(enabled, true, "init's thisLayer.play() never reached the sound runtime")
+    }
+
     func testRendererStateCarriesParityDiagnostics() async throws {
         let harness = try await makeHarness()
         for _ in 1 ... 2 {

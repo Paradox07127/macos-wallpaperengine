@@ -252,6 +252,98 @@ struct WPESoundWPERulesTests {
         #expect(tracks["b"]?.isEnabled == false)
     }
 
+    @Test("Script play starts a start-silent sound; pause holds its queue and play resumes it")
+    func scriptPlayPausesAndResumes() throws {
+        let seed: UInt64 = 0x5750_4553_4F55_4E44
+        var probe = WPESoundPathScheduler(playbackMode: "loop", seed: seed, rules: .wpe)
+        let picks = (0 ..< 3).compactMap { _ in probe.candidates(pathCount: 4).first }
+        try #require(picks.count == 3 && picks[1] != picks[2], "a restarted queue must end on another file")
+        let root = try Self.makeRoot(files: ["a.wav", "b.wav", "c.wav", "d.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), randomSeed: seed, rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [
+            Self.sound(paths: ["a.wav", "b.wav", "c.wav", "d.wav"], mode: "loop", startSilent: true),
+        ]) == 1)
+        let send = { runtime.applyScriptSoundCommand($0, forSoundID: "s", volume: 1) }
+        #expect(!send(.isPlaying))
+        _ = send(.play)
+        #expect(send(.isPlaying))
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        let playing = try #require(runtime.debugTrackSnapshots().first)
+        #expect(playing.lastScheduledPathIndex == picks[2])
+
+        _ = send(.pause)
+        #expect(!send(.isPlaying))
+        let paused = try #require(runtime.debugTrackSnapshots().first)
+        #expect(paused.lastScheduledPathIndex == playing.lastScheduledPathIndex)
+        #expect(paused.scheduledSegmentCount == playing.scheduledSegmentCount)
+
+        _ = send(.play)
+        #expect(send(.isPlaying))
+        let resumed = try #require(runtime.debugTrackSnapshots().first)
+        #expect(resumed.lastScheduledPathIndex == playing.lastScheduledPathIndex, "play resumes, not restarts")
+        #expect(resumed.scheduledSegmentCount == playing.scheduledSegmentCount)
+    }
+
+    @Test("Script stop drops the queue and a later play queues again")
+    func scriptStopThenPlay() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
+        let send = { runtime.applyScriptSoundCommand($0, forSoundID: "s", volume: 1) }
+        #expect(send(.isPlaying))
+
+        _ = send(.stop)
+        #expect(!send(.isPlaying))
+        #expect(try #require(runtime.debugTrackSnapshots().first).scheduledSegmentCount == 0)
+
+        _ = send(.play)
+        #expect(send(.isPlaying))
+        #expect(try #require(runtime.debugTrackSnapshots().first).scheduledSegmentCount == 2)
+    }
+
+    @Test("Script play on a random sound is a no-op while it waits")
+    func scriptPlayWhileRandomWaits() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [
+            Self.sound(paths: ["a.wav"], mode: "random", startSilent: true, minTime: 1, maxTime: 1),
+        ]) == 1)
+        let send = { runtime.applyScriptSoundCommand($0, forSoundID: "s", volume: 1) }
+        _ = send(.play)
+        #expect(send(.isPlaying))
+        runtime.debugCompleteHeadSegment(forSoundID: "s")
+        #expect(!send(.isPlaying))
+        #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 1)
+
+        _ = send(.play)
+        let snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.pendingDelay == 1)
+        #expect(snapshot.scheduledSegmentCount == 0)
+    }
+
+    @Test("Script play at volume 0 does not start the sound")
+    func scriptPlayAtZeroVolume() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
+        #expect(!runtime.applyScriptSoundCommand(.play, forSoundID: "s", volume: 0))
+        let snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(!snapshot.isEnabled)
+        #expect(snapshot.sceneVolume == 0)
+    }
+
     @Test("The old renderer keeps the engine running at master volume 0")
     func legacyZeroAppVolumeKeepsRunning() throws {
         let root = try Self.makeRoot(files: ["a.wav"])

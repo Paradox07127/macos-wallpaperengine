@@ -148,6 +148,8 @@ final class WPESoundRuntime: Sendable {
         var scheduledRandomDelay: Double?
         /// Seconds left of a WPE random-mode wait; the next file is scheduled only once it runs out.
         var delayRemaining: Double?
+        /// Paused by SceneScript: the next play resumes the queued file instead of picking a new one.
+        var scriptPaused = false
 
         var waitsBetweenPlays: Bool {
             scheduler.rules == .wpe && scheduler.mode == .random
@@ -318,6 +320,47 @@ final class WPESoundRuntime: Sendable {
                 state.tracks[index].sceneVolume = Float(min(max(volume, 0), 1))
                 applyAudioState(to: &state)
             }
+        }
+    }
+
+    /// SceneScript ISound under WPE rules; `volume` is the layer's current script volume. Returns isPlaying after the
+    /// command. App mute, suspend and master volume only hold output and do not change the answer.
+    func applyScriptSoundCommand(_ command: WPEParityScriptEngine.SoundCommand, forSoundID id: String,
+                                 volume: Float) -> Bool {
+        state.withLock { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return false }
+            state.tracks[index].sceneVolume = min(max(volume, 0), 1)
+            applyAudioState(to: &state)
+            let track = state.tracks[index]
+            switch command {
+            case .play:
+                // PlayNext returns before anything else at zero per-sound gain (1401f5980.c:77-82).
+                guard track.sceneVolume > 0 else { break }
+                // A random sound's timer covers its file and the wait after it; play needs it run out (:750).
+                let randomTimerRunning = track.waitsBetweenPlays && track.enabled
+                    && (track.delayRemaining != nil || !track.scheduledFiles.isEmpty)
+                if track.scriptPaused {
+                    state.tracks[index].scriptPaused = false
+                    state.tracks[index].enabled = true
+                } else if !randomTimerRunning {
+                    Self.stopTrack(at: index, state: &state)
+                    state.tracks[index].enabled = true
+                }
+                reconcileEngineRunState(state: &state)
+            case .stop:
+                Self.stopTrack(at: index, state: &state)
+                reconcileEngineRunState(state: &state)
+            case .pause:
+                guard track.enabled, !track.scriptPaused else { break }
+                state.tracks[index].scriptPaused = true
+                state.tracks[index].enabled = false
+                track.player.pause()
+                reconcileEngineRunState(state: &state)
+            case .isPlaying:
+                break
+            }
+            let current = state.tracks[index]
+            return current.enabled && !current.scriptPaused && !current.scheduledFiles.isEmpty
         }
     }
 
@@ -622,6 +665,7 @@ final class WPESoundRuntime: Sendable {
     private static func stopTrack(at index: Int, state: inout State) {
         guard state.tracks.indices.contains(index) else { return }
         state.tracks[index].enabled = false
+        state.tracks[index].scriptPaused = false
         state.tracks[index].epoch &+= 1
         state.tracks[index].player.stop()
         state.tracks[index].scheduledFiles.removeAll(keepingCapacity: false)

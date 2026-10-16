@@ -351,7 +351,7 @@ final class WPEParitySceneDriver {
                     }
                     guard generation == loadGeneration else { throw CancellationError() }
                     // Init waits for the actual registered material/shader preparation (140186c90/172830).
-                    try renderer.attachScript(script)
+                    try withScriptSound(script.engine) { try renderer.attachScript(script) }
                 } catch {
                     if hasRegisteredAssets || error is CancellationError {
                         throw error
@@ -403,7 +403,9 @@ final class WPEParitySceneDriver {
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
                                             pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
                 guard current == selection else { continue }
-                try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
+                try withScriptSound(previous.script?.engine) {
+                    try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
+                }
                 self.renderer = renderer
                 plannedTarget = target
                 adoptUpscalePlan(selection.upscale)
@@ -448,9 +450,11 @@ final class WPEParitySceneDriver {
             scriptUserProperties, values: patch.newValues.filter { patch.changedKeys.contains($0.key) }
         )
         do {
-            try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
-                merged, keys: patch.changedKeys
-            ), mergedJSON: merged)
+            try withScriptSound(renderer.script?.engine) {
+                try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
+                    merged, keys: patch.changedKeys
+                ), mergedJSON: merged)
+            }
         } catch {
             Logger.warning("Parity user property preparation failed: \(error)", category: .wpeRender)
             return false
@@ -587,7 +591,9 @@ final class WPEParitySceneDriver {
                                         audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
             let start = CACurrentMediaTime()
-            let submission = try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
+            let submission = try withScriptSound(renderer.script?.engine) {
+                try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
+            }
             encodeSeconds += CACurrentMediaTime() - start
             encodeCount += 1
             if let soundRuntime {
@@ -605,6 +611,15 @@ final class WPEParitySceneDriver {
             logFrameFailure(error)
             return false
         }
+    }
+
+    /// ISound calls reach the sound runtime only while `body` runs; script volume writes still drain at frame end.
+    private func withScriptSound<Result>(_ engine: WPEParityScriptEngine?, _ body: () throws -> Result) rethrows
+        -> Result {
+        guard let engine else { return try body() }
+        return try engine.withSoundConsumers(volume: { _, _ in }, command: {
+            soundRuntime?.applyScriptSoundCommand($1, forSoundID: $0, volume: $2.volume) ?? false
+        }, body: body)
     }
 
     /// A private copy of the presented backbuffer, encoded on the frame queue so the next frame cannot overwrite it
