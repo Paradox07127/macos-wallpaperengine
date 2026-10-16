@@ -37,7 +37,9 @@ public enum WPEParityProgramResolver {
     public static func resolve(_ description: WPEParityProgramDescription,
                                sources: any WPEShaderSourceProviding) throws -> WPEParityProgram {
         let shader = description.material.shader
-        let (names, vertex, _, fragment) = expandedSources(shader: shader, sources: sources)
+        let assets = sources as? WPEParityProgramAssets
+        let (names, vertex, _, fragment) = assets?.expandedSources(shader)
+            ?? expandedSources(shader: shader, sources: sources)
         func defines(_ textures: [Int32: WPEBoundComboTexture]) -> [WPEShaderDefine] {
             WPEComboResolver.resolve(passJSONCombos: description.passJSONCombos,
                                      blendingMode: Int32(description.material.blending.rawValue),
@@ -47,7 +49,10 @@ public enum WPEParityProgramResolver {
         let combos = defines([:])
         let all = defines(description.boundTextures)
         // GS_ENABLED: Main+0x118 bit3 is set when Main is created and never cleared.
-        let hlsl = try WPEHLSLRewriter(sources: sources).rewrite(names, defines: all, geometryShadersEnabled: true)
+        func rewrite() throws -> WPEHLSLProgram {
+            try WPEHLSLRewriter(sources: sources).rewrite(names, defines: all, geometryShadersEnabled: true)
+        }
+        let hlsl = try assets?.rewritten(shader, defines: all, rewrite) ?? rewrite()
         return WPEParityProgram(shader: shader, combos: combos, textureCombos: Array(all.dropFirst(combos.count)),
                                 hlsl: hlsl)
     }

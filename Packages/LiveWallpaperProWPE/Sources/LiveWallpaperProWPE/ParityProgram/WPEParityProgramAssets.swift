@@ -44,6 +44,17 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
     private let declarations = OSAllocatedUnfairLock(initialState: [String: ShaderDeclarations]())
     /// Keyed by path; a `nil` value records a missing or unparsable file.
     private let parsedJSON = OSAllocatedUnfairLock(initialState: [String: WPESceneJSONValue?]())
+    /// Keyed by shader name.
+    private let expanded = OSAllocatedUnfairLock(
+        initialState: [String: (names: WPEHLSLProgramSources, vertex: String, geometry: String?, fragment: String)]()
+    )
+    /// A stored failure rethrows the rewrite's own error.
+    private let rewrites = OSAllocatedUnfairLock(initialState: [RewriteKey: Result<WPEHLSLProgram, any Error>]())
+
+    private struct RewriteKey: Hashable {
+        let shader: String
+        let defines: [WPEShaderDefine]
+    }
 
     public var roots: [URL] {
         sources.map(\.root)
@@ -98,5 +109,33 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
             memo[shader] = first
             return first
         }
+    }
+
+    func expandedSources(_ shader: String)
+        -> (names: WPEHLSLProgramSources, vertex: String, geometry: String?, fragment: String) {
+        if let stored = expanded.withLock({ $0[shader] }) {
+            return stored
+        }
+        let computed = WPEParityProgramResolver.expandedSources(shader: shader, sources: self)
+        return expanded.withLock { memo in
+            let first = memo[shader] ?? computed
+            memo[shader] = first
+            return first
+        }
+    }
+
+    /// `defines` is the full define list the rewrite consumes; `rewrite` runs only for an unseen pair.
+    func rewritten(_ shader: String, defines: [WPEShaderDefine],
+                   _ rewrite: () throws -> WPEHLSLProgram) throws -> WPEHLSLProgram {
+        let key = RewriteKey(shader: shader, defines: defines)
+        if let stored = rewrites.withLock({ $0[key] }) {
+            return try stored.get()
+        }
+        let computed = Result(catching: rewrite)
+        return try rewrites.withLock { memo in
+            let first = memo[key] ?? computed
+            memo[key] = first
+            return first
+        }.get()
     }
 }

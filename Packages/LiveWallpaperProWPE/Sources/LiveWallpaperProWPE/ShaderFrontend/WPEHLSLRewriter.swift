@@ -34,14 +34,52 @@ public struct WPEHLSLProgramSources: Sendable, Hashable {
 
 /// HLSL text per stage, byte for byte what the engine hands to D3DCompile.
 public struct WPEHLSLProgram: Sendable, Hashable {
-    public var vertex: [UInt8]?
-    public var geometry: [UInt8]?
-    public var fragment: [UInt8]?
+    public var vertex: [UInt8]? {
+        didSet {
+            fingerprint = Self.fingerprint(vertex, geometry, fragment)
+        }
+    }
+
+    public var geometry: [UInt8]? {
+        didSet {
+            fingerprint = Self.fingerprint(vertex, geometry, fragment)
+        }
+    }
+
+    public var fragment: [UInt8]? {
+        didSet {
+            fingerprint = Self.fingerprint(vertex, geometry, fragment)
+        }
+    }
+
+    /// Hash of all three stages, kept current so hashing a program does not walk its bytes.
+    private(set) var fingerprint: Int
 
     public init(vertex: [UInt8]? = nil, geometry: [UInt8]? = nil, fragment: [UInt8]? = nil) {
         self.vertex = vertex
         self.geometry = geometry
         self.fragment = fragment
+        fingerprint = Self.fingerprint(vertex, geometry, fragment)
+    }
+
+    private static func fingerprint(_ stages: [UInt8]?...) -> Int {
+        var hasher = Hasher()
+        for stage in stages {
+            // -1 keeps a missing stage distinct from an empty one.
+            hasher.combine(stage?.count ?? -1)
+            stage?.withUnsafeBytes { hasher.combine(bytes: $0) }
+        }
+        return hasher.finalize()
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fingerprint)
+    }
+
+    /// Not redundant: the synthesized `==` would walk the stage bytes before reaching the fingerprint.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.fingerprint == rhs.fingerprint else { return false }
+        return lhs.vertex == rhs.vertex && lhs.geometry == rhs.geometry && lhs.fragment == rhs.fragment
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 @testable import LiveWallpaperProWPE
+import os
 import XCTest
 
 final class ParityProgramAssetsTests: XCTestCase {
@@ -47,5 +48,52 @@ final class ParityProgramAssetsTests: XCTestCase {
         XCTAssertEqual(shared([.directory(directory), Self.wpe]), "// directory shared\n")
         // Negative control: with the assets root first, its file shadows the wallpaper's.
         XCTAssertEqual(shared([Self.wpe, Self.wallpaper]), "// wpe shared\n")
+    }
+
+    func testResolverRewritesOneShaderAndDefineListOncePerAssets() throws {
+        let files = [
+            "shaders/probe.vert": "void main() {}\n",
+            "shaders/probe.frag": "#include \"common.h\"\nvoid main() {}\n",
+            "shaders/common.h": "// common\n",
+        ]
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/lookup/memo", isDirectory: true)) {
+            reads.withLock { $0 += 1 }
+            return files[$0].map { Data($0.utf8) }
+        }])
+        func description(_ path: String) -> WPEParityProgramDescription {
+            WPEParityProgramDescription(material: WPEParityProgramMaterial(shader: "probe", path: path, combos: ["ALPHA": 1]),
+                                        engineFlags: WPEEngineComboFlags(), boundTextures: [:])
+        }
+
+        let first = try WPEParityProgramResolver.resolve(description("materials/a.json"), sources: assets)
+        let readsAfterFirst = reads.withLock { $0 }
+        let second = try WPEParityProgramResolver.resolve(description("materials/b.json"), sources: assets)
+
+        XCTAssertGreaterThan(readsAfterFirst, 0)
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(reads.withLock { $0 }, readsAfterFirst, "second resolve read the shader files again")
+        let uncached = try WPEParityProgramResolver.resolve(description("materials/a.json"),
+                                                            sources: MemorySources(files: files))
+        XCTAssertEqual(first, uncached)
+    }
+
+    func testHLSLProgramEqualityFollowsEveryStageByte() {
+        let a = WPEHLSLProgram(vertex: Array("vs".utf8), geometry: nil, fragment: Array("ps".utf8))
+        var b = WPEHLSLProgram(vertex: Array("vs".utf8), geometry: nil, fragment: Array("ps".utf8))
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(a.hashValue, b.hashValue)
+
+        b.fragment?[1] = UInt8(ascii: "x")
+        XCTAssertNotEqual(a, b)
+        XCTAssertNotEqual(a, WPEHLSLProgram(vertex: Array("vs".utf8), geometry: [], fragment: Array("ps".utf8)))
+    }
+}
+
+private struct MemorySources: WPEShaderSourceProviding {
+    let files: [String: String]
+
+    func shaderSource(named name: String) -> [UInt8]? {
+        files[name].map { Array($0.utf8) }
     }
 }
