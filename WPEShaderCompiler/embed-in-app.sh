@@ -5,7 +5,25 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTENTS="${TARGET_BUILD_DIR:?}/${CONTENTS_FOLDER_PATH:?}"
 NOTICES="$CONTENTS/Resources/WPEShaderCompilerNotices"
-NOTICE_FILES=(DXC-LICENSE.TXT DirectX-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf)
+NOTICE_FILES=(DXC-LICENSE.TXT DXC-ThirdPartyNotices.txt DirectX-Headers-LICENSE SPIRV-Tools-LICENSE SPIRV-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf)
+
+# The vendored FreeType/HarfBuzz/msdfgen code is linked even without the shader toolchain.
+# Each line is "<repo path> <bundled name>"; scripts/check_third_party_notices.py reads them.
+REPO_ROOT="$(cd "$SOURCE_DIR/.." && pwd)"
+THIRD_PARTY_NOTICES="$CONTENTS/Resources/ThirdPartyNotices"
+mkdir -p "$THIRD_PARTY_NOTICES"
+while read -r source name; do
+    cp -f "$REPO_ROOT/$source" "$THIRD_PARTY_NOTICES/$name"
+done <<'EOF'
+Packages/LiveWallpaperProWPE/Sources/CFreeType/LICENSE.TXT FreeType-LICENSE.TXT
+Packages/LiveWallpaperProWPE/Sources/CFreeType/docs/FTL.TXT FreeType-FTL.TXT
+Packages/LiveWallpaperProWPE/Sources/CFreeType/src/bdf/README FreeType-BDF-README
+Packages/LiveWallpaperProWPE/Sources/CFreeType/src/pcf/README FreeType-PCF-README
+Packages/LiveWallpaperProWPE/Sources/CHarfBuzz/COPYING HarfBuzz-COPYING
+ThirdPartyNotices/HarfBuzz-ms-use-COPYING HarfBuzz-ms-use-COPYING
+Packages/LiveWallpaperProWPE/Sources/CWPESDF/vendor/msdfgen/LICENSE.txt msdfgen-LICENSE.txt
+ThirdPartyNotices/README.txt README.txt
+EOF
 
 if [ -z "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ]; then
     if [ "${CONFIGURATION:-}" != Debug ]; then

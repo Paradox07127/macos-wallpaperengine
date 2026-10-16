@@ -122,3 +122,9 @@ Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Shipping and CI us
 Issues and PRs welcome — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for what every PR is asked to clear. Security issues go through [docs/SECURITY.md](docs/SECURITY.md), not the public tracker. For bug reports, use **Settings → About → Report a Bug** in the app; it pre-fills diagnostics.
 
 MIT ([LICENSE](LICENSE)) — the whole repository, including Pro-only modules.
+
+### Third-party software
+
+The vendored code under `Packages/LiveWallpaperProWPE/Sources/{CFreeType,CHarfBuzz,CWPESDF/vendor/msdfgen}` keeps its own license (FreeType License, Old MIT, MIT). Both apps bundle Sparkle's license; Loomscreen Pro also bundles the FreeType, HarfBuzz, msdfgen and shader-toolchain notices. [ThirdPartyNotices/](ThirdPartyNotices/README.txt) lists each component.
+
+Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.

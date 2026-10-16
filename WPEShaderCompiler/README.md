@@ -10,7 +10,7 @@ on the user's machine.
 
 Set `WPE_SHADER_TOOLCHAIN_ROOT` explicitly to an input directory. There is no
 installation-path or developer-home default. `toolchain-inputs.sha256` pins
-30 files relative to that directory: 24 headers, two libraries and four complete
+33 files relative to that directory: 24 headers, two libraries and seven complete
 notices. `build.sh` verifies every pin before compiling the current `main.cpp`
 with the selected Xcode SDK's `clang++`; it does not copy a prebuilt helper.
 
@@ -20,8 +20,10 @@ include/directx/                d3d12shader.h, d3dcommon.h
 include/wsl/stubs/              rpc.h, rpcndr.h, OAIdl.h, OCIdl.h
 include/metal_irconverter/      metal_irconverter.h and its 15 ir_*.h includes
 lib/                           libdxcompiler.dylib, libmetalirconverter.dylib
-licenses/                      DXC-LICENSE.TXT, DirectX-Headers-LICENSE,
-                               MSC-LICENSE.txt, MSC-Acknowledgements.rtf
+licenses/                      DXC-LICENSE.TXT, DXC-ThirdPartyNotices.txt,
+                               DirectX-Headers-LICENSE, SPIRV-Tools-LICENSE,
+                               SPIRV-Headers-LICENSE, MSC-LICENSE.txt,
+                               MSC-Acknowledgements.rtf
 ```
 
 The pinned DXC inputs come from v1.9.2609, source commit
@@ -63,8 +65,11 @@ and removes old embedded toolchain files; a configured but invalid staging root
 fails rather than silently using old outputs.
 
 The phase copies the helper into `Contents/MacOS`, the two libraries into
-`Contents/Frameworks`, and all four notices unchanged into
-`Contents/Resources/WPEShaderCompilerNotices`. It removes the pinned DXC build's
+`Contents/Frameworks`, and all seven notices unchanged into
+`Contents/Resources/WPEShaderCompilerNotices`. Before the toolchain check, so
+Debug builds get them too, it copies the vendored FreeType, HarfBuzz and msdfgen
+notices plus `ThirdPartyNotices/README.txt` into
+`Contents/Resources/ThirdPartyNotices`. It removes the pinned DXC build's
 external rpaths, leaving `@loader_path` for MSC beside it. Every invocation
 re-copies/re-signs all three files using Xcode's expanded signing identity and
 runtime option; helper entitlements remain exactly sandbox + inherit. No mtime
@@ -123,16 +128,19 @@ and fragment output is unchanged.
 
 ## Library license notices
 
-The Pro bundle includes the pinned DXC `LICENSE.TXT` (University of Illinois/NCSA
-and third-party notices), DirectX-Headers MIT `LICENSE`, MSC Apache-2.0
-`LICENSE.txt` and the complete original MSC `Acknowledgements.rtf`. The latter
+The Pro bundle includes the pinned DXC `LICENSE.TXT` (University of Illinois/NCSA)
+and its `ThirdPartyNotices.txt`, DirectX-Headers MIT `LICENSE`, the SPIRV-Tools
+Apache-2.0 and SPIRV-Headers `LICENSE` files (SPIRV-Tools is linked into
+`libdxcompiler.dylib`), MSC Apache-2.0 `LICENSE.txt` and the complete original MSC
+`Acknowledgements.rtf`. `ThirdPartyNotices/manifest.tsv` lists every bundled
+library's notices and `scripts/check_third_party_notices.py` gates them. The MSC acknowledgements file
 contains DXVK, DirectX-Specs, DirectX Headers, DirectXMath, AMD, xxHash and DXC/LLVM
 sections; do not replace it with a short attribution summary. Converter/runtime
 notice pairs in the observed SDK are byte-identical, so one copy of each suffices
 for this recorded file inventory.
 
-The exact compiler-binary redistribution terms and MSC installer license remain
-**unconfirmed**. Including installed header licenses and acknowledgements does
+The exact compiler-binary redistribution terms and the MSC installer EULA remain
+**unverified**. Including installed header licenses and acknowledgements does
 not settle those terms. Local implementation/build/runtime acceptance and final
 distribution-license review remain separate; this change makes no claim that
 distribution permission is closed.

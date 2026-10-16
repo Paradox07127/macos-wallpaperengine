@@ -190,6 +190,7 @@ xcodebuild archive \
   > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaper Release archive failed."
 PRO_ARCHIVED_APP="$PRO_ARCHIVE_PATH/Products/Applications/Loomscreen Pro.app"
 PRO_RELEASE_BIN="$PRO_ARCHIVED_APP/Contents/MacOS/Loomscreen Pro"
+python3 scripts/check_third_party_notices.py --app "$PRO_ARCHIVED_APP" --sku pro
 [[ -x "$PRO_RELEASE_BIN" ]] || fail_with_log "Pro Release archive did not produce Loomscreen Pro.app."
 assert_arm64_binary "$PRO_RELEASE_BIN" "Pro Release archive"
 codesign --verify --deep --strict --verbose=2 "$PRO_ARCHIVED_APP"
@@ -231,6 +232,7 @@ xcodebuild archive \
 
 LITE_ARCHIVED_APP="$LITE_ARCHIVE_PATH/Products/Applications/Loomscreen.app"
 LITE_RELEASE_BIN="$LITE_ARCHIVED_APP/Contents/MacOS/Loomscreen"
+python3 scripts/check_third_party_notices.py --app "$LITE_ARCHIVED_APP" --sku lite
 [[ -x "$LITE_RELEASE_BIN" ]] || fail_with_log "Lite Release archive did not produce Loomscreen.app."
 assert_universal_binary "$LITE_RELEASE_BIN" "Lite Release archive"
 assert_universal_binary "$LITE_ARCHIVED_APP/Contents/Extensions/SystemWallpaperProviderLite.appex/Contents/MacOS/SystemWallpaperProviderLite" "Lite system wallpaper extension"

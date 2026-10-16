@@ -8,7 +8,7 @@ if [ -z "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ]; then
   exit 1
 fi
 TOOLCHAIN_ROOT="$(cd "$WPE_SHADER_TOOLCHAIN_ROOT" && pwd -P)"
-# The manifest pins headers, both libraries and all four notices before any output is built.
+# The manifest pins headers, both libraries and every notice before any output is built.
 (
   cd "$TOOLCHAIN_ROOT"
   /usr/bin/shasum -a 256 -c "$SOURCE_DIR/toolchain-inputs.sha256"

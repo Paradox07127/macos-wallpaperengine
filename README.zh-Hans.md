@@ -121,3 +121,9 @@ Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。出货与 CI
 欢迎 Issue 和 PR —— 每个 PR 需要过哪些门禁见 [docs/zh-Hans/CONTRIBUTING.md](docs/zh-Hans/CONTRIBUTING.md)。安全问题请走 [docs/zh-Hans/SECURITY.md](docs/zh-Hans/SECURITY.md)，不要提到公开的 issue 列表里。报 Bug 建议直接用应用内 **设置 → 关于 → 报告问题**，它会自动附带诊断信息。
 
 MIT（[LICENSE](LICENSE)）—— 覆盖整个仓库，含 Pro-only 模块。
+
+### 第三方软件
+
+`Packages/LiveWallpaperProWPE/Sources/{CFreeType,CHarfBuzz,CWPESDF/vendor/msdfgen}` 下的内嵌代码保留各自的许可（FreeType License、Old MIT、MIT）。两个应用都附带 Sparkle 的许可；Loomscreen Pro 另附 FreeType、HarfBuzz、msdfgen 和着色器工具链的声明。各组件清单见 [ThirdPartyNotices/](ThirdPartyNotices/README.txt)。
+
+Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.

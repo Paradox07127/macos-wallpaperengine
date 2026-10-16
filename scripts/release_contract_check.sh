@@ -197,6 +197,8 @@ python3 scripts/check_quality_exclusions.py --self-test
 python3 scripts/check_quality_exclusions.py
 python3 scripts/check_module_import_boundaries.py --self-test
 python3 scripts/check_module_import_boundaries.py
+python3 scripts/check_third_party_notices.py --self-test
+python3 scripts/check_third_party_notices.py
 
 # Nested Sparkle helpers must be re-signed (Code Sign on Copy leaves them
 # ad-hoc). The outer app must NOT be re-signed from a source entitlements
