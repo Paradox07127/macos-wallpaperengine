@@ -559,6 +559,10 @@ extension WPEMetalSceneRenderer {
         }
         defer { shaderWarmTask.cancel() }
 
+        let loadedSemantics: (WPETextureReference) -> WPEResourceSemantics? = { [self] reference in
+            guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
+            return WPEMetalTextureMetadataRegistry.shared.semantics(for: texture)
+        }
         try await withTaskCancellationHandler {
             debugStage("textures.load", "begin (pipeline-driven)")
             onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
@@ -570,10 +574,6 @@ extension WPEMetalSceneRenderer {
             renderPipeline = pipeline.resolvingSourceMipLevels { reference in
                 guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
                 return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
-            }
-            let loadedSemantics: (WPETextureReference) -> WPEResourceSemantics? = { [self] reference in
-                guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
-                return WPEMetalTextureMetadataRegistry.shared.semantics(for: texture)
             }
             renderPipeline = renderPipeline?.resolvingRenderContracts(externalSemantics: loadedSemantics)
             if !registeredMaterialTemplates.isEmpty {

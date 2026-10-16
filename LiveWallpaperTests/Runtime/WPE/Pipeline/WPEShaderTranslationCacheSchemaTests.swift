@@ -37,10 +37,9 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 48
-    /// Comma-separated declaration ownership invalidates previous translations.
-    /// The image-puppet fallback only changes model loading; shader translations stay compatible.
-    static let expectedFingerprint = "bcab6788d47c97abd62df596e966abff5abd07eca074cc9e50a168f9a827ff30"
+    static let expectedSchemaVersion = 49
+    /// The pipeline builder now imports CoreGraphics explicitly for the shared provider target.
+    static let expectedFingerprint = "010244b4330bb7f646c711def36a6ac75fba9dbc8b3ad0a5f25e23576c69f5f7"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {
