@@ -431,6 +431,44 @@ struct WPETexDecoderTests {
         }
     }
 
+    private static var engineNeutralLUT: URL {
+        ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map {
+            URL(fileURLWithPath: $0).appendingPathComponent("materials/lut/neutral.tex")
+        } ?? officialFlag0x40FixtureRoot.appendingPathComponent("neutral.tex")
+    }
+
+    @Test(
+        "Engine neutral.tex PNG unfolds to an identity 32³ RGBA8 volume",
+        .enabled(if: FileManager.default.fileExists(atPath: engineNeutralLUT.path))
+    )
+    func engineNeutralLUTDecodesToIdentityVolume() throws {
+        let data = try Data(contentsOf: Self.engineNeutralLUT)
+        let payload = try WPETexDecoder().extractTexturePayload(data: data, allowRawVolume: true).get()
+        #expect(payload.info.format == .rgba8888)
+        #expect(payload.info.isVolume)
+        #expect(payload.mipmaps.count == 1)
+        let mip = try #require(payload.mipmaps.first)
+        #expect([mip.index, mip.width, mip.height, mip.depth] as [Int] == [0, 32, 32, 32])
+        let bytes = [UInt8](mip.bytes)
+        try #require(bytes.count == 32 * 32 * 32 * 4)
+        func level(_ value: Int) -> UInt8 {
+            UInt8((Double(255 * value) / 31).rounded())
+        }
+        var mismatches: [String] = []
+        for z in 0 ..< 32 {
+            for y in 0 ..< 32 {
+                for x in 0 ..< 32 {
+                    let offset = ((z * 32 + y) * 32 + x) * 4
+                    let texel = Array(bytes[offset ..< offset + 4])
+                    if texel != [level(x), level(y), level(z), 255] {
+                        mismatches.append("(\(x),\(y),\(z))=\(texel)")
+                    }
+                }
+            }
+        }
+        #expect(mismatches.isEmpty, "\(mismatches.count) texels differ, first: \(mismatches.prefix(4))")
+    }
+
     @Test("Streaming extraction preserves TEXS sub-rects and compressed image payloads")
     func streamingExtractionPreservesSubRectsAndCompressedPayloads() throws {
         let width = 4

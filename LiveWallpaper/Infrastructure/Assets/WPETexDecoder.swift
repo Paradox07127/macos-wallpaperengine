@@ -135,8 +135,8 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// `scope` narrows 2D mip inflation. `allowRawVolume` opts a 3D-capable consumer into raw, non-BC,
-    /// static volume payloads; it never enables encoded volume unfolding and volumes retain every authored mip.
+    /// `scope` narrows 2D mip inflation. `allowRawVolume` opts a 3D-capable consumer into static volumes:
+    /// raw non-BC payloads keep every authored mip; a single-mip encoded image unfolds to one RGBA8 level.
     func extractTexturePayload(
         data: Data,
         scope: WPETexMipInflateScope = .fullChain,
@@ -164,12 +164,17 @@ struct WPETexDecoder: Sendable {
                 guard let format = parsed.info.format, format.bytesPerPixel != nil else {
                     throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
                 }
-                guard (parsed.bitmap.sourceImageFormatCode ?? -1) == -1,
-                      !parsed.bitmap.isVideoPayload, parsed.info.flags & 0x24 == 0,
+                guard !parsed.bitmap.isVideoPayload, parsed.info.flags & 0x24 == 0,
                       !parsed.hasAnimationFrames, parsed.bitmap.conditionalVariants.isEmpty else {
                     throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
                 }
-                try WPETexMipValidation.rawVolume(parsed.bitmap.mipmaps, info: parsed.info, format: format)
+                if parsed.bitmap.usesEncodedImagePayload {
+                    guard parsed.bitmap.frames.count == 1, parsed.bitmap.mipmaps.count == 1 else {
+                        throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
+                    }
+                } else {
+                    try WPETexMipValidation.rawVolume(parsed.bitmap.mipmaps, info: parsed.info, format: format)
+                }
             }
             if !parsed.bitmap.conditionalVariants.isEmpty, let conditionalProperties {
                 let selection = try WPETexConditionalSelection(variants: parsed.bitmap.conditionalVariants,
@@ -217,7 +222,8 @@ struct WPETexDecoder: Sendable {
             }
 
             if parsed.bitmap.usesEncodedImagePayload {
-                let bridgedPayload = try bridgeEncodedImagePayload(parsed)
+                let bridgedPayload = try parsed.info.isVolume
+                    ? decodeEncodedVolume(parsed) : bridgeEncodedImagePayload(parsed)
                 return .success(bridgedPayload)
             }
 
@@ -983,6 +989,46 @@ struct WPETexDecoder: Sendable {
             imageHeight: source.imageHeight,
             unknownInt0: source.unknownInt0,
             flag0x40Extension: source.flag0x40Extension
+        )
+    }
+
+    /// Z slices stack vertically: texel (x, y, z) is pixel (x, height * z + y), so rows are already in volume order.
+    private func decodeEncodedVolume(_ parsed: ParsedTex) throws -> WPETexTexturePayload {
+        let info = parsed.info
+        let mip = parsed.bitmap.mipmaps[0]
+        let byteCount = try WPETexMipValidation.layout(format: .rgba8888, width: info.width, height: info.height,
+                                                       depth: info.depth).byteCount
+        guard byteCount <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+            throw WPETexMipValidation.Invalid(detail: "Volume mip chain exceeds decoded byte budget")
+        }
+        let encoded = try inflateIfNeeded(payload: mip.payload, expectedByteCount: nil,
+                                          decompressedByteCount: mip.decompressedByteCount,
+                                          isCompressed: mip.isCompressed, mipmap: mip.index)
+        guard let source = CGImageSourceCreateWithData(encoded as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil), let space = image.colorSpace else {
+            throw WPETexDecodeError.decodeFailed(mipmap: mip.index, detail: "ImageIO could not decode encoded volume payload")
+        }
+        guard image.width == info.width, image.height == info.height * info.depth else {
+            throw WPETexDecodeError.invalidDimensions(width: image.width, height: image.height)
+        }
+        var pixels = Data(count: byteCount)
+        // Drawing in the image's own colour space keeps CoreGraphics from colour matching the LUT values.
+        let drew = pixels.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
+        }
+        guard drew else {
+            throw WPETexDecodeError.decodeFailed(mipmap: mip.index, detail: "CGContext could not draw encoded volume payload")
+        }
+        WPERasterImageAlpha.unpremultiplyRGBA8(&pixels)
+        return WPETexTexturePayload(
+            info: rgba8888Info(from: info, width: info.width, height: info.height, mipmapCount: 1),
+            mipmaps: [WPETexTextureMipmap(index: 0, width: info.width, height: info.height, depth: info.depth,
+                                          bytes: pixels)],
+            hasAnimationFrames: false
         )
     }
 

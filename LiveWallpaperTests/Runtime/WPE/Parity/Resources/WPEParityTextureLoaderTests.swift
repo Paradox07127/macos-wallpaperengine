@@ -330,7 +330,7 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let volume = tex(format: 0, images: [[solid(1, 1, [1, 2, 3, 4])]], flags: 0x40, depth: 32, encoded: true)
         XCTAssertThrowsError(try load(volume, device)) {
-            XCTAssertEqual($0 as? WPETexDecodeError, .unsupportedTextureDimension(depth: 32))
+            guard case .decodeFailed? = $0 as? WPETexDecodeError else { return XCTFail("\($0)") }
         }
         for code: UInt32 in [4, 6, 7, 12, 22, 23, 24] {
             let unsupported = tex(format: code, images: [[solid(1, 1, [0, 0, 0, 0, 0, 0, 0, 0])]], flags: 0x40, depth: 1)

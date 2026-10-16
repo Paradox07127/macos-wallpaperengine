@@ -2,6 +2,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
@@ -742,8 +743,16 @@ final class WPEParityPostProcessProductTests: XCTestCase {
 
     /// COL maps the clear RGB (0, .5, 1) to (.25, .5, .75); the raw LUT maps (x,y,z) to (z,x,y).
     func testOriginalColorCorrectionUsesConstantsAndSlotOneRawVolumeAxes() async throws {
+        try await assertAxisSwapCorrection(lut: rawAxisLUT())
+    }
+
+    /// Same texels as the raw LUT, stored the way engine LUTs are: a PNG with z slices stacked vertically.
+    func testOriginalColorCorrectionUnfoldsPNGEncodedVolumeIntoSlotOne() async throws {
+        try await assertAxisSwapCorrection(lut: pngAxisLUT())
+    }
+
+    private func assertAxisSwapCorrection(lut: Data) async throws {
         let engine = try engineAssets()
-        let lut = rawAxisLUT()
         let assets = WPEParityProgramAssets(sources: [
             .lookup(scratch) { $0 == "materials/lut/axis-swap.tex" ? lut : nil }, .directory(engine),
         ])
@@ -1029,14 +1038,44 @@ final class WPEParityPostProcessProductTests: XCTestCase {
 
     /// TEXV5/TEXI1, raw RGBA8, clamp and volume flags. x runs fastest; output RGB is (z,x,y).
     private func rawAxisLUT() -> Data {
-        var payload = Data()
+        let payload = Data(axisLUTTexels().flatMap { $0 + [255] })
+        return texContainer(info: [0, 0x42, 2, 2, 2, 2, 2, 0], bitmapMagic: "TEXB0003",
+                            bitmap: [1, .max, 1, 2, 2, 2, 0, UInt32(payload.count), UInt32(payload.count)],
+                            payload: payload)
+    }
+
+    /// TEXB4 with FreeImage format 13 (PNG): a 2×4 RGB image whose row is 2z + y.
+    private func pngAxisLUT() throws -> Data {
+        let rgb = Data(axisLUTTexels().joined())
+        let image = try XCTUnwrap(CGImage(
+            width: 2, height: 4, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: 6,
+            space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: XCTUnwrap(CGDataProvider(data: rgb as CFData)), decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent
+        ))
+        let png = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(png, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return texContainer(info: [0, 0x42, 2, 2, 4, 2, 2, 0], bitmapMagic: "TEXB0004",
+                            bitmap: [1, 13, 0, 1, 2, 2, 2, 0, 0, UInt32(png.length)], payload: png as Data)
+    }
+
+    /// RGB texels in x-fastest, then y, then z order.
+    private func axisLUTTexels() -> [[UInt8]] {
+        var texels: [[UInt8]] = []
         for z in 0 ..< 2 {
             for y in 0 ..< 2 {
                 for x in 0 ..< 2 {
-                    payload.append(contentsOf: [UInt8(z * 255), UInt8(x * 255), UInt8(y * 255), 255])
+                    texels.append([UInt8(z * 255), UInt8(x * 255), UInt8(y * 255)])
                 }
             }
         }
+        return texels
+    }
+
+    private func texContainer(info: [UInt32], bitmapMagic: String, bitmap: [UInt32], payload: Data) -> Data {
         var data = Data()
         func magic(_ text: String) {
             data.append(contentsOf: text.utf8); data.append(0)
@@ -1046,13 +1085,9 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
         }
         magic("TEXV0005"); magic("TEXI0001")
-        for value in [UInt32(0), 0x42, 2, 2, 2, 2, 2, 0] {
-            word(value)
-        }
-        magic("TEXB0003")
-        for value in [UInt32(1), .max, 1, 2, 2, 2, 0, UInt32(payload.count), UInt32(payload.count)] {
-            word(value)
-        }
+        info.forEach(word)
+        magic(bitmapMagic)
+        bitmap.forEach(word)
         data.append(payload)
         return data
     }
