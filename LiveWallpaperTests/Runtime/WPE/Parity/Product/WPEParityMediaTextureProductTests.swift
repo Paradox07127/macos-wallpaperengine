@@ -1,5 +1,7 @@
 #if !LITE_BUILD && DEBUG
+import AVFoundation
 import CoreGraphics
+import CoreVideo
 import CryptoKit
 import Darwin
 import Foundation
@@ -353,6 +355,41 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         try assertPanels(readBack(firstDrawable), width: 80, current: .a, previous: nil)
     }
 
+    func testVideoTexMP4BytesLeaveThePlannerOnceTheDecoderOwnsThemAndTheVideoStillPlays() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertEqual(renderer.videoTextures.count, 1)
+        let planner = try XCTUnwrap(Mirror(reflecting: renderer).descendant("planner") as? WPEParityFrameDrawPlanner)
+        XCTAssertEqual(planner.videos.count, 1, "The replan guard counts the planner's video streams")
+        XCTAssertEqual(planner.videos.reduce(0) { $0 + $1.bytes.count }, 0, "The planner still holds MP4 bytes")
+
+        // The witness layer samples the video; its decoded gray frames change the presented pixel.
+        func witness() async throws -> [UInt8] {
+            let bytes = try await present(driver, layer: layer)
+            let offset = (16 * 80 + 72) * 4
+            return Array(bytes[offset ..< offset + 3])
+        }
+        let deadline = Date().addingTimeInterval(5)
+        var before = try await witness()
+        while before == [0, 0, 0], Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            before = try await witness()
+        }
+        XCTAssertNotEqual(before, [0, 0, 0], "No decoded video frame reached the presented witness")
+        var after = before
+        while after == before, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            after = try await witness()
+        }
+        XCTAssertNotEqual(after, before, "The video texture held one frame until the deadline")
+    }
+
     private struct Fixture {
         let root: URL
         let device: any MTLDevice
@@ -387,7 +424,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
     }
 
     private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
-                             shortcutIcons: Bool = false) throws -> Fixture {
+                             shortcutIcons: Bool = false, video: Data? = nil) throws -> Fixture {
         let qualifiedInput = mergeUserTextures || shortcutIcons
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -478,8 +515,11 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             }
             try write("materials/input/\(name).tex", bytes)
         }
+        if let video {
+            try write("materials/input/video.tex", video)
+        }
         // Select the original g_Color4 branch explicitly so the witness observes live thisLayer.color.
-        for name in ["black", "white"] {
+        for name in ["black", "white"] + (video == nil ? [] : ["video"]) {
             try json("models/\(name).json", ["material": "materials/\(name).json"])
             try json("materials/\(name).json", ["passes": [[
                 "shader": "genericimage2", "combos": ["VERSION": 2],
@@ -512,7 +552,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
         }
-        var witness: [String: Any] = ["id": 3, "name": "ordering-witness", "image": "models/white.json",
+        var witness: [String: Any] = ["id": 3, "name": "ordering-witness",
+                                      "image": video == nil ? "models/white.json" : "models/video.json",
                                       "size": "16 32", "origin": "72 16 0"]
         if scripted {
             witness["visible"] = ["value": true, "script": Self.orderingScript]
@@ -766,6 +807,15 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
     }
 
     private func solidTEX(_ pixel: [UInt8]) -> Data {
+        tex(flags: 0, size: 2, payload: Data(Array(repeating: pixel, count: 4).joined()))
+    }
+
+    /// TEXI flag 0x20: the single mip holds the MP4 stream.
+    private func videoTEX(_ mp4: Data) -> Data {
+        tex(flags: 0x20, size: 64, payload: mp4)
+    }
+
+    private func tex(flags: UInt32, size: UInt32, payload: Data) -> Data {
         var data = Data()
         func magic(_ text: String) {
             data.append(contentsOf: text.utf8); data.append(0)
@@ -775,22 +825,63 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
         }
         magic("TEXV0005"); magic("TEXI0001")
-        for value in [UInt32(0), 0, 2, 2, 2, 2, 0] {
+        for value in [UInt32(0), flags, size, size, size, size, 0] {
             append(value)
         }
         magic("TEXB0003")
-        for value in [UInt32(1), .max, 1, 2, 2, 0, 16, 16] {
+        for value in [UInt32(1), .max, 1, size, size, 0, UInt32(payload.count), UInt32(payload.count)] {
             append(value)
         }
-        for _ in 0 ..< 4 {
-            data.append(contentsOf: pixel)
-        }
+        data.append(payload)
         return data
+    }
+
+    /// One second of 64x64 H.264 whose 24 frames are increasingly bright gray.
+    private static func writeVideo() async throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("parity-media-video-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64,
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64,
+        ])
+        guard writer.canAdd(input) else { throw MediaFixtureError.video }
+        writer.add(input)
+        guard writer.startWriting() else { throw writer.error ?? MediaFixtureError.video }
+        writer.startSession(atSourceTime: .zero)
+        let deadline = Date().addingTimeInterval(3)
+        for frame in 0 ..< 24 {
+            while !input.isReadyForMoreMediaData {
+                guard Date() < deadline, writer.status == .writing else { throw writer.error ?? MediaFixtureError.video }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            var pixelBuffer: CVPixelBuffer?
+            guard CVPixelBufferCreate(kCFAllocatorDefault, 64, 64, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+                == kCVReturnSuccess, let pixelBuffer else { throw MediaFixtureError.video }
+            CVPixelBufferLockBaseAddress(pixelBuffer, [])
+            if let base = CVPixelBufferGetBaseAddress(pixelBuffer) {
+                memset(base, Int32(40 + frame * 8), CVPixelBufferGetBytesPerRow(pixelBuffer) * 64)
+            }
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+            guard adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 24)) else {
+                throw writer.error ?? MediaFixtureError.video
+            }
+        }
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        guard writer.status == .completed else { throw writer.error ?? MediaFixtureError.video }
+        return try Data(contentsOf: url)
     }
 }
 
 private enum MediaFixtureError: Error {
-    case originalShader(String), palette, png, command, timeout(String)
+    case originalShader(String), palette, png, command, timeout(String), video
 }
 
 /// A controllable external source only; all upload, delivery, script, graph and presentation behavior is production code.

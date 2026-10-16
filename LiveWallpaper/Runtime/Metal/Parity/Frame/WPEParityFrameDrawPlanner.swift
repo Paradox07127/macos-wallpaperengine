@@ -458,6 +458,16 @@ struct WPEParityFrameDrawPlanner {
     private var morphTextures: [String: MTLTexture] = [:]
     /// Video .tex files the planned draws sample, filled as draws are planned.
     private(set) var videos: [WPEParityVideoTextures.Stream] = []
+
+    /// Returns the planned streams and keeps only their textures, so the replan guard can still count them.
+    mutating func takeVideoStreams() -> [WPEParityVideoTextures.Stream] {
+        let streams = videos
+        for index in videos.indices {
+            videos[index].bytes = Data()
+        }
+        return streams
+    }
+
     private var pipelines: [PipelineKey: WPEParityPipeline] = [:]
     /// Pipeline states built, over the planner's life; draws with the same program and state share one.
     private(set) var pipelineCreations = 0

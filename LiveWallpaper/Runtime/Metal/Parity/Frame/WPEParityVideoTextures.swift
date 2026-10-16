@@ -10,7 +10,8 @@ final class WPEParityVideoTextures {
     /// A video .tex as planned: the texture draws sample and the MP4 stream from its first mip.
     struct Stream {
         let texture: MTLTexture
-        let bytes: Data
+        /// Empty once the planner has handed the stream to its decoder.
+        var bytes: Data
     }
 
     private let videos: [(source: WPEVideoTextureSource, texture: MTLTexture)]

@@ -646,10 +646,11 @@ final class WPEParityFrameRenderer {
         let draws = layout.draws
 
         try planner.fillImportedImages()
+        let streams = planner.takeVideoStreams()
         let videos: WPEParityVideoTextures = if let previous {
             previous.videos
         } else {
-            try await WPEParityVideoTextures(streams: planner.videos,
+            try await WPEParityVideoTextures(streams: streams,
                                              workshopID: workshopID ?? plan.scene.assets.roots[0].lastPathComponent, device: device, queue: queue)
         }
 
