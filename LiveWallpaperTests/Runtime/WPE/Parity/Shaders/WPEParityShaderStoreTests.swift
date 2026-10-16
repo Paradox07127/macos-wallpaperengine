@@ -34,7 +34,9 @@ struct WPEParityShaderStoreTests {
                  "vertexInputs":[],"stageOutputs":[],"mscReflection":{}}
                 """
                 stages[stage] = .init(metallib: Data(repeating: 0xAB, count: 512),
-                                      reflectionJSON: Data((invalidReflection ? "invalid" : json).utf8))
+                                      reflectionJSON: Data((invalidReflection ? "invalid" : json).utf8),
+                                      stageIn: stage == .vertex && request.stages.contains(.geometry)
+                                          ? Data(repeating: 0xCD, count: 64) : nil)
             }
             return .init(stages: stages)
         }
