@@ -52,12 +52,20 @@ enum WPEParityFrameRenderError: Error, LocalizedError {
 /// Renders a plan's frames on Metal: one compiled graph per frame variant, renderer-owned dedicated and pooled
 /// targets, executor-owned heap and memoryless transients. A skipped draw stays in the graph and encodes nothing.
 final class WPEParityFrameRenderer {
-    /// The frames of one set of shown effects and the plans of their draws (R24 Q2 "effect").
+    /// The frames of one set of shown effects and the plans of their draws.
     private struct Layout {
-        let post: WPEParityPostProcessConfig
+        /// The planner plans from this; a graph restored from the cache restores it too.
+        let planned: WPEParityFrameLayout
         /// The state's effect visible bits the frames were composed with.
         let effects: [Bool]
-        let frames: [WPEParityFrame]
+        var post: WPEParityPostProcessConfig {
+            planned.post
+        }
+
+        var frames: [WPEParityFrame] {
+            planned.frames
+        }
+
         let draws: [Int: WPEParityFrameDrawPlan]
         let skipped: [Int: WPEParityFrameSkip]
         /// The camerafade draw's operation index.
@@ -124,7 +132,6 @@ final class WPEParityFrameRenderer {
     private var postConstants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] = [:]
     private let device: MTLDevice
     private let drawEncoder: WPEParityDrawEncoder
-    private var images: [WPEResourceID: MTLTexture]
     private let videos: WPEParityVideoTextures
     private let queue: MTLCommandQueue
     private let screen: WPEParityUniformScreen
@@ -230,7 +237,6 @@ final class WPEParityFrameRenderer {
 
     /// Calls retain the actual texture version and order until its clear has been encoded on a committed buffer.
     private var materialClears: [MaterialClear] = []
-    private(set) var materialFunctionFailure: (any Error)?
 
     /// The frames of the effects the state shows; draw operation indices refer to them.
     var frames: [WPEParityFrame] {
@@ -312,11 +318,6 @@ final class WPEParityFrameRenderer {
         return particle.renderer
     }
 
-    /// Per encoded draw and stage, the declared constants that fall back to zero.
-    var zeroConstants: [Int: [WPEHLSLStage: [String]]] {
-        draws.mapValues(\.zeroConstants)
-    }
-
     /// Per encoded draw and stage, the binding description's constants.
     var constants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] {
         draws.mapValues(\.constants)
@@ -362,6 +363,10 @@ final class WPEParityFrameRenderer {
         videos.textures
     }
 
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        videos.applyPerformanceProfile(profile)
+    }
+
     /// A resize reuses the video collection. Keeping that collection as the command target avoids retaining or
     /// calling the old renderer through a SceneScript engine that continues into the new frame plan.
     var scriptVideoPause: (String) -> Bool {
@@ -393,7 +398,6 @@ final class WPEParityFrameRenderer {
             }
             materialClears += accepted
         } catch {
-            materialFunctionFailure = error
             Logger.warning("Parity material function \(key.objectID)/\(key.effectID)/\(name) unavailable: \(error)",
                            category: .wpeRender)
         }
@@ -662,7 +666,6 @@ final class WPEParityFrameRenderer {
         self.backbuffer = backbuffer
         self.targets = targets
         targetSamplers = Self.targetSamplers(layout, targets: targets)
-        images = planner.layerImages
         self.videos = videos
         self.queue = queue
         self.arena = arena
@@ -718,7 +721,7 @@ final class WPEParityFrameRenderer {
             && plan.scene.cameraPaths.paths.isEmpty && !document.general.supportsAudioProcessing
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
             && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
-            && !([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: Self.hasScript)
+            && !WPEParitySceneScript.hasScripts(document)
         for object in skinned {
             guard let model = plan.scene.puppetModels[object.id] else { continue }
             let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
@@ -732,14 +735,6 @@ final class WPEParityFrameRenderer {
         return [program.hlsl.vertex, program.hlsl.geometry, program.hlsl.fragment].contains { stage in
             guard let source = stage.flatMap({ String(bytes: $0, encoding: .utf8) }) else { return false }
             return inputs.contains { source.contains($0) }
-        }
-    }
-
-    private static func hasScript(_ value: WPESceneJSONValue) -> Bool {
-        switch value {
-        case let .object(members): members["script"] != nil || members.values.contains(where: hasScript)
-        case let .array(elements): elements.contains(where: hasScript)
-        default: false
         }
     }
 
@@ -781,7 +776,6 @@ final class WPEParityFrameRenderer {
         camera.renderTargetSize = rootCamera.renderTargetSize
         camera.size = rootCamera.size
         script = previous.script
-        materialFunctionFailure = previous.materialFunctionFailure
         media = previous.media
         mediaGeneration = previous.mediaGeneration
         mediaTextures = previous.mediaTextures
@@ -864,7 +858,7 @@ final class WPEParityFrameRenderer {
         let affectedNames = Set(Self.drawNames(current.frames[0]).compactMap { index, name in
             prepared.affectedOperations.contains(index) ? name : nil
         })
-        let reuse = Layout(post: current.post, effects: current.effects, frames: current.frames,
+        let reuse = Layout(planned: current.planned, effects: current.effects,
                            draws: current.draws.filter { !prepared.affectedOperations.contains($0.key) },
                            skipped: current.skipped, fade: current.fade)
         let planned = try plan.layout(effects: state, texts: candidate.texts,
@@ -878,7 +872,6 @@ final class WPEParityFrameRenderer {
         }
         try installGraphs(layout, cachePrevious: false)
         planner = candidate
-        images = candidate.layerImages
         packedConstants.removeAll()
         fadeConstants.removeAll()
         repackBloom()
@@ -1273,7 +1266,7 @@ final class WPEParityFrameRenderer {
                   let after = prepared.texts[draw.objectID] else { return false }
             return before.layout == after.layout && before.atlasKey == after.atlasKey
         }
-        let reuse = Layout(post: current.post, effects: current.effects, frames: current.frames, draws: kept,
+        let reuse = Layout(planned: current.planned, effects: current.effects, draws: kept,
                            skipped: current.skipped, fade: current.fade)
         var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidatePlanner, encoder: drawEncoder,
@@ -1296,7 +1289,7 @@ final class WPEParityFrameRenderer {
             candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
             try candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
         }
-        layout = Layout(post: layout.post, effects: layout.effects, frames: layout.frames, draws: rebound,
+        layout = Layout(planned: layout.planned, effects: layout.effects, draws: rebound,
                         skipped: layout.skipped, fade: layout.fade)
         let readinessChanged = Set(layout.draws.keys) != Set(current.draws.keys)
         let requiresRebuild = prepared.delta.changes.contains { $0.requiresFrameRebuild }
@@ -1321,7 +1314,6 @@ final class WPEParityFrameRenderer {
         layers = candidateLayers
         layersMoved = true
         publishGraphs(gpu, cachePrevious: false)
-        images = candidatePlanner.layerImages
         pipeline.atlases = candidatePlanner.textAtlases.atlases
         packedConstants.removeAll()
         fadeConstants.removeAll()
@@ -1439,7 +1431,7 @@ final class WPEParityFrameRenderer {
             particleStreams[block] = stream
             return stream
         }
-        return try executor.encodeFrame(on: queue, textures: targets.merging(images) { $1 },
+        return try executor.encodeFrame(on: queue, textures: targets.merging(planner.layerImages) { $1 },
                                         prepare: { commandBuffer in
                                             try encodeMaterialClears(on: commandBuffer)
                                             try videos.encode(into: commandBuffer)
@@ -1618,6 +1610,7 @@ final class WPEParityFrameRenderer {
                    }
                }) {
                 (graphs, previousGraphs) = (previous, graphs)
+                planner.use(graphs.layout.planned)
                 targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
             } else {
                 var layout = graphs.layout
@@ -1670,11 +1663,13 @@ final class WPEParityFrameRenderer {
             guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
             guard indices[id] == Set(model.shapes.indices) else { return false }
         }
-        let replaced = Layout(post: layout.post, effects: layout.effects, frames: layout.frames, draws: draws,
+        var planned = layout.planned
+        planned.modelDataShapes = shapes
+        let replaced = Layout(planned: planned, effects: layout.effects, draws: draws,
                               skipped: layout.skipped, fade: layout.fade)
         retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
         previousGraphs = nil
-        planner.refreshModelDataShapes(shapes)
+        planner.use(planned)
         graphs = Graphs(layout: replaced, hidden: graphs.hidden, executors: graphs.executors,
                         operations: graphs.operations, particleDraws: graphs.particleDraws,
                         particleSnapshotSkips: graphs.particleSnapshotSkips)
@@ -1853,7 +1848,7 @@ final class WPEParityFrameRenderer {
                 false
             }
         }?.key
-        return Layout(post: planned.post, effects: effects, frames: planned.frames, draws: draws, skipped: skipped, fade: fade)
+        return Layout(planned: planned, effects: effects, draws: draws, skipped: skipped, fade: fade)
     }
 
     private static func requiredPost(_ draw: WPEParityFrameDraw) -> String? {

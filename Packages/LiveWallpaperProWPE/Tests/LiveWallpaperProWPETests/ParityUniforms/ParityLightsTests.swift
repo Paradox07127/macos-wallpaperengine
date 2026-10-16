@@ -30,8 +30,9 @@ final class ParityLightsTests: XCTestCase {
             }
             let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
             let lights = WPEParityUniformLights(document: document, transforms: transforms)
-            let draw = WPEParityUniformDraw(matrices: .effectPass, lights: lights)
-            let values = WPEParityUniformSet.values(frame: frame, draw: draw)
+            var lit = frame
+            lit.lights = lights
+            let values = WPEParityUniformSet.values(frame: lit, draw: WPEParityUniformDraw(matrices: .effectPass))
             for name in ["g_LightAmbientColor", "g_LightSkylightColor"] {
                 guard case let .vector(actual)? = values[name] else {
                     XCTFail("missing lighting uniform \(name)")

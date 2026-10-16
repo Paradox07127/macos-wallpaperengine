@@ -655,6 +655,7 @@ final class WPEParitySceneDriver {
     /// `.suspended` ramps scene time to a hold; `.quality` ramps it back.
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         paused = profile == .suspended
+        renderer?.applyPerformanceProfile(profile)
         if paused {
             soundRuntime?.pause()
         } else {

@@ -9,7 +9,7 @@ public enum WPEParityPostProcessBuilder {
         if config.bloomEnabled {
             stream.snapshot()
         }
-        if config.mipMappedFrameBufferRequested {
+        if config.sceneMipMappedFrameBufferEnabled {
             stream.resource("_rt_MipMappedFrameBuffer", mips: stream.mipCount, lifetime: .pooled)
         }
         if config.mipMappedFrameBufferRefreshEnabled {

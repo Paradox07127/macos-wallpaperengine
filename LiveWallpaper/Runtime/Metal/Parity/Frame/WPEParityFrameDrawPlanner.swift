@@ -71,8 +71,6 @@ struct WPEParityFrameDrawPlan {
     let sprites: [Int: [SpriteStep]]
     /// The binding description's constants per stage; the engine uniform set does not carry them.
     let constants: [WPEHLSLStage: [String: WPECBufferValue]]
-    /// Per stage, declared constants that neither the binding nor the engine uniform set supplies, so they stay zero.
-    let zeroConstants: [WPEHLSLStage: [String]]
     /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read (R22 Q3).
     let renderVarWrites: (rv0: SIMD4<Float>?, rv1: SIMD4<Float>?)
     var textRenderVars: WPEParityTextDrawParameters?
@@ -270,9 +268,9 @@ struct WPEParityFrameDrawPlan {
         let state = try drawState(frame: frame, uniforms: uniforms, variant: variant, table: table,
                                   textureSlots: &textureSlots, puppets: [:], constants: constants,
                                   engineExtras: orientation, replacementTextures: replacements)
-        // R16 Q3: RV1 (SPRITESHEET only), then the entry's partial RV0.
+        // RV1 (SPRITESHEET only), then the entry's partial RV0.
         if let renderVar1 = particle.renderVar1 {
-            renderVars.setRV1(renderVar1)
+            renderVars.rv1 = renderVar1
         }
         renderVars.apply(vertices.renderVar0)
         let (rv0, rv1) = (renderVars.rv0, renderVars.rv1)
@@ -390,8 +388,10 @@ struct WPEParityFrameDrawPlanner {
 
     struct Image {
         let texture: MTLTexture
-        let info: WPETexInfo?
+        /// Authored TEXI fields, including source format and flags. The texture describes the actual upload format.
+        let info: WPETexInfo
         var sprites: [WPEParityFrameDrawPlan.SpriteStep] = []
+        /// Final observations only; the planner's asset cache handles property invalidation.
         var conditionalSelection: WPETexConditionalSelection?
     }
 
@@ -463,7 +463,7 @@ struct WPEParityFrameDrawPlanner {
     }
 
     var videoImages: [String: Image] {
-        assetImages.filter { $0.value.info.map { $0.flags & Self.videoFlag != 0 } == true }
+        assetImages.filter { $0.value.info.flags & Self.videoFlag != 0 }
     }
 
     /// Derived from final observations on the existing asset owners. This is a view, not another watch registry.
@@ -562,11 +562,6 @@ struct WPEParityFrameDrawPlanner {
         frame = layout.frames[0]
         resources = Self.resources(frame)
         targets = Self.targets(frame)
-    }
-
-    /// Keep the existing operation view current when draw versions change without rebuilding the graph.
-    mutating func refreshModelDataShapes(_ shapes: [Int: WPEParitySceneModelData.Shape]) {
-        layout.modelDataShapes = shapes
     }
 
     mutating func adoptModelDataTransforms(_ layers: WPEParityLayerTransformSet) {
@@ -910,29 +905,7 @@ struct WPEParityFrameDrawPlanner {
             }
         }
         let uniforms = WPEParityUniformDraw(matrices: placed.matrices, effectPass: placed.effectPass,
-                                            textures: uniformTextures, lights: lights)
-
-        let probe = WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
-                                          screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
-                                          pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
-                                          eyePosition: layers.camera.eyePosition, view: layers.camera.view)
-        var engine = Set(WPEParityUniformSet.values(frame: probe, draw: uniforms).keys)
-        if puppetID != nil {
-            engine.insert("g_Bones")
-        }
-        if particleKey != nil {
-            engine.formUnion(["g_OrientationForward", "g_OrientationRight", "g_OrientationUp", "g_RenderVar0",
-                              "g_RenderVar1"])
-        }
-        if binding.textRenderVars != nil {
-            engine.formUnion(["g_RenderVar0", "g_RenderVar1", "g_RenderVar2", "g_RenderVar3"])
-        }
-        var zeroConstants: [WPEHLSLStage: [String]] = [:]
-        for (stage, reflection) in reflections {
-            let declared = Set(reflection.cbuffers.flatMap(\.variables).map(\.name))
-            let supplied = engine.union(binding.constants[stage]?.keys.map(\.self) ?? [])
-            zeroConstants[stage] = declared.subtracting(supplied).sorted()
-        }
+                                            textures: uniformTextures)
         func renderVar(_ name: String) -> SIMD4<Float>? {
             let value = WPEHLSLStage.allCases.lazy.compactMap { binding.constants[$0]?[name] }.first
             guard case let .vector(components)? = value else { return nil }
@@ -962,7 +935,6 @@ struct WPEParityFrameDrawPlanner {
             materialConstants: binding.materialConstants,
             sprites: sprites.filter { !$0.value.isEmpty },
             constants: binding.constants,
-            zeroConstants: zeroConstants,
             renderVarWrites: particleKey == nil ? (renderVar("g_RenderVar0"), renderVar("g_RenderVar1")) : (nil, nil),
             textRenderVars: binding.textRenderVars,
             clipMaskInverted: clipMaskInverted,
@@ -979,7 +951,7 @@ struct WPEParityFrameDrawPlanner {
             return particle.draws.first { $0.key == key }
         }.first
         guard let entry, let emulation = pipeline.geometry,
-              let prototype = WPEParityParticleProbe.prototype(for: key, document: plan.document, assets: plan.scene.assets),
+              let prototype = WPEParityParticleScene.prototype(for: key, document: plan.document, assets: plan.scene.assets),
               prototype.renderers.indices.contains(key.renderer)
         else { throw .pipeline("\(shader): no geometry stage or particle renderer for \(key)") }
         let renderer = prototype.renderers[key.renderer]
@@ -989,7 +961,7 @@ struct WPEParityFrameDrawPlanner {
         return WPEParityFrameDrawPlan.Particles(
             key: key, layers: layers, perspective: entry.perspective,
             compositeOwnerID: compositeOwnerID, renderer: renderer, renderVar1: renderVar1,
-            maxBytes: vertices * emulation.vertexStride, argumentBytes: WPEParityDrawEncoder.argumentBytes(pipeline)
+            maxBytes: vertices * emulation.vertexStride, argumentBytes: pipeline.argumentBytes
         )
     }
 
@@ -1087,7 +1059,7 @@ struct WPEParityFrameDrawPlanner {
             image = try videoImage(span, info: info, path: path)
         } else {
             do {
-                image = try Self.image(span, device: device, userProperties: userProperties)
+                image = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties)
             } catch WPETexDecodeError.unsupportedAnimation {
                 throw .videoTexture(path)
             } catch {
@@ -1116,16 +1088,6 @@ struct WPEParityFrameDrawPlanner {
         texture.label = path
         videos.append(WPEParityVideoTextures.Stream(texture: texture, bytes: video.bytes))
         return Image(texture: texture, info: info)
-    }
-
-    /// Keeps the authored channels, compression and mip chain. The loader owns the one-time TEX upload;
-    /// this planner owns resource-key caching and turns its sprite metadata into draw steps.
-    static func image(_ span: WPEMappedByteSpan, device: MTLDevice,
-                      userProperties: WPESceneJSONValue? = nil) throws -> Image {
-        let loaded = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties)
-        return Image(texture: loaded.texture, info: loaded.info, sprites: loaded.sprites.map {
-            WPEParityFrameDrawPlan.SpriteStep(frame: $0.frame, texture: $0.texture, duration: $0.duration)
-        }, conditionalSelection: loaded.conditionalSelection)
     }
 
     /// Composites use the sampler WPE creates with them; images follow their TEXI flags.

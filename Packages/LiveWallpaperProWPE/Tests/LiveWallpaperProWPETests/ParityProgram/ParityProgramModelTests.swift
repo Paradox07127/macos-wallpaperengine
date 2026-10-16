@@ -80,8 +80,8 @@ final class ParityProgramModelTests: XCTestCase {
             frame: WPEParityUniformFrame(clock: WPEParityClock(), daytime: 0,
                                          screen: WPEParityUniformScreen(clientWidth: 1, clientHeight: 1),
                                          pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
-                                         eyePosition: .zero, view: matrix_identity_float4x4),
-            draw: WPEParityUniformDraw(matrices: .effectPass, lights: lights)
+                                         eyePosition: .zero, view: matrix_identity_float4x4, lights: lights),
+            draw: WPEParityUniformDraw(matrices: .effectPass)
         )
         XCTAssertEqual(Self.components(values["g_LightAmbientColor"]), [0, 0, 0])
         XCTAssertEqual(Self.components(values["g_LightSkylightColor"]), [0.3, 0.3, 0.3])

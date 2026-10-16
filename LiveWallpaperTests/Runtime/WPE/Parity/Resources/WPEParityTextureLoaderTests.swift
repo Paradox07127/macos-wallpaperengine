@@ -662,7 +662,7 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
     }
 
-    private func load(_ data: Data, _ device: MTLDevice) throws -> WPEParityTextureLoader.Loaded {
+    private func load(_ data: Data, _ device: MTLDevice) throws -> WPEParityFrameDrawPlanner.Image {
         try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device)
     }
 
@@ -673,7 +673,7 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
-    private func sample(_ sprite: WPEParityTextureLoader.Sprite, uv: SIMD2<Float>,
+    private func sample(_ sprite: WPEParityFrameDrawPlan.SpriteStep, uv: SIMD2<Float>,
                         device: MTLDevice) throws -> SIMD4<Float> {
         let library = try device.makeLibrary(source: """
         #include <metal_stdlib>

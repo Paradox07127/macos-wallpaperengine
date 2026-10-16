@@ -4,7 +4,6 @@ import LiveWallpaperProWPE
 
 /// Why a draw operation of the frame is not encoded.
 enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
-    case modelMesh
     case noMaterial
     case program(String)
     case noShader(String)
@@ -15,7 +14,6 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
 
     var category: String {
         switch self {
-        case .modelMesh: "model mesh"
         case .noMaterial: "no material file"
         case .program: "program unresolved"
         case .noShader: "no compiled shader"
@@ -27,7 +25,7 @@ enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .modelMesh, .noMaterial: category
+        case .noMaterial: category
         case let .program(detail), let .noShader(detail), let .pipeline(detail), let .texture(detail),
              let .videoTexture(detail):
             "\(category): \(detail)"
@@ -44,7 +42,7 @@ struct WPEParityFrameLayout {
         post.hdrEnabled ? (post.bloomEnabled ? "combine_hdr" : "combine_srgb") : nil
     }
 
-    /// Frame `n` uses `frames[n % frames.count]`; a second entry exists only when FBO swap pairs alternate.
+    /// Frame `n` uses `frames[n % frames.count]`; the composer emits the same frame for every `n`, so it holds one.
     let frames: [WPEParityFrame]
     /// Keyed by draw operation index; a draw without a program is in `skipped`.
     let programs: [Int: WPEParityProgram]
@@ -492,18 +490,13 @@ struct WPEParityFramePlan {
                                pixelScale: Double,
                                cache: inout [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>])
         throws -> WPEParityFrameLayout {
-        let even = try WPEParityFrameComposer.compose(
+        let frame = try WPEParityFrameComposer.compose(
             scene: description, post: post, frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
         )
-        let odd = try WPEParityFrameComposer.compose(
-            scene: description, post: post, frameIndex: 1, physicalBackbufferSize: physicalBackbufferSize,
-            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
-        )
-        let (programs, skipped) = Self.programs(even, scene: scene, cache: &cache)
-        let frames = even == odd ? [even] : [even, odd]
-        return WPEParityFrameLayout(post: post, frames: frames, programs: programs,
-                                    bindings: frames.map { WPEParityProgramBuilder.bindings(frame: $0, scene: scene, description: description) },
+        let (programs, skipped) = Self.programs(frame, scene: scene, cache: &cache)
+        return WPEParityFrameLayout(post: post, frames: [frame], programs: programs,
+                                    bindings: [WPEParityProgramBuilder.bindings(frame: frame, scene: scene, description: description)],
                                     skipped: skipped)
     }
 

@@ -164,6 +164,33 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertTrue(videos.textures[0] === texture)
     }
 
+    func testPerformanceProfileSuspendsAndResumesThePlayer() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: texture, bytes: Data(contentsOf: url))],
+                                                      workshopID: "parity-video-profile-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["a": texture])
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, videos.playbackSnapshot(ownerID: "a")?.isPlaying != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "a")?.isPlaying, true)
+
+        videos.applyPerformanceProfile(.suspended)
+        let suspended = try XCTUnwrap(videos.playbackSnapshot(ownerID: "a"))
+        XCTAssertFalse(suspended.isPlaying)
+        XCTAssertEqual(suspended.playbackRequested, true, "Suspension is policy, not a script pause")
+        videos.applyPerformanceProfile(.quality)
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "a")?.isPlaying, true)
+    }
+
     private static func state() throws -> WPEParitySceneState {
         let json: [String: Any] = [
             "camera": ["center": "0 0 0"],

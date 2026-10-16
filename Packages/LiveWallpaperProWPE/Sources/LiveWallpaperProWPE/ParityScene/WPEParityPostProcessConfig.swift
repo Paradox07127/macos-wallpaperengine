@@ -52,10 +52,6 @@ public struct WPEParityPostProcessConfig: Sendable {
         sceneBloomEnabled && userBloomEnabled && objectTableNonEmpty
     }
 
-    public var mipMappedFrameBufferRequested: Bool {
-        sceneMipMappedFrameBufferEnabled
-    }
-
     /// 14017fa70:699–701/713–715: a requested resource is updated only with Main+0x128 bit7.
     public var mipMappedFrameBufferRefreshEnabled: Bool {
         sceneMipMappedFrameBufferEnabled && qualityMipMappedFrameBufferEnabled

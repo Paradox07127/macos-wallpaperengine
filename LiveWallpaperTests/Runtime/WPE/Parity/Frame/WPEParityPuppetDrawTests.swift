@@ -244,7 +244,7 @@ final class WPEParityPuppetDrawTests: XCTestCase {
             samplers: ["g_Texture0SamplerState": sampler, "g_Texture1SamplerState": sampler],
             uniforms: WPEParityUniformDraw(matrices: WPEParityUniformMatrices(
                 model: matrix_identity_float4x4, view: matrix_identity_float4x4, projection: matrix_identity_float4x4
-            )), placement: nil, sprites: [:], constants: [:], zeroConstants: [:], renderVarWrites: (nil, nil),
+            )), placement: nil, sprites: [:], constants: [:], renderVarWrites: (nil, nil),
             fallbackTextures: []
         )
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: 2, height: 1,
@@ -349,7 +349,6 @@ final class WPEParityPuppetDrawTests: XCTestCase {
             placement: nil,
             sprites: [:],
             constants: [:],
-            zeroConstants: [:],
             renderVarWrites: (nil, nil),
             fallbackTextures: []
         )

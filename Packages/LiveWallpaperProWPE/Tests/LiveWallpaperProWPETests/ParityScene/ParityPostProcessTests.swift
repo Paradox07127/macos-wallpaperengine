@@ -174,7 +174,7 @@ struct ParityPostProcessTests {
                     "quality suppresses refresh, not the requested resource")
             #expect(resource?.initialClear == nil, "compatible replans must retain history; allocation initializes it")
         }
-        #expect(config.mipMappedFrameBufferRequested == (gate == 1))
+        #expect(config.sceneMipMappedFrameBufferEnabled == (gate == 1))
         #expect(!config.mipMappedFrameBufferRefreshEnabled)
         #expect(sequence(enabled) == [ldrSequence[0], "copy backbuffer -> _rt_MipMappedFrameBuffer",
                                       "mips _rt_MipMappedFrameBuffer"] + Array(ldrSequence.dropFirst()))

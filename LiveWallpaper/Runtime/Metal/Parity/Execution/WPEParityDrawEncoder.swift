@@ -70,11 +70,7 @@ struct WPEParityDrawEncoder {
         }
     }
 
-    /// Arena bytes `encode` takes for `pipeline`'s cbuffers and top-level argument buffers, each 256-byte aligned.
-    static func argumentBytes(_ pipeline: WPEParityPipeline) -> Int {
-        pipeline.argumentBytes
-    }
-
+    /// Arena bytes `encode` takes for the stages' cbuffers and top-level argument buffers, each 256-byte aligned.
     static func argumentBytes(stages: [WPEParityPipeline.Stage]) -> Int {
         stages.reduce(0) { total, stage in
             let plan = stage.bindingPlan
@@ -94,7 +90,7 @@ struct WPEParityDrawEncoder {
         if emulation != nil, draw.primitiveType != .point || draw.indexBuffer != nil {
             throw WPEParityExecutionError.geometryDrawUnsupported
         }
-        guard frame.canAllocate(length: Self.argumentBytes(draw.pipeline)) else {
+        guard frame.canAllocate(length: draw.pipeline.argumentBytes) else {
             throw WPEParityExecutionError.arenaExhausted
         }
         encoder.setRenderPipelineState(draw.pipeline.state)

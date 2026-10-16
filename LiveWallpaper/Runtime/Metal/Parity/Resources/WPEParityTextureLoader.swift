@@ -18,23 +18,8 @@ enum WPEParityTextureLoader {
         }
     }
 
-    struct Sprite {
-        let frame: WPEParityUniformSpriteFrame
-        let texture: MTLTexture
-        let duration: Double
-    }
-
-    struct Loaded {
-        let texture: MTLTexture
-        /// Authored TEXI fields, including source format and flags. The texture describes the actual upload format.
-        let info: WPETexInfo
-        let sprites: [Sprite]
-        /// Final observations only; the caller's existing resource owner handles property invalidation.
-        let conditionalSelection: WPETexConditionalSelection?
-    }
-
     static func load(span: WPEMappedByteSpan, device: MTLDevice,
-                     userProperties: WPESceneJSONValue? = nil) throws -> Loaded {
+                     userProperties: WPESceneJSONValue? = nil) throws -> WPEParityFrameDrawPlanner.Image {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
         if info.isVolume, info.width > 2048 || info.height > 2048 || info.depth > 2048 {
@@ -84,11 +69,12 @@ enum WPEParityTextureLoader {
                 heightX: rotation.z * size.x, heightY: rotation.w * size.y,
                 imageWidth: size.x, imageHeight: size.y
             )
-            return Sprite(frame: frame, texture: texture, duration: source.duration)
+            return WPEParityFrameDrawPlan.SpriteStep(frame: frame, texture: texture, duration: source.duration)
         }
         guard let texture = first ?? sprites.first?.texture else { throw WPETexDecodeError.missingBitmapBlock }
-        // Loaded retains only uploaded GPU resources and small metadata; decompressed mip bytes die here.
-        return Loaded(texture: texture, info: info, sprites: sprites, conditionalSelection: payload.conditionalSelection)
+        // The image retains only uploaded GPU resources and small metadata; decompressed mip bytes die here.
+        return WPEParityFrameDrawPlanner.Image(texture: texture, info: info, sprites: sprites,
+                                               conditionalSelection: payload.conditionalSelection)
     }
 
     private static func makeTexture(mipmaps: [WPETexTextureMipmap], format: WPETexFormat,

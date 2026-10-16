@@ -73,10 +73,6 @@ public struct WPEParityRenderVarState: Equatable, Sendable {
         self.rv0 = SIMD4(rv0.x ?? self.rv0.x, rv0.y ?? self.rv0.y, rv0.z ?? self.rv0.z, rv0.w ?? self.rv0.w)
     }
 
-    public mutating func setRV1(_ rv1: SIMD4<Float>) {
-        self.rv1 = rv1
-    }
-
     /// SPRITESHEET draws: (frame 0 width UV, frame 0 height UV, frame count, frame 0 pixel height/width)
     /// (D/1402366f0.c:81-91); `texture.spriteFrame` is frame 0. Nil without TEXS frames.
     public static func spriteSheetRV1(texture: WPEParityUniformTexture, frameCount: Int) -> SIMD4<Float>? {

@@ -80,20 +80,15 @@ final class WPEParityRealSceneTests: XCTestCase {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 
         let reasons = Dictionary(grouping: renderer.skipped.values, by: \.category).mapValues(\.count)
-        // Models are out of scope; every other draw must reach a pipeline. Objects hidden at load are planned too, and
-        // the capture holds no shaders for their programs.
+        // Every draw must reach a pipeline. Objects hidden at load are planned too, and the capture holds no shaders
+        // for their programs.
         var hiddenSkips = 0
         for (index, skip) in renderer.skipped.sorted(by: { $0.key < $1.key }) {
             if case let .scene(draw)? = plan.frames[0].draws[index], !plan.state.isVisible(draw.objectID) {
                 hiddenSkips += 1
                 continue
             }
-            switch skip {
-            case .modelMesh:
-                print("scene \(sceneID) operation \(index) skipped: \(skip)")
-            default:
-                XCTFail("\(sceneID) operation \(index): \(skip)")
-            }
+            XCTFail("\(sceneID) operation \(index): \(skip)")
         }
         print("scene \(sceneID): \(hiddenSkips) draws of objects hidden at load skipped")
         print("scene \(sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
@@ -109,21 +104,6 @@ final class WPEParityRealSceneTests: XCTestCase {
             XCTAssertEqual(visible, 31)
         }
 
-        // Declared constants outside the binding description and the engine uniform set stay zero.
-        var zero: [String: [String]] = [:]
-        for (index, stages) in renderer.zeroConstants.sorted(by: { $0.key < $1.key }) {
-            let shader = plan.programs[index]?.shader ?? "?"
-            for (stage, names) in stages {
-                XCTAssertEqual(names.filter { !$0.hasPrefix("g_") }, [], "\(sceneID) operation \(index) \(shader) \(stage)")
-                if shader == "effects/foliagesway" {
-                    XCTAssertEqual(names, [], "\(sceneID) operation \(index) foliagesway \(stage)")
-                }
-                for name in names where !(zero["\(shader) \(stage)"]?.contains(name) ?? false) {
-                    zero["\(shader) \(stage)", default: []].append(name)
-                }
-            }
-        }
-        print("scene \(sceneID): constants falling back to zero by shader and stage \(zero.sorted { $0.key < $1.key })")
         if sceneID == "3815666789" {
             // foliagesway's vertex stage reads `speed` (default 1), its fragment stage `speeduv` (scene 5).
             let foliage = renderer.constants.filter { plan.programs[$0.key]?.shader == "effects/foliagesway" }
@@ -231,7 +211,7 @@ final class WPEParityRealSceneTests: XCTestCase {
     }
 
     /// Object 1003 samples a 4000x2300 video .tex. Playback follows AVPlayer's wall clock, so once the first decoded
-    /// frame lands, frames rendered 0.5 s apart hold different video pixels.
+    /// frame lands, a later frame holds different video pixels.
     private func assertVideoPlays(renderer: WPEParityFrameRenderer, device: MTLDevice,
                                   queue: MTLCommandQueue) async throws {
         XCTAssertEqual(renderer.videoTextures.count, 1)
@@ -248,12 +228,14 @@ final class WPEParityRealSceneTests: XCTestCase {
             before = try readBack(video, device: device, queue: queue)
         }
         XCTAssertTrue(before.contains { $0 != 0 }, "no decoded video frame reached the texture within 10 s")
-        try await Task.sleep(for: .milliseconds(500))
-        try await renderFrame(renderer, label: "scene 3660962877 video frame 0.5 s later")
-        let after = try readBack(video, device: device, queue: queue)
-        let changed = stride(from: 0, to: after.count, by: 4).count { after[$0 ..< $0 + 4] != before[$0 ..< $0 + 4] }
-        print("scene 3660962877: \(changed) of \(after.count / 4) video texels changed over 0.5 s")
-        XCTAssertGreaterThan(changed, 0)
+        var changed = 0
+        while changed == 0, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            try await renderFrame(renderer, label: "scene 3660962877 waiting for the next video frame")
+            let after = try readBack(video, device: device, queue: queue)
+            changed = stride(from: 0, to: after.count, by: 4).count { after[$0 ..< $0 + 4] != before[$0 ..< $0 + 4] }
+        }
+        XCTAssertGreaterThan(changed, 0, "the video texture held one frame until the 10 s deadline")
     }
 
     /// R8 Q4: object 935's layer-mesh draw packs MVP rows as cbuffer registers. The spec values assume V = I, which

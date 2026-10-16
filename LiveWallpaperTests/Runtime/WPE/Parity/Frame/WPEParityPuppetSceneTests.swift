@@ -48,12 +48,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertEqual(warm.skipped, renderer.skipped)
 
         for (index, skip) in renderer.skipped.sorted(by: { $0.key < $1.key }) {
-            switch skip {
-            case .modelMesh:
-                print("scene \(Self.sceneID) operation \(index) skipped: \(skip)")
-            default:
-                XCTFail("operation \(index): \(skip)")
-            }
+            XCTFail("operation \(index): \(skip)")
         }
         print("scene \(Self.sceneID): draws \(renderer.drawCount) total, \(renderer.executedDrawCount) executed, "
             + "\(renderer.skipped.count) skipped")

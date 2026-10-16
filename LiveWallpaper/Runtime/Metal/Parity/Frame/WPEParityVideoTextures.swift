@@ -50,6 +50,12 @@ final class WPEParityVideoTextures {
         return true
     }
 
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        for video in videos {
+            video.source.applyPerformanceProfile(profile)
+        }
+    }
+
     func hasOwner(_ id: String) -> Bool {
         owners[id] != nil
     }

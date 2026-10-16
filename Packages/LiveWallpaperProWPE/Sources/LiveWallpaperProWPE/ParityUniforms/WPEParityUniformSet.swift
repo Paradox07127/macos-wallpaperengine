@@ -10,7 +10,7 @@ public struct WPEParityUniformFrame: Sendable {
     public var eyePosition: SIMD3<Float>
     public var view: simd_float4x4
     public var audio: WPEParityAudioSpectrum
-    /// Live scene terms after script writes; nil retains the draw's loaded light set.
+    /// Live scene terms after script writes; nil leaves them to whatever the binding supplies.
     public var lights: WPEParityUniformLights?
 
     public init(clock: WPEParityClock, daytime: Float, screen: WPEParityUniformScreen,
@@ -34,15 +34,12 @@ public struct WPEParityUniformDraw: Sendable {
     public var effectPass: WPEParityUniformEffectPass?
     /// Indexed by slot; missing or nil entries are unbound.
     public var textures: [WPEParityUniformTexture?]
-    /// Scene-wide light terms; nil leaves them to whatever the binding supplies.
-    public var lights: WPEParityUniformLights?
 
     public init(matrices: WPEParityUniformMatrices, effectPass: WPEParityUniformEffectPass? = nil,
-                textures: [WPEParityUniformTexture?] = [], lights: WPEParityUniformLights? = nil) {
+                textures: [WPEParityUniformTexture?] = []) {
         self.matrices = matrices
         self.effectPass = effectPass
         self.textures = textures
-        self.lights = lights
     }
 }
 
@@ -78,7 +75,7 @@ public enum WPEParityUniformSet {
         if let effectPass = draw.effectPass {
             values.merge(effectPass.values) { $1 }
         }
-        if let lights = frame.lights ?? draw.lights {
+        if let lights = frame.lights {
             values.merge(lights.values) { $1 }
         }
         for slot in 0 ..< WPEParityUniformTextures.slotCount {

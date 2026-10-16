@@ -15,7 +15,7 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
     func testDrawBindsTheImageOfTheFrameShowing() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
-        let image = try WPEParityFrameDrawPlanner.image(WPEMappedByteSpan(data: Self.twoImageSheet()), device: device)
+        let image = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: Self.twoImageSheet()), device: device)
         XCTAssertEqual(image.sprites.count, 2)
         let plan = try makePlan(image, device: device)
 
@@ -34,8 +34,8 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
     func testRotatedFrameOnAWideImageUploadsWPERotation() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         // A 90° frame on an 8×4 image: x 2, y 1, width (0, 4), height (-8, 0).
-        let image = try WPEParityFrameDrawPlanner.image(
-            WPEMappedByteSpan(data: Self.singleFrameSheet(width: 8, height: 4, frame: [2, 1, 0, 4, -8, 0])),
+        let image = try WPEParityTextureLoader.load(
+            span: WPEMappedByteSpan(data: Self.singleFrameSheet(width: 8, height: 4, frame: [2, 1, 0, 4, -8, 0])),
             device: device
         )
         let frame = try XCTUnwrap(image.sprites.first?.frame)
@@ -99,7 +99,6 @@ final class WPEParitySpriteAtlasTests: XCTestCase {
             placement: nil,
             sprites: [0: image.sprites],
             constants: [:],
-            zeroConstants: [:],
             renderVarWrites: (nil, nil),
             fallbackTextures: []
         )

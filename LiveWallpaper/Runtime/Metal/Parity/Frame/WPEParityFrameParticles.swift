@@ -39,13 +39,4 @@ struct WPEParityParticleFrame {
         return allocation
     }
 }
-
-/// Renderer and capacity facts read through the package's resolved particle Config tree, without allocating a
-/// simulation system, prewarming it, or consuming either scene generator.
-enum WPEParityParticleProbe {
-    static func prototype(for key: WPEParityParticleDrawKey, document: WPESceneDocument,
-                          assets: WPEParityProgramAssets) -> WPEParityParticlePrototype? {
-        WPEParityParticleScene.prototype(for: key, document: document, assets: assets)
-    }
-}
 #endif

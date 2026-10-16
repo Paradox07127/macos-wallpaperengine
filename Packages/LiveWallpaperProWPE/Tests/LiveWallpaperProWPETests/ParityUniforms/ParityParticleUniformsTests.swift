@@ -214,7 +214,7 @@ final class ParityParticleUniformsTests: XCTestCase {
         state.apply(WPEParityRenderVar0(x: 0.005, y: 100, z: 0))
         state.apply(WPEParityRenderVar0(z: 0.1585, w: 3.5))
         XCTAssertEqual(state.rv0, SIMD4(0.005, 100, 0.1585, 3.5))
-        state.setRV1(SIMD4(1, 2, 3, 4))
+        state.rv1 = SIMD4(1, 2, 3, 4)
         XCTAssertEqual(state.rv1, SIMD4(1, 2, 3, 4))
         XCTAssertEqual(state.rv0, SIMD4(0.005, 100, 0.1585, 3.5))
     }

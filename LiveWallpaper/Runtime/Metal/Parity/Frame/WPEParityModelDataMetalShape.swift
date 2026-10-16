@@ -5,7 +5,7 @@ import Metal
 
 /// One immutable resource version owned by the canonical ModelData shape. Draw plans and submitted Metal
 /// commands retain this version; updating a live model never writes into a buffer an earlier frame can read.
-final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unchecked Sendable {
+final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unchecked Sendable { // all lets; buffers never written after init
     let vertexFormat: UInt32
     let vertexCount: Int
     let indexElementWidth: WPEPuppetIndexElementWidth?

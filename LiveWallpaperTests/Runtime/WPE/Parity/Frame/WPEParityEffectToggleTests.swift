@@ -101,7 +101,79 @@ final class WPEParityEffectToggleTests: XCTestCase {
                        "the bloom switch reloads")
     }
 
+    func testConditionalTextureChangeAfterACachedEffectReturnReachesItsReader() async throws {
+        // TEXB4: raw red 2x2 base, green replacement while the bool `enabled` is true.
+        let tex = try XCTUnwrap(Data(base64Encoded: "VEVYVjAwMDUAVEVYSTAwMDEAAAAAAAMAAAACAAAAAgAAAAIAAAACAAAAAAAAAFRFWEIwMDA0AAEAAAD/////AQAAAEcAAAAoIwAAAgAAAHsiY29uZGl0aW9uIjoiZW5hYmxlZCJ9AAEAAAACAAAAAgAAAAAAAAAQAAAAEAAAAP8AAP//AAD//wAA//8AAP8BAAAAAQAAABMAAAAoIwAAAAAAAAAAAAACAAAAAgAAAP////8QAAAAAP8A/wD/AP8A/wD/AP8A/w=="))
+        let harness = try await makeSyntheticDriver(texture: tex, objects: [
+            ["id": 1, "name": "imported", "image": "models/toggle.json", "origin": "16 8 0", "size": "32 16", "alpha": 1],
+            ["id": 2, "name": "direct", "image": "models/util/solidlayer.json", "origin": "48 8 0", "size": "32 16",
+             "color": "0 0 0", "alpha": 1, "effects": [["id": 4, "file": "effects/toggle.json"]]],
+        ], userPropertiesJSON: #"{"enabled":{"type":"bool","value":true}}"#)
+        defer { harness.driver.cleanup() }
+        let renderer = try XCTUnwrap(harness.driver.renderer)
+        try await encode(renderer)
+        renderer.state.setEffect("4", of: "2", visible: false)
+        try await encode(renderer)
+        renderer.state.setEffect("4", of: "2", visible: true)
+        try await encode(renderer)
+        XCTAssertEqual(Self.drawnEffects(renderer), ["4"])
+
+        XCTAssertTrue(try change(harness, "enabled", from: .bool(true), to: .bool(false)))
+        try await encode(renderer)
+        let imported = try XCTUnwrap(Self.sampledTexture(renderer, objectID: "1", effect: false))
+        let direct = try XCTUnwrap(Self.sampledTexture(renderer, objectID: "2", effect: true))
+        XCTAssertTrue(imported === direct, "the effect restored from the graph cache must read the replaced texture")
+    }
+
     // MARK: Helpers
+
+    private static func sampledTexture(_ renderer: WPEParityFrameRenderer, objectID: String,
+                                       effect: Bool) -> MTLTexture? {
+        renderer.lastFrameDraws.lazy.compactMap { operation, draw -> MTLTexture? in
+            guard case let .scene(scene)? = renderer.frames[0].draws[operation], scene.objectID == objectID,
+                  (scene.effectID != nil) == effect, scene.shader == "passthrough" else { return nil }
+            return draw.textures["g_Texture0"]
+        }.first
+    }
+
+    /// A 64x16 scene over the installed WPE assets whose `toggle` model, material and effect sample `texture`.
+    private func makeSyntheticDriver(texture: Data, objects: [[String: Any]],
+                                     userPropertiesJSON: String = "{}") async throws -> DriverHarness {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
+        }
+        let compiler: WPEParityHelperShaderCompiler
+        switch WPEParityShaderToolchain.makeCompiler() {
+        case let .success(found): compiler = found
+        case let .failure(reason): throw XCTSkip("\(reason)")
+        }
+        let pass: [String: Any] = ["shader": "passthrough", "textures": ["toggle"], "combos": ["TRANSFORM": 1],
+                                   "blending": "normal"]
+        let files: [String: Data] = try [
+            "materials/toggle.tex": texture,
+            "models/toggle.json": JSONSerialization.data(withJSONObject: ["material": "materials/toggle.json"]),
+            "materials/toggle.json": JSONSerialization.data(withJSONObject: ["passes": [pass]]),
+            "effects/toggle.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/toggle.json"]]]),
+        ]
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }, .directory(wpeAssets)])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 16], "clearcolor": "0 0 0",
+                        "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
+            "objects": objects,
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:])
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 64, height: 16), pixelFormat: .rgba8Unorm,
+                              compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch),
+                              scriptHost: .init(userPropertiesJSON: userPropertiesJSON))
+        return DriverHarness(driver: driver, json: json)
+    }
 
     private struct Fixture {
         let renderer: WPEParityFrameRenderer
