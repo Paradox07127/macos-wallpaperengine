@@ -718,7 +718,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try await complete(marker)
         XCTAssertEqual(marker.status, .completed)
         XCTAssertNil(marker.error)
-        try assertEvery(Array(UnsafeRawBufferPointer(start: bytes.contents(), count: 64)), equals: [0, 255, 0, 255])
+        assertEvery(Array(UnsafeRawBufferPointer(start: bytes.contents(), count: 64)), equals: [0, 255, 0, 255])
 
         // Normal visibility hides only the failed layer. Its media snapshot remains installed; no gap policy is invented.
         XCTAssertTrue(renderer.state.set(.visible, of: "2", to: .zero))

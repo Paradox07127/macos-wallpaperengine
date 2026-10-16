@@ -541,7 +541,7 @@ actor WPEDisplayRenderActor {
             let mailbox = media.mailbox
             if parityDriver.scriptHandlesMedia || parityDriver.hasMediaTextureDemand {
                 let textureDemand = parityDriver.hasMediaTextureDemand
-                await MainActor.run {
+                _ = await MainActor.run {
                     media.configureParity(generation: generation, device: textureDemand ? inputs.device : nil,
                                           textureDemand: textureDemand, onChange: { [weak self] in
                                               Task { await self?.parityMediaChanged(generation: generation, mailbox: mailbox) }

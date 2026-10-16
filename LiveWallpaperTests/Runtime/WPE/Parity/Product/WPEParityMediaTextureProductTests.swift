@@ -60,7 +60,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         try assertBoundEffects(driver, current: before.currentID, previous: before.previousID)
 
         // The same immutable pair and merged declarations survive a real renderer replan.
-        weak var retired = driver.renderer
+        weak let retired = driver.renderer
         layer.drawableSize = CGSize(width: 160, height: 64)
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 160, height: 64))
         let replanned = await driver.replan()

@@ -761,7 +761,7 @@ struct WPELinkedShaderStageTests {
             #expect(vertex.execution == .authoredMesh && result.vertexFunctionName == "wpe_authored_mesh_vertex", Comment(rawValue: name))
             #expect(WPEMetalRenderExecutor.authoredMeshAttributeRejection(result) == nil, Comment(rawValue: name))
             let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = try #require(vertex.library.makeFunction(name: result.vertexFunctionName))
+            descriptor.vertexFunction = vertex.library.makeFunction(name: result.vertexFunctionName)
             descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: result.library, name: result.fragmentFunctionName, format: .rgba32Float)
             descriptor.colorAttachments[0].pixelFormat = .rgba32Float
             _ = try device.makeRenderPipelineState(descriptor: descriptor)

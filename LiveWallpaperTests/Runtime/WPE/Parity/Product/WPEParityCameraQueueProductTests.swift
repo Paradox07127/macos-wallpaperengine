@@ -271,7 +271,7 @@ extension WPEParitySceneDriverTests {
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         for frame in 0 ... 6 {
             if frame == 3 {
-                weak var old = driver.renderer
+                weak let old = driver.renderer
                 driver.updateSurfaceGeometry(drawableSize: CGSize(width: 32, height: 32))
                 let replanned = await driver.replan()
                 XCTAssertTrue(replanned)

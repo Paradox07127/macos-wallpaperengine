@@ -150,7 +150,7 @@ extension WPEParitySceneDriverTests {
             modelDataPixel(updated, width: 48, x: 36, y: 16, white: true)
             modelDataPixel(updated, width: 48, x: 8, y: 16, white: true)
         }
-        weak var previous = driver.renderer
+        weak let previous = driver.renderer
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 96, height: 64))
         let replanned = await driver.replan()
         XCTAssertTrue(replanned)

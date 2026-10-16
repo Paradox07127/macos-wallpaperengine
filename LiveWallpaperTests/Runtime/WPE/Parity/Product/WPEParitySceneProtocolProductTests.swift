@@ -179,7 +179,7 @@ extension WPEParitySceneDriverTests {
         for frame in 1 ... 3 {
             if frame > 1 {
                 let previousID = try ObjectIdentifier(XCTUnwrap(driver.renderer))
-                weak var previousRenderer = driver.renderer
+                weak let previousRenderer = driver.renderer
                 // Rebuild before each flush: the first keeps all members, the second must retain deletion.
                 // The actual drawable stays160×96, so the fixed client-pixel oracle is unchanged.
                 driver.updateSurfaceGeometry(drawableSize: frame == 2 ? CGSize(width: 80, height: 48)
@@ -439,7 +439,7 @@ extension WPEParitySceneDriverTests {
         let greens = [[255, 0, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 0, 255]]
         for frame in 1 ... 5 {
             if frame == 3 || frame == 4 {
-                weak var previous = driver.renderer
+                weak let previous = driver.renderer
                 driver.updateSurfaceGeometry(drawableSize: frame == 3 ? CGSize(width: 80, height: 48)
                     : CGSize(width: 160, height: 96))
                 XCTAssertTrue(driver.needsReplan)

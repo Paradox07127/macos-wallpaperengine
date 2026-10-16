@@ -87,7 +87,7 @@ struct UserShortcutRendererLinkTests {
         let store = Self.makeStore()
         let link = UserShortcutRendererLink(store: store)
         var bridge: WPEUserShortcutScriptBridge? = WPEUserShortcutScriptBridge()
-        weak var released = bridge
+        weak let released = bridge
         try link.attach(#require(bridge), icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["run"])
         #expect(link.registrationCount == 1)
         bridge = nil
@@ -205,7 +205,7 @@ struct UserShortcutRendererLinkTests {
                 }
             }
             #expect(bridge.requestLaunch("open"))
-            try? store.setWebsite("https://new.example.com", for: Self.key("w1", "open"))
+            _ = try? store.setWebsite("https://new.example.com", for: Self.key("w1", "open"))
             #expect(bridge.requestLaunch("run"))
         }
 

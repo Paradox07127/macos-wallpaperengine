@@ -48,7 +48,8 @@ struct WPEParityMediaInputTests {
         #expect(reloadedPair.current === coverB)
         #expect(reloadedPair.previous === coverA)
         #expect(reload.systemProperties == change.systemProperties)
-        #expect(reload.events.contains(.propertiesChanged(.init(title: "B"))))
+        let reloadCarriesTitleB = reload.events.contains(.propertiesChanged(.init(title: "B")))
+        #expect(reloadCarriesTitleB)
         #expect(reload.events.contains {
             if case .thumbnailChanged = $0 {
                 true

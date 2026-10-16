@@ -64,8 +64,8 @@ struct WPEPointerEdgeDeliveryTests {
 
     @Test("Each left press mints a gesture number that its release keeps; right presses do not")
     func leftPressGestureNumbers() throws {
-        let view = try WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
-                                             device: #require(MTLCreateSystemDefaultDevice()))
+        let view = WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                                         device: MTLCreateSystemDefaultDevice())
         view.clickCaptureEnabled = true
         try view.mouseDown(with: event(.leftMouseDown))
         let first = view.pointerFrame.gesture
@@ -83,8 +83,8 @@ struct WPEPointerEdgeDeliveryTests {
 
     @Test("Each button handler publishes one complete frame; the press frame already carries its new gesture number")
     func buttonHandlersPublishOneCompleteFrame() throws {
-        let view = try WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
-                                             device: #require(MTLCreateSystemDefaultDevice()))
+        let view = WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                                         device: MTLCreateSystemDefaultDevice())
         view.clickCaptureEnabled = true
         let log = PublishedFrames()
         view.onPointerFrameChange = { log.frames.append($0) }

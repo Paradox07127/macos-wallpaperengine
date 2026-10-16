@@ -713,41 +713,48 @@ struct WPERenderPipelineBuilderTests {
             #expect(layer.passes.last?.pass.target == .scene)
             #expect(frame.resolvingEffectPublication(passVisibility: [:], camera: camera) == frame)
             #expect(canonical.layers[0].passes == owner.passes)
-            var predecessor = WPETextureReference.fbo(owner.graphLayer.compositeA)
-            for (index, effect) in layer.passes.dropFirst().enumerated() {
-                #expect(effect.pass.source == predecessor)
-                #expect(effect.pass.textures.values.allSatisfy { $0 == predecessor })
-                #expect(effect.pass.binds.values.allSatisfy { $0 == predecessor })
-                #expect(effect.textureBindings.values.allSatisfy { $0 == predecessor })
-                #expect(effect.access.matches(pass: effect.pass, textureBindings: effect.textureBindings))
-                #expect(!effect.access.readsCurrentTarget && !effect.access.hasPreviousReference)
-                #expect(effect.alphaContract == straightContract)
-                let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
-                #expect(request.premultipliedInputSlots.isEmpty && !request.premultipliedOutput)
-                if index == selected.count - 1 {
-                    #expect(effect.pass.target == .scene && effect.pass.blending == "normal")
-                    #expect(effect.publicationVertexRole == nil)
-                } else {
-                    let expected = index.isMultiple(of: 2) ? owner.graphLayer.compositeB : owner.graphLayer.compositeA
-                    #expect(effect.pass.target == .layerComposite(name: expected))
-                    #expect(effect.pass.blending == "disabled")
-                    #expect(effect.publicationVertexRole == .localEffect)
-                    #expect(effect.pass.target.textureReference != predecessor)
-                    predecessor = .fbo(expected)
-                }
-            }
-            let roleProbes: [String: [String: WPESceneShaderConstantValue]] = Dictionary(
-                uniqueKeysWithValues: layer.passes.map { ($0.id, ["roleProbe": .number(1)]) }
-            )
-            let rebuilt = frame.addingMetalRuntimeUniforms(
-                .init(time: 0, daytime: 0, brightness: 1, pointerPosition: .zero), camera: camera,
-                scriptedConstants: roleProbes
-            ).pipeline
-            #expect(rebuilt.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
-            let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]), sceneHDR: false)
-            #expect(overlay.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
+            try expectPublishedSubset(frame, layer: layer, owner: owner, selectedCount: selected.count,
+                                      straightContract: straightContract, camera: camera)
         }
         #expect(canonical.resolvingEffectPublication(passVisibility: [:], camera: camera) == cold)
+    }
+
+    private func expectPublishedSubset(_ frame: WPEPreparedRenderPipeline, layer: WPEPreparedRenderLayer,
+                                       owner: WPEPreparedRenderLayer, selectedCount: Int,
+                                       straightContract: WPEShaderAlphaContract, camera: WPEMetalCameraUniforms) throws {
+        var predecessor = WPETextureReference.fbo(owner.graphLayer.compositeA)
+        for (index, effect) in layer.passes.dropFirst().enumerated() {
+            #expect(effect.pass.source == predecessor)
+            #expect(effect.pass.textures.values.allSatisfy { $0 == predecessor })
+            #expect(effect.pass.binds.values.allSatisfy { $0 == predecessor })
+            #expect(effect.textureBindings.values.allSatisfy { $0 == predecessor })
+            #expect(effect.access.matches(pass: effect.pass, textureBindings: effect.textureBindings))
+            #expect(!effect.access.readsCurrentTarget && !effect.access.hasPreviousReference)
+            #expect(effect.alphaContract == straightContract)
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
+            #expect(request.premultipliedInputSlots.isEmpty && !request.premultipliedOutput)
+            if index == selectedCount - 1 {
+                #expect(effect.pass.target == .scene && effect.pass.blending == "normal")
+                #expect(effect.publicationVertexRole == nil)
+            } else {
+                let expected = index.isMultiple(of: 2) ? owner.graphLayer.compositeB : owner.graphLayer.compositeA
+                #expect(effect.pass.target == .layerComposite(name: expected))
+                #expect(effect.pass.blending == "disabled")
+                #expect(effect.publicationVertexRole == .localEffect)
+                #expect(effect.pass.target.textureReference != predecessor)
+                predecessor = .fbo(expected)
+            }
+        }
+        let roleProbes: [String: [String: WPESceneShaderConstantValue]] = Dictionary(
+            uniqueKeysWithValues: layer.passes.map { ($0.id, ["roleProbe": .number(1)]) }
+        )
+        let rebuilt = frame.addingMetalRuntimeUniforms(
+            .init(time: 0, daytime: 0, brightness: 1, pointerPosition: .zero), camera: camera,
+            scriptedConstants: roleProbes
+        ).pipeline
+        #expect(rebuilt.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
+        let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]), sceneHDR: false)
+        #expect(overlay.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
     }
 
     @Test("Multi-material and ambiguous effect instances reject publication without partial rewrites",
@@ -1130,7 +1137,12 @@ struct WPERenderPipelineBuilderTests {
         #expect(frame.frameUniforms.affineModelMatrixPassIDs.contains(layer.passes[1].id))
         #expect(frame.frameUniforms.value(named: "g_ModelMatrix", passID: layer.passes[1].id)?.vectorValue == layer.modelMatrixOverride)
         guard scope == "combined" else { return }
-        let mvp = try #require(frame.frameUniforms.value(named: "g_ModelViewProjectionMatrix", passID: layer.passes[1].id)?.vectorValue)
+        try expectCombinedParentRender(pipeline, layer: layer, frameUniforms: frame.frameUniforms, camera: camera)
+    }
+
+    private func expectCombinedParentRender(_ pipeline: WPEPreparedRenderPipeline, layer: WPEPreparedRenderLayer,
+                                            frameUniforms: WPEFrameUniformContext, camera: WPEMetalCameraUniforms) throws {
+        let mvp = try #require(frameUniforms.value(named: "g_ModelViewProjectionMatrix", passID: layer.passes[1].id)?.vectorValue)
         // Windows parent-r2 9000808, terminal event 48; column-major bound VS MVP.
         let captured: [Double] = [0.009494711644947529, 0.007795349694788456, 0, 0,
                         -0.0024985559284687042, 0.010167608968913555, 0, 0,
@@ -1153,7 +1165,7 @@ struct WPERenderPipelineBuilderTests {
         let built = try #require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))
         executor.seedTranslatedPipelines([built])
         let output = try executor.render(pipeline: pipeline, size: CGSize(width: 256, height: 128), textures: [:], cameraUniforms: camera)
-        executor.frameUniformContext = frame.frameUniforms
+        executor.frameUniformContext = frameUniforms
         #expect(executor.authoredVertexRejection(for: pass, result: compiled, layer: layer.graphLayer,
                                                  frameState: WPEMetalFrameState(output: output, sceneSize: camera.renderSize, cameraUniforms: camera),
                                                  effectTextureProjection: { nil }) == nil)
@@ -1374,6 +1386,17 @@ struct WPERenderPipelineBuilderTests {
         #expect(result.resolvingSourceMipLevels { _ in nil } == result)
         #expect(result.resolvingSourceMipLevels { _ in -1 } == result)
         #expect(result.resolvingSourceMipLevels { _ in 15 } == result)
+        try expectReducedSourceMips(result, canonical: canonical, layer: layer, inputs: inputs,
+                                    source: (width, height, physicalHeight), camera: camera, runtime: runtime,
+                                    executor: executor, pool: pool)
+    }
+
+    private func expectReducedSourceMips(_ result: WPEPreparedRenderPipeline, canonical: WPEPreparedRenderPipeline,
+                                         layer: WPEPreparedRenderLayer, inputs: [SIMD4<Float>],
+                                         source: (width: Int, height: Int, physicalHeight: Int),
+                                         camera: WPEMetalCameraUniforms, runtime: WPEMetalRuntimeUniforms,
+                                         executor: WPEMetalRenderExecutor, pool: WPEMetalRenderTargetPool) throws {
+        let (width, height, physicalHeight) = source
         for mip in [0, 1, 2] {
             let fromCanonical = canonical.resolvingSourceMipLevels { _ in mip }
                 .resolvingEffectPublication(passVisibility: [:], camera: camera)
