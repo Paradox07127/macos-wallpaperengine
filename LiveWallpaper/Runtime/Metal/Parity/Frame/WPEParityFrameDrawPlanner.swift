@@ -857,6 +857,7 @@ struct WPEParityFrameDrawPlanner {
                         SIMD2(Float($0.x), Float($0.y))
                     } ?? SIMD2(Float(color.width), Float(color.height)))
                     : draw.multipliesDestination && draw.source == .flatTexture && draw.geometry == .fullscreenQuad ? .clipMaskMerge
+                    : draw.fullscreenLayer ? .fullscreenLayer
                     : draw.geometry != .fullscreenQuad ? .layer
                     : draw.layerMatrices ? .lastEffectPass : .effectPass,
                 compositeOwnerID: draw.compositeOwnerID,

@@ -239,7 +239,10 @@ extension WPEParitySceneDriverTests {
             let shownTexture = try XCTUnwrap(layer.lastTexture)
             XCTAssertEqual([shownTexture.width, shownTexture.height], [384, 192])
             let shown = try readBack(shownTexture, device: device)
-            try textClearAssertPixel(shown, width: 384, x: 380, y: 16, rgb: [0, 0, 255], alpha: 255,
+            // 1401e8aa0.c:1004-1050: a fullscreen parent's tint covers the whole backbuffer; white at alpha 1 maps
+            // blue to max(rgb) · white.
+            let beyond = context == .fullscreenParent ? [255, 255, 255] : [0, 0, 255]
+            try textClearAssertPixel(shown, width: 384, x: 380, y: 16, rgb: beyond, alpha: 255,
                                      label: "actual displayed background beyond the text/ordinary parent")
             if case .topLevel = context {
                 let hasDisplayedInk = stride(from: 0, to: shown.count, by: 4).contains {

@@ -299,7 +299,9 @@ private struct WPEParitySceneEmitter {
                         materialState.depthWrite = object.materialState.depthWrite
                     }
                     mask = destination.writeMask
-                    geometry = object.layerGeometry
+                    if !object.fullscreen {
+                        geometry = object.layerGeometry
+                    }
                 }
                 bind(identity, target, depth: depth)
                 if passIndex == 0, readsFullFrame {
@@ -314,7 +316,8 @@ private struct WPEParitySceneEmitter {
                                         depthTest: materialState.depthTest,
                                         depthWrite: materialState.depthWrite && blend.permitsDepthWrite,
                                         cullsBackFaces: materialState.cullsBackFaces,
-                                        layerMatrices: lastSegment && geometry == .fullscreenQuad))
+                                        layerMatrices: lastSegment && !object.fullscreen && geometry == .fullscreenQuad,
+                                        fullscreenLayer: lastSegment && object.fullscreen))
                 if pass.compose, (effectIndex, passIndex) != lastPass {
                     current ^= 1
                     flips += 1
@@ -342,10 +345,11 @@ private struct WPEParitySceneEmitter {
                                               blend: publishBlend,
                                               alphaMax: destination.alphaMax,
                                               compositeOwnerID: destination.compositeOwnerID,
-                                              writeMask: destination.writeMask, geometry: object.layerGeometry,
+                                              writeMask: destination.writeMask,
+                                              geometry: object.fullscreen ? .fullscreenQuad : object.layerGeometry,
                                               depthTest: object.materialState.depthTest,
                                               depthWrite: object.materialState.depthWrite && publishBlend.permitsDepthWrite,
-                                              colorRole: .compositePublish),
+                                              fullscreenLayer: object.fullscreen, colorRole: .compositePublish),
                    depth: destination.depth)
     }
 

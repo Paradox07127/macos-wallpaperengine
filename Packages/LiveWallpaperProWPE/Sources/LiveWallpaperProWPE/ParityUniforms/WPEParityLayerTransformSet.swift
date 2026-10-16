@@ -13,6 +13,9 @@ public enum WPEParityLayerDrawKind: Sendable, Equatable {
     case clipMaskMerge
     /// A pass of the last effect after its last flip: the 2×2 quad with the layer's matrices (1401e8aa0.c:951-1075).
     case lastEffectPass
+    /// `WPEParitySceneDraw.fullscreenLayer`: the 2×2 quad with the effect-pass matrices; the effect constants still
+    /// come from the layer, which 1401e8aa0.c:513-550 stores before the fullscreen branch.
+    case fullscreenLayer
 }
 
 /// The camera and every layer's world matrix, answering per draw with the matrices `WPEParityUniformSet` packs.
@@ -211,11 +214,12 @@ public struct WPEParityLayerTransformSet: Sendable {
         let effectPass = WPEParityUniformEffectPass(layerModel: matrices.model,
                                                     layerModelViewProjection: matrices.modelViewProjection,
                                                     size: layers[id]?.size ?? .zero,
-                                                    isLastPass: kind == .layer || kind == .textClearAlpha || kind == .lastEffectPass)
+                                                    isLastPass: kind == .layer || kind == .textClearAlpha
+                                                        || kind == .lastEffectPass || kind == .fullscreenLayer)
         let drawn = switch kind {
         case .layer, .textClearAlpha, .lastEffectPass: matrices
         case let .compositeFill(size): WPEParityLayerTransform.compositeFillMatrices(size: size)
-        case .effectPass: WPEParityUniformMatrices.effectPass
+        case .effectPass, .fullscreenLayer: WPEParityUniformMatrices.effectPass
         case .clipMaskMerge: WPEParityUniformMatrices(model: matrix_identity_float4x4,
                                                       view: matrix_identity_float4x4,
                                                       projection: matrix_identity_float4x4)
@@ -227,7 +231,7 @@ public struct WPEParityLayerTransformSet: Sendable {
         switch kind {
         case .layer, .textClearAlpha: .layer(size: layers[id]?.size ?? .zero, uvMax: uvMax)
         case let .compositeFill(size): .composite(size: size, uvMax: uvMax)
-        case .effectPass, .clipMaskMerge, .lastEffectPass: .effectPass
+        case .effectPass, .clipMaskMerge, .lastEffectPass, .fullscreenLayer: .effectPass
         }
     }
 }

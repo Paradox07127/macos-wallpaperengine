@@ -64,6 +64,9 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
     /// A `fullscreenQuad` pass of the last effect after its last flip: WPE draws the 2×2 quad with the layer's
     /// matrices instead of the effect ortho (1401e8aa0.c:951-997, 1052-1075).
     public let layerMatrices: Bool
+    /// A last-segment pass or bit4 publish of a fullscreen layer: the 2×2 quad with M = V = I and P = ortho(±1)
+    /// (1401e8aa0.c:1004-1050).
+    public let fullscreenLayer: Bool
     /// RD flag 0x100 (SrcBlend DEST_COLOR), set around the clip mask merge (14020d6a0.c:150-169).
     public let multipliesDestination: Bool
 
@@ -72,7 +75,8 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
                 target: WPEResourceID, blend: WPEParitySceneBlend, alphaMax: Bool = false,
                 compositeOwnerID: String? = nil, writeMask: WPEParitySceneWriteMask, geometry: Geometry,
                 fillsComposite: Bool = false, depthTest: Bool = false, depthWrite: Bool = false,
-                cullsBackFaces: Bool = false, layerMatrices: Bool = false, multipliesDestination: Bool = false,
+                cullsBackFaces: Bool = false, layerMatrices: Bool = false, fullscreenLayer: Bool = false,
+                multipliesDestination: Bool = false,
                 colorRole: ColorRole = .none, clipMaskInverted: Bool = false,
                 logicalCompositeSize: SIMD2<Int>? = nil) {
         self.pass = pass
@@ -96,6 +100,7 @@ public struct WPEParitySceneDraw: Hashable, Sendable {
         self.depthWrite = depthWrite
         self.cullsBackFaces = cullsBackFaces
         self.layerMatrices = layerMatrices
+        self.fullscreenLayer = fullscreenLayer
         self.multipliesDestination = multipliesDestination
     }
 }
