@@ -428,6 +428,70 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         XCTAssertTrue(animator.bones.allSatisfy { [$0.x, $0.y, $0.z, $0.w].allSatisfy(\.isFinite) })
         XCTAssertGreaterThan(animator.layers[0].time, 0)
     }
+
+    /// Workshop 3647999330's single morph target over one vertex.
+    private func morphMesh(flags: UInt32 = 0x1000) -> WPEPuppetMesh {
+        let target = WPEPuppetMorph.Target(name: "Shape 1706", positions: [-28174, 16728, 0], normals: nil,
+                                           alpha: flags & 0x1000 != 0 ? [32767] : nil)
+        return WPEPuppetMesh(materialPath: "", vertices: [], indices: [], parts: [], flags: flags,
+                             morph: WPEPuppetMorph(scale: 10.269853, vertexCount: 1, targets: [target]))
+    }
+
+    private func morphAnimator(track: [Float], blend: Double, additive: Bool) -> WPEParityPuppetAnimator {
+        let tail = WPEPuppetAnimationTail(mdlaVersion: 6, sourceRange: 0 ..< 0, blendCurves: nil, scalarCurves: nil,
+                                          unknownSegments: [],
+                                          morphTracks: [[WPEPuppetMorphTrack(targetIndex: 0, values: track)]])
+        let clip = WPEPuppetAnimation(id: 749, name: "LogoShake", mode: "loop", fps: 4, frameCount: 1, channels: [],
+                                      tail: tail)
+        let model = WPEPuppetModel(version: 23, meshes: [morphMesh()], animations: [clip])
+        var animator = WPEParityPuppetAnimator(model: model, layers: [layer(749, blend: blend, additive: additive)])
+        animator.advance(dt: 0.125)
+        return animator
+    }
+
+    private func lanes(_ value: WPECBufferValue?) -> [[Float]] {
+        guard case let .array(groups)? = value else { return [] }
+        return groups.map { group in
+            switch group {
+            case let .vector(lanes): lanes
+            case let .uintVector(lanes): lanes.map { Float($0) }
+            default: []
+            }
+        }
+    }
+
+    /// 1401fdf90.c:1087-1155 and 14020cff0.c:50-160: the set target lands in g_MorphOffsets[1] at index · vc.
+    func testAdditiveMorphTrackFillsTheMorphUniforms() {
+        let values = morphAnimator(track: [0, 1], blend: 1, additive: true).values
+        guard case let .array(offsets)? = values["g_MorphOffsets"], case .uintVector = offsets.first else {
+            return XCTFail("g_MorphOffsets must be uint4 groups")
+        }
+        XCTAssertEqual(lanes(values["g_MorphOffsets"]), [[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+        XCTAssertEqual(lanes(values["g_MorphWeights"]), [[10.269853, 0.5, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+    }
+
+    /// 1401fdf90.c:988-1006: a blended layer lerps from the previous weight by the layer weight.
+    func testBlendedMorphTrackLerpsByTheLayerWeight() {
+        let values = morphAnimator(track: [0, 1], blend: 0.5, additive: false).values
+        XCTAssertEqual(lanes(values["g_MorphOffsets"]).first, [1, 0, 0, 0])
+        XCTAssertEqual(lanes(values["g_MorphWeights"]).first, [10.269853, 0.25, 0, 0])
+    }
+
+    func testZeroMorphTrackSetsNoTarget() {
+        let values = morphAnimator(track: [0, 0], blend: 1, additive: false).values
+        XCTAssertEqual(lanes(values["g_MorphOffsets"]).first, [0, 0, 0, 0])
+        XCTAssertEqual(lanes(values["g_MorphWeights"]).first, [10.269853, 0, 0, 0])
+    }
+
+    /// 1401fbae0.c:246-321: texel 0 is (0, 0, 0, 0x7fff), then one texel per target vertex.
+    func testMorphTexelsLayOutTargetsAfterTheRestTexel() throws {
+        let texture = try XCTUnwrap(WPEParityPuppetAnimator.morphTexels(morphMesh()))
+        XCTAssertEqual(texture.side, 2)
+        XCTAssertEqual(texture.texels, [0, 0, 0, 32767, -28174, 16728, 0, 32767] + [Int16](repeating: 0, count: 8))
+        let plain = try XCTUnwrap(WPEParityPuppetAnimator.morphTexels(morphMesh(flags: 0)))
+        XCTAssertEqual(plain.side, 2)
+        XCTAssertEqual(plain.texels, [0, 0, 0, 32767] + [Int16](repeating: 0, count: 12))
+    }
 }
 
 /// `PKGV` archive: header string, entry count, then (name, offset, size) records before the data block.

@@ -96,6 +96,8 @@ public struct WPEPuppetMesh: Equatable, Sendable {
     public let vertexFormat: UInt32
     /// Mesh flags (record +0x18): bit 1 marks the blend mesh (puppet+0x390), bit 3 the segmented draw.
     public let flags: UInt32
+    /// MDMP targets of this mesh; nil when it has none.
+    public fileprivate(set) var morph: WPEPuppetMorph?
 
     public init(
         materialPath: String,
@@ -109,10 +111,12 @@ public struct WPEPuppetMesh: Equatable, Sendable {
         vertexFormat: UInt32 = 0,
         flags: UInt32 = 0,
         vertexStream: WPEPuppetVertexStream? = nil,
-        companion: WPEPuppetMeshCompanion? = nil
+        companion: WPEPuppetMeshCompanion? = nil,
+        morph: WPEPuppetMorph? = nil
     ) {
         self.vertexFormat = vertexFormat
         self.flags = flags
+        self.morph = morph
         self.materialPath = materialPath
         self.vertices = vertices
         self.vertexStream = vertexStream
@@ -123,6 +127,50 @@ public struct WPEPuppetMesh: Equatable, Sendable {
         self.bounds = bounds
         self.clipMaskName = clipMaskName
         self.clipGroups = clipGroups
+    }
+}
+
+/// One mesh's MDMP0001 record (140261880.c:3128-3226).
+public struct WPEPuppetMorph: Equatable, Sendable {
+    public struct Target: Equatable, Sendable {
+        public let name: String
+        /// SNORM16 x, y, z per vertex.
+        public let positions: [Int16]
+        /// Mesh flag 0x400; SNORM16 x, y, z per vertex.
+        public let normals: [Int16]?
+        /// Mesh flag 0x1000; one SNORM16 per vertex.
+        public let alpha: [Int16]?
+
+        public init(name: String, positions: [Int16], normals: [Int16]?, alpha: [Int16]?) {
+            self.name = name
+            self.positions = positions
+            self.normals = normals
+            self.alpha = alpha
+        }
+    }
+
+    /// Mesh +0x60, uploaded as g_MorphWeights[0].
+    public let scale: Float
+    /// Mesh +0x64 after each target lowers it to its positions' vertex count.
+    public let vertexCount: Int
+    public let targets: [Target]
+
+    public init(scale: Float, vertexCount: Int, targets: [Target]) {
+        self.scale = scale
+        self.vertexCount = vertexCount
+        self.targets = targets
+    }
+}
+
+/// One morph-target weight track of an MDLA ≥4 clip (140261880.c:2504-2668).
+public struct WPEPuppetMorphTrack: Equatable, Sendable {
+    public let targetIndex: Int
+    /// One weight per frame, frameCount + 1 of them.
+    public let values: [Float]
+
+    public init(targetIndex: Int, values: [Float]) {
+        self.targetIndex = targetIndex
+        self.values = values
     }
 }
 
@@ -315,19 +363,23 @@ public struct WPEPuppetAnimationTail: Equatable, Sendable {
     /// `nil` for MDLA0005; MDLA0006 preserves a block even when `hasCurves == false`.
     public let scalarCurves: WPEPuppetAnimationCurveBlock?
     public let unknownSegments: [WPEPuppetAnimationRawSegment]
+    /// Per MDLV mesh (clip+0x138); empty when the clip has no morph block.
+    public let morphTracks: [[WPEPuppetMorphTrack]]
 
     public init(
         mdlaVersion: Int,
         sourceRange: Range<Int>,
         blendCurves: WPEPuppetAnimationCurveBlock?,
         scalarCurves: WPEPuppetAnimationCurveBlock?,
-        unknownSegments: [WPEPuppetAnimationRawSegment]
+        unknownSegments: [WPEPuppetAnimationRawSegment],
+        morphTracks: [[WPEPuppetMorphTrack]] = []
     ) {
         self.mdlaVersion = mdlaVersion
         self.sourceRange = sourceRange
         self.blendCurves = blendCurves
         self.scalarCurves = scalarCurves
         self.unknownSegments = unknownSegments
+        self.morphTracks = morphTracks
     }
 }
 
@@ -1055,7 +1107,8 @@ public enum WPEMdlParser {
         let animations: [WPEPuppetAnimation]
         let animationAuditCheckpoint = auditRecorder?.checkpoint()
         do {
-            animations = try parseAnimationsIfPresent(reader: &metadataReader, auditRecorder: auditRecorder)
+            animations = try parseAnimationsIfPresent(meshCount: meshes.count, reader: &metadataReader,
+                                                      auditRecorder: auditRecorder)
         } catch {
             if let animationAuditCheckpoint {
                 auditRecorder?.rollback(to: animationAuditCheckpoint)
@@ -1067,7 +1120,8 @@ public enum WPEMdlParser {
             animations = []
         }
 
-        consumeMorphSectionIfPresent(reader: &metadataReader, auditRecorder: auditRecorder)
+        parseMorphSectionIfPresent(meshes: &meshes, boneCount: bones.count, reader: &metadataReader,
+                                   auditRecorder: auditRecorder)
 
         let resolvedBones: [WPEPuppetBone]
         let elementAuditCheckpoint = auditRecorder?.checkpoint()
@@ -1097,17 +1151,17 @@ public enum WPEMdlParser {
         )
     }
 
-    /// Morph targets. The records are walked so a layout change is caught, but nothing downstream
-    /// reads shape deltas, so they are consumed rather than stored. A record the walk cannot follow
-    /// falls back to consuming the declared extent, which the parse audit reports as `MDMP body`.
-    private static func consumeMorphSectionIfPresent(
+    /// Morph targets per MDLV mesh. A record the reader cannot follow leaves every mesh without targets and
+    /// consumes the declared extent, which the parse audit reports as `MDMP body`.
+    private static func parseMorphSectionIfPresent(
+        meshes: inout [WPEPuppetMesh],
+        boneCount: Int,
         reader: inout WPEMdlBinaryReader,
         auditRecorder: WPEMdlParseAuditRecorder?
     ) {
         guard let offset = reader.findTag("MDMP", from: reader.currentOffset) else { return }
         let checkpoint = auditRecorder?.checkpoint()
         var probe = reader
-        var declaredEnd = 0
         do {
             try probe.seek(to: offset)
             let tag = try probe.readFixedString(byteCount: 8)
@@ -1116,23 +1170,20 @@ public enum WPEMdlParser {
             auditRecorder?.beginSection(kind: .mdmp, label: tag, start: offset)
             try readIgnoredUInt8(reader: &probe, auditRecorder: auditRecorder, label: "MDMP section flag")
             // The declared end is an absolute file offset, not a length.
-            declaredEnd = try Int(probe.readUInt32())
+            let declaredEnd = try Int(probe.readUInt32())
             guard declaredEnd > probe.currentOffset, declaredEnd <= probe.dataCount else {
                 throw WPEMdlParserError.invalidHeader
             }
-            let bodyCheckpoint = auditRecorder?.checkpoint()
             var walked = probe
             do {
-                try walkMorphRecords(
-                    sectionEnd: declaredEnd,
-                    reader: &walked,
-                    auditRecorder: auditRecorder
-                )
+                let morphs = try readMorphRecords(meshes: meshes, boneCount: boneCount, sectionEnd: declaredEnd,
+                                                  reader: &walked)
+                guard walked.currentOffset == declaredEnd else { throw WPEMdlParserError.invalidHeader }
+                for (index, morph) in morphs.enumerated() {
+                    meshes[index].morph = morph
+                }
                 probe = walked
             } catch {
-                if let bodyCheckpoint {
-                    auditRecorder?.rollback(to: bodyCheckpoint)
-                }
                 Logger.warning(
                     "WPE puppet MDL morph records do not match the known layout: \(error)",
                     category: .wpeRender
@@ -1154,53 +1205,56 @@ public enum WPEMdlParser {
         }
     }
 
-    /// One MDMP event carries `count` shapes; each shape's delta table is `length / 6` three-`UInt16`
-    /// entries. `shapeID == 0` trails `length` bytes, every other shape trails one `UInt16` per entry.
-    private static func walkMorphRecords(
+    /// 140261880.c:3134-3226, one record per MDLV mesh. A blob whose size disagrees with the vertex count is a
+    /// native fast-fail (swi 0x29).
+    private static func readMorphRecords(
+        meshes: [WPEPuppetMesh],
+        boneCount: Int,
         sectionEnd: Int,
-        reader: inout WPEMdlBinaryReader,
-        auditRecorder: WPEMdlParseAuditRecorder?
-    ) throws {
-        while reader.currentOffset < sectionEnd {
-            let eventStart = reader.currentOffset
-            let shapeCount = try reader.readUInt16()
-            let eventTime = try reader.readFloat()
-            try readIgnoredUInt16(reader: &reader, auditRecorder: auditRecorder, label: "MDMP event id")
-            let reserved = try reader.readUInt16()
-            guard eventTime.isFinite, reserved == 0, shapeCount <= maxMeshCount else {
-                throw WPEMdlParserError.invalidHeader
+        reader: inout WPEMdlBinaryReader
+    ) throws -> [WPEPuppetMorph?] {
+        var morphs: [WPEPuppetMorph?] = []
+        for mesh in meshes {
+            let targetCount = try reader.readUInt16()
+            guard targetCount != 0 else {
+                morphs.append(nil)
+                continue
             }
-            for _ in 0 ..< shapeCount {
-                let shapeID = try reader.readUInt32()
-                let shapeReserved = try reader.readUInt32()
-                _ = try reader.readCString(sectionEnd: sectionEnd)
-                let byteCount = try reader.readUInt32()
-                try readIgnoredUInt32(reader: &reader, auditRecorder: auditRecorder, label: "MDMP shape hash")
-                guard shapeReserved == 0, byteCount % 6 == 0 else {
-                    throw WPEMdlParserError.invalidHeader
+            let scale = try reader.readFloat()
+            var vertexCount = try Int(reader.readUInt32())
+            var targets: [WPEPuppetMorph.Target] = []
+            for _ in 0 ..< targetCount {
+                _ = try reader.readUInt32()
+                _ = try reader.readUInt32()
+                let name = try reader.readCString(sectionEnd: sectionEnd)
+                let positionBytes = try Int(reader.readUInt32())
+                vertexCount = min(vertexCount, positionBytes / 6)
+                guard positionBytes == vertexCount * 6 else { throw WPEMdlParserError.invalidHeader }
+                let positions = try (0 ..< vertexCount * 3).map { _ in try Int16(bitPattern: reader.readUInt16()) }
+                let normals = try mesh.flags & 0x400 != 0 ? readMorphBlob(count: vertexCount * 3, reader: &reader) : nil
+                if mesh.flags & 0x800 != 0 {
+                    _ = try readMorphBlob(count: vertexCount * 3, reader: &reader)
                 }
-                let entryCount = Int(byteCount) / 6
-                let trailerBytes = shapeID == 0 ? Int(byteCount) : entryCount * MemoryLayout<UInt16>.size
-                guard reader.currentOffset + Int(byteCount) + trailerBytes <= sectionEnd else {
-                    throw WPEMdlParserError.invalidHeader
+                let alpha = try mesh.flags & 0x1000 != 0 ? readMorphBlob(count: vertexCount, reader: &reader) : nil
+                if mesh.flags & 0x2000 != 0 {
+                    // MORPHING_MODIFIERS bone, rule word and two floats.
+                    let bone = try reader.readUInt32()
+                    _ = try reader.readUInt32()
+                    _ = try reader.readFloat()
+                    _ = try reader.readFloat()
+                    guard bone < boneCount else { throw WPEMdlParserError.invalidHeader }
                 }
-                try skipKnownBytes(
-                    byteCount: Int(byteCount),
-                    reader: &reader,
-                    auditRecorder: auditRecorder,
-                    label: "MDMP shape deltas"
-                )
-                try skipKnownBytes(
-                    byteCount: trailerBytes,
-                    reader: &reader,
-                    auditRecorder: auditRecorder,
-                    label: "MDMP shape trailer"
-                )
+                targets.append(WPEPuppetMorph.Target(name: name, positions: positions, normals: normals, alpha: alpha))
             }
-            // A record that consumed nothing would loop forever while the section never advances.
-            guard reader.currentOffset > eventStart else { throw WPEMdlParserError.invalidHeader }
+            morphs.append(WPEPuppetMorph(scale: scale, vertexCount: vertexCount, targets: targets))
         }
-        guard reader.currentOffset == sectionEnd else { throw WPEMdlParserError.invalidHeader }
+        return morphs
+    }
+
+    /// A u32 byte count that must equal 2 × `count`, then `count` SNORM16 values.
+    private static func readMorphBlob(count: Int, reader: inout WPEMdlBinaryReader) throws -> [Int16] {
+        guard try Int(reader.readUInt32()) == count * 2 else { throw WPEMdlParserError.invalidHeader }
+        return try (0 ..< count).map { _ in try Int16(bitPattern: reader.readUInt16()) }
     }
 
     /// An unsampled version still parses: the feature ladder extrapolates in both directions, and
@@ -1859,6 +1913,7 @@ public enum WPEMdlParser {
         mdlaVersion: Int,
         frameCount: UInt32,
         boneCount: Int,
+        meshCount: Int,
         sectionEnd: Int,
         hasFollowingAnimation: Bool,
         reader: inout WPEMdlBinaryReader
@@ -1919,35 +1974,31 @@ public enum WPEMdlParser {
             : nil
         let afterBlend = reader.currentOffset
 
+        // 140261880.c:2505-2668: per MDLV mesh, flags; bit 0 adds a float and the morph-target weight tracks.
+        var morphTracks: [[WPEPuppetMorphTrack]] = []
         if features.v4Events {
-            let hasV4Events = try reader.readUInt8()
-            guard hasV4Events == 0 || hasV4Events == 1 else {
+            let hasMorphTracks = try reader.readUInt8()
+            guard hasMorphTracks == 0 || hasMorphTracks == 1 else {
                 throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 1)
             }
-            if hasV4Events == 1 {
-                let eventCount = try reader.readUInt32()
-                guard eventCount <= 65536 else {
-                    throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
-                }
-                for _ in 0 ..< eventCount {
-                    _ = try reader.readFloat()
-                    // `(curveCount: UInt16, flags: UInt16)`; every curve after the first is led by a UInt16 id.
-                    let curveCount = try reader.readUInt16()
-                    _ = try reader.readUInt16()
-                    guard curveCount > 0 else {
-                        throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
-                    }
-                    for curveIndex in 0 ..< Int(curveCount) {
-                        if curveIndex > 0 {
-                            _ = try reader.readUInt16()
+            if hasMorphTracks == 1 {
+                for _ in 0 ..< meshCount {
+                    var tracks: [WPEPuppetMorphTrack] = []
+                    if try reader.readUInt32() & 1 != 0 {
+                        _ = try reader.readFloat()
+                        let trackCount = try reader.readUInt16()
+                        for _ in 0 ..< trackCount {
+                            let targetIndex = try Int(reader.readUInt16())
+                            let byteCount = try reader.readUInt32()
+                            // A track other than frameCount + 1 floats is a native fast-fail (:2645-2654).
+                            guard UInt64(byteCount) == (UInt64(frameCount) + 1) * UInt64(MemoryLayout<Float>.size) else {
+                                throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
+                            }
+                            let values = try (0 ... frameCount).map { _ in try reader.readFloat() }
+                            tracks.append(WPEPuppetMorphTrack(targetIndex: targetIndex, values: values))
                         }
-                        let byteCount = try reader.readUInt32()
-                        try skipAnimationFloatPayload(
-                            byteCount: byteCount,
-                            sectionEnd: sectionEnd,
-                            reader: &reader
-                        )
                     }
+                    morphTracks.append(tracks)
                 }
             }
         }
@@ -1998,13 +2049,15 @@ public enum WPEMdlParser {
             sourceRange: tailStart..<reader.currentOffset,
             blendCurves: blendCurves,
             scalarCurves: scalarCurves,
-            unknownSegments: unknownSegments
+            unknownSegments: unknownSegments,
+            morphTracks: morphTracks
         )
     }
 
     /// Parses corpus-validated MDLA0005/0006 channel-major skeletal animation records.
     /// Each channel contains `frameCount + 1` nine-float keyframes and maps to MDLS bone order.
     private static func parseAnimationsIfPresent(
+        meshCount: Int,
         reader: inout WPEMdlBinaryReader,
         auditRecorder: WPEMdlParseAuditRecorder?
     ) throws -> [WPEPuppetAnimation] {
@@ -2119,6 +2172,7 @@ public enum WPEMdlParser {
                 mdlaVersion: mdlaVersion,
                 frameCount: frameCount,
                 boneCount: channelCountInt,
+                meshCount: meshCount,
                 sectionEnd: sectionEnd,
                 hasFollowingAnimation: animationIndex + 1 < animationCount,
                 reader: &reader

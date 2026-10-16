@@ -176,6 +176,12 @@ public struct WPEParityPuppetAnimator: Sendable {
     private let restPose: [Pose]
     private let inverseBindWorld: [simd_float4x4]
     private var poses: [Pose?] = []
+    /// Mesh0's MDMP record; nil when it has no targets.
+    private let morph: WPEPuppetMorph?
+    /// puppet+0x398: bit `index & 63` marks target `index` as weighted this frame.
+    private var morphMask: UInt64 = 0
+    /// puppet+0x3a0, one weight per mesh0 target.
+    private var morphWeights: [Float] = []
 
     /// Disabled layers remain addressable; FUN_1401fdf90 skips their update/evaluation, not their identity.
     /// A layer naming an animation absent from the model still has no evaluable animation.
@@ -206,6 +212,8 @@ public struct WPEParityPuppetAnimator: Sendable {
             bonesAlpha = [Float](repeating: 1, count: restLocal.count)
         }
         poses = [Pose?](repeating: nil, count: restLocal.count)
+        morph = model.meshes.first?.morph.flatMap { $0.targets.isEmpty ? nil : $0 }
+        morphWeights = [Float](repeating: 0, count: morph?.targets.count ?? 0)
         evaluate()
     }
 
@@ -280,7 +288,46 @@ public struct WPEParityPuppetAnimator: Sendable {
                 })
             })
         }
+        if let morph {
+            // 14020cff0.c:50-160: lane 0 holds the count and the scale, then up to 11 set targets in index order.
+            var offsets = [UInt32](repeating: 0, count: 12)
+            var weights = [Float](repeating: 0, count: 12)
+            weights[0] = morph.scale
+            var count = 0
+            for index in morphWeights.indices where count < 11 && morphMask >> UInt64(index & 63) & 1 != 0 {
+                count += 1
+                offsets[count] = UInt32(index * morph.vertexCount)
+                weights[count] = morphWeights[index]
+            }
+            offsets[0] = UInt32(count)
+            result["g_MorphOffsets"] = .array(stride(from: 0, to: 12, by: 4).map { .uintVector(Array(offsets[$0 ..< $0 + 4])) })
+            result["g_MorphWeights"] = .array(stride(from: 0, to: 12, by: 4).map { .vector(Array(weights[$0 ..< $0 + 4])) })
+        }
         return result
+    }
+
+    /// The R16G16B16A16_SNORM morph texture (1401fbae0.c:246-321): texel 0 is (0, 0, 0, 1), texel 1 + t·vc + v
+    /// holds target t's vertex v; nil when mesh0 has no targets.
+    public static func morphTexels(_ mesh: WPEPuppetMesh) -> (side: Int, texels: [Int16])? {
+        guard let morph = mesh.morph, !morph.targets.isEmpty else { return nil }
+        let count = morph.targets.count * morph.vertexCount + 1
+        var side = Int(Double(count).squareRoot())
+        if side * side < count {
+            side += 1
+        }
+        var texels = [Int16](repeating: 0, count: side * side * 4)
+        texels[3] = .max
+        // :286: only a mesh with the alpha blob writes the target texels.
+        guard mesh.flags & 0x1000 != 0 else { return (side, texels) }
+        for (targetIndex, target) in morph.targets.enumerated() {
+            guard let alpha = target.alpha else { continue }
+            for vertex in 0 ..< morph.vertexCount {
+                let texel = (1 + targetIndex * morph.vertexCount + vertex) * 4
+                texels.replaceSubrange(texel ..< texel + 3, with: target.positions[vertex * 3 ..< vertex * 3 + 3])
+                texels[texel + 3] = alpha[vertex]
+            }
+        }
+        return (side, texels)
     }
 
     static func packedRows(_ palette: [simd_float4x4]) -> [SIMD4<Float>] {
@@ -316,10 +363,15 @@ public struct WPEParityPuppetAnimator: Sendable {
         for bone in bonesAlpha.indices {
             bonesAlpha[bone] = 1
         }
+        morphMask = 0
+        for target in morphWeights.indices {
+            morphWeights[target] = 0
+        }
         for layer in layers where layer.enabled {
             let frame = Self.frame(time: layer.time, frameDuration: layer.frameDuration,
                                    frameCount: layer.animation.frameCount)
             evaluateAlpha(layer, frame: frame)
+            evaluateMorph(layer, frame: frame)
             for channel in layer.animation.channels where poses.indices.contains(channel.boneIndex) {
                 let bone = channel.boneIndex
                 let sample = Self.interpolate(channel.keyframes[frame.a], channel.keyframes[frame.b], t: frame.t)
@@ -356,6 +408,39 @@ public struct WPEParityPuppetAnimator: Sendable {
                 bonesAlpha[bone] = sample
             } else {
                 bonesAlpha[bone] = previous * (1 - layer.weight) + sample * layer.weight
+            }
+        }
+    }
+
+    /// Mesh0's tracks of the layer's clip; a sample below FLT_EPSILON leaves its target's bit unset.
+    private mutating func evaluateMorph(_ layer: Layer, frame: (a: Int, b: Int, t: Float)) {
+        guard let tracks = layer.animation.tail?.morphTracks.first else { return }
+        for track in tracks where morphWeights.indices.contains(track.targetIndex) {
+            let target = track.targetIndex
+            let sample = track.values[frame.a] * (1 - frame.t) + track.values[frame.b] * frame.t
+            let bit = UInt64(1) << UInt64(target & 63)
+            let weighted = abs(sample) >= .ulpOfOne
+            let previous = morphWeights[target]
+            if layer.additive {
+                // 1401fdf90.c:1087-1155: add sample · weight, bounded by the previous value and that addend.
+                guard weighted else { continue }
+                let added = sample * layer.weight
+                morphMask |= bit
+                morphWeights[target] = min(max(previous + added, min(previous, added)), max(previous, added))
+            } else if layer.weight == 1 {
+                // :1345-1366 overwrites and clears the bit of a negligible sample.
+                if weighted {
+                    morphMask |= bit
+                    morphWeights[target] = sample
+                } else {
+                    morphMask &= ~bit
+                }
+            } else {
+                // :988-1006
+                if weighted {
+                    morphMask |= bit
+                }
+                morphWeights[target] = previous * (1 - layer.weight) + sample * layer.weight
             }
         }
     }

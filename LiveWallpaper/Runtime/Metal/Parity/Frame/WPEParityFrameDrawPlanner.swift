@@ -425,6 +425,8 @@ struct WPEParityFrameDrawPlanner {
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
     private var transparent: MTLTexture?
+    /// Each morphing puppet layer's R16G16B16A16_SNORM target texture, built once.
+    private var morphTextures: [String: MTLTexture] = [:]
     /// Video .tex files the planned draws sample, filled as draws are planned.
     private(set) var videos: [WPEParityVideoTextures.Stream] = []
     private var pipelines: [PipelineKey: WPEParityPipeline] = [:]
@@ -516,7 +518,7 @@ struct WPEParityFrameDrawPlanner {
                 case let .asset(name): names.contains(name)
                 case let .imported(id, name): imported.contains(id) || name.map(names.contains) == true
                 case let .resource(id): imported.contains(id)
-                case .textAtlas: false
+                case .textAtlas, .morph: false
                 }
             }) {
                 affected.insert(operation)
@@ -1051,6 +1053,24 @@ struct WPEParityFrameDrawPlanner {
             guard let texture = textAtlases.textures[WPEParityTextAtlasTextures.Key(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else {
                 throw .texture("\(shader) slot \(slot) samples text atlas \(key) \(atlas), which has no texture")
             }
+            return .image(texture)
+        case let .morph(objectID)?:
+            if let texture = morphTextures[objectID] {
+                return .image(texture)
+            }
+            guard let mesh = plan.scene.puppetModels[objectID]?.meshes.first,
+                  let morph = WPEParityPuppetAnimator.morphTexels(mesh) else {
+                throw .texture("\(shader) slot \(slot) samples the morph texture of \(objectID), which has no targets")
+            }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Snorm, width: morph.side,
+                                                                      height: morph.side, mipmapped: false)
+            descriptor.usage = .shaderRead
+            guard let texture = device.makeTexture(descriptor: descriptor) else {
+                throw .texture("morph texture of \(objectID)")
+            }
+            texture.replace(region: MTLRegionMake2D(0, 0, morph.side, morph.side), mipmapLevel: 0,
+                            withBytes: morph.texels, bytesPerRow: morph.side * 4 * MemoryLayout<Int16>.size)
+            morphTextures[objectID] = texture
             return .image(texture)
         }
     }

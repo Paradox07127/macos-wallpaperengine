@@ -11,6 +11,8 @@ public struct WPEParityProgramBinding: Sendable {
         /// A glyph atlas of `WPEParityProgramScene.textAtlases`; its CPU pixels are uploaded whole when dirty.
         case textAtlas(key: String, atlas: WPEParityGlyphAtlasInstance.Atlas,
                        colorScale: Int = 1, plane: WPEParityGlyphAtlas.Plane = .primary)
+        /// The morph-target texture of this puppet layer's mesh0.
+        case morph(objectID: String)
     }
 
     /// One stage's uniform annotated with a material key.
@@ -102,6 +104,10 @@ public extension WPEParityProgramBuilder {
                 var slots = textures(names, draw: draw, object: object, imported: imported)
                 slots[0] = atlas ?? slots[0]
                 slots[1] = companion ?? slots[1]
+                // 140206ae0.c:344-352: MORPHING binds the puppet's morph texture to slot 5.
+                if draw.source?.combos["MORPHING"] == 1 {
+                    slots[5] = .morph(objectID: draw.objectID)
+                }
                 bindings[index] = WPEParityProgramBinding(
                     constants: constants, textRenderVars: textRenderVars, textures: slots, userTextures: material.userTextures,
                     userTextureSlots: userTextureSlots(material.userTextures, textures: slots),
@@ -155,7 +161,7 @@ public extension WPEParityProgramBuilder {
         declarations.slots.filter { slot, _ in
             switch textures[slot] {
             case .asset?, .imported?: true
-            case .resource?, .textAtlas?, nil: false
+            case .resource?, .textAtlas?, .morph?, nil: false
             }
         }
     }

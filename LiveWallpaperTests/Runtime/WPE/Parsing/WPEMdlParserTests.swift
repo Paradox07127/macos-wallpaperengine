@@ -625,7 +625,7 @@ struct WPEMdlParserTests {
 
     @Test("An MDLA0004 v4 event with several curves is walked curve by curve")
     func parsesMDLA0004MultiCurveEvent() throws {
-        let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 4, v4EventCurves: [[1, 2], [3, 4, 5]]))
+        let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 4, v4EventCurves: [[1, 2], [3, 4]]))
         let animation = try #require(
             model.animations.first,
             "a second curve's id read as the trailing event count throws, and the whole animation list falls back to empty"

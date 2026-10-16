@@ -76,6 +76,61 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertEqual(still, 0, accuracy: 1e-7)
     }
 
+    /// Workshop 3647999330, compiled by wpe-shaderc: object 545's puppet morphs its one target, driven by clip 749's
+    /// additive layer (track 0, v[30] = 0.4798).
+    func testScene3647999330PuppetMorphs() async throws {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
+        let folder = steam.appending(path: "workshop/content/431960/3647999330", directoryHint: .isDirectory)
+        let package = folder.appending(path: "scene.pkg")
+        let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
+            .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")
+        guard FileManager.default.fileExists(atPath: package.path),
+              FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
+            throw XCTSkip("Needs Workshop 3647999330 and WPE's assets (or WPE_ASSETS_DIR)")
+        }
+        let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
+                                                   projectRoot: folder, dependencyMounts: [],
+                                                   engineAssetsRootURL: engineRoot)
+        let document = try WPESceneDocumentParser.parse(
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
+                                          width: Self.width, height: Self.height)
+        let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let renderer = try await WPEParityFrameRenderer(
+            plan: plan, device: device, queue: XCTUnwrap(device.makeCommandQueue()),
+            shaders: WPEParityFrameShaderSource(
+                store: WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: cache)),
+                compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1
+            )
+        )
+        XCTAssertEqual(renderer.skipped, [:])
+        for frame in 0 ... 60 {
+            guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: frame == 0 ? 0 : 1.0 / 60) else {
+                return XCTFail("scene 3647999330 frame \(frame) was skipped")
+            }
+            await commandBuffer.completed()
+            XCTAssertNil(commandBuffer.error)
+        }
+        let draw = try XCTUnwrap(renderer.lastFrameDraws.first { operation, _ in
+            guard case let .scene(scene)? = plan.frames[0].draws[operation] else { return false }
+            return scene.objectID == "545" && scene.source?.combos["MORPHING"] == 1
+        }?.draw, "object 545 has no encoded MORPHING draw")
+        guard case let .array(groups)? = draw.constants[.vertex]?["g_MorphWeights"],
+              case let .vector(weights)? = groups.first else {
+            return XCTFail("object 545 uploads no g_MorphWeights")
+        }
+        XCTAssertEqual(weights[1], 0.4798, accuracy: 0.01)
+        let morph = try XCTUnwrap(draw.textures["g_Texture5"])
+        XCTAssertEqual([morph.width, morph.height], [2, 2])
+        XCTAssertEqual(morph.pixelFormat, .rgba16Snorm)
+    }
+
     private func render(_ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }) async throws {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 

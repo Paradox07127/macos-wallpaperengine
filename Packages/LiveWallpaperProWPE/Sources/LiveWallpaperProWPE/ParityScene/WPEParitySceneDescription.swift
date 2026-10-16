@@ -177,6 +177,11 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public var skinned: Bool
     /// Mesh0 flag bit 2 enables the native g_BonesAlpha path, independently of MORPHING.
     public var skinningAlpha: Bool
+    /// Mesh0's float4 position (format 0x10000), whose w is the 1-based morph texel index.
+    public var morphing: Bool {
+        vertexStream.map { $0.layout.format & 0x10000 != 0 } ?? false
+    }
+
     /// puppet+0x390, the first mesh with flag & 2 (1401fbae0.c:237-238); WPE builds a second mesh from it.
     public var blendMeshIndex: Int?
     /// Texture 0 of the layer material, which the clip mask draws sample (14020d6a0.c:44).
@@ -392,6 +397,9 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         var combos = ["SKINNING": 1, "BONECOUNT": boneCount]
         if skinningAlpha {
             combos["SKINNING_ALPHA"] = 1
+        }
+        if morphing {
+            combos["MORPHING"] = 1
         }
         return combos
     }
