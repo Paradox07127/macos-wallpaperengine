@@ -19,14 +19,16 @@ final class ParityCorpusCaptureTests: XCTestCase {
         let resolution: [Int]
         let frames: Int
         let frameStepSeconds: Double
-        /// time/daytime/pointerX/pointerY; a missing field takes 0, 0.5, 0.5, 0.5.
+        /// time/daytime/pointerX/pointerY/epoch; a missing field takes 0, 0.5, 0.5, 0.5, the load's wall clock.
         let replayFrame: [String: Double]
         let propertyOverridesByScene: [String: [String: WallpaperEngineProjectPropertyValue]]
         let seed: UInt32
+        /// WPE's shadow quality 0–4; nil = the product default.
+        let shadowQuality: Int32?
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, scenes, resolution, frames, frameStepSeconds, replayFrame
-            case propertyOverridesByScene, seed
+            case propertyOverridesByScene, seed, shadowQuality
         }
 
         init(from decoder: Decoder) throws {
@@ -42,6 +44,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 [String: [String: WallpaperEngineProjectPropertyValue]].self, forKey: .propertyOverridesByScene
             ) ?? [:]
             seed = try container.decodeIfPresent(UInt32.self, forKey: .seed) ?? 1
+            shadowQuality = try container.decodeIfPresent(Int32.self, forKey: .shadowQuality)
         }
     }
 
@@ -50,6 +53,8 @@ final class ParityCorpusCaptureTests: XCTestCase {
         let time: Double
         let date: Date
         let pointer: SIMD2<Double>
+        /// Unix seconds that script `Date.now()` reads at scene time 0; nil = the wall clock at load.
+        let epoch: Double?
         let fields: [String: Double]
 
         init(_ fields: [String: Double]) {
@@ -59,7 +64,9 @@ final class ParityCorpusCaptureTests: XCTestCase {
             date = Calendar.current.startOfDay(for: Date(timeIntervalSinceReferenceDate: 0))
                 .addingTimeInterval(daytime * 86400)
             pointer = SIMD2(fields["pointerX"] ?? 0.5, fields["pointerY"] ?? 0.5)
+            epoch = fields["epoch"]
             self.fields = ["time": time, "daytime": daytime, "pointerX": pointer.x, "pointerY": pointer.y]
+                .merging(epoch.map { ["epoch": $0] } ?? [:]) { $1 }
         }
     }
 
@@ -125,7 +132,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                     descriptor: descriptor, provider: provider, projectRoot: folder, engineAssetsRoot: engineAssetsRoot,
                     compiler: compiler, device: device, size: CGSize(width: size[0], height: size[1]),
                     frames: config.frames, step: config.frameStepSeconds, replay: replay, seed: config.seed,
-                    png: outDir.appending(path: "\(id).png"), record: &record
+                    shadowQuality: config.shadowQuality, png: outDir.appending(path: "\(id).png"), record: &record
                 )
                 record.merge(result) { $1 }
                 captured += 1
@@ -159,32 +166,39 @@ final class ParityCorpusCaptureTests: XCTestCase {
     /// and writes the last drawable to `png`. Draw and program skips land in `record` even when a frame fails.
     private func capture(descriptor: SceneDescriptor, provider: any WPESceneAssetProvider, projectRoot: URL,
                          engineAssetsRoot: URL?, compiler: WPEParityHelperShaderCompiler, device: MTLDevice,
-                         size: CGSize, frames: Int, step: Double, replay: Replay, seed: UInt32, png: URL,
+                         size: CGSize, frames: Int, step: Double, replay: Replay, seed: UInt32,
+                         shadowQuality: Int32?, png: URL,
                          record: inout [String: Any]) async throws -> [String: Any] {
         let layer = WPEParitySceneDriverTests.RecordingLayer()
         layer.device = device
         layer.pixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: false)
         layer.drawableSize = size
         layer.framebufferOnly = false
+        var settings = try WPEParityProductSettings.make(descriptor: descriptor, device: device,
+                                                         bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled)
+        if let shadowQuality {
+            settings.shadowQuality = shadowQuality
+        }
         let inputs = try WPEParitySceneInputs(
             descriptor: descriptor,
             entryResolver: SceneResourceResolver(provider: provider, cacheRootURL: projectRoot),
             projectRoot: projectRoot,
             assets: WPEParitySceneAssets.make(provider: provider, projectRoot: projectRoot, dependencyMounts: [],
                                               engineAssetsRootURL: engineAssetsRoot),
-            settings: WPEParityProductSettings.make(descriptor: descriptor, device: device,
-                                                    bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled),
+            settings: settings,
             compiler: compiler, device: device, presentLayer: WPEPresentLayer(layer: layer),
             mailbox: WPEPointerMailbox(), surfaceControl: IdleSurfaceControl(), drawableSize: size,
             pixelFormat: layer.pixelFormat
         )
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
+        var scriptHost = inputs.scriptHost(userPropertiesJSON: inputs.scriptUserProperties())
+        scriptHost.dateEpochMillis = (replay.epoch ?? Date().timeIntervalSince1970) * 1000
+        record["shadowQuality"] = settings.shadowQuality
         try await driver.load(document: inputs.makeDocument(), assets: inputs.assets, settings: inputs.settings,
                               drawableSize: size, pixelFormat: inputs.pixelFormat, compiler: compiler,
                               workshopID: descriptor.workshopID,
-                              scriptHost: inputs.scriptHost(userPropertiesJSON: inputs.scriptUserProperties()),
-                              particleSeed: seed)
+                              scriptHost: scriptHost, particleSeed: seed)
         record["skippedDraws"] = driver.diagnostics?.skippedDraws ?? [:]
         record["skippedPrograms"] = driver.shaderErrorSummary.entries.map { ["shader": $0.shader, "reason": $0.reason] }
         record["loadDiagnostics"] = driver.loadDiagnostics.map { String(describing: $0) as Any } ?? NSNull()
@@ -194,6 +208,10 @@ final class ParityCorpusCaptureTests: XCTestCase {
         let timestamps = (0 ..< warmup).map { Double($0) * step } + (0 ..< frames).map { replay.time + Double($0) * step }
         var times: [Double] = []
         for (index, timestamp) in timestamps.enumerated() {
+            // Videos otherwise play from the AVPlayer wall clock, which the synthetic steps outrun.
+            if index >= warmup {
+                await renderer.seekVideosForCapture(to: timestamp)
+            }
             let commandBuffer = try XCTUnwrap(driver.renderAndPresentFrame(
                 layer: layer, timestamp: timestamp, pointer: replay.pointer, date: replay.date
             ), "frame \(index) was not presented")
