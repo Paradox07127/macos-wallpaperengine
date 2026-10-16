@@ -524,6 +524,7 @@ extension ScreenManager {
         updateFullScreenFallbackPolling()
         refreshPerformancePolicyForAllScreens()
         applyWallpaperCapturePolicy()
+        captureDesktopSnapshotsForLockIfNeeded()
     }
 
     /// Windows built later read the policy in their own initializer.
@@ -554,6 +555,7 @@ extension ScreenManager {
 
     func captureDesktopSnapshotsForLockIfNeeded() {
         guard !isTerminating else { return }
+        guard SystemUserPresenceProbe.shared.screenLockState() == .unlocked else { return }
         let globalSettings = SettingsManager.shared.loadGlobalSettings()
         guard globalSettings.preservePlaybackOnLock else { return }
 

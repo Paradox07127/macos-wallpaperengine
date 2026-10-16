@@ -1,6 +1,76 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Keep a video frame as the desktop picture": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep a video frame as the desktop picture"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener un fotograma como imagen del escritorio"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画のフレームをデスクトップ画像に使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将视频帧保留为 macOS 墙纸"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將影片影格保留為 macOS 背景圖片"
+          }
+        }
+      }
+    },
+    "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiza cada minuto las imágenes del escritorio de las pantallas activadas mientras el Mac está desbloqueado. Se conservan tras desbloquearlo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック解除中、対象ディスプレイのデスクトップ画像を毎分更新します。ロック解除後も残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁时每分钟更新已启用显示器的 macOS 墙纸。解锁后仍会保留。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解鎖時每分鐘更新已啟用顯示器的 macOS 背景圖片。解鎖後仍會保留。"
+          }
+        }
+      }
+    },
     "Remove from download history": {
       "extractionState": "manual",
       "localizations": {

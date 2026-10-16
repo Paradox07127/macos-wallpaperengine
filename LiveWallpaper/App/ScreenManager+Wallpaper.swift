@@ -424,6 +424,7 @@ extension ScreenManager {
               config.setAsLockScreen != enabled else { return }
         config.setAsLockScreen = enabled
         saveConfiguration(config)
+        if enabled { captureDesktopSnapshotsForLockIfNeeded() }
     }
 
     /// What the capture actually did, awaited rather than guessed: the caller

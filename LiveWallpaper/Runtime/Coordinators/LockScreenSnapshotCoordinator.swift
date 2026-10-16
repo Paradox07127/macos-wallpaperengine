@@ -4,17 +4,24 @@ import Combine
 @MainActor
 final class LockScreenSnapshotCoordinator {
     private var cleanupTasks: Set<AnyCancellable> = []
-    private let onSessionDidResignActive: @MainActor () -> Void
+    private let onRefresh: @MainActor () -> Void
 
-    init(onSessionDidResignActive: @escaping @MainActor () -> Void) {
-        self.onSessionDidResignActive = onSessionDidResignActive
+    init(onRefresh: @escaping @MainActor () -> Void) {
+        self.onRefresh = onRefresh
         observeSessionNotifications()
     }
 
     private func observeSessionNotifications() {
-        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)
+        // Prepare while unlocked: the password screen may already have cached its background on resign-active.
+        Timer.publish(every: 60, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
-                self?.onSessionDidResignActive()
+                guard SystemUserPresenceProbe.shared.screenLockState() == .unlocked else { return }
+                self?.onRefresh()
+            }
+            .store(in: &cleanupTasks)
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.onRefresh()
             }
             .store(in: &cleanupTasks)
     }

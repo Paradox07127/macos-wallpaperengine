@@ -349,8 +349,8 @@ struct PlaybackControls: View {
             title: "On Lock",
             isOn: syncToLockScreen,
             binding: syncToLockScreenBinding,
-            label: Text("Capture this video's frame when locking"),
-            help: Text("Captures this video's current frame at lock and sets it as the macOS desktop picture."),
+            label: Text("Keep a video frame as the desktop picture"),
+            help: Text("Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."),
             badge: lockScreenExtracted
         )
     }
