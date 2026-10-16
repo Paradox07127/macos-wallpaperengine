@@ -63,8 +63,9 @@ struct WPEParityFrameDrawPlan {
     let placement: Placement?
     /// Camera parallax or camerashake moves the view, so the layer matrices are recomputed every frame.
     var cameraMoves = false
-    /// The state object whose live g_Color4/g_Color/g_Alpha the draw takes, and the value `constants` holds.
-    var layerColor: (object: Int, loaded: SIMD4<Float>)?
+    /// The state object whose live g_Color4/g_Color/g_Alpha the draw takes. `loaded` is the colour `constants`
+    /// holds; nil for a script-created layer, whose constants hold its template's colour.
+    var layerColor: (object: Int, loaded: SIMD4<Float>?)?
     /// The state material pass whose constants `materialConstants` re-pack into `constants`.
     var materialPass: Int?
     var materialConstants: [WPEHLSLStage: [WPEParityProgramBinding.MaterialConstant]] = [:]
@@ -721,8 +722,9 @@ struct WPEParityFrameDrawPlanner {
         return targets
     }
 
-    mutating func makePlan(_ index: Int,
-                           artifact: WPEParityShaderArtifact) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan {
+    /// `state` is the live state whose slots the renderer reads every frame.
+    mutating func makePlan(_ index: Int, artifact: WPEParityShaderArtifact,
+                           state: WPEParitySceneState) throws(WPEParityFrameSkip) -> WPEParityFrameDrawPlan {
         let shader = layout.programs[index]?.shader ?? "operation \(index)"
         guard let description = frame.draws[index], let target = targets[index],
               let attachment = (target.color ?? target.depth).flatMap({ resources[$0] }),
@@ -1039,8 +1041,8 @@ struct WPEParityFrameDrawPlanner {
             uniforms: uniforms,
             placement: placement,
             cameraMoves: layers.camera.parallaxAmount != nil || layers.camera.shake != nil,
-            layerColor: binding.layerColorObjectID.flatMap(plan.state.index(of:)).map {
-                (object: $0, loaded: plan.state.layerColor(at: $0))
+            layerColor: binding.layerColorObjectID.flatMap { id in
+                state.index(of: id).map { (object: $0, loaded: plan.state.index(of: id).map(plan.state.layerColor(at:))) }
             },
             materialPass: binding.materialPass.flatMap(plan.state.passIndex(of:)),
             materialConstants: binding.materialConstants,

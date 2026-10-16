@@ -610,7 +610,7 @@ final class WPEParityFrameRenderer {
             ? try plan.layout(effects: loaded, mipMappedFrameBufferRequested: mipRequested) : plan.layout
         let layout = try Self.makeLayout(planned, effects: plan.state.effectVisibility, artifacts: artifacts,
                                          planner: &planner, encoder: encoder,
-                                         reusing: nil)
+                                         state: plan.state, reusing: nil)
         for probe in probes {
             let targets = WPEParityFrameDrawPlanner.targets(probe.frame)
             let resources = WPEParityFrameDrawPlanner.resources(probe.frame)
@@ -928,7 +928,7 @@ final class WPEParityFrameRenderer {
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidate, encoder: drawEncoder,
-                                         reusing: reuse)
+                                         state: state, reusing: reuse)
         for (index, name) in Self.drawNames(planned.frames[0])
             where affectedNames.contains(name) && planned.programs[index] != nil && layout.draws[index] == nil {
             throw layout.skipped[index] ?? WPEParityFrameSkip.noMaterial
@@ -1355,7 +1355,7 @@ final class WPEParityFrameRenderer {
                            skipped: current.skipped, fade: current.fade)
         var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidatePlanner, encoder: drawEncoder,
-                                         reusing: reuse)
+                                         state: state, reusing: reuse)
         // makeLayout records per-draw failures as skips. Required readers of this changed text cohort cannot
         // be silently dropped while its CPU atlas/ref/layout is accepted.
         for (index, description) in planned.frames[0].draws {
@@ -1698,7 +1698,7 @@ final class WPEParityFrameRenderer {
                                           mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
             let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                              planner: &planner, encoder: drawEncoder,
-                                             reusing: previous)
+                                             state: state, reusing: previous)
             // Removed owners cannot return through the visibility cache. Existing command buffers retain
             // their submitted resource versions; this drops the renderer's obsolete draw/graph references.
             try installGraphs(layout, cachePrevious: false)
@@ -1733,7 +1733,7 @@ final class WPEParityFrameRenderer {
                     layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts,
                                                              mipMappedFrameBufferRequested: mipMappedFrameBufferRequested), effects: effects,
                                                  artifacts: artifacts, planner: &planner, encoder: drawEncoder,
-                                                 reusing: layout)
+                                                 state: state, reusing: layout)
                 }
                 try installGraphs(layout, cachePrevious: true)
             }
@@ -1943,7 +1943,7 @@ final class WPEParityFrameRenderer {
     private static func makeLayout(_ planned: WPEParityFrameLayout, effects: [Bool],
                                    artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>],
                                    planner: inout WPEParityFrameDrawPlanner, encoder: WPEParityDrawEncoder,
-                                   reusing previous: Layout?) throws -> Layout {
+                                   state: WPEParitySceneState, reusing previous: Layout?) throws -> Layout {
         planner.use(planned)
         let names = drawNames(planned.frames[0])
         var earlier: [DrawName: Int] = [:]
@@ -1972,7 +1972,7 @@ final class WPEParityFrameRenderer {
             }
             let artifact = artifacts[program.hlsl] ?? .failure(.noShader("\(program.shader): not compiled at load"))
             do throws(WPEParityFrameSkip) {
-                let draw = try planner.makePlan(index, artifact: artifact.get())
+                let draw = try planner.makePlan(index, artifact: artifact.get(), state: state)
                 try Self.prepare(draw, encoder: encoder)
                 draws[index] = draw
             } catch {

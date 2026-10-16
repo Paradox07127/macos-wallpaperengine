@@ -221,7 +221,7 @@ extension WPEParitySceneDriverTests {
                 ))
                 let made: WPEParityFrameDrawPlan
                 do throws(WPEParityFrameSkip) {
-                    made = try planner.makePlan(index, artifact: artifact)
+                    made = try planner.makePlan(index, artifact: artifact, state: plan.state)
                 } catch {
                     // Rethrown untyped from this async test, the skip reaches XCTest as an unrelated NSError.
                     return XCTFail("quality \(quality) operation \(index): \(error)")
