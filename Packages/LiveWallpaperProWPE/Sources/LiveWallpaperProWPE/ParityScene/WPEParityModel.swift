@@ -18,9 +18,12 @@ public struct WPEParitySceneModelMesh: Hashable, Sendable {
 /// A model object's sub-meshes in file order, the order FUN_1402222a0 draws them.
 public struct WPEParitySceneModel: Hashable, Sendable {
     public var meshes: [WPEParitySceneModelMesh]
+    /// Object flag 0x800 (castshadow).
+    public var castsShadow: Bool
 
-    public init(meshes: [WPEParitySceneModelMesh]) {
+    public init(meshes: [WPEParitySceneModelMesh], castsShadow: Bool = false) {
         self.meshes = meshes
+        self.castsShadow = castsShadow
     }
 
     /// The frame pass that draws sub-mesh `mesh` of `objectID`.
@@ -28,10 +31,16 @@ public struct WPEParitySceneModel: Hashable, Sendable {
         WPEPassIdentity("\(objectID)/mesh\(mesh)")
     }
 
-    /// The sub-mesh index `pass` draws, or nil when it is no model pass of `objectID`.
+    /// The frame pass that draws sub-mesh `mesh` of `objectID` into the shadow atlas.
+    public static func shadowPass(objectID: String, mesh: Int) -> WPEPassIdentity {
+        WPEPassIdentity("\(objectID)/shadow/mesh\(mesh)")
+    }
+
+    /// The sub-mesh index `pass` (a scene or shadow pass) draws, or nil when it is no model pass of `objectID`.
     public static func meshIndex(_ pass: WPEPassIdentity, objectID: String) -> Int? {
-        let prefix = "\(objectID)/mesh"
-        guard pass.rawValue.hasPrefix(prefix) else { return nil }
-        return Int(pass.rawValue.dropFirst(prefix.count))
+        for prefix in ["\(objectID)/mesh", "\(objectID)/shadow/mesh"] where pass.rawValue.hasPrefix(prefix) {
+            return Int(pass.rawValue.dropFirst(prefix.count))
+        }
+        return nil
     }
 }

@@ -164,6 +164,8 @@ public enum WPEParitySceneResource {
     /// Puppet clip masks, R8 at the scene size (140208670.c:90-138).
     public static let fullAlphaMask: WPEResourceID = "_rt_FullAlphaMask"
     public static let fullAlphaMaskIntermediate: WPEResourceID = "_rt_FullAlphaMaskIntermediate"
+    /// Depth-only R32 shadow atlas (140190c80.c:1533-1541).
+    public static let shadowAtlas: WPEResourceID = "_rt_shadowAtlas"
 
     /// 1401ea500.c:137-446: `sc.<w>.<h>.<n|b><c|r><index>`, then the number of `ancestors` (the composites the
     /// enclosing layers draw their children into) whose name starts with that, when above 0.

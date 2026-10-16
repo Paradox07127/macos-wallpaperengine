@@ -150,6 +150,9 @@ private struct WPEParitySceneEmitter {
     }
 
     mutating func renderScene() {
+        if scene.shadowAtlas {
+            renderShadowCasters()
+        }
         let pass: WPEPassIdentity = "scene"
         emit(pass, .setTargets(color: [WPETextureView(sceneColor)], depth: WPETextureView(sceneDepth)))
         if scene.clearEnabled {
@@ -165,6 +168,30 @@ private struct WPEParitySceneEmitter {
         }
         if sceneColor != Resource.backbuffer {
             emit("scene.resolve", .resolve(source: sceneColor, destination: Resource.backbuffer))
+        }
+    }
+
+    /// 140196530: clear the atlas to reversed-Z far, then each casting model's blend-0 sub-meshes (14018aac0.c:155-157,
+    /// 1402222a0.c:304-306). The atlas extent is a placeholder; the caller owns the imported texture.
+    private mutating func renderShadowCasters() {
+        let atlas = WPETextureView(Resource.shadowAtlas)
+        register(Resource.shadowAtlas, 2, 2, format: Resource.depthFormat, lifetime: .imported)
+        emit("shadow", .setTargets(color: [], depth: atlas))
+        emit("shadow", .clearDepth(atlas, depth: 0))
+        for object in roots where object.visible {
+            guard case let .model(model) = object.kind, model.castsShadow else { continue }
+            owner = object.id
+            defer { owner = nil }
+            // Blend 3 (ALPHATOCOVERAGE=1) and the foliage4/fur4 caster variants are not emitted.
+            for (index, mesh) in model.meshes.enumerated()
+                where mesh.blend == .normal && mesh.shader != "foliage4" && mesh.shader != "fur4" {
+                let identity = WPEParitySceneModel.shadowPass(objectID: object.id, mesh: index)
+                emit(identity, .setTargets(color: [], depth: atlas))
+                draw(WPEParitySceneDraw(pass: identity, objectID: object.id, shader: "shadowcaster",
+                                        source: .init(materialPath: "materials/util/shadowcaster.json"), reads: [],
+                                        target: Resource.shadowAtlas, blend: .normal, writeMask: .rgba,
+                                        geometry: .modelMesh, depthTest: true, depthWrite: true))
+            }
         }
     }
 
@@ -695,7 +722,7 @@ private struct WPEParitySceneEmitter {
         samplers[id] = WPEParitySceneSampler(filter: .linear, address: fbo.repeats ? .wrap : .clamp)
     }
 
-    /// Layer composites and known engine snapshots. Post declares the mipmapped resource after actual shader
+    /// Layer composites, known engine snapshots and the shadow atlas when the frame draws it. Post declares the mipmapped resource after actual shader
     /// preparation requests it; an active read without that declaration still fails downstream readiness.
     private mutating func frameReads(_ names: [WPEResourceID]) -> [WPEResourceID] {
         names.filter { name in
@@ -704,6 +731,7 @@ private struct WPEParitySceneEmitter {
                 return true
             }
             return name == Resource.fullFrameBuffer || name.rawValue == "_rt_MipMappedFrameBuffer"
+                || (scene.shadowAtlas && name == Resource.shadowAtlas)
         }
     }
 

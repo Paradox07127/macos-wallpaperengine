@@ -481,12 +481,15 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var transparentSorting: Bool
     /// Global fog flags 0x1800000 (`general.fogdistance` / `fogheight`) send every layer through its own `_a` composite.
     public var forcesLayerComposite: Bool
+    /// The frame runs WPE's shadow pass into `_rt_shadowAtlas` before RenderScene.
+    public var shadowAtlas: Bool
     public var objects: [WPEParitySceneObject]
     public var diagnostics: [WPEParitySceneDiagnostic]
 
     public init(width: Int, height: Int, backbufferFormat: String = WPEParitySceneResource.colorFormat,
                 clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
                 msaaSamples: Int = 1, transparentSorting: Bool = false, forcesLayerComposite: Bool = false,
+                shadowAtlas: Bool = false,
                 objects: [WPEParitySceneObject], diagnostics: [WPEParitySceneDiagnostic] = []) {
         self.width = width
         self.height = height
@@ -496,6 +499,7 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
         self.msaaSamples = msaaSamples
         self.transparentSorting = transparentSorting
         self.forcesLayerComposite = forcesLayerComposite
+        self.shadowAtlas = shadowAtlas
         self.objects = objects
         self.diagnostics = diagnostics
     }
