@@ -35,6 +35,22 @@ final class ParityProgramTextureTests: XCTestCase {
         XCTAssertEqual(WPEParityProgramTextureHeader(bytes: Array(Self.header(format: .max, flags: .max)))?.flags, .max)
     }
 
+    /// FUN_140209360 sizes an autosize layer from its albedo; a missing file is the 6×6 placeholder (1400ec220.c:223-226).
+    func testMissingAlbedoShrinksOnlyAnAutosizeLayerToThePlaceholder() throws {
+        for autosize in [true, false] {
+            var layer = ParitySceneDocuments.layer(
+                width: 400, height: 200,
+                effects: [ParitySceneDocuments.effect(passes: [ParitySceneDocuments.pass("p")])]
+            )
+            layer.model = ["material": "materials/albedo.json", "autosize": autosize]
+            let scene = try ParitySceneDocuments.programScene([layer], files: [
+                "materials/albedo.json": #"{"passes":[{"shader":"genericimage2","textures":["gone"]}]}"#,
+            ])
+            let object = try XCTUnwrap(scene.scene.objects.first)
+            XCTAssertEqual([object.width, object.height], autosize ? [6, 6] : [400, 200], "autosize \(autosize)")
+        }
+    }
+
     func testVersionFourRG8AndR8ReachProductionFormatCombos() {
         let files = [
             "shaders/probe.vert": Data("void main() {}".utf8),

@@ -63,6 +63,116 @@ extension WPEParitySceneDriverTests {
         }
     }
 
+    /// FUN_140209360 sizes an autosize layer from its albedo, so a missing file makes the layer and its composite the 6×6
+    /// placeholder (1400ec220.c:223-226); a present albedo of the authored size covers the authored 48×24.
+    @MainActor @objc func testMissingAutosizeAlbedoShrinksTheLayerAndItsCompositeToThePlaceholder() async throws {
+        XCTAssertEqual(WPEMetalFXSpatialUpscaler.renderScale, 1, "Required isolated native-size product gate")
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let (original, compiler) = try missingTextureInputs()
+        for hasAlbedo in [false, true] {
+            let label = hasAlbedo ? "present albedo" : "missing albedo"
+            let driver = try WPEParitySceneDriver(device: device)
+            defer { driver.cleanup() }
+            let (sceneJSON, assets) = try autosizeScene(original: original, present: hasAlbedo)
+            let document = try WPESceneDocumentParser.parse(data: sceneJSON, userValues: [:])
+            try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                                  drawableSize: CGSize(width: 64, height: 32), pixelFormat: .rgba8Unorm,
+                                  compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+            XCTAssertTrue(driver.didLoad, label)
+            let layer = RecordingLayer()
+            layer.device = device
+            layer.pixelFormat = .rgba8Unorm
+            layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+            layer.drawableSize = CGSize(width: 64, height: 32)
+            layer.framebufferOnly = false
+            try await present(driver, layer: layer, label: label)
+            let renderer = try XCTUnwrap(driver.renderer)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(label): \(renderer.skipped)")
+            let frame = try XCTUnwrap(renderer.frames.first)
+            let drawn = Set(renderer.lastFrameDraws.map(\.operation))
+            let size = hasAlbedo ? [48, 24] : [6, 6]
+            let layerDraws = frame.draws.compactMap { operation, value -> WPEParitySceneDraw? in
+                guard case let .scene(draw) = value, draw.objectID == "1", drawn.contains(operation) else { return nil }
+                return draw
+            }
+            let albedo = try XCTUnwrap(layerDraws.first { $0.effectID == nil }, label)
+            XCTAssertTrue(layerDraws.contains { $0.effectID != nil }, "\(label): the effect must draw")
+            let composite = try XCTUnwrap(renderer.renderTarget(albedo.target), "\(label): \(albedo.target)")
+            XCTAssertEqual([composite.width, composite.height], size, "\(label) composite \(albedo.target)")
+            let raw = try readBack(renderer.backbuffer, device: renderer.backbuffer.device)
+            let width = renderer.backbuffer.width
+            let clear = Array(raw[0 ..< 3]).map(Int.init)
+            let centre = (16 * width + 32) * 4
+            var (minX, minY, maxX, maxY) = (Int.max, Int.max, Int.min, Int.min)
+            for y in 0 ..< renderer.backbuffer.height {
+                for x in 0 ..< width {
+                    let at = (y * width + x) * 4
+                    guard zip(raw[at ..< at + 3], clear).contains(where: { abs(Int($0) - $1) > 8 }) else { continue }
+                    (minX, minY, maxX, maxY) = (min(minX, x), min(minY, y), max(maxX, x), max(maxY, y))
+                }
+            }
+            // Quad centred at (32, 16): 6 units cover pixels 29–34 × 13–18; 48×24 cover 8–55 × 4–27.
+            let region = {
+                XCTAssertEqual([minX, minY, maxX, maxY], hasAlbedo ? [8, 4, 55, 27] : [29, 13, 34, 18],
+                               "\(label) drawn region; corner \(clear), centre \(Array(raw[centre ..< centre + 4]))")
+            }
+            if hasAlbedo {
+                region()
+            } else {
+                // The quad size still comes from the document size (WPEParityLayerTransform.layers via the draw planner).
+                XCTExpectFailure("OPEN: the layer quad does not follow the object size yet", failingBlock: region)
+            }
+        }
+    }
+
+    /// One autosize image layer of authored size 48×24 with a passthrough effect; `present` writes a 48×24 red albedo.
+    private func autosizeScene(original: WPEParityProgramAssets, present: Bool) throws -> (Data, WPEParityProgramAssets) {
+        let albedo: [String: Any] = ["shader": "passthrough", "textures": ["autosize-product"],
+                                     "combos": ["TRANSFORM": 1], "blending": "normal"]
+        var files: [String: Data] = try [
+            "models/autosize-product.json": JSONSerialization.data(withJSONObject: [
+                "autosize": true, "material": "materials/autosize-product.json",
+            ]),
+            "materials/autosize-product.json": JSONSerialization.data(withJSONObject: ["passes": [albedo]]),
+            "materials/autosize-pass.json": JSONSerialization.data(withJSONObject: [
+                "passes": [["shader": "passthrough", "combos": ["TRANSFORM": 1], "blending": "normal"]],
+            ]),
+            "effects/autosize-product.json": JSONSerialization.data(withJSONObject: [
+                "passes": [["material": "materials/autosize-pass.json"]],
+            ]),
+        ]
+        if present {
+            var tex = Data("TEXV0005\0TEXI0001\0".utf8)
+            func word(_ value: UInt32) {
+                withUnsafeBytes(of: value.littleEndian) { tex.append(contentsOf: $0) }
+            }
+            for value: UInt32 in [UInt32(WPETexFormat.rgba8888.rawValue), 0, 48, 24, 48, 24, 0] {
+                word(value)
+            }
+            tex.append(contentsOf: "TEXB0003\0".utf8)
+            for value: UInt32 in [1, .max, 1, 48, 24, 0, 48 * 24 * 4, 48 * 24 * 4] {
+                word(value)
+            }
+            for _ in 0 ..< 48 * 24 {
+                tex.append(contentsOf: [255, 0, 0, 255])
+            }
+            files["materials/autosize-product.tex"] = tex
+        }
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 32], "clearcolor": "0 0 1",
+                        "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
+            "objects": [
+                ["id": 1, "name": "autosize", "image": "models/autosize-product.json",
+                 "origin": "32 16 0", "size": "48 24", "alpha": 1,
+                 "effects": [["id": 4, "file": "effects/autosize-product.json"]]],
+            ],
+        ]
+        return try (JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]), assets)
+    }
+
     /// Loads and presents one frame; returns the operation keys of object 1's imported draw and object 2's effect draw.
     @MainActor private func missingTextureRender(_ driver: WPEParitySceneDriver, device: MTLDevice, texture: String,
                                                  files: [String: Data]) async throws -> (Int, Int) {

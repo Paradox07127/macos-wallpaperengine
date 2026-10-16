@@ -156,9 +156,17 @@ public struct WPEParityProgramScene: Sendable {
                 materials[MaterialKey(objectID: image.id, effectID: nil, source: albedoSource)] = material
             }
             let fullscreen = Self.flag(model?["fullscreen"])
+            // 140209360.c:26-49: an autosize model, not a projectlayer, takes its albedo's image size; a missing or
+            // "error" albedo is the 6×6 placeholder (1400ec220.c:164-165, 223-226).
+            let placeholderSize = Self.flag(model?["autosize"]) && !Self.flag(model?["projectlayer"])
+                && material?.textures[0].map {
+                    !$0.hasPrefix("_rt_") && ($0 == "error" || assets.data("materials/\($0).tex") == nil)
+                } == true
             // catsout WPSceneParser.cpp binds a fullscreen layer's FBOs to the screen.
-            let objectWidth = fullscreen ? width : image.size.map { Int($0.width.rounded()) } ?? width
-            let objectHeight = fullscreen ? height : image.size.map { Int($0.height.rounded()) } ?? height
+            let objectWidth = fullscreen ? width
+                : placeholderSize ? 6 : image.size.map { Int($0.width.rounded()) } ?? width
+            let objectHeight = fullscreen ? height
+                : placeholderSize ? 6 : image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
                                        materials: &materials, overridePasses: &overridePasses,
                                        records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored)
