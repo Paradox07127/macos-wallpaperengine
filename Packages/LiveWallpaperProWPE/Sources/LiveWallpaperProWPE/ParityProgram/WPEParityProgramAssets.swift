@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// WPE's file lookup for one wallpaper: the wallpaper first, then each WPE `assets` root in order. The 2.8.42
 /// capture manifest lists every stage's own root (the wallpaper's `shaders/` for workshop effects) ahead of
@@ -30,8 +31,17 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
         }
     }
 
+    struct ShaderDeclarations: Sendable {
+        /// Per stage; geometry only when `shaders/<name>.geom` exists.
+        let uniforms: [WPEHLSLStage: [String: WPEParityMaterialUniform]]
+        let annotations: WPEShaderAnnotationCombos
+    }
+
     /// Searched in order; the first source that has a file wins.
     public let sources: [Source]
+
+    /// Keyed by shader name; a wallpaper's shader files do not change while its assets live.
+    private let declarations = OSAllocatedUnfairLock(initialState: [String: ShaderDeclarations]())
 
     public var roots: [URL] {
         sources.map(\.root)
@@ -56,5 +66,23 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
 
     public func shaderSource(named name: String) -> [UInt8]? {
         data(name).map(Array.init)
+    }
+
+    func shaderDeclarations(_ shader: String) -> ShaderDeclarations {
+        if let stored = declarations.withLock({ $0[shader] }) {
+            return stored
+        }
+        let sources = WPEParityProgramResolver.expandedSources(shader: shader, sources: self)
+        var stages: [WPEHLSLStage: String] = [.vertex: sources.vertex, .fragment: sources.fragment]
+        stages[.geometry] = sources.geometry
+        let computed = ShaderDeclarations(
+            uniforms: stages.mapValues(WPEParityProgramConstants.uniforms),
+            annotations: WPEShaderAnnotationCombos(vertexSource: sources.vertex, fragmentSource: sources.fragment)
+        )
+        return declarations.withLock { memo in
+            let first = memo[shader] ?? computed
+            memo[shader] = first
+            return first
+        }
     }
 }

@@ -172,29 +172,25 @@ public extension WPEParityProgramBuilder {
                                 layerColor: SIMD4<Float>)
         -> ([WPEHLSLStage: [String: WPECBufferValue]], [Int32: String],
             [WPEHLSLStage: [String: WPEParityMaterialUniform]]) {
-        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
-        var stages: [WPEHLSLStage: String] = [.vertex: sources.vertex, .fragment: sources.fragment]
-        stages[.geometry] = sources.geometry
+        let declarations = assets.shaderDeclarations(material.shader)
         // Engine codes 0x00–0x02.
         let color: [String: WPECBufferValue] = [
             "g_Color4": .vector([layerColor.x, layerColor.y, layerColor.z, layerColor.w]),
             "g_Color": .vector([layerColor.x, layerColor.y, layerColor.z]),
             "g_Alpha": .float(layerColor.w),
         ]
-        let uniforms = stages.mapValues(WPEParityProgramConstants.uniforms)
-        let constants = uniforms.mapValues { uniforms in
+        let constants = declarations.uniforms.mapValues { uniforms in
             WPEParityProgramConstants.resolve(uniforms, values: material.constants).merging(color) { $1 }
         }
 
-        let names = resolvedTextureNames(material, vertexSource: sources.vertex, fragmentSource: sources.fragment)
-        return (constants, names, uniforms)
+        let names = resolvedTextureNames(material, annotations: declarations.annotations)
+        return (constants, names, declarations.uniforms)
     }
 
     /// Bound texture names and sampler defaults, shared with the native particle base-material probe.
     internal static func resolvedTextureNames(_ material: WPEParityProgramMaterial,
                                               assets: WPEParityProgramAssets) -> [Int32: String] {
-        let sources = WPEParityProgramResolver.expandedSources(shader: material.shader, sources: assets)
-        return resolvedTextureNames(material, vertexSource: sources.vertex, fragmentSource: sources.fragment)
+        resolvedTextureNames(material, annotations: assets.shaderDeclarations(material.shader).annotations)
     }
 
     /// Preserve authored FBO/previous ordering and include engine RT defaults in the same candidate read chain.
@@ -209,10 +205,9 @@ public extension WPEParityProgramBuilder {
         return names
     }
 
-    private static func resolvedTextureNames(_ material: WPEParityProgramMaterial, vertexSource: String,
-                                             fragmentSource: String) -> [Int32: String] {
+    private static func resolvedTextureNames(_ material: WPEParityProgramMaterial,
+                                             annotations: WPEShaderAnnotationCombos) -> [Int32: String] {
         var names = material.textures
-        let annotations = WPEShaderAnnotationCombos(vertexSource: vertexSource, fragmentSource: fragmentSource)
         for (slot, sampler) in annotations.samplers.entries where names[slot] == nil && !sampler.defaultTexture.isEmpty {
             names[slot] = sampler.defaultTexture
         }
