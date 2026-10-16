@@ -914,7 +914,8 @@ public struct WPEParityParticleSystem {
         case let .alphaFade(fadeIn, fadeOut):
             alpha[slot] *= blended(Math.alphaFade(t: t, fadeIn: fadeIn, fadeOut: fadeOut))
         case let .sizeChange(ramp):
-            size[slot] *= blended(Math.ramp(
+            // The instance size also scales sizechange start/end (1401c5490.c:9694-9719, 1d15a0.c:168-193).
+            size[slot] *= blended(instance.size * Math.ramp(
                 t: t, startTime: ramp.startTime, endTime: ramp.endTime, start: ramp.start, end: ramp.end
             ))
         case let .alphaChange(ramp):

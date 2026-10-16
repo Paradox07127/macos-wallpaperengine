@@ -118,6 +118,25 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(particles.age[0], 0.2)
     }
 
+    /// The instance size scales sizerandom and each sizechange start/end (1401c5490.c:6960, :9694; 1d15a0.c:168-193).
+    func testInstanceSizeScalesBirthSizeAndSizeChange() {
+        var particles = WPEParityParticleSystem(
+            json: ParityParticleTestSupport.json("""
+            {"maxcount": 1,
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                             {"name": "sizerandom", "min": 100, "max": 100}],
+             "operator": [{"name": "sizechange", "starttime": 0.7}]}
+            """),
+            instanceOverride: WPESceneParticleInstanceOverride(size: 0.49),
+            rng: WPEParityMT19937()
+        )
+        particles.advance(dt: 1)
+        XCTAssertEqual(particles.size[0], 100 * 0.5 * 0.49 * 0.49, accuracy: 1e-3)
+        particles.advance(dt: 8.5)
+        XCTAssertEqual(particles.size[0], 100 * 0.5 * 0.49 * 0.49 * 0.5, accuracy: 1e-3)
+    }
+
     func testUnknownComponentsAreReported() {
         let particles = system("""
         {"maxcount": 1,
