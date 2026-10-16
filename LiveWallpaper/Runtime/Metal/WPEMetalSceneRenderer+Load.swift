@@ -513,10 +513,14 @@ extension WPEMetalSceneRenderer {
             executor.userShortcutIconStore = userShortcutIconStore
         }
         // Before any script context installs `engine.userProperties`, which reads the declared keys once.
-        let shortcutKeys = UserShortcutRendererLink.declaredKeys(manifestRoot: projectManifestRootURL ?? cacheRootURL)
+        let shortcutKeys = WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: projectManifestRootURL ?? cacheRootURL)
+        #if SYSTEM_WALLPAPER_EXTENSION
+        userShortcutBridge.setBindings(declared: shortcutKeys, bound: [:])
+        #else
         await MainActor.run { [userShortcutBridge] in
             UserShortcutRendererLink.shared.updateDeclaredKeys(shortcutKeys, for: userShortcutBridge)
         }
+        #endif
         // New contexts read the current bindings, so earlier changes need no applyUserProperties.
         _ = userShortcutBridge.takeChangedKeys()
         userShortcutBridge.setChangeHandler { [weak displayActor] in Task { await displayActor?.forceContentRerender() } }

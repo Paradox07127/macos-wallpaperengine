@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperProWPE
 
 extension WPEMetalSceneRenderer {
     /// Called on the display actor during a diagnostic poll, never from a frame callback.

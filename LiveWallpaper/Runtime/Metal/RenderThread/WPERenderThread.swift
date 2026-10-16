@@ -229,6 +229,10 @@ final class WPERenderThread: @unchecked Sendable {
     var isCurrent: Bool { Thread.current === backingThread }
 
     #if DEBUG
+    func lifecycleReleaseProbeForTesting() -> @Sendable () -> Bool {
+        { [weak lifecycle] in lifecycle == nil }
+    }
+
     /// Lifecycle objects still alive process-wide; a stopped, released thread must not keep one.
     static var liveLifecycleCountForTesting: Int {
         Lifecycle.liveCount.withLock { $0 }

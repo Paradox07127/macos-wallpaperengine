@@ -1,4 +1,12 @@
 import os
+#if !LITE_BUILD
+import LiveWallpaperProWPE
+
+struct PreparedScenePropertyPatch: Sendable {
+    let patch: WPEScenePropertyPatch
+    let rendererGeneration: UInt64
+}
+#endif
 
 struct ScenePropertyMutationToken: Equatable, Sendable {
     fileprivate let generation: UInt64

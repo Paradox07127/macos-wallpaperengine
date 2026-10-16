@@ -55,13 +55,6 @@ final class UserShortcutRendererLink {
         push(to: bridge, icons: registration.icons, wallpaperID: registration.wallpaperID, declared: declaredKeys)
     }
 
-    nonisolated static func declaredKeys(manifestRoot: URL) -> Set<String> {
-        guard let schema = try? WallpaperEngineProjectPropertySchema.read(from: manifestRoot, includeSchemeColor: true) else {
-            return []
-        }
-        return Set(schema.properties.filter { $0.type == .userShortcut }.map(\.key))
-    }
-
     private func storeDidChange(wallpaperID: String?) {
         registrations.removeAll { $0.bridge == nil }
         for registration in registrations where registration.wallpaperID == wallpaperID {

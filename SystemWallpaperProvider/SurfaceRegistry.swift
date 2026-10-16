@@ -5,9 +5,12 @@ import QuartzCore
 final class WallpaperSurface {
     let uuid: UUID
     let bridge = RemoteContextBridge()
-    let renderer = VideoRenderer()
+    let renderer = WallpaperRenderer()
     var contextId: UInt32 = 0
+    var displayID: UInt32?
     var choiceID: String?
+    var resolvedItemID: String?
+    var publishedAt: Date?
     var playbackGeneration: UInt64 = 0
     var playbackFailure: String?
     var isPreview = false

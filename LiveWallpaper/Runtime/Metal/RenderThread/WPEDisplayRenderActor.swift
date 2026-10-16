@@ -502,6 +502,18 @@ actor WPEDisplayRenderActor {
         renderer?.setPresentFitMode(mode)
     }
 
+    /// Reload only when an authored control changes; a layer-only exclusion needs no rebuild.
+    func setSystemWallpaperState(descriptor: SceneDescriptor, excludedObjectIDs: Set<String>) async throws {
+        guard let renderer else { return }
+        renderer.excludedObjectIDs = excludedObjectIDs
+        guard renderer.descriptor != descriptor else { return }
+        renderer.descriptor = descriptor
+        // A sleeping native surface has released its scene slot. Its normal wake reload applies these values.
+        if renderer.didLoad {
+            try await reload()
+        }
+    }
+
     func scenePropertyBindings() -> [String: [WPEScenePropertyBinding]] {
         renderer?.scenePropertyBindings ?? [:]
     }
@@ -575,6 +587,31 @@ actor WPEDisplayRenderActor {
         }, onCancel: {
             resumer.resume(returning: nil)
         }, isolation: self)
+    }
+
+    /// Export uses the normal frame and terminal colour pass, without acquiring a window drawable.
+    func renderMovieFrame(into destination: WPEMetalRenderExecutor.PresentCompletionTexture) async throws {
+        try Task.checkCancellation()
+        guard let renderer else { throw WPEMetalRenderExecutorError.noRenderablePasses }
+        let production = WPEMetalFrameProductionCompletion()
+        var encoded = false
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs()) { source, commandBuffer in
+            try renderer.executor.encodePresentPass(
+                source: source, target: destination.texture, fitMode: renderer.presentFitMode,
+                worldSourceSize: renderer.sceneRenderSize, uniforms: nil, into: commandBuffer
+            )
+            let submission = production.registerSubmission()
+            commandBuffer.addCompletedHandler { buffer in submission.complete(succeeded: buffer.status == .completed) }
+            encoded = true
+            return true
+        }
+        production.seal()
+        guard encoded else { throw WPEMetalRenderExecutorError.commandBufferFailed }
+        let completed = await withCheckedContinuation { continuation in
+            production.observe { succeeded in continuation.resume(returning: succeeded) }
+        }
+        guard completed else { throw WPEMetalRenderExecutorError.commandBufferFailed }
+        try Task.checkCancellation()
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {

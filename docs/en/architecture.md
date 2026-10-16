@@ -169,17 +169,28 @@ Details: [Security](../SECURITY.md).
 
 ## System Wallpaper provider
 
-On macOS 26+, `WallpaperExportService` copies supported video files and publishes
-a manifest for `SystemWallpaperProvider`. The extension renders independently
+On macOS 26+, `WallpaperExportService` copies videos, records scene/web loops,
+and stages self-contained live scene bundles for `SystemWallpaperProvider`.
+Scene recording and live playback share the existing Metal renderer and a
+bounded IOSurface buffer pool; web recording uses ScreenCaptureKit's window
+capture rather than WebKit snapshots. The extension renders independently
 of the app, publishes a heartbeat, and performs compatibility checks. macOS
 chooses the active wallpaper; the app's library status is not an authoritative
 view of every system-side state.
 
 The provider uses private wallpaper/XPC integration bridges contained in
 `SystemWallpaperProvider/`. Treat it as a version-sensitive platform boundary,
-not a public general-purpose wallpaper SDK. It does not host the WPE/HTML
-runtime or the app's overlay windows. An incompatible provider can disable its
+not a public general-purpose wallpaper SDK. Pro shares its WPE scene runtime
+with the extension; it does not host live HTML or the app's overlay windows.
+Live scene time/date updates remain active at one frame per second when desktop
+animation is paused. Hidden/sleeping scenes can hibernate. An incompatible provider can disable its
 own path without replacing the normal app wallpaper architecture.
+
+The selected item and per-display targets use the existing provider manifest.
+Published media, scene bundles and display targets are installation-local and
+are not carried by `.lwconfig`: media and macOS wallpaper choices must be
+prepared/selected on the destination Mac. Existing app wallpaper settings and
+source references retain their normal backup behavior.
 
 ## Design and verification
 

@@ -337,7 +337,7 @@ extension WPEMetalSceneRenderer {
 
     func particleSystemVisible(_ system: WPEParticleSystem) -> Bool {
         guard let objectID = system.scriptParticleObjectID else { return true }
-        return Self.particleObjectVisible(
+        return ancestorChainVisible(objectID) && Self.particleObjectVisible(
             objectID,
             parentByID: objectParentByID,
             layerVisibility: liveLayerVisibility,

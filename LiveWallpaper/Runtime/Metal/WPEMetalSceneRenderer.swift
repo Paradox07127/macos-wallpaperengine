@@ -373,6 +373,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var lastRuntimeUniforms: WPEMetalRuntimeUniforms?
     var lastFramePipeline: WPEPreparedRenderPipeline?
     var scenePropertyBindings: [String: [WPEScenePropertyBinding]] = [:]
+    /// Native lock-screen exclusions are applied after scripts, without editing authored visibility.
+    var excludedObjectIDs: Set<String> = []
     var liveLayerVisibility: [String: Bool] = [:]
     var liveTextVisibility: [String: Bool] = [:]
     /// Fold a layer script's `visible` against ancestors' CURRENT visibility so a script cannot show a layer under a hidden ancestor.
@@ -427,7 +429,11 @@ final class WPEMetalSceneRenderer: NSObject {
         let executor = try WPEMetalRenderExecutor(device: device)
         let resolutionTracer = WPEResolutionTracer()
         // Container-internal installs have no security scope; `startAccessingSecurityScopedResource()` returns false for them.
+        #if SYSTEM_WALLPAPER_EXTENSION
+        let needsScope = false // Published assets are already inside the provider's granted shared directory.
+        #else
         let needsScope = engineAssetsRootURL.map { !WPEEngineAssetsLibrary.isContainerInternal($0) } ?? false
+        #endif
         let didStartEngineAssetsAccess = needsScope
             ? (engineAssetsRootURL?.startAccessingSecurityScopedResource() ?? false)
             : false

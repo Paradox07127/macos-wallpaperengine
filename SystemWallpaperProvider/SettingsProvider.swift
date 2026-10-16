@@ -10,52 +10,27 @@ struct SettingsProvider {
         let manifest = store.loadManifest()
         let provider = ChoiceProviderID(rawValue: providerID)
 
-        let items: [SettingsItem] = manifest.items.compactMap { item in
-            // No thumbnail means nothing to draw in the panel — skip rather
-            // than ship a blank tile.
-            guard let thumbName = item.thumbnailFileName else { return nil }
-            let thumbURL = SystemWallpaperPaths.videosDirectory(hostBundleID: store.hostBundleID)
-                .appendingPathComponent(thumbName)
-            guard FileManager.default.fileExists(atPath: thumbURL.path) else { return nil }
-
-            let videoURL = store.videoURL(for: item)
-            // A tile whose video is gone would be selectable but never play —
-            // skip it; the app-side sweep reclaims whatever is left on disk.
-            guard FileManager.default.fileExists(atPath: videoURL.path) else { return nil }
-            let descriptor = ChoiceIDDescriptor(
-                provider: provider,
-                identifier: item.id,
-                files: [videoURL],
-                configuration: Data(item.id.utf8)
-            )
-            let choiceID = ChoiceID(id: item.id, descriptor: descriptor)
-            let thumbnail = Thumbnail.image(url: thumbURL)
-
-            return SettingsItem(
-                id: choiceID,
-                localizedName: item.title,
-                thumbnail: thumbnail,
-                choice: ChoiceDescriptor(
-                    id: choiceID,
-                    provider: provider,
-                    identifier: item.id,
-                    name: item.title,
-                    localizedDescription: item.title,
-                    thumbnail: thumbnail,
-                    isDownloaded: true,
-                    options: []
-                ),
-                contentBadge: .video,
-                showInTopLevel: true,
-                sortOrder: 0,
-                // `.none`, not `.removable`: with a removable third-party choice
-                // macOS 27.0's own wallpaper pane traps in its Remove button
-                // handler (EXC_BREAKPOINT in Wallpaper.appex, 2026-08-18) and
-                // the request never reaches us. Removal lives in Loomscreen,
-                // which is the side that owns the files anyway.
-                disposability: .none
-            )
-        }
+        let item = manifest.item(for: SystemWallpaperManifest.selectedChoiceID)
+        let placeholder = Bundle.main.url(forResource: "SelectedWallpaper", withExtension: "png")
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/SelectedWallpaper.png")
+        let thumbnailURL = item?.thumbnailFileName.map { store.videosDirectory().appendingPathComponent($0) }
+        let thumbnail = Thumbnail.image(url: thumbnailURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
+        } ?? placeholder)
+        let brand = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Loomscreen"
+        let title = brand + " — " + String(localized: "Selected Wallpaper")
+        let identifier = SystemWallpaperManifest.selectedChoiceID
+        let choiceID = ChoiceID(id: identifier, descriptor: ChoiceIDDescriptor(
+            provider: provider, identifier: identifier,
+            files: item.map { [store.videoURL(for: $0)] } ?? [], configuration: Data(identifier.utf8)
+        ))
+        let items = [SettingsItem(
+            id: choiceID, localizedName: title, thumbnail: thumbnail,
+            choice: ChoiceDescriptor(id: choiceID, provider: provider, identifier: identifier, name: title,
+                                     localizedDescription: String(localized: "Follows the wallpaper selected inside Loomscreen"),
+                                     thumbnail: thumbnail, isDownloaded: true, options: []),
+            contentBadge: .video, showInTopLevel: true, sortOrder: 0, disposability: .none
+        )]
 
         let group = SettingsGroup(
             id: GroupID(id: providerID),
@@ -81,15 +56,8 @@ struct SettingsProvider {
     private func groupTitle() -> String {
         let brand = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
             ?? "Loomscreen"
-        let suffix: [String: String] = [
-            "zh-Hans": "视频壁纸",
-            "zh-Hant": "影片桌布",
-            "ja": "ビデオ壁紙",
-            "es": "Fondos de vídeo",
-        ]
         let preferred = Locale.preferredLanguages.first ?? "en"
-        let title = suffix.first { preferred.hasPrefix($0.key) }.map { "\(brand) \($0.value)" }
-            ?? "\(brand) Video Wallpapers"
+        let title = brand + " " + String(localized: "Wallpapers")
         return SystemWallpaperProviderStaleness.panelGroupTitle(
             title,
             verdict: ProviderStaleness.declaredVerdict(store: store),

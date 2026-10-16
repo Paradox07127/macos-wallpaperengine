@@ -15,12 +15,47 @@ struct SystemWallpaperCandidate: Identifiable {
     let title: String
     let source: Source
 
+    var publicationID: String {
+        switch source {
+        case let .bookmark(bookmark): bookmark.id.uuidString
+        #if !LITE_BUILD
+        case .workshop: id
+        #endif
+        }
+    }
+
+    var wallpaperType: WallpaperType {
+        switch source {
+        case let .bookmark(bookmark):
+            bookmark.wallpaperType
+        #if !LITE_BUILD
+        case let .workshop(entry):
+            switch entry.origin.originalType {
+            case .video: .video
+            case .web: .html
+            default: .scene
+            }
+        #endif
+        }
+    }
+
+    var placeholderSymbol: String {
+        switch wallpaperType {
+        case .video: "film"
+        case .html: "globe"
+        case .scene: "photo.artframe"
+        }
+    }
+
     /// Already-published entries are dropped rather than shown disabled: this is
     /// a list of things you can add, not a status display.
     @MainActor
-    static func all(bookmarks: [WallpaperBookmark], service: WallpaperExportService) -> [SystemWallpaperCandidate] {
+    static func all(bookmarks: [WallpaperBookmark], service: WallpaperExportService, includingPublished: Bool = false) -> [SystemWallpaperCandidate] {
         var result: [SystemWallpaperCandidate] = bookmarks.compactMap { bookmark in
-            guard case .video = bookmark.content, !service.isPublished(bookmarkID: bookmark.id) else { return nil }
+            #if LITE_BUILD
+            guard bookmark.wallpaperType == .video else { return nil }
+            #endif
+            guard includingPublished || !service.isPublished(bookmarkID: bookmark.id) else { return nil }
             return SystemWallpaperCandidate(
                 id: "bookmark::\(bookmark.id.uuidString)",
                 title: bookmark.label,
@@ -29,10 +64,10 @@ struct SystemWallpaperCandidate: Identifiable {
         }
         #if !LITE_BUILD
         result += SettingsManager.shared.loadGlobalSettings().recentWPEImports.compactMap { entry in
-            guard entry.origin.originalType == .video,
+            guard [.video, .web, .scene].contains(entry.origin.originalType),
                   !((entry.origin.entryFile ?? "").isEmpty) else { return nil }
             let id = workshopItemID(workshopID: entry.origin.workshopID)
-            guard !service.isPublished(itemID: id) else { return nil }
+            guard includingPublished || !service.isPublished(itemID: id) else { return nil }
             return SystemWallpaperCandidate(id: id, title: entry.origin.title, source: .workshop(entry))
         }
         #endif
@@ -48,16 +83,18 @@ struct SystemWallpaperCandidate: Identifiable {
     #endif
 
     @MainActor
-    func publish(using service: WallpaperExportService) async throws {
+    func publish(using service: WallpaperExportService, options: SystemWallpaperPreparationOptions = .init()) async throws {
         switch source {
         case let .bookmark(bookmark):
-            try await service.publish(bookmark: bookmark)
+            try await service.prepareAndPublish(content: bookmark.content, title: bookmark.label,
+                                                id: bookmark.id.uuidString, options: options, origin: bookmark.wpeOrigin)
         #if !LITE_BUILD
         case let .workshop(entry):
             guard let content = WPECachedContentResolver().content(for: entry.origin) else {
                 throw WallpaperExportService.ServiceError.unsupportedContent
             }
-            try await service.publish(content: content, title: entry.origin.title, id: id)
+            try await service.prepareAndPublish(content: content, title: entry.origin.title,
+                                                id: id, options: options, origin: entry.origin)
         #endif
         }
     }
@@ -68,6 +105,9 @@ struct SystemWallpaperCandidate: Identifiable {
     func thumbnail() async -> NSImage? {
         switch source {
         case let .bookmark(bookmark):
+            if let cover = bookmark.coverFileName, let image = await WallpaperCoverStore.shared.cover(named: cover) {
+                return image
+            }
             guard case let .video(data, packageEntryName) = bookmark.content,
                   packageEntryName == nil else { return nil }
             let key = "bookmark::video::\(bookmark.id.uuidString)"
@@ -137,7 +177,7 @@ struct SystemWallpaperCandidateTile: View {
                 .interpolation(.high)
                 .scaledToFill()
         } else {
-            Image(systemName: "film")
+            Image(systemName: candidate.placeholderSymbol)
                 .font(DesignTokens.Glyph.videoPlaceholder)
                 .foregroundStyle(Color.accentColor.opacity(0.85))
         }

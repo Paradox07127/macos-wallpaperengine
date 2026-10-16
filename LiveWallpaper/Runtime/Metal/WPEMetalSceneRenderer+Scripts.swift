@@ -1118,6 +1118,7 @@ extension WPEMetalSceneRenderer {
 
     var staticCacheExcludedLayerIDs: Set<String> {
         var ids = installedScriptLayerIDs
+        ids.formUnion(excludedObjectIDs)
         ids.formUnion(liveLayerPresentation.compactMap { id, mutation in
             mutation.alignment != nil || mutation.parallaxDepth != nil ? id : nil
         })
@@ -1172,7 +1173,13 @@ extension WPEMetalSceneRenderer {
     }
 
     func ancestorChainVisible(_ objectID: String) -> Bool {
-        Self.ancestorChainVisible(
+        var current: String? = objectID
+        var seen: Set<String> = []
+        while let id = current, seen.insert(id).inserted {
+            if excludedObjectIDs.contains(id) { return false }
+            current = objectParentByID[id]
+        }
+        return Self.ancestorChainVisible(
             objectID,
             parentByID: objectParentByID,
             liveLayerVisibility: liveLayerVisibility,
