@@ -260,6 +260,8 @@ public final class WPEParityScriptEngine {
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, command, setCurrentTime seconds (else 0).
     /// Returns 1/0 for isPlaying, seconds for getCurrentTime, 0 otherwise; nil = no product video consumer.
     public var videoTextureHandler: ((String, VideoCommand, Double) -> Double?)?
+    /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
+    public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
 
     /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
     public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
@@ -292,6 +294,13 @@ public final class WPEParityScriptEngine {
     private var mirroredMembershipGeneration: Int?
     private var soundVolumeConsumer: ((String, SoundFields) -> Void)?
     private var soundCommandConsumer: ((String, SoundCommand, SoundFields) -> Bool)?
+    /// IAnimation handles: one per binding found, by identity; the JS wrapper for handle i is cached at index i.
+    private var animationHandles: [WPEParityPropertyAnimation] = []
+
+    /// The Prelude's `host.animationCommand` op numbers.
+    private enum AnimationCommand: Int {
+        case play, pause, stop, isPlaying, setFrame, getFrame, getRate, setRate, fps, frameCount, duration
+    }
 
     /// Consumers may capture the actor's scene RNG only for this synchronous body. Nested scopes restore it.
     public func withSoundConsumers<Result>(volume: (String, SoundFields) -> Void,
@@ -1064,6 +1073,51 @@ public final class WPEParityScriptEngine {
             }
             handler(effectKeys[effect], name)
         }
+        // A material receiver passes one of its constant slots; a layer receiver passes slot -1 and its index.
+        let findAnimation: @convention(block) (Double, Double, String) -> Double = { [weak self] slot, layer, name in
+            guard let self else { return -1 }
+            let owner: (id: String, pass: WPEParityMaterialPassKey?)
+            if let slot = Self.checkedLayerIndex(slot, count: slots.count), let pass = slots[slot].materialPass {
+                owner = (pass.objectID, pass)
+            } else if let layer = Self.checkedLayerIndex(layer, count: layers.count) {
+                owner = (layers[layer].id, nil)
+            } else {
+                return -1
+            }
+            guard let lookup = propertyAnimationLookup else {
+                configuration.log(1, "getAnimation is unsupported without a product animation owner")
+                return -1
+            }
+            guard let animation = lookup(owner.id, owner.pass, name) else { return -1 }
+            if let handle = animationHandles.firstIndex(where: { $0 === animation }) {
+                return Double(handle)
+            }
+            animationHandles.append(animation)
+            return Double(animationHandles.count - 1)
+        }
+        let animationCommand: @convention(block) (Double, Double, Double) -> Double = { [weak self] handle, raw, value in
+            guard let self, let handle = Self.checkedLayerIndex(handle, count: animationHandles.count),
+                  let raw = Int(exactly: raw), let command = AnimationCommand(rawValue: raw) else { return 0 }
+            let animation = animationHandles[handle]
+            switch command {
+            case .play: animation.play()
+            case .pause: animation.pause()
+            case .stop: animation.stop()
+            case .isPlaying: return animation.isPlaying ? 1 : 0
+            case .setFrame: animation.frame = Float(value)
+            case .getFrame: return Double(animation.frame)
+            case .getRate: return Double(animation.rate)
+            case .setRate: animation.rate = Float(value)
+            case .fps: return Double(animation.fps)
+            case .frameCount: return Double(animation.frameCount)
+            case .duration: return Double(animation.duration)
+            }
+            return 0
+        }
+        let animationName: @convention(block) (Double) -> String = { [weak self] handle in
+            guard let self, let handle = Self.checkedLayerIndex(handle, count: animationHandles.count) else { return "" }
+            return animationHandles[handle].name ?? ""
+        }
         let layerIndexByID: @convention(block) (String) -> Double = { [weak self] id in
             Double(self?.layers.firstIndex { $0.id == id } ?? -1)
         }
@@ -1113,6 +1167,9 @@ public final class WPEParityScriptEngine {
         set("soundCommand", soundCommand)
         set("soundKind", WPEParityScriptLayerKind.sound.rawValue)
         set("executeMaterialFunction", executeMaterialFunction)
+        set("findAnimation", findAnimation)
+        set("animationCommand", animationCommand)
+        set("animationName", animationName)
         set("lookAtAngles", lookAtAngles)
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)

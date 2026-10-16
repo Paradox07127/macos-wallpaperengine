@@ -224,6 +224,19 @@ struct WPEParityPropertyAnimationTests {
         #expect(abs(animation.time - 0.3) < 1e-5)
     }
 
+    @Test func eventTimeMultipliesStoredFrameDurationBeforeCrossing() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 1)]], fps: 3, length: 8,
+                               options: ["events": [["frame": 5, "name": "boundary"]]]), valueType: .float
+        ))
+        // 1401a9540 mulss: Float32(5) * Float32(1/3) = 0x3fd55556.
+        // Float32(5/3) is the preceding float, which would dispatch this event one step too early.
+        animation.advance(dt: Float(bitPattern: 0x3FD5_5556))
+        #expect(animation.firedEvents.isEmpty)
+        animation.advance(dt: 0.0001)
+        #expect(animation.firedEvents.map(\.name) == ["boundary"])
+    }
+
     @Test func mirrorFiresBackwardsOnlyInsideTheStep() throws {
         let animation = try #require(WPEParityPropertyAnimation(
             property: property(channels: [[key(0, 0), key(4, 1)]], fps: 4, length: 4, options: [
@@ -257,6 +270,69 @@ struct WPEParityPropertyAnimationTests {
         #expect(animation.time == 0)
         try expectValue(animation, [2])
         #expect(animation.firedEvents.isEmpty)
+    }
+
+    @Test func playStartsAStartPausedClockAndPauseHoldsIt() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(4, 4)]], fps: 4, length: 4,
+                               options: ["startpaused": true]), valueType: .float
+        ))
+        #expect(!animation.isPlaying)
+        animation.play()
+        #expect(animation.isPlaying)
+        animation.advance(dt: 0.25)
+        #expect(animation.time == 0.25)
+        animation.pause()
+        #expect(!animation.isPlaying)
+        animation.advance(dt: 0.25)
+        #expect(animation.time == 0.25)
+        try expectValue(animation, [1])
+    }
+
+    /// 140170830 and 1401707f0: stop clears finished and reverse and rewinds; play rewinds only a finished clock.
+    @Test func stopRewindsAndClearsReverseWhilePlayKeepsDirection() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(4, 4)]], fps: 4, length: 4,
+                               options: ["mode": "mirror"]), valueType: .float
+        ))
+        animation.advance(dt: 1.25)
+        #expect(animation.direction == -1)
+        animation.pause()
+        animation.play()
+        #expect(animation.time == 0.75 && animation.direction == -1)
+        animation.stop()
+        #expect(!animation.isPlaying)
+        #expect(animation.time == 0 && animation.direction == 1)
+        animation.advance(dt: 0.5)
+        #expect(animation.time == 0)
+    }
+
+    @Test func playAfterSingleFinishedRestartsAtZero() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(4, 4)]], fps: 4, length: 4,
+                               options: ["mode": "single"]), valueType: .float
+        ))
+        animation.advance(dt: 2)
+        #expect(animation.finished && !animation.isPlaying)
+        animation.play()
+        #expect(!animation.finished && animation.time == 0)
+        animation.advance(dt: 0.5)
+        #expect(animation.time == 0.5)
+    }
+
+    /// 140170880 / 1401708a0: time = frame · stored 1/fps without a clamp; the frame is time / stored 1/fps.
+    @Test func framesConvertThroughTheStoredFrameDurationWithoutClamping() throws {
+        let animation = try #require(WPEParityPropertyAnimation(
+            property: property(channels: [[key(0, 0), key(30, 1)]], fps: 30, length: 30), valueType: .float
+        ))
+        animation.frame = 45
+        #expect(animation.time == Float(1) / 30 * 45)
+        #expect(animation.frame == animation.time / (Float(1) / 30))
+        #expect(animation.fps == 1 / (Float(1) / 30))
+        #expect(animation.frameCount == 30)
+        #expect(animation.duration == 1)
+        animation.advance(dt: 0)
+        #expect(abs(animation.time - 0.5) < 1e-5)
     }
 
     @Test func childUsesRootClockFpsLengthAndFrameStamp() throws {

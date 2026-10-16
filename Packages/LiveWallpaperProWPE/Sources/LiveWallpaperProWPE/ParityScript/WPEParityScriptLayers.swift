@@ -23,6 +23,41 @@ enum WPEParityScriptLayers {
       if ((mask & 0x400) && value !== null && typeof value === 'object') return { type: 0x400, value: _Internal.stringifyConfig(value) };
       return null;
     }
+    // IAnimation: one wrapper per host handle. Op numbers are WPEParityScriptEngine.AnimationCommand raw values.
+    const animations = [], animationHandles = new WeakMap();
+    function getAnimation(slot, layer, name) {
+      const handle = host.findAnimation(slot, layer, typeof name === 'string' ? name : '');
+      if (handle < 0) return undefined;
+      if (!animations[handle]) {
+        animations[handle] = Object.create(AnimationProto);
+        animationHandles.set(animations[handle], handle);
+      }
+      return animations[handle];
+    }
+    function animationCommand(wrapper, op, value = 0) {
+      const handle = animationHandles.get(wrapper);
+      return handle === undefined ? undefined : host.animationCommand(handle, op, value);
+    }
+    const AnimationProto = {
+      play() { animationCommand(this, 0); },
+      pause() { animationCommand(this, 1); },
+      stop() { animationCommand(this, 2); },
+      isPlaying() { const r = animationCommand(this, 3); return r === undefined ? undefined : r === 1; },
+      setFrame(frame) { const a = argument(frame, 4); if (a) animationCommand(this, 4, a.value); },
+      getFrame() { return animationCommand(this, 5); },
+      get rate() { return animationCommand(this, 6); },
+      set rate(value) {
+        const n = typeof value === 'number' ? Math.fround(value) : NaN;
+        if (Number.isFinite(n)) animationCommand(this, 7, n);
+      },
+      get fps() { return animationCommand(this, 8); },
+      get frameCount() { return animationCommand(this, 9); },
+      get duration() { return animationCommand(this, 10); },
+      get name() {
+        const handle = animationHandles.get(this);
+        return handle === undefined ? undefined : host.animationName(handle);
+      }
+    };
     const materialWrapper = Symbol('materialWrapper');
     function material(fields) {
       if (fields[materialWrapper]) return fields[materialWrapper];
@@ -33,6 +68,9 @@ enum WPEParityScriptLayers {
         Object.defineProperty(wrapper, name, accessor(() => f.slot, { rel: 0, type: f.type, angle: f.angle, readonly: f.readonly }));
         owners[f.slot] = wrapper;
       }
+      // The host maps any of this pass's constant slots to its material pass.
+      const first = Object.keys(fields)[0], slot = first === undefined ? -1 : fields[first].slot;
+      Object.defineProperty(wrapper, 'getAnimation', { value(name) { return getAnimation(slot, -1, name); } });
       return wrapper;
     }
     // The material callback compares ASCII paths without slash/dot normalization; do not replace it with
@@ -134,6 +172,7 @@ enum WPEParityScriptLayers {
         return this.__effects.find(e => e.name === a.value) || null;
       },
       getEffectCount() { return liveLayer(this) ? this.__effects.length : undefined; },
+      getAnimation(name) { return liveLayer(this) ? getAnimation(-1, this.__index, name) : undefined; },
       getVideoTexture() { return liveLayer(this) ? this.__video : undefined; }
     };
     const VideoProto = {

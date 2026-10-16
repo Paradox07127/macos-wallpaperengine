@@ -819,6 +819,7 @@ final class WPEParityFrameRenderer {
             try replaceConditionalProperties(changed: snapshot, merged: snapshot)
         }
         script?.engine.materialFunctionHandler = scriptMaterialFunction
+        script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
                        state: &state)
@@ -895,6 +896,7 @@ final class WPEParityFrameRenderer {
         self.script = script
         script.engine.materialFunctionHandler = scriptMaterialFunction
         script.engine.videoTextureHandler = scriptVideoCommand
+        script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         try script.start(state: &state)
     }

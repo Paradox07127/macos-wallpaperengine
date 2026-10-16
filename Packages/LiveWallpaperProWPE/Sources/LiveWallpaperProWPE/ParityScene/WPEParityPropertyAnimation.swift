@@ -26,12 +26,35 @@ public final class WPEParityPropertyAnimation {
         root?.clockFinished ?? clockFinished
     }
 
+    /// 140170860: neither paused nor finished, on this binding's own flags.
+    public var isPlaying: Bool {
+        !paused && !clockFinished
+    }
+
+    /// 140170880 / 1401708a0: this binding's own time in frames, through the stored 1/fps; setting does not clamp.
+    public var frame: Float {
+        get { clockTime / (1 / framesPerSecond) }
+        set { clockTime = (1 / framesPerSecond) * newValue }
+    }
+
+    /// 140170770: 1 / the stored 1/fps.
+    public var fps: Float {
+        1 / (1 / framesPerSecond)
+    }
+
+    public var frameCount: Int {
+        length
+    }
+
+    /// Seconds: length / fps.
+    public let duration: Float
+
     /// The sampled components, or nil when the authored channels cannot override the property.
     public var value: SIMD4<Float>? {
         guard samples.count == valueType.rawValue else { return nil }
         let time = time
         // WPE divides by a stored 1/fps for both; t·fps rounds differently near frame boundaries.
-        let frameDuration = 1 / fps
+        let frameDuration = 1 / framesPerSecond
         let frame = min(length - 1, max(0, Self.truncate(time / frameDuration)))
         let next = min(frame + 1, length)
         let fraction = fmodf(time, frameDuration) / frameDuration
@@ -71,11 +94,11 @@ public final class WPEParityPropertyAnimation {
 
     private let root: WPEParityPropertyAnimation?
     private let valueType: ValueType
-    private let fps: Float
+    private let framesPerSecond: Float
     private let length: Int
-    private let duration: Float
     private let mode: Mode
-    private let startPaused: Bool
+    /// Flag bit29; options.startpaused seeds it.
+    private var paused: Bool
     private let samples: [[Float]]
     private let events: [Event]
     private var clockTime: Float = 0
@@ -108,15 +131,15 @@ public final class WPEParityPropertyAnimation {
             root = nil
         }
         self.valueType = valueType
-        fps = root?.fps ?? authoredFPS
+        framesPerSecond = root?.framesPerSecond ?? authoredFPS
         length = root?.length ?? authoredLength
-        duration = Float(length) / fps
+        duration = Float(length) / framesPerSecond
         switch Self.string(options["mode"]) {
         case "mirror": mode = .mirror
         case "single": mode = .single
         default: mode = .loop
         }
-        startPaused = options["startpaused"] == .bool(true)
+        paused = options["startpaused"] == .bool(true)
 
         var offsets = [Float](repeating: 0, count: 4)
         if animation["relative"] == .bool(true), case let .string(value) = property["value"] {
@@ -155,7 +178,7 @@ public final class WPEParityPropertyAnimation {
                       let name = Self.string(entry["name"]) else { continue }
                 // 1401a9410: serialize the complete entry; its time is frame * stored frameDuration.
                 parsedEvents.append(Event(name: name, payloadJSON: WPEParityScriptEngine.jsonText(entry),
-                                          frame: frame, time: frame * (1 / fps)))
+                                          frame: frame, time: frame * (1 / framesPerSecond)))
             }
         }
         events = parsedEvents
@@ -190,9 +213,31 @@ public final class WPEParityPropertyAnimation {
         firedEvents.removeAll(keepingCapacity: true)
     }
 
+    /// 1401707f0: a finished clock restarts at 0; clears paused and finished but keeps the direction.
+    public func play() {
+        if clockFinished {
+            clockTime = 0
+        }
+        paused = false
+        clockFinished = false
+    }
+
+    /// 140170820.
+    public func pause() {
+        paused = true
+    }
+
+    /// 140170830: pauses, clears finished and reverse, and rewinds to 0.
+    public func stop() {
+        paused = true
+        clockFinished = false
+        clockDirection = 1
+        clockTime = 0
+    }
+
     /// FUN_1401a9f60: events fire on the unwrapped step before the clock wraps, reflects or clamps.
     private func step(_ delta: Float) {
-        guard !startPaused, !clockFinished, !(mode == .single && duration <= clockTime), duration > 0 else { return }
+        guard !paused, !clockFinished, !(mode == .single && duration <= clockTime), duration > 0 else { return }
         let signed = clockDirection < 0 ? -delta : delta
         let start = clockTime
         let next = signed + start

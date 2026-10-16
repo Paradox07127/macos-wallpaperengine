@@ -44,6 +44,29 @@ final class WPEParityScriptWiringTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// thisObject.getAnimation().play() in init starts a startpaused alpha animation through the renderer's bindings.
+    func testScriptPlaysAStartPausedAlphaAnimation() async throws {
+        let fixture = try await makeFixture("3815666789") { json in
+            Self.edit(&json, object: 17) {
+                $0["alpha"] = [
+                    "value": 0.2,
+                    "animation": ["c0": [["frame": 0, "value": 0.2], ["frame": 10, "value": 1]],
+                                  "options": ["fps": 10, "length": 10, "mode": "single", "startpaused": true]],
+                    "script": "export function init(value){ thisObject.getAnimation().play(); return value; }",
+                ]
+            }
+        }
+        let script = try attachScript(fixture)
+        let operation = try XCTUnwrap(Self.operation(fixture.plan, object: "17") { $0.fillsComposite })
+        for _ in 1 ... 5 {
+            try await encode(fixture.renderer)
+        }
+        let draw = try XCTUnwrap(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+        XCTAssertEqual(try XCTUnwrap(Self.float(draw.constants[.fragment]?["g_Alpha"])), 0.2 + 0.8 * 5 / 60,
+                       accuracy: 1e-3)
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// A fully held native pause skips object/script/render updates, retaining the last published intervals.
     func testHeldPauseStopsScriptWritesAndGPUFramesUntilResume() async throws {
         let fixture: Fixture

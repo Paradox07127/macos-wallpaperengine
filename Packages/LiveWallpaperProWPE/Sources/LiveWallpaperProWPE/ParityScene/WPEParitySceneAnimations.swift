@@ -4,7 +4,7 @@
 public struct WPEParitySceneAnimations {
     private enum Target {
         case object(Int, WPEParitySceneState.Property)
-        case constant(pass: Int, name: String, components: Int)
+        case constant(pass: Int, key: WPEParityMaterialPassKey, name: String, components: Int)
         case field(name: String, invalidation: WPEParitySceneState.Invalidation)
     }
 
@@ -89,7 +89,8 @@ public struct WPEParitySceneAnimations {
                     guard let components = constantComponents[key]?[name],
                           let valueType = WPEParityPropertyAnimation.ValueType(rawValue: components) else { continue }
                     authored.append(Authored(property: raw, valueType: valueType,
-                                             target: .constant(pass: pass, name: name, components: components),
+                                             target: .constant(pass: pass, key: key, name: name,
+                                                               components: components),
                                              objectID: id))
                 }
             }
@@ -136,13 +137,26 @@ public struct WPEParitySceneAnimations {
             switch binding.target {
             case let .object(index, property):
                 state.set(property, at: index, to: value)
-            case let .constant(pass, name, components):
+            case let .constant(pass, _, name, components):
                 state.setConstant(name, pass: pass, to: WPEParitySceneState.Constant(value: value, count: components))
             case let .field(name, invalidation):
                 // Animation curves are already in native stored units; the JavaScript angle conversion does not apply.
                 state.setScriptField(name, of: binding.objectID, to: .vector(value), invalidating: invalidation)
             }
         }
+    }
+
+    /// 14018db00: the first binding of the owner whose options.name (absent = "") equals `name`. `pass` selects that
+    /// material pass's constant animations; nil selects the layer's object-property and field animations.
+    public func animation(objectID: String, pass: WPEParityMaterialPassKey?,
+                          name: String) -> WPEParityPropertyAnimation? {
+        bindings.first { binding in
+            guard binding.objectID == objectID, (binding.animation.name ?? "") == name else { return false }
+            if case let .constant(_, key, _, _) = binding.target {
+                return key == pass
+            }
+            return pass == nil
+        }?.animation
     }
 
     static func id(_ object: WPESceneJSONValue) -> String? {
