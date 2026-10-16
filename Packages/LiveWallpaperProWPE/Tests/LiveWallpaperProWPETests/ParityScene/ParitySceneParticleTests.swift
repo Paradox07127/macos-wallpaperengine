@@ -221,13 +221,14 @@ struct ParitySceneParticleTests {
                 WPEParityParticleScene.prototype(for: $0, document: document, assets: program.assets)
             }
             #expect(probes.count == 7)
-            #expect(probes.map(\.slotCount) == [6, 2, 5, 2, 5, 4, 5])
+            // count scales emission only; every system keeps maxcount slots (ebe0.c:355).
+            #expect(probes.map(\.slotCount) == [3, 2, 5, 2, 5, 4, 5])
             #expect(probes.flatMap(\.renderers).map(\.kind) == [.sprite, .sprite, .sprite, .sprite, .sprite,
                                                                 .spriteTrail, .sprite])
             let scene = WPEParityParticleScene(document: document, assets: program.assets,
                                                engineFlags: program.engineFlags, seed: 7)
             let root = try #require(scene.objects.first?.system)
-            #expect(root.capacity == 6)
+            #expect(root.capacity == 3)
             #expect(root.children.count == 1)
             let child = try #require(root.children.first)
             #expect(child.capacity == 2)

@@ -129,7 +129,8 @@ final class ParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(Support.floats(bytes, at: 28, count: 4), [2, 0, 0, 0.5], "old packed colour stays unchanged")
         XCTAssertEqual(Support.floats(bytes, at: 44 + 28, count: 4), [0, 0, 3, 0.25])
         let childBytes = try XCTUnwrap(scene.batches(for: .init(objectID: "5", node: [0], renderer: 0)).first).bytes
-        XCTAssertEqual(Support.floats(childBytes, at: 28, count: 4), [1, 1, 1, 1])
+        // 22f890 gives the static child the object's override (brightness 2, alpha 0.5) before its first birth.
+        XCTAssertEqual(Support.floats(childBytes, at: 28, count: 4), [2, 2, 2, 0.5])
         XCTAssertEqual(Support.floats(childBytes, at: 44 + 28, count: 4), [3, 3, 3, 0.25],
                        "child brightness changes at birth while hascolor keeps its own colour gate")
     }
@@ -1193,6 +1194,77 @@ final class ParityParticleSceneTests: XCTestCase {
                 let bytes = scene.batches(for: WPEParityParticleDrawKey(objectID: id, renderer: 0)).first?.bytes ?? []
                 XCTAssertEqual(Support.floats(bytes, at: 28, count: 4),
                                [color.x * brightness, color.y * brightness, color.z * brightness, 0.5], id)
+            }
+        }
+    }
+
+    /// Every child gets the object's override (22f890 → 1d15a0) before its first birth; count scales emission
+    /// only, so slots stay at maxcount (ebe0.c:355).
+    func testChildrenUseTheObjectOverrideBeforeTheirFirstBirth() throws {
+        let children = #", "children": [{"name": "particles/kid.json"}, {"name": "particles/one.json"}, "#
+            + #"{"name": "particles/kid.json", "type": "eventspawn", "maxcount": 4}]"#
+        let one = """
+        {"maxcount": 1, "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": 100, "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}], "renderer": [{"name": "sprite"}]}
+        """
+        let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                         "instanceoverride": ["count": 0.5, "colorn": "0 0 1"]]]
+        var scene = try Self.scene(objects, particles: ["particles/fx.json": Self.burst(4, extra: children),
+                                                        "particles/kid.json": Self.burst(4),
+                                                        "particles/one.json": one])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.capacity, 4)
+        XCTAssertEqual(root.liveCount, 2)
+        XCTAssertEqual(root.children.count, 2)
+        let kid = try XCTUnwrap(root.children.first)
+        XCTAssertEqual(kid.capacity, 4)
+        XCTAssertEqual(kid.liveCount, 2)
+        XCTAssertEqual(kid.initialColor[0], SIMD3(0, 0, 1))
+        XCTAssertEqual(root.children.last?.liveCount, 1, "a maxcount-1 child must keep its slot under count 0.5")
+        let spawned = try XCTUnwrap(root.eventChildren.first)
+        XCTAssertEqual(spawned.count, 2)
+        for child in spawned {
+            XCTAssertEqual(child.liveCount, 2)
+            XCTAssertEqual(child.initialColor[0], SIMD3(0, 0, 1))
+        }
+    }
+
+    /// A valid colorn shifts colorrandom's HSV endpoints by colorn − the system reference colour.
+    func testColornRehuesColorRandomByTheSystemReference() throws {
+        func colored(_ rgb: String, extra: String = "") -> String {
+            """
+            {"maxcount": 1, "material": "materials/plain.json",
+             "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],
+             "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10},
+                             {"name": "colorrandom", "min": "\(rgb)", "max": "\(rgb)"}],
+             "renderer": [{"name": "sprite"}]\(extra)}
+            """
+        }
+        let withChild = Self.burst(1, extra: #", "children": [{"name": "particles/kid.json"}]"#)
+        let blue = "0.27843 0.47843 0.95294"
+        let cases: [(String, [String: String], String, Bool, SIMD3<Float>)] = [
+            ("re-hued", ["particles/fx.json": withChild, "particles/kid.json": colored("21 200 0")], blue, true,
+             SIMD3(0.077523, 0.228895, 0.908095)),
+            ("hascolor", ["particles/fx.json": withChild,
+                          "particles/kid.json": colored("21 200 0", extra: #", "hascolor": true"#)], blue, true,
+             SIMD3(0.27843, 0.47843, 0.95294)),
+            ("flags 8", ["particles/fx.json": colored("21 200 0", extra: #", "flags": 8"#)], blue, false,
+             SIMD3(21, 200, 0) / 255),
+            ("white", ["particles/fx.json": colored("197 214 255")], "1 1 1", false, SIMD3(1, 1, 1)),
+        ]
+        for (name, files, colorn, child, expected) in cases {
+            let objects: [[String: Any]] = [["id": 5, "name": "fx", "particle": "particles/fx.json",
+                                             "instanceoverride": ["colorn": colorn]]]
+            var scene = try Self.scene(objects, particles: files)
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+            let root = try XCTUnwrap(Self.root(scene))
+            let system = try XCTUnwrap(child ? root.children.first : root, name)
+            XCTAssertEqual(system.liveCount, 1, name)
+            for slot in 0 ..< system.capacity where system.lifetime[slot] != 0 {
+                let color = system.initialColor[slot]
+                XCTAssertLessThan(simd_reduce_max(abs(color - expected)), 1e-4, "\(name): \(color)")
             }
         }
     }

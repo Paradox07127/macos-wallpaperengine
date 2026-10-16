@@ -627,7 +627,8 @@ final class ParityParticleSimulationTests: XCTestCase {
     /// Nonzero boxes take six words per birth. The moving placement fixture uses zero offsets and their
     /// three-word direction fallback, plus three words for its velocity initializer: twelve parent words.
     private func followParent(_ entries: String, assets: [String: String], count: Int = 1,
-                              rate: Float = 0, lifetime: Float = 0.15, moving: Bool = false) -> WPEParityParticleSystem {
+                              rate: Float = 0, lifetime: Float = 0.15, moving: Bool = false,
+                              instanceOverride: WPESceneParticleInstanceOverride? = nil) -> WPEParityParticleSystem {
         WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
         {"maxcount": \(count),
          "emitter": [{"name": "boxrandom", "rate": \(rate), "instantaneous": \(rate == 0 ? count : 0),
@@ -636,7 +637,8 @@ final class ParityParticleSimulationTests: XCTestCase {
          "initializer": [{"name": "lifetimerandom", "min": \(lifetime), "max": \(lifetime)}
                          \(moving ? #", {"name": "velocityrandom", "min": "100 0 0", "max": "100 0 0"}"# : "")],
          "operator": [\(moving ? #"{"name": "movement"}"# : "")], "children": [\(entries)]}
-        """), rng: WPEParityMT19937(seed: 7), resolveChild: { assets[$0].map(ParityParticleTestSupport.json) })
+        """), instanceOverride: instanceOverride, rng: WPEParityMT19937(seed: 7),
+           resolveChild: { assets[$0].map(ParityParticleTestSupport.json) })
     }
 
     private func followChild(lifetime: Float = 10, startTime: Float = 0, extra: String = "") -> String {
@@ -667,8 +669,8 @@ final class ParityParticleSimulationTests: XCTestCase {
          "children": [{"name": "leaf", "origin": "0 5 0", "angles": "0 0 -1.5707963267948966", "scale": "1 3 1"}]}
         """
         var parent = followParent(#"{"name": "follow", "type": "eventfollow", "origin": "3 0 0", "angles": "0 0 1.5707963267948966", "scale": "2 1 1", "maxcount": 2}"#,
-                                  assets: ["follow": follow, "leaf": leaf], rate: 10, moving: true)
-        parent.instance.color = SIMD3(1, 0, 0)
+                                  assets: ["follow": follow, "leaf": leaf], rate: 10, moving: true,
+                                  instanceOverride: .init(color: SIMD3(255, 0, 0)))
         parent.advance(dt: 0.1)
         XCTAssertEqual(parent.position[0].x, 10)
         XCTAssertEqual(parent.eventChildren[0][0].instanceTransform.columns.3.x, 13)

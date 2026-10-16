@@ -82,15 +82,13 @@ public struct WPEParityParticleScene {
     }
 
     /// Renderer and slot facts from the same resolved Config tree as prototypes and simulation, without slots,
-    /// prewarm or RNG. Only the root uses the object's instance override, as in the existing child constructor.
+    /// prewarm or RNG. Every node gets the object's override (22f890), whose count scales emission, not slots.
     public static func prototype(for key: WPEParityParticleDrawKey, document: WPESceneDocument,
                                  assets: WPEParityProgramAssets) -> WPEParityParticlePrototype? {
         guard let object = document.particleObjects.first(where: { $0.id == key.objectID }),
               let root = WPEParityParticleConfig(path: object.particleRelativePath, assets: assets, is3D: false),
               let config = root.descendant(at: key.path[...]) else { return nil }
-        let instance = WPEParityParticleSystem.Instance(key.path.isEmpty ? object.instanceOverride : nil, hdr: false)
-        return WPEParityParticlePrototype(renderers: config.renderers,
-                                          slotCount: Int((Float(config.maxCount) * instance.count).rounded()))
+        return WPEParityParticlePrototype(renderers: config.renderers, slotCount: config.maxCount)
     }
 
     /// Each accepted system's base program and resolved bound/default texture names, without simulation or RNG.

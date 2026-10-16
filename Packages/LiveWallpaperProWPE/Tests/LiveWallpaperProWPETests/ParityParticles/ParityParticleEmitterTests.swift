@@ -335,8 +335,7 @@ final class ParityParticleEmitterTests: XCTestCase {
             """), instanceOverride: .init(count: 0), rng: rng)
             particles.advance(dt: 0.1)
             XCTAssertEqual(particles.liveCount, 0)
-            XCTAssertTrue(particles.position.isEmpty)
-            XCTAssertTrue(particles.birthU.isEmpty)
+            XCTAssertEqual(particles.capacity, 4, "count scales emission, not the maxcount slots")
             XCTAssertEqual(rng.next(), WPEParityMT19937(seed: 7).next(), "zero count leaves the shared stream at word1")
         }
     }

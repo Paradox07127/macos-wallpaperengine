@@ -158,6 +158,16 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                   })
     }
 
+    /// The colour colorn is measured against, 0–1: the first colorrandom midpoint (1401c45f0; c5490:809-845).
+    var colornReference: SIMD3<Float> {
+        for initializer in initializers {
+            if case let .color(low, high, _) = initializer {
+                return (low + high) / 2 / 255
+            }
+        }
+        return SIMD3(repeating: 1)
+    }
+
     func descendant(at path: ArraySlice<WPEParityParticlePathElement>) -> WPEParityParticleConfig? {
         guard let first = path.first else { return self }
         let candidates: [WPEParityParticleChildConfig]

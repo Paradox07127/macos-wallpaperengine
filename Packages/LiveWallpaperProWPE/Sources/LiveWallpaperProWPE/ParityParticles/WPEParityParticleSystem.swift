@@ -13,6 +13,8 @@ public struct WPEParityParticleSystem {
         var speed: Float = 1
         var alpha: Float = 1
         var color = SIMD3<Float>(repeating: 1)
+        /// The override or a script supplied colorn; without it `color` is only the default.
+        var hasColorn = false
         var brightness: Float = 1
         var controlPointOffsets = [SIMD3<Float>?](repeating: nil, count: WPEParityParticleControlPoint.count)
         var controlPointAngles = [SIMD3<Float>?](repeating: nil, count: WPEParityParticleControlPoint.count)
@@ -31,9 +33,18 @@ public struct WPEParityParticleSystem {
             alpha = Float(override.alpha ?? 1)
             // Normalized colorn and the HDR brightness become the system's birth colour seed.
             color = override.color.map { SIMD3<Float>($0 / 255) } ?? color
+            hasColorn = override.color != nil
             if hdr {
                 brightness = Float(max(override.brightness ?? 1, 0))
             }
+        }
+
+        /// A fresh child's copy: 22f890 hands it the override fields but no CP overrides (only 22bd40 applies those).
+        var childConstruction: Instance {
+            var copy = self
+            copy.controlPointOffsets = Array(repeating: nil, count: WPEParityParticleControlPoint.count)
+            copy.controlPointAngles = copy.controlPointOffsets
+            return copy
         }
     }
 
@@ -59,6 +70,12 @@ public struct WPEParityParticleSystem {
     var instance: Instance
     /// Event instances created after a hot update inherit that update, without changing the loaded child path.
     private var hasScriptInstanceChanges = false
+    /// Owner +0x3f7 & 2: the root's colorn validity, which 22f890 copies unchanged to every descendant.
+    private var colornRootValid = true
+    /// Valid colorn (22f890:21-31) seeds births and re-hues colorrandom.
+    private(set) var colornActive = false
+    /// Re-hued colorrandom endpoints (0–255) by initializer index; empty while colorn is invalid.
+    private var colorRanges: [Int: (low: SIMD3<Float>, high: SIMD3<Float>)] = [:]
     let material: WPEParityParticleMaterial
     let rng: WPEParityMT19937
     let crt: WPEParityCRTRandom
@@ -180,7 +197,7 @@ public struct WPEParityParticleSystem {
         parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0,
         scriptInstance: Instance? = nil, parentControlPoints: [simd_float4x4]? = nil,
         parentControlPointCount: Int = 0, parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
-        parentWorldSpace: Bool = false, bulkControlPointStart: Int? = nil
+        parentWorldSpace: Bool = false, bulkControlPointStart: Int? = nil, rootColornValid: Bool? = nil
     ) {
         self.parentSlot = parentSlot
         self.parentSample = parentSample
@@ -198,7 +215,8 @@ public struct WPEParityParticleSystem {
         frameContext.worldSpace = config.flags & 1 != 0
         frameContext.objectMatrix = frameContext.worldSpace
             ? self.instanceTransform : parentUpdateMatrix * self.instanceTransform
-        let capacity = Int((Float(config.maxCount) * instance.count).rounded())
+        // count scales emission only; the slots stay at maxcount (D/14022ebe0.c:355).
+        let capacity = config.maxCount
         self.capacity = capacity
         position = Array(repeating: .zero, count: capacity)
         velocity = position
@@ -228,16 +246,18 @@ public struct WPEParityParticleSystem {
             trailHead = trailCount
         }
         initializeControlPoints()
+        updateColorn(rootColornValid: rootColornValid)
         for child in config.children {
             if child.trigger == .always {
                 childGroup.append(children.count)
                 children.append(WPEParityParticleSystem(
-                    config: child.config, instance: Instance(), rng: rng, crt: crt,
+                    config: child.config, instance: instance.childConstruction, rng: rng, crt: crt,
                     instanceTransform: Self.childTransform(child), context: frameContext,
                     ownerTime: ownerTime, scriptInstance: scriptInstance, parentControlPoints: controlPoints,
                     parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
                     parentWorldSpace: frameContext.worldSpace,
-                    bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex
+                    bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex,
+                    rootColornValid: colornRootValid
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -409,6 +429,7 @@ public struct WPEParityParticleSystem {
         }
         if let value = vector("colorn") {
             next.color = value
+            next.hasColorn = true
         }
         for index in 0 ..< WPEParityParticleControlPoint.count {
             if let value = vector("controlpoint\(index)") {
@@ -423,24 +444,52 @@ public struct WPEParityParticleSystem {
     }
 
     /// The native hook walks static children and both active/finished event pools with their shared owner.
-    private mutating func useScriptInstance(_ next: Instance,
+    private mutating func useScriptInstance(_ next: Instance, rootColornValid: Bool? = nil,
                                             parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4) {
         let previousFrame = frameContext
         // 22bd40 pushes with 229760 even for a world static child, then pops after the recursive hook.
         setUpdateFrame(previousFrame, parentUpdateMatrix: parentUpdateMatrix, conditional: true)
         defer { frameContext = previousFrame }
         instance = next
+        updateColorn(rootColornValid: rootColornValid)
         applyControlPointInstance()
         hasScriptInstanceChanges = true
+        let matrix = frameContext.objectMatrix, rootValid = colornRootValid
         for index in children.indices {
-            children[index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
+            children[index].useScriptInstance(next, rootColornValid: rootValid, parentUpdateMatrix: matrix)
         }
         for group in eventChildren.indices {
             for index in eventChildren[group].indices {
-                eventChildren[group][index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
+                eventChildren[group][index].useScriptInstance(next, rootColornValid: rootValid,
+                                                              parentUpdateMatrix: matrix)
             }
             for index in finishedEventChildren[group].indices {
-                finishedEventChildren[group][index].useScriptInstance(next, parentUpdateMatrix: frameContext.objectMatrix)
+                finishedEventChildren[group][index].useScriptInstance(next, rootColornValid: rootValid,
+                                                                      parentUpdateMatrix: matrix)
+            }
+        }
+    }
+
+    /// `rootColornValid` is nil for the root, whose own validity becomes the bit its descendants receive.
+    /// Valid colorn differs from `colornReference` by at least 0.0035294 in a channel (22f890:21-31).
+    private mutating func updateColorn(rootColornValid: Bool?) {
+        let reference = config.colornReference
+        colornActive = rootColornValid != false && instance.hasColorn && config.flags & 8 == 0
+            && simd_reduce_max(abs(instance.color - reference)) >= 0.0035294
+        colornRootValid = rootColornValid ?? colornActive
+        colorRanges.removeAll()
+        guard colornActive else { return }
+        // Both endpoints move by colorn − reference in HSV: hue wraps, s/v clamp (1d15a0.c:248-402).
+        let shift = WPEParityParticleMath.rgbToHSV(instance.color) - WPEParityParticleMath.rgbToHSV(reference)
+        func rehue(_ rgb: SIMD3<Float>) -> SIMD3<Float> {
+            let hsv = WPEParityParticleMath.rgbToHSV(rgb / 255) + shift
+            let saturated = simd_clamp(hsv, .zero, SIMD3(repeating: 1))
+            return WPEParityParticleMath.hsvToRGB(hue: (hsv.x - hsv.x.rounded(.down)) * 360,
+                                                  saturation: saturated.y, value: saturated.z) * 255
+        }
+        for (index, initializer) in config.initializers.enumerated() {
+            if case let .color(low, high, _) = initializer {
+                colorRanges[index] = (rehue(low), rehue(high))
             }
         }
     }
@@ -606,13 +655,14 @@ public struct WPEParityParticleSystem {
         } else {
             eventChildConstructions += 1
             eventChildren[group].append(WPEParityParticleSystem(
-                config: child.config, instance: hasScriptInstanceChanges ? instance : Instance(),
+                config: child.config, instance: hasScriptInstanceChanges ? instance : instance.childConstruction,
                 rng: rng, crt: crt, instanceTransform: placement, context: frameContext,
                 parentSlot: event.slot, parentSample: sample, ownerTime: objectTime,
                 scriptInstance: hasScriptInstanceChanges ? instance : nil, parentControlPoints: controlPoints,
                 parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
                 parentWorldSpace: frameContext.worldSpace,
-                bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex
+                bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex,
+                rootColornValid: colornRootValid
             ))
         }
         if child.trigger == .follow {
@@ -718,7 +768,9 @@ public struct WPEParityParticleSystem {
         lifetime[slot] = 1
         initialSize[slot] = 0.5
         let brightness = config.flags & 8 == 0 ? instance.brightness : 1
-        initialColor[slot] = (config.hasColor ? SIMD3<Float>(repeating: 1) : instance.color) * brightness
+        // Seed: brightness, times colorn only while it is valid and the system has no hascolor (1d15a0.c:68-72).
+        let seed = colornActive && !config.hasColor ? instance.color : SIMD3<Float>(repeating: 1)
+        initialColor[slot] = seed * brightness
         initialAlpha[slot] = instance.alpha
         birthU[slot] = u
         frame[slot] = config.randomFrame ? u : 0
@@ -758,7 +810,8 @@ public struct WPEParityParticleSystem {
             initialSize[slot] *= low + pow(rng.unit(), exponent) * (high - low)
         case let .color(low, high, exponent):
             let r = shaped(rng.unit(), exponent)
-            initialColor[slot] = initialColor[slot] * (low + r * (high - low)) / 255
+            let range = colorRanges[index] ?? (low, high)
+            initialColor[slot] = initialColor[slot] * (range.low + r * (range.high - range.low)) / 255
         case let .hsvColor(hsv):
             initializeHSV(hsv, slot: slot)
         case let .colorList(colors, noise):
