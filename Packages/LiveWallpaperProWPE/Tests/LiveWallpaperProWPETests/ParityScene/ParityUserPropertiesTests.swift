@@ -80,6 +80,44 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(state.scriptField("zoom", of: ""), .vector(SIMD4(1.5, 0, 0, 0)))
     }
 
+    func testCameraObjectZoomFovAndParallaxDepthBindLiveAndWriteScriptFields() throws {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32}},
+         "objects":[
+          {"id":1,"image":"models/surface.json","parallaxDepth":{"user":"depth","value":"1 1"}},
+          {"id":3,"text":"Hi","parallaxDepth":{"user":"flag","value":true}},
+          {"id":4,"camera":"default","zoom":{"user":"lens","value":1},"fov":{"user":"angle","value":50}}
+         ]}
+        """#
+        func document(lens: Double = 1, angle: Double = 50, depth: WallpaperEngineProjectPropertyValue = .string("1 1"),
+                      flag: Bool = true) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: Data(source.utf8),
+                                             userValues: ["lens": .number(lens), "angle": .number(angle),
+                                                          "depth": depth, "flag": .bool(flag)],
+                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        }
+        let before = try document()
+        let bindings = WPEParityUserProperties.bindings(document: before)
+        for key in ["depth", "flag", "lens", "angle"] {
+            XCTAssertEqual(bindings[key]?.map(\.action), [.incremental], key)
+        }
+        var state = WPEParitySceneState(document: before, hdr: false)
+        let changed = try document(lens: 1.5, angle: 70, depth: .string("0.25 0.5"), flag: false)
+        try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: changed)).apply(to: &state)
+        XCTAssertEqual(state.scriptField("zoom", of: "4"), .vector(SIMD4(1.5, 0, 0, 0)))
+        XCTAssertEqual(state.scriptField("fov", of: "4"), .vector(SIMD4(70, 0, 0, 0)))
+        XCTAssertEqual(state.scriptField("parallaxDepth", of: "1"), .vector(SIMD4(0.25, 0.5, 0, 0)))
+        XCTAssertNil(state.scriptField("parallaxDepth", of: "3"), "a Bool keeps the running value")
+
+        let number = try document(lens: 1.5, angle: 70, depth: .number(0.5), flag: false)
+        try XCTUnwrap(WPEParityUserPropertyUpdate(from: changed, to: number)).apply(to: &state)
+        XCTAssertEqual(state.scriptField("parallaxDepth", of: "1"), .vector(SIMD4(0.5, 0.5, 0, 0)))
+        let single = try document(lens: 1.5, angle: 70, depth: .string("0.5"), flag: false)
+        try XCTUnwrap(WPEParityUserPropertyUpdate(from: number, to: single)).apply(to: &state)
+        XCTAssertEqual(state.scriptField("parallaxDepth", of: "1"), .vector(SIMD4(0.5, 0, 0, 0)))
+    }
+
     func testMaterialFileUserConstantsBindLiveAndFollowAChange() throws {
         let objects: [[String: Any]] = [
             ["id": 7, "image": "models/7.json", "size": "400 200", "alpha": ["user": "k", "value": 1]],

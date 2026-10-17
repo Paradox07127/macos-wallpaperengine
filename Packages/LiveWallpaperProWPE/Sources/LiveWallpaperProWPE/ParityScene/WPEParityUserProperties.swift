@@ -1,3 +1,4 @@
+import Foundation
 import LiveWallpaperCore
 
 /// User-property bindings of a parity scene and the field writes a change makes before the script engine applies the
@@ -24,8 +25,9 @@ public enum WPEParityUserProperties {
     ]
 
     /// Every user property the scene JSON binds, with each target it reaches. A scripted object field keeps its user watch
-    /// (1401a4db0.c:39-142); scriptproperties, sound volume, particle instance overrides and the fields the renderer
-    /// reads per frame or re-lays are `.incremental`, anything else (other scripted fields included) is `.reload`.
+    /// (1401a4db0.c:39-142); scriptproperties, sound volume, particle instance overrides, camera-object zoom/fov,
+    /// parallaxDepth and the fields the renderer reads per frame or re-lays are `.incremental`, anything else (other
+    /// scripted fields included) is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
@@ -65,6 +67,10 @@ public enum WPEParityUserProperties {
                 }
             }
             guard !scripted else { return reload }
+            if field == ["parallaxDepth"]
+                || (field == ["zoom"] || field == ["fov"]) && WPEParityProgramScene.string(objects[index]["camera"]) != nil {
+                return (.objectResource(objectID: id, field: field[0]), .resource, true)
+            }
             if texts.contains(id), field.count == 1, liveTextFields.contains(field[0]) {
                 return (.textObject(id: id), .resource, true)
             }
@@ -166,9 +172,9 @@ public enum WPEParityUserProperties {
 }
 
 /// The state writes that take a running parity scene from one parse of its JSON to a parse with changed user values:
-/// every object field, effect visible bit, material constant, sound volume and particle instance field whose parsed
-/// value differs, and the camera parallax
-/// terms, accepted bloom Bool delta and bloom constants read per frame.
+/// every object field, effect visible bit, material constant, sound volume, particle instance field, camera-object
+/// zoom/fov and parallaxDepth whose parsed value differs, and the camera parallax terms, accepted bloom Bool delta and
+/// bloom constants read per frame.
 public struct WPEParityUserPropertyUpdate: Sendable {
     public struct ObjectWrite: Sendable, Equatable {
         public let id: String
@@ -214,6 +220,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public private(set) var sounds: [SoundWrite] = []
     /// `instance.*` fields of particle layers whose parsed instance override differs.
     public private(set) var particles: [ScriptFieldWrite] = []
+    /// Camera-object fov/zoom and every object's parallaxDepth whose accepted JSON value differs.
+    public private(set) var objectFields: [ScriptFieldWrite] = []
     public let cameraParallax: WPESceneCameraParallaxSettings
     /// The new parse's bloom values, which the post-process draws read on the next frame.
     public let bloom: WPEParityBloomSettings
@@ -295,6 +303,26 @@ public struct WPEParityUserPropertyUpdate: Sendable {
                                                   invalidation: descriptor.invalidation))
             }
         }
+        let earlierObjects = Dictionary(old.resolvedObjectsJSON.compactMap { object in
+            WPEParitySceneAnimations.id(object).map { ($0, object) }
+        }) { first, _ in first }
+        for object in new.resolvedObjectsJSON {
+            guard let id = WPEParitySceneAnimations.id(object), let earlier = earlierObjects[id] else { continue }
+            if WPEParityProgramScene.string(object["camera"]) != nil {
+                for descriptor in WPEParityScriptProperty.camera where descriptor.type == .float {
+                    guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: object[descriptor.name]),
+                          value != WPEParityScriptProperty.sceneFloatValue(fromJSON: earlier[descriptor.name]) else {
+                        continue
+                    }
+                    objectFields.append(ScriptFieldWrite(id: id, name: descriptor.fieldName, value: SIMD4(value, 0, 0, 0),
+                                                         invalidation: descriptor.invalidation))
+                }
+            }
+            if let depth = Self.nativeVec2(object["parallaxDepth"]), depth != Self.nativeVec2(earlier["parallaxDepth"]) {
+                objectFields.append(ScriptFieldWrite(id: id, name: "parallaxDepth", value: SIMD4(lowHalf: depth, highHalf: .zero),
+                                                     invalidation: .none))
+            }
+        }
         let previous = Dictionary(old.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         for image in new.imageObjects {
             guard let earlier = previous[image.id], earlier.effects.map(\.id) == image.effects.map(\.id) else {
@@ -344,8 +372,33 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             state.setScriptField("volume", of: write.id, to: .vector(SIMD4(write.volume, 0, 0, 0)),
                                  invalidating: .soundGain)
         }
-        for write in particles {
+        for write in particles + objectFields {
             state.setScriptField(write.name, of: write.id, to: .vector(write.value), invalidating: write.invalidation)
+        }
+    }
+
+    /// The vec2 fromJSON (1401a3fc0.c:18-48): a number broadcasts; a string reads x, then y after the first space run
+    /// or 0; other shapes leave the field alone.
+    private static func nativeVec2(_ value: WPESceneJSONValue?) -> SIMD2<Float>? {
+        switch value {
+        case let .number(number)?:
+            SIMD2(repeating: Float(number))
+        case let .string(text)?:
+            text.withCString { start in
+                guard start.pointee != 0 else { return .zero }
+                var cursor = start
+                let x = Float(strtod(cursor, nil))
+                while cursor.pointee != 0, cursor.pointee != 0x20 {
+                    cursor += 1
+                }
+                guard cursor.pointee == 0x20 else { return SIMD2(x, 0) }
+                while cursor.pointee == 0x20 {
+                    cursor += 1
+                }
+                return SIMD2(x, Float(strtod(cursor, nil)))
+            }
+        default:
+            nil
         }
     }
 
