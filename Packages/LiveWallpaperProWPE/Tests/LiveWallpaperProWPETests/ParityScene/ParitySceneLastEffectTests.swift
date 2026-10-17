@@ -177,7 +177,7 @@ final class ParitySceneUniqueFBOWorkshopTests: XCTestCase {
         // Supply that preparation fact here without inferring activity from a source annotation.
         var post = scene.postProcess
         post.sceneMipMappedFrameBufferEnabled = true
-        let composed = try WPEParityFrameComposer.compose(scene: scene.scene, post: post, frameIndex: 0)
+        let composed = try WPEParityFrameComposer.compose(scene: scene.scene, post: post)
         XCTAssertTrue(composed.resources.contains { $0.id == "_rt_MipMappedFrameBuffer" })
         _ = try WPERenderGraphCompiler.compile(resources: composed.resources, operations: composed.operations)
     }

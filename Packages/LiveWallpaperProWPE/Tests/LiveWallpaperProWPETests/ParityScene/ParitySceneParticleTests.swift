@@ -113,7 +113,7 @@ struct ParitySceneParticleTests {
             #expect(draws[0].materialState == WPEParitySceneMaterialState(depthTest: false, depthWrite: false,
                                                                           cullsBackFaces: false))
 
-            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
             let sceneDraws = frame.draws.sorted { $0.key < $1.key }.compactMap { index, draw -> (Int, WPEParitySceneDraw)? in
                 guard case let .scene(draw) = draw else { return nil }
                 return (index, draw)

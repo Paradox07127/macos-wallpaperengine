@@ -57,7 +57,7 @@ final class ParityProgramModelTests: XCTestCase {
 
     func testModelBindingSamplesItsMaterialTexturesWithWhiteColour() throws {
         let (_, scene) = try loadScene()
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let index = try XCTUnwrap(frame.draws.first { _, draw in
             if case let .scene(draw) = draw {
                 draw.pass == "112/mesh0"

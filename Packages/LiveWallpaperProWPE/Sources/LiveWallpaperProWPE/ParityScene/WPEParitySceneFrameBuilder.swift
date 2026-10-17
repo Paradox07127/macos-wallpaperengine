@@ -1,14 +1,13 @@
 /// Emits WPE's RenderScene (140183550) up to the end of the object loop: scene clear, image layers and their effect
 /// chains, and the MSAA resolve. Bloom, mip-mapped/HDR copies, ccsimple, fade and present are not part of it.
 public enum WPEParitySceneFrameBuilder {
-    /// `frameIndex` is ignored. The scene stays logical: Mac callers supply the physical backbuffer separately, and
+    /// The scene stays logical: Mac callers supply the physical backbuffer separately, and
     /// `pixelScale` converts raw authored FBO fit values.
-    public static func build(_ scene: WPEParitySceneDescription, frameIndex: Int = 0,
+    public static func build(_ scene: WPEParitySceneDescription,
                              physicalBackbufferSize: SIMD2<Int>? = nil,
                              physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
                              pixelScale: Double = 1) -> WPEParitySceneFrame {
-        var emitter = WPEParitySceneEmitter(scene, frameIndex: frameIndex,
-                                            physicalBackbufferSize: physicalBackbufferSize,
+        var emitter = WPEParitySceneEmitter(scene, physicalBackbufferSize: physicalBackbufferSize,
                                             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)
         emitter.renderScene()
         // A composite pair is registered up front, but WPE creates only min(2, bit4 + n) (1401ea500.c:113-126).
@@ -71,8 +70,7 @@ private struct WPEParitySceneEmitter {
     /// may name it in its reads before the owner renders.
     private let layerComposites: [WPEResourceID: WPEParitySceneObject]
 
-    init(_ logicalScene: WPEParitySceneDescription, frameIndex _: Int,
-         physicalBackbufferSize: SIMD2<Int>?,
+    init(_ logicalScene: WPEParitySceneDescription, physicalBackbufferSize: SIMD2<Int>?,
          physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int>, pixelScale: Double) {
         // Each build starts from the logical description. Only FBO declaration copies become physical here;
         // object geometry, text and camera extents stay logical, including repeated relayout/replan builds.

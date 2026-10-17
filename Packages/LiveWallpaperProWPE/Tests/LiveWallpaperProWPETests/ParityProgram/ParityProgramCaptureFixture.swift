@@ -68,7 +68,7 @@ struct ParityProgramCaptureFixture {
         )
         let scene = try WPEParityProgramScene(document: document(sceneID), assets: assets,
                                               settings: Self.captureSettings)
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         return frame.draws.keys.sorted().map { index in
             let pass = frame.operations[index].pass
             guard var description = frame.draws[index].flatMap({ WPEParityProgramBuilder.description(of: $0, scene: scene) })

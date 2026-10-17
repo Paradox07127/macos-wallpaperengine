@@ -635,11 +635,11 @@ public struct WPEParityProgramScene: Sendable {
             guard WPEParityAuthoredFBO.conditionsMatch(fbo["conditions"], combos: combos) else { continue }
             guard let name = string(fbo["name"]), let format = string(fbo["format"]) else { continue }
             let clear = fboClear(fbo["clear"])
-            fbos.append(WPEParityAuthoredFBO(name: name, scale: fboNumber(fbo["scale"]) ?? 1, fit: fboNumber(fbo["fit"]),
+            fbos.append(WPEParityAuthoredFBO(name: name, scale: jsonNumber(fbo["scale"]) ?? 1, fit: jsonNumber(fbo["fit"]),
                                              format: format,
                                              swapPartner: swapPartners[name],
                                              unique: fbo["unique"] == .bool(true),
-                                             explicitWidth: fboNumber(fbo["width"]), explicitHeight: fboNumber(fbo["height"]),
+                                             explicitWidth: jsonNumber(fbo["width"]), explicitHeight: jsonNumber(fbo["height"]),
                                              initialClear: clear.initial, scriptClear: clear.stored, repeats: string(fbo["uvs"]) == "repeat"))
         }
         var passes: [WPEParityAuthoredPass] = []
@@ -720,7 +720,8 @@ public struct WPEParityProgramScene: Sendable {
                                         materialFunctions: metadata), materials, records)
     }
 
-    private static func fboNumber(_ value: WPESceneJSONValue?) -> Double? {
+    /// A bare JSON number; unlike `number`, an object's `value` does not count.
+    static func jsonNumber(_ value: WPESceneJSONValue?) -> Double? {
         guard case let .number(number)? = value else { return nil }
         return number
     }

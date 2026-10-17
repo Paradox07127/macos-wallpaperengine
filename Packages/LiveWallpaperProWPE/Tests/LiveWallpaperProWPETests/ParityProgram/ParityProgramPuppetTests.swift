@@ -35,7 +35,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertFalse(object.puppetForcesComposite)
         XCTAssertFalse(object.requiresLayerComposite)
 
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let (index, albedo) = try sceneDraw(frame, "7/albedo")
         XCTAssertEqual(albedo.geometry, .puppetMesh)
         XCTAssertNil(frame.draws.values.first { draw in
@@ -60,7 +60,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertTrue(object.puppetForcesComposite)
         XCTAssertTrue(object.requiresLayerComposite)
 
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let (_, albedo) = try sceneDraw(frame, "7/albedo")
         XCTAssertEqual(albedo.geometry, .fullscreenQuad)
         XCTAssertTrue(albedo.fillsComposite)
@@ -88,7 +88,7 @@ final class ParityProgramPuppetTests: XCTestCase {
                 parts: [.init(id: 0, start: 0, count: 3), .init(id: 1, start: 0, count: 3)],
                 clipGroups: [.init(clipped: [1], mask: [0], maskTexture: "mask")], vertexStream: original.vertexStream
             )
-            let frame = try WPEParityFrameComposer.compose(scene: description, post: scene.postProcess, frameIndex: 0)
+            let frame = try WPEParityFrameComposer.compose(scene: description, post: scene.postProcess)
             let (index, target) = try sceneDraw(frame, "7/clip1/target")
             XCTAssertEqual(target.colorRole, composite ? .compositePublish : .albedo)
             let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene,
@@ -140,7 +140,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         XCTAssertEqual(puppets.map(\.id).sorted(), ["43", "47", "51"])
         XCTAssertEqual(puppets.filter(\.puppetForcesComposite).map(\.id).sorted(), ["47", "51"])
 
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let puppetDraws = frame.draws.compactMap { index, draw -> (Int, WPEParitySceneDraw)? in
             guard case let .scene(draw) = draw, draw.geometry == .puppetMesh else { return nil }
             return (index, draw)
@@ -196,7 +196,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         for id in ["3704273480", "3808922316"] {
             guard let scene = try Self.workshopScene(id) else { continue }
             let clipped = scene.scene.objects.filter { !($0.puppet?.clipOperations.isEmpty ?? true) }
-            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
             let draws = frame.draws.values.compactMap { draw -> WPEParitySceneDraw? in
                 if case let .scene(draw) = draw {
                     draw

@@ -170,7 +170,7 @@ final class ParitySceneTextTests: XCTestCase {
         XCTAssertNotNil(program.textAtlases[text.atlasKey])
         XCTAssertEqual(program.textSizes["5"], SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
 
-        let frame = try WPEParityFrameComposer.compose(scene: program.scene, post: program.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: program.scene, post: program.postProcess)
         let index = try XCTUnwrap(frame.operations.firstIndex { $0.pass == "5/glyphs" && $0.kind.isDraw })
         let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: program)[index])
         XCTAssertEqual(binding.layerColorObjectID, "5")

@@ -84,7 +84,7 @@ final class ParityProgramBindingSourceTests: XCTestCase {
     }
 
     private func frame(_ fixture: Fixture) throws -> WPEParityFrame {
-        try WPEParityFrameComposer.compose(scene: fixture.scene.scene, post: fixture.scene.postProcess, frameIndex: 0)
+        try WPEParityFrameComposer.compose(scene: fixture.scene.scene, post: fixture.scene.postProcess)
     }
 }
 

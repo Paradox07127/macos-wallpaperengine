@@ -69,18 +69,18 @@ public struct WPEParityCameraPaths: Sendable, Equatable {
             if path["disabled"] == .bool(true) {
                 continue
             }
-            let duration = Float(number(path["duration"]) ?? 0)
+            let duration = Float(WPEParityProgramScene.jsonNumber(path["duration"]) ?? 0)
             var keyframes: [WPEParityCameraPath.Keyframe] = []
             for (index, transform) in transforms.enumerated() {
                 guard case .object = transform, transform["disabled"] != .bool(true) else { continue }
-                let timestamp: Float = if let authored = number(transform["timestamp"]) {
+                let timestamp: Float = if let authored = WPEParityProgramScene.jsonNumber(transform["timestamp"]) {
                     Float(authored)
                 } else if index != 0 {
                     Float(index) / Float(transforms.count - 1) * duration
                 } else {
                     0
                 }
-                let zoom = transform["zoom"].map { Float(number($0) ?? 0) } ?? 1
+                let zoom = transform["zoom"].map { Float(WPEParityProgramScene.jsonNumber($0) ?? 0) } ?? 1
                 keyframes.append(.init(timestamp: timestamp, pose: WPEParityCameraPose(
                     eye: vector(transform["eye"]), center: vector(transform["center"]), up: vector(transform["up"]),
                     zoom: zoom
@@ -166,15 +166,6 @@ public struct WPEParityCameraPaths: Sendable, Equatable {
         let zoom = hermite(SIMD3(repeating: a.zoom), SIMD3(repeating: b.zoom)).x
         return WPEParityCameraPose(eye: hermite(a.eye, b.eye), center: hermite(a.center, b.center),
                                    up: hermite(a.up, b.up), zoom: zoom)
-    }
-
-    /// A JSON number; WPE reads `timestamp` only when it is one.
-    private static func number(_ value: WPESceneJSONValue?) -> Double? {
-        if case let .number(number)? = value {
-            number
-        } else {
-            nil
-        }
     }
 
     /// "x y z" read with atof from each run of spaces; a missing component is 0 (FUN_140198e20).

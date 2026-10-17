@@ -221,7 +221,7 @@ struct ParitySceneEffectCommandTests {
         #expect(effect.passes.map(\.kind) == [.draw, .swap(first: "a", second: "b")])
     }
 
-    @Test func swapKeepsItsCommandPositionAndDoesNotDependOnElapsedFrameNumber() throws {
+    @Test func swapKeepsItsCommandPosition() throws {
         let effect = WPEParitySceneEffect(id: "e", passes: [
             WPEParityScenePass(shader: "step", target: "a", binds: ["b"]),
             WPEParityScenePass(shader: "commands/swap", kind: .swap(first: "a", second: "b")),
@@ -232,32 +232,30 @@ struct ParitySceneEffectCommandTests {
         ])
         let scene = F.scene([F.layer(effects: [effect])])
         let pair: [WPEResourceID] = ["a_512_256_1", "b_512_256_1"]
-        for frameIndex in [0, 1, 7] {
-            let frame = WPEParitySceneFrameBuilder.build(scene, frameIndex: frameIndex)
-            #expect(frame.draws["L/e/0"]?.target == pair[0], "frame \(frameIndex)")
-            #expect(frame.draws["L/e/0"]?.reads == [WPEResourceID(F.bc0), pair[1]], "frame \(frameIndex)")
-            #expect(frame.draws["L/e/2"]?.reads == [WPEResourceID(F.bc0), pair[0]], "frame \(frameIndex)")
-            let relevant = frame.operations.filter { $0.pass.rawValue.hasPrefix("L/e/") }.map(\.kind)
-            let command = try #require(relevant.firstIndex(of: .swapResources(first: pair[0], second: pair[1])))
-            #expect(relevant[..<command].contains {
-                if case .draw = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
-            #expect(relevant[(command + 1)...].contains {
-                if case .draw = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
-            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
-            for id in pair {
-                #expect(graph.resources[id]?.lifetime == .persistent, "\(id) frame \(frameIndex)")
-                #expect(graph.storage[id] == .dedicated, "\(id) frame \(frameIndex)")
+        let frame = WPEParitySceneFrameBuilder.build(scene)
+        #expect(frame.draws["L/e/0"]?.target == pair[0])
+        #expect(frame.draws["L/e/0"]?.reads == [WPEResourceID(F.bc0), pair[1]])
+        #expect(frame.draws["L/e/2"]?.reads == [WPEResourceID(F.bc0), pair[0]])
+        let relevant = frame.operations.filter { $0.pass.rawValue.hasPrefix("L/e/") }.map(\.kind)
+        let command = try #require(relevant.firstIndex(of: .swapResources(first: pair[0], second: pair[1])))
+        #expect(relevant[..<command].contains {
+            if case .draw = $0 {
+                true
+            } else {
+                false
             }
+        })
+        #expect(relevant[(command + 1)...].contains {
+            if case .draw = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
+        for id in pair {
+            #expect(graph.resources[id]?.lifetime == .persistent, "\(id)")
+            #expect(graph.storage[id] == .dedicated, "\(id)")
         }
     }
 }

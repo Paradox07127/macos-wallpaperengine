@@ -88,31 +88,9 @@ struct ParityScenePooledCompositeTests {
             WPEResourceID(F.bc1): WPEParitySceneSampler(filter: .linear, address: .clamp),
         ])
         let composed = try WPEParityFrameComposer.compose(
-            scene: F.scene([layer]), post: WPEParityPostProcessConfig(backbufferWidth: 1920, backbufferHeight: 1080),
-            frameIndex: 0
+            scene: F.scene([layer]), post: WPEParityPostProcessConfig(backbufferWidth: 1920, backbufferHeight: 1080)
         )
         #expect(composed.samplers["sc.512.256.nr1"] == pointWrap)
-    }
-
-    @Test func composerKeepsSwapCommandsIndependentOfFrameIndex() throws {
-        let effect = WPEParitySceneEffect(id: "e", passes: [
-            WPEParityScenePass(shader: "step", target: "a"),
-            WPEParityScenePass(shader: "commands/swap", kind: .swap(first: "a", second: "b")),
-        ], fbos: [
-            WPEParitySceneFBO(name: "a", width: 512, height: 256, swapPartner: "b"),
-            WPEParitySceneFBO(name: "b", width: 512, height: 256, swapPartner: "a"),
-        ])
-        let post = WPEParityPostProcessConfig(backbufferWidth: 1920, backbufferHeight: 1080)
-        for frameIndex in [0, 1] {
-            let frame = try WPEParityFrameComposer.compose(scene: F.scene([F.layer(effects: [effect])]), post: post,
-                                                           frameIndex: frameIndex)
-            let step = frame.draws.values.compactMap { draw -> WPEParitySceneDraw? in
-                guard case let .scene(scene) = draw, scene.pass == "L/e/0" else { return nil }
-                return scene
-            }
-            #expect(step.map(\.target) == [WPEResourceID("a_512_256_1")], "frame \(frameIndex)")
-            #expect(frame.operations.contains { $0.kind == .swapResources(first: "a_512_256_1", second: "b_512_256_1") })
-        }
     }
 
     @Test func passReadsAnFBODeclaredByAnotherEffectOfTheLayer() throws {

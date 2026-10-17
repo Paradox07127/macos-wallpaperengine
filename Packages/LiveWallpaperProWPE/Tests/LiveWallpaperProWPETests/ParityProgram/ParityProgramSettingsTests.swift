@@ -43,8 +43,7 @@ final class ParityProgramSettingsTests: XCTestCase {
                     XCTAssertEqual(scene.engineFlags.hdr, expected)
                     XCTAssertEqual(scene.postProcess.hdrEnabled, expected)
                     XCTAssertEqual(scene.scene.backbufferFormat, expected ? "rgba16float" : "rgba8unorm")
-                    let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess,
-                                                                   frameIndex: 0)
+                    let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
                     let terminals = frame.draws.values.compactMap { draw -> String? in
                         guard case let .post(post) = draw else { return nil }
                         return post.shader
@@ -70,7 +69,7 @@ final class ParityProgramSettingsTests: XCTestCase {
             XCTAssertFalse(scene.engineFlags.hdr, "authored HDR predicate: \(general)")
             XCTAssertFalse(scene.postProcess.hdrEnabled)
             XCTAssertEqual(scene.scene.backbufferFormat, "rgba8unorm")
-            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
             XCTAssertFalse(frame.draws.values.contains {
                 if case .post = $0 {
                     return true
@@ -112,7 +111,7 @@ final class ParityProgramSettingsTests: XCTestCase {
                                               engineFlags: scene.engineFlags, boundTextures: [:])
         XCTAssertEqual(combos.first { $0.name == "BACKBUFFER_MS" }?.value,
                        expected > 1 ? "1" : nil, file: file, line: line)
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let resources = Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
         XCTAssertEqual(resources["backbuffer"]?.sampleCount, 1, file: file, line: line)
         XCTAssertEqual(resources["backbufferDepth"]?.sampleCount, 1, file: file, line: line)

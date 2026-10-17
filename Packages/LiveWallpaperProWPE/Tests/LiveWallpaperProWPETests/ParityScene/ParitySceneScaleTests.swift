@@ -30,7 +30,7 @@ struct ParitySceneScaleTests {
             backbufferWidth: 288, backbufferHeight: 162
         )
         let frame = try WPEParityFrameComposer.compose(
-            scene: scene, post: post, frameIndex: 0, physicalBackbufferSize: SIMD2(288, 162),
+            scene: scene, post: post, physicalBackbufferSize: SIMD2(288, 162),
             physicalCanvasSize: { Self.canvas($0, scale: 0.75) }, pixelScale: 0.75
         )
         let sceneTargets: [WPEResourceID] = ["backbuffer", "backbufferDepth", "_rt_FullFrameBuffer",
@@ -118,7 +118,7 @@ struct ParitySceneScaleTests {
                                               objectTableNonEmpty: true, hdrEnabled: true, bloomSettings: bloom,
                                               backbufferWidth: 192, backbufferHeight: 108, backbufferFormat: "rgba16float")
         let frame = try WPEParityFrameComposer.compose(
-            scene: scene, post: post, frameIndex: 0, physicalBackbufferSize: SIMD2(192, 108),
+            scene: scene, post: post, physicalBackbufferSize: SIMD2(192, 108),
             physicalCanvasSize: { Self.canvas($0, scale: 0.5) }, pixelScale: 0.5
         )
         for (name, expected) in [("_rt_2FrameBuffer", SIMD2(96, 54)), ("_rt_4FrameBuffer", SIMD2(48, 27)),
@@ -169,12 +169,9 @@ struct ParitySceneScaleTests {
         ])
         let first = WPEParitySceneFrameBuilder.build(scene, physicalCanvasSize: { Self.canvas($0, scale: 0.5) },
                                                      pixelScale: 0.5)
-        let second = WPEParitySceneFrameBuilder.build(scene, frameIndex: 1,
-                                                      physicalCanvasSize: { Self.canvas($0, scale: 0.5) }, pixelScale: 0.5)
         let resource = try #require(first.resources.first { $0.id == "shared" })
         // Declaring420x203 ->210x100, fit37 ->37x17, /2 ->18x8. Reader extent would incorrectly yield18x9.
         #expect(SIMD2(resource.width, resource.height) == SIMD2(18, 8))
-        #expect(first == second)
         let native = WPEParitySceneFrameBuilder.build(scene)
         let original = try #require(native.resources.first { $0.id == "shared" })
         #expect(SIMD2(original.width, original.height) == SIMD2(37, 18))
@@ -218,7 +215,7 @@ struct ParitySceneScaleTests {
         let scene = WPEParitySceneDescription(width: 127, height: 63, objects: [fullscreen])
         let post = WPEParityPostProcessConfig(backbufferWidth: 64, backbufferHeight: 64)
         let frame = try WPEParityFrameComposer.compose(
-            scene: scene, post: post, frameIndex: 0, physicalBackbufferSize: SIMD2(64, 64),
+            scene: scene, post: post, physicalBackbufferSize: SIMD2(64, 64),
             physicalCanvasSize: { Self.canvas($0, scale: 0.5) }, pixelScale: 0.5
         )
         let composite = try #require(frame.resources.first { $0.id == "sc.64.64.bc0" })
@@ -226,7 +223,7 @@ struct ParitySceneScaleTests {
         _ = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
         #expect(throws: WPEParityFrameCompositionError.backbufferMismatch(scene: "62x30 rgba8unorm",
                                                                           post: "64x64 rgba8unorm")) {
-            try WPEParityFrameComposer.compose(scene: scene, post: post, frameIndex: 0,
+            try WPEParityFrameComposer.compose(scene: scene, post: post,
                                                physicalCanvasSize: { Self.canvas($0, scale: 0.5) }, pixelScale: 0.5)
         }
     }

@@ -74,7 +74,7 @@ final class ParityProgramBindingTests: XCTestCase {
                                                   settings: .init(mipMappedFrameBufferEnabled: false))
                 var post = scene.postProcess
                 post.sceneMipMappedFrameBufferEnabled = true // A supplied preparation fact, not annotation inference.
-                let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: post, frameIndex: 0)
+                let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: post)
                 let operation = try XCTUnwrap(frame.draws.first { _, draw in
                     guard case let .scene(draw) = draw else { return false }
                     return draw.shader == "mip-reader"
@@ -336,13 +336,13 @@ final class ParityProgramBindingTests: XCTestCase {
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
                                                         userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         return try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
             $0.materialPass == .init(objectID: "7", effectID: nil, pass: 0)
         })
     }
 
-    /// R15/140181f30 binds the LUT in slot 1 independently of COL. A material/default texture is not a graph read.
+    /// 140181f30 binds the LUT in slot 1 independently of COL. A material/default texture is not a graph read.
     func testPostColorCorrectionBindsItsLUTAndPreservesFreeAnnotationAssets() throws {
         let (scene, frame) = try Self.postFixture(
             bloom: false, correction: .init(wccV: "warm", wccAmt: 50),
@@ -415,7 +415,7 @@ final class ParityProgramBindingTests: XCTestCase {
                                                         userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
         let scene = WPEParityProgramScene(document: document, assets: assets,
                                           settings: .init(colorCorrection: correction))
-        return try (scene, WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0))
+        return try (scene, WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess))
     }
 
     /// One image layer `7` whose material runs `shaders/probe.{vert,frag}`; returns its albedo draw's binding.
@@ -449,7 +449,7 @@ final class ParityProgramBindingTests: XCTestCase {
         var assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [])
         assets.userValues = userValues
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let bindings = WPEParityProgramBuilder.bindings(frame: frame, scene: scene)
         let index = try XCTUnwrap(frame.draws.first { _, draw in
             guard case let .scene(draw) = draw else { return false }
@@ -530,7 +530,7 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertNil(state.passIndex(of: .init(objectID: "7", effectID: "9", pass: 7)),
                      "a material-bearing command keeps its declared path without inventing a draw consumer")
         let frame = try WPEParityFrameComposer.compose(scene: scene.scene(effectVisible: { _, _ in true }),
-                                                       post: scene.postProcess, frameIndex: 0)
+                                                       post: scene.postProcess)
         let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
             $0.materialPass == later
         })
@@ -584,7 +584,7 @@ final class ParityProgramBindingTests: XCTestCase {
                                                             userValues: userValues,
                                                             makeTransformScriptResolver: { _, _ in NoScripts() })
             let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
-            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+            let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
             let pass = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 0)
             let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
                 $0.materialPass == pass
@@ -643,7 +643,7 @@ final class ParityProgramBindingTests: XCTestCase {
         )
         let scene = try WPEParityProgramScene(document: fixture.document("3815666789"), assets: assets,
                                               settings: ParityProgramCaptureFixture.captureSettings)
-        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess, frameIndex: 0)
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         let bindings = WPEParityProgramBuilder.bindings(frame: frame, scene: scene)
         func sceneDraw(_ shader: String) throws -> (WPEParitySceneDraw, WPEParityProgramBinding) {
             let draws = frame.draws.compactMap { index, draw -> (Int, WPEParitySceneDraw)? in

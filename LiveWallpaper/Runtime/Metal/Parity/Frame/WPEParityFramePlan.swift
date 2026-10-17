@@ -54,7 +54,7 @@ struct WPEParityFrameLayout {
 }
 
 /// What fixes a draw's program: a scene draw's material, or a post-process draw's material file and shader. Effect
-/// sets change which draws a frame has, never the program of one (R24 Q3).
+/// sets change which draws a frame has, never the program of one.
 enum WPEParityProgramKey: Hashable {
     case scene(objectID: String, effectID: String?, source: WPEParitySceneMaterialSource?)
     case post(material: String, shader: String)
@@ -79,7 +79,7 @@ struct WPEParityFramePlan {
     let physicalBackbufferSize: SIMD2<Int>
     private let pixelScale: Double
     private let physicalCanvasSize: @Sendable (SIMD2<Int>) -> SIMD2<Int>
-    /// The user alignment the camera crops the canvas with (R8 Q1).
+    /// The user alignment the camera crops the canvas with.
     let alignment: WPEParityCameraAlignment
     /// Object and material state as loaded, hidden objects included.
     let state: WPEParitySceneState
@@ -94,7 +94,7 @@ struct WPEParityFramePlan {
         post.hdrEnabled ? .linear : .authored
     }
 
-    /// The program of every draw any effect set has, disabled effects included, as WPE loads them (R24 Q3).
+    /// The program of every draw any effect set has, disabled effects included, as WPE loads them.
     let programCache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>]
     let particleMaterials: [WPEParityParticleMaterialProbe]
 
@@ -164,7 +164,7 @@ struct WPEParityFramePlan {
                 scene: Self.loaded(scene.scene(effectVisible: { _, _ in enabled },
                                                logicalViewport: SIMD2(width, height))),
                 post: post,
-                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalBackbufferSize: physicalBackbufferSize,
                 physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
             )
             _ = Self.programs(frame, scene: scene, cache: &cache)
@@ -182,7 +182,7 @@ struct WPEParityFramePlan {
         if !placeholders.isEmpty {
             parented.objects += placeholders
             let frame = try WPEParityFrameComposer.compose(
-                scene: parented, post: post, frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                scene: parented, post: post, physicalBackbufferSize: physicalBackbufferSize,
                 physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
             )
             _ = Self.programs(frame, scene: scene, cache: &cache)
@@ -194,7 +194,7 @@ struct WPEParityFramePlan {
         for variant in Self.postVariants(post) {
             let frame = try WPEParityFrameComposer.compose(
                 scene: Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), post: variant,
-                frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalBackbufferSize: physicalBackbufferSize,
                 physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
             )
             _ = Self.programs(frame, scene: scene, cache: &cache)
@@ -520,7 +520,7 @@ struct WPEParityFramePlan {
             try Self.postVariants(post).compactMap { variant in
                 let frame = try WPEParityFrameComposer.compose(
                     scene: Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height))), post: variant,
-                    frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                    physicalBackbufferSize: physicalBackbufferSize,
                     physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
                 )
                 guard seen.insert(frame.operations.map(\.pass)).inserted else { return nil }
@@ -544,7 +544,7 @@ struct WPEParityFramePlan {
         return [enabled, disabled]
     }
 
-    /// WPE loads hidden objects too; the renderer skips their operations while they stay hidden (R24 Q2).
+    /// WPE loads hidden objects too; the renderer skips their operations while they stay hidden.
     private static func loaded(_ scene: WPEParitySceneDescription) -> WPEParitySceneDescription {
         var description = scene
         for index in description.objects.indices {
@@ -561,7 +561,7 @@ struct WPEParityFramePlan {
                                cache: inout [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>])
         throws -> WPEParityFrameLayout {
         let frame = try WPEParityFrameComposer.compose(
-            scene: description, post: post, frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+            scene: description, post: post, physicalBackbufferSize: physicalBackbufferSize,
             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
         )
         let (programs, skipped) = Self.programs(frame, scene: scene, cache: &cache)

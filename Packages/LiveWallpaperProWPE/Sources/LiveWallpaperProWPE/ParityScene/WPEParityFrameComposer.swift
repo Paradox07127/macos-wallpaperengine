@@ -25,17 +25,16 @@ public struct WPEParityFrame: Hashable, Sendable {
 }
 
 public enum WPEParityFrameComposer {
-    /// `frameIndex` picks the side of each effect FBO swap pair, as in `WPEParitySceneFrameBuilder.build`.
     /// Post is already configured for the physical backbuffer. Its pyramid/RV0/texel sizes are never scaled again.
     public static func compose(scene: WPEParitySceneDescription, post: WPEParityPostProcessConfig,
-                               frameIndex: Int, physicalBackbufferSize: SIMD2<Int>? = nil,
+                               physicalBackbufferSize: SIMD2<Int>? = nil,
                                physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
                                pixelScale: Double = 1) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
         guard scene.msaaSamples == post.msaaSampleCount else {
             throw .sampleCountMismatch(scene: scene.msaaSamples, post: post.msaaSampleCount)
         }
         let sceneFrame = WPEParitySceneFrameBuilder.build(
-            scene, frameIndex: frameIndex, physicalBackbufferSize: physicalBackbufferSize,
+            scene, physicalBackbufferSize: physicalBackbufferSize,
             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
         )
         let actual = sceneFrame.resources.first { $0.id == WPEParitySceneResource.backbuffer }

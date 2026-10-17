@@ -119,8 +119,8 @@ public final class WPEParityPropertyAnimation {
               (Float(authoredLength) / authoredFPS).isFinite,
               Float(authoredLength) / authoredFPS > 0 else { return nil }
 
-        name = Self.string(options["name"])
-        parentKey = Self.string(options["parent"]?["key"])
+        name = WPEParityProgramScene.string(options["name"])
+        parentKey = WPEParityProgramScene.string(options["parent"]?["key"])
         if let sharingClock {
             guard parent == nil, parentKey == nil else { return nil }
             root = sharingClock.root ?? sharingClock
@@ -131,7 +131,7 @@ public final class WPEParityPropertyAnimation {
         framesPerSecond = root?.framesPerSecond ?? authoredFPS
         length = root?.length ?? authoredLength
         duration = Float(length) / framesPerSecond
-        switch Self.string(options["mode"]) {
+        switch WPEParityProgramScene.string(options["mode"]) {
         case "mirror": mode = .mirror
         case "single": mode = .single
         default: mode = .loop
@@ -172,7 +172,7 @@ public final class WPEParityPropertyAnimation {
         if case let .array(entries) = options["events"] {
             for entry in entries {
                 guard let frame = Self.number(entry["frame"]),
-                      let name = Self.string(entry["name"]) else { continue }
+                      let name = WPEParityProgramScene.string(entry["name"]) else { continue }
                 // 1401a9410: serialize the complete entry; its time is frame * stored frameDuration.
                 parsedEvents.append(Event(name: name, payloadJSON: WPEParityScriptEngine.jsonText(entry),
                                           frame: frame, time: frame * (1 / framesPerSecond)))
@@ -295,11 +295,6 @@ public final class WPEParityPropertyAnimation {
         guard case let .number(value) = raw, value.isFinite,
               value >= Double(Int.min), value < Double(Int.max) else { return nil }
         return Int(value)
-    }
-
-    private static func string(_ raw: WPESceneJSONValue?) -> String? {
-        guard case let .string(value) = raw else { return nil }
-        return value
     }
 
     private static func tangent(_ raw: WPESceneJSONValue?) -> SIMD2<Float> {
