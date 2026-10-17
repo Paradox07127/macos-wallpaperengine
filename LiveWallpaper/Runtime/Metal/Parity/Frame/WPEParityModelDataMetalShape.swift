@@ -42,7 +42,7 @@ final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unch
     }
 
     /// The existing ProgramScene asset resolver and compiled shader owner qualify material/input admission.
-    /// Cold shaders remain an explicit resource prerequisite until the global registration loader supplies them.
+    /// Cold shaders stay a prerequisite: only materials preloaded from `general.precache` or registered "materials" paths draw.
     static func program(materialPath path: String, plan: WPEParityFramePlan) throws -> WPEParityProgram {
         let draw = WPEParitySceneDraw(
             pass: WPEPassIdentity("modeldata/material-admission"), objectID: "modeldata/material-admission",
@@ -99,7 +99,7 @@ final class WPEParityModelDataMetalShape: WPEParityModelDataPreparedShape, @unch
             engineFlags = plan.scene.engineFlags
         }
         guard case let .success(artifact)? = artifacts[program.hlsl] else {
-            throw WPEParityModelDataFailure.safety("material program was not prepared by the scene asset loader: \(mesh.material?.materialPath ?? program.shader)")
+            throw WPEParityModelDataFailure.safety("material program was not preloaded from precache or a registered materials path:\(mesh.material?.materialPath ?? program.shader)")
         }
         guard artifact.geometry == nil else {
             throw WPEParityModelDataFailure.safety("model geometry-stage admission requires its original input contract")

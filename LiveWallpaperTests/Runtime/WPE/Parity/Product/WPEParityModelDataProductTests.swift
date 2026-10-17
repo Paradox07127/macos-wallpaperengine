@@ -3,6 +3,7 @@ import CoreGraphics
 import CryptoKit
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import os
@@ -316,7 +317,7 @@ extension WPEParitySceneDriverTests {
           return layer ? 0.5 : 0.25;
         }
         """#
-        let fixture = try modelDataFixture(script: source, precache: ["materials/model-data.json"])
+        let fixture = try modelDataFixture(script: source)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
@@ -362,9 +363,31 @@ extension WPEParitySceneDriverTests {
         let engine = try XCTUnwrap(renderer.script?.engine)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
         XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
-        for path in ["models/foo.mdl", "particles/x.json", "materials/missing-model-data.json"] {
+        for path in ["models/foo.mdl", "particles/x.json"] {
             XCTAssertEqual(fixture.reads.count(path), 0, "registration must not read \(path)")
         }
+    }
+
+    func testMissingRegisteredMaterialIsSkippedWithWarningAndInitStillRuns() async throws {
+        let fixture = try modelDataFixture(script: """
+        engine.registerAsset('materials/missing.json');
+        engine.registerAsset('models/foo.mdl');
+        export function init(value) { return 0.5; }
+        """)
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "missing-registered-cache")))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertNil(driver.loadDiagnostics)
+        XCTAssertEqual(driver.renderer?.state.object("1")?.alpha, 0.5)
+        XCTAssertGreaterThan(fixture.reads.count("materials/missing.json"), 0)
+        XCTAssertEqual(fixture.reads.count("models/foo.mdl"), 0)
+        let warnings = LogFileSink.shared.recentDiagnosticLines(maxLines: 50, maxContextLines: 0)
+        XCTAssertTrue(warnings.contains { $0.contains("[WARNING]") && $0.contains("materials/missing.json") },
+                      "a skipped registered material must leave a warning")
     }
 
     func testPrecacheMaterialPathsKeepOnlyMaterialsPrefixedStrings() throws {

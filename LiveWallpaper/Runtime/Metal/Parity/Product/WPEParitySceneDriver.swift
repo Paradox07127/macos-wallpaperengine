@@ -338,18 +338,10 @@ final class WPEParitySceneDriver {
             adoptUpscalePlan(selection.upscale)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
-            for path in Self.precacheMaterialPaths(document.resolvedGeneralJSON) {
-                do {
-                    try await renderer.precacheMaterial(path, shaders: shaders)
-                } catch let error as CancellationError {
-                    throw error
-                } catch {
-                    // Unverified whether WPE fails the scene on this (1401515b0); the entry is skipped.
-                    Logger.warning("Parity precache material \(path) skipped: \(error)", category: .wpeRender)
-                }
-                try Task.checkCancellation()
-                guard generation == loadGeneration else { throw CancellationError() }
-            }
+            let precached = Self.precacheMaterialPaths(document.resolvedGeneralJSON)
+            // Unverified whether WPE fails the scene on a precache entry (1401515b0); the entry is skipped.
+            try await preloadMaterials(precached, source: "precache", renderer: renderer, shaders: shaders,
+                                       generation: generation)
             if WPEParitySceneScript.hasScripts(document) {
                 do {
                     var connectedHost = scriptHost
@@ -382,7 +374,16 @@ final class WPEParitySceneDriver {
                         materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
                         fieldDefaults: renderer.scriptFieldDefaults, host: connectedHost
                     )
+                    // Shader compilation is async, so createModelData cannot get-or-load a registered material on demand.
+                    var seen = Set(precached)
+                    let registered = script.engine.bindings.flatMap(\.registeredAssets).map(\.path).filter {
+                        $0.utf8.starts(with: "materials".utf8) && seen.insert($0).inserted
+                    }
+                    try await preloadMaterials(registered, source: "registered", renderer: renderer, shaders: shaders,
+                                               generation: generation)
                     try withScriptSound(script.engine) { try renderer.attachScript(script) }
+                } catch let error as CancellationError {
+                    throw error
                 } catch {
                     loadDiagnostics = .other(layer: "scripts", message: String(describing: error))
                     Logger.warning("Parity scene scripts unavailable: \(error)", category: .wpeRender)
@@ -811,6 +812,23 @@ final class WPEParitySceneDriver {
             executor.metalFXUpscaler = nil
         }
         executor.upscalePlan = plan
+    }
+
+    private nonisolated(nonsending) func preloadMaterials(
+        _ paths: [String], source: String, renderer: WPEParityFrameRenderer, shaders: WPEParityFrameShaderSource,
+        generation: Int
+    ) async throws {
+        for path in paths {
+            do {
+                try await renderer.precacheMaterial(path, shaders: shaders)
+            } catch let error as CancellationError {
+                throw error
+            } catch {
+                Logger.warning("Parity \(source) material \(path) skipped: \(error)", category: .wpeRender)
+            }
+            try Task.checkCancellation()
+            guard generation == loadGeneration else { throw CancellationError() }
+        }
     }
 
     /// String entries of `general.precache` whose first 9 bytes are "materials"; WPE skips the rest (140186c90.c:651-655).
