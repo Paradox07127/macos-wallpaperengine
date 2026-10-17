@@ -3,6 +3,63 @@ import Foundation
 import LiveWallpaperProWPE
 import os
 
+/// FIFO counting semaphore; a cancelled waiter throws CancellationError without taking a permit.
+final class WPEParityShaderCompileLimiter: Sendable {
+    static let shared = WPEParityShaderCompileLimiter(capacity: ProcessInfo.processInfo.activeProcessorCount)
+
+    private struct State {
+        var available: Int
+        var waiters: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
+    }
+
+    private let state: OSAllocatedUnfairLock<State>
+
+    init(capacity: Int) {
+        state = OSAllocatedUnfairLock(initialState: State(available: max(1, capacity)))
+    }
+
+    func acquire() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let granted: Bool? = state.withLock { state in
+                    // Cancellation before enqueueing is only visible here: the handler found no waiter to remove.
+                    if Task.isCancelled {
+                        return false
+                    }
+                    if state.available > 0 {
+                        state.available -= 1
+                        return true
+                    }
+                    state.waiters.append((id, continuation))
+                    return nil
+                }
+                switch granted {
+                case true?: continuation.resume()
+                case false?: continuation.resume(throwing: CancellationError())
+                case nil: break
+                }
+            }
+        } onCancel: {
+            let waiter = state.withLock { state in
+                state.waiters.firstIndex { $0.id == id }.map { state.waiters.remove(at: $0).continuation }
+            }
+            waiter?.resume(throwing: CancellationError())
+        }
+    }
+
+    func release() {
+        let next = state.withLock { state in
+            if state.waiters.isEmpty {
+                state.available += 1
+                return nil as CheckedContinuation<Void, Error>?
+            }
+            return state.waiters.removeFirst().continuation
+        }
+        next?.resume()
+    }
+}
+
 actor WPEParityShaderStore {
     enum ArtifactError: Error {
         case invalidStages
@@ -23,6 +80,7 @@ actor WPEParityShaderStore {
 
     private let compiler: any WPEParityShaderCompiling
     private let diskCache: WPEParityShaderDiskCache
+    private let limiter: WPEParityShaderCompileLimiter
     private var memory: [WPEParityShaderKey: WPEParityShaderArtifact] = [:]
     private var inFlight: [WPEParityShaderKey: Task<WPEParityShaderArtifact, Error>] = [:]
     private nonisolated let counts = OSAllocatedUnfairLock(initialState: Statistics())
@@ -31,9 +89,11 @@ actor WPEParityShaderStore {
         counts.withLock { $0 }
     }
 
-    init(compiler: any WPEParityShaderCompiling, diskCache: WPEParityShaderDiskCache) {
+    init(compiler: any WPEParityShaderCompiling, diskCache: WPEParityShaderDiskCache,
+         limiter: WPEParityShaderCompileLimiter = .shared) {
         self.compiler = compiler
         self.diskCache = diskCache
+        self.limiter = limiter
     }
 
     func artifact(for request: WPEParityShaderCompileRequest) async throws -> WPEParityShaderArtifact {
@@ -65,7 +125,7 @@ actor WPEParityShaderStore {
         let compiled: WPEParityCompiledStages
         let artifact: WPEParityShaderArtifact
         do {
-            compiled = try await compiler.compile(request)
+            compiled = try await compileHoldingPermit(request)
             artifact = try Self.decode(compiled, for: request)
         } catch {
             count(\.compilationFailures)
@@ -74,6 +134,12 @@ actor WPEParityShaderStore {
         await diskCache.write(compiled, for: request.key)
         memory[request.key] = artifact
         return artifact
+    }
+
+    private func compileHoldingPermit(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
+        try await limiter.acquire()
+        defer { limiter.release() }
+        return try await compiler.compile(request)
     }
 
     private nonisolated func count(_ outcome: any WritableKeyPath<Statistics, Int> & Sendable) {

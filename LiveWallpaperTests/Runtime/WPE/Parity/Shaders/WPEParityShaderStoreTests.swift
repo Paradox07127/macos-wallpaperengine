@@ -26,6 +26,11 @@ struct WPEParityShaderStoreTests {
             if shouldFail {
                 throw Failure.failed
             }
+            return Self.output(for: request, invalidReflection: invalidReflection)
+        }
+
+        static func output(for request: WPEParityShaderCompileRequest,
+                           invalidReflection: Bool = false) -> WPEParityCompiledStages {
             var stages: [WPEParityShaderKey.Stage: WPEParityCompiledStages.Stage] = [:]
             for stage in request.stages {
                 let json = """
@@ -39,6 +44,19 @@ struct WPEParityShaderStoreTests {
                                           ? Data(repeating: 0xCD, count: 64) : nil)
             }
             return .init(stages: stages)
+        }
+    }
+
+    private actor ConcurrencyProbe: WPEParityShaderCompiling {
+        private var running = 0
+        private(set) var peak = 0
+
+        func compile(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
+            running += 1
+            peak = max(peak, running)
+            defer { running -= 1 }
+            try await Task.sleep(for: .milliseconds(20))
+            return Compiler.output(for: request)
         }
     }
 
@@ -101,6 +119,55 @@ struct WPEParityShaderStoreTests {
         #expect(artifacts.count == 8)
         #expect(artifacts.allSatisfy { $0.vertex.functionName == "vertexMain" && $0.geometry == nil })
         #expect(await compiler.calls == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func compilesAcrossStoresShareOneConcurrencyLimit() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = ConcurrencyProbe()
+        let stores = (0 ..< 2).map { _ in
+            WPEParityShaderStore(compiler: probe, diskCache: WPEParityShaderDiskCache(cachesURL: directory))
+        }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for (index, store) in stores.enumerated() {
+                for offset in 0 ..< 40 {
+                    let shader = request(UInt8(index * 40 + offset))
+                    group.addTask { _ = try await store.artifact(for: shader) }
+                }
+            }
+            try await group.waitForAll()
+        }
+        let peak = await probe.peak
+        #expect(peak <= ProcessInfo.processInfo.activeProcessorCount, "peak concurrent compiles: \(peak)")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func cancelledPermitWaitersLeaveNoPermitBehind() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let limiter = WPEParityShaderCompileLimiter(capacity: 1)
+        try await limiter.acquire()
+        let waiters = (0 ..< 4).map { _ in
+            Task { () -> Bool in
+                do {
+                    try await limiter.acquire()
+                    return false
+                } catch {
+                    return error is CancellationError
+                }
+            }
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        waiters.forEach { $0.cancel() }
+        for waiter in waiters {
+            #expect(await waiter.value)
+        }
+        limiter.release()
+        let store = WPEParityShaderStore(compiler: Compiler(), diskCache: WPEParityShaderDiskCache(cachesURL: directory),
+                                         limiter: limiter)
+        let artifact = try await store.artifact(for: request())
+        #expect(artifact.vertex.functionName == "vertexMain")
+        try await limiter.acquire()
+        limiter.release()
     }
 
     @Test func statisticsSplitRequestsByOutcome() async throws {
