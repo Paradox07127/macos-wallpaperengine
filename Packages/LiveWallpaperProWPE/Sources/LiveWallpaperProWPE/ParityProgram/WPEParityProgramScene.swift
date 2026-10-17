@@ -363,7 +363,8 @@ public struct WPEParityProgramScene: Sendable {
         let cameraPaths = WPEParityCameraPaths(camera: document.sourceJSON["camera"], assets: assets)
         self.cameraPaths = cameraPaths
         // camerafade is e0 bit2, on from 0x26; fade.json loads only with camera paths (140181af0.c:37-42).
-        let cameraFade = bloomGeneral["camerafade"].map { Self.flag($0) } ?? true
+        // Only a bool or {value: bool} clears the bit (14019bfa0.c:16-38); 0, null and strings leave it on.
+        let cameraFade = WPEParityScriptProperty.sceneBoolValue(fromJSON: bloomGeneral["camerafade"]) ?? true
         var post = WPEParityPostProcessConfig(sceneBloomEnabled: sceneBloom, userBloomEnabled: settings.bloom,
                                               objectTableNonEmpty: !objects.isEmpty, hdrEnabled: flags.hdr,
                                               displayHDREnabled: settings.displayHDR,

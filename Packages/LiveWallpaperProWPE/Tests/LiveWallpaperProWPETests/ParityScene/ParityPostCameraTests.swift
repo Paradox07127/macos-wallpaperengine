@@ -109,6 +109,18 @@ final class ParityPostCameraTests: XCTestCase {
         XCTAssertFalse(try scene(camera: [:]).postProcess.fadeActive)
     }
 
+    func testCameraFadeTurnsOffOnlyForABoolOrABoolValueEnvelope() throws {
+        let withPaths: [String: Any] = ["paths": ["camera/paths.json"]]
+        let keepsOn: [Any] = [0, NSNull(), "false", ["value": 0]]
+        for value in keepsOn {
+            XCTAssertTrue(try scene(camera: withPaths, general: ["camerafade": value]).postProcess.fadeActive,
+                          "camerafade \(value) turned the fade off")
+        }
+        XCTAssertFalse(try scene(camera: withPaths, general: ["camerafade": false]).postProcess.fadeActive)
+        XCTAssertFalse(try scene(camera: withPaths, general: ["camerafade": ["value": false]]).postProcess.fadeActive)
+        XCTAssertTrue(try scene(camera: withPaths, general: [:]).postProcess.fadeActive)
+    }
+
     func testFadeDrawsAfterColorCorrection() throws {
         let program = try scene(camera: ["paths": ["camera/paths.json"]],
                                 colorCorrection: WPEParityColorCorrection(wecE: true, wecBrs: 25))
