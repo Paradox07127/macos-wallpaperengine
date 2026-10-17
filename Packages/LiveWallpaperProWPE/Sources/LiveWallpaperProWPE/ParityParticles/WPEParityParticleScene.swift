@@ -141,6 +141,13 @@ public struct WPEParityParticleScene {
     public func liveCount(_ objectID: String) -> Int? {
         indexByID[objectID].map { objects[$0].system.totalLiveCount }
     }
+
+    /// Runs `body` on the object's root system; nil when no system is loaded for that object.
+    @discardableResult
+    public mutating func control<R>(objectID: String, _ body: (inout WPEParityParticleSystem) -> R) -> R? {
+        guard let index = indexByID[objectID] else { return nil }
+        return body(&objects[index].system)
+    }
 }
 
 extension WPEParityParticleSystem {

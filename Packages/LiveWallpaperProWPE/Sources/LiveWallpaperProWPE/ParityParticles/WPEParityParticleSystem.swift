@@ -173,6 +173,8 @@ public struct WPEParityParticleSystem {
     /// Native +0x438: parent-owned raw-slot counts. Parent death releases once, then detaches all matches;
     /// multiple follow groups can therefore leave a count with no attached instance (236cd0:121–202).
     private(set) var followReferences: [Int: Int32] = [:]
+    /// Owner +0x3f7 bit 0, set by script pause: without a forced count the emitter pass is skipped (2378a0.c:362-363).
+    var paused = false
 
     /// `starttime` prewarms here; children are parsed through `resolveChild(path)`.
     /// `crt` is the scene's CRT `rand()` state, shared like `rng`. Brightness overrides need an HDR scene, which
@@ -199,7 +201,8 @@ public struct WPEParityParticleSystem {
         parentSample: WPEParityParticleParentSample? = nil, ownerTime: Float = 0,
         scriptInstance: Instance? = nil, parentControlPoints: [simd_float4x4]? = nil,
         parentControlPointCount: Int = 0, parentUpdateMatrix: simd_float4x4 = matrix_identity_float4x4,
-        parentWorldSpace: Bool = false, bulkControlPointStart: Int? = nil, rootColornValid: Bool? = nil
+        parentWorldSpace: Bool = false, bulkControlPointStart: Int? = nil, rootColornValid: Bool? = nil,
+        paused: Bool = false
     ) {
         self.parentSlot = parentSlot
         self.parentSample = parentSample
@@ -249,6 +252,7 @@ public struct WPEParityParticleSystem {
         }
         initializeControlPoints()
         updateColorn(rootColornValid: rootColornValid)
+        self.paused = paused
         for child in config.children {
             if child.trigger == .always {
                 childGroup.append(children.count)
@@ -259,7 +263,7 @@ public struct WPEParityParticleSystem {
                     parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
                     parentWorldSpace: frameContext.worldSpace,
                     bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex,
-                    rootColornValid: colornRootValid
+                    rootColornValid: colornRootValid, paused: paused
                 ))
             } else {
                 childGroup.append(eventChildren.count)
@@ -323,8 +327,8 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// A hidden object with live particles starts over at time 0: no particles, emitters restored as built without
-    /// new draws, sequence positions to 0, static children reset, event children destroyed (140230650.c:16-67,
+    /// A hidden object with live particles starts over at time 0: no particles, emitters restored as built (disabled
+    /// bits kept) without new draws, sequence positions to 0, static children reset, event children destroyed (140230650.c:16-67,
     /// D/14022f6c0.c). Nothing calls the starttime prewarm again.
     mutating func reset() {
         objectTime = 0
@@ -337,6 +341,44 @@ public struct WPEParityParticleSystem {
             eventChildren[group].removeAll(keepingCapacity: true)
         }
         followReferences.removeAll(keepingCapacity: true)
+    }
+
+    /// Clears the pause bit; only a system with nothing alive re-enables its static tree, without timer resets
+    /// (14024c5b0-14024c661, W6/14022f5b0.c).
+    public mutating func play() {
+        paused = false
+        guard !isAlive else { return }
+        enableEmissionThroughStaticChildren()
+    }
+
+    public mutating func pause() {
+        paused = true
+    }
+
+    /// The hidden-layer reset, then emission disabled through the static tree; the pause bit is untouched (14024c680).
+    public mutating func stop() {
+        reset()
+        stopEmissionThroughStaticChildren()
+    }
+
+    /// One root emitter pass with dt 0 forcing `count` births, even while paused; 0 forces 1, a negative count
+    /// nothing (14024cac0-14024caf1).
+    public mutating func emitParticles(_ count: Int32) {
+        guard count >= 0 else { return }
+        for index in config.emitters.indices {
+            emit(index, dt: 0, forced: count == 0 ? 1 : Int(count))
+        }
+        processSpawnEvents()
+    }
+
+    public var isPlaying: Bool {
+        !paused && isAlive
+    }
+
+    /// A live particle, an enabled emitter, or an alive static or active event descendant (W6/14022c310.c).
+    var isAlive: Bool {
+        liveCount != 0 || emitterStates.contains { !$0.disabled } || children.contains(where: \.isAlive)
+            || eventChildren.joined().contains(where: \.isAlive)
     }
 
     /// Live particles of this system and every descendant.
@@ -379,8 +421,11 @@ public struct WPEParityParticleSystem {
         for index in sequenceStates.indices {
             sequenceStates[index].t = 0
         }
+        // 22f6c0 restores timers, burst and accumulator but leaves each disabled bit as it was.
         for index in emitterStates.indices {
+            let disabled = emitterStates[index].disabled
             emitterStates[index] = Self.emitterState(config.emitters[index])
+            emitterStates[index].disabled = disabled
         }
         trailTimer = trailInterval
         clear(&trailPoints, to: .zero)
@@ -578,6 +623,7 @@ public struct WPEParityParticleSystem {
                                                   parentWorldSpace: frameContext.worldSpace)
             children[index].setUpdateFrame(frameContext, parentUpdateMatrix: frameContext.objectMatrix, conditional: false)
             children[index].objectTime = objectTime
+            children[index].paused = paused
             children[index].step(dt: dt, parentControlPoints: controlPoints, parentCount: controlPointCount,
                                  parentUpdateMatrix: frameContext.objectMatrix, parentWorldSpace: frameContext.worldSpace)
         }
@@ -599,6 +645,7 @@ public struct WPEParityParticleSystem {
                 eventChildren[group][index].setUpdateFrame(frameContext, parentUpdateMatrix: frameContext.objectMatrix,
                                                            conditional: true)
                 eventChildren[group][index].objectTime = objectTime
+                eventChildren[group][index].paused = paused
                 eventChildren[group][index].step(dt: dt, parentControlPoints: controlPoints, parentCount: controlPointCount,
                                                  parentUpdateMatrix: frameContext.objectMatrix,
                                                  parentWorldSpace: frameContext.worldSpace)
@@ -628,8 +675,10 @@ public struct WPEParityParticleSystem {
         processDeathEvents()
         updateControlPoints(parent: parentControlPoints, parentCount: parentCount,
                             parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
-        for index in config.emitters.indices {
-            emit(index, dt: dt)
+        if !paused {
+            for index in config.emitters.indices {
+                emit(index, dt: dt)
+            }
         }
         processSpawnEvents()
         runOperators(dt: dt)
@@ -699,6 +748,8 @@ public struct WPEParityParticleSystem {
         let placement = eventTransform(child, position: event.position)
         let sample = parentSample(slot: event.slot)
         if let last = finishedEventChildren[group].indices.last {
+            // The owner's pause bit reaches the instance before its reuse prewarm (1402378a0.c:1873-1874).
+            finishedEventChildren[group][last].paused = paused
             finishedEventChildren[group][last].reuseForEvent(
                 instanceTransform: placement, context: frameContext, parentSlot: event.slot,
                 parentSample: sample, ownerTime: objectTime, parentControlPoints: controlPoints,
@@ -715,7 +766,7 @@ public struct WPEParityParticleSystem {
                 parentControlPointCount: controlPointCount, parentUpdateMatrix: frameContext.objectMatrix,
                 parentWorldSpace: frameContext.worldSpace,
                 bulkControlPointStart: child.flags & 1 == 0 ? nil : child.controlPointStartIndex,
-                rootColornValid: colornRootValid
+                rootColornValid: colornRootValid, paused: paused
             ))
         }
         if child.trigger == .follow {
@@ -755,6 +806,16 @@ public struct WPEParityParticleSystem {
         }
         for index in children.indices {
             children[index].stopEmissionThroughStaticChildren()
+        }
+    }
+
+    /// 22f5b0 clears only the disabled bits through the static tree.
+    private mutating func enableEmissionThroughStaticChildren() {
+        for index in emitterStates.indices {
+            emitterStates[index].disabled = false
+        }
+        for index in children.indices {
+            children[index].enableEmissionThroughStaticChildren()
         }
     }
 

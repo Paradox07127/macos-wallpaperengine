@@ -30,6 +30,11 @@ public final class WPEParityScriptEngine {
         case play, pause, stop, isPlaying, setFrame, getFrame, fps, frameCount, duration
     }
 
+    /// Native IParticleSystem methods (14024cb00.c:94-205); the Prelude's op numbers are these raw values.
+    public enum ParticleCommand: Int, Sendable {
+        case play, pause, stop, isPlaying, emitParticles
+    }
+
     /// A snapshot of the existing typed fields at this synchronous native-call boundary.
     public struct SoundFields: Sendable {
         public let volume: Float
@@ -283,6 +288,9 @@ public final class WPEParityScriptEngine {
     /// Rebound like materialFunctionHandler. Arguments: image layer ID, `animationlayers` index, command, setFrame
     /// frame (else 0). Returns 1/0 for isPlaying, a getter's value, 0 otherwise; nil = no such puppet layer.
     public var animationLayerHandler: ((String, Int, AnimationLayerCommand, Double) -> Double?)?
+    /// Rebound like materialFunctionHandler. Arguments: particle layer ID, command, emitParticles count (else 0).
+    /// Returns 1/0 for isPlaying, 0 otherwise; nil = no loaded particle system for the layer.
+    public var particleSystemHandler: ((String, ParticleCommand, Int32) -> Double?)?
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
     public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
     /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
@@ -1180,6 +1188,19 @@ public final class WPEParityScriptEngine {
             }
             return handler(layers[index].id, animationLayer, command, value).map { NSNumber(value: $0) }
         }
+        let particleCommand: @convention(block) (Double, Double, Double) -> NSNumber? = { [weak self] index, raw, count in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count), layers[index].kind == .particle,
+                  let raw = Int(exactly: raw), let command = ParticleCommand(rawValue: raw),
+                  let count = Int32(exactly: count) else { return nil }
+            if let state = activeState, !state.pointee.isAlive(layers[index].id) {
+                return nil
+            }
+            guard let handler = particleSystemHandler, let result = handler(layers[index].id, command, count) else {
+                configuration.log(1, "IParticleSystem methods are unsupported without a product particle consumer")
+                return nil
+            }
+            return NSNumber(value: result)
+        }
         let executeMaterialFunction: @convention(block) (Double, String) -> Void = { [weak self] slot, name in
             guard let self, let slot = Self.checkedLayerIndex(slot, count: slots.count),
                   let effect = Self.checkedLayerIndex(Double(slots[slot].effect), count: effectKeys.count) else { return }
@@ -1305,6 +1326,8 @@ public final class WPEParityScriptEngine {
         set("imageKind", WPEParityScriptLayerKind.image.rawValue)
         set("textureAnimationCommand", textureAnimationCommand)
         set("animationLayerCommand", animationLayerCommand)
+        set("particleCommand", particleCommand)
+        set("particleKind", WPEParityScriptLayerKind.particle.rawValue)
         set("executeMaterialFunction", executeMaterialFunction)
         set("findAnimation", findAnimation)
         set("animationCommand", animationCommand)

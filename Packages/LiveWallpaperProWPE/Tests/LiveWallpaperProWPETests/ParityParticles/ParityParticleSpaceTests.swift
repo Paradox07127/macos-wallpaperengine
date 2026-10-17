@@ -404,6 +404,8 @@ final class ParityParticleSpaceTests: XCTestCase {
         XCTAssertEqual(x(value.controlPoints[0]), 100)
         XCTAssertEqual(x(value.previousControlPoints[0]), 100)
         XCTAssertTrue(value.controlPointsSeeded)
+        // The reset keeps the spent one-shot emitter disabled; play re-arms it without touching CP history.
+        value.play()
         value.advance(dt: 0.1, frame: .init(objectMatrix: translation(200)))
         // q = birth202 + retained delta100 =302; e102; k=.5 =>252.
         XCTAssertEqual(value.position[0].x, 252, accuracy: 0.0001)

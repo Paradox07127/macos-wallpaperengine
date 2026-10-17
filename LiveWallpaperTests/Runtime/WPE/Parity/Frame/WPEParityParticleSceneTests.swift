@@ -678,6 +678,35 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
     }
 
+    /// Scene 9000107's instance alpha script: stop in init, emitParticles(1) at 1 s and (3) at 3 s.
+    func testScriptStopAndEmitParticlesReachTheProductionParticleScene() async throws {
+        let script = """
+        let start = 0; let phase = -1;
+        export function init(value) { start = engine.runtime; thisLayer.stop(); return value; }
+        export function update(value) {
+            let t = engine.runtime - start; let next = t < 1 ? 0 : t < 3 ? 1 : 2;
+            if (next !== phase) { phase = next; if (phase === 1) thisLayer.emitParticles(1); if (phase === 2) thisLayer.emitParticles(3); }
+            return (phase + 1) / 4;
+        }
+        """
+        var particle = Self.burstParticle(renderer: [["name": "sprite"]])
+        particle["maxcount"] = 8
+        let (renderer, _) = try await syntheticRenderer(["particles/root.json": particle],
+                                                        instanceOverride: ["alpha": ["value": 1, "script": script]])
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        for frame in 1 ... 105 {
+            try await renderParticleFrame(renderer, elapsed: 1.0 / 30)
+            if frame < 29 {
+                XCTAssertEqual(renderer.particleLiveCount("1"), 0, "init's stop would let the burst through at frame \(frame)")
+            }
+            if frame == 45 {
+                XCTAssertEqual(renderer.particleLiveCount("1"), 1)
+            }
+        }
+        XCTAssertEqual(renderer.particleLiveCount("1"), 4)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     private static func burstParticle(renderer: [[String: Any]], material: String = "materials/plain.json") -> [String: Any] {
         ["maxcount": 1, "material": material, "renderer": renderer,
          "emitter": [["name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0]],
@@ -715,7 +744,8 @@ final class WPEParityParticleSceneTests: XCTestCase {
                                    composited: Bool = false, parentSize: Int = 64, ownerOrigin: String = "32 32 0",
                                    particleCullMode: String? = nil, ownerAngles: String = "0 0 0", ownerScale: String = "1 1 1",
                                    parentOrigin: String = "32 32 0", compositeChildOrigin: String = "0 0 0",
-                                   requiredOriginalInputs: Bool = false) async throws
+                                   requiredOriginalInputs: Bool = false,
+                                   instanceOverride: [String: Any]? = nil) async throws
         -> (WPEParityFrameRenderer, MTLCommandQueue) {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
@@ -742,6 +772,9 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
         var sceneObjects: [[String: Any]] = [["id": 1, "particle": "particles/root.json", "origin": ownerOrigin,
                                               "angles": ownerAngles, "scale": ownerScale]]
+        if let instanceOverride {
+            sceneObjects[0]["instanceoverride"] = instanceOverride
+        }
         if composited {
             sceneObjects = [
                 ["id": 2, "image": "models/parent.json", "size": "\(parentSize) \(parentSize)", "origin": parentOrigin, "color": "1 0 0",
@@ -787,6 +820,15 @@ final class WPEParityParticleSceneTests: XCTestCase {
         let renderer = try await WPEParityFrameRenderer(plan: plan, device: device, queue: queue,
                                                         shaders: .init(store: store, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1),
                                                         particleSeed: 7, particleArenaBytes: budget)
+        if WPEParitySceneScript.hasScripts(document) {
+            try renderer.attachScript(WPEParitySceneScript(
+                document: plan.document, state: renderer.state, assets: plan.scene.assets,
+                canvasSize: renderer.pathCamera.size,
+                screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+                materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
+                host: .init()
+            ))
+        }
         return (renderer, queue)
     }
 

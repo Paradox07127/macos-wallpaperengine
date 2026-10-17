@@ -433,6 +433,22 @@ final class WPEParityFrameRenderer {
         }
     }
 
+    /// Nil when the object has no loaded particle system.
+    var scriptParticleSystem: (String, WPEParityScriptEngine.ParticleCommand, Int32) -> Double? {
+        { [weak self] id, command, count in
+            self?.particles.scene.control(objectID: id) { system in
+                switch command {
+                case .play: system.play()
+                case .pause: system.pause()
+                case .stop: system.stop()
+                case .isPlaying: return system.isPlaying ? 1 : 0
+                case .emitParticles: system.emitParticles(count)
+                }
+                return 0
+            }
+        }
+    }
+
     /// Answers from the callback's own state on a copy of the layer worlds; `self.state` lags a callback's writes.
     var scriptTransformMatrix: (String, WPEParityScriptLayerKind, WPEParitySceneState) -> simd_float4x4? {
         { [weak self] id, kind, state in
@@ -898,6 +914,7 @@ final class WPEParityFrameRenderer {
         script?.engine.transformMatrixHandler = scriptTransformMatrix
         script?.engine.textureAnimationHandler = scriptTextureAnimation
         script?.engine.animationLayerHandler = scriptAnimationLayer
+        script?.engine.particleSystemHandler = scriptParticleSystem
         script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
@@ -978,6 +995,7 @@ final class WPEParityFrameRenderer {
         script.engine.videoTextureHandler = scriptVideoCommand
         script.engine.textureAnimationHandler = scriptTextureAnimation
         script.engine.animationLayerHandler = scriptAnimationLayer
+        script.engine.particleSystemHandler = scriptParticleSystem
         script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
         try script.start(state: &state)

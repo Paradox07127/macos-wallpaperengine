@@ -297,6 +297,26 @@ enum WPEParityScriptLayers {
         proto.pause = function () { if (liveLayer(this)) host.soundCommand(this.__index, 2); };
         proto.isPlaying = function () { return liveLayer(this) ? host.soundCommand(this.__index, 3) : undefined; };
       }
+      // IParticleSystem: op numbers are WPEParityScriptEngine.ParticleCommand raw values.
+      if (kind === host.particleKind) {
+        proto.play = function () { if (liveLayer(this)) host.particleCommand(this.__index, 0, 0); };
+        proto.pause = function () { if (liveLayer(this)) host.particleCommand(this.__index, 1, 0); };
+        proto.stop = function () { if (liveLayer(this)) host.particleCommand(this.__index, 2, 0); };
+        proto.isPlaying = function () {
+          if (!liveLayer(this)) return;
+          const r = host.particleCommand(this.__index, 3, 0);
+          return r == null ? undefined : r === 1;
+        };
+        proto.emitParticles = function (count) {
+          if (!liveLayer(this)) return;
+          const a = argument(count, 8);
+          if (!a) {
+            host.log(1, 'emitParticles is unsupported for a non-int32 count; native argument behavior is not verified');
+            return;
+          }
+          host.particleCommand(this.__index, 4, a.value);
+        };
+      }
       if (kind === host.imageKind) {
         proto.getTextureAnimation = function () { return liveLayer(this) ? getTextureAnimation(this) : undefined; };
         proto.getAnimationLayerCount = function () { return liveLayer(this) ? puppetAnimationLayers(this).length : undefined; };

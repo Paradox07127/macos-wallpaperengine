@@ -1404,6 +1404,152 @@ final class ParityParticleSceneTests: XCTestCase {
                               "\(root.initialColor[slot])")
         }
     }
+
+    /// `rate` births per second, each living `lifetime` seconds, in `maxcount` slots.
+    private static func continuous(rate: Float, maxcount: Int = 32, lifetime: Float = 10,
+                                   instantaneous: Int = 0, extra: String = "") -> String {
+        """
+        {"maxcount": \(maxcount), "material": "materials/plain.json",
+         "emitter": [{"name": "sphererandom", "rate": \(rate), "instantaneous": \(instantaneous), "distancemax": 0}],
+         "initializer": [{"name": "lifetimerandom", "min": \(lifetime), "max": \(lifetime)}],
+         "renderer": [{"name": "sprite"}]\(extra)}
+        """
+    }
+
+    func testPauseAgesLiveParticlesWithoutBirthsAndPlayResumesWithoutCatchUp() throws {
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": Self.continuous(rate: 10)])
+        scene.advance(dt: 0.35, frames: ["5": .init()])
+        let before = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(before.liveCount, 3)
+        XCTAssertEqual(scene.control(objectID: "5") { $0.isPlaying }, true)
+        scene.control(objectID: "5") { $0.pause() }
+        XCTAssertEqual(scene.control(objectID: "5") { $0.isPlaying }, false)
+        for _ in 0 ..< 5 {
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+        }
+        let paused = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(paused.liveCount, 3, "a paused emitter would have born five more")
+        XCTAssertEqual(paused.age[0], before.age[0] + 0.5, accuracy: 1e-5)
+        XCTAssertEqual(paused.emitterStates[0].accumulator, before.emitterStates[0].accumulator)
+        scene.control(objectID: "5") { $0.play() }
+        XCTAssertEqual(scene.control(objectID: "5") { $0.isPlaying }, true)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(scene)?.liveCount, 4, "play resumes at the frame's rate, not over the paused interval")
+        XCTAssertNil(scene.control(objectID: "missing") { $0.isPlaying })
+    }
+
+    func testStopClearsTheTreeAndDisablesEmissionUntilPlayRefiresTheBurst() throws {
+        let parent = Self.continuous(rate: 200, maxcount: 8, extra: """
+        , "children": [{"name": "leaf"}, {"name": "event", "type": "eventspawn"}]
+        """)
+        let files = ["particles/fx.json": parent, "leaf": Self.continuous(rate: 200), "event": Self.burst(1, lifetime: 0.015)]
+        var scene = try Self.scene(Self.five, particles: files)
+        for _ in 0 ..< 3 {
+            scene.advance(dt: 0.01, frames: ["5": .init()])
+        }
+        let before = try XCTUnwrap(Self.root(scene))
+        XCTAssertFalse(before.eventChildren[0].isEmpty)
+        XCTAssertFalse(before.finishedEventChildren[0].isEmpty)
+        XCTAssertGreaterThan(before.children[0].liveCount, 0)
+        scene.control(objectID: "5") { $0.pause() }
+        scene.control(objectID: "5") { $0.stop() }
+        let stopped = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(stopped.totalLiveCount, 0)
+        XCTAssertEqual(stopped.objectTime, 0)
+        XCTAssertTrue(stopped.emitterStates.allSatisfy(\.disabled))
+        XCTAssertTrue(stopped.children[0].emitterStates.allSatisfy(\.disabled))
+        XCTAssertTrue(stopped.eventChildren[0].isEmpty)
+        XCTAssertEqual(stopped.finishedEventChildren[0].count, before.finishedEventChildren[0].count)
+        XCTAssertTrue(stopped.paused, "stop leaves the pause bit to play")
+        scene.control(objectID: "5") { $0.play() }
+        scene.advance(dt: 0.01, frames: ["5": .init()])
+        XCTAssertGreaterThan(try XCTUnwrap(Self.root(scene)).children[0].liveCount, 0, "play re-enables static children")
+
+        var burst = try Self.scene(Self.five, particles: ["particles/fx.json": Self.burst(3)])
+        burst.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(burst)?.liveCount, 3)
+        burst.control(objectID: "5") { $0.stop() }
+        burst.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(burst)?.liveCount, 0)
+        XCTAssertEqual(burst.control(objectID: "5") { $0.isPlaying }, false)
+        burst.control(objectID: "5") { $0.play() }
+        burst.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(burst)?.liveCount, 3, "stop restores the pending burst that play re-enables")
+    }
+
+    func testEmitParticlesBirthsTheForcedCountWithTheAppliedInstanceUpToMaxcount() throws {
+        let particle = Self.continuous(rate: 0, maxcount: 6, instantaneous: 1)
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": particle])
+        var state = try Self.state()
+        scene.control(objectID: "5") { $0.stop() }
+        state.setScriptField("instance.alpha", of: "5", to: .vector(SIMD4(0.25, 0, 0, 0)), invalidating: .particleInstance)
+        scene.applyScriptInstanceFields(state: state)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(scene)?.liveCount, 0)
+        scene.control(objectID: "5") { $0.emitParticles(1) }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 1, "a disabled emitter births only the forced count")
+        XCTAssertEqual(Self.root(scene)?.initialAlpha[0], 0.25)
+        state.setScriptField("instance.alpha", of: "5", to: .vector(SIMD4(0.5, 0, 0, 0)), invalidating: .particleInstance)
+        scene.applyScriptInstanceFields(state: state)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        scene.control(objectID: "5") { $0.emitParticles(3) }
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.liveCount, 4)
+        XCTAssertEqual(Support.liveSlots(root).map { root.initialAlpha[$0] }, [0.25, 0.5, 0.5, 0.5])
+        scene.control(objectID: "5") { $0.emitParticles(0) }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 5, "zero emits one")
+        scene.control(objectID: "5") { $0.emitParticles(-1) }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 5, "a negative count emits nothing")
+        scene.control(objectID: "5") { $0.emitParticles(5) }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 6, "births stop at maxcount")
+    }
+
+    func testEmitParticlesOnAnEnabledEmitterDeductsTheForcedCountFromTheAccumulator() throws {
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": Self.continuous(rate: 10)])
+        scene.advance(dt: 0.05, frames: ["5": .init()])
+        let before = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(before.liveCount, 0)
+        scene.control(objectID: "5") { $0.emitParticles(2) }
+        let after = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(after.liveCount, 2)
+        XCTAssertEqual(after.emitterStates[0].accumulator, before.emitterStates[0].accumulator - 2, accuracy: 1e-6)
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        XCTAssertEqual(Self.root(scene)?.liveCount, 2, "the forced births consumed the next whole rate birth")
+    }
+
+    func testPausedOwnerStopsStaticAndEventChildBirths() throws {
+        let parent = Self.burst(1, lifetime: 0.05, extra: """
+        , "children": [{"name": "leaf"}, {"name": "event", "type": "eventdeath"}]
+        """)
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": parent, "leaf": Self.continuous(rate: 50),
+                                                          "event": Self.burst(1)])
+        scene.advance(dt: 0.05, frames: ["5": .init()])
+        let leafCount = try XCTUnwrap(Self.root(scene)?.children[0].liveCount)
+        XCTAssertEqual(leafCount, 2)
+        scene.control(objectID: "5") { $0.pause() }
+        for _ in 0 ..< 3 {
+            scene.advance(dt: 0.1, frames: ["5": .init()])
+        }
+        let root = try XCTUnwrap(Self.root(scene))
+        XCTAssertEqual(root.liveCount, 0, "the parent particle still dies while paused")
+        XCTAssertEqual(root.children[0].liveCount, leafCount, "a paused owner's static child would have kept emitting")
+        let event = try XCTUnwrap(root.eventChildren[0].first)
+        XCTAssertEqual(event.liveCount, 0, "a death child of a paused owner would have fired its burst")
+    }
+
+    func testHiddenResetKeepsScriptDisabledEmittersOff() throws {
+        var scene = try Self.scene(Self.five, particles: ["particles/fx.json": Self.continuous(rate: 10)])
+        scene.advance(dt: 0.1, frames: ["5": .init()])
+        scene.control(objectID: "5") { $0.stop() }
+        scene.control(objectID: "5") { $0.emitParticles(1) }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 1)
+        scene.advance(dt: 0.1, frames: [:])
+        XCTAssertEqual(Self.root(scene)?.liveCount, 0)
+        for _ in 0 ..< 3 {
+            scene.advance(dt: 0.5, frames: ["5": .init()])
+        }
+        XCTAssertEqual(Self.root(scene)?.liveCount, 0, "the hidden reset would have re-enabled the stopped emitter")
+    }
 }
 
 private struct NoScripts: WPESceneTransformScriptResolving {
