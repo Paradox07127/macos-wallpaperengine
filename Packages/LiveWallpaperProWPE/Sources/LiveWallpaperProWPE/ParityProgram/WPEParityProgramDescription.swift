@@ -13,6 +13,9 @@ public struct WPEParityProgramMaterial: Sendable, Equatable {
     public var userTextures: WPEParityProgramUserTextures
     /// Merged `constantshadervalues`: material key (the uniform annotation's `material`) → components.
     public var constants: [String: [Double]]
+    /// Material-file `{"user": K, "value": V}` entries with a string K, keyed by material key; a scene override of the
+    /// key removes the entry.
+    public var userConstants: [String: WPESceneJSONValue] = [:]
     /// `cullmode` other than `nocull`.
     public var cullsBackFaces: Bool
 

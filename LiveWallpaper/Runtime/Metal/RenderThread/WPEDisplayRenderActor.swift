@@ -553,10 +553,10 @@ actor WPEDisplayRenderActor {
 
     private func loadParity() async throws {
         guard let parityDriver, let inputs = parityInputs else { return }
-        let (document, userProperties) = try await CancellableBackgroundWork.run {
-            try (inputs.makeDocument(), inputs.scriptUserProperties())
+        let (document, assets, userProperties) = try await CancellableBackgroundWork.run {
+            try (inputs.makeDocument(), inputs.makeAssets(), inputs.scriptUserProperties())
         }
-        try await parityDriver.load(document: document, assets: inputs.assets, settings: inputs.settings,
+        try await parityDriver.load(document: document, assets: assets, settings: inputs.settings,
                                     drawableSize: parityDriver.drawableSize, pixelFormat: inputs.pixelFormat,
                                     compiler: inputs.compiler, soundResolver: inputs.soundResolver,
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),

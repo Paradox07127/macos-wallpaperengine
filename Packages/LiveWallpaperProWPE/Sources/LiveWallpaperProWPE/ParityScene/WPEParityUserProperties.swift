@@ -1,3 +1,5 @@
+import LiveWallpaperCore
+
 /// User-property bindings of a parity scene and the live writes a change makes. SceneScript
 /// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
 public enum WPEParityUserProperties {
@@ -88,6 +90,47 @@ public enum WPEParityUserProperties {
         }
         walk(document.sourceJSON, [])
         return result
+    }
+
+    /// The user watches of material-file constants no scene override replaced (140175880.c:386-429). A pass several
+    /// materials share (a multi-material model) holds one constant set, so its watches reload.
+    public static func bindings(scene: WPEParityProgramScene) -> [String: [WPEScenePropertyBinding]] {
+        var result: [String: [WPEScenePropertyBinding]] = [:]
+        for entry in materialFileConstants(of: scene) {
+            let target = WPEScenePropertyBindingTarget.shaderUniform(
+                objectID: entry.pass.objectID, effectID: entry.pass.effectID,
+                passID: entry.pass.effectID == nil ? nil : entry.pass.pass, name: entry.name
+            )
+            result[entry.property, default: []].append(WPEScenePropertyBinding(
+                propertyKey: entry.property, target: target, kind: .uniform, action: entry.shared ? .reload : .incremental
+            ))
+        }
+        return result
+    }
+
+    fileprivate typealias MaterialFileConstant = (pass: WPEParityMaterialPassKey, name: String,
+                                                  envelope: WPESceneJSONValue, property: String, shared: Bool)
+
+    /// `shared`: another material of the scene maps to the same state pass.
+    fileprivate static func materialFileConstants(of scene: WPEParityProgramScene) -> [MaterialFileConstant] {
+        var materialsByPass: [WPEParityMaterialPassKey: Int] = [:]
+        let passes = scene.materials.map { key, material in
+            let pass = WPEParityMaterialPassKey(objectID: key.objectID, effectID: key.effectID,
+                                                pass: scene.overridePasses[key] ?? 0)
+            materialsByPass[pass, default: 0] += 1
+            return (pass, material)
+        }
+        var result: [MaterialFileConstant] = []
+        for (pass, material) in passes {
+            for (name, envelope) in material.userConstants {
+                guard let property = WPEParityProgramScene.string(envelope["user"]) else { continue }
+                result.append((pass, name, envelope, property, materialsByPass[pass, default: 0] > 1))
+            }
+        }
+        return result.sorted {
+            ($0.pass.objectID, $0.pass.effectID ?? "", $0.pass.pass, $0.name)
+                < ($1.pass.objectID, $1.pass.effectID ?? "", $1.pass.pass, $1.name)
+        }
     }
 
     /// `{"user": K}` or `{"user": {"name": K, "condition": C}}`.
@@ -239,6 +282,19 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         }
         for write in constants {
             state.setConstant(write.name, of: write.pass, to: write.constant)
+        }
+    }
+
+    /// Rewrites each live-bound material-file constant whose property is in `keys` with its value in `values`, or the
+    /// envelope's own value when `values` lacks it (1401731d0.c:143-215).
+    public mutating func resolveMaterialFiles(of scene: WPEParityProgramScene,
+                                              values: [String: WallpaperEngineProjectPropertyValue],
+                                              changed keys: Set<String>) {
+        for entry in WPEParityUserProperties.materialFileConstants(of: scene)
+            where !entry.shared && keys.contains(entry.property) {
+            guard let constant = WPEParityProgramConstants.components(entry.envelope, userValues: values)
+                .flatMap(WPEParitySceneState.Constant.init(components:)) else { continue }
+            constants.append(ConstantWrite(pass: entry.pass, name: entry.name, constant: constant))
         }
     }
 

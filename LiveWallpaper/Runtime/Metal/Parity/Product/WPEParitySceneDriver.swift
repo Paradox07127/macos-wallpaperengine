@@ -76,6 +76,8 @@ final class WPEParitySceneDriver {
     /// What `load` planned from, so a new size or fit mode re-plans without reloading.
     private struct PlanSource {
         let document: WPESceneDocument
+        /// The scene as loaded; its material-file constants keep their load-time watches across commits.
+        let scene: WPEParityProgramScene
         let assets: WPEParityProgramAssets
         let settings: WPEParityProgramSettings
         let shaders: WPEParityFrameShaderSource
@@ -109,6 +111,7 @@ final class WPEParitySceneDriver {
     var userPropertyBindings: [String: [WPEScenePropertyBinding]] {
         guard let renderer, let planSource else { return [:] }
         return WPEParityUserProperties.bindings(document: planSource.document)
+            .merging(WPEParityUserProperties.bindings(scene: planSource.scene), uniquingKeysWith: +)
             .merging(renderer.conditionalPropertyBindings, uniquingKeysWith: +)
     }
 
@@ -319,9 +322,9 @@ final class WPEParitySceneDriver {
             }
             shaderErrorSummary = (shaderErrors.count, shaderErrors)
             shaderRequiresAudio = Self.readsAudio(plan)
-            planSource = PlanSource(document: document, assets: assets, settings: settings, shaders: shaders,
-                                    workshopID: workshopID, sceneSize: sceneSize, pixelFormat: pixelFormat,
-                                    renderScale: renderScale)
+            planSource = PlanSource(document: document, scene: plan.scene, assets: assets, settings: settings,
+                                    shaders: shaders, workshopID: workshopID, sceneSize: sceneSize,
+                                    pixelFormat: pixelFormat, renderScale: renderScale)
             plannedTarget = target
             adoptUpscalePlan(selection.upscale)
             scriptUserProperties = scriptHost.userPropertiesJSON
@@ -462,13 +465,14 @@ final class WPEParitySceneDriver {
     /// parse. False when `patch` is not the one prepared last.
     func commitUserProperties(_ patch: WPEScenePropertyPatch) -> Bool {
         guard let pending = pendingUserProperties, pending.patch == patch, let renderer, let planSource,
-              let update = WPEParityUserPropertyUpdate(from: planSource.document, to: pending.document) else {
+              var update = WPEParityUserPropertyUpdate(from: planSource.document, to: pending.document) else {
             return false
         }
         pendingUserProperties = nil
         let merged = WPEParitySceneScript.userPropertiesJSON(
             scriptUserProperties, values: patch.newValues.filter { patch.changedKeys.contains($0.key) }
         )
+        update.resolveMaterialFiles(of: planSource.scene, values: patch.newValues, changed: patch.changedKeys)
         do {
             try withScriptSound(renderer.script?.engine) {
                 try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
@@ -480,7 +484,7 @@ final class WPEParitySceneDriver {
             return false
         }
         scriptUserProperties = merged
-        self.planSource = PlanSource(document: pending.document, assets: planSource.assets,
+        self.planSource = PlanSource(document: pending.document, scene: planSource.scene, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
                                      pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
@@ -935,6 +939,14 @@ struct WPEParitySceneInputs: Sendable {
         let repaired = (try? WallpaperEngineProjectPropertySchema.read(from: projectRoot, includeSchemeColor: true))
             .map { WPESceneParallaxBindingInference.applying(to: data, schema: $0) } ?? data
         return try WPESceneDocumentParser.parse(data: repaired, userValues: userValues)
+    }
+
+    /// `assets` whose material files resolve user envelopes with the values `makeDocument` parses with.
+    func makeAssets() -> WPEParityProgramAssets {
+        var assets = assets
+        assets.userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
+                                                                                      cacheRootURL: projectRoot)
+        return assets
     }
 }
 #endif

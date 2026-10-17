@@ -62,6 +62,54 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         XCTAssertEqual(held.constantPacks, after.constantPacks, "an unchanged pass is not re-packed")
     }
 
+    func testMaterialFileConstantFollowsAKeyTheSceneAlsoBinds() async throws {
+        let harness = try await makeHarness(alphaKey: "drift", materialSpeedKey: "drift")
+        let composite = try XCTUnwrap(harness.operation { $0.fillsComposite })
+        let sway = try XCTUnwrap(harness.plan.programs.first { $0.value.shader == "effects/foliagesway" }?.key)
+        let before = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(before.speed[sway]), 5, accuracy: 1e-6)
+        let generation = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+
+        let committed = try await change(harness, "drift", from: .number(1), to: .number(0.5))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(after.alpha[composite]), 0.5, accuracy: 1e-6)
+        XCTAssertEqual(try XCTUnwrap(after.speed[sway]), 0.5, accuracy: 1e-6)
+        XCTAssertEqual(after.renderer, before.renderer, "the renderer is not rebuilt")
+        let generationAfter = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+        XCTAssertEqual(generationAfter, generation, "the scene did not reload")
+    }
+
+    func testMaterialFileOnlyKeyChangesTheCBufferWithoutReloading() async throws {
+        let harness = try await makeHarness(materialSpeedKey: "sway")
+        let operation = try XCTUnwrap(harness.plan.programs.first { $0.value.shader == "effects/foliagesway" }?.key)
+        let before = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(before.speed[operation]), 5, accuracy: 1e-6)
+
+        let committed = try await change(harness, "sway", from: .number(5), to: .number(9))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(after.speed[operation]), 9, accuracy: 1e-6)
+        XCTAssertEqual(after.renderer, before.renderer, "the renderer is not rebuilt")
+        XCTAssertEqual(after.constantPacks, before.constantPacks + 1)
+    }
+
+    func testReloadAfterACommitResolvesMaterialFileConstantsWithTheCommittedValue() async throws {
+        let harness = try await makeHarness(alphaKey: "drift", materialSpeedKey: "drift")
+        let composite = try XCTUnwrap(harness.operation { $0.fillsComposite })
+        let sway = try XCTUnwrap(harness.plan.programs.first { $0.value.shader == "effects/foliagesway" }?.key)
+        let snapshot = await harness.actor.rendererStateSnapshot()
+        let loaded = try XCTUnwrap(snapshot?.descriptor)
+        let committed = try await change(harness, "drift", from: .number(1), to: .number(0.5),
+                                         descriptor: loaded.withPropertyOverrides(["drift": .number(0.5)]))
+        XCTAssertTrue(committed)
+
+        try await harness.actor.reload()
+        let reloaded = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(reloaded.alpha[composite]), 0.5, accuracy: 1e-6)
+        XCTAssertEqual(try XCTUnwrap(reloaded.speed[sway]), 0.5, accuracy: 1e-6)
+    }
+
     func testHidingTheLayerDropsItsOperationsTheNextFrame() async throws {
         let harness = try await makeHarness()
         let operations = harness.operations(of: "17")
@@ -160,18 +208,20 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         let constantPacks: Int
     }
 
-    /// Prepares and commits one property change on the actor as `ScreenManager` does.
+    /// Prepares and commits one property change on the actor as `ScreenManager` does; `descriptor` nil commits the
+    /// loaded descriptor.
     private func change(_ harness: Harness, _ key: String, from old: WallpaperEngineProjectPropertyValue,
-                        to new: WallpaperEngineProjectPropertyValue) async throws -> Bool {
+                        to new: WallpaperEngineProjectPropertyValue,
+                        descriptor: SceneDescriptor? = nil) async throws -> Bool {
         let bindings = await harness.actor.scenePropertyBindings()
         let patch = WPEScenePropertyPatch(bindingsByProperty: bindings, oldValues: [key: old], newValues: [key: new])
         let authority = ScenePropertyMutationAuthority()
         let prepared = await harness.actor.prepareScenePropertyPatch(patch, authority: authority,
                                                                      expectedIntent: authority.currentToken())
         let snapshot = await harness.actor.rendererStateSnapshot()
-        let descriptor = try XCTUnwrap(snapshot?.descriptor)
+        let loaded = try XCTUnwrap(snapshot?.descriptor)
         guard let prepared else { return false }
-        return await harness.actor.commitScenePropertyPatch(prepared, updatedDescriptor: descriptor)
+        return await harness.actor.commitScenePropertyPatch(prepared, updatedDescriptor: descriptor ?? loaded)
     }
 
     /// Encodes one frame of the actor's parity renderer at a fixed step and reads what its draws set.
@@ -245,7 +295,9 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
 
     /// Object 17's alpha, visibility, foliagesway speed and a waterripple texture bound to user properties `opacity`,
     /// `show`, `speed` and `mask`; the scene is installed as a `.cache` scene and loaded by a fresh actor.
-    private func makeHarness() async throws -> Harness {
+    /// With `materialSpeedKey`, the scene leaves `speeduv` to `materials/effects/foliagesway.json`, which binds it to
+    /// that key with value 5.
+    private func makeHarness(alphaKey: String = "opacity", materialSpeedKey: String? = nil) async throws -> Harness {
         let fixture = try fixture()
         let relativePath = "wpe-cache/\(Self.sceneID)"
         let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)
@@ -256,7 +308,7 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         let sceneURL = sceneDirectory.appending(path: "scene.json")
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL)) as? [String: Any])
         var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
-        objects[0]["alpha"] = ["user": "opacity", "value": 1]
+        objects[0]["alpha"] = ["user": alphaKey, "value": 1]
         objects[0]["visible"] = ["user": "show", "value": true]
         var effects = try XCTUnwrap(objects[0]["effects"] as? [[String: Any]])
         var ripple = try XCTUnwrap(effects[0]["passes"] as? [[String: Any]])
@@ -264,7 +316,18 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         effects[0]["passes"] = ripple
         var sway = try XCTUnwrap(effects[1]["passes"] as? [[String: Any]])
         var constants = sway[0]["constantshadervalues"] as? [String: Any] ?? [:]
-        constants["speeduv"] = ["user": "speed", "value": 5]
+        if let materialSpeedKey {
+            constants["speeduv"] = nil
+            let materialURL = sceneDirectory.appending(path: "materials/effects/foliagesway.json")
+            var material = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: materialURL))
+                as? [String: Any])
+            var passes = try XCTUnwrap(material["passes"] as? [[String: Any]])
+            passes[0]["constantshadervalues"] = ["speeduv": ["user": materialSpeedKey, "value": 5]]
+            material["passes"] = passes
+            try JSONSerialization.data(withJSONObject: material).write(to: materialURL)
+        } else {
+            constants["speeduv"] = ["user": "speed", "value": 5]
+        }
         sway[0]["constantshadervalues"] = constants
         effects[1]["passes"] = sway
         objects[0]["effects"] = effects

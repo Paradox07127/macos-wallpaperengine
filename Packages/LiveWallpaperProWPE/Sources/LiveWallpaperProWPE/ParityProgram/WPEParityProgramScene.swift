@@ -832,6 +832,13 @@ extension WPEParityProgramMaterial {
                   combos: combos, textures: textures, constants: constants,
                   cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull",
                   userTextures: .init(material: document["usertextures"], pass: pass["usertextures"]))
+        if case let .object(entries)? = pass["constantshadervalues"] {
+            for (key, value) in entries {
+                if case .string? = value["user"] {
+                    userConstants[key] = value
+                }
+            }
+        }
     }
 
     /// Texture names in slot order.
@@ -861,6 +868,7 @@ extension WPEParityProgramMaterial {
         }
         for (key, value) in constants {
             self.constants[key] = WPEParityProgramConstants.components(value)
+            userConstants[key] = nil
         }
         if userTextures != nil || userTextureBindings?.isEmpty == false {
             self.userTextures = .init(material: self.userTextures.material, pass: self.userTextures.pass,
