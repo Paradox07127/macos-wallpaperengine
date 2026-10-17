@@ -1075,6 +1075,26 @@ final class WPEParityFrameRenderer {
         artifacts[program.hlsl] = .success(artifact)
     }
 
+    /// Compiles the programs a script-created image layer of `model` draws with, as a candidate layout plans them.
+    nonisolated(nonsending) func precacheCreatedImage(
+        _ model: String, shaders: WPEParityFrameShaderSource
+    ) async throws {
+        let image = WPEParitySceneState.CreatedImage(model: model, size: nil, perspective: false)
+        guard let description = plan.scene.createdImageObject(id: "", image: image) else {
+            throw WPEParityModelDataFailure.safety("image model \(model) is unavailable")
+        }
+        var candidate = state
+        let id = try String(candidate.appendImageLayer(image, id: nil, transparent: description.transparentMember,
+                                                       fullscreen: description.fullscreen) { _ in })
+        let planned = try plan.layout(effects: candidate, texts: planner.texts)
+        for (index, program) in planned.programs where planned.frames[0].owners[index] == id {
+            if case .success? = artifacts[program.hlsl] {
+                continue
+            }
+            artifacts[program.hlsl] = try await .success(shaders.artifact(for: program))
+        }
+    }
+
     /// Warm leaf images and childless sound layers use the common post-update removal path; a removed sound
     /// stops through `takeSoundVisibility`. Other class destructors and dependent owners stay rejected.
     var scriptLayerRemovalAdmission: (String, UInt32?) -> Bool {

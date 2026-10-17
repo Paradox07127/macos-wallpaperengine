@@ -495,12 +495,52 @@ public struct WPEParityProgramScene: Sendable {
         return settings
     }
 
-    /// Maps each created layer to its template for the material and colour lookups below.
-    public mutating func adoptCreatedLayers(_ templates: [String: String]) {
+    /// Maps each created layer to its template for the material and colour lookups below; `colors` seeds the
+    /// layer colour of created layers that load their own model.
+    public mutating func adoptCreatedLayers(_ templates: [String: String], colors: [String: SIMD4<Float>] = [:]) {
         createdTemplates = templates
         for (id, template) in templates {
             layerColors[id] = layerColors[template]
         }
+        layerColors.merge(colors) { _, created in created }
+    }
+
+    /// A script-created image layer without effects, described from its model file as a loaded one is.
+    /// Nil when the model file is missing or names a `.mdl`.
+    public func createdImageObject(id: String, image: WPEParitySceneState.CreatedImage) -> WPEParitySceneObject? {
+        guard !image.model.lowercased().hasSuffix(".mdl"), let model = assets.json(image.model) else { return nil }
+        let materialPath = Self.string(model["material"])
+        let material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
+        let source = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
+        let fullscreen = Self.flag(model["fullscreen"])
+        // 140209360.c:26-49, as the loaded image path above.
+        let albedo = !fullscreen && Self.flag(model["autosize"]) && !Self.flag(model["projectlayer"])
+            ? material?.textures[0].flatMap { $0.hasPrefix("_rt_") ? nil : $0 } : nil
+        let albedoSize: SIMD2<Int>? = albedo.flatMap { name in
+            name == "error" || assets.data("materials/\(name).tex") == nil ? SIMD2(6, 6)
+                : assets.textureHeader(named: name).flatMap {
+                    $0.flags & 4 != 0 ? nil : SIMD2(Int($0.imageWidth), Int($0.imageHeight))
+                }
+        }
+        let size = fullscreen ? SIMD2(scene.width, scene.height)
+            : albedoSize ?? image.size.map { SIMD2(Int($0.x.rounded()), Int($0.y.rounded())) }
+            ?? SIMD2(scene.width, scene.height)
+        var frameReads: [String: [WPEResourceID]] = [:]
+        if let materialPath, let material {
+            frameReads[materialPath] = WPEParityAuthoredPass.frameReads(
+                WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: engineFlags, assets: assets)
+            )
+        }
+        let blend = material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
+        let passthrough = Self.flag(model["passthrough"])
+        return WPEParitySceneObject(
+            id: id, width: size.x, height: size.y, materialShader: material?.shader ?? "genericimage2",
+            material: source, blend: blend,
+            materialState: Self.materialState(materialPath.flatMap { assets.json($0)?["passes"]?[0] }),
+            materialFog: material.map { Self.programHasFog($0, assets: assets) } ?? false,
+            passthrough: passthrough, fullscreen: fullscreen, materialFrameReads: frameReads,
+            transparentMember: ![.normal, .alphaToCoverage].contains(blend)
+        )
     }
 
     /// The merged pass JSON `draw` uses; an engine (util) material is read from its file with the engine's combos.

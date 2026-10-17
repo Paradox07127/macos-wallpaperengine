@@ -455,6 +455,53 @@ enum WPEParityScriptLayers {
       }
       return key && order.includes(key) ? key : null;
     }
+    const solidLayer = 'models/util/solidlayer.json';
+    // 181633290.c:552-635: the first directory (case-sensitive) and lowercase extension pick the factory key.
+    function createLayerPath(value) {
+      // 181633290.c:384-406 strips leading separators; 181653460.c:187-384 moves the path under __workshopId.
+      let path = value.replace(/^[\/\\]+/, '');
+      const segments = path.split(/[\/\\]/);
+      const file = segments[segments.length - 1];
+      const extension = file.includes('.') ? file.slice(file.lastIndexOf('.')).toLowerCase() : '';
+      const first = segments[0];
+      const key = first === 'models' ? (extension === '.json' ? 'image' : 'model') : first === 'particles' ? 'particle'
+        : first === 'materials' ? 'sprite' : first === 'sounds' ? 'sound' : null;
+      if (key === null) return null;
+      if (current.workshopId) {
+        const parts = path.split(/[\/\\]+/);
+        if (parts[1] === 'workshop') parts.splice(1, 2);
+        path = [parts[0], 'workshop', current.workshopId, ...parts.slice(1)].join('/')
+          .replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+      }
+      return JSON.stringify({ [key]: path });
+    }
+    function createLayerConfig(args) {
+      // 181633290.c:771-780
+      if (args.length !== 1) return JSON.stringify({ image: solidLayer });
+      let config = args[0];
+      if (modelOwners.has(config)) config = { model: config };
+      let text;
+      if (typeof config === 'string') {
+        // 181633290.c:308-382: a string is a JSON object first, a path otherwise.
+        let parsed = null;
+        try { parsed = JSON.parse(config); } catch (error) { parsed = null; }
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return createLayerPath(config);
+        text = config;
+      } else if (config !== null && typeof config === 'object') {
+        text = _Internal.stringifyConfig(config);
+      } else {
+        return null;
+      }
+      if (typeof text !== 'string') return null;
+      const object = JSON.parse(text);
+      // 181633290.c:225-282: a colour without any class key is a solid layer.
+      const classes = ['model', 'particle', 'sprite', 'image', 'text', 'light', 'sound', 'camera'];
+      if (object !== null && typeof object === 'object' && 'color' in object && !classes.some(key => key in object)) {
+        object.image = solidLayer;
+        return JSON.stringify(object);
+      }
+      return text;
+    }
     const scene = {
       getAnimation(name) { return getAnimation(-1, -2, name); },
       getLayer(key) {
@@ -501,25 +548,12 @@ enum WPEParityScriptLayers {
         const json = layer ? host.initialConfig(layer.__index) : null;
         return json == null ? null : JSON.parse(json);
       },
-      createLayer(config) {
+      createLayer(...args) {
         sceneScope('createLayer');
         // 14018ba00.c:25-27: null once the common scene holds 2048 objects, including pending.
         if (order.length > 2047) return null;
-        if (modelOwners.has(config)) config = { model: config };
-        const a = argument(config, 0x200 | 0x400);
-        if (!a) return null;
-        let text = a.value;
-        if (a.type === 0x200) {
-          // 181633290.c:384-406 strips leading separators; 181653460.c:187-384 moves the path under __workshopId.
-          let path = a.value.replace(/^[\/\\]+/, '');
-          if (current.workshopId) {
-            const parts = path.split(/[\/\\]+/);
-            if (parts[1] === 'workshop') parts.splice(1, 2);
-            path = [parts[0], 'workshop', current.workshopId, ...parts.slice(1)].join('/')
-              .replace(/\\/g, '/').replace(/\/{2,}/g, '/');
-          }
-          text = JSON.stringify({ image: path });
-        }
+        const text = createLayerConfig(args);
+        if (text === null) return null;
         const index = host.createLayer(text);
         return index < 0 ? null : table[index];
       },

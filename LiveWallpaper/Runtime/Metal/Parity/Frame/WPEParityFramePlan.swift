@@ -354,7 +354,15 @@ struct WPEParityFramePlan {
         let loadedObjects = description.objects
         description.objects.removeAll { !state.isAlive($0.id) }
         var templates: [String: String] = [:]
+        var createdColors: [String: SIMD4<Float>] = [:]
         for id in state.commonOrder {
+            if let image = state.object(id)?.createdImage, let index = state.index(of: id),
+               var object = scene.createdImageObject(id: id, image: image) {
+                object.visible = state.isVisible(id)
+                description.objects.append(object)
+                createdColors[id] = state.layerColor(at: index)
+                continue
+            }
             guard let templateID = state.object(id)?.templateID,
                   var object = loadedObjects.first(where: { $0.id == templateID }) else { continue }
             object.id = id
@@ -370,7 +378,7 @@ struct WPEParityFramePlan {
             templates[id] = templateID
         }
         var scene = scene
-        scene.adoptCreatedLayers(templates)
+        scene.adoptCreatedLayers(templates, colors: createdColors)
         for id in state.commonOrder {
             guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
             let previous = description.objects.first { $0.id == id }
@@ -446,6 +454,14 @@ struct WPEParityFramePlan {
                 (transform.id, transform.origin) = (id, object.origin)
                 (transform.angles, transform.scale) = (object.angles, object.scale)
                 transforms.append(transform)
+                continue
+            }
+            if let image = object.createdImage {
+                guard let description = scene.createdImageObject(id: id, image: image) else { continue }
+                transforms.append(WPEParityLayerTransform(
+                    id: id, origin: object.origin, angles: object.angles, scale: object.scale,
+                    size: SIMD2(Float(description.width), Float(description.height)), perspective: image.perspective
+                ))
                 continue
             }
             guard object.modelDataToken != nil else { continue }

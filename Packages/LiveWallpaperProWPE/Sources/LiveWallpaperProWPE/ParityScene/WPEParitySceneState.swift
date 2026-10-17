@@ -44,6 +44,22 @@ public struct WPEParitySceneState: Sendable {
         public internal(set) var modelDataToken: UInt32?
         /// The loaded image object whose materials and textures a script-created image layer draws with.
         public internal(set) var templateID: String?
+        /// A script-created image layer loaded from its own model file rather than a template.
+        public internal(set) var createdImage: CreatedImage?
+    }
+
+    public struct CreatedImage: Sendable, Equatable {
+        /// The `image` model path, such as `models/util/solidlayer.json`.
+        public var model: String
+        /// Config `size`; nil takes the model's albedo or canvas size.
+        public var size: SIMD2<Float>?
+        public var perspective: Bool
+
+        public init(model: String, size: SIMD2<Float>?, perspective: Bool) {
+            self.model = model
+            self.size = size
+            self.perspective = perspective
+        }
     }
 
     /// A material constant as WPE holds it: `count` components, the rest of `value` unused.
@@ -168,41 +184,22 @@ public struct WPEParitySceneState: Sendable {
     private var lastAutomaticID: UInt64 = 0
 
     /// Appends a script-created image layer that copies `templateID`'s live fields before `configure`.
-    /// 1401a38f0.c:21-41 keeps an explicit id; otherwise :44-102 advances the counter past reserved ids.
     /// `loaded`: the load-time state whose template effects and pass constants the clone starts from; nil adopts none.
     public mutating func appendImageLayer(cloning templateID: String, id explicitID: UInt64?,
                                           adopting loaded: WPEParitySceneState? = nil,
                                           configure: (inout Object) -> Void) throws -> UInt64 {
         guard let template = indexByID[templateID], objects[template].templateID == nil,
-              objects[template].modelDataToken == nil else {
+              objects[template].createdImage == nil, objects[template].modelDataToken == nil else {
             throw WPEParityModelDataFailure.safety("created image layer requires a loaded image template")
         }
-        let number: UInt64
-        if let explicitID {
-            guard !loadedIDs.contains(String(explicitID)), indexByID[String(explicitID)] == nil else {
-                throw WPEParityModelDataFailure.safety("created image layer reuses a reserved id")
-            }
-            number = explicitID
-        } else {
-            number = automaticObjectID()
-        }
+        let number = try createdImageID(explicitID)
         let id = String(number)
         var object = objects[template]
         object.alive = true
         object.templateID = templateID
         configure(&object)
-        indexByID[id] = ids.count
-        ids.append(id)
-        objects.append(object)
-        parents.append(nil)
-        commonOrder.append(id)
-        if transparentMembers.contains(templateID) {
-            transparentMembers.insert(id)
-            transparentOrder.append(id)
-            if fullscreenMembers.contains(templateID) {
-                fullscreenMembers.insert(id)
-            }
-        }
+        appendCreatedImage(id, object, transparent: transparentMembers.contains(templateID),
+                           fullscreen: fullscreenMembers.contains(templateID))
         if let loaded {
             // Append only: `effects` order is the load order every effect-visibility consumer indexes by.
             for (index, key) in loaded.effects.enumerated() where key.objectID == templateID {
@@ -218,10 +215,46 @@ public struct WPEParitySceneState: Sendable {
                 passes.append(Pass(constants: loaded.passes[index].constants))
             }
         }
+        return number
+    }
+
+    /// Appends a script-created image layer drawn from its own model file. Fields start at the layer ctor's
+    /// defaults before `configure`; `transparent` and `fullscreen` are the model material's membership.
+    public mutating func appendImageLayer(_ image: CreatedImage, id explicitID: UInt64?, transparent: Bool,
+                                          fullscreen: Bool, configure: (inout Object) -> Void) throws -> UInt64 {
+        let number = try createdImageID(explicitID)
+        var object = Object(origin: .zero, scale: .one, angles: .zero, alpha: 1, color: .one, brightness: 1,
+                            visible: true, createdImage: image)
+        configure(&object)
+        appendCreatedImage(String(number), object, transparent: transparent, fullscreen: fullscreen)
+        return number
+    }
+
+    /// 1401a38f0.c:21-41 keeps an explicit id; otherwise :44-102 advances the counter past reserved ids.
+    private mutating func createdImageID(_ explicitID: UInt64?) throws -> UInt64 {
+        guard let explicitID else { return automaticObjectID() }
+        guard !loadedIDs.contains(String(explicitID)), indexByID[String(explicitID)] == nil else {
+            throw WPEParityModelDataFailure.safety("created image layer reuses a reserved id")
+        }
+        return explicitID
+    }
+
+    private mutating func appendCreatedImage(_ id: String, _ object: Object, transparent: Bool, fullscreen: Bool) {
+        indexByID[id] = ids.count
+        ids.append(id)
+        objects.append(object)
+        parents.append(nil)
+        commonOrder.append(id)
+        if transparent {
+            transparentMembers.insert(id)
+            transparentOrder.append(id)
+            if fullscreen {
+                fullscreenMembers.insert(id)
+            }
+        }
         membershipGeneration += 1
         transformGeneration += 1
         visibilityGeneration += 1
-        return number
     }
 
     /// Advances 1401a38f0's counter past every loaded or held id (1401a38f0.c:44-102).

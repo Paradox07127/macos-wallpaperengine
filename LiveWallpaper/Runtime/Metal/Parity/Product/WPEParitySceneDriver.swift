@@ -381,6 +381,19 @@ final class WPEParitySceneDriver {
                     }
                     try await preloadMaterials(registered, source: "registered", renderer: renderer, shaders: shaders,
                                                generation: generation)
+                    // Neither util model needs a scene template, so a synchronous createLayer finds their programs.
+                    if Self.scriptsCreateLayers(document) {
+                        for model in ["models/util/solidlayer.json", "models/util/composelayer.json"] {
+                            do {
+                                try await renderer.precacheCreatedImage(model, shaders: shaders)
+                            } catch let error as CancellationError {
+                                throw error
+                            } catch {
+                                Logger.warning("Parity created image \(model) skipped: \(error)", category: .wpeRender)
+                            }
+                            guard generation == loadGeneration else { throw CancellationError() }
+                        }
+                    }
                     try withScriptSound(script.engine) { try renderer.attachScript(script) }
                 } catch let error as CancellationError {
                     throw error
@@ -829,6 +842,23 @@ final class WPEParitySceneDriver {
             try Task.checkCancellation()
             guard generation == loadGeneration else { throw CancellationError() }
         }
+    }
+
+    static func scriptsCreateLayers(_ document: WPESceneDocument) -> Bool {
+        func mentions(_ value: WPESceneJSONValue) -> Bool {
+            switch value {
+            case let .object(members):
+                if case let .string(source)? = members["script"], source.contains("createLayer") {
+                    return true
+                }
+                return members.values.contains(where: mentions)
+            case let .array(elements):
+                return elements.contains(where: mentions)
+            default:
+                return false
+            }
+        }
+        return ([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: mentions)
     }
 
     /// String entries of `general.precache` whose first 9 bytes are "materials"; WPE skips the rest (140186c90.c:651-655).

@@ -328,7 +328,8 @@ extension WPEParitySceneDriverTests {
         export function update(value) {
           frame += 1;
           if (frame === 2) {
-            clone = thisScene.createLayer('models/clone-template.json');
+            // Without a size the layer would take the canvas size and cover the template.
+            clone = thisScene.createLayer({ image: 'models/clone-template.json', size: new Vec2(12, 12) });
             if (!clone) throw Error('created image layer admission');
             clone.origin = new Vec3(136, 48, 0);
           } else if (frame === 4 && !thisScene.destroyLayer(clone)) {
@@ -372,14 +373,13 @@ extension WPEParitySceneDriverTests {
         let loadedDraws = try XCTUnwrap(driver.renderer).lastFrameDraws.count
 
         pixels = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
-        let id = try XCTUnwrap(createdID(), "createLayer must admit an image layer cloned from the loaded template")
+        let id = try XCTUnwrap(createdID(), "createLayer must admit an image layer loaded from its model path")
         XCTAssertEqual(try XCTUnwrap(driver.renderer).lastFrameDraws.count, loadedDraws + 1)
         XCTAssertFalse(try owned(id).isEmpty, "The created layer must draw in the frame that created it")
-        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: templateColor)
         sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
-        // white.tex mips past 0 hold 0xfc, so the green clone is about (0, 248, 0).
-        let clone = rgb(pixels, x: 136)
-        XCTAssertTrue(clone[0] <= 4 && clone[2] <= 4 && abs(clone[1] - 248) <= 8, "clone pixel \(clone) is not green")
+        // A path config keeps the layer ctor's white colour; white.tex mips past 0 hold 0xfc, about 248 here.
+        let created = rgb(pixels, x: 136)
+        XCTAssertTrue(created.allSatisfy { abs($0 - 248) <= 8 }, "created pixel \(created) is not white")
 
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 80, height: 48))
         XCTAssertTrue(driver.needsReplan)
@@ -387,8 +387,8 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(replanned)
         pixels = try await sceneProtocolFrame(driver, layer: layer, label: "replanned frame")
         XCTAssertFalse(try owned(id).isEmpty, "The re-planned renderer must keep the created layer")
-        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: templateColor)
-        // The re-planned renderer loads its own images; the clone shares the template's.
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: created)
+        // The re-planned renderer loads its own images; both layers sample the one cached asset image.
         let templateTexture = try XCTUnwrap(XCTUnwrap(owned("20").first).textures["g_Texture0"])
         XCTAssertTrue(try XCTUnwrap(owned(id).first).textures["g_Texture0"] === templateTexture)
 
@@ -399,6 +399,54 @@ extension WPEParitySceneDriverTests {
         sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
         XCTAssertTrue(try XCTUnwrap(owned("20").first).textures["g_Texture0"] === templateTexture,
                       "Destroying the clone retired the template's texture")
+    }
+
+    /// A composelayer or colour-only config loads its image model by path; no scene layer uses composelayer.
+    @objc func testCreatedComposeAndSolidLayersLoadFromTheirModelPaths() async throws {
+        let source = """
+        let frame = 0;
+        let compose, solid;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            compose = thisScene.createLayer({ color: new Vec3(1, 1, 1), alpha: 1,
+              image: 'models/util/composelayer.json', perspective: true, size: new Vec2(160, 96) });
+            solid = thisScene.createLayer({ color: new Vec3(1, 0, 1), origin: new Vec3(136, 48, 0),
+              size: new Vec2(12, 12) });
+            if (!compose || !solid) throw Error('created image layer admission');
+          } else if (frame === 3 && !(thisScene.destroyLayer(compose) && thisScene.destroyLayer(solid))) {
+            throw Error('created image layer destroy admission');
+          }
+          return value;
+        }
+        """
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source)]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects)
+        defer { driver.cleanup() }
+        func ownsDraws(_ id: String) throws -> Bool {
+            try XCTUnwrap(driver.renderer).frames.contains { $0.owners.values.contains(id) }
+        }
+        var pixels = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        let created = try XCTUnwrap(driver.renderer).state.commonOrder.filter { $0 != "101" }
+        XCTAssertEqual(created.count, 2, "createLayer must admit both image layers without a scene template")
+        let (compose, solid) = try (XCTUnwrap(created.first), XCTUnwrap(created.last))
+        XCTAssertTrue(try XCTUnwrap(driver.renderer).state.isVisible(compose))
+        XCTAssertTrue(try ownsDraws(compose), "The copybackground composelayer must compose the background")
+        XCTAssertTrue(try ownsDraws(solid))
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [255, 0, 255])
+        sceneProtocolPixel(pixels, x: 24, y: 48, rgb: [0, 0, 255])
+
+        pixels = try await sceneProtocolFrame(driver, layer: layer, label: "destroy frame")
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertNil(renderer.state.object(compose))
+        XCTAssertNil(renderer.state.object(solid))
+        XCTAssertFalse(try ownsDraws(compose))
+        XCTAssertFalse(try ownsDraws(solid))
+        sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
+        sceneProtocolPixel(pixels, x: 24, y: 48, rgb: [0, 0, 255])
     }
 
     @objc func testCreatedCloneOfEffectTemplateDrawsItsOwnEffectPass() async throws {

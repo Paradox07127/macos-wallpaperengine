@@ -35,8 +35,42 @@ enum WPEParityModelDataLayerAdmission {
         )
     }
 
-    /// Image configs clone a loaded template; `removable` is the removal admission, whose class, puppet, video,
-    /// child and dependency limits a template also needs. Other configs keep the ModelData transaction.
+    /// The factory's class keys in 14018ff60.c:38-126 order: model > particle > image > sprite > text > light >
+    /// sound > camera > shape > generic object.
+    enum LayerClass: Equatable {
+        case model, particle, image(String), sprite, text, light, sound, camera, shape, generic
+
+        init(_ config: [String: Any]) {
+            func string(_ key: String) -> String? {
+                config[key] as? String
+            }
+            let model = config["model"]
+            let numericModel = (model as? NSNumber).map { !WPEParityModelDataLayerAdmission.isBool($0) } ?? false
+            if numericModel || model is String || model is [String: Any] {
+                self = .model
+            } else if string("particle") != nil {
+                self = .particle
+            } else if let image = string("image") {
+                self = .image(image)
+            } else if string("sprite") != nil {
+                self = .sprite
+            } else if config["text"] != nil {
+                self = .text
+            } else if string("light") != nil {
+                self = .light
+            } else if let sound = config["sound"], !(sound is NSNull) {
+                self = .sound
+            } else if string("camera") != nil {
+                self = .camera
+            } else {
+                self = string("shape") != nil ? .shape : .generic
+            }
+        }
+    }
+
+    /// Image configs without effects load their model by path; image configs with effects clone a loaded template,
+    /// whose class, puppet, video, child and dependency limits `removable` also checks. Numeric models keep the
+    /// ModelData transaction; the other classes are not created at runtime yet.
     static func create(plan: WPEParityFramePlan, removable: @escaping (String, UInt32?) -> Bool)
         -> (String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
         let templates = plan.document.imageObjects.filter { image in
@@ -44,42 +78,72 @@ enum WPEParityModelDataLayerAdmission {
                 && image.parentObjectID == nil && removable(image.id, nil)
         }
         return { json, state in
-            guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
-                  let path = object["image"] as? String else {
+            // 14018ba00.c:37-42: a config that does not parse creates nothing.
+            guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+                Logger.warning("Layer admission: createLayer config is not a JSON object", category: .wpeRender)
+                return nil
+            }
+            let layerClass = LayerClass(object)
+            if layerClass == .model, object["model"] is NSNumber {
                 return Self.create(json, state: &state)
             }
-            let name = object["name"] as? String
-            guard let template = templates.first(where: { $0.imageRelativePath == path && $0.name == name })
-                ?? templates.first(where: { $0.imageRelativePath == path }) else {
-                Logger.warning("Image layer admission: no loaded template qualifies for \(path)", category: .wpeRender)
+            guard case let .image(path) = layerClass else {
+                Logger.warning("Layer admission: runtime creation of \(layerClass) layers is not supported yet",
+                               category: .wpeRender)
                 return nil
             }
             // 1401e7170.c:161, 441-464 rebuild each entry's descriptors and pass materials; only the template's
             // loaded effects have prepared materials here.
-            let effects = (object["effects"] as? [Any]).flatMap { $0.isEmpty ? nil : WPESceneJSONValue(jsonValue: $0) }
-            if let effects {
-                let loaded = plan.document.resolvedObjectsJSON.first { entry in
-                    switch entry["id"] {
-                    case let .number(number)?: String(Int(number)) == template.id
-                    case let .string(id)?: id == template.id
-                    default: false
-                    }
-                }
-                guard loaded?["effects"] == effects else {
-                    Logger.warning("Image layer admission: effects differ from template \(template.id)", category: .wpeRender)
-                    return nil
+            guard let effects = (object["effects"] as? [Any]).flatMap({
+                $0.isEmpty ? nil : WPESceneJSONValue(jsonValue: $0)
+            }) else {
+                return Self.loadImage(object, path: path, plan: plan, state: &state)
+            }
+            let name = object["name"] as? String
+            guard let template = templates.first(where: { $0.imageRelativePath == path && $0.name == name })
+                ?? templates.first(where: { $0.imageRelativePath == path }) else {
+                Logger.warning("Image layer admission: no loaded template with effects qualifies for \(path)",
+                               category: .wpeRender)
+                return nil
+            }
+            let loaded = plan.document.resolvedObjectsJSON.first { entry in
+                switch entry["id"] {
+                case let .number(number)?: String(Int(number)) == template.id
+                case let .string(id)?: id == template.id
+                default: false
                 }
             }
-            return Self.cloneImage(object, template: template.id, adopting: effects == nil ? nil : plan.state,
-                                   state: &state)
+            guard loaded?["effects"] == effects else {
+                Logger.warning("Image layer admission: effects differ from template \(template.id)", category: .wpeRender)
+                return nil
+            }
+            return Self.admitImage(object) { id, configure in
+                try state.appendImageLayer(cloning: template.id, id: id, adopting: plan.state, configure: configure)
+            }
         }
     }
 
-    /// 14018ba00 parses the config before its factory; the clone starts from the template's live fields.
-    /// `loaded` holds the load-time effect visibility and constants a clone with effects starts from.
-    private static func cloneImage(_ config: [String: Any], template: String, adopting loaded: WPEParitySceneState?,
-                                   state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
-        let unsupported = ["parent", "video", "model", "text", "particle", "sound"].filter { config[$0] != nil }
+    /// The image branch loads the config's own model; fields the config omits keep the layer ctor's defaults.
+    private static func loadImage(_ config: [String: Any], path: String, plan: WPEParityFramePlan,
+                                  state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
+        let size = WPEValueParser.numberVector(config["size"]).map { SIMD2(Float($0[0]), Float($0[1])) }
+        let image = WPEParitySceneState.CreatedImage(model: path, size: size,
+                                                     perspective: WPEValueParser.bool(config["perspective"]) ?? false)
+        guard let description = plan.scene.createdImageObject(id: "", image: image) else {
+            Logger.warning("Image layer admission: image model \(path) is unavailable", category: .wpeRender)
+            return nil
+        }
+        return Self.admitImage(config) { id, configure in
+            try state.appendImageLayer(image, id: id, transparent: description.transparentMember,
+                                       fullscreen: description.fullscreen, configure: configure)
+        }
+    }
+
+    /// 14018ba00 parses the config before its factory; `append` adds the layer and applies the config's fields.
+    private static func admitImage(
+        _ config: [String: Any], append: (UInt64?, (inout WPEParitySceneState.Object) -> Void) throws -> UInt64
+    ) -> WPEParityScriptEngine.CreatedLayer? {
+        let unsupported = ["parent", "video"].filter { config[$0] != nil }
             + ["dependencies"].filter { (config[$0] as? [Any])?.isEmpty == false }
         guard unsupported.isEmpty else {
             Logger.warning("Image layer admission: unsupported \(unsupported)", category: .wpeRender)
@@ -87,14 +151,14 @@ enum WPEParityModelDataLayerAdmission {
         }
         // 1401a38f0.c:21-41: only a nonzero numeric id is explicit.
         let explicitID = (config["id"] as? NSNumber).flatMap { number in
-            CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : UInt64(exactly: number.doubleValue)
+            isBool(number) ? nil : UInt64(exactly: number.doubleValue)
         }.flatMap { $0 > 0 ? $0 : nil }
         func value(_ key: String) -> Any? {
             let raw = config[key]
             return (raw as? [String: Any]).map { $0["value"] } ?? raw
         }
         do {
-            let number = try state.appendImageLayer(cloning: template, id: explicitID, adopting: loaded) { object in
+            let number = try append(explicitID) { object in
                 if let origin = WPEValueParser.vector3(config["origin"]) {
                     object.origin = SIMD3(origin)
                 }
