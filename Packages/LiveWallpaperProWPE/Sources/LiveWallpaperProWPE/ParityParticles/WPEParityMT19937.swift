@@ -1,4 +1,4 @@
-/// std::mt19937 that WPE keeps once per scene (D/14017c6d0.c:557-632).
+/// std::mt19937 that WPE keeps once per scene (14017c6d0.c:557-632).
 /// A class, not Sendable: every particle system of a scene draws from this one stream in WPE's order.
 public final class WPEParityMT19937 {
     private static let size = 624
@@ -31,7 +31,7 @@ public final class WPEParityMT19937 {
         return value
     }
 
-    /// a + (b − a)·(x >> 8)·2⁻²⁴ (D/14017c6d0.c:20-23).
+    /// a + (b − a)·(x >> 8)·2⁻²⁴ (14017c6d0.c:20-23).
     public func draw(_ low: Float, _ high: Float) -> Float {
         low + (high - low) * (Float(next() >> 8) * 0x1p-24)
     }
@@ -41,12 +41,12 @@ public final class WPEParityMT19937 {
         draw(0, 1)
     }
 
-    /// [1e-5, 1), the range the emitters use for φ and the sphere radius (D/1402378a0.c:851-853).
+    /// [1e-5, 1), the range the emitters use for φ and the sphere radius (1402378a0.c:851-853).
     public func unitAboveZero() -> Float {
         draw(1e-5, 1)
     }
 
-    /// MSVC uniform_int_distribution over [low, high]: Lemire multiply-shift with rejection (D/14024f410.c).
+    /// MSVC uniform_int_distribution over [low, high]: Lemire multiply-shift with rejection (14024f410.c).
     public func integer(_ low: Int32, _ high: Int32) -> Int32 {
         let range = UInt32(bitPattern: high &- low) &+ 1
         guard range != 0 else { return low &+ Int32(bitPattern: next()) }
@@ -73,7 +73,7 @@ public final class WPEParityMT19937 {
     }
 }
 
-/// The CRT `rand()` hsvcolorrandom draws from (D/1402c97a0.c), one per scene beside the scene's mt19937.
+/// The CRT `rand()` hsvcolorrandom draws from (1402c97a0.c), one per scene beside the scene's mt19937.
 public final class WPEParityCRTRandom {
     private var state: UInt32
 

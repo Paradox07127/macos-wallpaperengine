@@ -11,7 +11,7 @@ struct WPEParityParticleOscillation: Equatable, Sendable {
     var phaseMax: Float
 }
 
-/// Operator weight when blendin*/blendout* keys are present (D/1401c2a40.c:23-148).
+/// Operator weight when blendin*/blendout* keys are present (1401c2a40.c:23-148).
 /// The defaults keep each ramp at 1 over t ∈ [0, 1] for an operator that authors only one side.
 struct WPEParityParticleBlend: Equatable, Sendable {
     var inStart: Float = -1
@@ -58,7 +58,7 @@ enum WPEParityParticleMath {
         value > 0 ? min(value, 1) : 0
     }
 
-    /// v' = (v + g·dt)·(1 − min(drag·dt, 0.9999999)), p' = p + (v + g·dt)·dt (B/14023fbc0.c:1464-1572).
+    /// v' = (v + g·dt)·(1 − min(drag·dt, 0.9999999)), p' = p + (v + g·dt)·dt (14023fbc0.c:1464-1572).
     static func move(
         position: inout SIMD3<Float>, velocity: inout SIMD3<Float>,
         acceleration: SIMD3<Float>, drag: Float, dt: Float

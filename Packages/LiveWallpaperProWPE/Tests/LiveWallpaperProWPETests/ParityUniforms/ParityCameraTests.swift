@@ -102,7 +102,7 @@ final class ParityCameraTests: XCTestCase {
         """)
         XCTAssertEqual(document.cameraMotion?.objectID, "1")
         XCTAssertEqual(document.camera.eye, SIMD3(7, 8, 9))
-        XCTAssertEqual(document.camera.fov, 50, "H08 camera ctor/post-load default is 50")
+        XCTAssertEqual(document.camera.fov, 50, "camera ctor/post-load default is 50")
         let initial = WPEParityCamera(document: document, renderTargetSize: SIMD2(200, 100))
         XCTAssertEqual(initial.scenePerspective?.fov, 50)
         let root = WPEParityCamera.root(document: document, renderTargetSize: SIMD2(200, 100))

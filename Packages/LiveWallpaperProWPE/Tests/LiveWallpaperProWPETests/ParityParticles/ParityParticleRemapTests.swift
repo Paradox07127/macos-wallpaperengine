@@ -33,7 +33,7 @@ final class ParityParticleRemapTests: XCTestCase {
         """).alpha[0]
     }
 
-    /// (U^exp·Δ + min)·alpha (D/14023b340.c:524-539).
+    /// (U^exp·Δ + min)·alpha (14023b340.c:524-539).
     func testAlphaRandomExponentShapesTheDraw() {
         let linear = system(initializers: #", {"name": "alpharandom", "min": 0.2, "max": 0.6}"#, age: 0)
         let squared = system(initializers: #", {"name": "alpharandom", "min": 0.2, "max": 0.6, "exponent": 2}"#,
@@ -96,7 +96,7 @@ final class ParityParticleRemapTests: XCTestCase {
         XCTAssertEqual(particles.alpha[0], (maximum - minimum) * (noise * 0.5 + 0.5) + minimum)
     }
 
-    /// fbm: Σ noise·amp with amp from 1/(1 + 0.5 + 0.25), seed + 1 per octave (D/1400fbc70.c).
+    /// fbm: Σ noise·amp with amp from 1/(1 + 0.5 + 0.25), seed + 1 per octave (1400fbc70.c).
     func testFBM2SumsOctaves() {
         let seed: Int32 = 7, x: Float = 1.3
         let bounding = Float(1) / 1.75
@@ -233,7 +233,7 @@ final class ParityParticleRemapTests: XCTestCase {
     }
 
     /// Hidden with live particles: count and object time to 0, no new starttime prewarm (140230650.c:19-50,
-    /// D/14022f6c0.c); showing again emits from a zero accumulator.
+    /// 14022f6c0.c); showing again emits from a zero accumulator.
     func testHiddenResetDoesNotPrewarmAgain() {
         var particles = WPEParityParticleSystem(
             json: Support.json("""

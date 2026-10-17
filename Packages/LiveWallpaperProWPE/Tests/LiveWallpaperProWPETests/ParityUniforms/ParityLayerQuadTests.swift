@@ -30,7 +30,7 @@ final class ParityLayerQuadTests: XCTestCase {
         let effect = WPEParityLayerQuad.effectPass
         XCTAssertEqual(effect.vertices.map(\.position), [SIMD3(-1, 1, 0), SIMD3(1, 1, 0), SIMD3(-1, -1, 0),
                                                          SIMD3(1, -1, 0)])
-        // R10: Main+0x118 bit0 is set on Windows, so the 2×2 quad keeps v = 0 on its y = +1 edge.
+        // Main+0x118 bit0 is set on Windows, so the 2×2 quad keeps v = 0 on its y = +1 edge.
         XCTAssertEqual(effect.vertices.map(\.texcoord), [SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)])
     }
 }

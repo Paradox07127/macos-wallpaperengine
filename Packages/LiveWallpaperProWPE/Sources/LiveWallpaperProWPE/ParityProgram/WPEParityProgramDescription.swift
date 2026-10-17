@@ -59,7 +59,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
                         ("override", override, overrideEntries)].filter { $0.1 != nil }
         var diagnostics: [String] = []
         var slots: [Int32: WPESceneUserTextureBinding] = [:]
-        // The selected pass after the native recursive instance merge; unverified root/pass conflicts remain nil.
+        // The selected pass after the native recursive instance merge; nil on a root/pass conflict.
         var resolved: WPESceneJSONValue?
         if override == nil, let overrideBindings, !overrideBindings.isEmpty {
             diagnostics.append("usertextures override has typed bindings without raw array/keepaspect provenance")

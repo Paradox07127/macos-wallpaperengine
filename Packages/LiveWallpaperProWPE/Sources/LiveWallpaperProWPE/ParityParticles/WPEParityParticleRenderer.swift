@@ -12,11 +12,11 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
     /// ropetrail vertices per particle.
     public let segments: Int
     public let subdivision: Int
-    /// screen 0, upright 1, fixed 2 (D/1401c22e0.c:159-182).
+    /// screen 0, upright 1, fixed 2 (1401c22e0.c:159-182).
     public let orientation: Int
-    /// `axis` normalised, (0, 1, 0) when absent or zero (D/1401c22e0.c:185-245).
+    /// `axis` normalised, (0, 1, 0) when absent or zero (1401c22e0.c:185-245).
     public let axis: SIMD3<Float>
-    /// normalize(axis × (Y × axis)), (0, 0, −1) when axis ∥ Y (D/1401c22e0.c:246-288).
+    /// normalize(axis × (Y × axis)), (0, 0, −1) when axis ∥ Y (1401c22e0.c:246-288).
     public let fixedUp: SIMD3<Float>
     /// `flags` bit0: orientation axes are taken as world axes instead of being rotated by the model.
     public let worldAxes: Bool
@@ -38,7 +38,7 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
         maxLength = JSON.number(json["maxlength"]) ?? 10
         minLength = JSON.number(json["minlength"]) ?? 0
         segments = max(1, Int(JSON.number(json["segments"]) ?? 3))
-        // D/1401c0c90.c:21-28 (rope, 0–32, default 4); D/1401c1070.c:84-95 (ropetrail, default 1).
+        // 1401c0c90.c:21-28 (rope, 0–32, default 4); 1401c1070.c:84-95 (ropetrail, default 1).
         let subdivision = Int(JSON.number(json["subdivision"]) ?? (kind == .rope ? 4 : 1))
         self.subdivision = kind == .rope ? min(max(subdivision, 0), 32) : subdivision
         orientation = switch JSON.string(json["orientation"])?.lowercased() {
@@ -62,7 +62,7 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
 
 /// Texture facts the combos depend on; they come from the entry's material, not the particle JSON.
 public struct WPEParityParticleMaterial: Equatable, Sendable {
-    /// texture0 texFlags bit 2 (B/1401c5490.c:10129-10138).
+    /// texture0 texFlags bit 2 (1401c5490.c:10129-10138).
     public var spriteSheet: Bool
     public var spriteSheetNPOT: Bool
     public var texture0Format: Int?

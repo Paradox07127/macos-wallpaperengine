@@ -103,7 +103,7 @@ final class ParityTextPlannerTests: XCTestCase {
         XCTAssertEqual(planner.atlases[planned.atlasKey]?.mono.entry(forKey: key)?.references, 1)
     }
 
-    func testGlyphAndFBOTranslationsFollowTheQ6Formulas() throws {
+    func testGlyphAndFBOTranslationsFollowWPEsFormulas() throws {
         let planner = try Self.makePlanner()
         let object = Self.textObject()
         let direct = try XCTUnwrap(planner.plan(object, effectCount: 0).layout.mesh)

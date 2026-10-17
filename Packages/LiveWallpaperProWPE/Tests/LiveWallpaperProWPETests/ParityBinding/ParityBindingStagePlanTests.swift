@@ -135,7 +135,7 @@ final class ParityBindingStagePlanTests: XCTestCase {
     }
 }
 
-/// Saved MSC smoke-test reflections from <private-notes>
+/// Saved MSC reflections of the generic shaders.
 extension ParityBindingStagePlanTests {
     private func planFromMSC(_ json: String, stage: WPEStageReflection.Stage) throws -> WPEStageBindingPlan {
         let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Emitter keys with their native defaults (D/1401b8df0.c:16-104, D/1401b9100.c:62-155, D/1401b9520.c:98-157).
+/// Emitter keys with their native defaults (1401b8df0.c:16-104, 1401b9100.c:62-155, 1401b9520.c:98-157).
 struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     enum Shape: Equatable, Sendable { case sphere, box }
 
@@ -100,12 +100,12 @@ struct WPEParityParticleChildConfig: Equatable, Sendable {
     var flags: Int
     var controlPointStartIndex: Int
     var probability: Float
-    /// Native child config +0x70, default 10 (D/1401c1430.c:125); event groups consume this independently of slots.
+    /// Native child config +0x70, default 10 (1401c1430.c:125); event groups consume this independently of slots.
     var maxCount: Int
     var config: WPEParityParticleConfig
 }
 
-/// A rejected N1 field, retaining the attempted typed path and its authored asset.
+/// A rejected child-system field, retaining the attempted typed path and its authored asset.
 struct WPEParityParticleChildRejection: Equatable, Sendable {
     var path: [WPEParityParticlePathElement]
     var asset: String
@@ -255,7 +255,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         for entry in JSON.array(json["operator"]) {
             appendOperator(entry, is3D: is3D)
         }
-        // B/1401c5490.c:791–810 injects sprite only when renderer is not an array; [] stays empty.
+        // 1401c5490.c:791–810 injects sprite only when renderer is not an array; [] stays empty.
         let rendererEntries: [WPESceneJSONValue] = if case let .array(entries)? = json["renderer"] {
             entries
         } else {
@@ -551,10 +551,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             issues.append(.init(path: path, asset: asset, field: field, reason: reason))
         }
         if flags & ~15 != 0 {
-            reject("flags", "N1 does not implement these system flag bits")
+            reject("flags", "unsupported system flag bits")
         }
         for (index, emitter) in emitters.enumerated() where emitter.periodic {
-            reject("emitter[\(index)].flags", "periodic emission and child restart remain unsupported by N1")
+            reject("emitter[\(index)].flags", "periodic emission and child restart are unsupported")
         }
         for (index, point) in controlPoints.enumerated() {
             if point.flags & ~0x1000F != 0 {
@@ -588,11 +588,11 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         case .spawn: trigger = .spawn
         case .death: trigger = .death
         case .follow:
-            // Only the explicit native event kind enters N2. The legacy flags-only default chain remains unproved.
+            // Only an explicit "eventfollow" type becomes a follow child; the flags-only default is rejected.
             guard JSON.string(entry["type"])?.lowercased() == "eventfollow" else {
                 unsupportedChildren.append(.init(path: context.path + [.eventGroup(children.filter { $0.trigger != .always }.count)],
                                                  asset: path, field: "type",
-                                                 reason: "flags-only eventfollow default remains unsupported by N2"))
+                                                 reason: "flags-only eventfollow default is unsupported"))
                 return
             }
             trigger = .follow

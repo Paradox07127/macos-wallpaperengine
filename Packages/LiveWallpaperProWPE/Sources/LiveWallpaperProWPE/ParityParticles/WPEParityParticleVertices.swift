@@ -37,19 +37,19 @@ public extension WPEParityParticleSystem {
 }
 
 extension WPEParityParticleSystem {
-    /// spritetrail RV0 = (length, maxlength, minlength, kept) (D/1401c0af0.c:15-47).
+    /// spritetrail RV0 = (length, maxlength, minlength, kept) (1401c0af0.c:15-47).
     static func mainRenderVar0(renderer: WPEParityParticleRenderer) -> WPEParityRenderVar0 {
         renderer.kind == .spriteTrail
             ? WPEParityRenderVar0(x: renderer.length, y: renderer.maxLength, z: renderer.minLength)
             : WPEParityRenderVar0()
     }
 
-    /// A system whose only renderers are `rope` draws with genericropeparticle (B/1401c5490.c:10109-10116).
+    /// A system whose only renderers are `rope` draws with genericropeparticle (1401c5490.c:10109-10116).
     static func shaderOverride(renderers: [WPEParityParticleRenderer]) -> String? {
         !renderers.isEmpty && renderers.allSatisfy { $0.kind == .rope } ? "genericropeparticle" : nil
     }
 
-    /// Rope and ropetrail entries build their own material on genericropeparticle (D/1401d2340.c:608, :774); the
+    /// Rope and ropetrail entries build their own material on genericropeparticle (1401d2340.c:608, :774); the
     /// other entries keep the material's shader.
     static func shaderOverride(renderer: WPEParityParticleRenderer) -> String? {
         renderer.kind == .rope || renderer.kind == .ropeTrail ? "genericropeparticle" : nil

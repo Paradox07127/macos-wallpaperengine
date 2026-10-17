@@ -161,7 +161,7 @@ public struct WPEParityCamera: Sendable, Equatable {
     }
 
     /// Resolves the selected object's typed script fields over its authored seeds, then native constructor
-    /// defaults (H08: fov 50 / zoom 1). Keeps internal JSON identity/scalar helpers inside the package.
+    /// defaults (fov 50, zoom 1). Keeps internal JSON identity/scalar helpers inside the package.
     public func applyingObject(world: simd_float4x4, objectID: String, document: WPESceneDocument,
                                state: WPEParitySceneState, generalZoom: Float) -> Self {
         let object = document.resolvedObjectsJSON.first { WPEParitySceneAnimations.id($0) == objectID }

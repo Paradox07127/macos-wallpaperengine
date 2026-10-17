@@ -21,10 +21,10 @@ public struct WPEParityParticleSystem {
 
         init() {}
 
-        /// Colour/brightness gates are applied per system at birth; children may have different hascolor/flags.
+        /// Each system gates colour itself in `updateColorn`; children may have different hascolor/flags.
         init(_ override: WPESceneParticleInstanceOverride?, hdr: Bool) {
             guard let override else { return }
-            // Object update multiplies dt by the instance rate, floored at 0.01 (D/140230650.c:55-64).
+            // Object update multiplies dt by the instance rate, floored at 0.01 (140230650.c:55-64).
             rate = Float(max(override.rate ?? 1, 0.01))
             count = Float(max(override.count ?? 1, 0))
             lifetime = Float(max(override.lifetime ?? 1, 0))
@@ -130,12 +130,12 @@ public struct WPEParityParticleSystem {
     var birthsRecordSpawnEvents = true
     var freeHint = 0
     var highWater = 0
-    /// Birth-order list for the rope renderer (D/140236cd0.c:82-109).
+    /// Birth-order list for the rope renderer (140236cd0.c:82-109).
     var birthNext: [Int32]
     var birthPrevious: [Int32]
     var birthHead: Int32 = -1
     var birthTail: Int32 = -1
-    /// Ropetrail history ring per slot, pushed every length/segments seconds (D/1401d2340.c:776-779).
+    /// Ropetrail history ring per slot, pushed every length/segments seconds (1401d2340.c:776-779).
     var trailSegments = 0
     var trailInterval: Float = 0
     var trailTimer: Float = 0
@@ -220,7 +220,7 @@ public struct WPEParityParticleSystem {
         frameContext.worldSpace = config.flags & 1 != 0
         frameContext.objectMatrix = frameContext.worldSpace
             ? self.instanceTransform : parentUpdateMatrix * self.instanceTransform
-        // count scales emission only; the slots stay at maxcount (D/14022ebe0.c:355).
+        // count scales emission only; the slots stay at maxcount (14022ebe0.c:355).
         let capacity = config.maxCount
         self.capacity = capacity
         position = Array(repeating: .zero, count: capacity)
@@ -329,7 +329,7 @@ public struct WPEParityParticleSystem {
 
     /// A hidden object with live particles starts over at time 0: no particles, emitters restored as built (disabled
     /// bits kept) without new draws, sequence positions to 0, static children reset, event children destroyed (140230650.c:16-67,
-    /// D/14022f6c0.c). Nothing calls the starttime prewarm again.
+    /// 14022f6c0.c). Nothing calls the starttime prewarm again.
     mutating func reset() {
         objectTime = 0
         restart()
@@ -344,7 +344,7 @@ public struct WPEParityParticleSystem {
     }
 
     /// Clears the pause bit; only a system with nothing alive re-enables its static tree, without timer resets
-    /// (14024c5b0-14024c661, W6/14022f5b0.c).
+    /// (14024c5b0-14024c661, 14022f5b0.c).
     public mutating func play() {
         paused = false
         guard !isAlive else { return }
@@ -375,7 +375,7 @@ public struct WPEParityParticleSystem {
         !paused && isAlive
     }
 
-    /// A live particle, an enabled emitter, or an alive static or active event descendant (W6/14022c310.c).
+    /// A live particle, an enabled emitter, or an alive static or active event descendant (14022c310.c).
     var isAlive: Bool {
         liveCount != 0 || emitterStates.contains { !$0.disabled } || children.contains(where: \.isAlive)
             || eventChildren.joined().contains(where: \.isAlive)
@@ -435,7 +435,7 @@ public struct WPEParityParticleSystem {
         boidsFrame = 0
     }
 
-    /// One object update: dt × instance rate (D/140230650.c:55-64).
+    /// One object update: dt × instance rate (140230650.c:55-64).
     public mutating func advance(dt: Float, frame: WPEParityParticleFrameContext = .init()) {
         instanceTransform = frame.objectMatrix
         setUpdateFrame(frame, parentUpdateMatrix: matrix_identity_float4x4, conditional: true)
@@ -553,14 +553,14 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// Fixed 0.05 s steps, 0.2 s at maxcount ≥ 500, until starttime is covered (D/14022ebe0.c:349-367).
+    /// Fixed 0.05 s steps, 0.2 s at maxcount ≥ 500, until starttime is covered (14022ebe0.c:349-367).
     private mutating func prewarm(parent: [simd_float4x4]?, parentCount: Int,
                                   parentUpdateMatrix: simd_float4x4, parentWorldSpace: Bool) {
         guard config.startTime > 0 else { return }
         prewarmStep = capacity < 500 ? 0.05 : 0.2
         var stepLimit = Float.infinity
         if let horizon = prewarmHorizon, config.startTime > horizon {
-            // Stands in for the native full loop (D/14022ebe0.c:349-367); valid only because production prewarm uses a random seed.
+            // Stands in for the native full loop (14022ebe0.c:349-367); valid only because production prewarm uses a random seed.
             stepLimit = (horizon / prewarmStep).rounded(.up) + 2
         }
         let recorded = birthsRecordSpawnEvents
@@ -914,7 +914,7 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// D/14023b340.c:360-1032.
+    /// 14023b340.c:360-1032.
     private mutating func initialize(_ slot: Int, _ initializer: WPEParityParticleInitializer, index: Int,
                                      birthBasis: simd_float3x3) {
         switch initializer {
@@ -939,7 +939,7 @@ public struct WPEParityParticleSystem {
         case let .sequenceBetween(field):
             initializeSequenceBetween(field, index: index, slot: slot)
         case let .alpha(low, high, exponent):
-            // (U^exp·Δ + min)·alpha, powf only for exp ≠ 1 (D/14023b340.c:524-539).
+            // (U^exp·Δ + min)·alpha, powf only for exp ≠ 1 (14023b340.c:524-539).
             initialAlpha[slot] *= shaped(rng.unit(), exponent) * (high - low) + low
         case let .remap(field):
             applyRemap(field, slot: slot, initializer: true)
@@ -962,7 +962,7 @@ public struct WPEParityParticleSystem {
         }
     }
 
-    /// powf(U, exp) only when exp ≠ 1 (D/14023b340.c:387-410, 668-695).
+    /// powf(U, exp) only when exp ≠ 1 (14023b340.c:387-410, 668-695).
     private func shaped(_ u: Float, _ exponent: Float) -> Float {
         exponent == 1 ? u : pow(u, exponent)
     }

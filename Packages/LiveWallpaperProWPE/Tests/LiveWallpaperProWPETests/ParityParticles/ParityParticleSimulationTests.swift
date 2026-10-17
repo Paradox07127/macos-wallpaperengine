@@ -439,7 +439,7 @@ final class ParityParticleSimulationTests: XCTestCase {
         }
     }
 
-    /// Isolate the walker with an already-instantiated tree; parsed N1 lifecycle is guarded separately.
+    /// Isolate the walker with an already-instantiated tree; the parsed child lifecycle is tested separately.
     func testDrawTraversalCompletesEachEventSubtreeAndCarriesItsOwnMatrix() {
         let leaf = ParityParticleTestSupport.json("""
         {"maxcount": 1, "emitter": [{"name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0}],

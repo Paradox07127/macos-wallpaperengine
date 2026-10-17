@@ -148,7 +148,7 @@ final class ParityLayerTransformTests: XCTestCase {
                                                                              depth: 1000))
     }
 
-    /// R10: a grandchild drawn through a parent without a composite is P_owner·inverse(W'_owner)·W'_grandchild.
+    /// A grandchild drawn through a parent without a composite is P_owner·inverse(W'_owner)·W'_grandchild.
     func testGrandchildInGrandparentCompositeUsesOwnerMatrices() throws {
         let owner = layer("g", origin: SIMD3(1000, 500, 0), angles: SIMD3(0, 0, 0.4), size: SIMD2(400, 300),
                           alignment: .left)
@@ -166,7 +166,7 @@ final class ParityLayerTransformTests: XCTestCase {
         XCTAssertFalse(simd_almost_equal_elements(direct.modelViewProjection, expected, 1e-3))
     }
 
-    /// R10 step 1, capture eid144: the albedo fills a 3756×1936 composite with M = V = I and a y-up ortho.
+    /// Capture eid144: the albedo fills a 3756×1936 composite with M = V = I and a y-up ortho.
     func testAlbedoIntoCompositeMatchesCaptureEid144() throws {
         let layers = set([layer("a", origin: SIMD3(1920, 1080, 0), size: SIMD2(400, 200))])
         let kind = WPEParityLayerDrawKind.compositeFill(size: SIMD2(3756, 1936))

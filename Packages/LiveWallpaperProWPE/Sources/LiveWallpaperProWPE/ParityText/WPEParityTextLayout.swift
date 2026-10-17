@@ -128,7 +128,7 @@ public struct WPEParityTextLayout: Hashable, Sendable {
     public var mesh: WPEParityTextMesh?
     /// The layer's +0x2f8/+0x2fc translation (140256f20.c:302-325).
     public var blockOffset: SIMD2<Float>
-    /// N/140258ab0.c:17-38.
+    /// The text layer's FBO size (140258ab0.c:17-38).
     public var fboSize: SIMD2<Int>
 }
 

@@ -1,7 +1,7 @@
 import simd
 
 /// Gustavson simplex noise as WPE 2.8.42 evaluates it: 3D for turbulence, 2D for
-/// positionoffsetrandom, 1D for turbulentvelocityrandom. 1D/2D hash gradients follow D/14027b090.c and D/14027b170.c.
+/// positionoffsetrandom, 1D for turbulentvelocityrandom. 1D/2D hash gradients follow 14027b090.c and 14027b170.c.
 enum WPEParityParticleNoise {
     /// Ken Perlin's reference permutation.
     private static let permutation: [UInt8] = [

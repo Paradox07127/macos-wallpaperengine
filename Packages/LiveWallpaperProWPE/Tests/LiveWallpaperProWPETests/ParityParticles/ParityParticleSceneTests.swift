@@ -449,7 +449,7 @@ final class ParityParticleSceneTests: XCTestCase {
         return document.particleObjects.count
     }
 
-    /// The container's renderer entries in W32a's order: entries, static children depth first, event groups.
+    /// The container's renderer entries in draw order: entries, static children depth first, event groups.
     private static func keys(_ system: WPEParityParticleSystem, at node: WPEParityParticleDrawKey,
                              into keys: inout [WPEParityParticleDrawKey]) {
         Self.keys(system.config, at: node, into: &keys)
@@ -1087,7 +1087,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 $0.path == [.eventGroup(0)] && $0.asset == "bad" && $0.field.contains(field) && !$0.reason.isEmpty
             }, field)
         }
-        // Closed native world/history/parent-copy ancestry must not retain the old N2 rejection.
+        // World/history/parent-copy ancestor flags and operators must not make event children unsupported.
         for ancestor in [#", "flags": 1"#,
                          #", "operator": [{"name": "maintaindistancetocontrolpoint"}]"#,
                          #", "controlpoint": [{"flags": 4}]"#] {

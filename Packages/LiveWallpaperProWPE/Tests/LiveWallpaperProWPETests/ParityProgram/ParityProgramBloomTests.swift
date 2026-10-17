@@ -3,9 +3,9 @@ import LiveWallpaperCore
 @testable import LiveWallpaperProWPE
 import XCTest
 
-/// Bloom chain shape and per-pass constants as WPE writes them (R15).
+/// Bloom chain shape and per-pass constants as WPE writes them.
 final class ParityProgramBloomTests: XCTestCase {
-    /// R15 "3509243656 首帧" at 1920×1080.
+    /// Scene 3509243656's first frame at 1920×1080.
     func testScene3509243656HDRPassesCarryWPEsConstants() throws {
         let post = try fixturePost("3509243656", hdr: true)
         XCTAssertEqual(post.hdrBloomLevelCount, 6)

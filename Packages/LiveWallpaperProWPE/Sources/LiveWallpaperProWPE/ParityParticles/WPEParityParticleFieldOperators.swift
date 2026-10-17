@@ -1,6 +1,6 @@
 import simd
 
-/// turbulence (defaults D/1401beb80.c:20-126). Reads the birth u, draws nothing.
+/// turbulence (defaults 1401beb80.c:20-126). Reads the birth u, draws nothing.
 struct WPEParityParticleTurbulence: Equatable, Sendable {
     var mask: SIMD3<Float>
     var scale: Float
@@ -21,7 +21,7 @@ struct WPEParityParticleTurbulence: Equatable, Sendable {
     }
 }
 
-/// controlpointattract (D/1401bdee0.c:20-140).
+/// controlpointattract (1401bdee0.c:20-140).
 struct WPEParityParticleAttract: Equatable, Sendable {
     var controlPoint: Int
     var scale: Float
@@ -39,7 +39,7 @@ struct WPEParityParticleAttract: Equatable, Sendable {
     }
 }
 
-/// vortex (D/1401bef00.c:19-142).
+/// vortex (1401bef00.c:19-142).
 struct WPEParityParticleVortex: Equatable, Sendable {
     var controlPoint: Int
     var offset: SIMD3<Float>
@@ -67,7 +67,7 @@ struct WPEParityParticleVortex: Equatable, Sendable {
     }
 }
 
-/// vortex_v2 (D/1401bf2d0.c:21-146).
+/// vortex_v2 (1401bf2d0.c:21-146).
 struct WPEParityParticleVortexRing: Equatable, Sendable {
     var controlPoint: Int
     var axis: SIMD3<Float>
@@ -98,7 +98,7 @@ struct WPEParityParticleVortexRing: Equatable, Sendable {
     }
 }
 
-/// boids (D/1401bf700.c:18-122).
+/// boids (1401bf700.c:18-122).
 struct WPEParityParticleBoids: Equatable, Sendable {
     var separationThreshold: Float
     var neighborThreshold: Float
@@ -119,7 +119,7 @@ struct WPEParityParticleBoids: Equatable, Sendable {
     }
 }
 
-/// collisionplane / collisionsphere with the bounce behaviour (D/1401c00a0.c, D/1401c0540.c:32-67).
+/// collisionplane / collisionsphere with the bounce behaviour (1401c00a0.c, 1401c0540.c:32-67).
 struct WPEParityParticleCollision: Equatable, Sendable {
     enum Behavior: String, Sendable {
         case bounce, slide, stop, delete
@@ -331,7 +331,7 @@ extension WPEParityParticleSystem {
         velocity[slot] *= 1 - reduction * weight
     }
 
-    /// Plane bounce (D/14024f5e0.c:20-120): below the plane, push back onto it and reflect v·n.
+    /// Plane bounce (14024f5e0.c:20-120): below the plane, push back onto it and reflect v·n.
     mutating func applyCollisionPlane(_ field: WPEParityParticleCollision, slot: Int, weight _: Float) {
         var normal = field.vector, distance = field.scalar
         if field.flags & 1 != 0 {

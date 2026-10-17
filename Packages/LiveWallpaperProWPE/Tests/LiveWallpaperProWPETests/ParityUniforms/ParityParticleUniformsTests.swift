@@ -97,7 +97,7 @@ final class ParityParticleUniformsTests: XCTestCase {
     }
 
     /// 1920×1080 canvas, V = I, fov 90°: D = (1/(2/1080))/tan 45° = 540, far = max(15000, 1540).
-    func testPerspectiveAtTopLevelPushesR22Q5ViewAndProjection() throws {
+    func testPerspectiveAtTopLevelPushesCanvasDistanceViewAndProjection() throws {
         let emitter = WPEParityLayerTransform(id: "e", origin: .zero)
         let matrices = try WPEParityParticleMatrices.draw(transforms([emitter], fov: 90), objectID: "e",
                                                           modelMatrix: translation(9, 8, 7), perspective: true,

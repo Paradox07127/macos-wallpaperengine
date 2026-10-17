@@ -1,8 +1,8 @@
 import Foundation
 import simd
 
-/// remapvalue (operator 19, D/1401bfbb0.c, B/1401c5490.c:9259-9344, 4439-4826) and remapinitialvalue
-/// (initializer 15, B/1401c5490.c:7216-7265, 1690-2030). Enum values follow WPE's string tables at 0x140484e00-f38;
+/// remapvalue (operator 19, 1401bfbb0.c, 1401c5490.c:9259-9344, 4439-4826) and remapinitialvalue
+/// (initializer 15, 1401c5490.c:7216-7265, 1690-2030). Enum values follow WPE's string tables at 0x140484e00-f38;
 /// a string WPE does not know maps past the last case and does nothing.
 struct WPEParityParticleRemap: Equatable, Sendable {
     enum Value: Int, Sendable {
@@ -67,7 +67,7 @@ struct WPEParityParticleRemap: Equatable, Sendable {
     var outputControlPoint1: Int
     var inputScale: Float
 
-    /// The operator defaults its input to lifetimefraction, the initializer to maxlifetime (D/1401bc4b0.c).
+    /// The operator defaults its input to lifetimefraction, the initializer to maxlifetime (1401bc4b0.c).
     init(_ entry: WPEParityParticleEntry, defaultInput: Value) {
         func pick<T>(_ key: String, _ names: [String], _ fallback: T, _ make: (Int) -> T?, unknown: T) -> T {
             guard let text = WPEParityParticleJSON.string(entry.json[key]) else { return fallback }
@@ -118,7 +118,7 @@ enum WPEParityParticleInherit: Int, Equatable, Sendable {
         "addangularvelocity",
     ]
 
-    /// The operator defaults to setcoloropacity (D/1401c0080.c), the initializer to setcolor (D/1401bc980.c).
+    /// The operator defaults to setcoloropacity (1401c0080.c), the initializer to setcolor (1401bc980.c).
     init(_ entry: WPEParityParticleEntry, fallback: Self) {
         guard let text = WPEParityParticleJSON.string(entry.json["input"]) else {
             self = fallback

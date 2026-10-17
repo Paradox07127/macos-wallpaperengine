@@ -21,7 +21,7 @@ public enum WPEParityParticleMatrices {
     }
 }
 
-/// g_OrientationForward/Right/Up of one renderer draw (D/1402298b0.c:43-174).
+/// g_OrientationForward/Right/Up of one renderer draw (1402298b0.c:43-174).
 public enum WPEParityParticleOrientation {
     /// `modelRotation` is the 3×3 of the draw's g_ModelMatrix; `sceneView` is the frame's scene camera V,
     /// never a composite or perspective push.
@@ -74,7 +74,7 @@ public struct WPEParityRenderVarState: Equatable, Sendable {
     }
 
     /// SPRITESHEET draws: (frame 0 width UV, frame 0 height UV, frame count, frame 0 pixel height/width)
-    /// (D/1402366f0.c:81-91); `texture.spriteFrame` is frame 0. Nil without TEXS frames.
+    /// (1402366f0.c:81-91); `texture.spriteFrame` is frame 0. Nil without TEXS frames.
     public static func spriteSheetRV1(texture: WPEParityUniformTexture, frameCount: Int) -> SIMD4<Float>? {
         guard let uv = texture.spriteFrame?.rotation else { return nil }
         let aspect = Float(texture.textureHeight) / Float(texture.textureWidth) * (uv.w / uv.x)

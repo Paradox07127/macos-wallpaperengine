@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-/// hsvcolorrandom (D/1401ba3e0.c): hue in turns, quantised to `steps` by the CRT `rand()`.
+/// hsvcolorrandom (1401ba3e0.c): hue in turns, quantised to `steps` by the CRT `rand()`.
 struct WPEParityParticleHSVRandom: Equatable, Sendable {
     var hueMin: Float
     var hueStep: Float
@@ -26,7 +26,7 @@ struct WPEParityParticleHSVRandom: Equatable, Sendable {
     }
 }
 
-/// turbulentvelocityrandom (D/1401bb030.c).
+/// turbulentvelocityrandom (1401bb030.c).
 struct WPEParityParticleTurbulentVelocity: Equatable, Sendable {
     var speedMin: Float
     var speedMax: Float
@@ -51,7 +51,7 @@ struct WPEParityParticleTurbulentVelocity: Equatable, Sendable {
     }
 }
 
-/// positionoffsetrandom (D/1401bb660.c).
+/// positionoffsetrandom (1401bb660.c).
 struct WPEParityParticlePositionOffset: Equatable, Sendable {
     var directions: SIMD3<Float>
     var sign: SIMD3<Float>
@@ -70,7 +70,7 @@ struct WPEParityParticlePositionOffset: Equatable, Sendable {
     }
 }
 
-/// mapsequencearoundcontrolpoint (D/1401bbc90.c). `t` advances by 1/count per birth, shared by the system.
+/// mapsequencearoundcontrolpoint (1401bbc90.c). `t` advances by 1/count per birth, shared by the system.
 struct WPEParityParticleSequenceAround: Equatable, Sendable {
     var count: Float
     var bounds: SIMD2<Float>
@@ -98,7 +98,7 @@ struct WPEParityParticleSequenceAround: Equatable, Sendable {
     }
 }
 
-/// mapsequencebetweencontrolpoints (D/1401bc080.c). `t` advances by 1/(count − 1) per birth.
+/// mapsequencebetweencontrolpoints (1401bc080.c). `t` advances by 1/(count − 1) per birth.
 struct WPEParityParticleSequenceBetween: Equatable, Sendable {
     var count: Float
     var bounds: SIMD2<Float>
@@ -129,7 +129,7 @@ struct WPEParityParticleSequenceState {
     var t: Float = 0
     var step: Float = 0
 
-    /// t += step; above 1 repeat wraps (`fmod` or back to 0), mirror reflects; below 0 reflects (D/14023b340.c:898-937).
+    /// t += step; above 1 repeat wraps (`fmod` or back to 0), mirror reflects; below 0 reflects (14023b340.c:898-937).
     mutating func advance(mirror: Bool, wrapsByRemainder: Bool) {
         t += step
         if t > 1 {
@@ -147,7 +147,7 @@ struct WPEParityParticleSequenceState {
 }
 
 extension WPEParityParticleSystem {
-    /// k = clamp(⌊rand()/32767·(steps+1)⌋, 0, steps), then one U each for S and V (D/14023b340.c:412-437).
+    /// k = clamp(⌊rand()/32767·(steps+1)⌋, 0, steps), then one U each for S and V (14023b340.c:412-437).
     mutating func initializeHSV(_ hsv: WPEParityParticleHSVRandom, slot: Int) {
         let k = min(max(Int(Float(crt.next()) / 32767 * Float(hsv.steps + 1)), 0), hsv.steps)
         let hue = hsv.hueMin + Float(k) * hsv.hueStep
@@ -156,7 +156,7 @@ extension WPEParityParticleSystem {
         initialColor[slot] *= WPEParityParticleMath.hsvToRGB(hue: hue * 360, saturation: saturation, value: value)
     }
 
-    /// One integer draw for the entry, then one U per HSV channel inside ±noise (D/14023b340.c:438-523).
+    /// One integer draw for the entry, then one U per HSV channel inside ±noise (14023b340.c:438-523).
     mutating func initializeColorList(_ colors: [SIMD3<Float>], noise: SIMD3<Float>, slot: Int) {
         let base = colors[Int(rng.integer(0, Int32(colors.count - 1)))]
         var hsv = SIMD3<Float>()
@@ -182,7 +182,7 @@ extension WPEParityParticleSystem {
         velocity[slot] += Self.transformVelocity(direction * speed, by: birthBasis)
     }
 
-    /// fbm of 2D simplex per axis, no draws (D/14023b340.c:698-790).
+    /// fbm of 2D simplex per axis, no draws (14023b340.c:698-790).
     mutating func initializePositionOffset(_ field: WPEParityParticlePositionOffset, slot: Int) {
         let time = field.timeScale * frameContext.time
         let point = position[slot] * field.scale
@@ -204,7 +204,7 @@ extension WPEParityParticleSystem {
     }
 
     /// Keeps the height along the axis and the radius, sets the angle from t; 3 U for axial, tangential,
-    /// radial speed (D/14023b340.c:826-937).
+    /// radial speed (14023b340.c:826-937).
     mutating func initializeSequenceAround(_ field: WPEParityParticleSequenceAround, index: Int, slot: Int) {
         let basis = controlPointBasis(field.controlPoint)
         let axis = basis * field.axis, cosineAxis = basis * field.cosineAxis, sineAxis = basis * field.sineAxis
@@ -227,7 +227,7 @@ extension WPEParityParticleSystem {
         sequenceStates[index] = state
     }
 
-    /// Places the particle at bmin + t·Δb along A→B, keeping its offset perpendicular to the line (D/14023b340.c:938-1032).
+    /// Places the particle at bmin + t·Δb along A→B, keeping its offset perpendicular to the line (14023b340.c:938-1032).
     mutating func initializeSequenceBetween(_ field: WPEParityParticleSequenceBetween, index: Int, slot: Int) {
         let a = controlPointTranslation(field.start)
         let line = controlPointTranslation(field.end) - a

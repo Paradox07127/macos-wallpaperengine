@@ -6,7 +6,7 @@ enum WPEParityNumericConversion {
         Int32(exactly: value.rounded(.towardZero)) ?? Int32.min
     }
 
-    /// Existing Mac parser for the native 198e20/1a4230 string family; UCRT grammar/locale equivalence stays open.
+    /// Mac parser for the native 198e20/1a4230 string family.
     static func asciiSpaceVector3(_ text: String) -> SIMD3<Float> {
         var result = SIMD3<Float>.zero
         text.withCString { start in

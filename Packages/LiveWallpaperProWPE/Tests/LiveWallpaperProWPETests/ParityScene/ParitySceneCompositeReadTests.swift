@@ -97,7 +97,7 @@ final class ParitySceneCompositeReadTests: XCTestCase {
                                     height: 256, colorBlendMode: 9, effects: [effect])
     }
 
-    /// W55: no albedo or composite; earlier passes draw the 2×2 quad, the last one the shape mesh additive, all with
+    /// A shape layer has no albedo or composite; earlier passes draw the 2×2 quad, the last one the shape mesh additive, all with
     /// DIRECTDRAW=1, whatever colorBlendMode says.
     func testShapeQuadDrawsOnlyItsLastEffectsPasses() throws {
         let frame = WPEParitySceneFrameBuilder.build(Fixtures.scene([shape()]))

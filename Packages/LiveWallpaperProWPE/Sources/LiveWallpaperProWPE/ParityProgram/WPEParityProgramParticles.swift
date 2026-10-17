@@ -12,7 +12,7 @@ extension WPEParityProgramScene {
         return draws
     }
 
-    /// R16 Q4: the system's entries, then static children depth first, then one group per event child.
+    /// Draw order: the system's entries, then static children depth first, then one group per event child.
     private static func appendParticleDraws(_ config: WPEParityParticleConfig, at node: WPEParityParticleDrawKey,
                                             assets: WPEParityProgramAssets,
                                             draws: inout [WPEParitySceneParticleDraw],
@@ -55,7 +55,7 @@ extension WPEParityProgramScene {
 }
 
 extension WPEParityParticleMaterial {
-    /// The system material's texture0 (B/1401c5490.c:10129-10138; D/1401d2340.c:139-142).
+    /// The system material's texture0 (1401c5490.c:10129-10138; 1401d2340.c:139-142).
     init(texture0 header: WPEParityProgramTextureHeader?) {
         self.init(spriteSheet: header.map { $0.flags & 4 != 0 } ?? false,
                   spriteSheetNPOT: header.map { $0.imageWidth < $0.textureWidth } ?? false,

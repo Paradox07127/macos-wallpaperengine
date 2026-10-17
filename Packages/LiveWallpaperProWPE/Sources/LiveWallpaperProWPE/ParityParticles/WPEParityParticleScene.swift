@@ -33,7 +33,7 @@ public struct WPEParityParticleScene {
                                                        is3D: is3D, sceneVersion: sceneVersion) else { continue }
             let frame = frames[particle.id] ?? WPEParityParticleFrameContext()
             var instance = WPEParityParticleSystem.Instance(particle.instanceOverride, hdr: engineFlags.hdr)
-            // Load copies the CP block before 22bd40 and the root prewarm (D/14022af30.c:390-417).
+            // Load copies the CP block before 22bd40 and the root prewarm (14022af30.c:390-417).
             if let override = particle.instanceOverride {
                 for index in 0 ..< WPEParityParticleControlPoint.count {
                     instance.controlPointOffsets[index] = override.controlPointOffsets[index].map { SIMD3<Float>($0) }
