@@ -61,6 +61,25 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(state.generation(.bloom), constantsGeneration, "No Float bloom-constant hook is synthesized")
     }
 
+    func testUserGeneralZoomBindsLiveAndWritesTheSceneZoom() throws {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32},"zoom":{"user":"lens","value":1}},
+         "objects":[{"id":1,"image":"models/surface.json"}]}
+        """#
+        func document(_ zoom: Double) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["lens": .number(zoom)],
+                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        }
+        let before = try document(1)
+        XCTAssertEqual(WPEParityUserProperties.bindings(document: before)["lens"]?.first?.action, .incremental)
+        let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: document(1.5)))
+        XCTAssertEqual(update.sceneFloats.filter { $0.name == "zoom" }.map(\.value), [1.5])
+        var state = WPEParitySceneState(document: before, hdr: false)
+        update.apply(to: &state)
+        XCTAssertEqual(state.scriptField("zoom", of: ""), .vector(SIMD4(1.5, 0, 0, 0)))
+    }
+
     func testMaterialFileUserConstantsBindLiveAndFollowAChange() throws {
         let objects: [[String: Any]] = [
             ["id": 7, "image": "models/7.json", "size": "400 200", "alpha": ["user": "k", "value": 1]],

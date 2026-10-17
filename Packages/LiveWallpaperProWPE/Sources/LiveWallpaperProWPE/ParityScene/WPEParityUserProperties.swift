@@ -7,7 +7,7 @@ public enum WPEParityUserProperties {
     private static let liveGeneralFields: Set = [
         "cameraparallax", "cameraparallaxamount", "cameraparallaxdelay", "cameraparallaxmouseinfluence",
         "camerashake", "camerashakespeed", "camerashakeamplitude", "camerashakeroughness",
-        "fov", "nearz", "farz", "perspectiveoverridefov",
+        "fov", "nearz", "farz", "perspectiveoverridefov", "zoom",
         "bloom", "bloomstrength", "bloomthreshold", "bloomtint",
         "bloomhdrstrength", "bloomhdrthreshold", "bloomhdrfeather", "bloomhdrscatter", "bloomhdriterations",
     ]

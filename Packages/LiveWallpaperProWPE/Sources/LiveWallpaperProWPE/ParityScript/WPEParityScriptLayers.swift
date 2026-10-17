@@ -496,6 +496,19 @@ enum WPEParityScriptLayers {
         if (!layer || !host.canDestroyLayer(layer.__index)) return false;
         pending.add(layer);
         return true;
+      },
+      getCameraTransforms() {
+        const t = host.cameraTransforms();
+        if (!t) return undefined;
+        return { eye: new Vec3(t[0], t[1], t[2]), center: new Vec3(t[3], t[4], t[5]), up: new Vec3(t[6], t[7], t[8]),
+          zoom: t[9] };
+      },
+      // Members that fail the Vec3 or float argument check pass as null, which leaves that root value alone.
+      setCameraTransforms(t) {
+        if (t === null || typeof t !== 'object') return;
+        const vector = v => { const a = argument(v, 0x20); return a ? [a.value.x, a.value.y, a.value.z] : null; };
+        const zoom = argument(t.zoom, 4);
+        host.setCameraTransforms(vector(t.eye), vector(t.center), vector(t.up), zoom ? zoom.value : null);
       }
     };
     """#

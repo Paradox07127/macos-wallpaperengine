@@ -135,7 +135,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
     var isSceneProjection: Bool {
         guard owner == .scene, type == .float, target == .field else { return false }
         switch name {
-        case "fov", "nearz", "farz", "perspectiveoverridefov": return true
+        case "fov", "nearz", "farz", "perspectiveoverridefov", "zoom": return true
         default: return false
         }
     }
@@ -364,6 +364,8 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "farz", owner: .scene, type: .float),
         // 14019aaa5: raw O144, flags0/no hook; effective O148 and the published angle are separate.
         WPEParityScriptProperty(name: "perspectiveoverridefov", owner: .scene, type: .float),
+        // 140199780.c:1284-1300: scene+0x154, no hook; ortho scale multiplies it by the effective zoom.
+        WPEParityScriptProperty(name: "zoom", owner: .scene, type: .float),
     ]
 
     /// A material constant's instance descriptor (140154480.c:463-514): its onChanged sets pass+0x1f8 |= 3.

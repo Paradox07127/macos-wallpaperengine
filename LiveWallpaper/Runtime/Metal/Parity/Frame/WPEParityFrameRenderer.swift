@@ -1098,11 +1098,15 @@ final class WPEParityFrameRenderer {
                 selected.scenePerspective?.far = value.x
             }
         }
+        var sceneZoom = generalZoom
+        if case let .vector(value)? = state.scriptField("zoom", of: "") {
+            sceneZoom = value.x
+        }
         if let active {
             selected = selected.applyingObject(world: layers.world(active), objectID: active, document: plan.document,
-                                               state: state, generalZoom: generalZoom)
+                                               state: state, generalZoom: sceneZoom)
             if let queue = cameraQueues[active], queue.selectedIndex != nil {
-                selected.zoom = generalZoom * (queue.selectedZoom ?? 1)
+                selected.zoom = sceneZoom * (queue.selectedZoom ?? 1)
                 if selected.scenePerspective != nil {
                     selected.scenePerspective?.fov = queue.selectedFOV ?? 50
                 }
@@ -1110,7 +1114,21 @@ final class WPEParityFrameRenderer {
         } else {
             cameraPose = cameraPaths.advance(dt: dt)
             if let pose = cameraPose {
-                selected = selected.posed(pose, generalZoom: generalZoom)
+                selected = selected.posed(pose, generalZoom: sceneZoom)
+            } else {
+                // 1401891a0.c:72-75, :132-139: without a path, pose and zoom are the root values.
+                func root(_ name: String) -> SIMD4<Float>? {
+                    guard case let .vector(value)? = state.scriptField("cameraTransforms.\(name)", of: "") else {
+                        return nil
+                    }
+                    return value
+                }
+                func vector(_ name: String, _ fallback: SIMD3<Float>) -> SIMD3<Float> {
+                    root(name).map { SIMD3($0.x, $0.y, $0.z) } ?? fallback
+                }
+                let pose = WPEParityCameraPose(eye: vector("eye", rootCamera.eye), center: vector("center", rootCamera.center),
+                                               up: vector("up", rootCamera.up), zoom: root("zoom")?.x ?? 1)
+                selected = selected.posed(pose, generalZoom: sceneZoom)
             }
         }
         selected.shake = cameraShake
@@ -1282,6 +1300,11 @@ final class WPEParityFrameRenderer {
                 .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero))
         }
         defaults.merge(videos.scriptFieldDefaults) { _, actual in actual }
+        // Root zoom starts at 1 (140186c90.c:136); the root pose is the scene's root camera.
+        defaults[.init(objectID: "", name: "cameraTransforms.eye")] = .vector(SIMD4(rootCamera.eye, 0))
+        defaults[.init(objectID: "", name: "cameraTransforms.center")] = .vector(SIMD4(rootCamera.center, 0))
+        defaults[.init(objectID: "", name: "cameraTransforms.up")] = .vector(SIMD4(rootCamera.up, 0))
+        defaults[.init(objectID: "", name: "cameraTransforms.zoom")] = .vector(SIMD4(1, 0, 0, 0))
         return defaults
     }
 

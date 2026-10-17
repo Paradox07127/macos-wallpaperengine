@@ -1305,6 +1305,39 @@ public final class WPEParityScriptEngine {
             let columns = [matrix.columns.0, matrix.columns.1, matrix.columns.2, matrix.columns.3]
             return columns.flatMap { [$0.x, $0.y, $0.z, $0.w] }.map { NSNumber(value: $0) } as NSArray
         }
+        // 14018da30.c:7-13: root eye, center, up and zoom as ten numbers.
+        let cameraTransforms: @convention(block) () -> NSArray? = { [weak self] in
+            guard let self else { return nil }
+            guard let state = activeState else {
+                configuration.log(1, "getCameraTransforms is unsupported outside a scene callback")
+                return nil
+            }
+            let members = ["eye", "center", "up", "zoom"].compactMap { name -> SIMD4<Float>? in
+                let key = WPEParitySceneState.ScriptFieldKey(objectID: "", name: "cameraTransforms.\(name)")
+                guard case let .vector(value)? = state.pointee.scriptField(key.name, of: "")
+                    ?? configuration.fieldDefaults[key] else { return nil }
+                return value
+            }
+            guard members.count == 4 else {
+                configuration.log(1, "getCameraTransforms is unsupported without a product camera owner")
+                return nil
+            }
+            let numbers = members.dropLast().flatMap { [$0.x, $0.y, $0.z] } + [members[3].x]
+            return numbers.map { NSNumber(value: $0) } as NSArray
+        }
+        // 14018da90.c:7-21: each non-null member overwrites its root value; Vec3 members arrive as [x, y, z].
+        let setCameraTransforms: @convention(block) (JSValue, JSValue, JSValue, JSValue) -> Void = { [weak self] eye, center, up, zoom in
+            guard let self else { return }
+            guard let state = activeState else {
+                configuration.log(1, "setCameraTransforms is unsupported outside a scene callback")
+                return
+            }
+            for (name, value) in [("eye", eye), ("center", center), ("up", up), ("zoom", zoom)] where !value.isNull {
+                let vector = value.isNumber ? SIMD4(Float(value.toDouble()), 0, 0, 0)
+                    : SIMD4((0 ..< 3).map { Float(value.atIndex($0).toDouble()) } + [0])
+                state.pointee.setScriptField("cameraTransforms.\(name)", of: "", to: .vector(vector), invalidating: .none)
+            }
+        }
         let create: @convention(block) (String) -> Double = { [weak self] json in
             self?.createLayer(json: json) ?? -1
         }
@@ -1354,6 +1387,8 @@ public final class WPEParityScriptEngine {
         set("animationName", animationName)
         set("lookAtAngles", lookAtAngles)
         set("transformMatrix", transformMatrix)
+        set("cameraTransforms", cameraTransforms)
+        set("setCameraTransforms", setCameraTransforms)
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)
         set("layerIndexByID", layerIndexByID)
         set("createLayer", create)
@@ -1801,6 +1836,7 @@ public final class WPEParityScriptEngine {
         case "farz": .vector(SIMD4(Float(bitPattern: 0x461C_4000), 0, 0, 0))
         // 140186d67: O144 raw override95; no public clamp or angle conversion.
         case "perspectiveoverridefov": .vector(SIMD4(Float(bitPattern: 0x42BE_0000), 0, 0, 0))
+        case "zoom": .vector(SIMD4(Float(bitPattern: 0x3F80_0000), 0, 0, 0))
         default: nil
         }
     }
