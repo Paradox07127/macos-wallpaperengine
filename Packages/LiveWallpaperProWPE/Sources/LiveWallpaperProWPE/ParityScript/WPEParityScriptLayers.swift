@@ -102,6 +102,10 @@ enum WPEParityScriptLayers {
       const r = host.animationLayerCommand(owner.layer, owner.index, op, value);
       return r == null ? undefined : r;
     }
+    // Entries whose animation the puppet lacks get no native layer (1401fcc20); the host answers nil for them.
+    function puppetAnimationLayers(layer) {
+      return layer.__animationLayers.filter(w => animationLayerCommand(w, 7) !== undefined);
+    }
     const AnimationLayerProto = {
       play() { animationLayerCommand(this, 0); },
       pause() { animationLayerCommand(this, 1); },
@@ -295,6 +299,17 @@ enum WPEParityScriptLayers {
       }
       if (kind === host.imageKind) {
         proto.getTextureAnimation = function () { return liveLayer(this) ? getTextureAnimation(this) : undefined; };
+        proto.getAnimationLayerCount = function () { return liveLayer(this) ? puppetAnimationLayers(this).length : undefined; };
+        proto.getAnimationLayer = function (key) {
+          if (!liveLayer(this)) return;
+          const a = argument(key, 8 | 0x200);
+          if (!a) return undefined;
+          const list = puppetAnimationLayers(this);
+          if (a.type === 8) return list[a.value];
+          let found;
+          if (a.value !== '') for (const w of list) if (w.name === a.value) found = w;
+          return found;
+        };
       }
       proto.lookAt = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, false); };
       proto.lookAtYaw = function (target, up) { orientLayer(this, origin, angles, kind === host.cameraKind, target, up, true); };
@@ -307,7 +322,8 @@ enum WPEParityScriptLayers {
     });
     host.addLayer = function (index, kind, base, parent, effects, baseMaterials, hasVideo, animationLayers) {
       const p = protos[kind];
-      const layer = hidden(Object.create(p.proto), { __base: base, __parent: parent, __effects: [], __video: null });
+      const layer = hidden(Object.create(p.proto), { __base: base, __parent: parent, __effects: [], __video: null,
+        __animationLayers: [] });
       Object.defineProperty(layer, '__index', { value: index });
       if (Object.keys(p.instance).length) Object.defineProperty(layer, 'instance', { value: hidden(Object.create(p.instance), { __base: base }) });
       if (hasVideo && Object.keys(p.video).length) {
@@ -327,6 +343,7 @@ enum WPEParityScriptLayers {
         const wrapper = hidden(Object.create(AnimationLayerProto), { __base: a.base });
         animationLayerOwners.set(wrapper, { layer: index, index: a.index });
         for (const f of host.animationLayerFields) owners[a.base + f.rel] = wrapper;
+        layer.__animationLayers.push(wrapper);
       }
       table[index] = layer;
       order.push(layer);

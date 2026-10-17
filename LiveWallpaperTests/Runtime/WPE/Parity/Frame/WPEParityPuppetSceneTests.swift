@@ -151,6 +151,37 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertEqual(advanced.frame, seeked.frame + seeked.fps / 60, accuracy: 1e-3)
     }
 
+    /// Workshop 3647999330: the rope's click flag makes object 545's update stop "sss" and play "LogoShake" by name.
+    func testClickOnTheRopeStopsSssAndKeepsLogoShakePlaying() async throws {
+        let compiler = try makeCompiler()
+        let plan = try makePlan("3647999330")
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, compiler: compiler,
+                                              cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
+                                              device: device, queue: queue)
+        let sceneScript = try WPEParitySceneScript(
+            document: plan.document, state: renderer.state, assets: plan.scene.assets,
+            canvasSize: renderer.pathCamera.size,
+            screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
+            materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
+            host: .init()
+        )
+        try renderer.attachScript(sceneScript)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
+        let exceptions = sceneScript.engine.exceptionCount
+        sceneScript.engine.dispatch(.cursorClick, payloadJSON: #"{"world":[0,0,0],"local":[0,0,0],"hitBox":null}"#,
+                                    target: "64", state: &renderer.state)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 2")
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 3")
+        XCTAssertEqual(sceneScript.engine.exceptionCount, exceptions, sceneScript.engine.exceptions.joined(separator: "\n"))
+        let puppet = try XCTUnwrap(renderer.puppets["545"])
+        let sss = try XCTUnwrap(puppet.layers.first { $0.sceneIndex == 1 })
+        XCTAssertFalse(sss.isPlaying)
+        XCTAssertEqual(sss.frame, 0)
+        XCTAssertTrue(try XCTUnwrap(puppet.layers.first { $0.sceneIndex == 7 }).isPlaying)
+    }
+
     private static func edit(_ json: inout [String: Any], object id: Int, _ body: (inout [String: Any]) -> Void) {
         var objects = json["objects"] as? [[String: Any]] ?? []
         for index in objects.indices where objects[index]["id"] as? Int == id {
