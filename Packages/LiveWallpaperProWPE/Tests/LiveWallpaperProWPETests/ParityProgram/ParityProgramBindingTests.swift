@@ -4,6 +4,29 @@ import LiveWallpaperCore
 import XCTest
 
 final class ParityProgramBindingTests: XCTestCase {
+    func testFrameReadCandidatesListOnlySamplerDefaultsDeclaredUnderTheMaterialCombos() {
+        let files = [
+            "shaders/reflective.vert": Data("void main() {}".utf8),
+            "shaders/reflective.frag": Data("""
+            // [COMBO] {"combo":"REFLECTION","default":1}
+            uniform sampler2D g_Texture0; // {"default":"util/white"}
+            #if REFLECTION
+            uniform sampler2D g_Texture3; // {"default":"_rt_MipMappedFrameBuffer"}
+            #endif
+            void main() {}
+            """.utf8),
+        ]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("frame-reads-\(UUID().uuidString)")
+        let assets = WPEParityProgramAssets(sources: [.lookup(root) { files[$0] }])
+        var material = WPEParityProgramMaterial(shader: "reflective", combos: ["REFLECTION": 0], textures: [0: "albedo"])
+        func reads() -> [String] {
+            WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: .init(), assets: assets)
+        }
+        XCTAssertEqual(reads(), ["albedo"])
+        material.combos = [:]
+        XCTAssertEqual(reads(), ["albedo", "_rt_MipMappedFrameBuffer"], "the shader's combo default enables the declaration")
+    }
+
     /// Material and annotation names reach the same real RT binding/read; compiled activity is the app's separate
     /// request fact. An unknown RT retains its identity and does not become an asset.
     func testMipSnapshotDefaultsAndExplicitSlotsKeepTheSameDeclaredHistoryRead() throws {

@@ -55,6 +55,7 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
     )
     /// A stored failure rethrows the rewrite's own error.
     private let rewrites = OSAllocatedUnfairLock(initialState: [RewriteKey: Result<WPEHLSLProgram, any Error>]())
+    private let declaredSlots = OSAllocatedUnfairLock(initialState: [RewriteKey: Set<Int32>]())
 
     private struct RewriteKey: Hashable {
         let shader: String
@@ -160,5 +161,19 @@ public struct WPEParityProgramAssets: WPEShaderSourceProviding {
             memo[key] = first
             return first
         }.get()
+    }
+
+    /// `defines` is the full define list the program compiles with; `scan` runs only for an unseen pair.
+    func declaredSamplerSlots(_ shader: String, defines: [WPEShaderDefine], _ scan: () -> Set<Int32>) -> Set<Int32> {
+        let key = RewriteKey(shader: shader, defines: defines)
+        if let stored = declaredSlots.withLock({ $0[key] }) {
+            return stored
+        }
+        let computed = scan()
+        return declaredSlots.withLock { memo in
+            let first = memo[key] ?? computed
+            memo[key] = first
+            return first
+        }
     }
 }

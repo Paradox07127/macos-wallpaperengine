@@ -180,7 +180,7 @@ public struct WPEParityProgramScene: Sendable {
             let objectHeight = fullscreen ? height
                 : albedoSize?.y ?? image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
-                                       materials: &materials, overridePasses: &overridePasses,
+                                       engineFlags: flags, materials: &materials, overridePasses: &overridePasses,
                                        records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
@@ -201,7 +201,7 @@ public struct WPEParityProgramScene: Sendable {
             var frameReads: [String: [WPEResourceID]] = [:]
             if let materialPath, let material {
                 frameReads[materialPath] = WPEParityAuthoredPass.frameReads(
-                    WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets)
+                    WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: flags, assets: assets)
                 )
             }
             if image.isShapeQuad {
@@ -217,7 +217,8 @@ public struct WPEParityProgramScene: Sendable {
                     if let meshMaterial {
                         materials[MaterialKey(objectID: image.id, effectID: nil, source: source)] = meshMaterial
                         frameReads[mesh.materialPath] = WPEParityAuthoredPass.frameReads(
-                            WPEParityProgramBuilder.resolvedFrameTextureNames(meshMaterial, assets: assets)
+                            WPEParityProgramBuilder.resolvedFrameTextureNames(meshMaterial, engineFlags: flags,
+                                                                              assets: assets)
                         )
                     }
                     meshes.append(WPEParitySceneModelMesh(
@@ -276,7 +277,7 @@ public struct WPEParityProgramScene: Sendable {
             for (index, text) in texts.enumerated() {
                 let schema = schemas[text.id]
                 let effects = Self.effects(schema?.effects ?? [], objectID: text.id, assets: assets,
-                                           materials: &materials, overridePasses: &overridePasses,
+                                           engineFlags: flags, materials: &materials, overridePasses: &overridePasses,
                                            records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions,
                                            authored: authoredByID[text.id])
                 do {
@@ -432,6 +433,7 @@ public struct WPEParityProgramScene: Sendable {
 
     /// Loads each effect file and records the merged material of every pass under `objectID`.
     private static func effects(_ effects: [WPESceneImageEffect], objectID: String, assets: WPEParityProgramAssets,
+                                engineFlags: WPEEngineComboFlags,
                                 materials: inout [MaterialKey: WPEParityProgramMaterial],
                                 overridePasses: inout [MaterialKey: Int],
                                 records: inout [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]],
@@ -443,7 +445,7 @@ public struct WPEParityProgramScene: Sendable {
             let configuration = Self.array(authored?["effects"]).enumerated().first { index, value in
                 (Self.string(value["id"]) ?? Self.number(value["id"]).map { String(Int($0)) } ?? "\(index)") == effect.id
             }?.element
-            let result = Self.effect(effect, objectID: objectID, file: file, assets: assets,
+            let result = Self.effect(effect, objectID: objectID, file: file, assets: assets, engineFlags: engineFlags,
                                      combos: configuration?["combos"], userTextureConfiguration: configuration)
             records[.init(objectID: objectID, effectID: effect.id)] = result.records
             functions[.init(objectID: objectID, effectID: effect.id)] = result.effect.materialFunctions
@@ -508,7 +510,7 @@ public struct WPEParityProgramScene: Sendable {
     public func modelDataFrameReads(materialPath: String) -> [WPEResourceID] {
         guard let material = WPEParityProgramMaterial(path: materialPath, assets: assets) else { return [] }
         return WPEParityAuthoredPass.frameReads(
-            WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets)
+            WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: engineFlags, assets: assets)
         )
     }
 
@@ -608,7 +610,7 @@ public struct WPEParityProgramScene: Sendable {
 
     private static func effect(_ effect: WPESceneImageEffect, objectID: String,
                                file: WPESceneJSONValue, assets: WPEParityProgramAssets,
-                               combos: WPESceneJSONValue?, userTextureConfiguration: WPESceneJSONValue?)
+                               engineFlags: WPEEngineComboFlags, combos: WPESceneJSONValue?, userTextureConfiguration: WPESceneJSONValue?)
         -> (effect: WPEParityAuthoredEffect,
             materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)],
             records: [WPEParityEffectPassRecord]) {
@@ -679,7 +681,8 @@ public struct WPEParityProgramScene: Sendable {
                                                       effectPass: passIndex)
             passes.append(WPEParityAuthoredPass(
                 kind: .draw, shader: material.shader, target: string(pass["target"]),
-                textures: WPEParityProgramBuilder.resolvedFrameTextureNames(material, assets: assets),
+                textures: WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: engineFlags,
+                                                                            assets: assets),
                 compose: pass["compose"] == .bool(true), blend: WPEParitySceneBlend(material.blending), source: source,
                 materialState: Self.materialState(assets.json(path)?["passes"]?[0])
             ))

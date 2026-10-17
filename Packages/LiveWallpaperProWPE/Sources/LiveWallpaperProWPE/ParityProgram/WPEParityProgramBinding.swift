@@ -199,13 +199,42 @@ public extension WPEParityProgramBuilder {
     /// Preserve authored FBO/previous ordering and include engine RT defaults in the same candidate read chain.
     /// Annotation presence is not an allocation request: compiled active slots determine that before readiness.
     internal static func resolvedFrameTextureNames(_ material: WPEParityProgramMaterial,
+                                                   engineFlags: WPEEngineComboFlags,
                                                    assets: WPEParityProgramAssets) -> [String] {
         var names = material.textureNames
-        for (_, name) in resolvedTextureNames(material, assets: assets).sorted(by: { $0.key < $1.key })
-            where name.hasPrefix("_rt_") && !names.contains(name) {
+        let candidates = resolvedTextureNames(material, assets: assets).sorted(by: { $0.key < $1.key })
+            .filter { $0.value.hasPrefix("_rt_") && !names.contains($0.value) }
+        guard !candidates.isEmpty else { return names }
+        let declared = declaredSamplerSlots(material, engineFlags: engineFlags, assets: assets)
+        for (slot, name) in candidates where material.textures[slot] != nil || declared.contains(slot) {
             names.append(name)
         }
         return names
+    }
+
+    /// Sampler slots whose declaration survives `#if` under the define set the program compiles with.
+    private static func declaredSamplerSlots(_ material: WPEParityProgramMaterial, engineFlags: WPEEngineComboFlags,
+                                             assets: WPEParityProgramAssets) -> Set<Int32> {
+        let program = description(material, engineFlags: engineFlags, assets: assets)
+        let defines = WPEComboResolver.resolve(
+            passJSONCombos: program.passJSONCombos, blendingMode: Int32(material.blending.rawValue),
+            annotations: assets.shaderDeclarations(material.shader).annotations,
+            engineFlags: program.engineFlags, boundTextures: program.boundTextures
+        )
+        return assets.declaredSamplerSlots(material.shader, defines: defines) {
+            // The prelude WPEHLSLRewriter.rewrite puts ahead of the combos.
+            let prelude = "#define HLSL 1\n#define HLSL_SM40 1\n#define GS_ENABLED 1\n"
+                + defines.map { "#define \($0.name) \($0.value)\n" }.joined()
+            let sources = assets.expandedSources(material.shader)
+            func active(_ source: String) -> String {
+                // A source the preprocessor rejects does not compile, so it declares nothing.
+                let text = try? WPEShaderPreprocessor.run(Latin1.bytes(prelude) + Array(source.utf8))
+                return text.flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
+            }
+            let annotations = WPEShaderAnnotationCombos(vertexSource: active(sources.vertex),
+                                                        fragmentSource: active(sources.fragment))
+            return Set(annotations.samplers.entries.map(\.key))
+        }
     }
 
     private static func resolvedTextureNames(_ material: WPEParityProgramMaterial,
