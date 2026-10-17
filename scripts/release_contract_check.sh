@@ -211,6 +211,12 @@ if ! grep -q 'XPCServices/Installer.xpc' scripts/release-app.sh; then
   echo "ERROR: release-app.sh no longer re-signs Sparkle's Installer XPC; installs would fail." >&2
   exit 1
 fi
+sparkle_thin_line="$(grep -n 'lipo .*-thin "\$ARCHIVE_ARCHS"' scripts/release-app.sh | head -1 | cut -d: -f1 || true)"
+sparkle_resign_line="$(grep -n '^resign_sparkle_helpers "\$APP_PATH"' scripts/release-app.sh | head -1 | cut -d: -f1 || true)"
+if [[ -z "$sparkle_thin_line" || -z "$sparkle_resign_line" ]] || (( sparkle_thin_line > sparkle_resign_line )); then
+  echo "ERROR: release-app.sh must thin Pro's Sparkle binaries to ARCHIVE_ARCHS before re-signing the helpers." >&2
+  exit 1
+fi
 if ! grep -q 'loomscreen-sparkle-ent' scripts/release-app.sh; then
   echo "ERROR: release-app.sh no longer extracts archive entitlements before Sparkle helper re-sign." >&2
   exit 1

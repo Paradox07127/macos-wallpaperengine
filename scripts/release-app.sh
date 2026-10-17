@@ -305,6 +305,19 @@ echo "== [$SKU] Staging .app for packaging =="
 mkdir -p "$STAGING_DIR"
 ditto "$ARCHIVED_APP" "$APP_PATH"
 
+if [[ -n "$ARCHIVE_ARCHS" ]]; then
+  echo "== [$SKU] Thinning Sparkle to $ARCHIVE_ARCHS =="
+  # Sparkle is a prebuilt universal binary, so ARCHS never thins it. Must run
+  # before the re-sign below, which re-seals every binary changed here.
+  SPARKLE_VERSION_DIR="$APP_PATH/Contents/Frameworks/Sparkle.framework/Versions/B"
+  for sparkle_bin in Sparkle Autoupdate Updater.app/Contents/MacOS/Updater \
+      XPCServices/Downloader.xpc/Contents/MacOS/Downloader \
+      XPCServices/Installer.xpc/Contents/MacOS/Installer; do
+    lipo "$SPARKLE_VERSION_DIR/$sparkle_bin" -thin "$ARCHIVE_ARCHS" \
+      -output "$SPARKLE_VERSION_DIR/$sparkle_bin"
+  done
+fi
+
 echo "== [$SKU] Re-signing Sparkle nested helpers =="
 # Code Sign on Copy re-signs Sparkle.framework's main binary with this app's
 # Team ID but leaves Installer.xpc / Autoupdate / Updater.app ad-hoc. Sparkle's
