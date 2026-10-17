@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import os
 
 /// Compiles each stage by running the `wpe-shaderc` helper, which loads DXC and Metal Shader Converter itself.
 struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
@@ -17,7 +18,8 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         }
     }
 
-    /// SHA-256 of the helper and both libraries, so cached shaders follow the binaries rather than their paths.
+    /// SHA-256 of the helper and both libraries, so cached shaders follow the binaries rather than their paths;
+    /// each file is rehashed only when its path, size, mtime or inode changes.
     let compilerIdentity: String
     private let helper: URL
     private let dxcompiler: URL
@@ -29,11 +31,47 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         self.dxcompiler = dxcompiler
         self.metalIRConverter = metalIRConverter
         self.workDirectory = workDirectory
-        compilerIdentity = try "wpe-shaderc " + [helper, dxcompiler, metalIRConverter].map { url in
-            try Self.digest(Data(contentsOf: url, options: .alwaysMapped))
-        }.joined(separator: " ")
+        compilerIdentity = try "wpe-shaderc " + [helper, dxcompiler, metalIRConverter].map(Self.fileDigest)
+            .joined(separator: " ")
         try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
     }
+
+    private struct FileStamp: Hashable {
+        let path: String
+        let size: off_t
+        let modifiedSeconds: Int
+        let modifiedNanoseconds: Int
+        let inode: ino_t
+    }
+
+    private static let fileDigests = OSAllocatedUnfairLock<[FileStamp: String]>(initialState: [:])
+
+    private static func fileDigest(_ url: URL) throws -> String {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else {
+            throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        let stamp = FileStamp(path: url.path, size: info.st_size, modifiedSeconds: info.st_mtimespec.tv_sec,
+                              modifiedNanoseconds: info.st_mtimespec.tv_nsec, inode: info.st_ino)
+        if let digest = fileDigests.withLock({ $0[stamp] }) {
+            return digest
+        }
+        #if DEBUG
+        fileHashCounts.withLock { $0[url.path, default: 0] += 1 }
+        #endif
+        let digest = try digest(Data(contentsOf: url, options: .alwaysMapped))
+        fileDigests.withLock { $0[stamp] = digest }
+        return digest
+    }
+
+    #if DEBUG
+    private static let fileHashCounts = OSAllocatedUnfairLock<[String: Int]>(initialState: [:])
+
+    /// How many times this process has read and hashed the file at `path` for an identity.
+    static func fileHashCount(path: String) -> Int {
+        fileHashCounts.withLock { $0[path, default: 0] }
+    }
+    #endif
 
     func compile(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
         let sources: [(WPEParityShaderKey.Stage, [UInt8]?)] = [

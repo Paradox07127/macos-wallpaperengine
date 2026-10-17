@@ -189,6 +189,28 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         XCTAssertNotEqual(modified, original)
     }
 
+    func testUnchangedToolchainIsHashedOnceAndRewrittenFileChangesIdentity() throws {
+        try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
+        let files = Binaries(helper: workDirectory.appending(path: "helper"),
+                             dxcompiler: workDirectory.appending(path: "dxcompiler"),
+                             metalIRConverter: workDirectory.appending(path: "converter"))
+        for url in [files.helper, files.dxcompiler, files.metalIRConverter] {
+            try Data(url.lastPathComponent.utf8).write(to: url)
+        }
+        let first = try makeCompiler(files).compilerIdentity
+        let second = try makeCompiler(files).compilerIdentity
+        XCTAssertEqual(second, first)
+        for url in [files.helper, files.dxcompiler, files.metalIRConverter] {
+            XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: url.path), 1, url.lastPathComponent)
+        }
+
+        try Data("dxcompiler rewritten".utf8).write(to: files.dxcompiler)
+        let rewritten = try makeCompiler(files).compilerIdentity
+        XCTAssertNotEqual(rewritten, first)
+        XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.dxcompiler.path), 2)
+        XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.helper.path), 1)
+    }
+
     private func binaries() throws -> Binaries {
         let tools = try parityShaderToolchainURLs()
         return Binaries(helper: tools.helper, dxcompiler: tools.dxcompiler, metalIRConverter: tools.metalIRConverter)
