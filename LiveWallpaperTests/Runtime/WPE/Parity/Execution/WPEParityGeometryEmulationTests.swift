@@ -190,19 +190,7 @@ final class WPEParityGeometryEmulationTests: XCTestCase {
     }
 
     private func makeCompiler() throws -> WPEParityHelperShaderCompiler {
-        let environment = ProcessInfo.processInfo.environment
-        func path(_ key: String, _ fallback: String) -> URL {
-            URL(fileURLWithPath: environment[key] ?? fallback)
-        }
-        let helper = path("WPE_SHADERC", "/Users/example/Developer/wpe-shaderc-build/wpe-shaderc")
-        let dxcompiler = path("WPE_DXCOMPILER",
-                              "/Users/example/Developer/DirectXShaderCompiler/build-14.6/lib/libdxcompiler.dylib")
-        let converter = path("WPE_METALIRCONVERTER", "/usr/local/lib/libmetalirconverter.dylib")
-        for url in [helper, dxcompiler, converter] where !FileManager.default.fileExists(atPath: url.path) {
-            throw XCTSkip("Missing \(url.path); set WPE_SHADERC, WPE_DXCOMPILER and WPE_METALIRCONVERTER")
-        }
-        return try WPEParityHelperShaderCompiler(helper: helper, dxcompiler: dxcompiler, metalIRConverter: converter,
-                                                 workDirectory: scratch.appending(path: "shaderc"))
+        try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
     }
 
     // MARK: Pixels

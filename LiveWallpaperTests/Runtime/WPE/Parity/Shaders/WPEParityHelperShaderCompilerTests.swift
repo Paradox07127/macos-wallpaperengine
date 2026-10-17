@@ -190,21 +190,8 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
     }
 
     private func binaries() throws -> Binaries {
-        let environment = ProcessInfo.processInfo.environment
-        func path(_ key: String, _ fallback: String) -> URL {
-            URL(fileURLWithPath: environment[key] ?? fallback)
-        }
-        let binaries = Binaries(
-            helper: path("WPE_SHADERC", "/Users/example/Developer/wpe-shaderc-build/wpe-shaderc"),
-            dxcompiler: path("WPE_DXCOMPILER",
-                             "/Users/example/Developer/DirectXShaderCompiler/build-14.6/lib/libdxcompiler.dylib"),
-            metalIRConverter: path("WPE_METALIRCONVERTER", "/usr/local/lib/libmetalirconverter.dylib")
-        )
-        for url in [binaries.helper, binaries.dxcompiler, binaries.metalIRConverter]
-            where !FileManager.default.fileExists(atPath: url.path) {
-            throw XCTSkip("Missing \(url.path); set WPE_SHADERC, WPE_DXCOMPILER and WPE_METALIRCONVERTER")
-        }
-        return binaries
+        let tools = try parityShaderToolchainURLs()
+        return Binaries(helper: tools.helper, dxcompiler: tools.dxcompiler, metalIRConverter: tools.metalIRConverter)
     }
 
     private func makeCompiler(_ binaries: Binaries) throws -> WPEParityHelperShaderCompiler {

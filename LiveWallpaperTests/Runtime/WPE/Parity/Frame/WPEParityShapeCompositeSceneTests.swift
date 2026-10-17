@@ -84,19 +84,7 @@ final class WPEParityShapeCompositeSceneTests: XCTestCase {
 
     private func makeRenderer(_ sceneID: String) async throws -> (WPEParityFramePlan, WPEParityFrameRenderer) {
         let environment = ProcessInfo.processInfo.environment
-        func path(_ key: String, _ fallback: String) -> URL {
-            URL(fileURLWithPath: environment[key] ?? fallback)
-        }
-        let helper = path("WPE_SHADERC", "/Users/example/Developer/wpe-shaderc-build/wpe-shaderc")
-        let dxcompiler = path("WPE_DXCOMPILER",
-                              "/Users/example/Developer/DirectXShaderCompiler/build-14.6/lib/libdxcompiler.dylib")
-        let converter = path("WPE_METALIRCONVERTER", "/usr/local/lib/libmetalirconverter.dylib")
-        for url in [helper, dxcompiler, converter] where !FileManager.default.fileExists(atPath: url.path) {
-            throw XCTSkip("Missing \(url.path); set WPE_SHADERC, WPE_DXCOMPILER and WPE_METALIRCONVERTER")
-        }
-        let compiler = try WPEParityHelperShaderCompiler(helper: helper, dxcompiler: dxcompiler,
-                                                         metalIRConverter: converter,
-                                                         workDirectory: scratch.appending(path: "shaderc"))
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")

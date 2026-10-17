@@ -890,20 +890,9 @@ final class WPEParityParticleSceneTests: XCTestCase {
 }
 
 extension WPEParityHelperShaderCompiler {
-    /// This machine's wpe-shaderc, DXC and Metal Shader Converter, or a skip naming the one that is missing.
     static func local(workDirectory: URL) throws -> Self {
-        let environment = ProcessInfo.processInfo.environment
-        func path(_ key: String, _ fallback: String) -> URL {
-            URL(fileURLWithPath: environment[key] ?? fallback)
-        }
-        let helper = path("WPE_SHADERC", "/Users/example/Developer/wpe-shaderc-build/wpe-shaderc")
-        let dxcompiler = path("WPE_DXCOMPILER",
-                              "/Users/example/Developer/DirectXShaderCompiler/build-14.6/lib/libdxcompiler.dylib")
-        let converter = path("WPE_METALIRCONVERTER", "/usr/local/lib/libmetalirconverter.dylib")
-        for url in [helper, dxcompiler, converter] where !FileManager.default.fileExists(atPath: url.path) {
-            throw XCTSkip("Missing \(url.path); set WPE_SHADERC, WPE_DXCOMPILER and WPE_METALIRCONVERTER")
-        }
-        return try Self(helper: helper, dxcompiler: dxcompiler, metalIRConverter: converter,
+        let tools = try parityShaderToolchainURLs()
+        return try Self(helper: tools.helper, dxcompiler: tools.dxcompiler, metalIRConverter: tools.metalIRConverter,
                         workDirectory: workDirectory)
     }
 }
