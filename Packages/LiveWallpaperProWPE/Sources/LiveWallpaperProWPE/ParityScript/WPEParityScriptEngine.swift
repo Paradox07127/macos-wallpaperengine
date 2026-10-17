@@ -287,7 +287,7 @@ public final class WPEParityScriptEngine {
     /// Returns 1/0 for isPlaying, 0 otherwise; nil = no loaded particle system for the layer.
     public var particleSystemHandler: ((String, ParticleCommand, Int32) -> Double?)?
     /// Rebound like materialFunctionHandler. Arguments: owner layer ID, material pass (nil = the layer), name.
-    public var propertyAnimationLookup: ((String, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
+    public var propertyAnimationLookup: ((String?, WPEParityMaterialPassKey?, String) -> WPEParityPropertyAnimation?)?
     /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
     /// native vfunc+0x80 matrix (images W′, others W), nil = no transform owner for the layer.
     public var transformMatrixHandler: ((String, WPEParityScriptLayerKind, WPEParitySceneState) -> simd_float4x4?)?
@@ -1252,12 +1252,14 @@ public final class WPEParityScriptEngine {
             }
             handler(effectKeys[effect], name)
         }
-        // A material receiver passes one of its constant slots; a layer receiver passes slot -1 and its index.
+        // A material receiver passes one of its constant slots; a layer passes slot -1 and its index; the scene -1, -2.
         let findAnimation: @convention(block) (Double, Double, String) -> Double = { [weak self] slot, layer, name in
             guard let self else { return -1 }
-            let owner: (id: String, pass: WPEParityMaterialPassKey?)
+            let owner: (id: String?, pass: WPEParityMaterialPassKey?)
             if let slot = Self.checkedLayerIndex(slot, count: slots.count), let pass = slots[slot].materialPass {
                 owner = (pass.objectID, pass)
+            } else if slot == -1, layer == -2 {
+                owner = (nil, nil)
             } else if let layer = Self.checkedLayerIndex(layer, count: layers.count) {
                 owner = (layers[layer].id, nil)
             } else {

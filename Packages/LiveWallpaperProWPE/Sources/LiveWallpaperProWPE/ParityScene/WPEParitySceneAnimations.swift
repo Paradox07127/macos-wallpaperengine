@@ -163,10 +163,13 @@ public struct WPEParitySceneAnimations {
 
     /// 14018db00: the first binding of the owner whose options.name (absent = "") equals `name`. `pass` selects that
     /// material pass's constant animations; nil selects the layer's object-property and field animations.
-    public func animation(objectID: String, pass: WPEParityMaterialPassKey?,
+    /// A nil `objectID` searches the whole scene in binding order and ignores `pass` and the target kind.
+    public func animation(objectID: String?, pass: WPEParityMaterialPassKey?,
                           name: String) -> WPEParityPropertyAnimation? {
         bindings.first { binding in
-            guard binding.objectID == objectID, (binding.animation.name ?? "") == name else { return false }
+            guard (binding.animation.name ?? "") == name else { return false }
+            guard let objectID else { return true }
+            guard binding.objectID == objectID else { return false }
             if case let .constant(_, key, _, _) = binding.target {
                 return key == pass
             }

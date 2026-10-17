@@ -762,6 +762,45 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    func testSceneGetAnimationFindsANamedAnimationOnAnyLayer() throws {
+        func animated(_ name: String, script: String? = nil) -> [String: Any] {
+            var property: [String: Any] = ["value": 0, "animation": [
+                "c0": [["frame": 0, "value": 0], ["frame": 8, "value": 1]],
+                "options": ["fps": 8, "length": 8, "mode": "loop", "startpaused": true, "name": name],
+            ]]
+            property["script"] = script
+            return property
+        }
+        var scene = try Self.scene([
+            ["id": 1, "image": "models/a.json", "alpha": animated("fade", script: """
+            let n = 0, pulse;
+            export function init(value) {
+                pulse = thisScene.getAnimation('pulse');
+                if (!pulse || pulse !== thisScene.getAnimation('pulse')) throw new Error('identity');
+                if (thisScene.getAnimation('missing') !== undefined) throw new Error('missing name');
+                pulse.play();
+            }
+            export function update(value) { if (++n === 1) pulse.pause(); }
+            """)],
+            ["id": 2, "image": "models/b.json", "alpha": animated("pulse")],
+        ], assets: Self.fixedAssets())
+        var animations = WPEParitySceneAnimations(document: scene.document, state: scene.state, constantComponents: [:])
+        var lookups: [String] = []
+        scene.engine.propertyAnimationLookup = { [animations] objectID, pass, name in
+            lookups.append("\(objectID ?? "nil")|\(pass == nil)|\(name)")
+            return animations.animation(objectID: objectID, pass: pass, name: name)
+        }
+        try scene.engine.start(state: &scene.state)
+        for _ in 0 ..< 3 {
+            animations.advance(dt: 0.125, state: &scene.state)
+            scene.engine.tick(dt: 0.125, state: &scene.state)
+        }
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(Set(lookups), ["nil|true|pulse", "nil|true|missing"])
+        XCTAssertEqual(scene.state.object("2")?.alpha ?? 0, 0.125, accuracy: 2e-3)
+        XCTAssertEqual(scene.state.object("1")?.alpha ?? 1, 0, accuracy: 2e-3)
+    }
+
     static let install = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
 

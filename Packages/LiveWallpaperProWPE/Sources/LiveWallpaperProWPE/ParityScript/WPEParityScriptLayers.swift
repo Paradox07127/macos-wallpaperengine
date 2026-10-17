@@ -456,6 +456,7 @@ enum WPEParityScriptLayers {
       return key && order.includes(key) ? key : null;
     }
     const scene = {
+      getAnimation(name) { return getAnimation(-1, -2, name); },
       getLayer(key) {
         sceneScope('getLayer');
         return resolveLayer(key);
