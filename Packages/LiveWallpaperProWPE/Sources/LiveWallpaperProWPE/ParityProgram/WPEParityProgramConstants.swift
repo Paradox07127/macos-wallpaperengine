@@ -103,7 +103,8 @@ enum WPEParityProgramConstants {
         }
         switch user {
         case let .number(number): return [number]
-        case let .bool(flag): return [flag ? 1 : 0]
+        // WPE's float and vector readers skip a JSON Bool, so the authored value stays.
+        case .bool: return components(value)
         case let .string(text): return numbers(text)
         }
     }

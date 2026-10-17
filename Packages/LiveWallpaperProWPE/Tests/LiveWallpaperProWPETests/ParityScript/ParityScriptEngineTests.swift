@@ -743,6 +743,25 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    func testFloatSeedKeepsAuthoredValueForBoolUserValue() throws {
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":200,"height":100}},
+         "objects":[
+          {"id":1,"light":"lpoint","radius":{"user":"flag","value":3},"intensity":{"script":"export function init(v){return thisObject.radius;}"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: ["flag": .bool(false)],
+                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: Self.fixedAssets(),
+            canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+        ))
+        try engine.start(state: &state)
+        XCTAssertEqual(state.scriptField("intensity", of: "1"), .vector(SIMD4(3, 0, 0, 0)))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     static let install = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
 

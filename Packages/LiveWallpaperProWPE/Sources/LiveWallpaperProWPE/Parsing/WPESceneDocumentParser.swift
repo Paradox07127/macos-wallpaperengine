@@ -1356,19 +1356,18 @@ public enum WPESceneDocumentParser {
     }
 
     /// Replaces `{ "user": K, "value": V }` with `userValues[K] ?? V`, and must run
-    /// BEFORE field parsing. `field` = the key `raw` sits under; nil for array elements and the root.
+    /// BEFORE field parsing.
     private static func resolveUserPropertyEnvelopes(
         in raw: Any,
         userValues: [String: WallpaperEngineProjectPropertyValue],
-        depth: Int = 0,
-        field: String? = nil
+        depth: Int = 0
     ) throws -> Any {
         guard depth < 100 else {
             throw WPESceneDocumentError.malformedField("scene.json is too deeply nested")
         }
         if let array = raw as? [Any] {
             return try array.map {
-                try resolveUserPropertyEnvelopes(in: $0, userValues: userValues, depth: depth + 1, field: nil)
+                try resolveUserPropertyEnvelopes(in: $0, userValues: userValues, depth: depth + 1)
             }
         }
 
@@ -1382,8 +1381,7 @@ public enum WPESceneDocumentParser {
             var resolved: [String: Any] = [:]
             resolved.reserveCapacity(dict.count)
             for (key, value) in dict {
-                resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1,
-                                                                 field: key)
+                resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1)
             }
             // `value` is the *disabled* state, so the gate must still be evaluated or a
             // satisfied gate would start switched off with nothing able to turn it on.
@@ -1391,7 +1389,7 @@ public enum WPESceneDocumentParser {
                 resolved["value"] = gate
             } else if let key = dict["user"] as? String, let override = userValues[key] {
                 // A plain-key binding is the property's current value, which update(value) receives.
-                resolved["value"] = jsonValue(for: override)
+                resolved["value"] = userValue(override, over: resolved["value"] ?? NSNull())
             }
             return resolved
         }
@@ -1406,12 +1404,7 @@ public enum WPESceneDocumentParser {
             guard let override = userValues[key] else {
                 return fallback
             }
-            // The native vec2 reader (1401a3fc0) writes nothing for a Bool, so these fields keep the authored value.
-            if case .bool = override, let field,
-               ["parallaxDepth", "parallaxdepth", "size", "padding", "spacing", "dropshadowoffset"].contains(field) {
-                return fallback
-            }
-            return jsonValue(for: override)
+            return userValue(override, over: fallback)
         }
 
         // Condition form (style selector) `{"user":{"name":K,"condition":"2"},"value":false}`:
@@ -1430,7 +1423,7 @@ public enum WPESceneDocumentParser {
             guard let condition = conditionString(from: user["condition"]) else {
                 // Nested user with a name but no condition → the property drives
                 // the value directly, like the simple form.
-                return jsonValue(for: override)
+                return userValue(override, over: fallback)
             }
             // Gate to a Bool only for a genuine JSON boolean: `strictBool` rejects numeric
             // NSNumbers so a condition-form scalar or vector is returned untouched.
@@ -1446,8 +1439,7 @@ public enum WPESceneDocumentParser {
             resolved[key] = try resolveUserPropertyEnvelopes(
                 in: value,
                 userValues: userValues,
-                depth: depth + 1,
-                field: key
+                depth: depth + 1
             )
         }
         return resolved
@@ -1469,6 +1461,16 @@ public enum WPESceneDocumentParser {
             return nil
         }
         return override.looselyMatches(.conditionLiteral(condition))
+    }
+
+    /// WPE's number, vector and int readers (1401a4b00, 1401a3fc0, 1401a4930) skip a JSON Bool, so a Bool user
+    /// value leaves an authored number or string in place.
+    private static func userValue(_ override: WallpaperEngineProjectPropertyValue, over authored: Any) -> Any {
+        if case .bool = override, WPEValueParser.strictBool(authored) == nil,
+           authored is NSNumber || authored is String {
+            return authored
+        }
+        return jsonValue(for: override)
     }
 
     private static func jsonValue(for value: WallpaperEngineProjectPropertyValue) -> Any {

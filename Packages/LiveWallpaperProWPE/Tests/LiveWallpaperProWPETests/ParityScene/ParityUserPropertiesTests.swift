@@ -135,6 +135,47 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(images["2"], SIMD2(0.5, 0))
     }
 
+    func testBoolUserValueKeepsAuthoredNumericFieldsAndConstants() throws {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32}},
+         "objects":[
+          {"id":1,"image":"models/surface.json","alpha":{"user":"flag","value":0.5},
+           "effects":[{"id":2,"file":"effects/opacity/effect.json","visible":{"user":"flag","value":false},
+                       "passes":[{"constantshadervalues":{"alpha":{"user":"flag","value":0}}}]}]},
+          {"id":4,"text":"Hi","pointsize":{"user":"flag","value":10}},
+          {"id":5,"image":"models/surface.json",
+           "brightness":{"user":"flag","value":2,"script":"export function update(v){return v;}"}}
+         ]}
+        """#
+        func document(_ flag: Bool) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["flag": .bool(flag)],
+                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        }
+        let on = try document(true)
+        let image = try XCTUnwrap(on.imageObjects.first { $0.id == "1" })
+        XCTAssertEqual(image.alpha, 0.5)
+        let effect = try XCTUnwrap(image.effects.first)
+        XCTAssertEqual(effect.passOverrides.first?.constants["alpha"], .number(0))
+        XCTAssertTrue(effect.visible, "a Bool field still takes the Bool user value")
+        XCTAssertEqual(WPEParityTextObject.textObjects(in: on).first { $0.id == "4" }?.pointSize, 10)
+        XCTAssertEqual(on.textObjects.first { $0.id == "4" }?.pointSize, 10)
+        let scripted = on.resolvedObjectsJSON.first { $0["id"] == .number(5) }
+        XCTAssertEqual(scripted?["brightness"]?["value"], .number(2))
+
+        let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: on, to: document(false)))
+        XCTAssertEqual(update.objects.filter { $0.id == "1" && $0.property == .alpha }, [])
+        XCTAssertEqual(update.constants, [])
+        XCTAssertTrue(update.effects.contains {
+            $0.effect == .init(objectID: "1", effectID: "2") && !$0.visible
+        }, "\(update.effects)")
+    }
+
+    func testMaterialConstantKeepsAuthoredNumberForBoolUserValue() {
+        XCTAssertEqual(WPEParityProgramConstants.components(.object(["user": .string("k"), "value": .number(0.5)]),
+                                                            userValues: ["k": .bool(true)]), [0.5])
+    }
+
     func testMaterialFileUserConstantsBindLiveAndFollowAChange() throws {
         let objects: [[String: Any]] = [
             ["id": 7, "image": "models/7.json", "size": "400 200", "alpha": ["user": "k", "value": 1]],
