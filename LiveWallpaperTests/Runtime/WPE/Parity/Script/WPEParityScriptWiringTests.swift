@@ -184,6 +184,48 @@ final class WPEParityScriptWiringTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// One press opens one launch shared by cursorDown/Click; a second call in that click and a call from update
+    /// throw SyntaxError.
+    func testOnePressLaunchesOneUserShortcutAndLaterCallsThrowSyntaxError() async throws {
+        let fixture = try await makeFixture("3815666789") { json in
+            Self.edit(&json, object: 17) {
+                $0["solid"] = true
+                $0["alpha"] = ["value": 1, "script": """
+                let clickCaught = 0, updateCaught = 0;
+                export function cursorDown(event) {
+                  engine.openUserShortcut('shortcut1');
+                }
+                export function cursorClick(event) {
+                  try { engine.openUserShortcut('shortcut1'); } catch (e) { clickCaught = e instanceof SyntaxError ? 1 : -1; }
+                }
+                export function update(value) {
+                  try { engine.openUserShortcut('shortcut1'); } catch (e) { updateCaught = e instanceof SyntaxError ? 1 : -1; }
+                  return clickCaught * 2 + updateCaught;
+                }
+                """]
+            }
+        }
+        let bridge = WPEUserShortcutScriptBridge()
+        bridge.setBindings(declared: ["shortcut1"],
+                           bound: ["shortcut1": .init(commandType: "cmd", displayName: "Shortcut", revision: 7)])
+        let launched = OSAllocatedUnfairLock<[String]>(initialState: [])
+        bridge.setLauncher { key, revision in launched.withLock { $0.append("\(key)@\(revision)") } }
+        let script = try attachScript(fixture, host: .init(openUserShortcut: { bridge.requestLaunch($0) }))
+        let operation = try XCTUnwrap(Self.operation(fixture.plan, object: "17") { $0.fillsComposite })
+        let corners = try XCTUnwrap(fixture.renderer.cursorQuad("17", camera: fixture.renderer.pathCamera))
+        let centre = (corners.0 + corners.1 + corners.2 + corners.3) / 4
+        for down in [false, true, false] {
+            try await encode(fixture.renderer, input: WPEParityFrameInput(cursor: centre, buttonDown: down))
+        }
+        XCTAssertEqual(script.engine.dispatchCount(.cursorDown), 1)
+        XCTAssertEqual(script.engine.dispatchCount(.cursorClick), 1)
+        XCTAssertEqual(launched.withLock { $0 }, ["shortcut1@7"])
+        let draw = try XCTUnwrap(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+        XCTAssertEqual(Self.float(draw.constants[.fragment]?["g_Alpha"]), 3,
+                       "the click's and update's calls must both have thrown SyntaxError")
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// 1401731d0.c:493-707: a usershortcut entry carries isbound, and when bound its commandtype and file.
     func testScriptsSeeUserShortcutBindingStateAndItsChanges() async throws {
         let fixture = try await makeFixture("3815666789") { json in

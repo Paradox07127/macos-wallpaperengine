@@ -151,5 +151,67 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(driver.loadGeneration, generation, "the scene did not reload")
         try await frame(1, scale: 0.01171875, pushed: false)
     }
+
+    /// A visible camera object owns the pose over loaded camera paths, which hold still meanwhile; hiding it hands
+    /// the pose back to the paths at their first keyframe (1401891a0.c:57-136).
+    func testVisibleCameraObjectOverridesCameraPathsUntilHidden() async throws {
+        let original = try sceneInputs().1
+        let compiler = try makeCompiler()
+        let keyframes: [[String: Any]] = [
+            ["timestamp": 0, "eye": "10 20 30", "center": "10 20 29", "up": "0 1 0"],
+            ["timestamp": 1, "eye": "50 20 30", "center": "50 20 29", "up": "0 1 0"],
+        ]
+        var files = try [
+            "models/path-witness.json": ["material": "materials/path-witness.json"] as [String: Any],
+            "materials/path-witness.json": ["passes": [["shader": "genericimage2", "textures": ["path-red"],
+                                                        "blending": "normal", "cullmode": "nocull"]]],
+            "cameras/path.json": ["paths": [["duration": 2, "transforms": keyframes]]],
+        ].mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        files["materials/path-red.tex"] = cameraWitnessTexture([255, 0, 0, 255])
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
+        func document(cameraVisible: Bool) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0", "paths": ["cameras/path.json"]],
+                "general": ["orthogonalprojection": ["width": 256, "height": 128], "clearenabled": true,
+                            "clearcolor": "0 0 0", "bloom": false],
+                "objects": [
+                    ["id": 1, "image": "models/path-witness.json", "origin": "128 64 0", "size": "48 96"],
+                    ["id": 2, "camera": "default", "origin": "5 7 0", "visible": cameraVisible],
+                ],
+            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        let visible = try document(cameraVisible: true)
+        try await driver.load(document: visible, assets: assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 256, height: 128), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "path-cache")))
+        let renderer = try XCTUnwrap(driver.renderer)
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 256, height: 128)
+        layer.framebufferOnly = false
+        layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        func frame(_ index: Int, eye: SIMD3<Float>, center: SIMD3<Float>) async throws {
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(index) * 0.25,
+                                                                     pointer: SIMD2(repeating: 0.5)))
+            await command.completed()
+            try await settle(driver, label: "path frame \(index)")
+            XCTAssertNil(command.error)
+            XCTAssertTrue(driver.renderer === renderer)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            XCTAssertEqual(renderer.pathCamera.eye, eye, "frame \(index)")
+            XCTAssertEqual(renderer.pathCamera.center, center, "frame \(index)")
+        }
+        for index in 0 ..< 3 {
+            try await frame(index, eye: SIMD3(5, 7, 0), center: SIMD3(5, 7, -1))
+        }
+        try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: visible,
+                                                                               to: document(cameraVisible: false))))
+        try await frame(3, eye: SIMD3(10, 20, 30), center: SIMD3(10, 20, 29))
+    }
 }
 #endif

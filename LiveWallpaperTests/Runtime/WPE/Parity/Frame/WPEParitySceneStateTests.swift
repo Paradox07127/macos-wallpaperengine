@@ -196,6 +196,19 @@ final class WPEParitySceneStateTests: XCTestCase {
             + "\(Self.hash(readBack(workshop.renderer.backbuffer, device: workshop.device, queue: workshop.queue)))")
     }
 
+    /// A wallpaper read that throws is a miss, so the engine root's file of the same path answers it.
+    func testThrowingWallpaperReadFallsBackToTheEngineAssets() throws {
+        let engineRoot = scratch.appending(path: "engine", directoryHint: .isDirectory)
+        let file = engineRoot.appending(path: "assets/materials/fallback.json")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let bytes = Data(#"{"passes":[]}"#.utf8)
+        try bytes.write(to: file)
+        let assets = WPEParitySceneAssets.make(provider: ThrowingSceneAssetProvider(),
+                                               projectRoot: scratch.appending(path: "project", directoryHint: .isDirectory),
+                                               dependencyMounts: [], engineAssetsRootURL: engineRoot)
+        XCTAssertEqual(assets.data("materials/fallback.json"), bytes)
+    }
+
     // MARK: Helpers
 
     private struct Fixture {
@@ -361,6 +374,24 @@ private struct NoTransformScripts: WPESceneTransformScriptResolving {
     func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
                      seed _: SIMD3<Double>) -> SIMD3<Double>? {
         nil
+    }
+}
+
+private struct ThrowingSceneAssetProvider: WPESceneAssetProvider {
+    var entryNames: [String] {
+        []
+    }
+
+    func data(atRelativePath _: String) throws -> Data {
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    func stagedURL(atRelativePath _: String) throws -> URL {
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    func exists(atRelativePath _: String) -> Bool {
+        false
     }
 }
 #endif
