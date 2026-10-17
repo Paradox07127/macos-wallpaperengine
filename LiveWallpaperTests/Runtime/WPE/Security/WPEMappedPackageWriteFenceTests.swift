@@ -212,6 +212,14 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
+        // Fresh UUID-named HLSL input and stderr log under the temporary wpe-shaderc work directory.
+        "LiveWallpaper/Runtime/Metal/Parity/Shaders/WPEParityHelperShaderCompiler.swift": [
+            "createFile(": 1,
+            "FileHandle(forWritingTo": 1,
+            ".write(to": 1,
+        ],
+        // Cache entry files go into a fresh hidden directory under Caches/wpe-parity-shaders, then renamed into place.
+        "LiveWallpaper/Runtime/Metal/Parity/Shaders/WPEParityShaderDiskCache.swift": [".write(to": 2],
         // O_WRONLY: probe appmanifest, O_EXCL|O_NOFOLLOW under an O_NOFOLLOW-walked private profile dir.
         "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1, "O_RDWR": 1, "O_WRONLY": 1],
         "SteamConnector/SteamLibraryWriter.swift": ["O_WRONLY": 1],

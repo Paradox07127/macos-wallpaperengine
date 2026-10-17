@@ -477,9 +477,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     SettingsNavigationSearchTarget(
                         label: "Rendering",
                         anchor: .performanceRendering,
-                        rows: ["Adaptive frame rate", "MetalFX upscaling", "HDR output", "Multithreaded rendering"],
+                        rows: [
+                            "Adaptive frame rate", "MetalFX upscaling", "3D anti-aliasing", "HDR output",
+                            "Multithreaded rendering",
+                        ],
                         keywords: [
-                            "frame rate", "fps", "adaptive", "metalfx", "upscaling",
+                            "frame rate", "fps", "adaptive", "metalfx", "upscaling", "anti-aliasing", "msaa",
                             "hdr", "multithreaded", "rendering",
                         ]
                     )
