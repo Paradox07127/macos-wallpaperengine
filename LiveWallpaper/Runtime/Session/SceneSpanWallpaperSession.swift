@@ -127,6 +127,12 @@ final class SceneSpanWallpaperGroup {
 
     func reconcile() {
         let active = sessions.filter(\.isPlaying).sorted { $0.screenID < $1.screenID }
+        // ScreenManager never feeds the hidden owner a policy decision; its pause ramp reads the reasons from here.
+        let reasons = active.isEmpty
+            ? sessions.filter(\.userIntendsToPlay).reduce(into: Set()) { $0.formUnion($1.playbackMachine.outputs.suspendReasons) }
+            : []
+        owner.playbackMachine.policyChanged(WallpaperPolicyDecision(profile: active.isEmpty ? .suspended : .quality,
+                                                                    suspendReasons: reasons))
         if sessions.contains(where: \.userIntendsToPlay) {
             owner.play()
         } else {

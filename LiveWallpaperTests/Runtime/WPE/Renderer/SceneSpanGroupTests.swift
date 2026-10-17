@@ -169,6 +169,25 @@ struct SceneSpanGroupTests {
         #expect(owner.hotZoneClipFrames == [])
     }
 
+    @Test("The hidden owner eases to a hold only when every reason suspending its members allows a ramp")
+    func ownerRampFollowsMemberSuspendReasons() throws {
+        let (owner, _) = try Self.makeOwner()
+        defer { owner.cleanup() }
+        let member = try Self.makeStandInMember(owner: owner)
+        defer { member.cleanup() }
+        let machine = WallpaperPlaybackStateMachine()
+        machine.policyChanged(WallpaperPolicyDecision(profile: .suspended, suspendReasons: [.applicationRule]))
+        member.adoptPlaybackStateMachine(machine)
+        member.applyPerformanceProfile(.suspended)
+        #expect(SceneWallpaperSession.pauseRampsDown(owner.playbackMachine.outputs.suspendReasons),
+                "an application-rule pause on the span would stop the shared scene at once")
+
+        machine.policyChanged(WallpaperPolicyDecision(profile: .suspended, suspendReasons: [.applicationRule, .thermal]))
+        member.applyPerformanceProfile(.suspended)
+        #expect(!SceneWallpaperSession.pauseRampsDown(owner.playbackMachine.outputs.suspendReasons),
+                "a thermal pause on the span would still ease the shared scene")
+    }
+
     @Test("Each Interaction member's display joins the owner's clip set", .enabled(if: NSScreen.screens.count >= 2))
     func clipFramesCoverEachInteractiveMember() throws {
         let (owner, _) = try Self.makeOwner()
