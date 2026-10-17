@@ -74,9 +74,16 @@ extension ScreenManager {
         engineAssetsRootURL: URL?, onOriginBookmarkRefresh: @escaping AmbientWallpaperSessionBuilder.WPEOriginRefreshHandler
     ) -> (any SceneWallpaperRuntime)? {
         let enabled = WPEParityResourceSaverFlags.resolve().sceneMirrorRendering
-        guard enabled, var candidate = sceneMirrorCandidate(for: screen, configuration: configuration) else { return nil }
+        // Candidates query NSScreen; skip them unless another display or group already shows this scene.
+        let peerScreens = screens.filter { peer in
+            guard peer.id != screen.id, let stored = getConfiguration(for: peer), stored.sceneSpanGroupID == nil,
+                  case let .scene(shown) = stored.activeWallpaper else { return false }
+            return shown == descriptor
+        }
+        guard enabled, !peerScreens.isEmpty || sceneMirrorGroups.values.contains(where: { $0.lead.descriptor == descriptor }),
+              var candidate = sceneMirrorCandidate(for: screen, configuration: configuration) else { return nil }
         candidate.descriptor = descriptor
-        let peers = screens.compactMap { peer in
+        let peers = peerScreens.compactMap { peer in
             getConfiguration(for: peer).flatMap { sceneMirrorCandidate(for: peer, configuration: $0) }
         }
         let groups = sceneMirrorGroups.map { (id: $0.key, lead: $0.value.lead, density: $0.value.group.density) }
