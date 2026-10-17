@@ -92,6 +92,48 @@ struct UserShortcutRendererLinkTests {
         #expect(!Self.hasIcon(icons, "background"), "a cleared scene texture must fall back to the author's image")
     }
 
+    @Test("A scene texture bound to a file deleted since keeps the author's image")
+    func sceneTextureBindingToDeletedFileKeepsFallback() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let png = folder.appendingPathComponent("background.png")
+        try Self.writePNG(rgba: [200, 100, 50, 255], width: 1, height: 1, to: png)
+        let store = Self.makeStore()
+        try store.setFile(png, arguments: nil, for: Self.key("w1", "background"))
+        try FileManager.default.removeItem(at: png)
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        let icons = try Self.makeIcons()
+
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: [], textureKeys: ["background"])
+
+        #expect(!Self.hasIcon(icons, "background"), "a deleted file must leave the author's image in the slot")
+    }
+
+    @Test("A scene texture bound to a file that is not an image keeps the author's image until it decodes")
+    func sceneTextureBindingToUndecodableFileKeepsFallback() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("background.png")
+        try Data("not an image".utf8).write(to: file)
+        let store = Self.makeStore()
+        try store.setFile(file, arguments: nil, for: Self.key("w1", "background"))
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        let icons = try Self.makeIcons()
+
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: [], textureKeys: ["background"])
+
+        #expect(!Self.hasIcon(icons, "background"), "undecodable bytes must leave the author's image in the slot")
+        try Self.writePNG(rgba: [200, 100, 50, 255], width: 1, height: 1, to: file)
+        link.updateDeclaredKeys([], for: bridge)
+        #expect(Self.hasIcon(icons, "background"), "an earlier decode failure must not stick once the file decodes")
+    }
+
     private static func writePNG(rgba: [UInt8], width: Int, height: Int, to url: URL) throws {
         let provider = try #require(CGDataProvider(data: Data(rgba) as CFData))
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
