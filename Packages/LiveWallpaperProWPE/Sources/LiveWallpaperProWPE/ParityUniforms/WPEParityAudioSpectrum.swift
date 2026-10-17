@@ -12,6 +12,11 @@ public struct WPEParityAudioSpectrum: Sendable {
         Array(output.suffix(64))
     }
 
+    /// The 16 bands per channel that `g_AudioSpectrum16Left`/`Right` publish.
+    public var bands16: (left: SIMD16<Float>, right: SIMD16<Float>) {
+        (SIMD16(Self.pool(Self.pool(left64))), SIMD16(Self.pool(Self.pool(right64))))
+    }
+
     /// The 64 left then 64 right published bins.
     public var bins: [Float] {
         output

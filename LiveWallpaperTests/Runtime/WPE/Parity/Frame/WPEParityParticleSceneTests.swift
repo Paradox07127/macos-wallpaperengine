@@ -707,6 +707,31 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    func testAudioResponsiveEmitterReadsTheRenderedSpectrum() async throws {
+        let particle: [String: Any] = [
+            "maxcount": 64, "material": "materials/plain.json", "renderer": [["name": "sprite"]],
+            "emitter": [["name": "sphererandom", "rate": 60, "distancemax": 0, "audioprocessingmode": 3]],
+            "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]
+        let full = [Float](repeating: 1, count: 64)
+        for loud in [false, true] {
+            let (renderer, _) = try await syntheticRenderer(["particles/root.json": particle])
+            for _ in 0 ..< 30 {
+                let input = WPEParityFrameInput(audio: loud ? (left: full, right: full) : nil)
+                guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 1.0 / 30, input: input) else {
+                    return XCTFail("skipped")
+                }
+                await buffer.completed()
+                XCTAssertNil(buffer.error)
+            }
+            if loud {
+                XCTAssertGreaterThan(renderer.particleLiveCount("1") ?? 0, 0, "full-scale spectrum never reached the emitter")
+            } else {
+                XCTAssertEqual(renderer.particleLiveCount("1"), 0, "silence must not emit an audio-responsive particle")
+            }
+        }
+    }
+
     private static func burstParticle(renderer: [[String: Any]], material: String = "materials/plain.json") -> [String: Any] {
         ["maxcount": 1, "material": material, "renderer": renderer,
          "emitter": [["name": "sphererandom", "rate": 0, "instantaneous": 1, "distancemax": 0]],

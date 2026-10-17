@@ -1156,6 +1156,8 @@ final class WPEParityFrameRenderer {
         particles.beginFrame()
         particles.scene.applyScriptInstanceFields(state: state)
         let viewProjection = camera.projection * camera.view
+        // `audio` advances later in the frame, so particles read the previous frame's spectrum.
+        let spectrum = audio.bands16
         for id in state.commonOrder {
             if let queue = cameraQueues[id],
                let output = queue.advance(dt: clock.frametime, world: layers.world(id),
@@ -1167,7 +1169,9 @@ final class WPEParityFrameRenderer {
                 let frame = state.isVisible(id)
                     ? WPEParityParticleFrameContext(time: clock.timeUniform, cursor: pointer.position,
                                                     viewProjection: viewProjection, objectMatrix: layers.world(id),
-                                                    timeOfDay: timeOfDay, previousFrametime: clock.previousFrametime) : nil
+                                                    timeOfDay: timeOfDay, previousFrametime: clock.previousFrametime,
+                                                    frametime: clock.frametime,
+                                                    spectrumLeft: spectrum.left, spectrumRight: spectrum.right) : nil
                 particles.scene.advance(objectID: id, dt: clock.frametime, frame: frame)
             }
         }

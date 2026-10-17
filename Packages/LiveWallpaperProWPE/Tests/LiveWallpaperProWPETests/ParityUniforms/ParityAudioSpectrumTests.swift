@@ -223,6 +223,17 @@ final class ParityAudioSpectrumTests: XCTestCase {
         XCTAssertEqual(try bands(control, "g_AudioSpectrum16Left").prefix(2), [0.5, 1])
     }
 
+    func testSixteenBandsEqualTheSixteenBandUniforms() throws {
+        let pattern: [Float] = [0.1, 0.4, 0.2, 1, 0.3, 0.9, 0.6, 0.5]
+        let left = Array(repeating: pattern, count: 8).flatMap(\.self)
+        var spectrum = WPEParityAudioSpectrum()
+        spectrum.advance(left: left, right: Array(left.reversed()), dt: 1, silence: false)
+        let pooled = spectrum.bands16
+        XCTAssertEqual((0 ..< 16).map { pooled.left[$0] }, try bands(spectrum, "g_AudioSpectrum16Left"))
+        XCTAssertEqual((0 ..< 16).map { pooled.right[$0] }, try bands(spectrum, "g_AudioSpectrum16Right"))
+        XCTAssertNotEqual(pooled.left, pooled.right)
+    }
+
     func testValuesAboveOneSurviveAllUniformResolutions() throws {
         var seeded = WPEParityAudioSpectrum()
         seeded.advance(left: bins(0.5), right: bins(0.5), dt: 1, silence: false)
