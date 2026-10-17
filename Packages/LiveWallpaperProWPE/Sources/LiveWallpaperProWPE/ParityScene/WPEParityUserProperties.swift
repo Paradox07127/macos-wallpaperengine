@@ -377,29 +377,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         }
     }
 
-    /// The vec2 fromJSON (1401a3fc0.c:18-48): a number broadcasts; a string reads x, then y after the first space run
-    /// or 0; other shapes leave the field alone.
     private static func nativeVec2(_ value: WPESceneJSONValue?) -> SIMD2<Float>? {
-        switch value {
-        case let .number(number)?:
-            SIMD2(repeating: Float(number))
-        case let .string(text)?:
-            text.withCString { start in
-                guard start.pointee != 0 else { return .zero }
-                var cursor = start
-                let x = Float(strtod(cursor, nil))
-                while cursor.pointee != 0, cursor.pointee != 0x20 {
-                    cursor += 1
-                }
-                guard cursor.pointee == 0x20 else { return SIMD2(x, 0) }
-                while cursor.pointee == 0x20 {
-                    cursor += 1
-                }
-                return SIMD2(x, Float(strtod(cursor, nil)))
-            }
-        default:
-            nil
-        }
+        WPEParityNumericConversion.nativeVector2(value).map(SIMD2<Float>.init)
     }
 
     /// The script value of instance field `name`; nil when the override does not hold it. The parser keeps `colorn`

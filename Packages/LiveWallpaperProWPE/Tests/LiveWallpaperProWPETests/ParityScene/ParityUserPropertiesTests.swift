@@ -118,6 +118,23 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(state.scriptField("parallaxDepth", of: "1"), .vector(SIMD4(0.5, 0, 0, 0)))
     }
 
+    func testBoolUserValueKeepsAuthoredParallaxDepthAndOneTokenLeavesYZero() throws {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32}},
+         "objects":[
+          {"id":1,"image":"models/surface.json","parallaxDepth":{"user":"flag","value":"0.25 0.5"}},
+          {"id":2,"image":"models/surface.json","parallaxDepth":{"user":"depth","value":"1 1"}}
+         ]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(source.utf8),
+                                                        userValues: ["flag": .bool(true), "depth": .string("0.5")],
+                                                        makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        let images = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0.parallaxDepth) })
+        XCTAssertEqual(images["1"], SIMD2(0.25, 0.5))
+        XCTAssertEqual(images["2"], SIMD2(0.5, 0))
+    }
+
     func testMaterialFileUserConstantsBindLiveAndFollowAChange() throws {
         let objects: [[String: Any]] = [
             ["id": 7, "image": "models/7.json", "size": "400 200", "alpha": ["user": "k", "value": 1]],

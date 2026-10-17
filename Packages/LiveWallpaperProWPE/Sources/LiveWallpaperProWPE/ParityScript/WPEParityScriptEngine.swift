@@ -1745,9 +1745,8 @@ public final class WPEParityScriptEngine {
         if descriptor.owner == .object, descriptor.name == "parallaxDepth", let document {
             let object = document.resolvedObjectsJSON.first { WPEParitySceneAnimations.id($0) == objectID }
             let raw = object?["parallaxDepth"] ?? object?["parallaxdepth"]
-            let depth = raw.map { components($0["value"] ?? $0) } ?? [1, 1]
-            let x = depth.first ?? 0
-            return .vector(SIMD4(x, depth.count > 1 ? depth[1] : x, 0, 0))
+            let depth = WPEParityNumericConversion.nativeVector2(raw?["value"] ?? raw) ?? SIMD2(1, 1)
+            return .vector(SIMD4(Float(depth.x), Float(depth.y), 0, 0))
         }
         if descriptor.owner == .text, let text = document?.textObjects.first(where: { $0.id == objectID }) {
             switch descriptor.name {
@@ -1872,6 +1871,9 @@ public final class WPEParityScriptEngine {
             }
             guard let number, number.isFinite, number >= Double(Int32.min), number <= Double(Int32.max) else { return nil }
             return .integer(Int32(number.rounded(.towardZero)))
+        }
+        if descriptor.type == .vec2 {
+            return WPEParityNumericConversion.nativeVector2(value).map { .vector(SIMD4(Float($0.x), Float($0.y), 0, 0)) }
         }
         let components = Self.components(value)
         guard !components.isEmpty else { return nil }

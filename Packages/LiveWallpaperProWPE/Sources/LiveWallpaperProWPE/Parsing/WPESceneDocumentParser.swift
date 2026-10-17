@@ -1356,18 +1356,19 @@ public enum WPESceneDocumentParser {
     }
 
     /// Replaces `{ "user": K, "value": V }` with `userValues[K] ?? V`, and must run
-    /// BEFORE field parsing.
+    /// BEFORE field parsing. `field` = the key `raw` sits under; nil for array elements and the root.
     private static func resolveUserPropertyEnvelopes(
         in raw: Any,
         userValues: [String: WallpaperEngineProjectPropertyValue],
-        depth: Int = 0
+        depth: Int = 0,
+        field: String? = nil
     ) throws -> Any {
         guard depth < 100 else {
             throw WPESceneDocumentError.malformedField("scene.json is too deeply nested")
         }
         if let array = raw as? [Any] {
             return try array.map {
-                try resolveUserPropertyEnvelopes(in: $0, userValues: userValues, depth: depth + 1)
+                try resolveUserPropertyEnvelopes(in: $0, userValues: userValues, depth: depth + 1, field: nil)
             }
         }
 
@@ -1381,7 +1382,8 @@ public enum WPESceneDocumentParser {
             var resolved: [String: Any] = [:]
             resolved.reserveCapacity(dict.count)
             for (key, value) in dict {
-                resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1)
+                resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1,
+                                                                 field: key)
             }
             // `value` is the *disabled* state, so the gate must still be evaluated or a
             // satisfied gate would start switched off with nothing able to turn it on.
@@ -1402,6 +1404,11 @@ public enum WPESceneDocumentParser {
                 depth: depth + 1
             )
             guard let override = userValues[key] else {
+                return fallback
+            }
+            // The native vec2 reader (1401a3fc0) writes nothing for a Bool, so these fields keep the authored value.
+            if case .bool = override, let field,
+               ["parallaxDepth", "parallaxdepth", "size", "padding", "spacing", "dropshadowoffset"].contains(field) {
                 return fallback
             }
             return jsonValue(for: override)
@@ -1439,7 +1446,8 @@ public enum WPESceneDocumentParser {
             resolved[key] = try resolveUserPropertyEnvelopes(
                 in: value,
                 userValues: userValues,
-                depth: depth + 1
+                depth: depth + 1,
+                field: key
             )
         }
         return resolved
@@ -2674,17 +2682,14 @@ public enum WPESceneDocumentParser {
         WPEValueParser.double(raw)
     }
 
-    /// Per-axis depth string ("1 0" = horizontal-only, "0 1" = vertical-only), not a
-    /// scalar. A bare scalar maps to both axes, a `{user,value}` wrapper is unwrapped,
-    /// absent -> `(1, 1)`: WPE omits the key at its default and always writes an explicit 0.
+    /// Per-axis depth through the native vec2 reader: "x y", "x" -> (x, 0), a number broadcasts, a `{user,value}`
+    /// wrapper is unwrapped; absent or any other shape -> the default `(1, 1)`.
     static func parseParallaxDepth(_ raw: Any?) -> SIMD2<Double> {
         guard let raw else { return SIMD2<Double>(1, 1) }
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return parseParallaxDepth(value)
         }
-        if let vector = parseVector3(raw) { return SIMD2<Double>(vector.x, vector.y) }
-        if let scalar = parseDouble(raw) { return SIMD2<Double>(scalar, scalar) }
-        return SIMD2<Double>(0, 0)
+        return WPEParityNumericConversion.nativeVector2(WPESceneJSONValue(jsonValue: raw)) ?? SIMD2<Double>(1, 1)
     }
 
     private static func parseInt(_ raw: Any?) -> Int? {

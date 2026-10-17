@@ -265,10 +265,11 @@ struct WPECameraParallaxTests {
         #expect(try parsedImageDepth(["user": "p0", "value": "0.5 0.5"]) == SIMD2<Double>(0.5, 0.5))
     }
 
-    @Test("parallaxDepth still accepts a bare scalar and defaults to 1 when absent")
+    @Test("parallaxDepth broadcasts a bare number, reads a one-token string as (x, 0) and defaults to 1 when absent")
     func parsesScalarAndAbsentDepth() throws {
         #expect(try parsedImageDepth(2.0) == SIMD2<Double>(2, 2))
-        #expect(try parsedImageDepth("3") == SIMD2<Double>(3, 3))
+        // 1401a3fc0.c:18-48 reads y only after a run of spaces.
+        #expect(try parsedImageDepth("3") == SIMD2<Double>(3, 0))
         let doc = try parse(minimalScene(general: [
             "orthogonalprojection": ["width": 100, "height": 100, "auto": true]
         ]))
