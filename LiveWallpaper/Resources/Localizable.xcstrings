@@ -13438,6 +13438,40 @@
         }
       }
     },
+    "Choose Image" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Image"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir imagen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像を選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇圖片"
+          }
+        }
+      }
+    },
     "Choose Local File" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19039,6 +19073,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法儲存綁定。"
+          }
+        }
+      }
+    },
+    "Couldn't save the chosen image." : {
+      "comment" : "Shown under a scene image row when choosing or clearing the image couldn't be saved.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save the chosen image."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar la imagen elegida."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した画像を保存できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存所选图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存所選圖片。"
           }
         }
       }
@@ -51497,6 +51566,40 @@
         }
       }
     },
+    "Replaces this image in the wallpaper. Clear it to show the author's image again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replaces this image in the wallpaper. Clear it to show the author's image again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituye esta imagen en el fondo de pantalla. Bórrala para volver a mostrar la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙内のこの画像を置き換えます。クリアすると作者の画像に戻ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换壁纸中的这张图片。清除后将恢复作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代桌布中的這張圖片。清除後將恢復作者的圖片。"
+          }
+        }
+      }
+    },
     "Replaces:" : {
       "comment" : "Import confirmation header over the parts of the current configuration the file replaces.",
       "localizations" : {
@@ -67443,6 +67546,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 首次執行逾時。"
+          }
+        }
+      }
+    },
+    "The image can't be found. Choose it again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image can't be found. Choose it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encuentra la imagen. Vuelve a elegirla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像が見つかりません。もう一度選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到该图片，请重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到該圖片，請重新選擇。"
           }
         }
       }

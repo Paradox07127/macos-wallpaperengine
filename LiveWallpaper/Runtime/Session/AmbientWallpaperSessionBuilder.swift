@@ -408,7 +408,8 @@ final class AmbientWallpaperSessionBuilder {
                 let userShortcutIcons = WPEUserShortcutIconStore(device: device)
                 UserShortcutRendererLink.shared.attach(
                     userShortcuts, icons: userShortcutIcons, wallpaperID: descriptor.workshopID,
-                    declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot)
+                    declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot),
+                    textureKeys: UserShortcutRendererLink.declaredTextureKeys(manifestRoot: assets.projectRoot)
                 )
                 var inputs = WPEParitySceneInputs(
                     descriptor: descriptor,

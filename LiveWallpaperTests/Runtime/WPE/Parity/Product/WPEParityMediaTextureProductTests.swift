@@ -162,6 +162,64 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertEqual(surface.lastIsPaused, true)
     }
 
+    func testSceneTextureImagesReplaceTheirSlotAndRestoreTheAuthoredFallback() async throws {
+        let fixture = try makeFixture(scripted: false, sceneTextures: true)
+        let images = WPEUserShortcutIconStore(device: fixture.device)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        var inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "scene-texture-guard", cacheRelativePath: "scene-texture-guard",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        inputs.userShortcutIcons = images
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run { try? FileManager.default.removeItem(at: fixtureRoot) }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
+
+        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 32).flatMap(\.self),
+                                            width: 8, height: 4)
+        XCTAssertTrue(images.setIcon(cyan, forKey: "texture-current"))
+        try await waitUntil("A scene texture image did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        var pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+
+        try await actor.reload()
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        layer.drawableSize = CGSize(width: 160, height: 64)
+        await actor.updateSurfaceGeometry(drawableSize: CGSize(width: 160, height: 64))
+        let deadline = Date().addingTimeInterval(5)
+        while await actor.run({ $0.parityDriverForTesting?.renderer?.backbuffer.width != 160 }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        let resized = await actor.run { $0.parityDriverForTesting?.renderer?.backbuffer.width }
+        XCTAssertEqual(resized, 160, "A real renderer replan must complete")
+        try await actorFrame(actor)
+        pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 160, panel: 0, artwork: nil, fallback: [0, 255, 255, 255])
+        assertPanel(pixels, width: 160, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+
+        XCTAssertTrue(images.setIcon(nil, forKey: "texture-current"))
+        try await waitUntil("Clearing a scene texture did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 160, current: nil, previous: nil)
+    }
+
     func testOriginalEffectsConsumeSameFrameMediaAndScriptThenPreservePairAcrossReloadAndResize() async throws {
         let fixture = try makeFixture(scripted: true)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -424,8 +482,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
     }
 
     private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
-                             shortcutIcons: Bool = false, video: Data? = nil) throws -> Fixture {
-        let qualifiedInput = mergeUserTextures || shortcutIcons
+                             shortcutIcons: Bool = false, sceneTextures: Bool = false,
+                             video: Data? = nil) throws -> Fixture {
+        let qualifiedInput = mergeUserTextures || shortcutIcons || sceneTextures
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let environment = ProcessInfo.processInfo.environment
@@ -544,7 +603,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ]
             try json("materials/\(name)-effect.json", ["passes": [[
                 "shader": "combine", "textures": ["previous", "input/\(name)"],
-                "usertextures": baseDeclarations,
+                "usertextures": sceneTextures ? [NSNull(), "texture-\(name)"] : baseDeclarations,
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
             try json("materials/\(name)-compose.json", ["passes": [[

@@ -51,7 +51,7 @@ struct WPEParityFrameDrawPlan {
     var textures: [[String: TextureSource]]
     /// System declarations eligible to replace an authored image, never a graph-owned RT or glyph atlas.
     var mediaSlots: [Int: WPEMediaSystemTexture] = [:]
-    /// Native usershortcut provider keys, resolved by the existing product icon store.
+    /// Usershortcut and scene-texture property keys, resolved by the product icon store.
     var userShortcutSlots: [Int: String] = [:]
     /// Full-image UVs for a media replacement of a padded authored albedo; built once, not on artwork changes.
     var mediaGeometry: Geometry?
@@ -754,8 +754,14 @@ struct WPEParityFrameDrawPlanner {
                 slots[Int(entry.key)] = kind
             }
         }
+        // Any other provider names a plain property whose user image replaces slots 0..9 (140154480.c:142-232,
+        // 1401556e0.c:82-109); an unresolved declaration merge keeps the authored texture.
+        let sceneTextures = binding.userTextures.diagnostics.isEmpty
         var userShortcutSlots = binding.userTextureSlots.reduce(into: [Int: String]()) { slots, entry in
-            if entry.key >= 0, entry.value.type == "usershortcut" {
+            let type = entry.value.type
+            let plain = sceneTextures && Int(entry.key) < WPEParityUniformTextures.slotCount && type != "system"
+                && WPEMediaSystemTexture(bindingName: entry.value.name) == nil
+            if entry.key >= 0, type == "usershortcut" || plain {
                 slots[Int(entry.key)] = entry.value.name
             }
         }

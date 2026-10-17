@@ -95,8 +95,8 @@ struct WPEProjectSettingsPresentation: Equatable {
 
     static func isSceneInteractive(_ type: WallpaperEngineProjectPropertySchema.PropertyType) -> Bool {
         switch type {
-        case .bool, .slider, .combo, .color, .textinput, .userShortcut: true
-        case .file, .directory, .sceneTexture, .group, .text, .unsupported: false
+        case .bool, .slider, .combo, .color, .textinput, .userShortcut, .sceneTexture: true
+        case .file, .directory, .group, .text, .unsupported: false
         }
     }
 

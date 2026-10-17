@@ -300,6 +300,29 @@ struct WallpaperEngineProjectPropertiesTests {
         ]).isEmpty)
     }
 
+    #if !LITE_BUILD
+    @Test("A scene texture gets a settings row while its property value still cannot reach rendering")
+    @MainActor
+    func sceneTextureRowIsShownWithoutAnEditableValue() throws {
+        let manifest = """
+        {
+          "general": {
+            "properties": {
+              "background": { "type": "scenetexture", "text": "Background", "value": "" }
+            }
+          }
+        }
+        """
+
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8))
+        let presentation = WPEProjectSettingsPresentation(schema: schema, overrides: [:])
+
+        #expect(presentation.visibleKeys == ["background"])
+        #expect(schema.properties.contains { WPESceneCustomSettingsCard.isSceneSettingCandidate($0) })
+        #expect(schema.declaredEditableValues(["background": .string("/untrusted/image.png")]).isEmpty)
+    }
+    #endif
+
     @Test("Resolves raw WPE keys and identifiers to readable labels; keeps author text")
     func resolvesDisplayKeysAndIdentifiers() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(

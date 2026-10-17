@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
@@ -60,6 +61,49 @@ struct UserShortcutRendererLinkTests {
         #expect(!Self.hasIcon(icons, "open"), "a cleared binding must fall back to the author's texture")
     }
 
+    @Test("A bound scene texture gets its decoded image, stays out of the script bridge, and clearing restores the fallback")
+    func sceneTextureBindingPushesDecodedImage() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pixel: [UInt8] = [200, 100, 50, 255]
+        let png = folder.appendingPathComponent("background.png")
+        try Self.writePNG(rgba: Array(repeating: pixel, count: 6 * 3).flatMap(\.self), width: 6, height: 3, to: png)
+        let store = Self.makeStore()
+        try store.setFile(png, arguments: nil, for: Self.key("w1", "background"))
+        let link = UserShortcutRendererLink(store: store)
+        let bridge = WPEUserShortcutScriptBridge()
+        let icons = try Self.makeIcons()
+
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: ["launch"], textureKeys: ["background"])
+
+        let texture = try #require(icons.substituting(nil, slot: 0, declarations: [0: "background"]),
+                                   "a bound scene texture must replace the author's image")
+        #expect(texture.width == 6 && texture.height == 3, "the image must keep its own size and orientation")
+        var bytes = [UInt8](repeating: 0, count: 4)
+        texture.getBytes(&bytes, bytesPerRow: 6 * 4, from: MTLRegionMake2D(2, 1, 1, 1), mipmapLevel: 0)
+        #expect(bytes == pixel)
+        #expect(bridge.snapshot().declared == ["launch"])
+        #expect(bridge.snapshot().bound.isEmpty, "a scene texture binding must not reach scripts as a shortcut")
+
+        store.clear(Self.key("w1", "background"))
+        #expect(!Self.hasIcon(icons, "background"), "a cleared scene texture must fall back to the author's image")
+    }
+
+    private static func writePNG(rgba: [UInt8], width: Int, height: Int, to url: URL) throws {
+        let provider = try #require(CGDataProvider(data: Data(rgba) as CFData))
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let image = try #require(CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+    }
+
     @Test("A store change reaches every bridge of that wallpaper and no other")
     func storeChangeReachesSameWallpaperBridges() throws {
         let store = Self.makeStore()
@@ -104,10 +148,11 @@ struct UserShortcutRendererLinkTests {
             .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let json = #"{"general":{"properties":{"launch":{"type":"usershortcut","text":"Launch","order":0},"speed":{"type":"slider","text":"Speed","value":1,"min":0,"max":2,"order":1}}}}"#
+        let json = #"{"general":{"properties":{"launch":{"type":"usershortcut","text":"Launch","order":0},"speed":{"type":"slider","text":"Speed","value":1,"min":0,"max":2,"order":1},"background":{"type":"scenetexture","text":"Background","value":"","order":2}}}}"#
         try Data(json.utf8).write(to: folder.appendingPathComponent("project.json"))
 
         #expect(UserShortcutRendererLink.declaredKeys(manifestRoot: folder) == ["launch"])
+        #expect(UserShortcutRendererLink.declaredTextureKeys(manifestRoot: folder) == ["background"])
         #expect(UserShortcutRendererLink.declaredKeys(manifestRoot: folder.appendingPathComponent("missing")).isEmpty)
     }
 
@@ -126,6 +171,23 @@ struct UserShortcutRendererLinkTests {
 
         let outcome = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
         #expect(outcome.schema?.properties.map(\.key) == ["launch"])
+    }
+
+    @Test("A scene whose only property is a scene texture still gets a settings schema")
+    func sceneTextureOnlySceneLoadsSchema() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SceneTextureSchema-\(UUID().uuidString)", isDirectory: true)
+        let folder = root.appendingPathComponent("LiveWallpaper/wpe-cache/78")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let json = #"{"general":{"properties":{"background":{"type":"scenetexture","text":"Background","value":"","order":0}}}}"#
+        try Data(json.utf8).write(to: folder.appendingPathComponent("project.json"))
+        let descriptor = SceneDescriptor(workshopID: "78", cacheRelativePath: "wpe-cache/78", entryFile: "scene.json",
+                                         capabilityTier: .imageOnly)
+        defer { WPESceneProjectSchemaLoader.invalidateCache() }
+
+        let outcome = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(outcome.schema?.properties.map(\.key) == ["background"])
     }
 
     @Test("The launcher runs the clicked binding, and nothing for a key cleared meanwhile", .timeLimit(.minutes(1)))

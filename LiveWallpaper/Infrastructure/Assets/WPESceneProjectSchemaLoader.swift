@@ -247,8 +247,8 @@ enum WPESceneProjectSchemaLoader {
         workshopID: String,
         locationDescription: String
     ) -> Outcome {
-        // A user-shortcut slot is not editable but still needs the card to host its binding row.
-        if parsed.hasMeaningfulSettings || parsed.properties.contains(where: { $0.type == .userShortcut }) {
+        // User-shortcut and scene-texture slots are not editable but still need the card to host their binding row.
+        if parsed.hasMeaningfulSettings || parsed.properties.contains(where: { [.userShortcut, .sceneTexture].contains($0.type) }) {
             return Outcome(
                 schema: parsed,
                 log: "loaded \(parsed.properties.count) properties (editable=\(parsed.properties.filter { $0.type.isEditable }.count)) for workshop=\(workshopID) from \(locationDescription)",
