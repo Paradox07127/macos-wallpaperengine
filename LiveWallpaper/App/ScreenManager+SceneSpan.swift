@@ -10,6 +10,11 @@ extension ScreenManager {
         engineAssetsRootURL: URL?, onOriginBookmarkRefresh: @escaping AmbientWallpaperSessionBuilder.WPEOriginRefreshHandler
     ) -> (any SceneWallpaperRuntime)? {
         guard let id = configuration.sceneSpanGroupID else {
+            if let mirrored = makeSceneMirrorSession(descriptor: descriptor, origin: origin, screen: screen, configuration: configuration,
+                                                     dependencyMounts: dependencyMounts, engineAssetsRootURL: engineAssetsRootURL,
+                                                     onOriginBookmarkRefresh: onOriginBookmarkRefresh) {
+                return mirrored
+            }
             return ambientSessionBuilder.makeSceneSession(descriptor: descriptor, origin: origin,
                                                           frame: screen.frame, fitMode: configuration.fitMode,
                                                           dependencyMounts: dependencyMounts, engineAssetsRootURL: engineAssetsRootURL,

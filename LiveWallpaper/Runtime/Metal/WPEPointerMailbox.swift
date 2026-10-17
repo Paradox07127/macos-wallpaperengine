@@ -9,6 +9,8 @@ final class WPEPointerMailbox: Sendable {
     struct Geometry: Equatable, Sendable {
         var viewFrameInScreen: CGRect
         var interactiveFrames: [CGRect]?
+        /// Displays that each show the whole view at their own size; a location on one maps to the same view point.
+        var mirrorFrames: [CGRect] = []
         static let none = Geometry(viewFrameInScreen: .zero)
     }
 
@@ -267,8 +269,9 @@ final class WPEPointerMailbox: Sendable {
         forScreenLocation location: CGPoint,
         geometry: Geometry
     ) -> WPEMetalPointerSample {
-        let rect = geometry.viewFrameInScreen
-        guard rect.width > 0, rect.height > 0, rect.contains(location),
+        let view = geometry.viewFrameInScreen
+        let rect = geometry.mirrorFrames.first { $0.contains(location) } ?? view
+        guard view.width > 0, view.height > 0, rect.contains(location),
               geometry.interactiveFrames?.contains(where: { $0.contains(location) }) ?? true else {
             return .inactive
         }

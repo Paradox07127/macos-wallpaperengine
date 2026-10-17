@@ -25,24 +25,33 @@ final class SceneSpanWallpaperGroup {
         }
     }
 
+    enum Layout {
+        case span
+        case mirror
+    }
+
     let id: UUID
     var descriptor: SceneDescriptor
     let owner: SceneWallpaperSession
     let frames: WPESceneSpanFrames
     let density: CGFloat
+    let layout: Layout
     private var members: [CGDirectDisplayID: Member] = [:]
     private var displayFrames: [CGDirectDisplayID: CGRect]
     private var recovery: Task<Void, Never>?
     var onEmpty: (() -> Void)?
+    /// A mirror member whose own setting no longer matches the shared runtime; the handler restores that display alone.
+    var onMemberDiverged: ((CGDirectDisplayID) -> Void)?
 
     init(id: UUID, descriptor: SceneDescriptor, owner: SceneWallpaperSession,
-         frames: WPESceneSpanFrames, density: CGFloat, displayFrames: [CGDirectDisplayID: CGRect]) {
+         frames: WPESceneSpanFrames, density: CGFloat, displayFrames: [CGDirectDisplayID: CGRect], layout: Layout = .span) {
         self.id = id
         self.descriptor = descriptor
         self.owner = owner
         self.frames = frames
         self.density = density
         self.displayFrames = displayFrames
+        self.layout = layout
         owner.onRuntimeErrorChange = { [weak self] in
             self?.sessions.forEach { $0.onRuntimeErrorChange?() }
         }
@@ -56,7 +65,26 @@ final class SceneSpanWallpaperGroup {
     }
 
     var canvasFrame: CGRect {
-        displayFrames.values.reduce(CGRect.null) { $0.union($1) }
+        switch layout {
+        case .span: displayFrames.values.reduce(CGRect.null) { $0.union($1) }
+        case .mirror: Self.mirrorCanvas(displayFrames)
+        }
+    }
+
+    /// The producer renders once at the largest display; ties keep the lowest display ID.
+    static func mirrorCanvas(_ frames: [CGDirectDisplayID: CGRect]) -> CGRect {
+        frames.sorted { $0.key < $1.key }.max { $0.value.width * $0.value.height < $1.value.width * $1.value.height }?.value ?? .null
+    }
+
+    func presentation(for frame: CGRect) -> VideoSpanRenderConfiguration {
+        switch layout {
+        case .span: .init(canvasFrame: canvasFrame, screenFrame: frame)
+        case .mirror: .init(canvasFrame: frame, screenFrame: frame)
+        }
+    }
+
+    func hasMember(_ id: CGDirectDisplayID) -> Bool {
+        Member.live(members[id]) != nil
     }
 
     func makeMember(for screen: Screen, configuration: ScreenConfiguration) throws -> SceneSpanWallpaperSession {
@@ -120,7 +148,7 @@ final class SceneSpanWallpaperGroup {
 
     private func updateLayout() {
         for session in sessions {
-            session.updatePresentation(.init(canvasFrame: canvasFrame, screenFrame: displayFrames[session.screenID] ?? .zero))
+            session.updatePresentation(presentation(for: displayFrames[session.screenID] ?? .zero))
         }
         reconcile()
     }
@@ -149,9 +177,21 @@ final class SceneSpanWallpaperGroup {
         owner.setHotZoneClipFrames(active.filter { $0.clickEnabled && !$0.hotZoneInputSuspended }.map(\.displayFrame))
         owner.setHibernationEligible(!sessions.isEmpty && sessions.allSatisfy(\.hibernationEligible))
         owner.setCriticalMemoryPressureActive(sessions.contains(where: \.criticalPressure))
-        owner.updateSpanViewport(canvasFrame, density: density,
-                                 interactiveFrames: active.filter { $0.mouseEnabled || $0.clickEnabled }.map(\.displayFrame))
-        owner.spanSurface.setSpanClockScreen(active.first?.wallpaperWindow?.screen)
+        let interactiveFrames = active.filter { $0.mouseEnabled || $0.clickEnabled }.map(\.displayFrame)
+        owner.updateSpanViewport(canvasFrame, density: density, interactiveFrames: interactiveFrames)
+        if layout == .mirror {
+            let geometry = WPEPointerMailbox.Geometry(viewFrameInScreen: canvasFrame, interactiveFrames: interactiveFrames,
+                                                      mirrorFrames: Array(displayFrames.values))
+            owner.spanSurface.pointerGeometryOverride = geometry
+            owner.spanSurface.mailbox.publishGeometry(geometry)
+        }
+        owner.spanSurface.setSpanClockScreen(Self.clockLeader(active.compactMap { $0.wallpaperWindow?.screen },
+                                                              refreshRate: { $0.configuredFramesPerSecond }))
+    }
+
+    /// Ties keep the earlier member.
+    static func clockLeader<Member>(_ members: [Member], refreshRate: (Member) -> Int) -> Member? {
+        members.max { refreshRate($0) < refreshRate($1) }
     }
 
     func publishClick(_ frame: WPEPointerFrame, from session: SceneSpanWallpaperSession) {
@@ -159,8 +199,9 @@ final class SceneSpanWallpaperGroup {
         let canvas = canvasFrame
         let display = session.displayFrame
         func global(_ local: SIMD2<Double>) -> SIMD2<Double> {
-            SIMD2((Double(display.minX - canvas.minX) + local.x * Double(display.width)) / Double(canvas.width),
-                  (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
+            guard layout == .span else { return local }
+            return SIMD2((Double(display.minX - canvas.minX) + local.x * Double(display.width)) / Double(canvas.width),
+                         (Double(canvas.maxY - display.maxY) + local.y * Double(display.height)) / Double(canvas.height))
         }
         var canvasFrame = WPEPointerFrame(position: global(frame.position), clickPosition: global(frame.clickPosition),
                                           isDown: frame.isDown, isRightDown: frame.isRightDown, gesture: frame.gesture)
@@ -174,9 +215,11 @@ final class SceneSpanWallpaperGroup {
         // A release always reaches the member that took its press; dropping it would leave the mailbox's desktop frame down.
         guard !isDown || session.acceptsDesktopClicks else { return }
         let canvas = canvasFrame
+        let displays = Array(displayFrames.values)
         func canvasUV(_ point: CGPoint) -> SIMD2<Double> {
-            SIMD2(Double((point.x - canvas.minX) / canvas.width),
-                  Double((canvas.maxY - point.y) / canvas.height)).clamped(lowerBound: .zero, upperBound: .one)
+            let shown = layout == .mirror ? displays.first(where: { $0.contains(point) }) ?? session.displayFrame : canvas
+            return SIMD2(Double((point.x - shown.minX) / shown.width),
+                         Double((shown.maxY - point.y) / shown.height)).clamped(lowerBound: .zero, upperBound: .one)
         }
         var frame = WPEPointerFrame(position: canvasUV(location), clickPosition: canvasUV(pressLocation),
                                     isDown: isDown, isRightDown: false)
@@ -229,7 +272,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         surface = WPERenderSurface(frame: CGRect(origin: .zero, size: screen.frame.size), device: device, targetScreen: screen.nsScreen, allowsHDR: false)
         window.contentView = surface.mtkView
         actor = WPEDisplayRenderActor(label: "com.loomscreen.scene-span.present.\(screen.id)")
-        let presentation = VideoSpanRenderConfiguration(canvasFrame: group.canvasFrame, screenFrame: screen.frame)
+        let presentation = group.presentation(for: screen.frame)
         self.presentation = presentation
         let presenter = try WPESceneSpanPresenter(device: device, layer: WPEPresentLayer(layer: surface.metalLayer),
                                                   frames: group.frames, state: presented, producer: group.owner.spanRenderActor,
@@ -378,6 +421,10 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     func setSceneFitMode(_ mode: VideoFitMode) {
+        guard group.layout == .span else {
+            group.onMemberDiverged?(screenID)
+            return
+        }
         group.owner.setSceneFitMode(mode)
     }
 
@@ -459,8 +506,10 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         group.owner.isCurrentScenePropertyMutationIntent(token)
     }
 
+    /// nil for a mirror member: patching the shared runtime would change every display, so the caller rebuilds this one alone.
     func prepareScenePropertyPatch(_ patch: WPEScenePropertyPatch, expectedIntent token: ScenePropertyMutationToken) async -> PreparedScenePropertyPatch? {
-        await group.owner.prepareScenePropertyPatch(patch, expectedIntent: token)
+        guard group.layout == .span else { return nil }
+        return await group.owner.prepareScenePropertyPatch(patch, expectedIntent: token)
     }
 
     func stageScenePropertyPosterCommit(overrides: [String: WallpaperEngineProjectPropertyValue]) -> ScenePropertyPosterCommit {
