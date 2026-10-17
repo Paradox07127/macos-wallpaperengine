@@ -33,6 +33,5 @@ extension WPEParitySceneDriverTests {
             }
         }
     }
-
 }
 #endif
