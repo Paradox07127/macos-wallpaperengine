@@ -164,7 +164,8 @@ final class WPEParityFrameRenderer {
     private var seenScriptBloom = 0
     private var seenScriptSound = 0
     private var seenSoundBoundsFields = -1
-    private var seenSoundVisibility = -1
+    /// (visibility, membership) generations last reported to the sound runtime.
+    private var seenSoundVisibility = SIMD2(-1, -1)
     private var seenScriptLighting = -1
     private var seenLightTransforms = -1
     private var seenLightVisibility = -1
@@ -1044,8 +1045,8 @@ final class WPEParityFrameRenderer {
         artifacts[program.hlsl] = .success(artifact)
     }
 
-    /// Warm leaf images use the common post-update removal path. Other class destructors and dependent
-    /// owners need their original resource contract before the product admits them.
+    /// Warm leaf images and childless sound layers use the common post-update removal path; a removed sound
+    /// stops through `takeSoundVisibility`. Other class destructors and dependent owners stay rejected.
     var scriptLayerRemovalAdmission: (String, UInt32?) -> Bool {
         // The engine continues through renderer replacement. Capture immutable loaded-class metadata,
         // without keeping the old renderer/Metal owners alive or consulting a dead weak renderer.
@@ -1053,10 +1054,15 @@ final class WPEParityFrameRenderer {
         let parents = plan.document.objectParentByID
         let videoIDs = objects.filter { videos.hasOwner($0.id) }.map(\.id)
         let loadedIDs = plan.state.loadedIDs
+        let soundIDs = Set(plan.document.soundObjects.map(\.id))
         return { id, modelDataToken in
             // Created image clones own no class resource beyond their template's shared images.
             if modelDataToken != nil || !loadedIDs.contains(id) {
                 return true
+            }
+            // Sounds are not scene objects (no draw), so they can never be a dependency target.
+            if soundIDs.contains(id) {
+                return !parents.values.contains(id)
             }
             guard let object = objects.first(where: { $0.id == id }), case .image = object.kind,
                   object.puppet == nil, !videoIDs.contains(id), !parents.values.contains(id),
@@ -1328,11 +1334,13 @@ final class WPEParityFrameRenderer {
     }
 
     func takeSoundVisibility(_ body: (String, Bool) -> Void) {
-        guard seenSoundVisibility != state.visibilityGeneration else { return }
+        // Removal bumps only membership, and a removed object reads invisible.
+        let generation = SIMD2(state.visibilityGeneration, state.membershipGeneration)
+        guard seenSoundVisibility != generation else { return }
         for sound in plan.document.soundObjects {
             body(sound.id, state.isVisible(sound.id))
         }
-        seenSoundVisibility = state.visibilityGeneration
+        seenSoundVisibility = generation
     }
 
     /// Sound volumes scripts wrote since the last call, by sound object; the runtime applies volume² × master.

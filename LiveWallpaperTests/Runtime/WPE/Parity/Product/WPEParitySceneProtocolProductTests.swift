@@ -288,6 +288,39 @@ extension WPEParitySceneDriverTests {
                           "The re-planned renderer loaded the destroyed layer's texture again")
     }
 
+    @objc func testDestroyedSoundLayerIsAdmittedAndReportsInvisible() async throws {
+        let source = """
+        let frame = 0;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            const accepted = thisScene.destroyLayer(thisScene.getLayer('music'));
+            thisLayer.brightness = accepted === true ? 2 : 99;
+          }
+          return value;
+        }
+        """
+        let sound: [String: Any] = ["id": 50, "name": "music", "sound": ["sounds/music.mp3"]]
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, script: source), sound]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects)
+        defer { driver.cleanup() }
+        func soundVisibility() throws -> [String: Bool] {
+            var reports: [String: Bool] = [:]
+            try XCTUnwrap(driver.renderer).takeSoundVisibility { reports[$0] = $1 }
+            return reports
+        }
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "sound before destroy")
+        XCTAssertEqual(try soundVisibility(), ["50": true])
+        XCTAssertTrue(try XCTUnwrap(driver.renderer).scriptLayerRemovalAdmission("50", nil),
+                      "A rejected sound removal logs that destroyLayer is unsupported")
+
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "sound destroy frame")
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertEqual(renderer.state.object("101")?.brightness, 2, "destroyLayer on the sound layer returned false")
+        XCTAssertNil(renderer.state.object("50"))
+        XCTAssertEqual(try soundVisibility(), ["50": false], "The destroyed sound must be reported invisible so it stops")
+    }
+
     @objc func testCreatedImageLayerDrawsThisFrameSurvivesReplanAndDestroys() async throws {
         let source = """
         let frame = 0;
