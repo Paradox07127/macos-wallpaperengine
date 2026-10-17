@@ -19,7 +19,7 @@ enum WPEParityModelDataLayerAdmission {
             resolveMaterial: { value, context in
                 guard let context, context.assetsPrepared, value.isString, let path = value.toString(),
                       context.registeredAssets.contains(where: {
-                          $0.flag && $0.path.utf8.elementsEqual(path.utf8)
+                          $0.path.utf8.elementsEqual(path.utf8)
                       }) else {
                     throw WPEParityModelDataFailure.safety("material requires its prepared binding registration")
                 }

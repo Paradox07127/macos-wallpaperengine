@@ -303,6 +303,46 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.indexCount == 3 })
     }
 
+    func testSingleArgumentRegisteredMaterialLoadsSceneAndDrawsCreatedModelLayer() async throws {
+        let source = #"""
+        const material = engine.registerAsset('materials/model-data.json');
+        export function init(value) {
+          const model = thisScene.createModelData({shapes:[{
+            vertexBuffer:new Float32Array([-4,-4,0,0.5,0.5, 4,-4,0,0.5,0.5, 0,4,0,0.5,0.5]),
+            indexBuffer:new Uint16Array([0,1,2]),vertexFormat:[IModelData.POSITION,IModelData.UV],material:material}],
+            boundingBoxMins:new Vec3(-4,-4,0),boundingBoxMaxs:new Vec3(4,4,0)});
+          const layer = thisScene.createLayer({id:700002,model:model,name:'unflagged',origin:'24 16 0',perspective:false});
+          return layer ? 0.5 : 0.25;
+        }
+        """#
+        let fixture = try modelDataFixture(script: source)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "unflagged-model-cache")))
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 48, height: 32)
+        layer.framebufferOnly = false
+        let renderer = try XCTUnwrap(driver.renderer)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertEqual(engine.bindings.flatMap(\.registeredAssets).map(\.flag), [false])
+        let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
+        await command.completed()
+        try await settle(driver, label: "unflagged registered material")
+        XCTAssertNil(command.error)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
+        let token = try XCTUnwrap(renderer.state.object("700002")?.modelDataToken)
+        XCTAssertNotNil(renderer.state.modelData(token))
+        XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.indexCount == 3 })
+        try modelDataPixel(readBack(renderer.backbuffer, device: device), width: 48, x: 24, y: 16, white: true)
+    }
+
     func testRegisteredModelMaterialFailureAbortsLoadAndStopsItsPreparedSound() async throws {
         let fixture = try modelDataFixture(script: """
         engine.registerAsset('materials/missing-model-data.json', true);

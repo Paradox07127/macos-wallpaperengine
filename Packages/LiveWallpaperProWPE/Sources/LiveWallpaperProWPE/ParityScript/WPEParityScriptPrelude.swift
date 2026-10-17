@@ -271,12 +271,13 @@ enum WPEParityScriptPrelude {
       get canvasSize() { return new Vec2(G[3], G[4]); },
       get screenResolution() { return new Vec2(G[5], G[6]); },
       userProperties: {},
-      registerAsset(path, flag) {
+      registerAsset(path, precache) {
         if (current) throw new SyntaxError('registerAsset can only be called from global scope.');
-        if (typeof path !== 'string' || compilingBinding < 0) return undefined;
+        if (typeof path !== 'string' || compilingBinding < 0) return null;
         const nul = assetIndexOf(path, '\u0000');
         const canonical = assetWellFormed(nul < 0 ? path : assetSlice(path, 0, nul));
-        return host.registerAsset(compilingBinding, canonical, typeof flag === 'boolean' ? flag : false) ? canonical : undefined;
+        return host.registerAsset(compilingBinding, canonical, typeof precache === 'boolean' ? precache : false)
+          ? canonical : null;
       },
       registerAudioBuffers(resolution) {
         if (!argument(resolution, 8)) return null;

@@ -58,7 +58,7 @@ extension WPEParitySceneDriverTests {
         let source = #"""
         const material = engine.registerAsset('materials/opaque-model-data.json\u0000suffix', true);
         if (material !== 'materials/opaque-model-data.json') throw Error('registered path was not canonical');
-        if (engine.registerAsset('materials/opaque-model-data.json\u0000other', false) !== undefined)
+        if (engine.registerAsset('materials/opaque-model-data.json\u0000other', false) !== null)
           throw Error('canonical path duplicate changed its first declaration');
         let layer;
         export function init(value) {

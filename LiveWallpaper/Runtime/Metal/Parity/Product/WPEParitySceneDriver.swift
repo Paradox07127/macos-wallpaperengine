@@ -374,9 +374,6 @@ final class WPEParitySceneDriver {
                     hasRegisteredAssets = script.engine.bindings.contains { !$0.registeredAssets.isEmpty }
                     try await script.engine.prepareRegisteredAssets { _, declarations in
                         for declaration in declarations {
-                            guard declaration.flag else {
-                                throw WPEParityModelDataFailure.safety("registered asset flag consumer is not qualified: \(declaration.path)")
-                            }
                             try await renderer.prepareRegisteredModelDataMaterial(declaration.path, shaders: shaders)
                             guard generation == loadGeneration else { throw CancellationError() }
                         }

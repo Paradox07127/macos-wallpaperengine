@@ -7,15 +7,15 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         let script = #"""
         const plain = 'materials/prefix.json';
         if (engine.registerAsset(plain + '\u0000suffix', true) !== plain) throw Error('NUL return');
-        if (engine.registerAsset(plain + '\u0000other', false) !== undefined) throw Error('NUL duplicate');
-        if (engine.registerAsset(plain, false) !== undefined) throw Error('plain duplicate');
+        if (engine.registerAsset(plain + '\u0000other', false) !== null) throw Error('NUL duplicate');
+        if (engine.registerAsset(plain, false) !== null) throw Error('plain duplicate');
         for (const path of ['materials/caf\u00e9.json', 'materials/cafe\u0301.json', 'materials/\ud83d\ude00.json']) {
           if (engine.registerAsset(path, true) !== path) throw Error('Unicode identity');
         }
         const malformed = 'materials/\ud800-high-\udc00.json\u0000\ud800';
         const repaired = 'materials/\ufffd-high-\ufffd.json';
         if (engine.registerAsset(malformed, true) !== repaired) throw Error('surrogate replacement');
-        if (engine.registerAsset(repaired, false) !== undefined) throw Error('repaired duplicate');
+        if (engine.registerAsset(repaired, false) !== null) throw Error('repaired duplicate');
         export function init() {
           try {
             engine.registerAsset({toString(){throw Error('coercion');}}, true);
@@ -75,8 +75,8 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         let script = #"""
         const path = 'materials/registered.json';
         if (engine.registerAsset(path, false) !== path) throw Error('first registration');
-        if (engine.registerAsset(path, true) !== undefined) throw Error('duplicate registration');
-        if (engine.registerAsset({toString(){throw Error('coercion');}}) !== undefined) throw Error('strict string');
+        if (engine.registerAsset(path, true) !== null) throw Error('duplicate registration');
+        if (engine.registerAsset({toString(){throw Error('coercion');}}) !== null) throw Error('strict string');
         let global = false;
         try { thisScene.createModelData({}); } catch(e) { global = e.message === 'createModelData cannot be called from global scope.'; }
         export function init() {
@@ -205,6 +205,41 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         XCTAssertEqual(recorded, ["2", "2"])
         XCTAssertNotNil(state.modelData(1))
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testSingleArgumentRegistrationReturnsPathAndRejectedRegistrationsReturnNull() throws {
+        let script = #"""
+        const model = 'models/registered.mdl';
+        if (engine.registerAsset(model) !== model) throw Error('single argument return');
+        if (engine.registerAsset(model) !== null) throw Error('duplicate return');
+        if (engine.registerAsset(model, true) !== null) throw Error('duplicate with flag return');
+        for (const value of [7, undefined, null, {}]) {
+          if (engine.registerAsset(value) !== null) throw Error('non-string return');
+        }
+        if (engine.registerAsset('particles/registered.json', 'yes') !== 'particles/registered.json') throw Error('flag type');
+        export function init() { return 2; }
+        """#
+        let source: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [["id": 1, "image": "models/a.json", "alpha": ["value": 1, "script": script]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        let state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64)
+        ))
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        let registered = try XCTUnwrap(engine.bindings.first).registeredAssets
+        XCTAssertEqual(registered.map(\.path), ["models/registered.mdl", "particles/registered.json"])
+        XCTAssertEqual(registered.map(\.flag), [false, false], "a missing or non-boolean precache argument is false")
     }
 }
 
