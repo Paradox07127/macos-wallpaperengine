@@ -225,7 +225,21 @@ enum WPEParityScriptLayers {
     };
     Object.defineProperty(EffectProto, 'visible', accessor(e => e.__s, { rel: 0, type: 6, angle: false }));
     const LayerProto = {
-      getParent() { if (!liveLayer(this)) return; return this.__parent < 0 ? null : table[this.__parent]; },
+      getParent() { if (!liveLayer(this)) return; return this.__parent < 0 ? undefined : table[this.__parent]; },
+      // 1401e00b0: an unresolved or pending parent clears the parent without an error.
+      setParent(parent, second, third) {
+        if (!liveLayer(this)) return;
+        if (typeof second === 'number' || typeof second === 'string' || second === true || third === true) {
+          host.log(1, 'setParent with an attachment or adjustTransforms is unsupported');
+          return;
+        }
+        let target = resolveLayer(parent) || null;
+        if (target && pending.has(target)) target = null;
+        const r = host.setParent(this.__index, target ? target.__index : -1);
+        if (r == null) return;
+        this.__parent = r === 1 && target ? target.__index : -1;
+        if (r === 0 && target) throw new Error('Invalid parent configuration.');
+      },
       getChildren() { if (!liveLayer(this)) return; return order.filter(l => l.__parent === this.__index); },
       getEffect(key) {
         if (!liveLayer(this)) return;

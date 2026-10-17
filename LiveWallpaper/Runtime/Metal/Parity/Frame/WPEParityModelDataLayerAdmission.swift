@@ -129,17 +129,24 @@ enum WPEParityModelDataLayerAdmission {
         }
     }
 
-    /// Explicit numeric identity and literal TRS form the bounded warm model transaction. Other classes,
+    /// Literal identity, TRS and perspective form the bounded warm model transaction. Other classes,
     /// parents/effects/placement and new scripted dependencies require their actual resource adoption first.
     static func create(_ json: String, state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
         do {
-            guard let config = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
-                  Set(config.keys).isSubset(of: ["id", "name", "model", "origin", "scale", "angles", "visible"]),
+            guard var config = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+                  Set(config.keys).isSubset(of: ["id", "name", "model", "origin", "scale", "angles", "visible",
+                                                 "perspective"]),
                   config.values.allSatisfy(isLiteral),
-                  let number = config["id"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-                  let id = UInt32(exactly: number.doubleValue), id > 0 else {
+                  config["perspective"].map({ ($0 as? NSNumber).map(isBool) == true }) ?? true else {
                 throw WPEParityModelDataFailure.safety("dynamic model layer configuration is outside the admitted literal subset")
             }
+            // 1401a38f0.c:21-41: only a nonzero numeric id is explicit; anything else takes the counter.
+            let explicitID = (config["id"] as? NSNumber).flatMap { isBool($0) ? nil : UInt64(exactly: $0.doubleValue) }
+                .flatMap { $0 > 0 ? $0 : nil }
+            guard let id = UInt32(exactly: explicitID ?? state.automaticObjectID()) else {
+                throw WPEParityModelDataFailure.safety("dynamic model layer requires a UInt32 id")
+            }
+            config["id"] = NSNumber(value: id)
             for field in ["origin", "angles"] {
                 if let value = config[field], WPEValueParser.vector3(value) == nil {
                     throw WPEParityModelDataFailure.safety("dynamic model layer requires a literal \(field) vector")
@@ -154,11 +161,16 @@ enum WPEParityModelDataLayerAdmission {
                 throw WPEParityModelDataFailure.safety("numeric model has no prepared canonical shape consumer")
             }
             try state.appendModelDataLayer(descriptor)
-            return .init(id: descriptor.id, configJSON: json)
+            let prepared = try JSONSerialization.data(withJSONObject: config)
+            return String(bytes: prepared, encoding: .utf8).map { .init(id: descriptor.id, configJSON: $0) }
         } catch {
             Logger.warning("ModelData layer admission: \(error)", category: .wpeRender)
             return nil
         }
+    }
+
+    private static func isBool(_ number: NSNumber) -> Bool {
+        CFGetTypeID(number) == CFBooleanGetTypeID()
     }
 
     private static func isLiteral(_ value: Any) -> Bool {

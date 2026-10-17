@@ -1131,6 +1131,21 @@ public final class WPEParityScriptEngine {
             flushWrites(to: &state.pointee)
             return sort(layers[index].id, position, &state.pointee)
         }
+        // `parentIndex` −1 clears the parent. 1 accepted, 0 rejected, nil when nothing ran.
+        let setParent: @convention(block) (Double, Double) -> NSNumber? = { [weak self] index, parentIndex in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count) else { return nil }
+            guard let state = activeState else {
+                configuration.log(1, "setParent is unsupported outside a scene callback")
+                return nil
+            }
+            var parentID: String?
+            if parentIndex != -1 {
+                guard let parent = Self.checkedLayerIndex(parentIndex, count: layers.count) else { return nil }
+                parentID = layers[parent].id
+            }
+            flushWrites(to: &state.pointee)
+            return NSNumber(value: state.pointee.setParent(layers[index].id, to: parentID) ? 1 : 0)
+        }
         let registerAudio: @convention(block) (Double) -> Void = { [weak self] resolution in
             self?.audioResolutions.insert(Int(resolution))
         }
@@ -1308,6 +1323,7 @@ public final class WPEParityScriptEngine {
         set("destroyed", destroyed)
         set("canDestroyLayer", canDestroy)
         set("sortLayer", sort)
+        set("setParent", setParent)
         let registerAsset: @convention(block) (Double, String, Bool) -> Bool = { [weak self] binding, path, flag in
             guard let self, let index = Int(exactly: binding), bindings.indices.contains(index) else { return false }
             guard !bindings[index].registeredAssets.contains(where: { $0.path.utf8.elementsEqual(path.utf8) }) else { return false }

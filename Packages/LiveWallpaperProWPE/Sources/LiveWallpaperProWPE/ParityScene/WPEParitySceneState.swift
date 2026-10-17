@@ -179,10 +179,7 @@ public struct WPEParitySceneState: Sendable {
             }
             number = explicitID
         } else {
-            repeat {
-                lastAutomaticID += 1
-            } while loadedIDs.contains(String(lastAutomaticID)) || indexByID[String(lastAutomaticID)] != nil
-            number = lastAutomaticID
+            number = automaticObjectID()
         }
         let id = String(number)
         var object = objects[template]
@@ -213,6 +210,50 @@ public struct WPEParitySceneState: Sendable {
         transformGeneration += 1
         visibilityGeneration += 1
         return number
+    }
+
+    /// Advances 1401a38f0's counter past every loaded or held id (1401a38f0.c:44-102).
+    public mutating func automaticObjectID() -> UInt64 {
+        repeat {
+            lastAutomaticID += 1
+        } while loadedIDs.contains(String(lastAutomaticID)) || indexByID[String(lastAutomaticID)] != nil
+        return lastAutomaticID
+    }
+
+    /// Nil for an object with no slot or no parent.
+    public func parentID(of id: String) -> String? {
+        indexByID[id].flatMap { parents[$0] }.map { ids[$0] }
+    }
+
+    /// 1401de750 without adjustTransforms or an attachment. False for a dead or unknown object or parent, and
+    /// for a parent that is the object or below it, which leaves the object parentless.
+    @discardableResult
+    public mutating func setParent(_ id: String, to parentID: String?) -> Bool {
+        guard let index = index(of: id) else { return false }
+        var parent: Int?
+        if let parentID {
+            guard let resolved = self.index(of: parentID) else { return false }
+            parent = resolved
+        }
+        guard parents[index] != parent else { return true }
+        // WPE rejects only itself; a cycle is rejected too because the frame builder would recurse through it.
+        var ancestor = parent
+        var steps = 0
+        while let current = ancestor, steps <= objects.count {
+            if current == index {
+                parent = nil
+                break
+            }
+            ancestor = parents[current]
+            steps += 1
+        }
+        let accepted = parent != nil || parentID == nil
+        guard parents[index] != parent else { return accepted }
+        parents[index] = parent
+        membershipGeneration += 1
+        transformGeneration += 1
+        visibilityGeneration += 1
+        return accepted
     }
 
     /// Appends one already parsed, admitted ModelData layer to a private candidate; all previous slots, values

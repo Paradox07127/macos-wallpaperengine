@@ -216,6 +216,51 @@ extension WPEParitySceneDriverTests {
         try modelDataPixel(readBack(current.backbuffer, device: device), width: 192, x: 144, y: 64, white: false)
     }
 
+    /// An id-less createLayer takes the next free id; setParent onto a passthrough draws the mesh in its composite.
+    func testCreatedModelLayerWithoutIDReparentedOntoComposeLayerDrawsInsideIt() async throws {
+        let source = #"""
+        const material = engine.registerAsset('materials/model-data.json', true);
+        export function init(value) {
+          const model = thisScene.createModelData({shapes:[{
+            vertexBuffer:new Float32Array([-4,-4,0,0.5,0.5, 4,-4,0,0.5,0.5, 0,4,0,0.5,0.5]),
+            indexBuffer:new Uint16Array([0,1,2]),vertexFormat:[IModelData.POSITION,IModelData.UV],material:material}],
+            boundingBoxMins:new Vec3(-4,-4,0),boundingBoxMaxs:new Vec3(4,4,0)});
+          const layer = thisScene.createLayer({model:model,name:'child',origin:new Vec3(0,0,0),perspective:false});
+          layer.setParent(thisScene.getLayer('canvas'), false);
+          return 0;
+        }
+        """#
+        let fixture = try modelDataFixture(script: source, extraObjects: [[
+            "id": 2, "name": "canvas", "image": "models/util/composelayer.json", "origin": "36 16 0",
+            "size": "16 16", "copybackground": false,
+        ]])
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "reparented-model-cache")))
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 48, height: 32)
+        layer.framebufferOnly = false
+        let renderer = try XCTUnwrap(driver.renderer)
+        let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
+        await command.completed()
+        try await settle(driver, label: "reparented ModelData layer")
+        XCTAssertNil(command.error)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(renderer.state.parentID(of: "3"), "2")
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        let pixels = try readBack(renderer.backbuffer, device: device)
+        // Canvas pixel (x, y), y up.
+        modelDataPixel(pixels, width: 48, x: 36, y: 31 - 16, white: true)
+        modelDataPixel(pixels, width: 48, x: 0, y: 31 - 0, white: false)
+    }
+
     func testRegisteredModelMaterialFailureAbortsLoadAndStopsItsPreparedSound() async throws {
         let fixture = try modelDataFixture(script: """
         engine.registerAsset('materials/missing-model-data.json', true);
@@ -299,7 +344,7 @@ extension WPEParitySceneDriverTests {
         let reads: ModelDataAssetReads
     }
 
-    private func modelDataFixture(script: String, withSound: Bool = false,
+    private func modelDataFixture(script: String, withSound: Bool = false, extraObjects: [[String: Any]] = [],
                                   cancellation: ModelDataLoadCancellation? = nil) throws -> ModelDataFixture {
         let original: WPEParityProgramAssets
         do {
@@ -361,7 +406,7 @@ extension WPEParitySceneDriverTests {
             return files[path]
         }] + original.sources)
         var objects: [[String: Any]] = [["id": 1, "name": "controller", "image": "models/util/solidlayer.json",
-                                         "size": "1 1", "alpha": ["value": 0, "script": script]]]
+                                         "size": "1 1", "alpha": ["value": 0, "script": script]]] + extraObjects
         var soundResolver: WPEMultiRootResourceResolver?
         if withSound {
             let directory = try XCTUnwrap(TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR"))

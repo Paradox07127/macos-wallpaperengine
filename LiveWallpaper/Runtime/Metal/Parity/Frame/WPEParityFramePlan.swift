@@ -170,6 +170,24 @@ struct WPEParityFramePlan {
             _ = Self.programs(frame, scene: scene, cache: &cache)
             constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
         }
+        // A childless passthrough draws nothing until a script parents a layer onto it, and programs compile only
+        // here: give each one a passthrough placeholder child so the program publishing its composite resolves.
+        var parented = Self.loaded(scene.scene(logicalViewport: SIMD2(width, height)))
+        let parentIDs = Set(parented.objects.compactMap(\.parentID))
+        let placeholders = parented.objects.filter { $0.passthrough && !parentIDs.contains($0.id) }.map { object in
+            var child = object
+            (child.id, child.parentID) = (object.id + "/child", object.id)
+            return child
+        }
+        if !placeholders.isEmpty {
+            parented.objects += placeholders
+            let frame = try WPEParityFrameComposer.compose(
+                scene: parented, post: post, frameIndex: 0, physicalBackbufferSize: physicalBackbufferSize,
+                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+            )
+            _ = Self.programs(frame, scene: scene, cache: &cache)
+            constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
+        }
 
         // Main prepares utility materials from fixed quality/HDR switches, independently of live bloom.
         // Resolve both reachable branches in the existing cache; no texture or second artifact store is made.
@@ -368,6 +386,18 @@ struct WPEParityFramePlan {
                 description.objects.append(object)
             }
         }
+        // Script parents: groups are not scene objects, so the nearest object ancestor owns the child.
+        let objectIDs = Set(description.objects.map(\.id))
+        for index in description.objects.indices {
+            let id = description.objects[index].id
+            guard state.index(of: id) != nil else { continue }
+            var seen: Set<String> = [id]
+            var parent = state.parentID(of: id)
+            while let current = parent, !objectIDs.contains(current), seen.insert(current).inserted {
+                parent = state.parentID(of: current)
+            }
+            description.objects[index].parentID = parent.flatMap { objectIDs.contains($0) ? $0 : nil }
+        }
         let commonRanks = Dictionary(uniqueKeysWithValues: state.commonOrder.enumerated().map { ($0.element, $0.offset) })
         for index in description.objects.indices {
             if let rank = commonRanks[description.objects[index].id] {
@@ -410,9 +440,18 @@ struct WPEParityFramePlan {
                 continue
             }
             guard object.modelDataToken != nil else { continue }
-            transforms.append(WPEParityLayerTransform(
-                id: id, origin: object.origin, angles: object.angles, scale: object.scale
-            ))
+            var transform = WPEParityLayerTransform(id: id, origin: object.origin, angles: object.angles,
+                                                    scale: object.scale)
+            if case let .vector(perspective)? = state.scriptField("perspective", of: id) {
+                transform.perspective = perspective.x != 0
+            }
+            transforms.append(transform)
+        }
+        for index in transforms.indices where state.index(of: transforms[index].id) != nil {
+            let parentID = state.parentID(of: transforms[index].id)
+            if transforms[index].parentID != parentID {
+                (transforms[index].parentID, transforms[index].attachment) = (parentID, nil)
+            }
         }
         return WPEParityLayerTransformSet(camera: existing.camera, layers: transforms,
                                           puppetModels: scene.puppetModels)
