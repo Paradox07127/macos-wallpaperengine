@@ -6,6 +6,10 @@ actor WPEParityShaderDiskCache {
     private static let stageInName = "vertex-stage-in.metallib"
     private let rootURL: URL
     private let sizeBudget: Int
+    /// Entry directory name → last access and bytes on disk; nil until the first write scans the root.
+    /// Entries another process adds after that scan stay uncounted until the next launch.
+    private var index: [String: (accessedAt: Date, bytes: Int)]?
+    private var indexedBytes = 0
 
     init(cachesURL: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0],
          sizeBudget: Int = 64 * 1024 * 1024) {
@@ -46,6 +50,7 @@ actor WPEParityShaderDiskCache {
             }
             // Directory mtime records last access; creation time lives in the manifest.
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: directory.path)
+            index?[key.rawValue]?.accessedAt = Date()
             return WPEParityCompiledStages(stages: compiled)
         } catch {
             remove(key)
@@ -55,6 +60,7 @@ actor WPEParityShaderDiskCache {
 
     func write(_ compiled: WPEParityCompiledStages, for key: WPEParityShaderKey) {
         guard sizeBudget > 0 else { return }
+        loadIndexIfNeeded()
         let fileManager = FileManager.default
         let temporary = rootURL.appendingPathComponent(".\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: temporary) }
@@ -74,9 +80,13 @@ actor WPEParityShaderDiskCache {
                 }
             }
             let manifest = WPEParityShaderCacheManifest(key: key, stages: stages, files: files)
-            try JSONEncoder().encode(manifest).write(to: temporary.appendingPathComponent("manifest.json"))
+            let manifestData = try JSONEncoder().encode(manifest)
+            try manifestData.write(to: temporary.appendingPathComponent("manifest.json"))
             if read(key) == nil {
                 try fileManager.moveItem(at: temporary, to: entryURL(key))
+                let bytes = files.values.reduce(manifestData.count) { $0 + $1.byteCount }
+                let replaced = index?.updateValue((Date(), bytes), forKey: key.rawValue)
+                indexedBytes += bytes - (replaced?.bytes ?? 0)
             }
             evict()
         } catch {
@@ -86,34 +96,41 @@ actor WPEParityShaderDiskCache {
 
     func remove(_ key: WPEParityShaderKey) {
         try? FileManager.default.removeItem(at: entryURL(key))
+        if let removed = index?.removeValue(forKey: key.rawValue) {
+            indexedBytes -= removed.bytes
+        }
     }
 
     private func entryURL(_ key: WPEParityShaderKey) -> URL {
         rootURL.appendingPathComponent(key.rawValue, isDirectory: true)
     }
 
-    private func evict() {
+    private func loadIndexIfNeeded() {
+        guard index == nil else { return }
         let fileManager = FileManager.default
-        guard let directories = try? fileManager.contentsOfDirectory(
+        let directories = (try? fileManager.contentsOfDirectory(
             at: rootURL, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return }
-        var entries: [(url: URL, accessedAt: Date, bytes: Int)] = []
+        )) ?? []
+        var entries: [String: (accessedAt: Date, bytes: Int)] = [:]
         for directory in directories {
             guard let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey]),
                   values.isDirectory == true,
                   let files = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
             let bytes = files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) }
-            entries.append((directory, values.contentModificationDate ?? .distantPast, bytes))
+            entries[directory.lastPathComponent] = (values.contentModificationDate ?? .distantPast, bytes)
         }
-        var total = entries.reduce(0) { $0 + $1.bytes }
-        for entry in entries.sorted(by: { $0.accessedAt < $1.accessedAt }) where total > sizeBudget {
-            do {
-                try fileManager.removeItem(at: entry.url)
-                total -= entry.bytes
-            } catch {
-                continue
-            }
+        index = entries
+        indexedBytes = entries.values.reduce(0) { $0 + $1.bytes }
+    }
+
+    private func evict() {
+        guard let entries = index, indexedBytes > sizeBudget else { return }
+        for (name, entry) in entries.sorted(by: { $0.value.accessedAt < $1.value.accessedAt }) where indexedBytes > sizeBudget {
+            try? FileManager.default.removeItem(at: rootURL.appendingPathComponent(name, isDirectory: true))
+            // Dropped even when removal fails (usually already deleted elsewhere); a kept phantom would be counted forever.
+            index?[name] = nil
+            indexedBytes -= entry.bytes
         }
     }
 }

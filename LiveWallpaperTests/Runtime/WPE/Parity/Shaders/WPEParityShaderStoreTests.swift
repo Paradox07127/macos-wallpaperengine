@@ -232,6 +232,31 @@ struct WPEParityShaderStoreTests {
         #expect(await tiny.read(request(4).key) == nil)
     }
 
+    @Test func evictionCountsEntriesLeftByAnEarlierInstance() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = Compiler()
+        let first = request(1), second = request(2), third = request(3)
+        let earlier = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: directory))
+        _ = try await earlier.artifact(for: first)
+        _ = try await earlier.artifact(for: second)
+        let budget = try byteCount(in: entry(first, in: directory)) + byteCount(in: entry(second, in: directory)) + 32
+        for (request, age) in [(first, 100.0), (second, 50.0)] {
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -age)],
+                                                  ofItemAtPath: entry(request, in: directory).path)
+        }
+        let later = WPEParityShaderStore(compiler: compiler,
+                                         diskCache: WPEParityShaderDiskCache(cachesURL: directory, sizeBudget: budget))
+        _ = try await later.artifact(for: third)
+        #expect(!FileManager.default.fileExists(atPath: entry(first, in: directory).path))
+        #expect(FileManager.default.fileExists(atPath: entry(second, in: directory).path))
+        #expect(FileManager.default.fileExists(atPath: entry(third, in: directory).path))
+        let root = directory.appendingPathComponent("wpe-parity-shaders/v1", isDirectory: true)
+        let total = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            .reduce(0) { try $0 + byteCount(in: $1) }
+        #expect(total <= budget)
+    }
+
     @Test func invalidCompilerOutputIsNotCached() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
