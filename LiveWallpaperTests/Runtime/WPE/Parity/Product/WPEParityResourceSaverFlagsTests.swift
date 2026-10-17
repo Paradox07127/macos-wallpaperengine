@@ -5,9 +5,9 @@ import XCTest
 
 final class WPEParityResourceSaverFlagsTests: XCTestCase {
     private static let defaultFlags = WPEParityResourceSaverFlags(textureCompression: true, renderTargetAliasing: false,
-                                                                  offscreenScaleTier: 0, sceneMirrorRendering: false)
+                                                                  offscreenScaleTier: 0, sceneMirrorRendering: true)
 
-    func testUnsetPreferencesResolveCompressionOnAndOthersOff() throws {
+    func testUnsetPreferencesResolveCompressionAndMirrorOnAndOthersOff() throws {
         let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
         defer { suite.discard() }
         XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.defaultFlags)
@@ -24,16 +24,16 @@ final class WPEParityResourceSaverFlagsTests: XCTestCase {
         let cases: [(String, Any, WPEParityResourceSaverFlags)] = [
             (WPEParityResourceSaverFlags.textureCompressionDefaultsKey, false,
              .init(textureCompression: false, renderTargetAliasing: false, offscreenScaleTier: 0,
-                   sceneMirrorRendering: false)),
+                   sceneMirrorRendering: true)),
             (WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey, true,
              .init(textureCompression: true, renderTargetAliasing: true, offscreenScaleTier: 0,
-                   sceneMirrorRendering: false)),
+                   sceneMirrorRendering: true)),
             (WPEParityResourceSaverFlags.offscreenScaleTierDefaultsKey, 3,
              .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 3,
-                   sceneMirrorRendering: false)),
-            (WPEParityResourceSaverFlags.sceneMirrorRenderingDefaultsKey, true,
-             .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 0,
                    sceneMirrorRendering: true)),
+            (WPEParityResourceSaverFlags.sceneMirrorRenderingDefaultsKey, false,
+             .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 0,
+                   sceneMirrorRendering: false)),
         ]
         for (key, value, expected) in cases {
             let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
@@ -50,9 +50,17 @@ final class WPEParityResourceSaverFlagsTests: XCTestCase {
             defer { suite.discard() }
             suite.defaults.set(value, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
             suite.defaults.set(value, forKey: WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey)
+            suite.defaults.set(value, forKey: WPEParityResourceSaverFlags.sceneMirrorRenderingDefaultsKey)
             XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.defaultFlags,
                            "\(value)")
         }
+    }
+
+    func testExplicitZeroTierStaysOff() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
+        defer { suite.discard() }
+        suite.defaults.set(0, forKey: WPEParityResourceSaverFlags.offscreenScaleTierDefaultsKey)
+        XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults).offscreenScaleTier, 0)
     }
 
     func testOutOfRangeOrNonIntegralTierResolvesToZero() throws {

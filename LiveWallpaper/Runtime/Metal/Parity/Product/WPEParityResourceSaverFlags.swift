@@ -2,7 +2,7 @@
 import CoreFoundation
 import Foundation
 
-/// Resource-saving switches for the parity renderer; unset or malformed values resolve compression on, the rest off.
+/// Parity resource savers; unset or malformed values resolve compression and scene mirroring on, the rest off (tier 0).
 struct WPEParityResourceSaverFlags: Equatable, Sendable {
     static let textureCompressionDefaultsKey = "loomscreen.wallpapers.parityTextureCompression.v1"
     static let renderTargetAliasingDefaultsKey = "loomscreen.wallpapers.parityRenderTargetAliasing.v1"
@@ -19,7 +19,7 @@ struct WPEParityResourceSaverFlags: Equatable, Sendable {
         Self(textureCompression: bool(textureCompressionDefaultsKey, defaults, default: true),
              renderTargetAliasing: bool(renderTargetAliasingDefaultsKey, defaults),
              offscreenScaleTier: tier(defaults),
-             sceneMirrorRendering: bool(sceneMirrorRenderingDefaultsKey, defaults))
+             sceneMirrorRendering: bool(sceneMirrorRenderingDefaultsKey, defaults, default: true))
     }
 
     private static func bool(_ key: String, _ defaults: UserDefaults, default fallback: Bool = false) -> Bool {
