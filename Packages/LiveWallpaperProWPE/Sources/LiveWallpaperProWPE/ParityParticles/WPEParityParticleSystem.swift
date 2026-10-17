@@ -371,6 +371,24 @@ public struct WPEParityParticleSystem {
         processSpawnEvents()
     }
 
+    // System flags 0x10/0x20/0x40/0x80 opt out of the instance speed, count, lifetime and size, root or nested alike
+    // (1401c5490.c:925, 961, 3567, 6953, 8026, 9687).
+    var speedScale: Float {
+        config.flags & 0x10 == 0 ? instance.speed : 1
+    }
+
+    var countScale: Float {
+        config.flags & 0x20 == 0 ? instance.count : 1
+    }
+
+    var lifetimeScale: Float {
+        config.flags & 0x40 == 0 ? instance.lifetime : 1
+    }
+
+    var sizeScale: Float {
+        config.flags & 0x80 == 0 ? instance.size : 1
+    }
+
     public var isPlaying: Bool {
         !paused && isAlive
     }
@@ -605,7 +623,7 @@ public struct WPEParityParticleSystem {
                 break
             }
         }
-        let horizon = max(max(longest ?? 1, 0.001) * instance.lifetime, 0.001)
+        let horizon = max(max(longest ?? 1, 0.001) * lifetimeScale, 0.001)
         return horizon.isFinite ? horizon : nil
     }
 
@@ -827,7 +845,7 @@ public struct WPEParityParticleSystem {
             // A hot count=0 does not kill live slots, but it must allow the finished subtree into the pool.
             let pendingBurst = state.burstPending && emitter.instantaneous > 0
             let idle = state.delayLeft <= 0 && state.durationLeft <= 0
-                && emitter.rate * instance.count <= 0 && !pendingBurst && !emitter.periodic
+                && emitter.rate * countScale <= 0 && !pendingBurst && !emitter.periodic
             if !state.disabled, !idle {
                 return false
             }
@@ -891,9 +909,9 @@ public struct WPEParityParticleSystem {
         for (index, initializer) in config.initializers.enumerated() {
             initialize(slot, initializer, index: index, birthBasis: basis ?? matrix_identity_float3x3)
         }
-        lifetime[slot] = max(lifetime[slot] * instance.lifetime, 0.001)
-        initialSize[slot] *= instance.size
-        velocity[slot] *= instance.speed
+        lifetime[slot] = max(lifetime[slot] * lifetimeScale, 0.001)
+        initialSize[slot] *= sizeScale
+        velocity[slot] *= speedScale
         size[slot] = initialSize[slot]
         color[slot] = initialColor[slot]
         alpha[slot] = initialAlpha[slot]
@@ -1022,7 +1040,7 @@ public struct WPEParityParticleSystem {
             alpha[slot] *= blended(Math.alphaFade(t: t, fadeIn: fadeIn, fadeOut: fadeOut))
         case let .sizeChange(ramp):
             // The instance size also scales sizechange start/end (1401c5490.c:9694-9719, 1d15a0.c:168-193).
-            size[slot] *= blended(instance.size * Math.ramp(
+            size[slot] *= blended(sizeScale * Math.ramp(
                 t: t, startTime: ramp.startTime, endTime: ramp.endTime, start: ramp.start, end: ramp.end
             ))
         case let .alphaChange(ramp):

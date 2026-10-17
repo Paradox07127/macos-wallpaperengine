@@ -854,9 +854,7 @@ final class ParityParticleSceneTests: XCTestCase {
 
     func testN1QualificationRejectsNewBranchesWithoutChangingHealthySiblings() throws {
         let plain = Self.burst(1)
-        let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let cases: [(text: String, edge: String, field: String)] = [
-            (periodic, "", "emitter"),
             (plain.replacingOccurrences(of: "lifetimerandom", with: "unprovedinitializer"), "", "component"),
             (plain, #", "angles": "invalid""#, "angles"),
             (plain, #", "angles": "1e40 0 0""#, "angles"),
@@ -864,7 +862,7 @@ final class ParityParticleSceneTests: XCTestCase {
             (plain, #", "scale": "2 0 1""#, "scale"),
             (plain, #", "scale": "1e40 1 1""#, "scale"),
             (plain, #", "scale": "invalid""#, "scale"),
-            (plain, #", "type": "static", "flags": 2"#, "child.flags"),
+            (plain, #", "type": "static", "flags": 4"#, "child.flags"),
         ]
         for (bad, edge, field) in cases {
             let parent = Self.burst(1, lifetime: 0.005, extra: #", "children": [{"name": "legacy"}, {"name": "event", "type": "eventdeath"}]"#)
@@ -929,6 +927,9 @@ final class ParityParticleSceneTests: XCTestCase {
         let plain = Self.burst(1)
         let candidates: [(String, String)] = [
             (Self.burst(1, extra: #", "flags": 1"#), ""),
+            (Self.burst(1, extra: #", "flags": 248"#), ""),
+            (plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#), ""),
+            (plain, #", "type": "static", "flags": 2"#),
             (Self.burst(1, origin: "0 0 1", extra: #", "operator": [{"name": "maintaindistancetocontrolpoint", "distance": 1}]"#), ""),
             (Self.burst(1, origin: "0 0 1", extra: """
             , "controlpoint": [{"id": 1, "offset": "4 0 0"}],
@@ -964,7 +965,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 XCTAssertEqual(batches.map(\.vertices.count), [1, 1])
                 XCTAssertTrue(batches.allSatisfy { Support.floats($0.vertices.bytes, at: 0, count: 3).allSatisfy(\.isFinite) })
                 let spawned = try XCTUnwrap(Self.root(scene)?.eventChildren[0].first)
-                if !edge.isEmpty {
+                if edge == #", "flags": 1"# {
                     XCTAssertEqual(spawned.children[0].controlPointCount, 8, "22c3c0 bulk flag forces eight CP slots")
                 }
             }
@@ -1065,12 +1066,10 @@ final class ParityParticleSceneTests: XCTestCase {
 
     func testN2RejectsAnUnprovedFollowEdgeWithFieldReasonsWithoutPruningHealthySiblings() throws {
         let plain = Self.burst(1)
-        let periodic = plain.replacingOccurrences(of: #""instantaneous": 1"#, with: #""instantaneous": 1, "flags": 4"#)
         let cases: [(child: String, edge: String, field: String)] = [
-            (periodic, #""type": "eventfollow""#, "emitter"),
             (plain, #""type": "eventfollow", "angles": "invalid""#, "angles"),
             (plain, #""type": "eventfollow", "scale": "2 0 1""#, "scale"),
-            (plain, #""type": "eventfollow", "flags": 2"#, "child.flags"),
+            (plain, #""type": "eventfollow", "flags": 4"#, "child.flags"),
             (plain, #""flags": 2"#, "type"),
         ]
         for (bad, edge, field) in cases {
@@ -1120,8 +1119,8 @@ final class ParityParticleSceneTests: XCTestCase {
                                                                   "bad": plain, "good": plain])
         let periodicRoot = try XCTUnwrap(Self.root(periodicScene))
         XCTAssertEqual(periodicRoot.children.count, 1)
-        XCTAssertTrue(periodicRoot.eventChildren.isEmpty)
-        XCTAssertTrue(periodicRoot.config.unsupportedChildren.contains { $0.field == "emitter[0].flags" })
+        XCTAssertEqual(periodicRoot.eventChildren.count, 1, "a periodic ancestor admits its follow child")
+        XCTAssertTrue(periodicRoot.config.unsupportedChildren.isEmpty)
     }
 
     func testLocalStaticChildUsesRadianXYZRotationAndNegativeScaleOnlyInItsBatchModel() throws {

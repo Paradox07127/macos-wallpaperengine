@@ -275,7 +275,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         material = materialPath.flatMap(resolveMaterial) ?? material
         maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
         startTime = JSON.number(json["starttime"]) ?? 0
-        flags = Int(JSON.number(json["flags"]) ?? 0)
+        // Only the low byte is kept (E 0x1401c56e9).
+        flags = Int(JSON.number(json["flags"]) ?? 0) & 0xFF
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
         sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
@@ -595,12 +596,6 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         func reject(_ field: String, _ reason: String) {
             issues.append(.init(path: path, asset: asset, field: field, reason: reason))
         }
-        if flags & ~15 != 0 {
-            reject("flags", "unsupported system flag bits")
-        }
-        for (index, emitter) in emitters.enumerated() where emitter.periodic {
-            reject("emitter[\(index)].flags", "periodic emission and child restart are unsupported")
-        }
         for (index, point) in controlPoints.enumerated() {
             if point.flags & ~0x1000F != 0 {
                 reject("controlpoint[\(index)].flags", "unknown control point flag bits")
@@ -695,8 +690,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             unsupportedChildren += placementIssues
             return
         }
-        if flags & ~1 != 0 {
-            next.issues.append(edgeIssue("child.flags", "parent-period restart and unknown child flag bits remain unsupported"))
+        // Bit 0 copies the parent's live positions into the child's CPs, bit 1 restarts it with each parent period.
+        if flags & ~3 != 0 {
+            next.issues.append(edgeIssue("child.flags", "unknown child flag bits remain unsupported"))
         }
         let child = WPEParityParticleConfig(json: json, context: next, is3D: is3D, resolveChild: resolveChild,
                                             resolveMaterial: resolveMaterial)

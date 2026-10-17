@@ -196,7 +196,7 @@ struct ParitySceneParticleTests {
             ],
             "particles/leaf.json": ["maxcount": 5, "material": "materials/particle.json",
                                     "renderer": [["name": "sprite"]]],
-            "particles/unknown-flags.json": ["flags": 16, "material": "materials/particle.json",
+            "particles/unknown-flags.json": ["controlpoint": [["flags": 32]], "material": "materials/particle.json",
                                              "renderer": [["name": "sprite"]]],
         ]
         try ParticleSceneFiles.withScene(objects, files: files) { program, document in
@@ -243,7 +243,7 @@ struct ParitySceneParticleTests {
             #expect(program.scene.diagnostics.contains { diagnostic in
                 if case let .particleChildUnsupported(id, path, asset, field, _) = diagnostic {
                     return id == "5" && path == [.eventGroup(1), .staticChild(1)]
-                        && asset == "particles/unknown-flags.json" && field == "flags"
+                        && asset == "particles/unknown-flags.json" && field == "controlpoint[0].flags"
                 }
                 return false
             })
@@ -276,9 +276,7 @@ struct ParitySceneParticleTests {
             "legacy": ["maxcount": 1, "material": "materials/particle.json"],
             "event": ["maxcount": 1, "material": "materials/particle.json", "renderer": [],
                       "children": [["name": "bad"], ["name": "healthy"]]],
-            // CP history now has consumers; periodic emission still requires native verification before admission.
-            "bad": ["maxcount": 1, "material": "materials/particle.json",
-                    "emitter": [["name": "boxrandom", "flags": 4]]],
+            "bad": ["maxcount": 1, "material": "materials/particle.json", "controlpoint": [["flags": 32]]],
             "healthy": ["maxcount": 1, "material": "materials/particle.json"],
         ]
         try ParticleSceneFiles.withScene([["id": 5, "name": "fx", "particle": "particles/fx.json"]], files: files) { program, document in
@@ -287,7 +285,7 @@ struct ParitySceneParticleTests {
             #expect(program.scene.diagnostics.contains { diagnostic in
                 if case let .particleChildUnsupported(id, path, asset, field, reason) = diagnostic {
                     return id == "5" && path == [.eventGroup(0), .staticChild(0)] && asset == "bad"
-                        && field == "emitter[0].flags" && !reason.isEmpty
+                        && field == "controlpoint[0].flags" && !reason.isEmpty
                 }
                 return false
             })
