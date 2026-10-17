@@ -1,5 +1,10 @@
 import Foundation
 
+enum MonitorAgentPhase: String, Codable, Sendable {
+    case responding, executing, waitingForInput, waitingForApproval, waitingForAgents
+    case completed, interrupted, failed, unknown
+}
+
 // MARK: - Monitor wallpaper data contract (schema v2)
 
 

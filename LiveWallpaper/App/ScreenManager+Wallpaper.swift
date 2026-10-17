@@ -290,8 +290,18 @@ extension ScreenManager {
 
     func notifyWallpaperSessionChanged() {
         commitWallpaperSessionState(includePollingRefresh: true)
+        syncSystemWallpaperSelection()
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.reconcileEnvironmentOverlays()
+        }
+    }
+
+    func syncSystemWallpaperSelection() {
+        if let onWallpaperSelectionChange {
+            for screen in screens where screen.runtimeSession != nil {
+                guard let configuration = getConfiguration(for: screen) else { continue }
+                onWallpaperSelectionChange(configuration, configuration.wpeOrigin?.title ?? screen.name)
+            }
         }
     }
 

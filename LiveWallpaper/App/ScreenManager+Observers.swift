@@ -557,7 +557,13 @@ extension ScreenManager {
         let globalSettings = SettingsManager.shared.loadGlobalSettings()
         guard globalSettings.preservePlaybackOnLock else { return }
 
+        let heartbeatURL = SystemWallpaperPaths.heartbeatURL(hostBundleID: Bundle.main.bundleIdentifier ?? "com.loomscreen")
+        let native = (try? Data(contentsOf: heartbeatURL)).flatMap {
+            try? SystemWallpaperCoding.decoder.decode(SystemWallpaperHeartbeat.self, from: $0)
+        }
+
         for screen in screens {
+            guard native?.ownsDisplay(screen.id, now: Date()) != true else { continue }
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
                   config.wallpaperType == .video,
                   config.setAsLockScreen else { continue }

@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperProWPE
+import Metal
 
 extension WPEPreparedRenderPipeline {
     func resolvingRenderContracts(

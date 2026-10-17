@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import IOKit.ps
 import os.log
@@ -131,6 +132,43 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     private let observerLock = NSLock()
     private var libraryObserver: LibraryChangeObserver?
     private var powerObserver: PowerConditionObserver?
+    private var sessionObserver: SessionConditionObserver?
+
+    private final class SessionConditionObserver: @unchecked Sendable {
+        private let registry: SurfaceRegistry
+        private let store: SharedLibraryStore
+        private var observers: [NSObjectProtocol] = []
+
+        init(registry: SurfaceRegistry, store: SharedLibraryStore) {
+            self.registry = registry
+            self.store = store
+            Task { @MainActor [weak self] in self?.start() }
+        }
+
+        @MainActor
+        private func start() {
+            let registry = registry
+            let store = store
+            WallpaperXPCHandler.updateSystemState(
+                registry: registry, store: store,
+                locked: SystemUserPresenceProbe.shared.screenLockState() == .locked,
+                asleep: SystemUserPresenceProbe.shared.areAllDisplaysAsleep()
+            )
+            for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+                observers.append(DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name(name), object: nil, queue: nil
+                ) { _ in WallpaperXPCHandler.updateSystemState(registry: registry, store: store, locked: locked) })
+            }
+            for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true),
+                                   (NSWorkspace.screensDidWakeNotification, false),
+                                   (NSWorkspace.willSleepNotification, true),
+                                   (NSWorkspace.didWakeNotification, false)] {
+                observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+                    forName: name, object: nil, queue: nil
+                ) { _ in WallpaperXPCHandler.updateSystemState(registry: registry, store: store, asleep: asleep) })
+            }
+        }
+    }
 
     init(store: SharedLibraryStore) {
         self.store = store
@@ -153,6 +191,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         library.owner = self
         libraryObserver = library
         powerObserver = PowerConditionObserver(registry: registry, store: store)
+        sessionObserver = SessionConditionObserver(registry: registry, store: store)
     }
 
     /// Fans a library change out to every live connection. Only a handler holds

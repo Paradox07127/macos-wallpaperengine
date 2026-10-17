@@ -205,9 +205,12 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Infrastructure/Services/WallpaperExportService.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
-            // manifest.json, heartbeat-adjacent provider.json — atomic writes into the app's own container, never a mapped scene file.
-            ".write(to": 3,
+            // Container manifest/provider/thumbnail and a poster in a fresh temporary scene bundle.
+            // All writes are atomic and never target a mapped source asset.
+            ".write(to": 4,
         ],
+        // Atomic configuration write inside a fresh temporary copy, never the source scene.
+        "LiveWallpaper/Infrastructure/Services/SystemWallpaperSceneBundle.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Audio/OggAudioTranscoder.swift": ["forWriting:": 1],
         "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],

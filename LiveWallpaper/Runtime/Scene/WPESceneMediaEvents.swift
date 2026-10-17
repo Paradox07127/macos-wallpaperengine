@@ -351,7 +351,9 @@ protocol WPENowPlayingEventSource: AnyObject {
     func unsubscribe(id: UUID)
 }
 
+#if !SYSTEM_WALLPAPER_EXTENSION
 extension NowPlayingMonitor: WPENowPlayingEventSource {}
+#endif
 
 @MainActor
 final class WPESceneMediaEventDispatcher {

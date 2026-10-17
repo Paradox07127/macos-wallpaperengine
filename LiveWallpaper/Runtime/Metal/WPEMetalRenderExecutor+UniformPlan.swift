@@ -3,10 +3,10 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 import simd
 
 extension WPEMetalRenderExecutor {
-
     enum UniformResolutionStep: Equatable {
         /// Not terminal: the context is `.empty` outside `render`, so a miss
         /// must still fall through to the pass sources.

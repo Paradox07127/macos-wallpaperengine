@@ -122,12 +122,12 @@ struct SystemWallpaperSettingsView: View {
                 SystemWallpaperStatusLine("Selected by macOS", systemImage: "checkmark.circle.fill", tint: DesignTokens.Colors.Status.active)
             case .empty:
                 HStack {
-                    SystemWallpaperStatusLine("No videos yet", systemImage: "photo.on.rectangle.angled", tint: DesignTokens.Colors.textSecondary)
+                    SystemWallpaperStatusLine("No wallpapers yet", systemImage: "photo.on.rectangle.angled", tint: DesignTokens.Colors.textSecondary)
                     Spacer(minLength: 0)
                     Button {
                         showingAddSheet = true
                     } label: {
-                        Label("Add Video", systemImage: "plus")
+                        Label("Add Wallpaper", systemImage: "plus")
                     }
                 }
             case .publishedNotSelected:
