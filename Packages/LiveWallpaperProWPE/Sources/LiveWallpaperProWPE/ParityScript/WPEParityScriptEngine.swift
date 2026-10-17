@@ -189,7 +189,7 @@ public final class WPEParityScriptEngine {
         public let objectID: String
         public let propertyPath: String
         public let modulePath: String
-        /// Temporary projection of the one Binding array, not an asset cache or additional owner.
+        /// Registrations of every compiled, prepared binding in binding order; a projection of the one Binding array.
         public let registeredAssets: [RegisteredAsset]
         public let assetsPrepared: Bool
     }
@@ -210,11 +210,6 @@ public final class WPEParityScriptEngine {
         public let exportBits: Int
         public var compiled: Bool {
             script >= 0
-        }
-
-        public var assetContext: AssetContext {
-            AssetContext(bindingIndex: bindingIndex, objectID: objectID, propertyPath: path,
-                         modulePath: "scripts/\(name).js", registeredAssets: registeredAssets, assetsPrepared: assetsPrepared)
         }
 
         fileprivate let bindingIndex: Int
@@ -471,6 +466,15 @@ public final class WPEParityScriptEngine {
         }
     }
 
+    public func assetContext(of index: Int) -> AssetContext? {
+        guard bindings.indices.contains(index) else { return nil }
+        let binding = bindings[index]
+        return AssetContext(bindingIndex: binding.bindingIndex, objectID: binding.objectID, propertyPath: binding.path,
+                            modulePath: "scripts/\(binding.name).js",
+                            registeredAssets: bindings.filter { $0.compiled && $0.assetsPrepared }.flatMap(\.registeredAssets),
+                            assetsPrepared: binding.assetsPrepared)
+    }
+
     /// Runs the existing product loader once per unprepared binding. No VM or mutable State borrow spans await.
     /// The caller keeps this engine on its owning actor and validates its existing load generation before attach.
     public nonisolated(nonsending) func prepareRegisteredAssets(
@@ -478,7 +482,7 @@ public final class WPEParityScriptEngine {
     ) async throws {
         for index in bindings.indices where bindings[index].compiled && !bindings[index].assetsPrepared {
             try Task.checkCancellation()
-            try await prepare(bindings[index].assetContext, bindings[index].registeredAssets)
+            try await prepare(assetContext(of: index)!, bindings[index].registeredAssets)
             try Task.checkCancellation()
             bindings[index].assetsPrepared = true
         }
@@ -1460,7 +1464,7 @@ public final class WPEParityScriptEngine {
         context.exception = nil
         context.exceptionHandler = { context, exception in context?.exception = exception }
         defer { context.exceptionHandler = exceptionHandler }
-        let assetContext = Int(exactly: bindingIndex).flatMap { bindings.indices.contains($0) ? bindings[$0].assetContext : nil }
+        let assetContext = Int(exactly: bindingIndex).flatMap(assetContext(of:))
         return WPEParityScriptModels.perform(input, token: token, assetContext: assetContext,
                                              provider: provider) { patch in
             // No State inout borrow spans VM getters/material conversion; the owned patch is now complete.
@@ -1673,9 +1677,9 @@ public final class WPEParityScriptEngine {
         let name = "\(className)_\(components.last ?? path)"
         let vars = resolved?["scriptproperties"].map(Self.jsonText) ?? NSNull() as Any
         let bindingIndex = bindings.count
-        let assetContext = AssetContext(bindingIndex: bindingIndex, objectID: layerIndex < 0 ? "" : layers[layerIndex].id,
-                                        propertyPath: path, modulePath: "scripts/\(name).js", registeredAssets: [], assetsPrepared: true)
-        bindings.append(Binding(objectID: assetContext.objectID, path: path, name: name,
+        let objectID = layerIndex < 0 ? "" : layers[layerIndex].id
+        let modulePath = "scripts/\(name).js"
+        bindings.append(Binding(objectID: objectID, path: path, name: name,
                                 exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
         let function = context.evaluateScript(WPEParityScriptModule.lower(script),
@@ -1684,7 +1688,7 @@ public final class WPEParityScriptEngine {
         var handle = -1
         if exceptionCount == before, let function, function.isObject {
             bits = Int(host.invokeMethod("addBinding", withArguments: [
-                function, name, assetContext.modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
+                function, name, modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
                 descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars, descriptor.isSoundVolumeWrite,
                 layerIndex >= 0 && layers[layerIndex].kind == .sound && descriptor.owner == .sound,
             ]).toInt32())
@@ -1693,7 +1697,7 @@ public final class WPEParityScriptEngine {
             }
         }
         let registered = bindings[bindingIndex]
-        bindings[bindingIndex] = Binding(objectID: assetContext.objectID, path: path, name: name,
+        bindings[bindingIndex] = Binding(objectID: objectID, path: path, name: name,
                                          exportBits: max(bits, 0), bindingIndex: bindingIndex,
                                          registeredAssets: registered.registeredAssets, assetsPrepared: registered.assetsPrepared,
                                          script: handle, userKeys: userKeys)

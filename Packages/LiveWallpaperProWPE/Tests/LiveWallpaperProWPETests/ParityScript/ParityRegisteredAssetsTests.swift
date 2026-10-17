@@ -116,10 +116,11 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64)
         ))
-        XCTAssertEqual(engine.bindings.map(\.assetContext.objectID), ["1", "2"])
-        XCTAssertEqual(engine.bindings.map(\.assetContext.propertyPath), ["alpha", "alpha"])
-        XCTAssertEqual(engine.bindings.map(\.assetContext.bindingIndex), [0, 1])
-        XCTAssertEqual(engine.bindings.map(\.assetContext.modulePath), ["scripts/image_alpha.js", "scripts/image_alpha.js"])
+        let contexts = engine.bindings.indices.compactMap(engine.assetContext(of:))
+        XCTAssertEqual(contexts.map(\.objectID), ["1", "2"])
+        XCTAssertEqual(contexts.map(\.propertyPath), ["alpha", "alpha"])
+        XCTAssertEqual(contexts.map(\.bindingIndex), [0, 1])
+        XCTAssertEqual(contexts.map(\.modulePath), ["scripts/image_alpha.js", "scripts/image_alpha.js"])
         XCTAssertEqual(engine.bindings.map(\.registeredAssets.count), [1, 1])
         XCTAssertTrue(engine.bindings.allSatisfy { $0.registeredAssets.first?.flag == false }, "a duplicate keeps the first flag")
         let blocked = WPEParityScriptEngine.Failure.registeredAssetsNotPrepared(Array(repeating: "materials/registered.json", count: 2))
@@ -146,6 +147,63 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         engine.tick(dt: 1 / 60, state: &state)
         XCTAssertEqual(state.object("1")?.alpha, 4)
         XCTAssertEqual(state.object("2")?.alpha, 4)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testModelDataMaterialRegisteredByAnotherPreparedBindingResolves() async throws {
+        let registering = #"""
+        const material = engine.registerAsset('materials/registered.json', true);
+        shared.material = material;
+        shared.make = p => thisScene.createModelData({boundingBoxMins:new Vec3(0,0,0), boundingBoxMaxs:new Vec3(1,1,0),
+          shapes:[{vertexBuffer:new Float32Array([0,0,0,1,0,0,0,1,0]), indexBuffer:new Uint16Array([0,1,2]),
+          vertexFormat:[IModelData.POSITION], material:p}]});
+        export function init() { return 2; }
+        """#
+        let calling = #"""
+        export function init() {
+          let other = false, unknown = false;
+          try { other = shared.make(shared.material) !== null; } catch (e) {}
+          try { shared.make('materials/unregistered.json'); }
+          catch (e) { unknown = e.message.includes('prepared binding registration'); }
+          return other && unknown ? 5 : 99;
+        }
+        """#
+        let objects: [[String: Any]] = [(1, registering), (2, calling)].map { id, script in
+            ["id": id, "image": "models/a.json", "alpha": ["value": 1, "script": script]]
+        }
+        let source: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+                                     "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        var recorded: [String] = []
+        let provider = WPEParityScriptModelDataProvider(
+            maximumArrayEntries: 64, maximumBufferBytes: 4096,
+            resolveMaterial: { value, context in
+                recorded.append(context?.objectID ?? "")
+                let path = try XCTUnwrap(value.toString())
+                guard let context, context.assetsPrepared,
+                      context.registeredAssets.contains(where: { $0.flag && $0.path == path }) else {
+                    throw WPEParityModelDataFailure.safety("material requires its prepared binding registration")
+                }
+                return Data(path.utf8)
+            },
+            admitShape: { _, _ in nil }
+        )
+        let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64), modelData: provider
+        ))
+        try await engine.prepareRegisteredAssets { _, _ in }
+        try engine.start(state: &state)
+        XCTAssertEqual(state.object("2")?.alpha, 5)
+        XCTAssertEqual(recorded, ["2", "2"])
+        XCTAssertNotNil(state.modelData(1))
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 }

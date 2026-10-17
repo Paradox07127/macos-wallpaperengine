@@ -1812,11 +1812,37 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.object("1")?.color, SIMD3(1, 0, 1))
         XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(2, -1, 1))
         XCTAssertEqual(scene.state.object("1")?.brightness, 7)
-        XCTAssertEqual(diagnostics.filter { $0.contains("scene layer ID parsing is unsupported") }.count, 1)
+        XCTAssertEqual(diagnostics.filter { $0.contains("scene layer ID parsing is unsupported") }.count, 0)
         XCTAssertEqual(diagnostics.filter { $0.contains("getLayerByID is unsupported for a non-string ID") }.count, 1)
         XCTAssertEqual(diagnostics.filter { $0.contains("getLayerByID found no exact ID") }.count, 1)
         XCTAssertFalse(diagnostics.contains { $0.contains("getLayerIndex") },
                        "invalid wrapper misses use the shared resolver; they are not unverified ID parsing")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testNameMissWithoutLeadingDigitResolvesNullSilently() throws {
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "clock", ["alpha": Self.scripted(1, """
+            let frames = 0;
+            export function update() {
+              frames += 1;
+              const silent = ['A4', 'sh', '----MUSIC PLAYER---- (DO NOT TOUCH ME)'].every(k => thisScene.getLayer(k) === null);
+              const control = thisScene.getLayer('12abc') === null && thisScene.getLayer('2') === thisScene.getLayer(1);
+              return silent && control ? frames : -1;
+            }
+            """)]),
+            Self.layer(2, "Other"),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        try scene.engine.start(state: &scene.state)
+        for _ in 0 ..< 3 {
+            scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        }
+        XCTAssertEqual(scene.state.object("1")?.alpha, 3)
+        XCTAssertEqual(diagnostics.filter { $0.contains("scene layer ID parsing is unsupported") }.count, 3,
+                       "only the digit-led non-canonical key would warn")
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 

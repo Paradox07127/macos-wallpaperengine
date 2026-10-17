@@ -410,6 +410,8 @@ enum WPEParityScriptLayers {
         // The original bounded probe excludes pending name hits immediately. Number/wrapper pending
         // resolution is a separate branch; do not infer its admission from this observation.
         if (named) return pending.has(named) ? null : named;
+        // No leading decimal digit: the native ID parse yields 0, and no layer has ID 0.
+        if (!/^[ \t\n\v\f\r]*[+-]?[0-9]/.test(key)) return null;
         // Only canonical nonnegative decimal IDs are supported; never substitute general JS coercion.
         if (!/^(0|[1-9][0-9]*)$/.test(key) || key.length > 10
             || (key.length === 10 && key > '4294967295')) {
