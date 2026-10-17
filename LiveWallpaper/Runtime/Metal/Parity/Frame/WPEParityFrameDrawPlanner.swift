@@ -440,7 +440,7 @@ struct WPEParityFrameDrawPlanner {
     }
 
     /// TEXI flag 0x20: the first mip is a video stream (1400ec220.c:851).
-    private static let videoFlag: UInt32 = 0x20
+    static let videoFlag: UInt32 = 0x20
 
     private struct PipelineKey: Hashable {
         let program: WPEHLSLProgram

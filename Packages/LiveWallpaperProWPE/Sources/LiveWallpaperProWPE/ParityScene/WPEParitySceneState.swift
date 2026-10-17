@@ -54,11 +54,34 @@ public struct WPEParitySceneState: Sendable {
         /// Config `size`; nil takes the model's albedo or canvas size.
         public var size: SIMD2<Float>?
         public var perspective: Bool
+        public var copyBackground: Bool
+        /// Raw `common_blending.h` BLENDMODE index.
+        public var colorBlendMode: Int
+        /// Config `config.passthrough`; the model's own flag also makes the layer a passthrough.
+        public var passthrough: Bool
 
-        public init(model: String, size: SIMD2<Float>?, perspective: Bool) {
+        public init(model: String, size: SIMD2<Float>?, perspective: Bool, copyBackground: Bool = true,
+                    colorBlendMode: Int = 0, passthrough: Bool = false) {
             self.model = model
             self.size = size
             self.perspective = perspective
+            self.copyBackground = copyBackground
+            self.colorBlendMode = colorBlendMode
+            self.passthrough = passthrough
+        }
+
+        /// The createLayer factory reads `config` through scene load's per-key descriptors (1401fbae0.c:768), so
+        /// absent keys take the parser's image defaults.
+        public init(model: String, config: [String: Any]) {
+            func bool(_ raw: Any?) -> Bool? {
+                WPEValueParser.bool((raw as? [String: Any])?["value"] ?? raw)
+            }
+            self.init(model: model,
+                      size: WPEValueParser.numberVector(config["size"]).map { SIMD2(Float($0[0]), Float($0[1])) },
+                      perspective: bool(config["perspective"]) ?? false,
+                      copyBackground: bool(config["copybackground"]) ?? true,
+                      colorBlendMode: WPESceneDocumentParser.parseColorBlendMode(config),
+                      passthrough: bool((config["config"] as? [String: Any])?["passthrough"]) ?? false)
         }
     }
 

@@ -533,16 +533,25 @@ public struct WPEParityProgramScene: Sendable {
                 WPEParityProgramBuilder.resolvedFrameTextureNames(material, engineFlags: engineFlags, assets: assets)
             )
         }
-        let blend = material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
-        let passthrough = Self.flag(model["passthrough"])
+        let baseBlend = material.map { WPEParitySceneBlend($0.blending) } ?? .translucent
+        let passthrough = Self.flag(model["passthrough"]) || image.passthrough
+        // 1401fac50.c:267-279: membership reads the base blend, not the mode-31 override.
         return WPEParitySceneObject(
             id: id, width: size.x, height: size.y, materialShader: material?.shader ?? "genericimage2",
-            material: source, blend: blend,
+            material: source, blend: image.colorBlendMode == 31 ? .additive : baseBlend,
             materialState: Self.materialState(materialPath.flatMap { assets.json($0)?["passes"]?[0] }),
             materialFog: material.map { Self.programHasFog($0, assets: assets) } ?? false,
-            passthrough: passthrough, fullscreen: fullscreen, materialFrameReads: frameReads,
-            transparentMember: ![.normal, .alphaToCoverage].contains(blend)
+            colorBlendMode: image.colorBlendMode, passthrough: passthrough, copyBackground: image.copyBackground,
+            fullscreen: fullscreen, materialFrameReads: frameReads,
+            transparentMember: ![.normal, .alphaToCoverage].contains(baseBlend) || passthrough && !image.copyBackground
         )
+    }
+
+    /// The asset textures the material of `image`'s model binds; render targets excluded.
+    public func createdImageTextures(_ image: WPEParitySceneState.CreatedImage) -> [String] {
+        let material = assets.json(image.model).flatMap { Self.string($0["material"]) }
+            .flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
+        return (material?.textures ?? [:]).sorted { $0.key < $1.key }.map(\.value).filter { !$0.hasPrefix("_rt_") }
     }
 
     /// The merged pass JSON `draw` uses; an engine (util) material is read from its file with the engine's combos.

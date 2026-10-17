@@ -539,6 +539,122 @@ extension WPEParitySceneDriverTests {
         assertRed(rgb(pixels, x: 80), "template")
     }
 
+    /// A layer loaded from its model path takes copybackground and colorBlendMode from its config, as a loaded one.
+    @objc func testCreatedLayerTakesCompositingFieldsFromItsConfig() async throws {
+        let source = """
+        let frame = 0;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2 && !thisScene.createLayer({ image: 'models/util/composelayer.json', copybackground: false,
+                                                      colorBlendMode: 2, size: new Vec2(160, 96) }))
+            throw Error('created image layer admission');
+          return value;
+        }
+        """
+        // The loaded multiply panel compiles the publish program the created layer's composite needs.
+        var multiply = sceneProtocolPanel(id: 102, name: "multiply", x: 136)
+        multiply["colorBlendMode"] = 2
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source), multiply]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects)
+        defer { driver.cleanup() }
+        func draws(_ id: String) throws -> [WPEParitySceneDraw] {
+            try XCTUnwrap(XCTUnwrap(driver.renderer).frames.first).draws.values.compactMap { draw in
+                guard case let .scene(scene) = draw, scene.objectID == id else { return nil }
+                return scene
+            }
+        }
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        let renderer = try XCTUnwrap(driver.renderer)
+        let id = try XCTUnwrap(renderer.state.commonOrder.first { !["101", "102"].contains($0) })
+        XCTAssertTrue(renderer.state.transparentOrder.contains(id), "A passthrough without copybackground is transparent")
+        let loaded = try XCTUnwrap(draws("102").first { $0.pass.rawValue.hasSuffix("/passthrough4") })
+        let created = try draws(id)
+        let publish = try XCTUnwrap(created.first { $0.pass.rawValue.hasSuffix("/passthrough4") },
+                                    "colorBlendMode 2 must publish the created layer's own composite")
+        XCTAssertEqual(publish.source, loaded.source)
+        XCTAssertEqual(publish.blend, loaded.blend)
+        XCTAssertFalse(created.contains { $0.shader == "composelayer" },
+                       "Without copybackground the composite must start cleared, not from the background")
+    }
+
+    /// `brightness` reaches both a template clone and a layer loaded from its model path.
+    @objc func testCreatedLayersTakeBrightnessFromTheirConfig() async throws {
+        let source = """
+        let frame = 0;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2) {
+            const config = thisScene.getInitialLayerConfig(thisScene.getLayer('template'));
+            config.brightness = 0;
+            if (!thisScene.createLayer(config)) throw Error('effect clone admission');
+            if (!thisScene.createLayer({ image: 'models/util/solidlayer.json', size: new Vec2(12, 12),
+                                         brightness: { value: 0 } }))
+              throw Error('created image layer admission');
+          }
+          return value;
+        }
+        """
+        let (_, original) = try sceneInputs()
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "combos": ["VERSION": 2],
+                                                   "textures": ["clone-template"],
+                                                   "blending": "normal", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        var files = try [
+            "models/clone-template.json": JSONSerialization.data(withJSONObject: ["material": "materials/clone-template.json"]),
+            "materials/clone-template.json": JSONSerialization.data(withJSONObject: material),
+            "materials/clone-template.tex": XCTUnwrap(original.data("materials/util/white.tex")),
+        ]
+        let tintAssets = try WPEParityProgramAssets(sources: [.directory(XCTUnwrap(original.roots.last).appending(path: "effects/tint"))])
+        for path in ["materials/effects/tint.json", "shaders/effects/tint.frag", "shaders/effects/tint.vert"] {
+            files[path] = try XCTUnwrap(tintAssets.data(path), path)
+        }
+        let tint: [String: Any] = ["id": 21, "file": "effects/tint/effect.json", "visible": true]
+        let template: [String: Any] = ["id": 20, "name": "template", "image": "models/clone-template.json",
+                                       "origin": "80 48 0", "size": "12 12", "effects": [tint]]
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source), template]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects, files: files)
+        defer { driver.cleanup() }
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        let state = try XCTUnwrap(driver.renderer).state
+        let created = state.commonOrder.filter { !["101", "20"].contains($0) }.compactMap { state.object($0) }
+        XCTAssertEqual(created.map { $0.templateID != nil }, [true, false])
+        XCTAssertEqual(created.map(\.brightness), [0, 0])
+    }
+
+    /// A model whose material samples a video texture has no decoder to update it, so it is not created.
+    @objc func testCreatedLayerRejectsVideoBackedModel() async throws {
+        let source = """
+        let frame = 0;
+        export function update(value) {
+          frame += 1;
+          if (frame === 2 && thisScene.createLayer({ image: 'models/video-model.json', size: new Vec2(12, 12) }))
+            throw Error('video-backed image layer admitted');
+          return value;
+        }
+        """
+        let material: [String: Any] = ["passes": [["shader": "genericimage2", "textures": ["video-model"],
+                                                   "blending": "normal", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        // TEXI flag 0x20 marks the texture as a video stream.
+        var video = Data("TEXV0005\0TEXI0001\0".utf8)
+        for value: UInt32 in [0, 0x20, 64, 64, 64, 64, 0] {
+            withUnsafeBytes(of: value.littleEndian) { video.append(contentsOf: $0) }
+        }
+        let files = try [
+            "models/video-model.json": JSONSerialization.data(withJSONObject: ["material": "materials/video-model.json"]),
+            "materials/video-model.json": JSONSerialization.data(withJSONObject: material),
+            "materials/video-model.tex": video,
+        ]
+        let objects = [sceneProtocolPanel(id: 101, name: "controller", x: 24, color: "0 0 1", script: source)]
+        let (driver, layer) = try await sceneProtocolDriver(objects: objects, files: files)
+        defer { driver.cleanup() }
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
+        _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).state.commonOrder, ["101"])
+    }
+
     @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
         // The ordinary helper below must use these actual bundled inputs; no environment fallback is admitted.
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",

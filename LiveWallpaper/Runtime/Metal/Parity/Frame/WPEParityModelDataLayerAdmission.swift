@@ -126,11 +126,16 @@ enum WPEParityModelDataLayerAdmission {
     /// The image branch loads the config's own model; fields the config omits keep the layer ctor's defaults.
     private static func loadImage(_ config: [String: Any], path: String, plan: WPEParityFramePlan,
                                   state: inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer? {
-        let size = WPEValueParser.numberVector(config["size"]).map { SIMD2(Float($0[0]), Float($0[1])) }
-        let image = WPEParitySceneState.CreatedImage(model: path, size: size,
-                                                     perspective: WPEValueParser.bool(config["perspective"]) ?? false)
+        let image = WPEParitySceneState.CreatedImage(model: path, config: config)
         guard let description = plan.scene.createdImageObject(id: "", image: image) else {
             Logger.warning("Image layer admission: image model \(path) is unavailable", category: .wpeRender)
+            return nil
+        }
+        // Video decoders are built only at renderer init, so nothing would update this texture.
+        guard !plan.scene.createdImageTextures(image).contains(where: {
+            (plan.scene.assets.textureHeader(named: $0)?.flags ?? 0) & WPEParityFrameDrawPlanner.videoFlag != 0
+        }) else {
+            Logger.warning("Image layer admission: unsupported video texture in \(path)", category: .wpeRender)
             return nil
         }
         return Self.admitImage(config) { id, configure in
@@ -175,6 +180,9 @@ enum WPEParityModelDataLayerAdmission {
                 }
                 if let alpha = WPEValueParser.double(value("alpha")) {
                     object.alpha = Float(alpha)
+                }
+                if let brightness = WPEValueParser.double(value("brightness")) {
+                    object.brightness = Float(brightness)
                 }
                 if let visible = WPEValueParser.bool(value("visible")) {
                     object.visible = visible

@@ -66,6 +66,55 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
         XCTAssertNil(state.isEffectVisible("5", of: clone2))
         XCTAssertNil(state.passIndex(of: .init(objectID: clone2, effectID: "5", pass: 0)))
     }
+
+    func testCreatedImageTakesCompositingFieldsFromItsConfigWithTheParserDefaults() throws {
+        let defaults = WPEParitySceneState.CreatedImage(model: "models/a.json", config: [:])
+        XCTAssertEqual(defaults, .init(model: "models/a.json", size: nil, perspective: false, copyBackground: true,
+                                       colorBlendMode: 0, passthrough: false))
+        let config: [String: Any] = ["copybackground": ["value": false], "colorBlendMode": 31,
+                                     "config": ["passthrough": true], "perspective": true, "size": "12 8"]
+        XCTAssertEqual(WPEParitySceneState.CreatedImage(model: "models/a.json", config: config),
+                       .init(model: "models/a.json", size: SIMD2(12, 8), perspective: true, copyBackground: false,
+                             colorBlendMode: 31, passthrough: true))
+        let named = WPEParitySceneState.CreatedImage(model: "models/a.json",
+                                                     config: ["blendmode": "additive", "colorBlendMode": 2])
+        XCTAssertEqual(named.colorBlendMode, 9, "A blendmode string wins over colorBlendMode")
+
+        let resources: [String: Any] = [
+            "models/a.json": ["material": "materials/a.json"],
+            "materials/a.json": ["passes": [["shader": "genericimage2", "blending": "normal",
+                                             "textures": ["a", "_rt_FullFrameBuffer"]]]],
+        ]
+        let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
+        let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])
+        let source: [String: Any] = [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in CreatedLayerNoScripts() })
+        let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
+        XCTAssertEqual(scene.createdImageTextures(defaults), ["a"])
+        let plain = try XCTUnwrap(scene.createdImageObject(id: "1", image: defaults))
+        XCTAssertFalse(plain.transparentMember)
+        XCTAssertEqual(plain.blend, .normal)
+
+        var image = defaults
+        image.passthrough = true
+        image.copyBackground = false
+        let cleared = try XCTUnwrap(scene.createdImageObject(id: "1", image: image))
+        XCTAssertTrue(cleared.passthrough)
+        XCTAssertFalse(cleared.copyBackground)
+        XCTAssertTrue(cleared.transparentMember, "A passthrough without copybackground joins the transparent members")
+
+        image = defaults
+        image.colorBlendMode = 31
+        let additive = try XCTUnwrap(scene.createdImageObject(id: "1", image: image))
+        XCTAssertEqual(additive.colorBlendMode, 31)
+        XCTAssertEqual(additive.blend, .additive)
+        XCTAssertFalse(additive.transparentMember, "Membership reads the base blend, not the mode-31 override")
+    }
 }
 
 private struct CreatedLayerNoScripts: WPESceneTransformScriptResolving {

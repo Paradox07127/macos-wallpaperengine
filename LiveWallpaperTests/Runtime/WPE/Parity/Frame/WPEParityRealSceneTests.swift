@@ -235,6 +235,35 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
     }
 
+    /// Workshop 3509243656: objects[8]'s visible script creates a layer from `models/ta.json`, a model no loaded
+    /// layer draws.
+    func testScene3509243656ColdCreatedLayerDraws() async throws {
+        try await assertCreatedLayersDraw("3509243656", model: "models/ta.json")
+    }
+
+    /// Workshop 3662499296: its scripts create 63 layers from the workshop's `models/bar.json`.
+    func testScene3662499296ColdCreatedLayersDraw() async throws {
+        try await assertCreatedLayersDraw("3662499296", model: "models/workshop/2652493753/bar.json")
+    }
+
+    private func assertCreatedLayersDraw(_ workshopID: String, model: String) async throws {
+        let driver = try await loadWorkshopScene(workshopID)
+        defer { driver.cleanup() }
+        try await presentFrames(driver, count: 3, label: "scene \(workshopID)")
+        let renderer = try XCTUnwrap(driver.renderer)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        let created = engine.createdLayers.map(\.id)
+        XCTAssertFalse(created.isEmpty, "exceptions: \(engine.exceptions)")
+        for id in created {
+            XCTAssertEqual(renderer.state.object(id)?.createdImage?.model, model, "created layer \(id)")
+            let draws = sceneDraws(renderer, objectID: id)
+            XCTAssertFalse(draws.isEmpty, "created layer \(id) has no planned draw")
+            for (operation, _) in draws {
+                XCTAssertNil(renderer.skipped[operation], "created layer \(id) operation \(operation)")
+            }
+        }
+    }
+
     /// Loads a Workshop scene from the Steam library through the product driver, scripts included.
     private func loadWorkshopScene(_ workshopID: String) async throws -> WPEParitySceneDriver {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
