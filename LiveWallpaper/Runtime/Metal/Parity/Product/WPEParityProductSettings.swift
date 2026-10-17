@@ -23,13 +23,14 @@ enum WPEParityProductSettings {
         let correction = try WPEParityColorCorrection(presetSnapshot: descriptor.presetSnapshot)
         let samples = resolveMSAASampleCount(requested: requestedMSAASampleCount(defaults: defaults),
                                              supports: { device.supportsTextureSampleCount($0) })
+        let savers = WPEParityResourceSaverFlags.resolve(defaults: defaults)
         return WPEParityProgramSettings(bloom: bloomEnabled, hdrPostProcessing: true,
                                         msaaSampleCount: samples,
                                         mipMappedFrameBufferEnabled: requestedMipMappedFrameBuffer(defaults: defaults),
                                         colorCorrection: correction, displayHDR: displayHDR,
                                         maximumPotentialEDR: Float(maximumPotentialEDR),
-                                        offscreenScaleTier: WPEParityResourceSaverFlags.resolve(defaults: defaults)
-                                            .offscreenScaleTier)
+                                        offscreenScaleTier: savers.offscreenScaleTier,
+                                        renderTargetAliasing: savers.renderTargetAliasing)
     }
 
     /// The picker offers only 1/2/4/8. Never increase a request to match a device capability.

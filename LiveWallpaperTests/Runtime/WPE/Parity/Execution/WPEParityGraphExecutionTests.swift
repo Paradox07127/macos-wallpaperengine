@@ -564,6 +564,40 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try assertPixels(readBack(outputs[2], device: device, queue: queue), equal: Self.texels)
     }
 
+    /// A layer target held in an executor heap is a different texture from the renderer's; its draws still bind the
+    /// sampler the scene declares for it.
+    func testAliasedRenderTargetKeepsItsSceneSampler() async throws {
+        let renderer = try await captureRenderer("3509243656", aliasing: true)
+        try await submit(renderer)
+        let aliased = renderer.aliasedRenderTargets
+        XCTAssertFalse(aliased.isEmpty, "the scene aliases no render target")
+        var declared: [WPEResourceID: WPEParitySceneSampler] = [:]
+        for frame in renderer.frames {
+            declared.merge(frame.samplers) { first, _ in first }
+        }
+        var checked = 0
+        for id in aliased.sorted() {
+            guard let sampler = declared[id], let texture = renderer.renderTarget(id) else { continue }
+            XCTAssertEqual(renderer.targetSampler(of: texture),
+                           .wpe(filter: sampler.filter == .point ? .point : .linear,
+                                address: sampler.address == .wrap ? .wrap : .clamp), "\(id)")
+            checked += 1
+        }
+        XCTAssertGreaterThan(checked, 0, "no aliased target has a declared sampler")
+    }
+
+    /// Caching the replaced graph for a toggle back would keep its heap next to the new graph's.
+    func testVisibilityChangeOfAnAliasingGraphRetainsOnlyTheCurrentHeaps() async throws {
+        let renderer = try await captureRenderer("3509243656", aliasing: true)
+        try await submit(renderer)
+        XCTAssertFalse(renderer.aliasedRenderTargets.isEmpty, "the scene aliases no render target")
+        let id = try XCTUnwrap(renderer.state.ids.first { renderer.state.isVisible($0) })
+        XCTAssertTrue(renderer.state.set(.visible, of: id, to: .zero))
+        try await submit(renderer)
+        XCTAssertEqual(renderer.retainedGraphHeaps.reduce(0) { $0 + $1.size }, renderer.heapBytes,
+                       "a replaced graph still holds its heap")
+    }
+
     /// Exercises the caller's bindings defer, rather than injecting a throw into GraphExecutor's visitor.
     /// A valid authored volume loads first; an actual uploaded media image then fails the real 3D sampler check.
     @MainActor
@@ -826,6 +860,43 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         return try await WPEParityFrameRenderer(plan: plan, device: harness.device, queue: harness.queue,
                                                 shaders: .init(store: store, compilerIdentity: "unavailable-test-input",
                                                                bindingABIVersion: 1), particleSeed: 1)
+    }
+
+    /// A capture scene at 1920x1080 with the capture machine's settings, its programs from the captured stages.
+    private func captureRenderer(_ sceneID: String, aliasing: Bool) async throws -> WPEParityFrameRenderer {
+        let root = try fixtureDirectory()
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
+        }
+        let sceneDirectory = root.appending(path: "scene-sources/\(sceneID)")
+        let document = try WPESceneDocumentParser.parse(
+            data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:]
+        )
+        let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
+                                            assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
+        let plan = try WPEParityFramePlan(document: document, assets: assets,
+                                          settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true,
+                                                                             msaa: true, renderTargetAliasing: aliasing),
+                                          width: 1920, height: 1080)
+        let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
+        let store = try WPEParityShaderStore(
+            compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.loadPrograms,
+                                                     geometryCompiler: geometryCompiler,
+                                                     uncapturedUtilityPrograms: WPEParityFixtureShaderCompiler.utilityPrograms(in: plan)),
+            diskCache: WPEParityShaderDiskCache(cachesURL: cache)
+        )
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        return try await WPEParityFrameRenderer(
+            plan: plan, device: device, queue: XCTUnwrap(device.makeCommandQueue()),
+            shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: "hlsl-capture-2026-10-12",
+                                                bindingABIVersion: 1),
+            particleSeed: 1
+        )
     }
 
     private func submit(_ renderer: WPEParityFrameRenderer) async throws {

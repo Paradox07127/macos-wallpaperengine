@@ -65,6 +65,29 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertEqual(renderer.pipelineCreations, pipelines, "no pipeline is built after load")
     }
 
+    /// Each effect set and every switch between them draws the same bytes whether pooled targets alias or not.
+    func testEffectCombinationsDrawTheSameBytesWithRenderTargetAliasing() async throws {
+        let plain = try await makeFixtureRenderer()
+        let aliased = try await makeFixtureRenderer(aliasing: true)
+        XCTAssertFalse(aliased.renderer.aliasedRenderTargets.isEmpty, "the scene aliases no render target")
+        let steps: [(ripple: Bool, sway: Bool)] = [
+            (true, true), (false, true), (false, false), (true, false), (true, true), (false, false), (true, true),
+        ]
+        for (index, step) in steps.enumerated() {
+            for fixture in [plain, aliased] {
+                fixture.renderer.state.setEffect("19", of: "17", visible: step.ripple)
+                fixture.renderer.state.setEffect("50", of: "17", visible: step.sway)
+            }
+            for frame in 1 ... 3 {
+                try await encode(plain.renderer)
+                try await encode(aliased.renderer)
+                XCTAssertTrue(try readBack(plain.renderer.backbuffer, plain)
+                    == readBack(aliased.renderer.backbuffer, aliased),
+                    "step \(index) \(step) frame \(frame) differs with aliasing")
+            }
+        }
+    }
+
     func testEffectVisibleUserPropertyAppliesThroughTheDriver() async throws {
         let harness = try await makeDriver { json in
             Self.editEffects(&json) { $0[0]["visible"] = ["user": "ripple", "value": true] }
@@ -302,13 +325,16 @@ final class WPEParityEffectToggleTests: XCTestCase {
     }
 
     /// The capture scene with its JSON edited by `edit`, compiled from the capture's stages.
-    private func makeFixtureRenderer(edit: (inout [String: Any]) -> Void = { _ in }) async throws -> Fixture {
+    private func makeFixtureRenderer(aliasing: Bool = false,
+                                     edit: (inout [String: Any]) -> Void = { _ in }) async throws -> Fixture {
         let (root, wpeAssets) = try paths()
         let document = try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: sceneJSON(root, edit: edit)), userValues: [:]
         )
+        var settings = Self.settings
+        settings.renderTargetAliasing = aliasing
         let plan = try WPEParityFramePlan(document: document, assets: assets(root, wpeAssets),
-                                          settings: Self.settings, width: Self.width, height: Self.height)
+                                          settings: settings, width: Self.width, height: Self.height)
         let store = try WPEParityShaderStore(
             compiler: WPEParityFixtureShaderCompiler(directory: root, programs: plan.loadPrograms),
             diskCache: WPEParityShaderDiskCache(cachesURL: scratch.appending(path: "cache"))

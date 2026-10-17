@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Foundation
 import ImageIO
 @testable import LiveWallpaper
@@ -275,6 +276,53 @@ final class WPEParityRealSceneTests: XCTestCase {
         print("scene 3509243656 compressed: frame 60 written to \(url.path)")
     }
 
+    /// Two runs without aliasing must already agree, or a difference with it says nothing about aliasing.
+    func testRenderTargetAliasingKeepsEveryBackbufferByteOver120Frames() async throws {
+        for sceneID in ["3509243656", "3815666789"] {
+            let reference = try await backbufferDigests(sceneID, aliasing: false)
+            let repeated = try await backbufferDigests(sceneID, aliasing: false)
+            let unstable = reference.digests.indices.first { reference.digests[$0] != repeated.digests[$0] }
+            guard unstable == nil else {
+                return XCTFail("scene \(sceneID): two runs without aliasing differ from frame \(unstable! + 1)")
+            }
+            let aliased = try await backbufferDigests(sceneID, aliasing: true)
+            print("scene \(sceneID): aliased \(aliased.renderer.aliasedRenderTargets.sorted())")
+            XCTAssertFalse(aliased.renderer.aliasedRenderTargets.isEmpty, "scene \(sceneID) aliases nothing")
+            let changed = reference.digests.indices.first { reference.digests[$0] != aliased.digests[$0] }
+            XCTAssertNil(changed, "scene \(sceneID): aliasing changes the backbuffer from frame \((changed ?? 0) + 1)")
+        }
+    }
+
+    /// Only the capture's settings draw every pass; with others the fixture lacks programs and the graph is smaller.
+    func testScene3509243656RenderTargetAliasingSavesTargetMemoryAt4K() async throws {
+        var bytes: [Int] = []
+        for aliasing in [false, true] {
+            var settings = Self.settings
+            settings.renderTargetAliasing = aliasing
+            let (_, renderer, _, _) = try await makeRenderer("3509243656", settings: settings, width: 3840, height: 2160)
+            for frame in 1 ... 3 {
+                try await renderFrame(renderer, label: "scene 3509243656 4K aliasing \(aliasing) frame \(frame)")
+            }
+            bytes.append(renderer.heapBytes + renderer.dedicatedTextureBytes)
+            print("scene 3509243656 4K aliasing \(aliasing): heap \(renderer.heapBytes) bytes, dedicated textures "
+                + "\(renderer.dedicatedTextureBytes) bytes, aliased \(renderer.aliasedRenderTargets.sorted())")
+        }
+        XCTAssertLessThan(bytes[1], bytes[0])
+    }
+
+    private func backbufferDigests(_ sceneID: String, aliasing: Bool) async throws
+        -> (digests: [SHA256.Digest], renderer: WPEParityFrameRenderer) {
+        var settings = Self.settings
+        settings.renderTargetAliasing = aliasing
+        let (_, renderer, device, queue) = try await makeRenderer(sceneID, settings: settings)
+        var digests: [SHA256.Digest] = []
+        for frame in 1 ... 120 {
+            try await renderFrame(renderer, label: "scene \(sceneID) aliasing \(aliasing) frame \(frame)")
+            try digests.append(SHA256.hash(data: readBack(renderer.backbuffer, device: device, queue: queue)))
+        }
+        return (digests, renderer)
+    }
+
     private func render(_ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }) async throws {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 
@@ -351,6 +399,7 @@ final class WPEParityRealSceneTests: XCTestCase {
 
     private func makeRenderer(
         _ sceneID: String, settings: WPEParityProgramSettings = WPEParityRealSceneTests.settings,
+        width: Int = WPEParityRealSceneTests.width, height: Int = WPEParityRealSceneTests.height,
         editGeneral: (inout [String: Any]) -> Void = { _ in }
     ) async throws -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice, MTLCommandQueue) {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
@@ -378,7 +427,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: settings,
-                                          width: Self.width, height: Self.height)
+                                          width: width, height: height)
 
         let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: cache) }

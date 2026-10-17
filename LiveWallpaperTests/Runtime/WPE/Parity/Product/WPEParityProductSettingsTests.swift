@@ -67,6 +67,17 @@ final class WPEParityProductSettingsTests: XCTestCase {
                                                          defaults: suite.defaults).offscreenScaleTier, 2)
     }
 
+    func testFactoryCarriesTheRenderTargetAliasingPreference() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityProductSettingsTests")
+        defer { suite.discard() }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        XCTAssertFalse(try WPEParityProductSettings.make(descriptor: descriptor(), device: device,
+                                                         defaults: suite.defaults).renderTargetAliasing)
+        suite.defaults.set(true, forKey: WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey)
+        XCTAssertTrue(try WPEParityProductSettings.make(descriptor: descriptor(), device: device,
+                                                        defaults: suite.defaults).renderTargetAliasing)
+    }
+
     func testFactoryPropagatesTypedPresetFailureEvenWithBloomDisabled() throws {
         let suite = try TestScratch.defaultsSuite(prefix: "WPEParityProductSettingsTests")
         defer { suite.discard() }

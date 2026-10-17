@@ -28,14 +28,18 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var shadowQuality: Int32
     /// See `WPEParitySceneDescription.offscreenScaleTier`; 0 allocates every target at its full size.
     public var offscreenScaleTier: Int
+    /// Pooled render targets a frame provably overwrites before reading may share memory with other targets.
+    public var renderTargetAliasing: Bool
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
                 msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection(),
                 displayHDR: Bool = false, maximumPotentialEDR: Float = 1,
-                shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality, offscreenScaleTier: Int = 0) {
+                shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality, offscreenScaleTier: Int = 0,
+                renderTargetAliasing: Bool = false) {
         self.bloom = bloom
         self.offscreenScaleTier = offscreenScaleTier
+        self.renderTargetAliasing = renderTargetAliasing
         self.shadowQuality = shadowQuality
         self.hdrPostProcessing = hdrPostProcessing
         self.displayHDR = displayHDR
@@ -75,6 +79,8 @@ public struct WPEParityProgramScene: Sendable {
     public let resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]]
     /// Original effect-local functions and compact declaration order, including disabled effects.
     public let resolvedMaterialFunctions: [WPEParitySceneState.EffectKey: WPEParityMaterialFunctions]
+    /// See `WPEParityProgramSettings.renderTargetAliasing`.
+    public let renderTargetAliasing: Bool
     let materials: [MaterialKey: WPEParityProgramMaterial]
     /// Index of each effect material among its effect's scene `passes` overrides; albedo materials are absent.
     let overridePasses: [MaterialKey: Int]
@@ -379,6 +385,7 @@ public struct WPEParityProgramScene: Sendable {
         post.colorCorrection = settings.colorCorrection
         post.offscreenScaleTier = settings.offscreenScaleTier
         postProcess = post
+        renderTargetAliasing = settings.renderTargetAliasing
     }
 
     /// The native HDR allocation predicate, also used before the product plans its physical render extent.

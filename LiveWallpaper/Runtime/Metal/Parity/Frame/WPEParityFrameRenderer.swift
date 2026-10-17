@@ -3,6 +3,7 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
+import os
 import simd
 
 /// Compiles WPE programs through the shader store.
@@ -88,7 +89,17 @@ final class WPEParityFrameRenderer {
         let operations: [[WPEParityGraphDrawSource]]
         let particleDraws: [WPEParityParticleDrawKey: Int]
         let particleSnapshotSkips: [String: WPEParityFrameSkip]
+
+        /// Pooled targets an executor keeps in its heap or tile memory instead of a renderer-owned texture.
+        var aliasedTargets: Set<WPEResourceID> {
+            Set(executors.flatMap { executor in
+                executor.transientTextures.keys.filter { executor.graph.resources[$0]?.lifetime == .pooled }
+            })
+        }
     }
+
+    /// Set by a failed command buffer of an aliasing graph; later graphs in this process keep every pooled target.
+    private static let renderTargetAliasingFailed = OSAllocatedUnfairLock(initialState: false)
 
     let backbuffer: MTLTexture
     /// Render targets the renderer allocates; layer images are not among them.
@@ -282,6 +293,20 @@ final class WPEParityFrameRenderer {
         let variant = max(0, frameIndex - 1) % graphs.executors.count
         let physical = resourceBindings[scope]?[id] ?? id
         return graphs.executors[variant].transientTextures[physical] ?? targets[physical]
+    }
+
+    var aliasedRenderTargets: Set<WPEResourceID> {
+        graphs.aliasedTargets
+    }
+
+    /// The sampler a draw binds when it samples `texture` as a scene render target.
+    func targetSampler(of texture: MTLTexture) -> WPEParitySamplerState? {
+        targetSamplers[ObjectIdentifier(texture)]
+    }
+
+    /// Heaps of the current graphs and of the graphs cached for a visibility toggle back.
+    var retainedGraphHeaps: [MTLHeap] {
+        (graphs.executors + (previousGraphs?.executors ?? [])).compactMap(\.heap)
     }
     #endif
 
@@ -739,7 +764,8 @@ final class WPEParityFrameRenderer {
         try Self.prepareHDRBloomTargets(plan.post, device: device, targets: &targets)
         let snapshotObjects = Set(particleFacts.filter { $0.value.values.contains(true) }.map(\.key))
         let graphs = try Self.makeGraphs(layout: layout, state: plan.state, device: device, encoder: encoder,
-                                         arena: arena, targets: &targets, snapshotObjects: snapshotObjects)
+                                         arena: arena, targets: &targets, snapshotObjects: snapshotObjects,
+                                         aliasing: Self.aliasesRenderTargets(plan))
         if let atlas = layout.frames.flatMap(\.resources).first(where: { $0.id == WPEParitySceneResource.shadowAtlas }) {
             targets[atlas.id] = try Self.makeTarget(atlas, device: device)
         }
@@ -776,7 +802,7 @@ final class WPEParityFrameRenderer {
         self.animations = animations
         self.backbuffer = backbuffer
         self.targets = targets
-        targetSamplers = Self.targetSamplers(layout, targets: targets)
+        targetSamplers = Self.targetSamplers(graphs, targets: targets)
         self.videos = videos
         self.queue = queue
         self.arena = arena
@@ -881,7 +907,7 @@ final class WPEParityFrameRenderer {
                   Self.matches(old, resource: resource) else { continue }
             targets[resource.id] = old
         }
-        targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
+        targetSamplers = Self.targetSamplers(graphs, targets: targets)
         let clearColors = Self.clearColors(graphs.layout, targets: targets)
         try Self.clear(targets.values.filter { clearColors[ObjectIdentifier($0)] != nil }, queue: queue,
                        colors: clearColors)
@@ -1720,9 +1746,17 @@ final class WPEParityFrameRenderer {
         }
         let textures = frameTextures ?? targets.merging(planner.layerImages) { $1 }
         frameTextures = textures
+        let aliasing = !graphs.aliasedTargets.isEmpty
         return try executor.encodeFrame(on: queue, textures: textures,
                                         prepare: { commandBuffer in
                                             submitted = true
+                                            if aliasing {
+                                                commandBuffer.addCompletedHandler { buffer in
+                                                    if buffer.error != nil {
+                                                        Self.renderTargetAliasingFailed.withLock { $0 = true }
+                                                    }
+                                                }
+                                            }
                                             if !retiredTextures.isEmpty {
                                                 // The handler only drops the last reference; releasing an MTLTexture is thread-safe.
                                                 nonisolated(unsafe) let retired = retiredTextures
@@ -1879,6 +1913,9 @@ final class WPEParityFrameRenderer {
     /// recompiles the graphs, and an effect change re-plans the draws it alters, except when it returns to the
     /// previous set.
     private func selectGraphs() throws {
+        if Self.renderTargetAliasingFailed.withLock({ $0 }), !graphs.aliasedTargets.isEmpty {
+            try installGraphs(graphs.layout, cachePrevious: false)
+        }
         let currentPost = plan.postConfig(state: state)
         let effectiveN = currentPost.hdrEnabled && currentPost.bloomEnabled ? currentPost.hdrBloomLevelCount : 0
         func matchesPost(_ post: WPEParityPostProcessConfig) -> Bool {
@@ -1926,9 +1963,11 @@ final class WPEParityFrameRenderer {
                            || targets[resource.id].map { Self.matches($0, resource: resource) } == true
                    }
                }) {
-                (graphs, previousGraphs) = (previous, graphs)
+                let replaced = graphs
+                graphs = previous
+                previousGraphs = cacheable(replaced)
                 planner.use(graphs.layout.planned)
-                targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
+                targetSamplers = Self.targetSamplers(graphs, targets: targets)
                 reserveArena(for: graphs.layout)
             } else {
                 var layout = graphs.layout
@@ -2041,26 +2080,35 @@ final class WPEParityFrameRenderer {
         var candidateTargets = targets
         let made = try Self.makeGraphs(layout: layout, state: state, device: device, encoder: drawEncoder,
                                        arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings,
-                                       snapshotObjects: particleSnapshotObjects)
+                                       snapshotObjects: particleSnapshotObjects, aliasing: Self.aliasesRenderTargets(plan))
         let added = candidateTargets.filter { id, texture in
             targets[id].map { ObjectIdentifier($0) != ObjectIdentifier(texture) } ?? true
         }
         let initialization = try Self.clear(Array(added.values), queue: queue,
                                             colors: Self.clearColors(layout, targets: added))
         return PreparedGraphs(graphs: made, targets: candidateTargets,
-                              samplers: Self.targetSamplers(layout, targets: candidateTargets),
+                              samplers: Self.targetSamplers(made, targets: candidateTargets),
                               initialization: initialization)
     }
 
     /// All fallible preparation precedes this same-owner value publication.
     private func publishGraphs(_ prepared: PreparedGraphs, cachePrevious: Bool) {
         retiredDrops += previousGraphs?.executors.reduce(0) { $0 + $1.droppedDraws } ?? 0
-        previousGraphs = cachePrevious ? graphs : nil
+        previousGraphs = cachePrevious ? cacheable(graphs) : nil
         graphs = prepared.graphs
         // Named pool history survives graph changes; Metal retains submitted texture versions.
         targets = prepared.targets
         targetSamplers = prepared.samplers
         reserveArena(for: graphs.layout)
+    }
+
+    /// Nil for graphs holding aliased targets: their heaps would stay resident beside the new graphs' own.
+    private func cacheable(_ replaced: Graphs) -> Graphs? {
+        guard replaced.aliasedTargets.isEmpty else {
+            retiredDrops += replaced.executors.reduce(0) { $0 + $1.droppedDraws }
+            return nil
+        }
+        return replaced
     }
 
     /// Raises the non-particle share to what `layout` needs. It never shrinks, so a cached graph still fits.
@@ -2124,14 +2172,19 @@ final class WPEParityFrameRenderer {
         }
     }
 
-    private static func targetSamplers(_ layout: Layout, targets: [WPEResourceID: MTLTexture])
+    private static func targetSamplers(_ graphs: Graphs, targets: [WPEResourceID: MTLTexture])
         -> [ObjectIdentifier: WPEParitySamplerState] {
         var result: [ObjectIdentifier: WPEParitySamplerState] = [:]
-        for frame in layout.frames {
+        for frame in graphs.layout.frames {
             for (id, sampler) in frame.samplers {
-                guard let texture = targets[id] else { continue }
-                result[ObjectIdentifier(texture)] = .wpe(filter: sampler.filter == .point ? .point : .linear,
-                                                         address: sampler.address == .wrap ? .wrap : .clamp)
+                // An aliased pooled target is a different texture in each executor and none in `targets`.
+                let aliased = graphs.executors.compactMap { executor in
+                    executor.graph.resources[id]?.lifetime == .pooled ? executor.transientTextures[id] : nil
+                }
+                for texture in [targets[id]].compactMap(\.self) + aliased {
+                    result[ObjectIdentifier(texture)] = .wpe(filter: sampler.filter == .point ? .point : .linear,
+                                                             address: sampler.address == .wrap ? .wrap : .clamp)
+                }
             }
         }
         return result
@@ -2357,14 +2410,18 @@ final class WPEParityFrameRenderer {
         }
     }
 
+    private static func aliasesRenderTargets(_ plan: WPEParityFramePlan) -> Bool {
+        plan.scene.renderTargetAliasing && !renderTargetAliasingFailed.withLock { $0 }
+    }
+
     /// Compiles each frame variant of `layout` without the operations of objects `state` hides, allocating the
-    /// targets the graphs need that `targets` lacks.
+    /// targets the graphs need that `targets` lacks. With `aliasing`, a pooled target every variant proves fully
+    /// overwritten before it is read lives in the executors' memory and its renderer texture is released.
     private static func makeGraphs(layout: Layout, state: WPEParitySceneState, device: MTLDevice,
                                    encoder: WPEParityDrawEncoder, arena: WPEParityFrameArena,
                                    targets: inout [WPEResourceID: MTLTexture],
-                                   resourceBindings: WPEParityResourceBindings = [:], snapshotObjects: Set<String>) throws -> Graphs {
-        var executors: [WPEParityGraphExecutor] = []
-        var operations: [[WPEParityGraphDrawSource]] = []
+                                   resourceBindings: WPEParityResourceBindings = [:], snapshotObjects: Set<String>,
+                                   aliasing: Bool = false) throws -> Graphs {
         var particleDraws: [WPEParityParticleDrawKey: Int] = [:]
         var snapshotSkips: [String: WPEParityFrameSkip] = [:]
         for (index, description) in layout.frames[0].draws {
@@ -2372,18 +2429,39 @@ final class WPEParityFrameRenderer {
                 particleDraws[key] = index
             }
         }
-        for (variant, frame) in layout.frames.enumerated() {
-            let projected = WPEParityParticleGraph(frame: frame, state: state, draws: layout.draws, variant: variant,
-                                                   snapshotObjects: snapshotObjects)
+        let projections = layout.frames.indices.map { variant in
+            WPEParityParticleGraph(frame: layout.frames[variant], state: state, draws: layout.draws, variant: variant,
+                                   snapshotObjects: snapshotObjects)
+        }
+        for projected in projections {
             snapshotSkips.merge(projected.snapshotSkips) { first, _ in first }
-            let graph = try WPERenderGraphCompiler.compile(resources: frame.resources,
-                                                           operations: projected.operations,
-                                                           preservingTransfers: projected.preservingTransfers)
-            let executor = try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
-                                                      pixelFormats: WPEParityFrameDrawPlanner.pixelFormats,
-                                                      resourceBindings: resourceBindings)
+        }
+        func compile(discardable: Set<WPEResourceID>, proofs: [WPERenderGraphCoverageProof]) throws
+            -> [WPECompiledRenderGraph] {
+            try zip(layout.frames, projections).enumerated().map { variant, pair in
+                try WPERenderGraphCompiler.compile(resources: pair.0.resources, operations: pair.1.operations,
+                                                   discardableHistory: discardable,
+                                                   coverage: proofs.isEmpty ? WPERenderGraphCoverageProof() : proofs[variant],
+                                                   preservingTransfers: pair.1.preservingTransfers)
+            }
+        }
+        func executors(_ graphs: [WPECompiledRenderGraph]) throws -> [WPEParityGraphExecutor] {
+            try graphs.map { graph in
+                try WPEParityGraphExecutor(graph: graph, device: device, drawEncoder: encoder, arena: arena,
+                                           pixelFormats: WPEParityFrameDrawPlanner.pixelFormats,
+                                           resourceBindings: resourceBindings)
+            }
+        }
+        let aliased: [WPEParityGraphExecutor]? = if aliasing {
+            try? aliasedExecutors(layout, projections, compile: compile, executors: executors)
+        } else {
+            nil
+        }
+        let built = try aliased ?? executors(compile(discardable: [], proofs: []))
+        for (frame, executor) in zip(layout.frames, built) {
             // Script functions can use persistent FBOs without any graph draw/read lifetime. They must be
             // allocated before module-global/init execution, while ordinary graph transients remain unchanged.
+            let graph = executor.graph
             let prepared = Set(graph.lifetimes.keys).union(frame.resources.filter { $0.lifetime == .persistent }.map(\.id))
             for id in prepared where executor.transientTextures[id] == nil {
                 guard let resource = frame.resources.first(where: { $0.id == id }), resource.lifetime != .imported else { continue }
@@ -2392,12 +2470,119 @@ final class WPEParityFrameRenderer {
                 }
                 targets[id] = try makeTarget(resource, device: device)
             }
-            executors.append(executor)
-            operations.append(projected.sources)
         }
-        return Graphs(layout: layout, hidden: state.objects.indices.map { !state.isVisible(at: $0) },
-                      executors: executors, operations: operations, particleDraws: particleDraws,
-                      particleSnapshotSkips: snapshotSkips)
+        let graphs = Graphs(layout: layout, hidden: state.objects.indices.map { !state.isVisible(at: $0) },
+                            executors: built, operations: projections.map(\.sources), particleDraws: particleDraws,
+                            particleSnapshotSkips: snapshotSkips)
+        for id in graphs.aliasedTargets {
+            targets[id] = nil
+        }
+        return graphs
+    }
+
+    /// Nil when no pooled target qualifies. A target one variant aliases must not be read at entry by another, which
+    /// would see the renderer texture that variant no longer writes, so candidates shrink until every variant agrees.
+    private static func aliasedExecutors(
+        _ layout: Layout, _ projections: [WPEParityParticleGraph],
+        compile: (Set<WPEResourceID>, [WPERenderGraphCoverageProof]) throws -> [WPECompiledRenderGraph],
+        executors: ([WPECompiledRenderGraph]) throws -> [WPEParityGraphExecutor]
+    ) throws -> [WPEParityGraphExecutor]? {
+        let proofs = zip(layout.frames, projections).map { coverageProof($1, frame: $0, layout: layout) }
+        var discardable = historyCandidates(layout)
+        while !discardable.isEmpty {
+            let graphs = try compile(discardable, proofs)
+            let agreed = discardable.filter { id in
+                graphs.allSatisfy { $0.lifetimes[id] == nil || $0.storage[id] != .dedicated }
+            }
+            if agreed == discardable {
+                return try executors(graphs)
+            }
+            discardable = agreed
+        }
+        return nil
+    }
+
+    /// Pooled targets whose history a graph may drop, except composites a layer's albedo or its children fill: those
+    /// are first drawn in some other effect or visibility set and then read what this graph would no longer keep.
+    private static func historyCandidates(_ layout: Layout) -> Set<WPEResourceID> {
+        var filled: Set<WPEResourceID> = []
+        for frame in layout.frames {
+            for case let .scene(draw) in frame.draws.values where draw.fillsComposite || draw.compositeOwnerID != nil {
+                filled.insert(draw.target)
+            }
+            for block in frame.particleBlocks where block.compositeOwnerID != nil {
+                filled.insert(block.color)
+            }
+        }
+        let pooled = layout.frames.flatMap(\.resources).filter { $0.lifetime == .pooled }.map(\.id)
+        return Set(pooled).subtracting(filled)
+    }
+
+    /// Facts about each draw of `projected`; particle and camera-fade draws, which can encode nothing, stay unproven.
+    private static func coverageProof(_ projected: WPEParityParticleGraph, frame: WPEParityFrame,
+                                      layout: Layout) -> WPERenderGraphCoverageProof {
+        var draws: [Int: WPEDrawCoverage] = [:]
+        var owners: [Int: String] = [:]
+        for (index, source) in projected.sources.enumerated() {
+            switch source {
+            case let .layout(operation):
+                owners[index] = frame.owners[operation]
+                if case .draw = projected.operations[index].kind {
+                    draws[index] = coverage(operation, frame: frame, layout: layout)
+                }
+            case let .particlePrefix(block), let .particleSnapshot(block), let .particleSuffix(block):
+                let particles = frame.particleBlocks[block]
+                owners[index] = frame.owners[particles.operations.lowerBound] ?? particles.objectID
+            case .state:
+                break
+            }
+        }
+        return WPERenderGraphCoverageProof(draws: draws, owners: owners)
+    }
+
+    private static func coverage(_ operation: Int, frame: WPEParityFrame, layout: Layout) -> WPEDrawCoverage {
+        let unproven = WPEDrawCoverage(alwaysExecutes: false, fullscreenGeometry: false, mayDiscard: true,
+                                       writesEverySample: false)
+        guard operation != layout.fade, let plan = layout.draws[operation], plan.pipeline.geometry == nil,
+              let program = layout.planned.programs[operation], program.hlsl.geometry == nil,
+              let vertex = program.hlsl.vertex.flatMap({ String(bytes: $0, encoding: .utf8) }),
+              let fragment = program.hlsl.fragment.flatMap({ String(bytes: $0, encoding: .utf8) }) else { return unproven }
+        let quad: Bool
+        let alphaToCoverage: Bool
+        switch frame.draws[operation] {
+        case let .scene(draw)? where draw.target != WPEParitySceneResource.shadowAtlas:
+            // Only an intermediate effect pass draws the 2x2 quad with the fixed effect-pass matrices.
+            quad = draw.geometry == .fullscreenQuad && !draw.layerMatrices && !draw.fullscreenLayer
+                && !draw.fillsComposite && !draw.multipliesDestination && draw.source != .textClearAlpha
+            alphaToCoverage = draw.blend == .alphaToCoverage
+        case .post?:
+            quad = true
+            alphaToCoverage = false
+        case .scene?, nil:
+            return unproven
+        }
+        let raster = plan.rasterizer
+        let solid = raster.cullMode == .none && raster.fillMode == .solid && !raster.scissorEnable
+        return WPEDrawCoverage(
+            alwaysExecutes: true, fullscreenGeometry: quad && solid && passesQuadThrough(vertex),
+            mayDiscard: fragment.range(of: #"\b(discard|clip)\b"#, options: .regularExpression) != nil,
+            writesEverySample: !alphaToCoverage && !fragment.contains("SV_Coverage")
+        )
+    }
+
+    /// The vertex stage's only position write emits the input quad as is or through the MVP, and nothing writes the
+    /// input position first.
+    private static func passesQuadThrough(_ source: String) -> Bool {
+        let lines = source.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        let positions = lines.filter { $0.contains("gl_Position") && $0 != "float4 gl_Position : SV_POSITION;" }
+        let inputWrites = lines.contains { line in
+            guard let assignment = line.firstIndex(of: "=") else { return false }
+            return line[..<assignment].contains("a_Position")
+        }
+        return !inputWrites && positions.count == 1 && [
+            "OUT.gl_Position = vec4(IN.a_Position, 1.0);", "OUT.gl_Position = vec4(IN.a_Position, 1);",
+            "OUT.gl_Position = mul(vec4(IN.a_Position, 1.0), g_ModelViewProjectionMatrix);",
+        ].contains(positions[0])
     }
 
     /// One context per visible particle object: scene time, cursor in [0, 1]² y down, the scene camera's
