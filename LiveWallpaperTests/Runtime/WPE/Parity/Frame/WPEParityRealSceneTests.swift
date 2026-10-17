@@ -5,6 +5,7 @@ import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import QuartzCore
 import simd
 import XCTest
 
@@ -175,6 +176,107 @@ final class WPEParityRealSceneTests: XCTestCase {
         let morph = try XCTUnwrap(draw.textures["g_Texture5"])
         XCTAssertEqual([morph.width, morph.height], [2, 2])
         XCTAssertEqual(morph.pixelFormat, .rgba16Snorm)
+    }
+
+    /// Workshop 2955378002: an effect visibility script on objects[198] clones layer "playerbarsexception" (an image
+    /// layer with two effects) seven times through `createLayer(getInitialLayerConfig(origbar))`.
+    func testScene2955378002ScriptClonesTemplateImageLayerSevenTimes() async throws {
+        let driver = try await loadWorkshopScene("2955378002")
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        try await presentFrames(driver, count: 3, label: "scene 2955378002")
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        let created = engine.createdLayers.map(\.id)
+        XCTAssertEqual(created.count, 7, "exceptions: \(engine.exceptions)")
+        for id in created {
+            let draws = sceneDraws(renderer, objectID: id)
+            XCTAssertFalse(draws.isEmpty, "created layer \(id) has no planned draw")
+            XCTAssertTrue(draws.contains { $0.draw.effectID != nil }, "created layer \(id) plans none of its effects")
+            for (operation, _) in draws {
+                XCTAssertNil(renderer.skipped[operation], "created layer \(id) operation \(operation)")
+            }
+        }
+    }
+
+    /// Workshop 3798688689: objects[506] creates two ModelData layers per emitter (14 kv1 + 13 kv2 emitters) and
+    /// objects[510] four trail layers on the first trail advance; each is reparented onto composelayer 92001 or 92002.
+    func testScene3798688689ModelDataLayersDrawInsideTheirComposeLayers() async throws {
+        let driver = try await loadWorkshopScene("3798688689")
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        try await presentFrames(driver, count: 3, label: "scene 3798688689")
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        let created = engine.createdLayers.map(\.id)
+        XCTAssertEqual(created.count, 27 * 2 + 4, "exceptions: \(engine.exceptions)")
+        let encodedOperations = Set(renderer.lastFrameDraws.map(\.operation))
+        var encoded = 0
+        for id in created {
+            let parent = renderer.state.parentID(of: id)
+            XCTAssertTrue(parent == "92001" || parent == "92002", "created layer \(id) has parent \(parent ?? "none")")
+            let draws = sceneDraws(renderer, objectID: id)
+            XCTAssertFalse(draws.isEmpty, "created layer \(id) has no planned draw")
+            for (operation, draw) in draws {
+                XCTAssertEqual(draw.compositeOwnerID, parent, "created layer \(id) draws outside its parent composite")
+                XCTAssertNil(renderer.skipped[operation], "created layer \(id) operation \(operation)")
+                encoded += encodedOperations.contains(operation) ? 1 : 0
+            }
+        }
+        XCTAssertGreaterThan(encoded, 0, "no created layer was encoded in the last frame")
+    }
+
+    /// Loads a Workshop scene from the Steam library through the product driver, scripts included.
+    private func loadWorkshopScene(_ workshopID: String) async throws -> WPEParitySceneDriver {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
+        let folder = steam.appending(path: "workshop/content/431960/\(workshopID)", directoryHint: .isDirectory)
+        let package = folder.appending(path: "scene.pkg")
+        let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
+            .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")
+        guard FileManager.default.fileExists(atPath: package.path),
+              FileManager.default.fileExists(atPath: engineRoot.appending(path: "assets/materials/util").path) else {
+            throw XCTSkip("Needs Workshop \(workshopID) and WPE's assets (or WPE_ASSETS_DIR)")
+        }
+        let assets = try WPEParitySceneAssets.make(provider: WPEPackageSceneAssetProvider(packageURL: package),
+                                                   projectRoot: folder, dependencyMounts: [],
+                                                   engineAssetsRootURL: engineRoot)
+        let document = try WPESceneDocumentParser.parse(data: XCTUnwrap(assets.data("scene.json")), userValues: [:])
+        // Kept across runs: the shader cache is keyed by compiler identity.
+        let cache = FileManager.default.temporaryDirectory.appending(path: "wpe-parity-workshop-\(workshopID)",
+                                                                     directoryHint: .isDirectory)
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: cache.appending(path: "shaderc"))
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        let host = WPEParitySceneScript.Host(
+            userPropertiesJSON: WPEParitySceneScript.userPropertiesJSON(projectRoot: folder, values: [:])
+        )
+        try await driver.load(document: document, assets: assets, settings: WPEParityProgramSettings(),
+                              drawableSize: CGSize(width: Self.width, height: Self.height),
+                              pixelFormat: .bgra8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: cache.appending(path: "shaders")),
+                              workshopID: workshopID, scriptHost: host, particleSeed: 1)
+        XCTAssertNil(driver.loadDiagnostics)
+        return driver
+    }
+
+    private func presentFrames(_ driver: WPEParitySceneDriver, count: Int, label: String) async throws {
+        let layer = CAMetalLayer()
+        layer.device = try XCTUnwrap(driver.renderer).backbuffer.device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: Self.width, height: Self.height)
+        for frame in 1 ... count {
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(frame) / 60,
+                                                                     pointer: SIMD2(0.5, 0.5)),
+                                        "\(label) frame \(frame) was not presented")
+            await command.completed()
+            XCTAssertNil(command.error, "\(label) frame \(frame)")
+        }
+    }
+
+    private func sceneDraws(_ renderer: WPEParityFrameRenderer,
+                            objectID: String) -> [(operation: Int, draw: WPEParitySceneDraw)] {
+        renderer.frames[0].draws.compactMap { operation, draw in
+            guard case let .scene(scene) = draw, scene.objectID == objectID else { return nil }
+            return (operation, scene)
+        }
     }
 
     /// Each offscreen scale tier allocates no more render-target bytes than the one below it.
