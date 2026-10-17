@@ -418,7 +418,7 @@ public enum WPESceneDocumentParser {
             if resolution.primary == .light {
                 diagnostics.append(.init(
                     severity: .info,
-                    message: "Light object \(objectName) fields and dynamic bindings are preserved; Metal light uniforms and shadows await their L1 gates"
+                    message: "Light object \(objectName) fields and dynamic bindings are preserved"
                 ))
             }
 
@@ -525,8 +525,8 @@ public enum WPESceneDocumentParser {
         }
         let authoredType = nonEmptyString(dict["light"])?.lowercased() ?? "point"
         let type: WPESceneLightType = switch authoredType {
-        // 14025da80 distinguishes point (5) from shader lpoint (0). H08 confirms these registered shader-light
-        // strings after load; plain-name aliases are not registered and must not create g_L* slots.
+        // 14025da80 distinguishes point (5) from shader lpoint (0); only these registered shader-light
+        // strings survive load; plain-name aliases are not registered and must not create g_L* slots.
         case "lpoint": .point
         case "lspot": .spot
         case "ltube": .tube
@@ -2002,7 +2002,7 @@ public enum WPESceneDocumentParser {
         if zoomField.isAuthored {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general.zoom and its authored bindings are preserved as metadata; camera consumption awaits L1 validation"
+                message: "general.zoom and its authored bindings are preserved as metadata"
             ))
         }
         let perspectiveOverrideFOV = preservedDoubleField(
@@ -2041,26 +2041,26 @@ public enum WPESceneDocumentParser {
             cameraShake.speed.isAuthored, cameraShake.roughness.isAuthored].contains(true) {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general.camerashake fields and authored bindings are preserved; camera jitter is not consumed without a continuous-frame L1 oracle"
+                message: "general.camerashake fields and authored bindings are preserved"
             ))
         }
         if clearEnabled.isAuthored {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general.clearenabled is preserved as metadata; render-pass clear consumption awaits L1 validation"
+                message: "general.clearenabled is preserved as metadata"
             ))
         }
         if [wind.enabled.isAuthored, wind.direction.isAuthored, wind.strength.isAuthored,
             gravity.direction.isAuthored, gravity.strength.isAuthored].contains(true) {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general wind/gravity fields and authored bindings are preserved; particle/render consumption awaits L1 validation"
+                message: "general wind/gravity fields and authored bindings are preserved"
             ))
         }
         if rawDict["lightconfig"] != nil {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general.lightconfig capacity counts are preserved; Metal light-array allocation and shadow passes await their L1 gates"
+                message: "general.lightconfig capacity counts are preserved"
             ))
         }
         let cameraParallax = WPESceneCameraParallaxSettings(
@@ -2240,13 +2240,13 @@ public enum WPESceneDocumentParser {
         if config.passthrough {
             diagnostics.append(.init(
                 severity: .info,
-                message: "Image \(name) declares config.passthrough — preserved as metadata; render-graph consumption awaits L1 validation"
+                message: "Image \(name) config.passthrough is preserved as metadata"
             ))
         }
         if disablePropagation {
             diagnostics.append(.init(
                 severity: .info,
-                message: "Image \(name) declares disablepropagation — preserved as metadata; parallax-hierarchy consumption awaits L1 validation"
+                message: "Image \(name) disablepropagation is preserved as metadata"
             ))
         }
         if !animationLayers.isEmpty {

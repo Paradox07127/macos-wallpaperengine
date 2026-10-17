@@ -267,7 +267,7 @@ struct WPESceneDocumentParserTests {
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
         #expect(document.diagnostics.contains {
-            $0.message.contains("general.zoom") && $0.message.contains("awaits L1")
+            $0.message.contains("general.zoom") && $0.message.contains("are preserved as metadata")
         })
     }
 
@@ -323,7 +323,7 @@ struct WPESceneDocumentParserTests {
                 && $0.message.contains("objects that author perspective: true")
         })
         #expect(document.diagnostics.contains {
-            $0.message.contains("camerashake") && $0.message.contains("not consumed")
+            $0.message.contains("camerashake") && $0.message.contains("are preserved")
         })
     }
 
@@ -369,10 +369,10 @@ struct WPESceneDocumentParserTests {
         #expect(document.camera == WPESceneCamera.defaultCamera)
         #expect(document.particleObjects.isEmpty)
         #expect(document.diagnostics.contains {
-            $0.message.contains("clearenabled") && $0.message.contains("awaits L1")
+            $0.message.contains("clearenabled") && $0.message.contains("is preserved as metadata")
         })
         #expect(document.diagnostics.contains {
-            $0.message.contains("wind/gravity") && $0.message.contains("awaits L1")
+            $0.message.contains("wind/gravity") && $0.message.contains("are preserved")
         })
     }
 
@@ -409,10 +409,10 @@ struct WPESceneDocumentParserTests {
             $0.target == .lightObject(id: "433") && $0.kind == .uniform && $0.action == .reload
         } == true)
         #expect(document.diagnostics.contains {
-            $0.message.contains("Light object Point") && $0.message.contains("await their L1 gates")
+            $0.message.contains("Light object Point") && $0.message.contains("are preserved")
         })
         #expect(document.diagnostics.contains {
-            $0.message.contains("general.lightconfig") && $0.message.contains("await their L1 gates")
+            $0.message.contains("general.lightconfig") && $0.message.contains("are preserved")
         })
     }
 
@@ -1857,7 +1857,7 @@ struct WPESceneDocumentParserTests {
         #expect(byID["488"]?.visible == false)
     }
 
-    @Test("Image config and propagation-control metadata are preserved without runtime consumption")
+    @Test("Image config and propagation-control metadata are preserved")
     func imageConfigAndPropagationMetadataArePreserved() throws {
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -1878,10 +1878,10 @@ struct WPESceneDocumentParserTests {
         #expect(layer.config == WPESceneImageConfig(passthrough: true))
         #expect(layer.disablePropagation == true)
         #expect(document.diagnostics.contains {
-            $0.message.contains("config.passthrough") && $0.message.contains("awaits L1")
+            $0.message.contains("config.passthrough") && $0.message.contains("is preserved as metadata")
         })
         #expect(document.diagnostics.contains {
-            $0.message.contains("disablepropagation") && $0.message.contains("awaits L1")
+            $0.message.contains("disablepropagation") && $0.message.contains("is preserved as metadata")
         })
     }
 
