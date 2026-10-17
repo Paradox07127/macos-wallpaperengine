@@ -1370,7 +1370,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
-    /// T03/T05b/T06b/T09b/T11/T12b: bounded timers, no callback-internal cancellation or Windows crash policy.
+    /// Bounded timers, no callback-internal cancellation or Windows crash policy.
     func testPerScriptTimerSnapshotsCancellationAndEventExceptionMask() throws {
         var scene = try Self.scene([
             Self.layer(1, "timers", ["alpha": Self.scripted(1, """
@@ -1918,9 +1918,9 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
-    /// Literal expected pairs are the 42 actual H10 Windows rows (ss-3e240afac388431f), not output from
+    /// Literal expected pairs are the 42 actual Windows getLayerIndex rows (ss-3e240afac388431f), not output from
     /// the product's converter. Small decimals rule out Float32 rounding; +/-2^32 rule out reject/clamp.
-    func testLayerIndexNumericProtocolMatchesWindowsH10WithoutChangingMaterialCoercion() throws {
+    func testLayerIndexNumericProtocolMatchesWindowsWithoutChangingMaterialCoercion() throws {
         var diagnostics: [String] = []
         var scene = try Self.scene([
             Self.layer(1, "Witness"),
@@ -1972,7 +1972,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 ];
                 for (const pair of cases) {
                     const actual = thisScene.getLayerIndex(pair[0]);
-                    if (actual !== pair[1]) throw Error('H10 numeric ' + String(pair[0]) + ': ' + actual + ' vs ' + pair[1]);
+                    if (actual !== pair[1]) throw Error('getLayerIndex numeric ' + String(pair[0]) + ': ' + actual + ' vs ' + pair[1]);
                 }
                 if (![undefined, null, false, true].every(input => thisScene.getLayerIndex(input) === -1)
                     || thisScene.getLayerIndex() !== -1) throw Error('non-number must not use numeric conversion');
@@ -2072,7 +2072,7 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
-    /// H04 reads the real native defaults, including padding32 and the font identifier missing from the old slots.
+    /// Reads the real native text defaults, including padding32 and the font identifier missing from the old slots.
     func testNativeTextDefaultsAndStringFieldMirror() throws {
         var scene = try Self.scene([
             ["id": 1, "name": "Text", "text": "Audit", "alpha": Self.scripted(1, """
