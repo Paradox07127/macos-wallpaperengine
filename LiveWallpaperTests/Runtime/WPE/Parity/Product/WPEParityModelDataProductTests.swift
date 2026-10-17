@@ -305,7 +305,7 @@ extension WPEParitySceneDriverTests {
         do {
             original = try sceneInputs(sceneID: withSound ? "3509243656" : "3815666789").1
         } catch {
-            throw NSError(domain: "ModelData.RequiredOriginal", code: 1)
+            throw TestScratch.requiredInputError(error, failure: NSError(domain: "ModelData.RequiredOriginal", code: 1))
         }
         for (path, expected) in [
             ("scripts/jsclasses/baseclasses.js", "708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294"),

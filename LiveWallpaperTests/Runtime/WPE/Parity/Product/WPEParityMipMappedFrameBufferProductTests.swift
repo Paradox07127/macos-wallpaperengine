@@ -429,8 +429,10 @@ extension WPEParitySceneDriverTests {
             let (_, assets) = try sceneInputs()
             return try (assets, makeCompiler())
         } catch {
-            throw NSError(domain: "WPEParityMipMappedFrameBufferProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityMipMappedFrameBufferProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"]
+            ))
         }
     }
 

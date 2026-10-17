@@ -262,7 +262,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
     /// Typed live writes select active N while the original tint shaders reuse the prepared HDR capacity.
     func testBloomTintAndIterationsReachOriginalMetalPassesPixelsAndPreparedCapacity() async throws {
         let engine: URL
-        do { engine = try engineAssets() } catch { throw NSError(domain: "Bloom.RequiredOriginalInputs", code: 1) }
+        do { engine = try engineAssets() } catch { throw TestScratch.requiredInputError(error, failure: NSError(domain: "Bloom.RequiredOriginalInputs", code: 1)) }
         let overrideKeys = ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
                             "TEST_RUNNER_WPE_SHADERC", "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"]
         guard overrideKeys.allSatisfy({ ProcessInfo.processInfo.environment[$0] == nil }) else {

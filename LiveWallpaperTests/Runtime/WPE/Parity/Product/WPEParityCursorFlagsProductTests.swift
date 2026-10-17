@@ -70,8 +70,10 @@ extension WPEParitySceneDriverTests {
         do {
             (_, assets) = try sceneInputs()
         } catch {
-            throw NSError(domain: "WPEParityCursorFlagsProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityCursorFlagsProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"]
+            ))
         }
         let compiler: WPEParityHelperShaderCompiler
         switch WPEParityShaderToolchain.makeCompiler() {

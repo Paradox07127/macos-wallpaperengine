@@ -16,8 +16,10 @@ extension WPEParitySceneDriverTests {
         do {
             original = try sceneInputs().1
         } catch {
-            throw NSError(domain: "OpaqueModelData.RequiredOriginal", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "OpaqueModelData.RequiredOriginal", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"]
+            ))
         }
         for (path, expected) in [
             ("scripts/jsclasses/baseclasses.js", "708e6636167f0456eebf3ba05274d7b7763d17dfbd44c2711dc3d6d98f0cb294"),

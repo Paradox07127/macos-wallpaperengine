@@ -330,6 +330,10 @@ final class WPEParitySpanTests: XCTestCase {
         return XCTSkip(reason)
     }
 
+    private func missingInput(_ reason: String, required: Bool) -> any Error {
+        TestScratch.requiredInputError(XCTSkip(reason), failure: unavailable(reason, required: required))
+    }
+
     /// Nonuniform external input: opaque red/green halves, independent of the WPE renderer.
     private func mediaArtwork() throws -> Data {
         var rgba: [UInt8] = []
@@ -417,20 +421,20 @@ final class WPEParitySpanTests: XCTestCase {
     private func makeHarness(span: Bool = true, staticMedia: Bool = false,
                              requiredInputs: Bool = false) async throws -> Harness {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
-            throw unavailable("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>",
-                              required: requiredInputs)
+            throw missingInput("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>",
+                               required: requiredInputs)
         }
         let compiler: WPEParityHelperShaderCompiler
         switch WPEParityShaderToolchain.makeCompiler() {
         case let .success(found): compiler = found
-        case let .failure(reason): throw unavailable("\(reason)", required: requiredInputs)
+        case let .failure(reason): throw missingInput("\(reason)", required: requiredInputs)
         }
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
         let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
         guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
-            throw unavailable("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)",
-                              required: requiredInputs)
+            throw missingInput("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)",
+                               required: requiredInputs)
         }
         let relativePath = "wpe-cache/\(UUID().uuidString)"
         let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)

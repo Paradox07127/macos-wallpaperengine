@@ -513,7 +513,7 @@ final class WPEParityTextDrawTests: XCTestCase {
     func testRequestedMonoFieldsConsumeOriginalShaderRVsAndKeepParameterOnlyResources() async throws {
         let assets: URL
         do { assets = try wpeAssets() } catch {
-            throw NSError(domain: "WPEParityMono.RequiredInputs", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(domain: "WPEParityMono.RequiredInputs", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(error)"]))
         }
         for (path, expected) in [
             ("shaders/font.frag", "d9f4e7198e2cc417c50a62d65e7dd2a654a13657b4d61df358bb1c016d4d7b26"),
@@ -543,7 +543,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             let beforeJSON = try JSONSerialization.data(withJSONObject: json)
             let fixture: Fixture
             do { fixture = try await makeSyntheticRenderer(effect: effect, scene: beforeJSON) } catch {
-                throw NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"])
+                throw TestScratch.requiredInputError(error, failure: NSError(domain: "WPEParityMono.RequiredInputs", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(error)"]))
             }
             let renderer = fixture.renderer
             let warmed = fixture.plan.loadPrograms.filter {
@@ -1024,8 +1024,10 @@ final class WPEParityTextDrawTests: XCTestCase {
             json["objects"] = [first, second]
             return try await makeSyntheticRenderer(effect: true, scene: JSONSerialization.data(withJSONObject: json))
         } catch {
-            throw NSError(domain: "WPEParityTextAdmission.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required real font/shader/Metal fixture unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityTextAdmission.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required real font/shader/Metal fixture unavailable: \(error)"]
+            ))
         }
     }
 

@@ -17,8 +17,10 @@ extension WPEParitySceneDriverTests {
             let (_, sources) = try sceneInputs()
             original = sources
         } catch {
-            throw NSError(domain: "WPEParityPuppetAlphaProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityPuppetAlphaProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original inputs unavailable: \(error)"]
+            ))
         }
         func digest(_ data: Data) -> String {
             SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

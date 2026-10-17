@@ -187,7 +187,13 @@ extension WPEParitySceneDriverTests {
     }
 
     func shadowInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {
-        let (_, original) = try XCTUnwrap(try? sceneInputs(), "required captured scene and original WPE asset sources")
+        let original: WPEParityProgramAssets
+        do { (_, original) = try sceneInputs() } catch {
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityShadowProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "required captured scene and original WPE asset sources: \(error)"]
+            ))
+        }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath().standardizedFileURL
         let tools = try ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"].map { path in
             let url = contents.appending(path: path).resolvingSymlinksInPath().standardizedFileURL

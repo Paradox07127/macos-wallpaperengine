@@ -576,8 +576,10 @@ extension WPEParitySceneDriverTests {
         do {
             (_, assets) = try sceneInputs()
         } catch {
-            throw NSError(domain: "WPEParitySceneProtocolProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParitySceneProtocolProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"]
+            ))
         }
         if !files.isEmpty {
             assets = WPEParityProgramAssets(sources: [.lookup(scratch) { path in

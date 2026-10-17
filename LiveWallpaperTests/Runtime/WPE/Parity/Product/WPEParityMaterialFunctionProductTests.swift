@@ -168,8 +168,10 @@ extension WPEParitySceneDriverTests {
         do {
             (_, base) = try sceneInputs()
         } catch {
-            throw NSError(domain: "WPEParityMaterialFunctionProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityMaterialFunctionProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets unavailable: \(error)"]
+            ))
         }
         // Construct the existing compiler with the actual shipping components in this host bundle.
         // Resolve symlinks before admission; existence alone cannot establish a component's bundle origin.

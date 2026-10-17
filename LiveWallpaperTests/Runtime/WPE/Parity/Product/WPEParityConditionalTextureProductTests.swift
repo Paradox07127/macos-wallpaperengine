@@ -135,8 +135,10 @@ extension WPEParitySceneDriverTests {
             )
             return (original, compiler)
         } catch {
-            throw NSError(domain: "WPEParityConditionalTextureProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets/bundled compiler unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityConditionalTextureProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets/bundled compiler unavailable: \(error)"]
+            ))
         }
     }
 

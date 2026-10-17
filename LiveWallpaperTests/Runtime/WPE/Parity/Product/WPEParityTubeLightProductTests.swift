@@ -145,7 +145,13 @@ extension WPEParitySceneDriverTests {
     }
 
     private func tubeLightInputs() throws -> (WPEParityProgramAssets, WPEParityHelperShaderCompiler) {
-        let (_, original) = try XCTUnwrap(try? sceneInputs(), "required captured scene and original WPE asset sources")
+        let original: WPEParityProgramAssets
+        do { (_, original) = try sceneInputs() } catch {
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityTubeLightProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "required captured scene and original WPE asset sources: \(error)"]
+            ))
+        }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath().standardizedFileURL
         for key in ["WPE_SHADERC", "WPE_DXCOMPILER", "WPE_METALIRCONVERTER",
                     "TEST_RUNNER_WPE_SHADERC", "TEST_RUNNER_WPE_DXCOMPILER", "TEST_RUNNER_WPE_METALIRCONVERTER"] {

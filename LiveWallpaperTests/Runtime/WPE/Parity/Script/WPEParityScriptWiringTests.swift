@@ -77,7 +77,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
                 }
             }
         } catch {
-            throw NSError(domain: "NativePause.RequiredFixture", code: 1, userInfo: [NSUnderlyingErrorKey: error])
+            throw TestScratch.requiredInputError(error, failure: NSError(domain: "NativePause.RequiredFixture", code: 1, userInfo: [NSUnderlyingErrorKey: error]))
         }
         let script = try attachScript(fixture)
         let operation = try XCTUnwrap(Self.operation(fixture.plan, object: "17") { $0.fillsComposite })

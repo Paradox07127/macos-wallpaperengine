@@ -112,9 +112,10 @@ final class WPEParitySceneDriverTests: XCTestCase {
             (document, assets) = try sceneInputs()
             compiler = try makeCompiler()
         } catch {
-            // This is a required product gate: an unavailable external fixture/toolchain is a failure, not a skip.
-            throw NSError(domain: "WPEParitySceneDriverTests.RequiredCaptureInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required capture inputs unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParitySceneDriverTests.RequiredCaptureInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required capture inputs unavailable: \(error)"]
+            ))
         }
         XCTAssertEqual(WPEMetalFXSpatialUpscaler.renderScale, 1, "The required native gate uses isolated defaults")
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())

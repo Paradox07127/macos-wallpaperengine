@@ -90,8 +90,10 @@ extension WPEParitySceneDriverTests {
             assets = found
             compiler = try makeCompiler()
         } catch {
-            throw NSError(domain: "WPEParityMediaPresenceProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityMediaPresenceProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"]
+            ))
         }
         // Original flat really consumes live g_Color/g_Alpha. No replacement shader or synthetic output is used.
         for (path, expected) in [

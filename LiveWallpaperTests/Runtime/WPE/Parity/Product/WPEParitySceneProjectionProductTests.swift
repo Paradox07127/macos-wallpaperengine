@@ -12,7 +12,7 @@ extension WPEParitySceneDriverTests {
     /// 183a70 publishes projection before the script tick; object/queue selection replaces only effective FOV.
     func testSceneProjectionUsesStrictLiveFieldsBeforeTickAndPreservesThemAcrossCameraSelectionAndResize() async throws {
         let original: WPEParityProgramAssets
-        do { original = try sceneInputs().1 } catch { throw NSError(domain: "Projection.RequiredOriginal", code: 1) }
+        do { original = try sceneInputs().1 } catch { throw TestScratch.requiredInputError(error, failure: NSError(domain: "Projection.RequiredOriginal", code: 1)) }
         for (path, expected) in [
             ("shaders/genericimage2.vert", "97370dbb18746d61629edf77ee2c30afe07605f5270f8a29a406b414932368bb"),
             ("shaders/genericimage2.frag", "1e252e2271cae57fcfdecf3bd79d1685bb726e1e8afe09ba863dca2e1b12d68e"),

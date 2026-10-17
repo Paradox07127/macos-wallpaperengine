@@ -147,8 +147,10 @@ extension WPEParitySceneDriverTests {
             case let .failure(reason): throw reason
             }
         } catch {
-            throw NSError(domain: "WPEParityMipMappedParticleProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets/bundled helper unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityMipMappedParticleProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets/bundled helper unavailable: \(error)"]
+            ))
         }
     }
 

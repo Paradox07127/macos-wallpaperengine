@@ -19,8 +19,10 @@ extension WPEParitySceneDriverTests {
         do {
             (_, original) = try sceneInputs()
         } catch {
-            throw NSError(domain: "WPEParityAnimationEventProductTests.RequiredOriginalInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: String(describing: error)])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityAnimationEventProductTests.RequiredOriginalInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: String(describing: error)]
+            ))
         }
         let contents = Bundle.main.bundleURL.appending(path: "Contents").resolvingSymlinksInPath()
         let tools = ["MacOS/wpe-shaderc", "Frameworks/libdxcompiler.dylib", "Frameworks/libmetalirconverter.dylib"]

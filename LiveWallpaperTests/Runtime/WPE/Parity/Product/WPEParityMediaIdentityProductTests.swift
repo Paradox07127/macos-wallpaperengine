@@ -105,8 +105,10 @@ extension WPEParitySceneDriverTests {
             assets = found
             compiler = try makeCompiler()
         } catch {
-            throw NSError(domain: "WPEParityMediaIdentityProductTests.RequiredInputs", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"])
+            throw TestScratch.requiredInputError(error, failure: NSError(
+                domain: "WPEParityMediaIdentityProductTests.RequiredInputs", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Required original assets/toolchain unavailable: \(error)"]
+            ))
         }
         for (path, expected) in [
             ("shaders/flat.frag", "7e0503a1821089475b884e4e8b0fb1987108f7d00c5cb353da7695eac7796477"),

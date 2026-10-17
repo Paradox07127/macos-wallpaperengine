@@ -1,5 +1,6 @@
 import Foundation
 @testable import LiveWallpaper
+import XCTest
 
 enum TestScratch {
     static func externalFixtureURL(
@@ -10,6 +11,16 @@ enum TestScratch {
               let path = environment[pathKey],
               path.hasPrefix("/"), !path.contains("\0") else { return nil }
         return URL(fileURLWithPath: path)
+    }
+
+    /// A missing-input `XCTSkip` stays a skip unless the run opted into external fixtures; anything else is `failure`.
+    static func requiredInputError(
+        _ error: any Error,
+        failure: any Error,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any Error {
+        guard error is XCTSkip, environment["LIVEWALLPAPER_EXTERNAL_FIXTURES"] != "1" else { return failure }
+        return error
     }
 
     enum Failure: Error {
