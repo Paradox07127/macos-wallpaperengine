@@ -68,6 +68,62 @@ struct WPEUserShortcutIconStoreTests {
         #expect(!store.setIcon(nil, forKey: "rj1"))
     }
 
+    // MARK: - Slot aspect
+
+    @Test("A scene texture image is centre-cropped to the slot aspect with truncated size and halved offset")
+    func cropRectTable() {
+        let table: [(width: Int, height: Int, aspect: Float, rect: [Int])] = [
+            (6, 3, 1, [1, 0, 3, 3]),
+            (4, 4, 2, [0, 1, 4, 2]),
+            (4, 2, 2, [0, 0, 4, 2]),
+            (5, 2, 1, [1, 0, 2, 2]),
+        ]
+        for row in table {
+            let rect = WPEUserShortcutIconImage.cropRect(width: row.width, height: row.height, aspect: row.aspect)
+            #expect([rect.x, rect.y, rect.width, rect.height] == row.rect, "\(row)")
+        }
+        let strip = WPEUserShortcutIconImage(rgba: [1, 1, 1, 255, 2, 2, 2, 255, 3, 3, 3, 255], width: 3, height: 1)
+        #expect(strip.fitted(toAspect: 1, pads: false) == WPEUserShortcutIconImage(rgba: [2, 2, 2, 255], width: 1, height: 1))
+        #expect(strip.fitted(toAspect: 3, pads: false) == nil, "a matching aspect keeps the image")
+    }
+
+    @Test("A usershortcut icon is centred on a transparent canvas of the slot aspect")
+    func padRectCentresTheIcon() {
+        let wide = WPEUserShortcutIconImage.padRect(width: 4, height: 2, aspect: 1)
+        #expect([wide.x, wide.y, wide.width, wide.height] == [0, 1, 4, 4] as [Int])
+        let tall = WPEUserShortcutIconImage.padRect(width: 2, height: 4, aspect: 2)
+        #expect([tall.x, tall.y, tall.width, tall.height] == [3, 0, 8, 4] as [Int])
+        let icon = WPEUserShortcutIconImage(rgba: [9, 9, 9, 255], width: 1, height: 1)
+        #expect(icon.fitted(toAspect: 3, pads: true)
+            == WPEUserShortcutIconImage(rgba: [0, 0, 0, 0, 9, 9, 9, 255, 0, 0, 0, 0], width: 3, height: 1))
+    }
+
+    @Test("Fitted textures are cached per rounded aspect and dropped when the image changes")
+    func fittedTexturesFollowTheImage() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let store = WPEUserShortcutIconStore(device: device)
+        store.setIcon(WPEUserShortcutIconImage(rgba: [UInt8](repeating: 255, count: 12 * 12 * 4), width: 12, height: 12),
+                      forKey: "photo")
+        let whole = try #require(store.substituting(nil, slot: 0, declarations: [0: "photo"]))
+        let slot = WPEUserImageSlot(key: "photo", aspect: 3, pads: false)
+        let cropped = try #require(store.texture(for: slot))
+        #expect([cropped.width, cropped.height] == [12, 4] as [Int])
+        #expect(store.texture(for: slot) === cropped)
+        #expect(store.texture(for: WPEUserImageSlot(key: "photo", aspect: 3.04, pads: false)) === cropped)
+        #expect(store.texture(for: WPEUserImageSlot(key: "photo", aspect: nil, pads: false)) === whole)
+        #expect(store.texture(for: WPEUserImageSlot(key: "photo", aspect: 1, pads: false)) === whole)
+        let padded = try #require(store.texture(for: WPEUserImageSlot(key: "photo", aspect: 3, pads: true)))
+        #expect([padded.width, padded.height] == [36, 12] as [Int])
+
+        store.setIcon(WPEUserShortcutIconImage(rgba: [UInt8](repeating: 128, count: 12 * 12 * 4), width: 12, height: 12),
+                      forKey: "photo")
+        let replaced = try #require(store.texture(for: slot))
+        #expect(replaced !== cropped, "a new image must not reuse the previous image's crop")
+        #expect([replaced.width, replaced.height] == [12, 4] as [Int])
+        store.setIcon(nil, forKey: "photo")
+        #expect(store.texture(for: slot) == nil)
+    }
+
     // MARK: - Builtin dispatch
 
     @Test("A builtin image pass declaring a usershortcut slot samples the icon, else the fallback", arguments: ["genericimage2", "genericimage4"])

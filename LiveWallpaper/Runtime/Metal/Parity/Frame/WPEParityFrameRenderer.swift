@@ -1659,7 +1659,7 @@ final class WPEParityFrameRenderer {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera
         guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
-        let shortcutTextures = userShortcutIcons?.snapshot() ?? [:]
+        let shortcutIcons = userShortcutIcons
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
@@ -1855,7 +1855,7 @@ final class WPEParityFrameRenderer {
                                                                                                 textures: textures, arena: arena, textureSlots: &textureSlots,
                                                                                                 renderVars: &renderVars, particles: &particles, layers: live,
                                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) },
-                                                                                                userShortcutTexture: { shortcutTextures[$0] }) {
+                                                                                                userShortcutTexture: { shortcutIcons?.texture(for: $0) }) {
                                                         // Encode argument tables before the next batch reserves any vertex bytes.
                                                         try encode(provided, operation: operation)
                                                     } else if loggedParticleDrops.insert(batch.key.objectID).inserted {
@@ -1883,7 +1883,7 @@ final class WPEParityFrameRenderer {
                                                                                  renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
                                                                                  textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
                                                                                  mediaTexture: { mediaTextures?.texture(for: $0) },
-                                                                                 userShortcutTexture: { shortcutTextures[$0] })
+                                                                                 userShortcutTexture: { shortcutIcons?.texture(for: $0) })
                                                 guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
                                                       description.target == WPEParitySceneResource.shadowAtlas else {
                                                     try encode(provided, operation: operation)

@@ -907,10 +907,16 @@ extension WPEParityProgramMaterial {
                 constants[key] = WPEParityProgramConstants.components(value, userValues: assets.userValues)
             }
         }
+        let reference = pass["usertexturereference"].flatMap { size -> SIMD2<Int>? in
+            guard let width = Scene.number(size["width"]), let height = Scene.number(size["height"]),
+                  width > 0, height > 0 else { return nil }
+            return SIMD2(Int(width), Int(height))
+        }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
                   combos: combos, textures: textures, constants: constants,
                   cullsBackFaces: Scene.string(pass["cullmode"])?.lowercased() != "nocull",
-                  userTextures: .init(material: document["usertextures"], pass: pass["usertextures"]))
+                  userTextures: .init(material: document["usertextures"], pass: pass["usertextures"],
+                                      reference: reference))
         if case let .object(entries)? = pass["constantshadervalues"] {
             for (key, value) in entries {
                 if case .string? = value["user"] {
@@ -951,7 +957,8 @@ extension WPEParityProgramMaterial {
         }
         if userTextures != nil || userTextureBindings?.isEmpty == false {
             self.userTextures = .init(material: self.userTextures.material, pass: self.userTextures.pass,
-                                      override: userTextures, overrideBindings: userTextureBindings)
+                                      override: userTextures, overrideBindings: userTextureBindings,
+                                      reference: self.userTextures.reference)
         }
     }
 }

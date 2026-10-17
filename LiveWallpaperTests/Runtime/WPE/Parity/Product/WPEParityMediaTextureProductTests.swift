@@ -103,10 +103,11 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertEqual(surface.lastIsPaused, true)
 
         // Controlled external icon bytes exercise the native-provider consumer, not macOS icon extraction pixels.
-        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 32).flatMap(\.self),
-                                            width: 8, height: 4)
-        let magenta = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(255), 0, 255, 255], count: 32).flatMap(\.self),
-                                               width: 4, height: 8)
+        // Square like the rendered icon canvas, so the square authored slots bind them unpadded.
+        let cyan = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(0), 255, 255, 255], count: 16).flatMap(\.self),
+                                            width: 4, height: 4)
+        let magenta = WPEUserShortcutIconImage(rgba: Array(repeating: [UInt8(255), 0, 255, 255], count: 16).flatMap(\.self),
+                                               width: 4, height: 4)
         XCTAssertTrue(icons.setIcon(cyan, forKey: "shortcut-current"))
         try await waitUntil("Shortcut icon did not wake the parked product actor") { surface.lastIsPaused == false }
         try await actorFrame(actor)
@@ -218,6 +219,49 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         try await waitUntil("Clearing a scene texture did not wake the parked product actor") { surface.lastIsPaused == false }
         try await actorFrame(actor)
         try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 160, current: nil, previous: nil)
+    }
+
+    func testSceneTextureImageIsCenterCroppedToTheAuthoredSlotAspect() async throws {
+        // The authored slot is 6x2, so the 12x12 image keeps only rows 4..<8: its cyan middle third.
+        let fixture = try makeFixture(scripted: false, sceneTextures: true, currentSlotWidth: 6)
+        let images = WPEUserShortcutIconStore(device: fixture.device)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        var inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "scene-texture-crop", cacheRelativePath: "scene-texture-crop",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        inputs.userShortcutIcons = images
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run { try? FileManager.default.removeItem(at: fixtureRoot) }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        try await actorFrame(actor)
+
+        let red: [UInt8] = [255, 0, 0, 255], cyan: [UInt8] = [0, 255, 255, 255]
+        let banded = (0 ..< 12).flatMap { row in Array(repeating: (4 ..< 8).contains(row) ? cyan : red, count: 12).joined() }
+        XCTAssertTrue(images.setIcon(WPEUserShortcutIconImage(rgba: banded, width: 12, height: 12), forKey: "texture-current"))
+        try await waitUntil("A scene texture image did not wake the parked product actor") { surface.lastIsPaused == false }
+        try await actorFrame(actor)
+        let pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 0, artwork: nil, fallback: cyan)
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+        let sizes = await actor.run { actor in
+            actor.parityDriverForTesting?.renderer?.lastFrameDraws.compactMap {
+                $0.draw.textures["g_Texture1"].map { [$0.width, $0.height] }
+            } ?? []
+        }
+        XCTAssertTrue(sizes.contains([12, 4]), "the bound user image must have the cropped size, got \(sizes)")
+        XCTAssertFalse(sizes.contains([12, 12]), "the uncropped user image must not be bound, got \(sizes)")
     }
 
     func testOriginalEffectsConsumeSameFrameMediaAndScriptThenPreservePairAcrossReloadAndResize() async throws {
@@ -483,7 +527,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
 
     private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
                              shortcutIcons: Bool = false, sceneTextures: Bool = false,
-                             video: Data? = nil) throws -> Fixture {
+                             currentSlotWidth: UInt32 = 2, video: Data? = nil) throws -> Fixture {
         let qualifiedInput = mergeUserTextures || shortcutIcons || sceneTextures
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -562,12 +606,14 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
         for (name, pixel) in [("black", [UInt8(0), 0, 0, 255]), ("white", [255, 255, 255, 255]),
                               ("current", [0, 128, 0, 255]), ("previous", [0, 0, 128, 255])] {
-            let bytes = solidTEX(pixel)
+            let wide = name == "current" && currentSlotWidth != 2
+            let bytes = solidTEX(pixel, width: name == "current" ? currentSlotWidth : 2)
             if qualifiedInput {
                 let expected = [
                     "black": "12bb09f8d804b7bc680b12fe8be942cd2870213357a9db7ea5b4ff2f899df86a",
                     "white": "69a03565ff1e6ec0c468d27e1faff5cff7d00f0fb6a97cd34c053cb5d49f8f3c",
-                    "current": "3f42f5054e37baaba996691e03011d5c786c640212dac5cf6204031cdc1f8acd",
+                    "current": wide ? "3ca8b24e4bc5cd3ed135a7c5573c46e6aae03c2df27283e659dd10f5a6b86157"
+                        : "3f42f5054e37baaba996691e03011d5c786c640212dac5cf6204031cdc1f8acd",
                     "previous": "80e49f65d3e7c3898cd20e6aa9a13f8479c19c63e3e6f873e6441de60acdd0ed",
                 ]
                 XCTAssertEqual(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(), expected[name])
@@ -866,16 +912,16 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         return data as Data
     }
 
-    private func solidTEX(_ pixel: [UInt8]) -> Data {
-        tex(flags: 0, size: 2, payload: Data(Array(repeating: pixel, count: 4).joined()))
+    private func solidTEX(_ pixel: [UInt8], width: UInt32 = 2) -> Data {
+        tex(flags: 0, width: width, height: 2, payload: Data(Array(repeating: pixel, count: Int(width) * 2).joined()))
     }
 
     /// TEXI flag 0x20: the single mip holds the MP4 stream.
     private func videoTEX(_ mp4: Data) -> Data {
-        tex(flags: 0x20, size: 64, payload: mp4)
+        tex(flags: 0x20, width: 64, height: 64, payload: mp4)
     }
 
-    private func tex(flags: UInt32, size: UInt32, payload: Data) -> Data {
+    private func tex(flags: UInt32, width: UInt32, height: UInt32, payload: Data) -> Data {
         var data = Data()
         func magic(_ text: String) {
             data.append(contentsOf: text.utf8); data.append(0)
@@ -885,11 +931,11 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
         }
         magic("TEXV0005"); magic("TEXI0001")
-        for value in [UInt32(0), flags, size, size, size, size, 0] {
+        for value in [UInt32(0), flags, width, height, width, height, 0] {
             append(value)
         }
         magic("TEXB0003")
-        for value in [UInt32(1), .max, 1, size, size, 0, UInt32(payload.count), UInt32(payload.count)] {
+        for value in [UInt32(1), .max, 1, width, height, 0, UInt32(payload.count), UInt32(payload.count)] {
             append(value)
         }
         data.append(payload)

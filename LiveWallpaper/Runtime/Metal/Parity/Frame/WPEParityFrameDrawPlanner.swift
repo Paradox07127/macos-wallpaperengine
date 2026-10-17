@@ -51,8 +51,8 @@ struct WPEParityFrameDrawPlan {
     var textures: [[String: TextureSource]]
     /// System declarations eligible to replace an authored image, never a graph-owned RT or glyph atlas.
     var mediaSlots: [Int: WPEMediaSystemTexture] = [:]
-    /// Usershortcut and scene-texture property keys, resolved by the product icon store.
-    var userShortcutSlots: [Int: String] = [:]
+    /// Usershortcut and scene-texture slots, resolved by the product icon store.
+    var userImageSlots: [Int: WPEUserImageSlot] = [:]
     /// Full-image UVs for a media replacement of a padded authored albedo; built once, not on artwork changes.
     var mediaGeometry: Geometry?
     /// A compiled authored-format conversion that cannot consume an RGBA8 media image unchanged.
@@ -163,7 +163,7 @@ struct WPEParityFrameDrawPlan {
                   layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
                   textRenderVarState: WPEParityRenderVarState? = nil,
                   mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
-                  userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
+                  userShortcutTexture: (WPEUserImageSlot) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
         let selectedGeometry = replacements[0] == nil ? geometry : mediaGeometry ?? geometry
         let vertices: MTLBuffer
@@ -239,7 +239,7 @@ struct WPEParityFrameDrawPlan {
                           particles: inout WPEParityParticleFrame,
                           layers live: WPEParityLayerTransformSet? = nil,
                           mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
-                          userShortcutTexture: (String) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
+                          userShortcutTexture: (WPEUserImageSlot) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
         if particle.renderVar1 != nil, replacements[0] != nil {
@@ -299,10 +299,10 @@ struct WPEParityFrameDrawPlan {
     }
 
     private func replacementTextures(mediaTexture: (WPEMediaSystemTexture) -> MTLTexture?,
-                                     userShortcutTexture: (String) -> MTLTexture?) -> [Int: MTLTexture] {
+                                     userShortcutTexture: (WPEUserImageSlot) -> MTLTexture?) -> [Int: MTLTexture] {
         var textures = mediaSlots.compactMapValues(mediaTexture)
-        for (slot, key) in userShortcutSlots {
-            if let texture = userShortcutTexture(key) {
+        for (slot, image) in userImageSlots {
+            if let texture = userShortcutTexture(image) {
                 textures[slot] = texture
             }
         }
@@ -774,12 +774,12 @@ struct WPEParityFrameDrawPlanner {
         // Any other provider names a plain property whose user image replaces slots 0..9 (140154480.c:142-232,
         // 1401556e0.c:82-109); an unresolved declaration merge keeps the authored texture.
         let sceneTextures = binding.userTextures.diagnostics.isEmpty
-        var userShortcutSlots = binding.userTextureSlots.reduce(into: [Int: String]()) { slots, entry in
+        var userImageKeys = binding.userTextureSlots.reduce(into: [Int: (key: String, pads: Bool)]()) { slots, entry in
             let type = entry.value.type
             let plain = sceneTextures && Int(entry.key) < WPEParityUniformTextures.slotCount && type != "system"
                 && WPEMediaSystemTexture(bindingName: entry.value.name) == nil
             if entry.key >= 0, type == "usershortcut" || plain {
-                slots[Int(entry.key)] = entry.value.name
+                slots[Int(entry.key)] = (entry.value.name, type == "usershortcut")
             }
         }
         let pipeline = try pipeline(description, target: target, resources: resources, program: layout.programs[index],
@@ -830,7 +830,7 @@ struct WPEParityFrameDrawPlanner {
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
         let samplerNames = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .sampler }.map(\.name))
         mediaSlots = mediaSlots.filter { names.contains("g_Texture\($0.key)") }
-        userShortcutSlots = userShortcutSlots.filter { names.contains("g_Texture\($0.key)") }
+        userImageKeys = userImageKeys.filter { names.contains("g_Texture\($0.key)") }
         let text: WPEParitySceneText? = if case let .scene(draw) = description {
             texts[draw.objectID]
         } else {
@@ -1011,8 +1011,20 @@ struct WPEParityFrameDrawPlanner {
         } else {
             nil
         }
+        // 0x1401556e0.c:149-213: the pass's usertexturereference, else the authored image (a sprite sheet's frame)
+        // sets the slot aspect a user image is fitted to.
+        let userImageSlots = userImageKeys.reduce(into: [Int: WPEUserImageSlot]()) { slots, entry in
+            let authored = uniformTextures.indices.contains(entry.key) ? uniformTextures[entry.key] : nil
+            let size = binding.userTextures.reference.map { SIMD2(Float($0.x), Float($0.y)) } ?? authored.map { texture in
+                texture.spriteFrame.map { SIMD2(hypot($0.widthX, $0.widthY), hypot($0.heightX, $0.heightY)) }
+                    ?? SIMD2(Float(texture.imageWidth), Float(texture.imageHeight))
+            }
+            let keeps = binding.userTextures.keepAspectSlots.contains(Int32(entry.key))
+            let aspect = size.flatMap { $0.x > 0 && $0.y > 0 && !keeps ? $0.x / $0.y : nil }
+            slots[entry.key] = WPEUserImageSlot(key: entry.value.key, aspect: aspect, pads: entry.value.pads)
+        }
         var mediaGeometry: WPEParityFrameDrawPlan.Geometry?
-        if mediaSlots[0] != nil || userShortcutSlots[0] != nil, uvMax != .one {
+        if mediaSlots[0] != nil || userImageSlots[0] != nil, uvMax != .one {
             let inputs = artifact.vertex.reflection.vertexInputs
             let paddedQuad = placement.map {
                 switch $0.kind {
@@ -1059,7 +1071,7 @@ struct WPEParityFrameDrawPlanner {
             puppetID: puppetID,
             textures: textures,
             mediaSlots: mediaSlots,
-            userShortcutSlots: userShortcutSlots,
+            userImageSlots: userImageSlots,
             mediaGeometry: mediaGeometry,
             mediaFormatFailures: mediaFormatFailures,
             samplers: samplers,

@@ -247,7 +247,8 @@ final class ParityProgramBindingTests: XCTestCase {
                                    ["name": "$mediaThumbnail", "type": "system", "keepaspect": true],
                                    ["name": "$mediaPreviousThumbnail", "type": "system"]]
         for locus in ["material", "pass", "instance"] {
-            var pass: [String: Any] = ["shader": "probe", "textures": ["util/base", "util/ordinary", "util/current", "previous"]]
+            var pass: [String: Any] = ["shader": "probe", "textures": ["util/base", "util/ordinary", "util/current", "previous"],
+                                       "usertexturereference": ["width": 6, "height": 2]]
             var material: [String: Any] = [:]
             var instance: [String: Any] = [:]
             switch locus {
@@ -262,8 +263,9 @@ final class ParityProgramBindingTests: XCTestCase {
             XCTAssertEqual(typed, [.init(name: "ordinary", slot: 1),
                                    .init(name: "$mediaThumbnail", type: "system", slot: 2),
                                    .init(name: "$mediaPreviousThumbnail", type: "system", slot: 3)], locus)
-            XCTAssertEqual(binding.userTextures.diagnostics.filter { $0.contains("keepaspect") },
-                           ["usertextures keepaspect transform is unverified at slot 2"], locus)
+            XCTAssertEqual(binding.userTextures.keepAspectSlots, [2], locus)
+            XCTAssertEqual(binding.userTextures.diagnostics.filter { $0.contains("keepaspect") }, [], locus)
+            XCTAssertEqual(binding.userTextures.reference, SIMD2(6, 2), locus)
             XCTAssertEqual(binding.userTextureSlots.keys.sorted(), [1, 2], "previous is producer-owned: \(locus)")
             XCTAssertEqual(binding.userTextureSlots[1]?.name, "ordinary", "ordinary must not be removed: \(locus)")
             XCTAssertEqual(binding.textures[1], .asset("util/ordinary"), locus)

@@ -8,13 +8,70 @@ struct WPEUserShortcutIconImage: Equatable, Sendable {
     let rgba: [UInt8]
     let width: Int
     let height: Int
+
+    /// 1401702f0: the centred region of the slot aspect (width / height); the wider side becomes trunc(h·a) or trunc(w/a).
+    static func cropRect(width: Int, height: Int, aspect: Float) -> (x: Int, y: Int, width: Int, height: Int) {
+        if Float(width) / Float(height) > aspect {
+            let cropped = Int(Float(height) * aspect)
+            return ((width - cropped) >> 1, 0, cropped, height)
+        }
+        let cropped = Int(Float(width) / aspect)
+        return (0, (height - cropped) >> 1, width, cropped)
+    }
+
+    /// 0x1401556e0.c:327-362: width/height are the transparent canvas of the slot aspect, x/y where the icon lands.
+    static func padRect(width: Int, height: Int, aspect: Float) -> (x: Int, y: Int, width: Int, height: Int) {
+        if Float(width) / Float(height) > aspect {
+            let padded = Int(Float(width) / aspect)
+            return (0, (padded - height) >> 1, width, padded)
+        }
+        let padded = Int(Float(height) * aspect)
+        return ((padded - width) >> 1, 0, padded, height)
+    }
+
+    /// nil when the slot aspect leaves the image unchanged.
+    func fitted(toAspect aspect: Float, pads: Bool) -> WPEUserShortcutIconImage? {
+        let rect = pads ? Self.padRect(width: width, height: height, aspect: aspect)
+            : Self.cropRect(width: width, height: height, aspect: aspect)
+        guard rect.width != width || rect.height != height else { return nil }
+        let rowBytes = width * 4
+        guard pads else {
+            let rows = (rect.y ..< rect.y + rect.height).flatMap { row in
+                rgba[row * rowBytes + rect.x * 4 ..< row * rowBytes + (rect.x + rect.width) * 4]
+            }
+            return WPEUserShortcutIconImage(rgba: rows, width: rect.width, height: rect.height)
+        }
+        var canvas = [UInt8](repeating: 0, count: rect.width * rect.height * 4)
+        for row in 0 ..< height {
+            let target = ((rect.y + row) * rect.width + rect.x) * 4
+            canvas.replaceSubrange(target ..< target + rowBytes, with: rgba[row * rowBytes ..< (row + 1) * rowBytes])
+        }
+        return WPEUserShortcutIconImage(rgba: canvas, width: rect.width, height: rect.height)
+    }
+}
+
+/// A texture slot a user image replaces.
+struct WPEUserImageSlot: Hashable, Sendable {
+    let key: String
+    /// The slot aspect (width / height) the image is fitted to; nil binds it whole (keepaspect).
+    let aspect: Float?
+    /// Usershortcut icons pad to the aspect with transparent pixels; scene textures crop to it.
+    let pads: Bool
 }
 
 /// Written on the main actor by `UserShortcutRendererLink`, read by the render thread mid-encode.
 final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all mutable state; an MTLTexture is read-only once built.
     private struct Icon {
         let digest: String
+        let image: WPEUserShortcutIconImage
         let texture: MTLTexture
+        var fitted: [Fit: MTLTexture] = [:]
+    }
+
+    /// Like the native cache name, round(aspect × 10) tells fitted variants apart.
+    private struct Fit: Hashable {
+        let tenths: Int
+        let pads: Bool
     }
 
     private let device: MTLDevice
@@ -55,7 +112,7 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
             guard let texture = Self.makeTexture(from: image, device: device) else {
                 return setIcon(nil, forKey: propertyKey)
             }
-            lock.withLock { icons[propertyKey] = Icon(digest: digest, texture: texture) }
+            lock.withLock { icons[propertyKey] = Icon(digest: digest, image: image, texture: texture) }
             changed = true
         } else {
             changed = lock.withLock { icons.removeValue(forKey: propertyKey) != nil }
@@ -66,9 +123,22 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
         return changed
     }
 
-    /// One immutable set of icon references for a parity frame; draws never hold this lock while encoding.
-    func snapshot() -> [String: MTLTexture] {
-        lock.withLock { icons.mapValues(\.texture) }
+    /// The image fitted to `slot`, built on first use and kept until `setIcon` replaces the key; nil = no image.
+    func texture(for slot: WPEUserImageSlot) -> MTLTexture? {
+        guard let icon = lock.withLock({ icons[slot.key] }) else { return nil }
+        guard let aspect = slot.aspect else { return icon.texture }
+        let fit = Fit(tenths: Int((aspect * 10).rounded()), pads: slot.pads)
+        if let cached = icon.fitted[fit] {
+            return cached
+        }
+        guard let image = icon.image.fitted(toAspect: aspect, pads: slot.pads) else { return icon.texture }
+        guard let texture = Self.makeTexture(from: image, device: device) else { return nil }
+        lock.withLock {
+            if icons[slot.key]?.digest == icon.digest {
+                icons[slot.key]?.fitted[fit] = texture
+            }
+        }
+        return texture
     }
 
     /// authored is returned for undeclared slots and for declared keys with no icon.

@@ -41,13 +41,18 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
     public let bindings: WPERenderUserTextureBindings
     /// Slots retain authored ordinals and still require an authored texture fallback.
     public let slots: [Int32: WPESceneUserTextureBinding]
+    /// Slots declared with keepaspect: their user image is bound whole.
+    public let keepAspectSlots: Set<Int32>
+    /// The pass's usertexturereference size; nil = the authored image sets the slot aspect.
+    public let reference: SIMD2<Int>?
     public let diagnostics: [String]
 
     public init(material: WPESceneJSONValue? = nil, pass: WPESceneJSONValue? = nil,
                 override: WPESceneJSONValue? = nil,
-                overrideBindings: [WPESceneUserTextureBinding]? = nil) {
+                overrideBindings: [WPESceneUserTextureBinding]? = nil, reference: SIMD2<Int>? = nil) {
         self.material = material
         self.pass = pass
+        self.reference = reference
         let materialEntries = Self.entries(material)
         let passEntries = Self.entries(pass)
         let overrideEntries = Self.entries(override)
@@ -59,6 +64,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
                         ("override", override, overrideEntries)].filter { $0.1 != nil }
         var diagnostics: [String] = []
         var slots: [Int32: WPESceneUserTextureBinding] = [:]
+        var keepAspectSlots: Set<Int32> = []
         // The selected pass after the native recursive instance merge; nil on a root/pass conflict.
         var resolved: WPESceneJSONValue?
         if override == nil, let overrideBindings, !overrideBindings.isEmpty {
@@ -81,7 +87,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
             slots[key] = entry.binding
             // Native reads a Boolean; missing or other shapes do not enable the flag.
             if entry.keepAspect {
-                diagnostics.append("usertextures keepaspect transform is unverified at slot \(slot)")
+                keepAspectSlots.insert(key)
             }
         }
         let hasResolvedArray = if case .array? = resolved {
@@ -99,6 +105,7 @@ public struct WPEParityProgramUserTextures: Sendable, Equatable {
             diagnostics.append("usertextures \(locus) has an unsupported non-array declaration")
         }
         self.slots = slots
+        self.keepAspectSlots = keepAspectSlots
         self.diagnostics = diagnostics
     }
 
