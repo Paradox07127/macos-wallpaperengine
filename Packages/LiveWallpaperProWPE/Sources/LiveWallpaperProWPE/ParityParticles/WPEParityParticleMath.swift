@@ -58,14 +58,20 @@ enum WPEParityParticleMath {
         value > 0 ? min(value, 1) : 0
     }
 
-    /// v' = (v + g·dt)·(1 − min(drag·dt, 0.9999999)), p' = p + (v + g·dt)·dt (14023fbc0.c:1464-1572).
+    /// v' = (v + g·dt)·(1 − min(drag·dragDt, 0.9999999)), p' = p + (v + g·dt)·dt (14023fbc0.c:1464-1572).
     static func move(
         position: inout SIMD3<Float>, velocity: inout SIMD3<Float>,
-        acceleration: SIMD3<Float>, drag: Float, dt: Float
+        acceleration: SIMD3<Float>, drag: Float, dt: Float, dragDt: Float? = nil
     ) {
         let accelerated = velocity + acceleration * dt
         position += accelerated * dt
-        velocity = accelerated * (1 - min(drag * dt, 0.999_999_9))
+        velocity = accelerated * (1 - min(drag * (dragDt ?? dt), 0.999_999_9))
+    }
+
+    /// 140236cd0.c:363-371: drag alone runs on dt·powf(min(0.025/frametime, 1), 0.7).
+    static func dragStep(dt: Float, frametime: Float?) -> Float {
+        guard let frametime else { return dt }
+        return powf(min(0.025 / frametime, 1), 0.7) * dt
     }
 
     /// Both branches true ORs the two float bit patterns (S 597117-597153).

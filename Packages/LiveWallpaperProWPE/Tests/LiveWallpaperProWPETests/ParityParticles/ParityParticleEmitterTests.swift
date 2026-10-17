@@ -352,4 +352,44 @@ final class ParityParticleEmitterTests: XCTestCase {
             XCTAssertEqual(particles.liveCount, instantaneous, "count \(count)")
         }
     }
+
+    func testAudioProcessingRateEmitterStaysSilentWithoutSpectrumAndEmitsWhenLoud() {
+        func alive(_ frame: WPEParityParticleFrameContext) -> Int {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount":100,"emitter":[{"name":"boxrandom","rate":20,"audioprocessingmode":3}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            for _ in 0 ..< 60 {
+                particles.advance(dt: 1.0 / 60, frame: frame)
+            }
+            return particles.liveCount
+        }
+        XCTAssertEqual(alive(WPEParityParticleFrameContext()), 0)
+        let loud = SIMD16<Float>(repeating: 1)
+        XCTAssertGreaterThan(alive(WPEParityParticleFrameContext(spectrumLeft: loud, spectrumRight: loud)), 0)
+    }
+
+    func testAudioProcessingKeysUseNativeDefaultsAndClampTheBandRange() {
+        let config = WPEParityParticleConfig(json: ParityParticleTestSupport.json("""
+        {"maxcount":1,"emitter":[{"name":"boxrandom","audioprocessingmode":1},
+          {"name":"boxrandom","audioprocessingmode":2,"audioprocessingexponent":1,"audioprocessingbounds":"0 0.5",
+           "audioprocessingfrequencystart":20,"audioprocessingfrequencyend":3}]}
+        """), is3D: true, resolveChild: { _ in nil })
+        let defaults = config.emitters[0].audio, authored = config.emitters[1].audio
+        XCTAssertEqual(defaults, WPEParityParticleAudioResponse(mode: 1, exponent: 2, low: 0.8, high: 1, start: 0, end: 1))
+        XCTAssertEqual(authored, WPEParityParticleAudioResponse(mode: 2, exponent: 1, low: 0, high: 0.5, start: 3, end: 15))
+
+        var left = SIMD16<Float>.zero, right = SIMD16<Float>.zero
+        left[1] = 0.9
+        right[0] = 0.5
+        // Band 1 = 0.9: (0.9 − 0.8)/0.2 = 0.5 → smoothstep 0.5 → 0.5² = 0.25; bands past `end` are ignored.
+        XCTAssertEqual(defaults.level(left: left, right: right), 0.25, accuracy: 1e-6)
+        left[2] = 1
+        XCTAssertEqual(defaults.level(left: left, right: right), 0.25, accuracy: 1e-6)
+        var average = defaults
+        average.mode = 3
+        // max((0.5 + 0.9)/2 = 0.7, 0.45) is below the lower bound.
+        XCTAssertEqual(average.level(left: left, right: right), 0)
+        XCTAssertEqual(authored.level(left: left, right: right), 0, "right channel, bands 3…15 are silent")
+    }
 }

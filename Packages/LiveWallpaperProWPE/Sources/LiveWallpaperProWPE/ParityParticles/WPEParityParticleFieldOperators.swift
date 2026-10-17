@@ -9,8 +9,10 @@ struct WPEParityParticleTurbulence: Equatable, Sendable {
     var phaseMin: Float
     var phaseMax: Float
     var timeScale: Float
+    var audio: WPEParityParticleAudioResponse
 
     init(_ entry: WPEParityParticleEntry, is3D: Bool) {
+        audio = WPEParityParticleAudioResponse(entry)
         mask = entry.vector("mask", is3D ? SIMD3(1, 1, 1) : SIMD3(1, 1, 0))
         scale = entry.number("scale", is3D ? 0.5 : 0.01)
         speedMin = entry.number("speedmin", is3D ? 1 : 500)
@@ -49,8 +51,10 @@ struct WPEParityParticleVortex: Equatable, Sendable {
     var speedInner: Float
     var speedOuter: Float
     var flags: Int
+    var audio: WPEParityParticleAudioResponse
 
     init(_ entry: WPEParityParticleEntry, is3D: Bool) {
+        audio = WPEParityParticleAudioResponse(entry)
         controlPoint = entry.controlPoint("controlpoint")
         offset = entry.vector("offset", .zero)
         axis = Self.normalizedAxis(entry.vector("axis", SIMD3(0, 0, 1)))
@@ -81,8 +85,10 @@ struct WPEParityParticleVortexRing: Equatable, Sendable {
     var ringPullForce: Float
     var centerForce: Float
     var flags: Int
+    var audio: WPEParityParticleAudioResponse
 
     init(_ entry: WPEParityParticleEntry, is3D: Bool) {
+        audio = WPEParityParticleAudioResponse(entry)
         controlPoint = entry.controlPoint("controlpoint")
         axis = WPEParityParticleVortex.normalizedAxis(entry.vector("axis", SIMD3(0, 0, 1)))
         inner = entry.number("distanceinner", is3D ? 1 : 500)
@@ -158,7 +164,7 @@ extension WPEParityParticleSystem {
         typealias Noise = WPEParityParticleNoise
         let u = birthU[slot]
         let phase = frameContext.time * field.timeScale + u * (field.phaseMax - field.phaseMin)
-        let speed = field.speedMin + u * (field.speedMax - field.speedMin)
+        let speed = (field.speedMin + u * (field.speedMax - field.speedMin)) * audioLevel(field.audio)
         let point = (position[slot] + phase) * field.scale
         let gain = dt * speed * weight
         if field.mask.x != 0 {
@@ -202,7 +208,7 @@ extension WPEParityParticleSystem {
         }
         let normal = radial / simd_length(radial)
         let s = WPEParityParticleMath.saturate((simd_length(radial) - field.inner) / (field.outer - field.inner))
-        let speed = field.speedInner + s * (field.speedOuter - field.speedInner)
+        let speed = (field.speedInner + s * (field.speedOuter - field.speedInner)) * audioLevel(field.audio)
         velocity[slot] += simd_cross(normal, field.axis) * dt * speed * weight
     }
 
@@ -227,7 +233,7 @@ extension WPEParityParticleSystem {
         }
         let ahead = position[slot] + velocity[slot] * dt - center - height * axis
         let correction = (radius / simd_length(ahead) - 1) * field.centerForce / dt + pull
-        let speed = field.speedInner + s * (field.speedOuter - field.speedInner)
+        let speed = (field.speedInner + s * (field.speedOuter - field.speedInner)) * audioLevel(field.audio)
         velocity[slot] += (dt * speed * simd_cross(normal, axis) + correction * ahead) * weight
     }
 

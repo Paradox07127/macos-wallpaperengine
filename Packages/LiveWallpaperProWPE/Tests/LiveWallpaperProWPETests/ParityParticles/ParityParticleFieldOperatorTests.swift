@@ -478,4 +478,22 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
         XCTAssertEqual(ramp?.weight(t: 0.25) ?? -1, 0.5, accuracy: 0.001)
         XCTAssertNil(blend(""))
     }
+
+    func testAudioProcessingFieldOperatorsLeaveVelocityUnchangedInSilence() {
+        func velocity(_ field: String, audioKey: String) -> SIMD3<Float> {
+            var particles = System(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1,
+              "distancemin":"1 1 1","distancemax":"1 1 1"}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10},
+               {"name":"velocityrandom","min":"5 0 0","max":"5 0 0"}],
+             "operator":[{"name":"\(field)"\(audioKey)}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            particles.advance(dt: 0.1)
+            return particles.velocity[Support.liveSlots(particles)[0]]
+        }
+        for field in ["turbulence", "vortex", "vortex_v2"] {
+            XCTAssertNotEqual(velocity(field, audioKey: ""), SIMD3(5, 0, 0), "\(field) without audio left it unmoved")
+            XCTAssertEqual(velocity(field, audioKey: #","audioprocessingmode":3"#), SIMD3(5, 0, 0), field)
+        }
+    }
 }

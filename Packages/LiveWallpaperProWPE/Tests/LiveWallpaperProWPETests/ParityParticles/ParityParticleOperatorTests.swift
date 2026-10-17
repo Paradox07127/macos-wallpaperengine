@@ -24,6 +24,57 @@ final class ParityParticleOperatorTests: XCTestCase {
         XCTAssertEqual(position.x, 1, accuracy: 1e-6)
     }
 
+    func testDragUsesTheFrametimeScaledStep() {
+        func damped(_ frame: WPEParityParticleFrameContext) -> (linear: Float, angular: Float) {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount":1,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":1}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10},
+               {"name":"velocityrandom","min":"10 0 0","max":"10 0 0"},
+               {"name":"angularvelocityrandom","min":"0 0 10","max":"0 0 10"}],
+             "operator":[{"name":"movement","drag":1},{"name":"angularmovement","drag":1}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            particles.advance(dt: 1.0 / 30, frame: frame)
+            let slot = ParityParticleTestSupport.liveSlots(particles)[0]
+            return (particles.velocity[slot].x, particles.angularVelocity[slot].z)
+        }
+        // dt·powf(min(0.025·30, 1), 0.7) = 0.75^0.7/30 ≈ 0.027253 → 1 − 0.027253 = 0.972747.
+        let scaled = damped(WPEParityParticleFrameContext(frametime: 1.0 / 30))
+        XCTAssertEqual(scaled.linear, 9.727_47, accuracy: 1e-4)
+        XCTAssertEqual(scaled.angular, 9.727_47, accuracy: 1e-4)
+        let plain = damped(WPEParityParticleFrameContext())
+        XCTAssertEqual(plain.linear, 10 * (1 - 1.0 / 30))
+        XCTAssertEqual(plain.angular, 10 * (1 - 1.0 / 30))
+        // At or above 40 fps the factor is 1.
+        XCTAssertEqual(damped(WPEParityParticleFrameContext(frametime: 0.02)).linear, plain.linear)
+    }
+
+    func testAudioModeZeroAndNilFrametimeMatchUnauthoredSimulationBitForBit() {
+        func run(_ audioKey: String, frame: WPEParityParticleFrameContext) -> [UInt32] {
+            var particles = WPEParityParticleSystem(json: ParityParticleTestSupport.json("""
+            {"maxcount":64,"emitter":[{"name":"sphererandom","rate":40,"speedmin":5,"speedmax":20\(audioKey)}],
+             "initializer":[{"name":"lifetimerandom","min":2,"max":4},
+               {"name":"turbulentvelocityrandom"\(audioKey)}],
+             "operator":[{"name":"movement","drag":0.7,"gravity":"0 -30 0"},
+               {"name":"angularmovement","drag":0.4,"force":"0 0 3"},
+               {"name":"turbulence"\(audioKey)},{"name":"vortex"\(audioKey)},{"name":"vortex_v2"\(audioKey)}]}
+            """), rng: WPEParityMT19937(seed: 11))
+            for index in 0 ..< 45 {
+                var step = frame
+                step.time = Float(index) / 30
+                particles.advance(dt: 1.0 / 30, frame: step)
+            }
+            return ParityParticleTestSupport.liveSlots(particles).flatMap { slot in
+                [particles.position[slot], particles.velocity[slot], particles.angularVelocity[slot]]
+                    .flatMap { [$0.x.bitPattern, $0.y.bitPattern, $0.z.bitPattern] }
+            }
+        }
+        let loud = SIMD16<Float>(repeating: 1)
+        let baseline = run("", frame: WPEParityParticleFrameContext())
+        XCTAssertFalse(baseline.isEmpty)
+        XCTAssertEqual(run(#","audioprocessingmode":0"#,
+                           frame: WPEParityParticleFrameContext(spectrumLeft: loud, spectrumRight: loud)), baseline)
+    }
+
     func testAlphaFadeBranches() {
         XCTAssertEqual(Math.alphaFade(t: 0.25, fadeIn: 0.5, fadeOut: 0.5), 0.5)
         XCTAssertEqual(Math.alphaFade(t: 0.75, fadeIn: 0.5, fadeOut: 0.5), 0.5)

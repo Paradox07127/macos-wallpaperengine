@@ -19,6 +19,11 @@ public struct WPEParityParticleFrameContext: Sendable {
     public var worldSpace: Bool
     /// ctx+0x140, the remap "timeofday" input, supplied from the same frame clock as `time`.
     public var timeOfDay: Float
+    /// ctx+0x14c: this frame's global interval before the instance rate; nil uses the step dt for drag.
+    public var frametime: Float?
+    /// 16-band audio spectrum per channel, read by `audioprocessingmode` emitters, initializers and operators.
+    public var spectrumLeft: SIMD16<Float>
+    public var spectrumRight: SIMD16<Float>
 
     public init(
         time: Float = 0,
@@ -26,10 +31,16 @@ public struct WPEParityParticleFrameContext: Sendable {
         viewProjection: simd_float4x4 = matrix_identity_float4x4,
         objectMatrix: simd_float4x4 = matrix_identity_float4x4,
         timeOfDay: Float = 0,
-        previousFrametime: Float = Float(bitPattern: 0x3D08_8889)
+        previousFrametime: Float = Float(bitPattern: 0x3D08_8889),
+        frametime: Float? = nil,
+        spectrumLeft: SIMD16<Float> = .zero,
+        spectrumRight: SIMD16<Float> = .zero
     ) {
         self.time = time
         self.previousFrametime = previousFrametime
+        self.frametime = frametime
+        self.spectrumLeft = spectrumLeft
+        self.spectrumRight = spectrumRight
         self.cursor = cursor
         self.viewProjection = viewProjection
         self.objectMatrix = objectMatrix

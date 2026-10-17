@@ -982,6 +982,7 @@ public struct WPEParityParticleSystem {
             alpha[slot] = initialAlpha[slot]
             previousPosition[slot] = position[slot]
         }
+        let dragDt = WPEParityParticleMath.dragStep(dt: dt, frametime: frameContext.frametime)
         for (index, entry) in config.operators.enumerated() {
             if case let .boids(field) = entry.kind {
                 applyBoids(field, blend: entry.blend, dt: dt)
@@ -990,12 +991,18 @@ public struct WPEParityParticleSystem {
             let kind = colorChanges[index] ?? entry.kind
             for slot in 0 ..< highWater where lifetime[slot] != 0 {
                 let t = age[slot] / lifetime[slot]
-                apply(kind, slot: slot, t: t, weight: entry.blend?.weight(t: t) ?? 1, dt: dt)
+                apply(kind, slot: slot, t: t, weight: entry.blend?.weight(t: t) ?? 1, dt: dt, dragDt: dragDt)
             }
         }
     }
 
-    private mutating func apply(_ kind: WPEParityParticleOperator.Kind, slot: Int, t: Float, weight: Float, dt: Float) {
+    /// The `audioprocessing*` multiplier for this frame's spectrum; 1 when the entry has audio off.
+    func audioLevel(_ audio: WPEParityParticleAudioResponse) -> Float {
+        audio.level(left: frameContext.spectrumLeft, right: frameContext.spectrumRight)
+    }
+
+    private mutating func apply(_ kind: WPEParityParticleOperator.Kind, slot: Int, t: Float, weight: Float, dt: Float,
+                                dragDt: Float) {
         typealias Math = WPEParityParticleMath
         func blended(_ factor: Float) -> Float {
             1 + (factor - 1) * weight
@@ -1004,12 +1011,12 @@ public struct WPEParityParticleSystem {
         case let .movement(gravity, drag):
             Math.move(
                 position: &position[slot], velocity: &velocity[slot],
-                acceleration: gravity * weight, drag: drag * weight, dt: dt
+                acceleration: gravity * weight, drag: drag * weight, dt: dt, dragDt: dragDt
             )
         case let .angularMovement(force, drag):
             Math.move(
                 position: &rotation[slot], velocity: &angularVelocity[slot],
-                acceleration: force * weight, drag: drag * weight, dt: dt
+                acceleration: force * weight, drag: drag * weight, dt: dt, dragDt: dragDt
             )
         case let .alphaFade(fadeIn, fadeOut):
             alpha[slot] *= blended(Math.alphaFade(t: t, fadeIn: fadeIn, fadeOut: fadeOut))

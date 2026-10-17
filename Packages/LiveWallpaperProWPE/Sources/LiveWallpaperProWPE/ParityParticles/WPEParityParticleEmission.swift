@@ -8,7 +8,7 @@ extension WPEParityParticleSystem {
         if liveCount < capacity {
             var count = forced
             if !state.disabled, !paused, state.delayLeft <= 0 {
-                var rate = emitter.rate * instance.count
+                var rate = emitter.rate * instance.count * audioLevel(emitter.audio)
                 if emitter.periodic {
                     if state.periodTimer > 0 {
                         state.periodTimer -= dt

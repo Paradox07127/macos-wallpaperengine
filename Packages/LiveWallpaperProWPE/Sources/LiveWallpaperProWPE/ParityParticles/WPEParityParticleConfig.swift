@@ -29,6 +29,50 @@ struct WPEParityParticleEmitterConfig: Equatable, Sendable {
     var periodicDelayMin: Float
     var periodicDelayMax: Float
     var maxPerPeriod: Int
+    var audio: WPEParityParticleAudioResponse
+}
+
+/// audioprocessing* keys (1401c1e20.c). Mode 0 is off, 1 left, 2 right, 3 the two channels averaged.
+struct WPEParityParticleAudioResponse: Equatable, Sendable {
+    var mode: UInt32
+    var exponent: Float
+    var low: Float
+    var high: Float
+    /// Inclusive band range, both ≤ 15 and ordered.
+    var start: Int
+    var end: Int
+}
+
+extension WPEParityParticleAudioResponse {
+    init(_ entry: WPEParityParticleEntry) {
+        let bounds = WPEParityParticleJSON.vector(entry.json["audioprocessingbounds"]) ?? SIMD3(0.8, 1, 0)
+        // Unsigned reads: a negative band wraps and clamps to 15 like any index past it.
+        let start = min(UInt32(truncatingIfNeeded: entry.integer("audioprocessingfrequencystart", 0)), 15)
+        let end = min(UInt32(truncatingIfNeeded: entry.integer("audioprocessingfrequencyend", 1)), 15)
+        self.init(
+            mode: UInt32(truncatingIfNeeded: entry.integer("audioprocessingmode", 0)),
+            exponent: entry.number("audioprocessingexponent", 2), low: bounds.x, high: bounds.y,
+            start: Int(min(start, end)), end: Int(max(start, end))
+        )
+    }
+
+    /// 14022a8a0: the loudest band remapped through the bounds, smoothstepped, then raised to the exponent; 1 when off.
+    func level(left: SIMD16<Float>, right: SIMD16<Float>) -> Float {
+        guard mode != 0 else { return 1 }
+        func band(_ index: Int) -> Float {
+            switch mode {
+            case 1: left[index]
+            case 2: right[index]
+            default: (left[index] + right[index]) / 2
+            }
+        }
+        var loudest = band(start)
+        for index in start ... end {
+            loudest = max(loudest, band(index))
+        }
+        let x = WPEParityParticleMath.saturate((loudest - low) / (high - low))
+        return WPEParityParticleMath.saturate(powf(x * x * (3 - 2 * x), exponent))
+    }
 }
 
 enum WPEParityParticleInitializer: Equatable, Sendable {
@@ -327,7 +371,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             periodicDelayMin: min(JSON.number(entry["minperiodicdelay"]) ?? 1,
                                   JSON.number(entry["maxperiodicdelay"]) ?? 2),
             periodicDelayMax: JSON.number(entry["maxperiodicdelay"]) ?? 2,
-            maxPerPeriod: max(0, Int(JSON.number(entry["maxtoemitperperiod"]) ?? 0))
+            maxPerPeriod: max(0, Int(JSON.number(entry["maxtoemitperperiod"]) ?? 0)),
+            audio: WPEParityParticleAudioResponse(WPEParityParticleEntry(entry))
         ))
     }
 

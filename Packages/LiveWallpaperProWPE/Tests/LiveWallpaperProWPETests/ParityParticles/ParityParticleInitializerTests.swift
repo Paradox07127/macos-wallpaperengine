@@ -6,6 +6,23 @@ import XCTest
 final class ParityParticleInitializerTests: XCTestCase {
     private typealias Support = ParityParticleTestSupport
 
+    /// 14023b340.c:622-634 scales the phase spread, so silence collapses every birth onto phasemin.
+    func testAudioProcessingTurbulentVelocityCollapsesThePhaseSpreadInSilence() {
+        func velocities(_ audioKey: String) -> [SIMD3<Float>] {
+            var particles = WPEParityParticleSystem(json: Support.json("""
+            {"maxcount":2,"emitter":[{"name":"boxrandom","rate":0,"instantaneous":2}],
+             "initializer":[{"name":"lifetimerandom","min":10,"max":10},
+               {"name":"turbulentvelocityrandom","speedmin":1,"speedmax":1,"phasemax":10\(audioKey)}]}
+            """), rng: WPEParityMT19937(seed: 7))
+            particles.advance(dt: 0.1)
+            return Support.liveSlots(particles).map { particles.velocity[$0] }
+        }
+        let spread = velocities("")
+        XCTAssertNotEqual(spread[0], spread[1])
+        let silent = velocities(#","audioprocessingmode":3"#)
+        XCTAssertEqual(silent[0], silent[1])
+    }
+
     /// Case7's native words are Z,Y,X, independently exponentiated, then multiplied by the birth CP basis.
     func testVelocityRandomExponentAndBirthBasisReachThePackedTrail() throws {
         for exponent in [1, 2] {

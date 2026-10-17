@@ -37,8 +37,10 @@ struct WPEParityParticleTurbulentVelocity: Equatable, Sendable {
     var offset: Float
     var forward: SIMD3<Float>
     var right: SIMD3<Float>
+    var audio: WPEParityParticleAudioResponse
 
     init(_ entry: WPEParityParticleEntry, is3D: Bool) {
+        audio = WPEParityParticleAudioResponse(entry)
         speedMin = entry.number("speedmin", is3D ? 0.5 : 100)
         speedMax = entry.number("speedmax", is3D ? 1 : 250)
         phaseMin = entry.number("phasemin", 0)
@@ -173,7 +175,9 @@ extension WPEParityParticleSystem {
     mutating func initializeTurbulentVelocity(_ field: WPEParityParticleTurbulentVelocity, slot: Int,
                                               birthBasis: simd_float3x3) {
         let phase = rng.unit()
-        let t = (phase * (field.phaseMax - field.phaseMin) + field.phaseMin + frameContext.time) * field.timeScale
+        // The audio level scales the phase spread, not the speed (14023b340.c:622-634).
+        let spread = (field.phaseMax - field.phaseMin) * audioLevel(field.audio)
+        let t = (phase * spread + field.phaseMin + frameContext.time) * field.timeScale
         let theta = WPEParityParticleNoise.simplex1(t) * .pi * field.scale + field.offset
         let direction = simd_quatf(real: WPEParityParticleMath.cos(theta / 2),
                                    imag: WPEParityParticleMath.sin(theta / 2) * simd_normalize(field.right))
