@@ -6,6 +6,4 @@ harfbuzz	pro	14.2.0	https://github.com/harfbuzz/harfbuzz	HarfBuzz-COPYING=Packag
 msdfgen	pro	1.13	https://github.com/Chlumsky/msdfgen	msdfgen-LICENSE.txt=Packages/LiveWallpaperProWPE/Sources/CWPESDF/vendor/msdfgen/LICENSE.txt	Contents/Resources/ThirdPartyNotices
 dxc	pro	v1.9.2609 (01b62ad47db7dee3dd33f90e7339cf9e860b3f93)	https://github.com/microsoft/DirectXShaderCompiler	toolchain:licenses/DXC-LICENSE.TXT,toolchain:licenses/DXC-ThirdPartyNotices.txt	Contents/Resources/WPEShaderCompilerNotices
 directx-headers	pro	980971e835876dc0cde415e8f9bc646e64667bf7	https://github.com/microsoft/DirectX-Headers	toolchain:licenses/DirectX-Headers-LICENSE	Contents/Resources/WPEShaderCompilerNotices
-spirv-tools	pro	ef96ed763b43b59b33b31b362f09a02b729fa1c9	https://github.com/KhronosGroup/SPIRV-Tools	toolchain:licenses/SPIRV-Tools-LICENSE	Contents/Resources/WPEShaderCompilerNotices
-spirv-headers	pro	496543121ce6419f23d6fa5d7194ba66c36212d2	https://github.com/KhronosGroup/SPIRV-Headers	toolchain:licenses/SPIRV-Headers-LICENSE	Contents/Resources/WPEShaderCompilerNotices
 msc	pro	4.0.1	https://developer.apple.com/metal/shader-converter/	toolchain:licenses/MSC-LICENSE.txt,toolchain:licenses/MSC-Acknowledgements.rtf	Contents/Resources/WPEShaderCompilerNotices

@@ -5,7 +5,7 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTENTS="${TARGET_BUILD_DIR:?}/${CONTENTS_FOLDER_PATH:?}"
 NOTICES="$CONTENTS/Resources/WPEShaderCompilerNotices"
-NOTICE_FILES=(DXC-LICENSE.TXT DXC-ThirdPartyNotices.txt DirectX-Headers-LICENSE SPIRV-Tools-LICENSE SPIRV-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf)
+NOTICE_FILES=(DXC-LICENSE.TXT DXC-ThirdPartyNotices.txt DirectX-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf)
 
 # The vendored FreeType/HarfBuzz/msdfgen code is linked even without the shader toolchain.
 # Each line is "<repo path> <bundled name>"; scripts/check_third_party_notices.py reads them.
@@ -75,11 +75,6 @@ embed() {
         /usr/bin/lipo "$source" -thin arm64 -output "$staged"
     fi
     chmod u+w "$staged"
-    if [ "$(basename "$destination")" = libdxcompiler.dylib ]; then
-        # libdxcompiler loads @rpath/libmetalirconverter.dylib; its build rpaths point outside the bundle.
-        install_name_tool -delete_rpath /usr/local/lib -delete_rpath @executable_path/../lib \
-            -add_rpath @loader_path "$staged"
-    fi
     codesign "${SIGN_OPTIONS[@]}" --identifier "$(basename "$destination")" "$@" "$staged"
     codesign --verify --strict "$staged"
     mv -f "$staged" "$destination"

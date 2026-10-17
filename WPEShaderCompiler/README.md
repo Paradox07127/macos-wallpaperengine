@@ -10,7 +10,7 @@ on the user's machine.
 
 Set `WPE_SHADER_TOOLCHAIN_ROOT` explicitly to an input directory. There is no
 installation-path or developer-home default. `toolchain-inputs.sha256` pins
-33 files relative to that directory: 24 headers, two libraries and seven complete
+31 files relative to that directory: 24 headers, two libraries and five complete
 notices. `build.sh` verifies every pin before compiling the current `main.cpp`
 with the selected Xcode SDK's `clang++`; it does not copy a prebuilt helper.
 
@@ -21,16 +21,20 @@ include/wsl/stubs/              rpc.h, rpcndr.h, OAIdl.h, OCIdl.h
 include/metal_irconverter/      metal_irconverter.h and its 15 ir_*.h includes
 lib/                           libdxcompiler.dylib, libmetalirconverter.dylib
 licenses/                      DXC-LICENSE.TXT, DXC-ThirdPartyNotices.txt,
-                               DirectX-Headers-LICENSE, SPIRV-Tools-LICENSE,
-                               SPIRV-Headers-LICENSE, MSC-LICENSE.txt,
+                               DirectX-Headers-LICENSE, MSC-LICENSE.txt,
                                MSC-Acknowledgements.rtf
 ```
 
 The pinned DXC inputs come from v1.9.2609, source commit
 `01b62ad47db7dee3dd33f90e7339cf9e860b3f93`, with DirectX-Headers submodule
-`980971e835876dc0cde415e8f9bc646e64667bf7`. The library is arm64 with minimum
-macOS 14.6. Its recorded build used Release, assertions/tests disabled and
-`CMAKE_OSX_ARCHITECTURES=arm64`, `CMAKE_OSX_DEPLOYMENT_TARGET=14.6`.
+`980971e835876dc0cde415e8f9bc646e64667bf7`. `build-dxcompiler.sh <work-dir>
+<toolchain-root>` reproduces the library from a fresh depth-1 clone: arm64,
+minimum macOS 14.6, MinSizeRel, assertions/tests disabled, SPIR-V codegen and
+the MetalIRConverter link disabled. Non-Windows hosts force SPIR-V on, so the
+script edits that `CMakeLists.txt` line and marks it assume-unchanged; the
+library must report `dxc(private) 1.9.0.1 (01b62ad4)` with no `-dirty`, because
+MSC's ShaderID depends on it. The staged copy is `strip -x`ed; the unstripped
+library stays in the work directory for symbolication.
 
 The pinned MSC inputs are the installed SDK with headers declaring 4.0.1.
 The installer receipt is `com.apple.metal`, package version
@@ -65,13 +69,11 @@ and removes old embedded toolchain files; a configured but invalid staging root
 fails rather than silently using old outputs.
 
 The phase copies the helper into `Contents/MacOS`, the two libraries into
-`Contents/Frameworks`, and all seven notices unchanged into
+`Contents/Frameworks`, and all five notices unchanged into
 `Contents/Resources/WPEShaderCompilerNotices`. Before the toolchain check, so
 Debug builds get them too, it copies the vendored FreeType, HarfBuzz and msdfgen
 notices plus `ThirdPartyNotices/README.txt` into
-`Contents/Resources/ThirdPartyNotices`. It removes the pinned DXC build's
-external rpaths, leaving `@loader_path` for MSC beside it. Every invocation
-re-copies/re-signs all three files using Xcode's expanded signing identity and
+`Contents/Resources/ThirdPartyNotices`. Every invocation re-copies/re-signs all three files using Xcode's expanded signing identity and
 runtime option; helper entitlements remain exactly sandbox + inherit. No mtime
 shortcut can retain a prior signature or helper. The outer app is sealed by
 Xcode after this phase. Lite has no phase and carries none of this toolchain.
@@ -129,9 +131,8 @@ and fragment output is unchanged.
 ## Library license notices
 
 The Pro bundle includes the pinned DXC `LICENSE.TXT` (University of Illinois/NCSA)
-and its `ThirdPartyNotices.txt`, DirectX-Headers MIT `LICENSE`, the SPIRV-Tools
-Apache-2.0 and SPIRV-Headers `LICENSE` files (SPIRV-Tools is linked into
-`libdxcompiler.dylib`), MSC Apache-2.0 `LICENSE.txt` and the complete original MSC
+and its `ThirdPartyNotices.txt`, DirectX-Headers MIT `LICENSE`, MSC Apache-2.0
+`LICENSE.txt` and the complete original MSC
 `Acknowledgements.rtf`. `ThirdPartyNotices/manifest.tsv` lists every bundled
 library's notices and `scripts/check_third_party_notices.py` gates them. The MSC acknowledgements file
 contains DXVK, DirectX-Specs, DirectX Headers, DirectXMath, AMD, xxHash and DXC/LLVM
