@@ -235,9 +235,10 @@ extension ScreenManager {
         }
     }
 
-    private func handleScreenParameterChange() {
+    func handleScreenParameterChange(
+        current: [CGDirectDisplayID: ScreenConfigurationSignature] = ScreenConfigurationSignature.currentLayout()
+    ) {
         guard !isTerminating else { return }
-        let current = ScreenConfigurationSignature.currentLayout()
         if current == lastScreenSignatures && !screens.isEmpty {
             Logger.debug("Screen parameters unchanged — skipping refresh", category: .screenManager)
             return
@@ -246,10 +247,15 @@ extension ScreenManager {
             guard let previous = lastScreenSignatures[id] else { return false }
             return previous.maximumFramesPerSecond != signature.maximumFramesPerSecond
         }
+        // A scene's drawable format and display-HDR plan are fixed at load, so only a reload follows the display.
+        let edrChangedScenes = Set(screens.filter { screen in
+            guard let previous = lastScreenSignatures[screen.id], let signature = current[screen.id] else { return false }
+            return previous.maximumPotentialEDR != signature.maximumPotentialEDR && screen.runtimeSession?.wallpaperType == .scene
+        }.map(\.id))
         lastScreenSignatures = current
 
         refreshRateCache.removeAll()
-        refreshScreens(preserveRuntimeSessions: true)
+        refreshScreens(preserveRuntimeSessions: true, reloading: edrChangedScenes)
         // Preserved sessions are still running the ceiling resolved against the
         // old refresh rate, and the cap is a divisor of it.
         for screen in screens where rateChanged[screen.id] != nil {

@@ -11,6 +11,8 @@ public struct ScreenConfigurationSignature: Equatable, Hashable, Sendable {
     /// In the signature because frame-rate caps are divisors of it: without this field a
     /// 60→120 Hz change with the same geometry would dedupe away.
     public let maximumFramesPerSecond: Int
+    /// The potential, not current, EDR value: the current one follows brightness and would rebuild scenes as it moves.
+    public let maximumPotentialEDR: Int
 
     public init(screen: NSScreen) {
         let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? 0
@@ -22,6 +24,7 @@ public struct ScreenConfigurationSignature: Equatable, Hashable, Sendable {
         self.height  = Self.quantize(f.height)
         self.scale   = Self.quantize(screen.backingScaleFactor)
         maximumFramesPerSecond = screen.maximumFramesPerSecond
+        maximumPotentialEDR = Self.quantize(screen.maximumPotentialExtendedDynamicRangeColorComponentValue)
     }
 
     private static func quantize(_ value: CGFloat) -> Int { Int((value * 1000).rounded()) }

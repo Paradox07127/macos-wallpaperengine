@@ -17,7 +17,8 @@ struct LegacyFingerprintMapping: Equatable {
 }
 
 extension ScreenManager {
-    func refreshScreens(preserveRuntimeSessions: Bool = true) {
+    /// `reloading`: displays whose sessions are rebuilt even while the rest are preserved.
+    func refreshScreens(preserveRuntimeSessions: Bool = true, reloading: Set<CGDirectDisplayID> = []) {
         guard !isTerminating else { return }
         let newScreens = displayRegistry.currentScreens()
         migrateLegacyDisplayIdentities(of: newScreens)
@@ -55,17 +56,14 @@ extension ScreenManager {
             releaseRuntimeSession(screen)
         }
 
-        var forcedReloadIDs: Set<CGDirectDisplayID> = []
-        if !preserveRuntimeSessions {
-            for screen in oldScreens where newScreenIDs.contains(screen.id)
-                && !identityChangedIDs.contains(screen.id) {
-                releaseRuntimeSession(screen)
-            }
-            forcedReloadIDs = oldScreenIDs.intersection(newScreenIDs)
+        let forcedReloadIDs = oldScreenIDs.intersection(newScreenIDs).subtracting(identityChangedIDs)
+            .intersection(preserveRuntimeSessions ? reloading : newScreenIDs)
+        for screen in oldScreens where forcedReloadIDs.contains(screen.id) {
+            releaseRuntimeSession(screen)
         }
 
         if preserveRuntimeSessions {
-            for newScreen in newScreens where !identityChangedIDs.contains(newScreen.id) {
+            for newScreen in newScreens where !identityChangedIDs.contains(newScreen.id) && !forcedReloadIDs.contains(newScreen.id) {
                 guard let existingScreen = oldScreensByID[newScreen.id] else { continue }
                 newScreen.adoptRuntimeSession(from: existingScreen)
             }
