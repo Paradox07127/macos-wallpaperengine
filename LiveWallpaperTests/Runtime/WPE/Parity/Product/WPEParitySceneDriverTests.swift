@@ -190,6 +190,34 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertNil(afterCleanup, "Cleanup revokes the last presented frame's capture eligibility")
     }
 
+    func testFailedReplanWaitsForADifferentTarget() async throws {
+        let (document, assets) = try sceneInputs()
+        let compiler = try makeCompiler()
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer {
+            WPEParitySceneDriver.remainingForcedReplanFailuresForTesting = 0
+            driver.cleanup()
+        }
+        try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
+                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+        XCTAssertTrue(driver.didLoad)
+
+        WPEParitySceneDriver.remainingForcedReplanFailuresForTesting = 1
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 1280, height: 720))
+        XCTAssertTrue(driver.needsReplan)
+        let failed = await driver.replan()
+        XCTAssertFalse(failed)
+        XCTAssertFalse(driver.needsReplan, "a failed target would be rebuilt and logged again every frame")
+
+        driver.updateSurfaceGeometry(drawableSize: CGSize(width: 1600, height: 900))
+        XCTAssertTrue(driver.needsReplan)
+        let replanned = await driver.replan()
+        XCTAssertTrue(replanned)
+        XCTAssertFalse(driver.needsReplan)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).backbuffer.width, 1600)
+    }
+
     /// Scene 3509243656 has one sound layer; the driver plays it with WPE's rules and stops it on cleanup.
     func testSoundLayerStartsRuntimeAndCleanupStopsIt() async throws {
         let (document, assets) = try sceneInputs(sceneID: "3509243656")

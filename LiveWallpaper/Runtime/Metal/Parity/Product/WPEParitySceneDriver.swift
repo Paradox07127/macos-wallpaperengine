@@ -107,6 +107,8 @@ final class WPEParitySceneDriver {
 
     private var planSource: PlanSource?
     private var plannedTarget: RenderTarget?
+    /// The target the last re-plan of this load failed to build; not retried until the target changes.
+    private var failedReplanTarget: RenderTarget?
     /// The loaded scene's user-property bindings; `.incremental` ones apply without a reload.
     var userPropertyBindings: [String: [WPEScenePropertyBinding]] {
         guard let renderer, let planSource else { return [:] }
@@ -210,17 +212,20 @@ final class WPEParitySceneDriver {
     /// The loaded plan no longer matches the drawable size or fit mode.
     var needsReplan: Bool {
         guard didLoad, let planSource else { return false }
-        return plannedTarget != currentTarget(sceneSize: planSource.sceneSize,
-                                              isHDR: WPEParityProgramScene.hdrEnabled(document: planSource.document,
-                                                                                      settings: planSource.settings),
-                                              pixelFormat: planSource.pixelFormat,
-                                              renderScale: planSource.renderScale).target
+        let target = currentTarget(sceneSize: planSource.sceneSize,
+                                   isHDR: WPEParityProgramScene.hdrEnabled(document: planSource.document,
+                                                                           settings: planSource.settings),
+                                   pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale).target
+        return target != plannedTarget && target != failedReplanTarget
     }
 
     #if DEBUG
     /// Test seam: remaining `load` calls that throw at once.
     nonisolated(unsafe) static var remainingForcedLoadFailuresForTesting = 0 // serial XCTest sets it before any load
     struct ForcedLoadFailure: Error {}
+    /// Test seam: remaining `replan` builds that throw at once.
+    nonisolated(unsafe) static var remainingForcedReplanFailuresForTesting = 0 // serial XCTest sets it before replan
+    struct ForcedReplanFailure: Error {}
     #endif
 
     init(device: MTLDevice) throws {
@@ -258,6 +263,7 @@ final class WPEParitySceneDriver {
         executor.lastPresentPass = nil
         planSource = nil
         plannedTarget = nil
+        failedReplanTarget = nil
         executor.upscalePlan = .inactive
         executor.lastPresentedDrawableSize = .zero
         _ = executor.takePresentSideDemotion()
@@ -414,6 +420,12 @@ final class WPEParitySceneDriver {
             let target = selection.target
             guard target != plannedTarget else { return true }
             do {
+                #if DEBUG
+                if Self.remainingForcedReplanFailuresForTesting > 0 {
+                    Self.remainingForcedReplanFailuresForTesting -= 1
+                    throw ForcedReplanFailure()
+                }
+                #endif
                 let plan = try await Self.makePlan(document: planSource.document, assets: planSource.assets,
                                                    settings: planSource.settings, target: target)
                 let renderer = try await WPEParityFrameRenderer(
@@ -431,10 +443,12 @@ final class WPEParitySceneDriver {
                 }
                 self.renderer = renderer
                 plannedTarget = target
+                failedReplanTarget = nil
                 adoptUpscalePlan(selection.upscale)
                 return true
             } catch {
                 if generation == loadGeneration {
+                    failedReplanTarget = target
                     Logger.warning("Parity scene re-plan at \(target.width)x\(target.height) failed: \(error)",
                                    category: .wpeRender)
                 }
@@ -820,6 +834,7 @@ final class WPEParitySceneDriver {
         renderer = nil
         planSource = nil
         plannedTarget = nil
+        failedReplanTarget = nil
         pendingUserProperties = nil
         shaderRequiresAudio = false
         lastTimestamp = nil
