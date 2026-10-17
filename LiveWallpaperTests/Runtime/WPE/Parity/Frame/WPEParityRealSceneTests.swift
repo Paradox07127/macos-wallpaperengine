@@ -203,6 +203,78 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertLessThan(bytes[3], bytes[0])
     }
 
+    /// Measures every TEX in the scene's directory without and with texture compression, cold and warm disk cache,
+    /// then renders frame 60 with the preference on. Prints only; no pixel comparison.
+    func testScene3509243656TextureCompressionMeasurement() async throws {
+        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
+            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
+        }
+        let sceneDirectory = root.appending(path: "scene-sources/3509243656")
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let urls = (FileManager.default.enumerator(at: sceneDirectory, includingPropertiesForKeys: nil)?.allObjects ?? [])
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "tex" }
+        let textures = try urls.map { try Data(contentsOf: $0) }
+        XCTAssertFalse(textures.isEmpty)
+        let scratch = FileManager.default.temporaryDirectory.appending(path: "texture-compression-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        func load(_ compression: WPEParityTextureCompression?) -> (seconds: Double, bytes: Int, failures: Int) {
+            var bytes = 0
+            var failures = 0
+            let start = ContinuousClock.now
+            for data in textures {
+                do {
+                    // A fresh path per load keeps the process-wide share from returning an earlier upload.
+                    let image = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                                                path: "materials/measure-\(UUID().uuidString).tex",
+                                                                compression: compression)
+                    var seen = Set<ObjectIdentifier>()
+                    for texture in [image.texture] + image.sprites.map(\.texture) where seen.insert(ObjectIdentifier(texture)).inserted {
+                        bytes += texture.allocatedSize
+                    }
+                } catch {
+                    failures += 1
+                }
+            }
+            let elapsed = ContinuousClock.now - start
+            return (Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18, bytes, failures)
+        }
+        func median(_ runs: [(seconds: Double, bytes: Int, failures: Int)]) -> Double {
+            runs.map(\.seconds).sorted()[runs.count / 2]
+        }
+
+        let off = (0 ..< 3).map { _ in load(nil) }
+        let coldCompressors = (0 ..< 3).map { _ in WPEParityTextureCompressor() }
+        let caches = (0 ..< 3).map { WPEParityCompressedTextureCache(cachesURL: scratch.appending(path: "cold-\($0)")) }
+        let cold = zip(coldCompressors, caches).map { load(WPEParityTextureCompression(compressor: $0, cache: $1)) }
+        let coldCompressor = coldCompressors[0]
+        let cache = caches[2]
+        let warmCompressor = WPEParityTextureCompressor()
+        let warm = (0 ..< 3).map { _ in load(WPEParityTextureCompression(compressor: warmCompressor, cache: cache)) }
+        print("scene 3509243656 textures: \(textures.count) TEX files, load failures \(off[0].failures)")
+        print("scene 3509243656 off: allocated \(off[0].bytes) bytes, median load \(median(off)) s")
+        print("scene 3509243656 on cold: allocated \(cold[0].bytes) bytes, median load \(median(cold)) s, "
+            + "outcomes \(coldCompressor.outcomeCounts)")
+        print("scene 3509243656 on warm: allocated \(warm[0].bytes) bytes, median load \(median(warm)) s, "
+            + "encodes \(warmCompressor.encodeCount), outcomes \(warmCompressor.outcomeCounts)")
+        XCTAssertLessThanOrEqual(cold[0].bytes, off[0].bytes)
+        XCTAssertEqual(warmCompressor.encodeCount, 0)
+
+        let defaults = UserDefaults.appScoped()
+        defaults.set(true, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
+        defer { defaults.removeObject(forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey) }
+        let (_, renderer, rendererDevice, queue) = try await makeRenderer("3509243656")
+        for frame in 1 ... 60 {
+            try await renderFrame(renderer, label: "scene 3509243656 compressed frame \(frame)")
+        }
+        print("scene 3509243656 renderer outcomes \(WPEParityTextureCompression.shared.compressor.outcomeCounts)")
+        let backbuffer = renderer.backbuffer
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "wpe-parity-3509243656-compressed.png")
+        try writePNG(readBack(backbuffer, device: rendererDevice, queue: queue), width: backbuffer.width,
+                     height: backbuffer.height, to: url)
+        print("scene 3509243656 compressed: frame 60 written to \(url.path)")
+    }
+
     private func render(_ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }) async throws {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 

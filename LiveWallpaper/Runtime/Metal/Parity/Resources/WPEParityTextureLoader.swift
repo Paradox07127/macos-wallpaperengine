@@ -26,7 +26,22 @@ enum WPEParityTextureLoader {
         let digest: SHA256.Digest
         /// nil when the TEX has no conditional variants or no properties were given.
         let selection: [UInt32: UInt32]?
+        /// Compressed and authored-format loads of one file never share a texture.
+        let compressed: Bool
     }
+
+    /// Where a compressing upload's images get their cache keys; `kept` is set when no image of the file qualifies.
+    private struct CompressionSource {
+        let compression: WPEParityTextureCompression
+        let digest: SHA256.Digest
+        let selection: [UInt32: UInt32]?
+        let kept: WPEParityTextureCompressor.Reason?
+    }
+
+    /// TEXI flag 0x20: the first mip is a video stream.
+    private static let videoFlag: UInt32 = 0x20
+    /// Shorter sides keep RGBA8; their savings do not pay for an encode.
+    private static let minimumCompressedSide = 256
 
     private struct WeakTexture {
         weak var texture: MTLTexture?
@@ -61,10 +76,12 @@ enum WPEParityTextureLoader {
 
     /// `path` is the asset path that keys a process-wide share of the upload; nil uploads a private copy.
     static func load(span: WPEMappedByteSpan, device: MTLDevice,
-                     userProperties: WPESceneJSONValue? = nil, path: String? = nil) throws -> WPEParityFrameDrawPlanner.Image {
+                     userProperties: WPESceneJSONValue? = nil, path: String? = nil,
+                     compression: WPEParityTextureCompression? = nil) throws -> WPEParityFrameDrawPlanner.Image {
         guard let path, let keyed = try? sharedKey(span: span, device: device, userProperties: userProperties,
-                                                   path: path) else {
-            return try upload(span: span, device: device, userProperties: userProperties).image
+                                                   path: path, compressed: compression != nil) else {
+            return try upload(span: span, device: device, userProperties: userProperties, compression: compression,
+                              digest: nil).image
         }
         let (key, info, selection) = keyed
         while true {
@@ -97,7 +114,8 @@ enum WPEParityTextureLoader {
             }
             defer { group.leave() }
             do {
-                let uploaded = try upload(span: span, device: device, userProperties: userProperties)
+                let uploaded = try upload(span: span, device: device, userProperties: userProperties,
+                                          compression: compression, digest: key.digest)
                 withSlots { $0[key] = .ready(uploaded.shared) }
                 return uploaded.image
             } catch {
@@ -112,7 +130,7 @@ enum WPEParityTextureLoader {
     }
 
     private static func sharedKey(
-        span: WPEMappedByteSpan, device: MTLDevice, userProperties: WPESceneJSONValue?, path: String
+        span: WPEMappedByteSpan, device: MTLDevice, userProperties: WPESceneJSONValue?, path: String, compressed: Bool
     ) throws -> (SharedKey, WPETexInfo, WPETexConditionalSelection?) {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
@@ -123,12 +141,13 @@ enum WPEParityTextureLoader {
         }
         let digest = span.withUnsafeBytes { SHA256.hash(data: $0) }
         let key = SharedKey(registryID: device.registryID, path: path, digest: digest,
-                            selection: selection?.flagsByVariantID)
+                            selection: selection?.flagsByVariantID, compressed: compressed)
         return (key, info, selection)
     }
 
-    private static func upload(span: WPEMappedByteSpan, device: MTLDevice,
-                               userProperties: WPESceneJSONValue?) throws
+    /// `digest` is the span's SHA-256 when the caller already has it.
+    private static func upload(span: WPEMappedByteSpan, device: MTLDevice, userProperties: WPESceneJSONValue?,
+                               compression: WPEParityTextureCompression?, digest: SHA256.Digest?) throws
         -> (image: WPEParityFrameDrawPlanner.Image, shared: SharedImage) {
         let decoder = WPETexDecoder()
         let info = try decoder.probe(span: span).get()
@@ -151,13 +170,19 @@ enum WPEParityTextureLoader {
         let mapping = try WPEMetalTextureFormatMapper.mapping(
             for: format, capabilities: WPEMetalTextureCapabilities(device: device), colorSpace: .linear
         )
+        let source = compression.map { compression in
+            CompressionSource(compression: compression, digest: digest ?? span.withUnsafeBytes { SHA256.hash(data: $0) },
+                              selection: payload.conditionalSelection?.flagsByVariantID,
+                              kept: keptReason(format: format, mapping: mapping, info: payload.info, device: device))
+        }
         var textures: [Int: MTLTexture] = [:]
         func upload(_ mipmaps: [WPETexTextureMipmap], imageID: Int) throws -> MTLTexture {
             if let texture = textures[imageID] {
                 return texture
             }
-            let texture = try makeTexture(mipmaps: mipmaps, format: format, mapping: mapping,
-                                          isVolume: payload.info.isVolume, device: device)
+            let texture = try source.flatMap { compressedTexture(mipmaps, imageID: imageID, source: $0, device: device) }
+                ?? makeTexture(mipmaps: mipmaps, format: format, mapping: mapping,
+                               isVolume: payload.info.isVolume, device: device)
             textures[imageID] = texture
             return texture
         }
@@ -212,6 +237,102 @@ enum WPEParityTextureLoader {
         let info = WPETexInfo(containerVersion: 0, infoVersion: 0, width: size, height: size, textureFormatCode: 0,
                               format: .rgba8888, mipmapCount: 1, flags: 9, imageWidth: size, imageHeight: size)
         return WPEParityFrameDrawPlanner.Image(texture: texture, info: info)
+    }
+
+    private static func keptReason(format: WPETexFormat, mapping: WPEMetalTextureFormatMapping, info: WPETexInfo,
+                                   device: MTLDevice) -> WPEParityTextureCompressor.Reason? {
+        if format != .rgba8888 || mapping.pixelFormat != .rgba8Unorm || info.isVolume {
+            return .sourceFormat
+        }
+        if info.flags & videoFlag != 0 {
+            return .video
+        }
+        // Point sampling reads single texels, which block compression shifts.
+        if info.noInterpolation {
+            return .pointSampled
+        }
+        return device.supportsFamily(.apple2) ? nil : .device
+    }
+
+    /// nil keeps the authored RGBA8 upload: the image does not qualify, failed the PSNR gate or failed to encode.
+    private static func compressedTexture(_ mipmaps: [WPETexTextureMipmap], imageID: Int, source: CompressionSource,
+                                          device: MTLDevice) -> MTLTexture? {
+        let (texture, outcome) = compress(mipmaps, imageID: imageID, source: source, device: device)
+        #if DEBUG
+        source.compression.compressor.note(outcome)
+        #else
+        _ = outcome
+        #endif
+        return texture
+    }
+
+    private static func compress(_ mipmaps: [WPETexTextureMipmap], imageID: Int, source: CompressionSource,
+                                 device: MTLDevice) -> (MTLTexture?, WPEParityTextureCompressor.Outcome) {
+        if let kept = source.kept {
+            return (nil, .kept(kept))
+        }
+        guard let base = mipmaps.first, min(base.width, base.height) >= minimumCompressedSide else {
+            return (nil, .kept(.small))
+        }
+        guard base.width <= 16384, base.height <= 16384, (try? WPETexMipValidation.decoded(mipmaps, format: .rgba8888)) != nil,
+              mipmaps.allSatisfy({ $0.bytes.count >= $0.width * $0.height * 4 }) else {
+            return (nil, .kept(.failed))
+        }
+        let shape = WPEParityTextureCompressor.alphaShape(mipmaps)
+        if shape.hidesColor {
+            return (nil, .kept(.hiddenColor))
+        }
+        let alpha: WPEParityTextureCompressor.AlphaMode = shape.opaque ? .opaque : .straight
+        let cache = source.compression.cache
+        let key = WPEParityCompressedTextureCache.key(source: source.digest, selection: source.selection,
+                                                      imageID: imageID, levels: mipmaps, alpha: alpha)
+        let byteCounts = mipmaps.map { WPEParityTextureCompressor.blockByteCount(width: $0.width, height: $0.height) }
+        switch cache.read(key, levelByteCounts: byteCounts) {
+        case .rejected?:
+            return (nil, .kept(.quality))
+        case let .blocks(levels)?:
+            guard let texture = try? makeASTCTexture(mipmaps: mipmaps, blocks: levels, device: device) else {
+                return (nil, .kept(.failed))
+            }
+            return (texture, .cached)
+        case nil:
+            break
+        }
+        do {
+            guard let levels = try source.compression.compressor.compress(mipmaps, alpha: alpha) else {
+                cache.write(.rejected, for: key)
+                return (nil, .kept(.quality))
+            }
+            let texture = try makeASTCTexture(mipmaps: mipmaps, blocks: levels, device: device)
+            cache.write(.blocks(levels), for: key)
+            return (texture, .encoded)
+        } catch {
+            return (nil, .kept(.failed))
+        }
+    }
+
+    private static func makeASTCTexture(mipmaps: [WPETexTextureMipmap], blocks: [Data],
+                                        device: MTLDevice) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .astc_4x4_ldr, width: mipmaps[0].width,
+                                                                  height: mipmaps[0].height, mipmapped: false)
+        descriptor.mipmapLevelCount = mipmaps.count
+        descriptor.usage = .shaderRead
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            throw WPEMetalTextureLoaderError.textureAllocationFailed
+        }
+        for (level, bytes) in zip(mipmaps, blocks) {
+            try bytes.withUnsafeBytes { raw in
+                guard let pointer = raw.baseAddress else {
+                    throw WPEMetalTextureLoaderError.malformedPayload("Empty compressed mip \(level.index)")
+                }
+                texture.replace(region: MTLRegionMake2D(0, 0, level.width, level.height), mipmapLevel: level.index,
+                                withBytes: pointer,
+                                bytesPerRow: WPEParityTextureCompressor.blocksPerRow(level.width)
+                                    * WPEParityTextureCompressor.blockBytes)
+            }
+        }
+        return texture
     }
 
     private static func makeTexture(mipmaps: [WPETexTextureMipmap], format: WPETexFormat,

@@ -601,6 +601,84 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         XCTAssertNil(released)
     }
 
+    func testCompressionTurnsLargeOpaqueRGBA8IntoASTCWithTheAuthoredMipCount() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let data = tex(format: 0, images: [gradientChain(512, levels: 3)])
+        let compressed = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                                         compression: compression())
+        XCTAssertEqual(compressed.texture.pixelFormat, .astc_4x4_ldr)
+        XCTAssertEqual(compressed.texture.mipmapLevelCount, 3)
+        let authored = try load(data, device)
+        XCTAssertEqual(authored.texture.pixelFormat, .rgba8Unorm)
+        XCTAssertEqual(authored.texture.mipmapLevelCount, 3)
+    }
+
+    func testCompressionKeepsSmallHiddenColourAndFailedEncodesInRGBA8() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let small = tex(format: 0, images: [gradientChain(128, levels: 1)])
+        var bytes = gradientChain(512, levels: 1)[0].bytes
+        // Texel 0 keeps its non-zero blue under alpha 0.
+        bytes[3] = 0
+        let hidden = Mip(width: 512, height: 512, bytes: bytes)
+        let large = tex(format: 0, images: [gradientChain(512, levels: 1)])
+        let cases: [(String, Data, WPEParityTextureCompression)] = try [
+            ("128²", small, compression()),
+            ("alpha 0 over RGB", tex(format: 0, images: [[hidden]]), compression()),
+            ("encoder failure", large, compression(WPEParityTextureCompressor(failsEncoding: true))),
+        ]
+        for (name, data, compression) in cases {
+            let image = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                                        compression: compression)
+            XCTAssertEqual(image.texture.pixelFormat, .rgba8Unorm, name)
+        }
+    }
+
+    func testSecondCompressedLoadReadsTheDiskCacheWithoutEncoding() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let data = tex(format: 0, images: [gradientChain(512, levels: 2)])
+        let compressor = WPEParityTextureCompressor()
+        let directory = try cacheDirectory()
+        for _ in 0 ..< 2 {
+            let compression = WPEParityTextureCompression(compressor: compressor,
+                                                          cache: WPEParityCompressedTextureCache(cachesURL: directory))
+            let image = try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                                        compression: compression)
+            XCTAssertEqual(image.texture.pixelFormat, .astc_4x4_ldr)
+            XCTAssertEqual(image.texture.mipmapLevelCount, 2)
+        }
+        XCTAssertEqual(compressor.encodeCount, 1)
+    }
+
+    /// Smooth, opaque and distinct per call, so the chain passes the PSNR gate and no other test shares its bytes.
+    private func gradientChain(_ size: Int, levels: Int) -> [Mip] {
+        let salt = UInt8.random(in: 0 ... 63)
+        return (0 ..< levels).map { level in
+            let side = size >> level
+            var bytes = Data(count: side * side * 4)
+            for y in 0 ..< side {
+                for x in 0 ..< side {
+                    let offset = (y * side + x) * 4
+                    bytes[offset] = UInt8(x * 255 / max(side - 1, 1))
+                    bytes[offset + 1] = UInt8(y * 255 / max(side - 1, 1))
+                    bytes[offset + 2] = 128 + salt
+                    bytes[offset + 3] = 255
+                }
+            }
+            return Mip(width: side, height: side, bytes: bytes)
+        }
+    }
+
+    private func cacheDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-texture-cache-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
+    }
+
+    private func compression(_ compressor: WPEParityTextureCompressor = WPEParityTextureCompressor()) throws
+        -> WPEParityTextureCompression {
+        try WPEParityTextureCompression(compressor: compressor, cache: WPEParityCompressedTextureCache(cachesURL: cacheDirectory()))
+    }
+
     private struct ConditionalRecord {
         let id: UInt32
         let x: UInt32

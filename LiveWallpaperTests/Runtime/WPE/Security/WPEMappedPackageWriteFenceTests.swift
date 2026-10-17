@@ -181,6 +181,7 @@ struct WPEMappedPackageWriteFenceTests {
 
     private static let auditedWriteSites: [String: [String: Int]] = [
         "LiveWallpaper/Infrastructure/Workshop/WorkshopDiskCacheStore.swift": [".write(to": 1],
+        "LiveWallpaper/Runtime/Metal/Parity/Resources/WPEParityCompressedTextureCache.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Persistence/WallpaperCoverStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Persistence/WallpaperNameTranslationCache.swift": [".write(to": 1],

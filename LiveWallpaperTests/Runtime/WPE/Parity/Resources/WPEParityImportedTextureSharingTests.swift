@@ -43,6 +43,20 @@ final class WPEParityImportedTextureSharingTests: XCTestCase {
         XCTAssertNil(shared)
     }
 
+    func testCompressedAndAuthoredLoadsOfOnePathDoNotShareATexture() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let span = WPEMappedByteSpan(data: Self.opaqueTexture(side: 512))
+        let path = "materials/share-\(UUID().uuidString).tex"
+        let compression = WPEParityTextureCompression(compressor: WPEParityTextureCompressor(),
+                                                      cache: WPEParityCompressedTextureCache(cachesURL: scratch))
+        let authored = try WPEParityTextureLoader.load(span: span, device: device, path: path)
+        let compressed = try WPEParityTextureLoader.load(span: span, device: device, path: path, compression: compression)
+        XCTAssertFalse(authored.texture === compressed.texture)
+        XCTAssertEqual(authored.texture.pixelFormat, .rgba8Unorm)
+        XCTAssertEqual(compressed.texture.pixelFormat, .astc_4x4_ldr)
+        XCTAssertTrue(try WPEParityTextureLoader.load(span: span, device: device, path: path).texture === authored.texture)
+    }
+
     private struct Fixture {
         let renderer: WPEParityFrameRenderer
         let subject: Int
@@ -115,6 +129,29 @@ final class WPEParityImportedTextureSharingTests: XCTestCase {
             word(value)
         }
         data.append(contentsOf: (0 ..< 64).map { seed[seed.startIndex + $0 % seed.count] })
+        return data
+    }
+
+    /// A smooth opaque RGBA8 TEX with a random blue level, so no other test uploads the same bytes.
+    private static func opaqueTexture(side: Int) -> Data {
+        var data = Data("TEXV0005\0TEXI0001\0".utf8)
+        func word(_ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        let size = UInt32(side)
+        for value: UInt32 in [UInt32(WPETexFormat.rgba8888.rawValue), 0, size, size, size, size, 0] {
+            word(value)
+        }
+        data.append(contentsOf: "TEXB0003\0".utf8)
+        for value: UInt32 in [1, .max, 1, size, size, 0, size * size * 4, size * size * 4] {
+            word(value)
+        }
+        let blue = UInt8.random(in: 0 ... 255)
+        for y in 0 ..< side {
+            for x in 0 ..< side {
+                data.append(contentsOf: [UInt8(x * 255 / (side - 1)), UInt8(y * 255 / (side - 1)), blue, 255])
+            }
+        }
         return data
     }
 

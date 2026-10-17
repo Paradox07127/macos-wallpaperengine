@@ -464,6 +464,8 @@ struct WPEParityFrameDrawPlanner {
     private var assetImages: [String: Image] = [:]
     /// The same committed typed snapshot the Driver supplies, also used for assets first loaded by a later layout.
     private var userProperties: WPESceneJSONValue
+    /// nil uploads every imported texture in its authored format.
+    private let textureCompression: WPEParityTextureCompression?
     /// Imported layer images, filled as draws are planned.
     private(set) var layerImages: [WPEResourceID: MTLTexture] = [:]
     private var layerImageAssets: [WPEResourceID: Image] = [:]
@@ -493,12 +495,14 @@ struct WPEParityFrameDrawPlanner {
     private(set) var texts: [String: WPEParitySceneText] = [:]
 
     init(device: MTLDevice, factory: WPEParityPipelineFactory, plan: WPEParityFramePlan,
-         preservingVideoImages: [String: Image] = [:], userProperties: WPESceneJSONValue = .object([:])) {
+         preservingVideoImages: [String: Image] = [:], userProperties: WPESceneJSONValue = .object([:]),
+         textureCompression: WPEParityTextureCompression? = .resolve()) {
         self.device = device
         self.factory = factory
         self.plan = plan
         assetImages = preservingVideoImages
         self.userProperties = userProperties
+        self.textureCompression = textureCompression
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
@@ -1223,7 +1227,7 @@ struct WPEParityFrameDrawPlanner {
         } else {
             do {
                 image = try WPEParityTextureLoader.load(span: span, device: device, userProperties: userProperties,
-                                                        path: path)
+                                                        path: path, compression: textureCompression)
             } catch WPETexDecodeError.unsupportedAnimation {
                 throw .videoTexture(path)
             } catch {
