@@ -182,13 +182,13 @@ struct InMemoryVideoAssetLoaderTeardownTests {
     func cancelledRequestStopsServing() {
         let loader = makeLoader(byteCount: 3 * Self.chunkSize)
         var responded = 0
-        let finished = loader.serve(
+        let outcome = loader.serve(
             range: 0 ..< (3 * Self.chunkSize),
             isCancelled: { responded >= 1 },
             respond: { _ in responded += 1 }
         )
         #expect(responded == 1)
-        #expect(!finished)
+        #expect(outcome == .cancelled)
     }
 
     @Test("A closed loader serves nothing")
@@ -196,33 +196,46 @@ struct InMemoryVideoAssetLoaderTeardownTests {
         let loader = makeLoader(byteCount: Self.chunkSize)
         loader.close()
         var responded = 0
-        let finished = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { _ in responded += 1 })
+        let outcome = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { _ in responded += 1 })
         #expect(responded == 0)
-        #expect(!finished)
+        #expect(outcome == .closed)
     }
 
-    @Test("Closing between chunks stops the rest of the range")
+    @Test("Closing between chunks stops the rest of the range and reports the close")
     func closeMidRangeStopsServing() {
         let loader = makeLoader(byteCount: 3 * Self.chunkSize)
         var responded = 0
-        let finished = loader.serve(range: 0 ..< (3 * Self.chunkSize), isCancelled: { false }, respond: { _ in
+        let outcome = loader.serve(range: 0 ..< (3 * Self.chunkSize), isCancelled: { false }, respond: { _ in
             responded += 1
             loader.close()
         })
         #expect(responded == 1)
-        #expect(!finished)
+        #expect(outcome == .closed)
+    }
+
+    @Test("Cancellation before the second chunk is reported as cancelled, not closed")
+    func cancelBeforeSecondChunkReportsCancelled() {
+        let loader = makeLoader(byteCount: 3 * Self.chunkSize)
+        var responded = 0
+        var cancelled = false
+        let outcome = loader.serve(range: 0 ..< (3 * Self.chunkSize), isCancelled: { cancelled }, respond: { _ in
+            responded += 1
+            cancelled = true
+        })
+        #expect(responded == 1)
+        #expect(outcome == .cancelled)
     }
 
     @Test("Served chunks count as in flight until the receiver releases them")
     func heldChunksKeepTheLoaderUndrained() {
         let loader = makeLoader(byteCount: Self.chunkSize + 4096)
         var held: [Data] = []
-        let finished = loader.serve(
+        let outcome = loader.serve(
             range: 0 ..< (Self.chunkSize + 4096),
             isCancelled: { false },
             respond: { held.append($0) }
         )
-        #expect(finished)
+        #expect(outcome == .finished)
         #expect(held.count == 2)
         #expect(!loader.isDrained)
         held.removeLast()

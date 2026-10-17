@@ -178,9 +178,15 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, S
                 requestsAllDataToEndOfResource: dataRequest.requestsAllDataToEndOfResource,
                 windowLength: windowLength
             )
-            guard serve(range: range, isCancelled: { loadingRequest.isCancelled }, respond: {
+            switch serve(range: range, isCancelled: { loadingRequest.isCancelled }, respond: {
                 dataRequest.respond(with: $0)
-            }) else { return true }
+            }) {
+            case .finished: break
+            case .cancelled: return true
+            case .closed:
+                loadingRequest.finishLoading(with: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled))
+                return true
+            }
         }
 
         loadingRequest.finishLoading()
@@ -190,24 +196,35 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, S
     /// `serve` polls `isCancelled` before every chunk and never finishes a cancelled request, so there is nothing to undo.
     func resourceLoader(_: AVAssetResourceLoader, didCancel _: AVAssetResourceLoadingRequest) {}
 
-    /// Returns false when cancellation or `close()` stopped it early; the request must then not be finished.
-    func serve(range: Range<Int>, isCancelled: () -> Bool, respond: (Data) -> Void) -> Bool {
+    enum ServeOutcome { case finished, cancelled, closed }
+
+    /// `.cancelled` must leave the request unfinished; `.closed` must still be finished with an error.
+    func serve(range: Range<Int>, isCancelled: () -> Bool, respond: (Data) -> Void) -> ServeOutcome {
         // Respond in bounded chunks so a large range cannot trigger one multi-hundred-MB Data copy; AVFoundation accepts repeated respond(with:) before finishLoading().
         var offset = range.lowerBound
         while offset < range.upperBound {
-            guard !isCancelled(), !isClosed else { return false }
+            guard !isCancelled() else { return .cancelled }
             let next = min(offset &+ Self.chunkSize, range.upperBound)
-            respond(makeChunk(physical: (windowStart &+ offset) ..< (windowStart &+ next)))
+            guard let chunk = makeChunk(physical: (windowStart &+ offset) ..< (windowStart &+ next)) else {
+                return .closed
+            }
+            respond(chunk)
             offset = next
         }
-        return true
+        return .finished
     }
 
-    /// Copies into memory we own so its deallocator tells us when AVFoundation has let go of it.
-    private func makeChunk(physical: Range<Int>) -> Data {
+    /// Copies into memory we own so its deallocator tells us when AVFoundation has let go of it; nil once closed.
+    private func makeChunk(physical: Range<Int>) -> Data? {
+        // Checking isClosed and counting the chunk under one lock keeps retire() from seeing zero in flight while this chunk is still headed to AVFoundation.
+        let admitted = drainState.withLock { state in
+            guard !state.isClosed else { return false }
+            state.inFlightChunks += 1
+            return true
+        }
+        guard admitted else { return nil }
         let bytes = UnsafeMutableRawPointer.allocate(byteCount: physical.count, alignment: 16)
         data.copyBytes(to: bytes.bindMemory(to: UInt8.self, capacity: physical.count), from: physical)
-        drainState.withLock { $0.inFlightChunks += 1 }
         return Data(bytesNoCopy: bytes, count: physical.count, deallocator: .custom { [self] pointer, _ in
             pointer.deallocate()
             chunkReleased()
