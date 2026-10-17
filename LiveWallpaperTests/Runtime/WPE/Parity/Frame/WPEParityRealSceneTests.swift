@@ -520,7 +520,8 @@ final class WPEParityRealSceneTests: XCTestCase {
     }
 
     private func readBack(_ texture: MTLTexture, device: MTLDevice, queue: MTLCommandQueue) throws -> [UInt8] {
-        let bytesPerRow = texture.width * 4
+        // Raw texel bytes; an HDR backbuffer is rgba16Float, 8 bytes a pixel.
+        let bytesPerRow = texture.width * (texture.pixelFormat == .rgba16Float ? 8 : 4)
         let length = bytesPerRow * texture.height
         let buffer = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
         let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
