@@ -2,7 +2,7 @@
 import CoreFoundation
 import Foundation
 
-/// Resource-saving switches for the parity renderer; every unset or malformed preference resolves off.
+/// Resource-saving switches for the parity renderer; unset or malformed values resolve compression on, the rest off.
 struct WPEParityResourceSaverFlags: Equatable, Sendable {
     static let textureCompressionDefaultsKey = "loomscreen.wallpapers.parityTextureCompression.v1"
     static let renderTargetAliasingDefaultsKey = "loomscreen.wallpapers.parityRenderTargetAliasing.v1"
@@ -16,15 +16,15 @@ struct WPEParityResourceSaverFlags: Equatable, Sendable {
     var sceneMirrorRendering: Bool
 
     static func resolve(defaults: UserDefaults = .appScoped()) -> Self {
-        Self(textureCompression: bool(textureCompressionDefaultsKey, defaults),
+        Self(textureCompression: bool(textureCompressionDefaultsKey, defaults, default: true),
              renderTargetAliasing: bool(renderTargetAliasingDefaultsKey, defaults),
              offscreenScaleTier: tier(defaults),
              sceneMirrorRendering: bool(sceneMirrorRenderingDefaultsKey, defaults))
     }
 
-    private static func bool(_ key: String, _ defaults: UserDefaults) -> Bool {
+    private static func bool(_ key: String, _ defaults: UserDefaults, default fallback: Bool = false) -> Bool {
         guard let number = defaults.object(forKey: key) as? NSNumber,
-              CFGetTypeID(number) == CFBooleanGetTypeID() else { return false }
+              CFGetTypeID(number) == CFBooleanGetTypeID() else { return fallback }
         return number.boolValue
     }
 

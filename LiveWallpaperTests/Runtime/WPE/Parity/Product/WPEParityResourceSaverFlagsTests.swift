@@ -4,28 +4,35 @@ import Foundation
 import XCTest
 
 final class WPEParityResourceSaverFlagsTests: XCTestCase {
-    private static let off = WPEParityResourceSaverFlags(textureCompression: false, renderTargetAliasing: false,
-                                                         offscreenScaleTier: 0, sceneMirrorRendering: false)
+    private static let defaultFlags = WPEParityResourceSaverFlags(textureCompression: true, renderTargetAliasing: false,
+                                                                  offscreenScaleTier: 0, sceneMirrorRendering: false)
 
-    func testUnsetPreferencesResolveToAllOff() throws {
+    func testUnsetPreferencesResolveCompressionOnAndOthersOff() throws {
         let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
         defer { suite.discard() }
-        XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.off)
+        XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.defaultFlags)
+    }
+
+    func testExplicitFalseTurnsCompressionOff() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
+        defer { suite.discard() }
+        suite.defaults.set(false, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
+        XCTAssertFalse(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults).textureCompression)
     }
 
     func testEachKeyFlipsOnlyItsOwnField() throws {
         let cases: [(String, Any, WPEParityResourceSaverFlags)] = [
-            (WPEParityResourceSaverFlags.textureCompressionDefaultsKey, true,
-             .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 0,
+            (WPEParityResourceSaverFlags.textureCompressionDefaultsKey, false,
+             .init(textureCompression: false, renderTargetAliasing: false, offscreenScaleTier: 0,
                    sceneMirrorRendering: false)),
             (WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey, true,
-             .init(textureCompression: false, renderTargetAliasing: true, offscreenScaleTier: 0,
+             .init(textureCompression: true, renderTargetAliasing: true, offscreenScaleTier: 0,
                    sceneMirrorRendering: false)),
             (WPEParityResourceSaverFlags.offscreenScaleTierDefaultsKey, 3,
-             .init(textureCompression: false, renderTargetAliasing: false, offscreenScaleTier: 3,
+             .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 3,
                    sceneMirrorRendering: false)),
             (WPEParityResourceSaverFlags.sceneMirrorRenderingDefaultsKey, true,
-             .init(textureCompression: false, renderTargetAliasing: false, offscreenScaleTier: 0,
+             .init(textureCompression: true, renderTargetAliasing: false, offscreenScaleTier: 0,
                    sceneMirrorRendering: true)),
         ]
         for (key, value, expected) in cases {
@@ -36,12 +43,16 @@ final class WPEParityResourceSaverFlagsTests: XCTestCase {
         }
     }
 
-    func testNonBoolSwitchValuesResolveOff() throws {
-        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
-        defer { suite.discard() }
-        suite.defaults.set(1, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
-        suite.defaults.set("true", forKey: WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey)
-        XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.off)
+    func testNonBoolSwitchValuesResolveToTheirDefaults() throws {
+        let values: [Any] = [1, 0, "true", "false"]
+        for value in values {
+            let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
+            defer { suite.discard() }
+            suite.defaults.set(value, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
+            suite.defaults.set(value, forKey: WPEParityResourceSaverFlags.renderTargetAliasingDefaultsKey)
+            XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.defaultFlags,
+                           "\(value)")
+        }
     }
 
     func testOutOfRangeOrNonIntegralTierResolvesToZero() throws {
