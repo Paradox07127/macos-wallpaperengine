@@ -165,6 +165,81 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         XCTAssertTrue(live == rebuilt, "live alpha change differs from a scene loaded with the new value")
     }
 
+    func testSoundVolumeChangesTheTrackGainWithoutReloading() async throws {
+        let sound: [String: Any] = [
+            "id": 902, "name": "music", "sound": ["sounds/Melodysheep - Ether.flac"], "playbackmode": "loop",
+            "volume": ["user": "musicvolume", "value": 1],
+        ]
+        let harness = try await makeHarness(withSound: sound)
+        let before = try await frame(harness.actor)
+        let generation = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+
+        let committed = try await change(harness, "musicvolume", from: .number(1), to: .number(0.5))
+        XCTAssertTrue(committed)
+        let volume = await harness.actor.run { actor in
+            actor.parityDriverForTesting?.soundRuntime?.debugTrackSnapshots().first { $0.id == "902" }?.sceneVolume
+        }
+        XCTAssertEqual(volume, 0.5)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(after.renderer, before.renderer, "the renderer is not rebuilt")
+        let generationAfter = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+        XCTAssertEqual(generationAfter, generation, "the scene did not reload")
+    }
+
+    func testUnboundPropertyReachesTheScriptApplyUserProperties() async throws {
+        let harness = try await makeHarness(edit: {
+            $0["visible"] = ["value": true, "script": """
+            export function applyUserProperties(p){ if (p.hasOwnProperty('fade')) thisLayer.alpha = p.fade; }
+            """]
+        }, properties: ["fade": ["type": "slider", "value": 1, "min": 0, "max": 1]])
+        let operation = try XCTUnwrap(harness.operation { $0.fillsComposite })
+        let before = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(before.alpha[operation]), 1, accuracy: 1e-6)
+
+        let committed = try await change(harness, "fade", from: .number(1), to: .number(0.5))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(after.alpha[operation]), 0.5, accuracy: 1e-6)
+        XCTAssertEqual(after.renderer, before.renderer)
+    }
+
+    func testHidingAScriptedLayerDropsItsOperationsTheNextFrame() async throws {
+        let harness = try await makeHarness(edit: {
+            $0["visible"] = ["user": "show", "value": true, "script": "export function update(v){ return v; }"]
+        })
+        let operations = harness.operations(of: "17")
+        let before = try await frame(harness.actor)
+        XCTAssertFalse(before.operations.isDisjoint(with: operations))
+
+        let committed = try await change(harness, "show", from: .bool(true), to: .bool(false))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertTrue(after.operations.isDisjoint(with: operations), "\(after.operations)")
+        XCTAssertEqual(after.renderer, before.renderer)
+    }
+
+    func testScriptPropertyChangeReachesTheRunningScript() async throws {
+        let harness = try await makeHarness(edit: {
+            $0["visible"] = [
+                "value": true,
+                "script": """
+                export var scriptProperties = createScriptProperties().addSlider({name:'level',value:1}).finish();
+                export function update(v){ thisLayer.alpha = scriptProperties.level; return v; }
+                """,
+                "scriptproperties": ["level": ["user": "level", "value": 1]],
+            ]
+        })
+        let operation = try XCTUnwrap(harness.operation { $0.fillsComposite })
+        let before = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(before.alpha[operation]), 1, accuracy: 1e-6)
+
+        let committed = try await change(harness, "level", from: .number(1), to: .number(0.25))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(after.alpha[operation]), 0.25, accuracy: 1e-6)
+        XCTAssertEqual(after.renderer, before.renderer)
+    }
+
     // MARK: Helpers
 
     private struct Harness {
@@ -296,8 +371,10 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
     /// Object 17's alpha, visibility, foliagesway speed and a waterripple texture bound to user properties `opacity`,
     /// `show`, `speed` and `mask`; the scene is installed as a `.cache` scene and loaded by a fresh actor.
     /// With `materialSpeedKey`, the scene leaves `speeduv` to `materials/effects/foliagesway.json`, which binds it to
-    /// that key with value 5.
-    private func makeHarness(alphaKey: String = "opacity", materialSpeedKey: String? = nil) async throws -> Harness {
+    /// that key with value 5. `edit` runs on object 17 after these; `properties` go to project.json; `sound` is muted.
+    private func makeHarness(alphaKey: String = "opacity", materialSpeedKey: String? = nil,
+                             edit: ((inout [String: Any]) -> Void)? = nil, properties: [String: Any]? = nil,
+                             withSound sound: [String: Any]? = nil) async throws -> Harness {
         let fixture = try fixture()
         let relativePath = "wpe-cache/\(Self.sceneID)"
         let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)
@@ -305,11 +382,27 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
                                                 withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: fixture.root.appending(path: "scene-sources/\(Self.sceneID)"),
                                          to: sceneDirectory)
+        if let properties {
+            try JSONSerialization.data(withJSONObject: ["general": ["properties": properties]])
+                .write(to: sceneDirectory.appending(path: "project.json"))
+        }
+        if sound != nil {
+            try FileManager.default.createDirectory(at: sceneDirectory.appending(path: "sounds"),
+                                                    withIntermediateDirectories: true)
+            try FileManager.default.copyItem(
+                at: fixture.root.appending(path: "scene-sources/3509243656/sounds/Melodysheep - Ether.flac"),
+                to: sceneDirectory.appending(path: "sounds/Melodysheep - Ether.flac")
+            )
+        }
         let sceneURL = sceneDirectory.appending(path: "scene.json")
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL)) as? [String: Any])
         var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
         objects[0]["alpha"] = ["user": alphaKey, "value": 1]
         objects[0]["visible"] = ["user": "show", "value": true]
+        edit?(&objects[0])
+        if let sound {
+            objects.append(sound)
+        }
         var effects = try XCTUnwrap(objects[0]["effects"] as? [[String: Any]])
         var ripple = try XCTUnwrap(effects[0]["passes"] as? [[String: Any]])
         ripple[0]["textures"] = [NSNull(), ["user": "mask", "value": "util/white"]]
@@ -358,11 +451,16 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
             mailbox: WPEPointerMailbox(),
             surfaceControl: SilentSurfaceControl(),
             drawableSize: Self.size,
-            pixelFormat: layer.pixelFormat
+            pixelFormat: layer.pixelFormat,
+            soundResolver: sound == nil ? nil
+                : WPEMultiRootResourceResolver(primaryRootURL: sceneDirectory, dependencyMounts: [])
         )
         let actor = WPEDisplayRenderActor()
         actors.append(actor)
         try await actor.adoptParity(inputs)
+        if sound != nil {
+            await actor.setAudioMuted(true)
+        }
         try await actor.load()
         return Harness(actor: actor, plan: plan, assets: assets, sceneJSON: sceneJSON)
     }

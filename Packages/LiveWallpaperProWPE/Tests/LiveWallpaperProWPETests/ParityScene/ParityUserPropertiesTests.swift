@@ -119,6 +119,67 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(update.constants, [])
     }
 
+    func testTextSoundParticleScriptedAndScriptPropertyEnvelopesBindLive() throws {
+        let bindings = try WPEParityUserProperties.bindings(document: Self.liveTargetsDocument())
+        func live(_ key: String, _ target: WPEScenePropertyBindingTarget,
+                  _ kind: WPEScenePropertyBindingKind) -> [WPEScenePropertyBinding] {
+            [WPEScenePropertyBinding(propertyKey: key, target: target, kind: kind, action: .incremental)]
+        }
+        XCTAssertEqual(Set(bindings.keys), ["tint", "show", "tinted", "gate", "music", "rain", "hue", "level"])
+        XCTAssertEqual(bindings["tint"], live("tint", .textObject(id: "5"), .color))
+        XCTAssertEqual(bindings["show"], live("show", .textObject(id: "5"), .visible))
+        XCTAssertEqual(bindings["tinted"], live("tinted", .imageEffect(objectID: "5", effectID: "7"), .visible))
+        XCTAssertEqual(bindings["gate"], live("gate", .imageObject(id: "6"), .visible),
+                       "a scripted field keeps its user watch")
+        XCTAssertEqual(bindings["music"], live("music", .soundObject(id: "8"), .volume))
+        XCTAssertEqual(bindings["rain"], live("rain", .particleObject(id: "9"), .resource))
+        XCTAssertEqual(bindings["hue"], live("hue", .particleObject(id: "9"), .resource))
+        XCTAssertEqual(bindings["level"], live("level", .objectResource(objectID: "10", field: "alpha.scriptproperties.level"),
+                                               .scriptProperty))
+    }
+
+    func testColourChangesWriteStateWithoutReLayingText() throws {
+        let before = try Self.liveTargetsDocument(["tint": .string("1 1 1"), "music": .number(1), "rain": .number(1),
+                                                   "hue": .string("1 1 1")])
+        let after = try Self.liveTargetsDocument(["tint": .string("1 0 0"), "music": .number(0.25), "rain": .number(3),
+                                                  "hue": .string("1 0 0")])
+        let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: after))
+        XCTAssertEqual(update.texts, [], "a colour change alone does not re-lay the text")
+        XCTAssertTrue(update.objects.contains {
+            $0.id == "5" && $0.property == .color && SIMD3($0.value.x, $0.value.y, $0.value.z) == SIMD3(1, 0, 0)
+        }, "\(update.objects)")
+        XCTAssertEqual(update.sounds, [.init(id: "8", volume: 0.25)])
+
+        var state = WPEParitySceneState(document: before, hdr: false)
+        update.apply(to: &state)
+        XCTAssertEqual(state.scriptField("instance.count", of: "9"), .vector(SIMD4(3, 0, 0, 0)))
+        XCTAssertEqual(state.scriptField("instance.colorn", of: "9"), .vector(SIMD4(1, 0, 0, 0)))
+    }
+
+    /// Text 5 (with tint effect 7), scripted image 6, sound 8, particle 9 and image 10 whose alpha script binds a
+    /// scriptproperty, every envelope user-bound.
+    private static func liveTargetsDocument(_ userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) throws
+        -> WPESceneDocument {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32}},
+         "objects":[
+          {"id":5,"text":"Hi","color":{"user":"tint","value":"1 1 1"},"visible":{"user":"show","value":true},
+           "effects":[{"id":7,"file":"effects/tint/effect.json","visible":{"user":"tinted","value":true}}]},
+          {"id":6,"image":"models/a.json",
+           "visible":{"user":"gate","value":true,"script":"export function update(v){return v;}"}},
+          {"id":8,"sound":["sounds/a.flac"],"volume":{"user":"music","value":1}},
+          {"id":9,"particle":"particles/p.json",
+           "instanceoverride":{"count":{"user":"rain","value":1},"colorn":{"user":"hue","value":"1 1 1"}}},
+          {"id":10,"image":"models/b.json",
+           "alpha":{"value":1,"script":"export var scriptProperties = createScriptProperties().addSlider({name:'level',value:1}).finish(); export function update(v){return v;}",
+                    "scriptproperties":{"level":{"user":"level","value":1}}}}
+         ]}
+        """#
+        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues,
+                                                makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+    }
+
     /// Image layers drawing `shaders/probe` through `materials/k.json` (user `k`, value 2.3) or `materials/m.json`
     /// (user `m`, value 0.5), parsed and loaded with `userValues`.
     private static func materialScene(objects: [[String: Any]], binaries: [String: Data] = [:],

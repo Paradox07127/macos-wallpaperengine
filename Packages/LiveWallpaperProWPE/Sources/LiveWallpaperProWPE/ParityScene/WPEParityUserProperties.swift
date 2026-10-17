@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 
-/// User-property bindings of a parity scene and the live writes a change makes. SceneScript
-/// properties and event 4 are not run; a target the parity renderer does not update live asks for a reload.
+/// User-property bindings of a parity scene and the field writes a change makes before the script engine applies the
+/// bound scriptproperties and event 4 (1401731d0.c:159-841); a target the parity renderer does not update live reloads.
 public enum WPEParityUserProperties {
     /// Live camera/bloom fields use canonical State consumers; changing `hdr` still reloads.
     private static let liveGeneralFields: Set = [
@@ -18,14 +18,20 @@ public enum WPEParityUserProperties {
         "limituseellipsis", "blockalign",
     ]
 
-    /// Every user property the scene JSON binds, with each target it reaches. Object fields of image layers, groups
-    /// and particles, effect visibility and material constants of image layers, the layout fields of text layers, the
-    /// per-frame projection/parallax/shake fields, bloom Bool and bloom constants are `.incremental`; anything else is `.reload`.
+    /// Particle instance overrides a user value rewrites through the instance hook (14022af30.c:390-392).
+    private static let liveParticleInstanceFields: Set = [
+        "count", "rate", "lifetime", "size", "speed", "alpha", "brightness", "colorn",
+    ]
+
+    /// Every user property the scene JSON binds, with each target it reaches. A scripted object field keeps its user watch
+    /// (1401a4db0.c:39-142); scriptproperties, sound volume, particle instance overrides and the fields the renderer
+    /// reads per frame or re-lays are `.incremental`, anything else (other scripted fields included) is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
         let particles = Set(document.particleObjects.map(\.id))
         let texts = Set(WPEParityTextObject.textObjects(in: document).map(\.id))
+        let sounds = Set(document.soundObjects.map(\.id))
         let objects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         var result: [String: [WPEScenePropertyBinding]] = [:]
         func target(_ path: [String], scripted: Bool) -> (WPEScenePropertyBindingTarget, WPEScenePropertyBindingKind,
@@ -36,12 +42,20 @@ public enum WPEParityUserProperties {
                 return (.generalField(name: name), .general, !scripted && liveGeneralFields.contains(name))
             }
             let field = Array(path.dropFirst(2))
-            let reload = (WPEScenePropertyBindingTarget.objectResource(objectID: id, field: field.joined(separator: ".")),
+            let joined = field.joined(separator: ".")
+            let reload = (WPEScenePropertyBindingTarget.objectResource(objectID: id, field: joined),
                           WPEScenePropertyBindingKind.resource, false)
-            guard !scripted else { return reload }
-            if field.count == 1, let property = WPEParitySceneState.Property(rawValue: field[0]), layers.contains(id) {
+            if field.contains("scriptproperties") {
+                return (.objectResource(objectID: id, field: joined), .scriptProperty, true)
+            }
+            if sounds.contains(id), field == ["volume"] {
+                return (.soundObject(id: id), .volume, true)
+            }
+            if field.count == 1, let property = WPEParitySceneState.Property(rawValue: field[0]),
+               layers.contains(id) || texts.contains(id) {
                 let owner: WPEScenePropertyBindingTarget = images.contains(id) ? .imageObject(id: id)
-                    : particles.contains(id) ? .particleObject(id: id) : .groupObject(id: id)
+                    : particles.contains(id) ? .particleObject(id: id)
+                    : texts.contains(id) ? .textObject(id: id) : .groupObject(id: id)
                 return switch property {
                 case .visible: (owner, .visible, true)
                 case .alpha: (owner, .alpha, true)
@@ -50,11 +64,16 @@ public enum WPEParityUserProperties {
                 case .origin, .scale, .angles: (.objectResource(objectID: id, field: field[0]), .resource, true)
                 }
             }
+            guard !scripted else { return reload }
             if texts.contains(id), field.count == 1, liveTextFields.contains(field[0]) {
                 return (.textObject(id: id), .resource, true)
             }
-            guard images.contains(id) else { return reload }
-            if field.count == 3, field[0] == "instance", field[1] == "constantshadervalues" {
+            if particles.contains(id), field.count == 2, field[0] == "instanceoverride",
+               liveParticleInstanceFields.contains(field[1]) {
+                return (.particleObject(id: id), .resource, true)
+            }
+            guard images.contains(id) || texts.contains(id) else { return reload }
+            if images.contains(id), field.count == 3, field[0] == "instance", field[1] == "constantshadervalues" {
                 return (.shaderUniform(objectID: id, effectID: nil, passID: nil, name: field[2]), .uniform, true)
             }
             guard field.count > 2, field[0] == "effects", let effect = Int(field[1]) else { return reload }
@@ -62,6 +81,7 @@ public enum WPEParityUserProperties {
             if field.count == 3, field[2] == "visible" {
                 return (.imageEffect(objectID: id, effectID: effectID), .visible, true)
             }
+            guard images.contains(id) else { return reload }
             if field.count == 6, field[2] == "passes", field[4] == "constantshadervalues", let pass = Int(field[3]) {
                 return (.shaderUniform(objectID: id, effectID: effectID, passID: pass, name: field[5]), .uniform, true)
             }
@@ -146,7 +166,8 @@ public enum WPEParityUserProperties {
 }
 
 /// The state writes that take a running parity scene from one parse of its JSON to a parse with changed user values:
-/// every object field, effect visible bit and material constant whose parsed value differs, and the camera parallax
+/// every object field, effect visible bit, material constant, sound volume and particle instance field whose parsed
+/// value differs, and the camera parallax
 /// terms, accepted bloom Bool delta and bloom constants read per frame.
 public struct WPEParityUserPropertyUpdate: Sendable {
     public struct ObjectWrite: Sendable, Equatable {
@@ -172,11 +193,27 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         public let invalidation: WPEParitySceneState.Invalidation
     }
 
+    public struct SoundWrite: Sendable, Equatable {
+        public let id: String
+        public let volume: Float
+    }
+
+    public struct ScriptFieldWrite: Sendable, Equatable {
+        public let id: String
+        public let name: String
+        public let value: SIMD4<Float>
+        public let invalidation: WPEParitySceneState.Invalidation
+    }
+
     public private(set) var objects: [ObjectWrite] = []
     public private(set) var effects: [EffectWrite] = []
     public private(set) var constants: [ConstantWrite] = []
     /// Text layers whose parsed fields differ, with their new fields.
     public private(set) var texts: [WPEParityTextObject] = []
+    /// Sound layers whose parsed volume differs, with the new volume.
+    public private(set) var sounds: [SoundWrite] = []
+    /// `instance.*` fields of particle layers whose parsed instance override differs.
+    public private(set) var particles: [ScriptFieldWrite] = []
     public let cameraParallax: WPESceneCameraParallaxSettings
     /// The new parse's bloom values, which the post-process draws read on the next frame.
     public let bloom: WPEParityBloomSettings
@@ -234,9 +271,29 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             effects.append(EffectWrite(effect: effect, visible: after.effectVisibility[index]))
         }
         let earlierTexts = Dictionary(WPEParityTextObject.textObjects(in: old).map { ($0.id, $0) }) { first, _ in first }
-        for text in WPEParityTextObject.textObjects(in: new) where earlierTexts[text.id] != text {
-            guard earlierTexts[text.id] != nil else { return nil }
-            texts.append(text)
+        for text in WPEParityTextObject.textObjects(in: new) {
+            guard var earlier = earlierTexts[text.id] else { return nil }
+            // Read at draw from the state objects above; only the other fields re-lay (140258050.c:184-191).
+            (earlier.color, earlier.alpha, earlier.brightness, earlier.visible) = (text.color, text.alpha,
+                                                                                   text.brightness, text.visible)
+            if earlier != text {
+                texts.append(text)
+            }
+        }
+        let earlierSounds = Dictionary(old.soundObjects.map { ($0.id, $0.volume) }) { first, _ in first }
+        for sound in new.soundObjects where earlierSounds[sound.id].map({ $0 != sound.volume }) ?? false {
+            sounds.append(SoundWrite(id: sound.id, volume: Float(sound.volume)))
+        }
+        let earlierOverrides = Dictionary(old.particleObjects.map { ($0.id, $0.instanceOverride) }) { first, _ in first }
+        for particle in new.particleObjects {
+            guard let override = particle.instanceOverride else { continue }
+            let earlier = earlierOverrides[particle.id] ?? nil
+            for descriptor in WPEParityScriptProperty.particleInstance {
+                guard let value = Self.instanceValue(descriptor.name, of: override),
+                      value != earlier.flatMap({ Self.instanceValue(descriptor.name, of: $0) }) else { continue }
+                particles.append(ScriptFieldWrite(id: particle.id, name: descriptor.fieldName, value: value,
+                                                  invalidation: descriptor.invalidation))
+            }
         }
         let previous = Dictionary(old.imageObjects.map { ($0.id, $0) }) { first, _ in first }
         for image in new.imageObjects {
@@ -283,6 +340,32 @@ public struct WPEParityUserPropertyUpdate: Sendable {
         for write in constants {
             state.setConstant(write.name, of: write.pass, to: write.constant)
         }
+        for write in sounds {
+            state.setScriptField("volume", of: write.id, to: .vector(SIMD4(write.volume, 0, 0, 0)),
+                                 invalidating: .soundGain)
+        }
+        for write in particles {
+            state.setScriptField(write.name, of: write.id, to: .vector(write.value), invalidating: write.invalidation)
+        }
+    }
+
+    /// The script value of instance field `name`; nil when the override does not hold it. The parser keeps `colorn`
+    /// scaled to 0...255.
+    private static func instanceValue(_ name: String, of override: WPESceneParticleInstanceOverride) -> SIMD4<Float>? {
+        if name == "colorn" {
+            return override.color.map { SIMD4(SIMD3<Float>($0 / 255), 0) }
+        }
+        let scalar: Double? = switch name {
+        case "count": override.count
+        case "rate": override.rate
+        case "lifetime": override.lifetime
+        case "size": override.size
+        case "speed": override.speed
+        case "alpha": override.alpha
+        case "brightness": override.brightness
+        default: nil
+        }
+        return scalar.map { SIMD4(Float($0), 0, 0, 0) }
     }
 
     /// Rewrites each live-bound material-file constant whose property is in `keys` with its value in `values`, or the

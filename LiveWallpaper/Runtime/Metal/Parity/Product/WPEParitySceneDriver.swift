@@ -443,12 +443,12 @@ final class WPEParitySceneDriver {
         }
     }
 
-    /// Every changed property is bound, and only to targets the renderer updates live.
+    /// Every changed property binds only targets the renderer updates live; an unbound key still reaches the scripts'
+    /// event 4 (140181f30.c:535-539).
     func canApplyUserPropertiesLive(_ patch: WPEScenePropertyPatch) -> Bool {
         let bindingsByKey = userPropertyBindings
         return didLoad && patch.changedKeys.allSatisfy { key in
-            let bindings = bindingsByKey[key] ?? []
-            return !bindings.isEmpty && bindings.allSatisfy { $0.action == .incremental }
+            bindingsByKey[key, default: []].allSatisfy { $0.action == .incremental }
         }
     }
 
@@ -482,6 +482,9 @@ final class WPEParitySceneDriver {
         } catch {
             Logger.warning("Parity user property preparation failed: \(error)", category: .wpeRender)
             return false
+        }
+        for write in update.sounds {
+            soundRuntime?.setVolume(Double(write.volume), forSoundID: write.id)
         }
         scriptUserProperties = merged
         self.planSource = PlanSource(document: pending.document, scene: planSource.scene, assets: planSource.assets,

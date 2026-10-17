@@ -1151,6 +1151,91 @@ final class WPEParityTextDrawTests: XCTestCase {
         }
     }
 
+    func testTextColourVisibilityAndEffectChangeLiveWithoutRelayout() async throws {
+        let wpeAssets = try wpeAssets()
+        let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
+        let cache = FileManager.default.temporaryDirectory.appending(path: "parity-text-cache",
+                                                                     directoryHint: .isDirectory)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        func boundScene(effect: Bool) throws -> Data {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: effect))
+                as? [String: Any])
+            var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+            objects[0]["color"] = ["user": "tint", "value": "1 1 1"]
+            objects[0]["visible"] = ["user": "show", "value": true]
+            if effect {
+                var effects = try XCTUnwrap(objects[0]["effects"] as? [[String: Any]])
+                effects[0]["visible"] = ["user": "tinted", "value": true]
+                objects[0]["effects"] = effects
+            }
+            json["objects"] = objects
+            return try JSONSerialization.data(withJSONObject: json)
+        }
+        func load(_ scene: Data) async throws -> WPEParitySceneDriver {
+            let driver = try WPEParitySceneDriver(device: device)
+            try await driver.load(document: Self.parse(scene),
+                                  assets: WPEParityProgramAssets(sceneDirectory: scratch,
+                                                                 assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")]),
+                                  settings: WPEParityProgramSettings(),
+                                  drawableSize: CGSize(width: Self.width, height: Self.height), pixelFormat: .rgba8Unorm,
+                                  compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: cache))
+            return driver
+        }
+        var values: [String: WallpaperEngineProjectPropertyValue] = [:]
+        func change(_ driver: WPEParitySceneDriver, scene: Data, _ key: String,
+                    to value: WallpaperEngineProjectPropertyValue) throws -> Bool {
+            let old = values[key] ?? (key == "tint" ? .string("1 1 1") : .bool(true))
+            var next = values
+            next[key] = value
+            let patch = WPEScenePropertyPatch(bindingsByProperty: driver.userPropertyBindings,
+                                              oldValues: [key: old], newValues: [key: value])
+            guard try driver.prepareUserProperties(patch, document: Self.parse(scene, userValues: next)),
+                  driver.commitUserProperties(patch) else { return false }
+            values = next
+            return true
+        }
+        func lit(_ pixels: [UInt8]) -> [Int] {
+            stride(from: 0, to: pixels.count, by: 4).filter { pixels[$0 ..< $0 + 3].contains { $0 != 0 } }
+        }
+
+        let plain = try boundScene(effect: false)
+        let driver = try await load(plain)
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        let generation = driver.loadGeneration
+        try await encode(renderer, label: "white")
+        let before = try glyphRect(XCTUnwrap(renderer.texts[Self.textID]), document: Self.parse(plain))
+
+        XCTAssertTrue(try change(driver, scene: plain, "tint", to: .string("1 0 0")), "a colour change commits live")
+        XCTAssertTrue(driver.renderer === renderer, "the renderer is not rebuilt")
+        XCTAssertEqual(driver.loadGeneration, generation, "the scene did not reload")
+        try await encode(renderer, label: "red")
+        let after = try glyphRect(XCTUnwrap(renderer.texts[Self.textID]), document: Self.parse(plain))
+        XCTAssertTrue(before == after, "the glyph block keeps its layout: \(before) -> \(after)")
+        let red = try readBack(renderer.backbuffer, device: device, queue: queue)
+        let redPixels = lit(red)
+        XCTAssertFalse(redPixels.isEmpty)
+        XCTAssertEqual(redPixels.filter { red[$0 + 1] != 0 || red[$0 + 2] != 0 }.count, 0, "every glyph pixel is red")
+
+        XCTAssertTrue(try change(driver, scene: plain, "show", to: .bool(false)))
+        try await encode(renderer, label: "hidden")
+        XCTAssertEqual(try lit(readBack(renderer.backbuffer, device: device, queue: queue)).count, 0)
+        XCTAssertEqual(driver.loadGeneration, generation)
+
+        values = [:]
+        let tinted = try boundScene(effect: true)
+        let effectDriver = try await load(tinted)
+        defer { effectDriver.cleanup() }
+        let effectRenderer = try XCTUnwrap(effectDriver.renderer)
+        try await encode(effectRenderer, label: "effect on")
+        let shown = effectRenderer.lastFrameDraws.count
+        XCTAssertTrue(try change(effectDriver, scene: tinted, "tinted", to: .bool(false)))
+        XCTAssertTrue(effectDriver.renderer === effectRenderer)
+        try await encode(effectRenderer, label: "effect off")
+        XCTAssertLessThan(effectRenderer.lastFrameDraws.count, shown, "the hidden effect's passes leave the frame")
+    }
+
     /// Fixed NotoSans32 metrics: Hello + space + big has ink width542; the sole blank gains58 at width600.
     /// The World suffix is the final, unwrapped line and must keep its geometry and actual pixels.
     func testScriptBlockAlignJustifiesOnlyTheWrappedRowAndKeepsItsAtlas() async throws {
