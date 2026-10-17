@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import os
+import Testing
 
 @Suite("lwmem:// data-request byte ranges")
 struct InMemoryVideoAssetLoaderRangeTests {
@@ -154,5 +155,150 @@ struct InMemoryVideoAssetLoaderRangeTests {
             windowLength: Self.windowLength
         )
         #expect(range == 4096..<Self.windowLength)
+    }
+}
+
+@Suite("lwmem:// teardown and served-chunk lifetime", .timeLimit(.minutes(1)))
+struct InMemoryVideoAssetLoaderTeardownTests {
+    private static let chunkSize = 2 * 1024 * 1024
+
+    private final class Probe: Sendable {}
+
+    private func makeLoader(byteCount: Int) -> InMemoryVideoAssetLoader {
+        let bytes = Data(repeating: 0x5A, count: byteCount)
+        return InMemoryVideoAssetLoader(data: bytes, mimeType: "video/mp4", windowStart: 0, windowLength: byteCount)
+    }
+
+    private func waitUntil(seconds: Double, _ condition: () -> Bool) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition() {
+            guard Date() < deadline else { return false }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+
+    @Test("A request cancelled mid-range gets no further chunks and is not finished")
+    func cancelledRequestStopsServing() {
+        let loader = makeLoader(byteCount: 3 * Self.chunkSize)
+        var responded = 0
+        let finished = loader.serve(
+            range: 0 ..< (3 * Self.chunkSize),
+            isCancelled: { responded >= 1 },
+            respond: { _ in responded += 1 }
+        )
+        #expect(responded == 1)
+        #expect(!finished)
+    }
+
+    @Test("A closed loader serves nothing")
+    func closedLoaderServesNothing() {
+        let loader = makeLoader(byteCount: Self.chunkSize)
+        loader.close()
+        var responded = 0
+        let finished = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { _ in responded += 1 })
+        #expect(responded == 0)
+        #expect(!finished)
+    }
+
+    @Test("Closing between chunks stops the rest of the range")
+    func closeMidRangeStopsServing() {
+        let loader = makeLoader(byteCount: 3 * Self.chunkSize)
+        var responded = 0
+        let finished = loader.serve(range: 0 ..< (3 * Self.chunkSize), isCancelled: { false }, respond: { _ in
+            responded += 1
+            loader.close()
+        })
+        #expect(responded == 1)
+        #expect(!finished)
+    }
+
+    @Test("Served chunks count as in flight until the receiver releases them")
+    func heldChunksKeepTheLoaderUndrained() {
+        let loader = makeLoader(byteCount: Self.chunkSize + 4096)
+        var held: [Data] = []
+        let finished = loader.serve(
+            range: 0 ..< (Self.chunkSize + 4096),
+            isCancelled: { false },
+            respond: { held.append($0) }
+        )
+        #expect(finished)
+        #expect(held.count == 2)
+        #expect(!loader.isDrained)
+        held.removeLast()
+        #expect(!loader.isDrained)
+        held.removeAll()
+        #expect(loader.isDrained)
+    }
+
+    @Test("A drain handler waits for the last held chunk")
+    func drainHandlerWaitsForHeldChunk() async throws {
+        let loader = makeLoader(byteCount: 4096)
+        var held: Data?
+        _ = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { held = $0 })
+        let fired = OSAllocatedUnfairLock(initialState: false)
+        loader.notifyWhenDrained(timeout: 30) { fired.withLock { $0 = true } }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!fired.withLock { $0 })
+        held = nil
+        #expect(try await waitUntil(seconds: 5) { fired.withLock { $0 } })
+    }
+
+    @Test("Retired objects outlive the call until the held chunk is released")
+    func retireKeepsObjectsUntilDrained() async throws {
+        let loader = makeLoader(byteCount: 4096)
+        var held: Data?
+        weak var probe: Probe?
+        do {
+            let object = Probe()
+            probe = object
+            _ = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { held = $0 })
+            loader.retire([object], timeout: 30)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(probe != nil)
+        held = nil
+        #expect(try await waitUntil(seconds: 5) { probe == nil })
+    }
+
+    @Test("Retired objects are released after the timeout when a chunk is never returned")
+    func retireFallsBackToTimeout() async throws {
+        let loader = makeLoader(byteCount: 4096)
+        var held: Data?
+        weak var probe: Probe?
+        do {
+            let object = Probe()
+            probe = object
+            _ = loader.serve(range: 0 ..< 4096, isCancelled: { false }, respond: { held = $0 })
+            loader.retire([object], timeout: 0.1)
+        }
+        #expect(try await waitUntil(seconds: 5) { probe == nil })
+        #expect(held != nil)
+    }
+
+    @Test("Chunks served from a mapped file are copies outside the mapping")
+    func chunksDoNotAliasTheMapping() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lwmem-chunk-copy-\(UUID().uuidString).bin")
+        try Data(repeating: 0x33, count: Self.chunkSize + 65536).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let mapped = try Data(contentsOf: url, options: .alwaysMapped)
+        let loader = InMemoryVideoAssetLoader(
+            data: mapped, mimeType: "video/mp4", windowStart: 0, windowLength: mapped.count
+        )
+        var chunks: [Data] = []
+        _ = loader.serve(range: 0 ..< mapped.count, isCancelled: { false }, respond: { chunks.append($0) })
+        #expect(chunks.count == 2)
+        mapped.withUnsafeBytes { mapping in
+            let low = UInt(bitPattern: mapping.baseAddress)
+            let high = low + UInt(mapping.count)
+            for chunk in chunks {
+                chunk.withUnsafeBytes { bytes in
+                    let address = UInt(bitPattern: bytes.baseAddress)
+                    #expect(address < low || address >= high)
+                }
+            }
+        }
+        #expect(chunks.reduce(0) { $0 + $1.count } == mapped.count)
     }
 }

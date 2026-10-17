@@ -213,7 +213,17 @@ final class WPEVideoTextureSource {
     var isLiveDecoder: Bool { player != nil }
 
     #if DEBUG
-    var outputPixelSizeForTesting: CGSize? { outputPixelSize }
+    var outputPixelSizeForTesting: CGSize? {
+        outputPixelSize
+    }
+
+    var playerForTesting: AVQueuePlayer? {
+        player
+    }
+
+    var inMemoryAssetLoaderForTesting: InMemoryVideoAssetLoader? {
+        inMemoryAssetLoader
+    }
     #endif
 
     init(
@@ -566,6 +576,7 @@ final class WPEVideoTextureSource {
         }
         playerLevelOutput = nil
         lastPlayerLevelPresentationTime = nil
+        inMemoryAssetLoader?.close()
         playerLooper?.disableLooping()
         player?.pause()
         for entry in itemOutputs { entry.item.remove(entry.output) }
@@ -573,6 +584,8 @@ final class WPEVideoTextureSource {
         for entry in retiredItemOutputs { entry.item.remove(entry.output) }
         retiredItemOutputs.removeAll()
         player?.removeAllItems()
+        // CoreMedia may still be copying served chunks; freeing the player before they drain is a use-after-free.
+        inMemoryAssetLoader?.retire([player, playerLooper])
         if let decoderTicket {
             admission?.release(decoderTicket)
         }

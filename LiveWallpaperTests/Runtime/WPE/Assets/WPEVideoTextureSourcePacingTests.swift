@@ -126,6 +126,32 @@ struct WPEVideoTextureSourcePacingTests {
         #expect(FileManager.default.fileExists(atPath: videoURL.path) == false, "invalidate() must remove the staged temp file")
     }
 
+    @Test("invalidate() keeps the player alive until the chunks it was served are released", .timeLimit(.minutes(1)))
+    func invalidateDefersPlayerReleaseUntilServedChunksDrain() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticVideoFixture.writeMP4(durationSeconds: 1.0, frameRate: 24)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        weak var player: AVQueuePlayer?
+        var heldChunk: Data?
+        do {
+            let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+            let loader = try #require(source.inMemoryAssetLoaderForTesting)
+            player = source.playerForTesting
+            _ = loader.serve(range: 0 ..< 256, isCancelled: { false }, respond: { heldChunk = $0 })
+            source.invalidate()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(player != nil, "The player was released while a served chunk was still held")
+
+        heldChunk = nil
+        let deadline = Date().addingTimeInterval(5)
+        while player != nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(player == nil, "The player outlived the release of every served chunk")
+    }
+
     @Test("invalidate() is idempotent — second call is a no-op")
     func invalidateIsIdempotent() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

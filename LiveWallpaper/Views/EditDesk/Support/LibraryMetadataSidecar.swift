@@ -137,7 +137,7 @@ final class LibraryMetadataSidecar {
             asset = AVURLAsset(url: url)
         }
         // AVFoundation holds its resource-loader delegate weakly across both loads.
-        defer { withExtendedLifetime(loader) {} }
+        defer { loader?.retire([asset]) }
         guard try await !(asset.loadTracks(withMediaType: .video)).isEmpty else { return nil }
         if entryName != nil {
             format = try await PlayableVideoLoader.detectFormat(asset: asset)

@@ -1,8 +1,9 @@
 import AVFoundation
 import Foundation
+import os
 
 /// Owner must retain the loader — resourceLoader's delegate is weak.
-final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, Sendable {
     static let scheme = "lwmem"
 
     private let data: Data
@@ -128,7 +129,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
         }
     }
 
-    private init(data: Data, mimeType: String, windowStart: Int, windowLength: Int) {
+    init(data: Data, mimeType: String, windowStart: Int, windowLength: Int) {
         self.data = data
         self.mimeType = mimeType
         self.windowStart = windowStart
@@ -156,6 +157,10 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
         _ resourceLoader: AVAssetResourceLoader,
         shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest
     ) -> Bool {
+        guard !isClosed else {
+            loadingRequest.finishLoading(with: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled))
+            return true
+        }
         if let info = loadingRequest.contentInformationRequest {
             info.contentType = mimeType
             info.contentLength = Int64(windowLength)
@@ -173,20 +178,101 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
                 requestsAllDataToEndOfResource: dataRequest.requestsAllDataToEndOfResource,
                 windowLength: windowLength
             )
-            // Respond in bounded chunks so a large range cannot trigger one multi-hundred-MB Data copy; AVFoundation accepts repeated respond(with:) before finishLoading().
-            var offset = range.lowerBound
-            while offset < range.upperBound {
-                let next = min(offset &+ Self.chunkSize, range.upperBound)
-                let physicalLow = windowStart &+ offset
-                let physicalHigh = windowStart &+ next
-                dataRequest.respond(with: Data(data[physicalLow..<physicalHigh]))
-                offset = next
-            }
+            guard serve(range: range, isCancelled: { loadingRequest.isCancelled }, respond: {
+                dataRequest.respond(with: $0)
+            }) else { return true }
         }
 
         loadingRequest.finishLoading()
         return true
     }
+
+    /// `serve` polls `isCancelled` before every chunk and never finishes a cancelled request, so there is nothing to undo.
+    func resourceLoader(_: AVAssetResourceLoader, didCancel _: AVAssetResourceLoadingRequest) {}
+
+    /// Returns false when cancellation or `close()` stopped it early; the request must then not be finished.
+    func serve(range: Range<Int>, isCancelled: () -> Bool, respond: (Data) -> Void) -> Bool {
+        // Respond in bounded chunks so a large range cannot trigger one multi-hundred-MB Data copy; AVFoundation accepts repeated respond(with:) before finishLoading().
+        var offset = range.lowerBound
+        while offset < range.upperBound {
+            guard !isCancelled(), !isClosed else { return false }
+            let next = min(offset &+ Self.chunkSize, range.upperBound)
+            respond(makeChunk(physical: (windowStart &+ offset) ..< (windowStart &+ next)))
+            offset = next
+        }
+        return true
+    }
+
+    /// Copies into memory we own so its deallocator tells us when AVFoundation has let go of it.
+    private func makeChunk(physical: Range<Int>) -> Data {
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: physical.count, alignment: 16)
+        data.copyBytes(to: bytes.bindMemory(to: UInt8.self, capacity: physical.count), from: physical)
+        drainState.withLock { $0.inFlightChunks += 1 }
+        return Data(bytesNoCopy: bytes, count: physical.count, deallocator: .custom { [self] pointer, _ in
+            pointer.deallocate()
+            chunkReleased()
+        })
+    }
+
+    private func chunkReleased() {
+        let waiters = drainState.withLock { state -> [@Sendable () -> Void] in
+            state.inFlightChunks -= 1
+            guard state.inFlightChunks == 0 else { return [] }
+            defer { state.drainWaiters.removeAll() }
+            return Array(state.drainWaiters.values)
+        }
+        // Never run waiters inside the deallocator: it fires on CoreMedia's buffering thread mid-free.
+        for waiter in waiters {
+            DispatchQueue.main.async(execute: waiter)
+        }
+    }
+
+    private var isClosed: Bool {
+        drainState.withLock { $0.isClosed }
+    }
+
+    /// After this, in-progress requests stop at the next chunk and new ones fail with a cancellation error.
+    func close() {
+        drainState.withLock { $0.isClosed = true }
+    }
+
+    var isDrained: Bool {
+        drainState.withLock { $0.inFlightChunks == 0 }
+    }
+
+    /// Runs `handler` on the main queue once no served chunk is alive, or after `timeout` seconds.
+    func notifyWhenDrained(timeout: TimeInterval, _ handler: @escaping @Sendable () -> Void) {
+        let waiterID: UInt64? = drainState.withLock { state in
+            guard state.inFlightChunks > 0 else { return nil }
+            let id = state.nextWaiterID
+            state.nextWaiterID &+= 1
+            state.drainWaiters[id] = handler
+            return id
+        }
+        guard let waiterID else {
+            DispatchQueue.main.async(execute: handler)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [self] in
+            drainState.withLock { $0.drainWaiters.removeValue(forKey: waiterID) }?()
+        }
+    }
+
+    /// Closes the loader and keeps `objects` alive until AVFoundation releases every served chunk, or `timeout` seconds pass.
+    func retire(_ objects: [(any AnyObject & Sendable)?], timeout: TimeInterval = 2) {
+        close()
+        let retained = objects.compactMap(\.self)
+        notifyWhenDrained(timeout: timeout) { withExtendedLifetime(retained) {} }
+    }
+
+    private struct DrainState {
+        var isClosed = false
+        var inFlightChunks = 0
+        var nextWaiterID: UInt64 = 0
+        var drainWaiters: [UInt64: @Sendable () -> Void] = [:]
+    }
+
+    private let drainState = OSAllocatedUnfairLock(initialState: DrainState())
 
     /// 2 MB chunks match typical AVFoundation range requests.
     private static let chunkSize: Int = 2 * 1024 * 1024

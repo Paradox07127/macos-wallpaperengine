@@ -358,7 +358,7 @@ final class ShelfThumbnailCache {
                 asset = AVURLAsset(url: url)
             }
             // AVFoundation holds its resource-loader delegate weakly during image generation.
-            defer { withExtendedLifetime(loader) {} }
+            defer { loader?.retire([asset]) }
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = maximumSize

@@ -307,6 +307,13 @@ final class WallpaperVideoPlayer {
                     self.loadingTask = nil
                 }
             }
+            // A load that ends before installPreparedPlayback still has chunks in flight; release them only after they drain.
+            var unhanded: [(loader: InMemoryVideoAssetLoader, asset: AVURLAsset)] = []
+            defer {
+                for entry in unhanded {
+                    entry.loader.retire([entry.asset])
+                }
+            }
 
             do {
                 let timer = PerformanceTimer(description: "Loading video asset", category: .videoPlayer)
@@ -337,6 +344,7 @@ final class WallpaperVideoPlayer {
                     memAsset.resourceLoader.setDelegate(result.loader, queue: Self.resourceLoaderQueue)
                     asset = memAsset
                     packagedLoader = result.loader
+                    unhanded.append((result.loader, memAsset))
                 } else {
                     asset = AVURLAsset(url: url)
                     packagedLoader = nil
@@ -385,6 +393,7 @@ final class WallpaperVideoPlayer {
                             memAsset.resourceLoader.setDelegate(result.loader, queue: Self.resourceLoaderQueue)
                             activeAsset = memAsset
                             loader = result.loader
+                            unhanded.append((result.loader, memAsset))
                             Logger.info(
                                 "Serving \(fileSize / (1024 * 1024)) MB video from a mapping — playback reads go to page cache, not the vnode",
                                 category: .videoPlayer
@@ -420,6 +429,7 @@ final class WallpaperVideoPlayer {
                     timer: timer,
                     url: url
                 )
+                unhanded.removeAll()
                 self.finishLoading(asset: activeAsset, generation: generation)
             } catch is CancellationError {
                 Logger.debug("Video loading task was cancelled", category: .videoPlayer)
@@ -624,8 +634,8 @@ final class WallpaperVideoPlayer {
         let result = try InMemoryVideoAssetLoader.loadPackageEntry(packageURL: packageURL, entryName: entryName)
         let asset = AVURLAsset(url: result.customURL, options: inMemoryAssetOptions)
         asset.resourceLoader.setDelegate(result.loader, queue: resourceLoaderQueue)
+        defer { result.loader.retire([asset]) }
         try await PlayableVideoLoader.validatePlayableVideo(asset: asset)
-        withExtendedLifetime(result.loader) {}
     }
 
 
@@ -1512,12 +1522,14 @@ final class WallpaperVideoPlayer {
 
         drainVideoOutputs()
 
+        inMemoryAssetLoader?.close()
         player?.pause()
         if isPlaying {
             isPlaying = false
         }
 
         playerLooper?.disableLooping()
+        let retiringAVObjects: [(any AnyObject & Sendable)?] = [player, playerLooper, templatePlayerItem]
         playerLooper = nil
         templatePlayerItem?.videoComposition = nil
         templatePlayerItem = nil
@@ -1540,11 +1552,14 @@ final class WallpaperVideoPlayer {
                 category: .videoPlayer
             )
         }
+        let retiringLoader = inMemoryAssetLoader
         inMemoryAssetLoader = nil
 
         cleanupTasks.removeAll()
 
         videoView?.setPlayer(nil)
+        // CoreMedia may still be copying served chunks; freeing the player before they drain is a use-after-free.
+        retiringLoader?.retire(retiringAVObjects)
         player = nil
     }
 
