@@ -493,12 +493,16 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var shadowAtlas: Bool
     public var objects: [WPEParitySceneObject]
     public var diagnostics: [WPEParitySceneDiagnostic]
+    /// 0 keeps every target full size; 1 halves eligible divided effect FBOs, 2 adds the HDR bloom's first level,
+    /// 3 adds full-resolution effect FBOs and pooled composites at 0.75. Resource ids keep the unscaled extent.
+    public var offscreenScaleTier: Int
 
     public init(width: Int, height: Int, backbufferFormat: String = WPEParitySceneResource.colorFormat,
                 clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
                 msaaSamples: Int = 1, transparentSorting: Bool = false, transparentOrder: [String] = [],
                 forcesLayerComposite: Bool = false, shadowAtlas: Bool = false,
-                objects: [WPEParitySceneObject], diagnostics: [WPEParitySceneDiagnostic] = []) {
+                objects: [WPEParitySceneObject], diagnostics: [WPEParitySceneDiagnostic] = [],
+                offscreenScaleTier: Int = 0) {
         self.width = width
         self.height = height
         self.backbufferFormat = backbufferFormat
@@ -511,6 +515,7 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
         self.shadowAtlas = shadowAtlas
         self.objects = objects
         self.diagnostics = diagnostics
+        self.offscreenScaleTier = offscreenScaleTier
     }
 }
 

@@ -22,6 +22,8 @@ public struct WPEParityFrame: Hashable, Sendable {
     /// The object each operation renders, keyed by operation index; scene-wide and post operations are absent.
     public let owners: [Int: String]
     public let particleBlocks: [WPEParityParticleBlock]
+    /// Both parts' `logicalSizes`.
+    public let logicalSizes: [WPEResourceID: SIMD2<Int>]
 }
 
 public enum WPEParityFrameComposer {
@@ -76,6 +78,7 @@ public enum WPEParityFrameComposer {
             }
         }
         return WPEParityFrame(operations: operations, resources: resources, draws: draws,
-                              samplers: sceneFrame.samplers, owners: owners, particleBlocks: sceneFrame.particleBlocks)
+                              samplers: sceneFrame.samplers, owners: owners, particleBlocks: sceneFrame.particleBlocks,
+                              logicalSizes: sceneFrame.logicalSizes.merging(postFrame.logicalSizes) { scene, _ in scene })
     }
 }

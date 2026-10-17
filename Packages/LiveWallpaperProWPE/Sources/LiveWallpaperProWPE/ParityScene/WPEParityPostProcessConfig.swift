@@ -20,6 +20,8 @@ public struct WPEParityPostProcessConfig: Sendable {
     /// ccsimple.json is loaded (`WPEParityColorCorrection.drawn`); `colorCorrection` gives its combos and values.
     public var colorCorrectionEnabled: Bool
     public var colorCorrection = WPEParityColorCorrection()
+    /// See `WPEParitySceneDescription.offscreenScaleTier`; post shrinks only the HDR bloom's first level, from 2.
+    public var offscreenScaleTier = 0
     /// fade.json is loaded: camerafade on and camera paths present. The draw runs only on frames whose
     /// `WPEParityCameraPaths.fadeAlpha` is above 0.
     public var fadeActive: Bool

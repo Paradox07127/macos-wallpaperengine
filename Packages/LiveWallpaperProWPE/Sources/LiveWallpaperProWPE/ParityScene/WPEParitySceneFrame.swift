@@ -151,6 +151,20 @@ public struct WPEParitySceneFrame: Hashable, Sendable {
     /// `dependencyTarget` layer's composites, which run while the layer is hidden.
     public let owners: [WPEPassIdentity: String]
     public let particleBlocks: [WPEParityParticleBlock]
+    /// The unscaled extent of each resource an offscreen scale tier shrank; shaders keep seeing this size.
+    public var logicalSizes: [WPEResourceID: SIMD2<Int>] = [:]
+}
+
+extension WPELogicalResource {
+    /// Each edge times `factor`, kept at 64 px or more; a resource whose long edge is under 256 px stays whole.
+    func offscreenScaled(by factor: Double) -> WPELogicalResource {
+        guard max(width, height) >= 256 else { return self }
+        func edge(_ value: Int) -> Int {
+            min(value, max(64, Int(Double(value) * factor)))
+        }
+        return WPELogicalResource(id: id, width: edge(width), height: edge(height), format: format, mipCount: mipCount,
+                                  sampleCount: sampleCount, lifetime: lifetime, initialClear: initialClear)
+    }
 }
 
 public enum WPEParitySceneResource {

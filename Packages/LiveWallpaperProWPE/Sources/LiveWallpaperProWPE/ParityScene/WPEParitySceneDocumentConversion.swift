@@ -291,6 +291,17 @@ public extension WPEParitySceneFBO {
     }
 }
 
+extension WPEParitySceneFBO {
+    /// The factor `WPEParitySceneDescription.offscreenScaleTier` applies to this FBO's allocation; 1 keeps it.
+    func offscreenScale(tier: Int) -> Double {
+        guard swapPartner == nil, !scriptClearable, initialClear == nil, !format.hasPrefix("depth") else { return 1 }
+        if scale >= 2 {
+            return tier >= 1 ? 0.5 : 1
+        }
+        return tier >= 3 ? 0.75 : 1
+    }
+}
+
 private extension WPEParityAuthoredPass {
     /// `nil` for a `copy` whose source or target does not resolve; catsout's WPSceneParser.cpp skips those too.
     func resolved(_ visible: [String: WPEParitySceneFBOScope.Declaration]) -> WPEParityScenePass? {

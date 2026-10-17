@@ -14,11 +14,21 @@ public enum WPEParitySceneFrameBuilder {
         let used = emitter.scriptClearResources.union(emitter.operations.flatMap(\.kind.resources) + emitter.particleBlocks.flatMap {
             [$0.color, $0.snapshotSource, Resource.fullFrameBuffer] + [$0.depth].compactMap(\.self)
         })
-        return WPEParitySceneFrame(operations: emitter.operations,
-                                   resources: emitter.resources.values.filter { used.contains($0.id) }
-                                       .sorted { $0.id < $1.id },
+        // Whole-texture copies (a particle snapshot's too), resolves and swaps need equal extents on both sides.
+        let pinned = Set(emitter.operations.flatMap(\.kind.extentBound) + emitter.particleBlocks.map(\.snapshotSource))
+        var logicalSizes: [WPEResourceID: SIMD2<Int>] = [:]
+        let resources = emitter.resources.values.filter { used.contains($0.id) }.map { resource in
+            guard let factor = emitter.offscreenScales[resource.id], !pinned.contains(resource.id) else { return resource }
+            let scaled = resource.offscreenScaled(by: factor)
+            if scaled != resource {
+                logicalSizes[resource.id] = SIMD2(resource.width, resource.height)
+            }
+            return scaled
+        }
+        return WPEParitySceneFrame(operations: emitter.operations, resources: resources.sorted { $0.id < $1.id },
                                    draws: emitter.draws, samplers: emitter.samplers, diagnostics: scene.diagnostics,
-                                   owners: emitter.owners, particleBlocks: emitter.particleBlocks)
+                                   owners: emitter.owners, particleBlocks: emitter.particleBlocks,
+                                   logicalSizes: logicalSizes)
     }
 }
 
@@ -64,6 +74,8 @@ private struct WPEParitySceneEmitter {
     var owners: [WPEPassIdentity: String] = [:]
     var particleBlocks: [WPEParityParticleBlock] = []
     var scriptClearResources: Set<WPEResourceID> = []
+    /// The factor the offscreen scale tier applies to each registered resource it may shrink.
+    var offscreenScales: [WPEResourceID: Double] = [:]
     /// The object being rendered; children nest inside their parent's.
     private var owner: String?
     /// Each `_rt_imageLayerComposite_<id>_a` the scene has and the layer it belongs to, so a draw of another layer
@@ -714,7 +726,9 @@ private struct WPEParitySceneEmitter {
 
     private mutating func registerComposite(_ composite: WPEResourceID, of object: WPEParitySceneObject) {
         let size = compositePhysicalSize(object)
-        register(composite, size.x, size.y, format: compositeFormat, physical: true)
+        let pooled = composite != Resource.layerCompositeA(object.id) && object.compositeSampler.filter != .point
+        register(composite, size.x, size.y, format: compositeFormat, physical: true,
+                 offscreenScale: pooled && scene.offscreenScaleTier >= 3 ? 0.75 : 1)
         samplers[composite] = object.compositeSampler
     }
 
@@ -732,7 +746,7 @@ private struct WPEParitySceneEmitter {
                                       effect: WPEParitySceneEffect, lifetime: WPEResourceLifetime = .pooled) {
         let id = Self.fboID(object, effect, fbo.name)
         register(id, fbo.width, fbo.height, format: fbo.format, lifetime: lifetime, initialClear: fbo.initialClear,
-                 physical: true)
+                 physical: true, offscreenScale: fbo.offscreenScale(tier: scene.offscreenScaleTier))
         samplers[id] = WPEParitySceneSampler(filter: .linear, address: fbo.repeats ? .wrap : .clamp)
     }
 
@@ -792,8 +806,11 @@ private struct WPEParitySceneEmitter {
     private mutating func register(_ id: WPEResourceID, _ width: Int, _ height: Int,
                                    format: String = Resource.colorFormat, samples: Int = 1,
                                    lifetime: WPEResourceLifetime = .pooled, initialClear: WPEClearColor? = nil,
-                                   physical: Bool = false) {
+                                   physical: Bool = false, offscreenScale: Double = 1) {
         guard resources[id] == nil else { return }
+        if offscreenScale != 1 {
+            offscreenScales[id] = offscreenScale
+        }
         let size: SIMD2<Int> = if lifetime == .imported || physical {
             SIMD2(width, height)
         } else {
@@ -862,6 +879,14 @@ private extension WPERenderOperation.Kind {
         case let .swapResources(first, second): [first, second]
         case let .resourceScope(_, resources): resources
         case let .generateMips(id): [id]
+        }
+    }
+
+    var extentBound: [WPEResourceID] {
+        switch self {
+        case let .copy(source, destination), let .resolve(source, destination): [source, destination]
+        case let .swapResources(first, second): [first, second]
+        default: []
         }
     }
 }

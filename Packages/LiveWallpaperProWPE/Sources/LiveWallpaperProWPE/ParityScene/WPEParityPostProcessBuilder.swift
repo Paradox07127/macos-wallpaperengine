@@ -70,7 +70,8 @@ public enum WPEParityPostProcessBuilder {
         if config.fadeActive {
             stream.draw("fade", blend: .translucent)
         }
-        return WPEParityPostProcessFrame(resources: stream.resources, operations: stream.operations, draws: stream.draws)
+        return WPEParityPostProcessFrame(resources: stream.resources, operations: stream.operations, draws: stream.draws,
+                                         logicalSizes: stream.logicalSizes)
     }
 }
 
@@ -79,6 +80,7 @@ private struct WPEParityPostProcessStream {
     var resources: [WPELogicalResource]
     var operations: [WPERenderOperation] = []
     var draws: [WPEParityPostProcessDraw] = []
+    var logicalSizes: [WPEResourceID: SIMD2<Int>] = [:]
     /// Main+0xb8, the engine's g_RenderVar0, as the last HDR pass left it.
     var renderVar0: [Float] = [0, 0, 0, 0]
 
@@ -101,15 +103,21 @@ private struct WPEParityPostProcessStream {
     }
 
     mutating func resource(_ id: WPEResourceID, divisor: Int = 1, format: String? = nil,
-                           mips: Int = 1, samples: Int = 1, lifetime: WPEResourceLifetime = .frameTransient) {
+                           mips: Int = 1, samples: Int = 1, lifetime: WPEResourceLifetime = .frameTransient,
+                           offscreenScale: Double = 1) {
         guard !resources.contains(where: { $0.id == id }) else { return }
         // Native d2c60 and resize 161f40 clamp each divided RT extent to two. Keep the exact extent of
         // full-size snapshots: a one-pixel Metal canvas is a Mac policy and its copies must still match.
         let minimum = divisor == 1 ? 1 : 2
-        resources.append(WPELogicalResource(id: id, width: max(minimum, config.backbufferWidth / divisor),
-                                            height: max(minimum, config.backbufferHeight / divisor),
-                                            format: format ?? config.backbufferFormat, mipCount: mips,
-                                            sampleCount: samples, lifetime: lifetime))
+        let resource = WPELogicalResource(id: id, width: max(minimum, config.backbufferWidth / divisor),
+                                          height: max(minimum, config.backbufferHeight / divisor),
+                                          format: format ?? config.backbufferFormat, mipCount: mips,
+                                          sampleCount: samples, lifetime: lifetime)
+        let scaled = resource.offscreenScaled(by: offscreenScale)
+        if scaled != resource {
+            logicalSizes[id] = SIMD2(resource.width, resource.height)
+        }
+        resources.append(scaled)
     }
 
     mutating func append(_ pass: String, _ kind: WPERenderOperation.Kind) {
@@ -136,7 +144,8 @@ private struct WPEParityPostProcessStream {
                        combos: [String: Int32] = [:], textures: [Int32: String] = [:]) {
         let texels = reads.map { id in
             let resource = resources.first { $0.id == id }!
-            return SIMD2<Float>(1 / Float(resource.width), 1 / Float(resource.height))
+            let size = logicalSizes[id] ?? SIMD2(resource.width, resource.height)
+            return SIMD2<Float>(1 / Float(size.x), 1 / Float(size.y))
         }
         let description = WPEParityPostProcessDraw(shader: shader,
                                                    material: material ?? "materials/util/\(shader).json",
@@ -176,7 +185,8 @@ private struct WPEParityPostProcessStream {
         // Native capacity survives active-N changes. The renderer prepares these named pool targets once.
         for level in 1 ... config.hdrBloomCapacity {
             let divisor = 1 << level
-            resource(pyramid(divisor), divisor: divisor, format: "rgba16float", lifetime: .pooled)
+            resource(pyramid(divisor), divisor: divisor, format: "rgba16float", lifetime: .pooled,
+                     offscreenScale: level == 1 && config.offscreenScaleTier >= 2 ? 0.5 : 1)
         }
         bind(pyramid(2))
         // 14017f1b0.c:364-371

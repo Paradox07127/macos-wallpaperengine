@@ -26,13 +26,16 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     public var maximumPotentialEDR: Float
     /// User `general.shadows` quality (render context +0x1ac); 0 = off.
     public var shadowQuality: Int32
+    /// See `WPEParitySceneDescription.offscreenScaleTier`; 0 allocates every target at its full size.
+    public var offscreenScaleTier: Int
 
     public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
                 msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection(),
                 displayHDR: Bool = false, maximumPotentialEDR: Float = 1,
-                shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality) {
+                shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality, offscreenScaleTier: Int = 0) {
         self.bloom = bloom
+        self.offscreenScaleTier = offscreenScaleTier
         self.shadowQuality = shadowQuality
         self.hdrPostProcessing = hdrPostProcessing
         self.displayHDR = displayHDR
@@ -355,7 +358,8 @@ public struct WPEParityProgramScene: Sendable {
                                               flags.spotShadowCookieLights, flags.spotShadowLights,
                                               flags.directionalShadowLights, flags.pointShadowLights,
                                           ].contains { $0 != 0 },
-                                          objects: sceneObjects, diagnostics: diagnostics)
+                                          objects: sceneObjects, diagnostics: diagnostics,
+                                          offscreenScaleTier: settings.offscreenScaleTier)
         let cameraPaths = WPEParityCameraPaths(camera: document.sourceJSON["camera"], assets: assets)
         self.cameraPaths = cameraPaths
         // camerafade is e0 bit2, on from 0x26; fade.json loads only with camera paths (140181af0.c:37-42).
@@ -372,6 +376,7 @@ public struct WPEParityProgramScene: Sendable {
                                               backbufferWidth: width, backbufferHeight: height,
                                               backbufferFormat: format)
         post.colorCorrection = settings.colorCorrection
+        post.offscreenScaleTier = settings.offscreenScaleTier
         postProcess = post
     }
 

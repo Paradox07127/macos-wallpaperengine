@@ -25,4 +25,6 @@ public struct WPEParityPostProcessFrame: Sendable {
     public let operations: [WPERenderOperation]
     /// Ordered exactly like the draw operations; also used as each draw's state key.
     public let draws: [WPEParityPostProcessDraw]
+    /// See `WPEParitySceneFrame.logicalSizes`.
+    public var logicalSizes: [WPEResourceID: SIMD2<Int>] = [:]
 }
