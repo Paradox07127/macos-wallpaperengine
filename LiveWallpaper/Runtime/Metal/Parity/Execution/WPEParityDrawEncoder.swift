@@ -2,6 +2,15 @@
 import LiveWallpaperProWPE
 import Metal
 
+/// The engine g_* inputs of one draw; encoding evaluates only the names a stage declares.
+struct WPEParityDrawUniforms {
+    var frame: WPEParityUniformFrame
+    var draw: WPEParityUniformDraw
+    /// Above the engine set and below `WPEParityDraw.constants`: particle orientation, and the last TEXS transform of
+    /// each declared slot this draw's own sprite frames do not write.
+    var extras: [String: WPECBufferValue] = [:]
+}
+
 /// One draw, with its explicit native index width when `indexBuffer` is set. Constants are keyed by stage, then HLSL name, since the stages can map one name to different
 /// material keys; textures and samplers are shared. Each stage packs only the names its own reflection declares.
 /// With a geometry-emulation pipeline the draw is a non-indexed point list, one vertex per particle.
@@ -9,7 +18,9 @@ struct WPEParityDraw {
     var pipeline: WPEParityPipeline
     var depthStencil: WPEParityDepthStencilState
     var rasterizer: WPEParityRasterizerState
+    /// Override every engine value in `uniforms` of the same name.
     var constants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
+    var uniforms: WPEParityDrawUniforms?
     var textures: [String: MTLTexture] = [:]
     var samplers: [String: WPEParitySamplerState] = [:]
     var vertexBuffer: MTLBuffer
@@ -27,6 +38,16 @@ struct WPEParityDraw {
     /// The executor skips and counts this draw when the frame arena cannot hold its arguments, instead of failing
     /// the frame.
     var dropsWhenArenaIsFull = false
+
+    /// Every value `stage` can pack, merged into one dictionary as `WPEParityUniformSet.values` builds it. Encoding
+    /// never builds it; it is the reference the packed bytes are checked against.
+    func values(for stage: WPEHLSLStage) -> [String: WPECBufferValue] {
+        var values = uniforms.map {
+            WPEParityUniformSet.values(frame: $0.frame, draw: $0.draw).merging($0.extras) { $1 }
+        } ?? [:]
+        values.merge(constants[stage] ?? [:]) { $1 }
+        return values
+    }
 }
 
 struct WPEParityDrawEncoder {
@@ -183,16 +204,14 @@ struct WPEParityDrawEncoder {
         guard plan.totalSize > 0 else { return nil }
         var table = [UInt8](repeating: 0, count: plan.totalSize)
 
-        for layout in stage.cbuffers {
+        for (index, layout) in stage.cbuffers.enumerated() {
             guard let entry = plan.cbufferOffset(register: layout.reflection.register,
                                                  space: layout.reflection.space) else { continue }
-            var packer = WPECBufferPacker(layout: layout)
-            for variable in layout.reflection.variables {
-                if let value = constants?[variable.name] {
-                    try packer.write(value, to: variable.name)
-                }
+            guard let allocation = frame.allocate(length: layout.size) else {
+                throw WPEParityExecutionError.arenaExhausted
             }
-            let allocation = try allocate(frame, packer.bytes)
+            try Self.pack(cbuffer: index, of: stage, constants: constants, uniforms: draw.uniforms,
+                          at: allocation.contents)
             // Buffer metadata: byte length in the low 32 bits (MSC bounds checks read it).
             try plan.writeEntry(at: entry, gpuAddress: allocation.gpuAddress, resourceID: 0,
                                 metadata: UInt64(UInt32(layout.size)), into: &table)
@@ -226,6 +245,26 @@ struct WPEParityDrawEncoder {
             }
         }
         return try allocate(frame, table).offset
+    }
+
+    /// Fills one cbuffer of `stage` at `base`: each declared name takes its `constants` value, else its engine value,
+    /// else stays zero.
+    static func pack(cbuffer index: Int, of stage: WPEParityPipeline.Stage, constants: [String: WPECBufferValue]?,
+                     uniforms: WPEParityDrawUniforms?, at base: UnsafeMutableRawPointer) throws {
+        let layout = stage.cbuffers[index]
+        _ = base.initializeMemory(as: UInt8.self, repeating: 0, count: layout.size)
+        for (variable, uniform) in zip(layout.reflection.variables, stage.engineUniforms[index]) {
+            if let value = constants?[variable.name] {
+                try WPECBufferWriter.write(value, to: variable, at: base)
+            } else if let uniforms {
+                if !uniforms.extras.isEmpty, let value = uniforms.extras[variable.name] {
+                    try WPECBufferWriter.write(value, to: variable, at: base)
+                } else {
+                    try WPEParityUniformSet.write(uniform, to: variable, frame: uniforms.frame, draw: uniforms.draw,
+                                                  at: base)
+                }
+            }
+        }
     }
 
     private func allocate(_ frame: WPEParityFrameArena.Frame, _ bytes: [UInt8]) throws -> WPEParityFrameArena.Allocation {

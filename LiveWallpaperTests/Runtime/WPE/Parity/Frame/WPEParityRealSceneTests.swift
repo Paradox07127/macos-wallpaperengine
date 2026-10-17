@@ -46,6 +46,51 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertNotEqual(first, last, "the frame did not change over 30 frames")
     }
 
+    /// Each cbuffer of every stage of every draw over three frames holds the bytes packing the draw's whole merged
+    /// value set gives, though encoding evaluates only the declared names.
+    func testDrawsPackTheBytesOfTheirWholeValueSet() async throws {
+        let scenes: [(id: String, edit: (inout [String: Any]) -> Void)] = [
+            ("3815666789", { _ in }), ("3660962877", { $0["camerashake"] = false }), ("3509243656", { _ in }),
+        ]
+        for scene in scenes {
+            let (_, renderer, _, _) = try await makeRenderer(scene.id, editGeneral: scene.edit)
+            var compared = 0
+            for frame in 1 ... 3 {
+                try await renderFrame(renderer, label: "scene \(scene.id) frame \(frame)")
+                XCTAssertFalse(renderer.lastFrameDraws.isEmpty, "scene \(scene.id) frame \(frame)")
+                for (operation, draw) in renderer.lastFrameDraws {
+                    XCTAssertNotNil(draw.uniforms, "scene \(scene.id) operation \(operation)")
+                    var stages = [(WPEHLSLStage.vertex, draw.pipeline.vertex), (.fragment, draw.pipeline.fragment)]
+                    if let geometry = draw.pipeline.geometry {
+                        stages.append((.geometry, geometry.geometry))
+                    }
+                    for (stage, reflected) in stages {
+                        let values = draw.values(for: stage)
+                        for (index, layout) in reflected.cbuffers.enumerated() where layout.size > 0 {
+                            var oracle = WPECBufferPacker(layout: layout)
+                            for variable in layout.reflection.variables {
+                                if let value = values[variable.name] {
+                                    try oracle.write(value, to: variable.name)
+                                }
+                            }
+                            var packed = [UInt8](repeating: 0xA5, count: layout.size)
+                            try packed.withUnsafeMutableBytes {
+                                try WPEParityDrawEncoder.pack(cbuffer: index, of: reflected,
+                                                              constants: draw.constants[stage],
+                                                              uniforms: draw.uniforms, at: XCTUnwrap($0.baseAddress))
+                            }
+                            XCTAssertEqual(packed, oracle.bytes, "scene \(scene.id) frame \(frame) operation "
+                                + "\(operation) \(stage) \(layout.reflection.name)")
+                            compared += 1
+                        }
+                    }
+                }
+            }
+            print("scene \(scene.id): \(compared) cbuffers compared over 3 frames")
+            XCTAssertGreaterThan(compared, 0, "scene \(scene.id)")
+        }
+    }
+
     /// With camerashake on, the shake moves every layer's view, so object 935's MVP changes with scene time.
     /// Parallax is off so only the shake can move the view.
     func testCameraShakeMovesLayerMatrices() async throws {

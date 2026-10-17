@@ -109,8 +109,8 @@ extension WPEParitySceneDriverTests {
                 let quarterDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == quarter.key }?.draw)
                 let quarterSource = try XCTUnwrap(quarterDraw.textures["g_Texture0"])
                 XCTAssertEqual(SIMD2(quarterSource.width, quarterSource.height), bb)
-                guard case let .vector(screen)? = quarterDraw.constants[.fragment]?["g_Screen"],
-                      case let .vector(texel)? = quarterDraw.constants[.fragment]?["g_TexelSize"] else {
+                guard case let .vector(screen)? = quarterDraw.values(for: .fragment)["g_Screen"],
+                      case let .vector(texel)? = quarterDraw.values(for: .fragment)["g_TexelSize"] else {
                     return XCTFail("actual post draw must carry physical screen/texel inputs")
                 }
                 XCTAssertEqual(screen, [Float(bb.x), Float(bb.y), 1.5])

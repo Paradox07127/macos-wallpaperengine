@@ -70,7 +70,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(current.skipped.isEmpty, "\(current.skipped)")
             XCTAssertEqual(current.pathCamera.zoom, zoom, accuracy: 0.000001, "frame \(index)")
             let entry = try XCTUnwrap(current.lastFrameDraws.first {
-                $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil
+                $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil
             })
             let mvp = try XCTUnwrap(current.uniforms(entry.operation)).matrices.modelViewProjection
             XCTAssertEqual(mvp.columns.0.x, scale, accuracy: 0.000001, "frame \(index)")
@@ -135,7 +135,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertNil(command.error)
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             let entry = try XCTUnwrap(renderer.lastFrameDraws.first {
-                $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil
+                $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil
             })
             let matrices = try XCTUnwrap(renderer.uniforms(entry.operation)).matrices
             XCTAssertEqual(matrices.modelViewProjection.columns.0.x, scale, accuracy: 0.000001, "frame \(index)")

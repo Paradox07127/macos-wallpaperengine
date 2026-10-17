@@ -108,11 +108,11 @@ extension WPEParitySceneDriverTests {
             try await settle(driver, label: "parallax frame \(index)")
             XCTAssertNil(command.error)
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
-            let entry = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil })
+            let entry = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil })
             let mvp = try XCTUnwrap(renderer.uniforms(entry.operation)).matrices.modelViewProjection
             let clipX = Float(x) / 8 - 1
             XCTAssertEqual(mvp.columns.3.x, clipX, accuracy: 0.000001)
-            guard case let .matrix(encoded)? = entry.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(encoded)? = entry.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("original shader must receive the actual MVP")
             }
             XCTAssertEqual(encoded.columns[0][3], clipX, accuracy: 0.000001, "native register rows are uploaded explicitly")
@@ -288,7 +288,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(renderer.pathCamera.eye.x, active ? 4 : 0, accuracy: 0.000001)
             XCTAssertEqual(renderer.pathCamera.zoom, active ? 2 : 1, accuracy: 0.000001)
             XCTAssertFalse(renderer.isStatic, "the authored visibility script must remain active")
-            let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil }?.draw)
+            let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil }?.draw)
             XCTAssertGreaterThan(draw.indexCount + draw.vertexCount, 0)
             let pixels = try readBack(renderer.backbuffer, device: device)
             let scale = frame >= 3 ? 2 : 1

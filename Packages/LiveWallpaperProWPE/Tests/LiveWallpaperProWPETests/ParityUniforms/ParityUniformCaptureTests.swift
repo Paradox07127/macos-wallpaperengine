@@ -58,6 +58,11 @@ final class ParityUniformCaptureTests: XCTestCase {
     }
 
     private func sampleValues() -> (values: [String: WPECBufferValue], mvp: simd_float4x4) {
+        let (frame, draw) = sampleInputs()
+        return (WPEParityUniformSet.values(frame: frame, draw: draw), draw.matrices.modelViewProjection)
+    }
+
+    private func sampleInputs() -> (frame: WPEParityUniformFrame, draw: WPEParityUniformDraw) {
         var clock = WPEParityClock()
         clock.advance(elapsed: 1.0 / 60, ratePercent: 100, paused: false)
         let screen = WPEParityUniformScreen(clientWidth: 1920, clientHeight: 1080)
@@ -82,8 +87,16 @@ final class ParityUniformCaptureTests: XCTestCase {
                                                  imageWidth: 400, imageHeight: 200)
         let texture = WPEParityUniformTexture(textureWidth: 512, textureHeight: 256, imageWidth: 400,
                                               imageHeight: 200, mipMapInfo: 3, spriteFrame: sprite)
-        let draw = WPEParityUniformDraw(matrices: matrices, textures: [texture])
-        return (WPEParityUniformSet.values(frame: frame, draw: draw), matrices.modelViewProjection)
+        return (frame, WPEParityUniformDraw(matrices: matrices, textures: [texture]))
+    }
+
+    private func outcome(_ body: () throws -> Void) -> WPEParityBindingError? {
+        do {
+            try body()
+            return nil
+        } catch {
+            return error as? WPEParityBindingError ?? .invalidBinding("\(error)")
+        }
     }
 
     func testFrameMutationsAfterInitReachDrawValues() throws {
@@ -166,5 +179,60 @@ final class ParityUniformCaptureTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(written, 0)
+    }
+
+    /// Every captured WPE cbuffer, filled name by name from the engine inputs, holds the bytes packing the whole set gives.
+    func testDirectEngineWritesMatchPackingTheWholeSet() throws {
+        guard let directory = ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"],
+              !directory.isEmpty else {
+            throw XCTSkip("Set WPE_HLSL_CAPTURE_DIR to the HLSL capture directory containing dxs-pairs.json.")
+        }
+        let url = URL(fileURLWithPath: directory).appendingPathComponent("dxs-pairs.json")
+        let captures = try JSONDecoder().decode([Capture].self, from: Data(contentsOf: url))
+        var (frame, layer) = sampleInputs()
+        frame.lights = WPEParityUniformLights(ambient: SIMD3(0.1, 0.2, 0.3), skylight: SIMD3(0.4, 0.5, 0.6))
+        frame.audio.advance(left: (0 ..< 64).map { Float($0 % 5) }, right: (0 ..< 64).map { Float($0 % 3) },
+                            dt: 1.0 / 30, silence: false)
+        var effect = layer
+        effect.matrices = .effectPass
+        effect.effectPass = WPEParityUniformEffectPass(layerModel: layer.matrices.model,
+                                                       layerModelViewProjection: layer.matrices.modelViewProjection,
+                                                       size: SIMD2(400, 200), isLastPass: false)
+        let plain = WPEParityUniformTexture(textureWidth: 64, textureHeight: 32, imageWidth: 60, imageHeight: 30,
+                                            mipMapInfo: -1)
+        effect.textures = [nil, plain, layer.textures[0]]
+        var compared = 0, engineWrites = 0
+        for draw in [layer, effect] {
+            let values = WPEParityUniformSet.values(frame: frame, draw: draw)
+            for capture in captures {
+                for stage in capture.rdef {
+                    for cbuffer in stage.rdef.cbuffers where cbuffer.size > 0 {
+                        let layout = try layout(stage, cbuffer)
+                        var packer = WPECBufferPacker(layout: layout)
+                        var direct = [UInt8](repeating: 0, count: layout.size)
+                        for variable in layout.reflection.variables {
+                            let packed = outcome {
+                                if let value = values[variable.name] {
+                                    try packer.write(value, to: variable.name)
+                                }
+                            }
+                            let written = outcome {
+                                try direct.withUnsafeMutableBytes {
+                                    try WPEParityUniformSet.write(WPEParityEngineUniform(name: variable.name),
+                                                                  to: variable, frame: frame, draw: draw,
+                                                                  at: XCTUnwrap($0.baseAddress))
+                                }
+                            }
+                            XCTAssertEqual(written, packed, "\(capture.name) \(variable.name)")
+                            engineWrites += values[variable.name] == nil ? 0 : 1
+                        }
+                        XCTAssertEqual(direct, packer.bytes, "\(capture.name) \(cbuffer.name)")
+                        compared += 1
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(compared, 0)
+        XCTAssertGreaterThan(engineWrites, 0)
     }
 }

@@ -108,12 +108,12 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             XCTAssertEqual(renderer.pathCamera.eye.x, eye.x, accuracy: 0.00001)
             XCTAssertEqual(renderer.pathCamera.eye.y, eye.y, accuracy: 0.00001)
-            let entry = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil })
+            let entry = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil })
             let mvp = try XCTUnwrap(renderer.uniforms(entry.operation)).matrices.modelViewProjection
             let clip = point / 8 - 1
             XCTAssertEqual(mvp.columns.3.x, clip.x, accuracy: 0.00001)
             XCTAssertEqual(mvp.columns.3.y, clip.y, accuracy: 0.00001)
-            guard case let .matrix(encoded)? = entry.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(encoded)? = entry.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("original shader must receive the same pre-tick pose")
             }
             XCTAssertEqual(encoded.columns[0][3], clip.x, accuracy: 0.00001)

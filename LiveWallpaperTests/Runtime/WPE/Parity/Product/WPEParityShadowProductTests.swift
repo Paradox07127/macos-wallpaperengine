@@ -422,7 +422,7 @@ extension WPEParitySceneDriverTests {
         let bound = try XCTUnwrap(receiver.textures["g_Texture6"])
         XCTAssertTrue(bound === atlas, "the floor must sample the live atlas")
         let (width, height) = (Float(atlas.width), Float(atlas.height))
-        XCTAssertEqual(Self.floats(receiver.constants[.fragment]?["g_Texture6Texel"]), [1 / width, 1 / height, width, height])
+        XCTAssertEqual(Self.floats(receiver.values(for: .fragment)["g_Texture6Texel"]), [1 / width, 1 / height, width, height])
         // Viewports set by a caster stay on its encoder, so no other draw may share a render pass with the casters.
         for graph in renderer.compiledGraphs {
             for step in graph.steps {

@@ -40,6 +40,8 @@ struct WPEParityPipeline {
         let reflection: WPEStageReflection
         let bindingPlan: WPEStageBindingPlan
         let cbuffers: [WPECBufferLayout]
+        /// Per cbuffer, the engine uniform each reflected variable names, in variable order.
+        let engineUniforms: [[WPEParityEngineUniform]]
 
         init(_ reflection: WPEStageReflection) throws {
             for resource in reflection.resources where resource.count != 1 {
@@ -48,6 +50,7 @@ struct WPEParityPipeline {
             self.reflection = reflection
             bindingPlan = try WPEStageBindingPlan(reflection)
             cbuffers = try reflection.cbuffers.map(WPECBufferLayout.init)
+            engineUniforms = reflection.cbuffers.map { $0.variables.map { WPEParityEngineUniform(name: $0.name) } }
         }
     }
 
@@ -59,6 +62,8 @@ struct WPEParityPipeline {
     let geometry: WPEParityGeometryEmulation?
     /// Packed-stage allocation budget, computed once with the pipeline rather than traversed per draw.
     let argumentBytes: Int
+    /// The g_TextureN Rotation/Translation names any stage declares, with their slot.
+    let textureTransforms: [(name: String, slot: Int)]
 
     init(state: MTLRenderPipelineState, vertex: Stage, fragment: Stage,
          geometry: WPEParityGeometryEmulation? = nil) {
@@ -66,7 +71,20 @@ struct WPEParityPipeline {
         self.vertex = vertex
         self.fragment = fragment
         self.geometry = geometry
-        argumentBytes = WPEParityDrawEncoder.argumentBytes(stages: [vertex, geometry?.geometry, fragment].compactMap(\.self))
+        let stages = [vertex, geometry?.geometry, fragment].compactMap(\.self)
+        argumentBytes = WPEParityDrawEncoder.argumentBytes(stages: stages)
+        var transforms: [String: Int] = [:]
+        for stage in stages {
+            for (layout, uniforms) in zip(stage.cbuffers, stage.engineUniforms) {
+                for (variable, uniform) in zip(layout.reflection.variables, uniforms) {
+                    switch uniform {
+                    case let .textureRotation(slot), let .textureTranslation(slot): transforms[variable.name] = slot
+                    default: break
+                    }
+                }
+            }
+        }
+        textureTransforms = transforms.map { (name: $0.key, slot: $0.value) }
     }
 }
 

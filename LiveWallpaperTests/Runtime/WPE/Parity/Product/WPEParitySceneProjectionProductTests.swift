@@ -104,14 +104,14 @@ extension WPEParitySceneDriverTests {
             let current = try XCTUnwrap(driver.renderer)
             XCTAssertTrue(current.skipped.isEmpty, "\(current.skipped)")
             XCTAssertEqual(current.pathCamera.scenePerspective, .init(fov: fov, near: near, far: far))
-            let entry = try XCTUnwrap(current.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil })
+            let entry = try XCTUnwrap(current.lastFrameDraws.first { $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil })
             let mvp = try XCTUnwrap(current.uniforms(entry.operation)).matrices.modelViewProjection
             let aspect = Float(current.backbuffer.width) / Float(current.backbuffer.height)
             let range = near / (far - near)
             XCTAssertEqual(mvp.columns.3.x, focal / aspect * 2, accuracy: 0.000001)
             XCTAssertEqual(mvp.columns.3.z, range * -8 + range * far, accuracy: 0.000001)
             XCTAssertEqual(mvp.columns.3.w, 8, accuracy: 0.000001)
-            guard case let .matrix(encoded)? = entry.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(encoded)? = entry.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("Original shader must receive the published projection")
             }
             XCTAssertEqual(encoded.columns[0][3], mvp.columns.3.x)
@@ -195,7 +195,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(command.error)
         XCTAssertTrue(coldRenderer.skipped.isEmpty, "\(coldRenderer.skipped)")
         XCTAssertEqual(coldRenderer.pathCamera.scenePerspective, .init(fov: 90, near: 1, far: 9))
-        let entry = try XCTUnwrap(coldRenderer.lastFrameDraws.first { $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil })
+        let entry = try XCTUnwrap(coldRenderer.lastFrameDraws.first { $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil })
         let matrix = try XCTUnwrap(coldRenderer.uniforms(entry.operation)).matrices.modelViewProjection
         XCTAssertEqual(matrix.columns.3.x, focal90 * 2, accuracy: 0.000001)
         XCTAssertEqual(matrix.columns.3.z, 0.125, accuracy: 0.000001)
@@ -236,10 +236,10 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, expectedFOV)
             XCTAssertEqual(overrideRenderer.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(60, 0, 0, 0)))
             let draw = try XCTUnwrap(overrideRenderer.lastFrameDraws.first {
-                $0.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] != nil
+                $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil
             })
             let mvp = try XCTUnwrap(overrideRenderer.uniforms(draw.operation)).matrices.modelViewProjection
-            guard case let .matrix(encoded)? = draw.draw.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(encoded)? = draw.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("Original shader must receive the selected override camera")
             }
             XCTAssertEqual(encoded.columns[3][3], mvp.columns.3.w)

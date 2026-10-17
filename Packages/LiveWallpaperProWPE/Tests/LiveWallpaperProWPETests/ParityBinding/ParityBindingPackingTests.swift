@@ -204,6 +204,57 @@ final class ParityBindingPackingTests: XCTestCase {
         XCTAssertThrowsError(try four.write(.vector([1, 2, 3, 4]), to: "v"))
     }
 
+    func testDirectWriterMatchesThePackerBytesAndErrors() throws {
+        let variables = [
+            variable("f"), variable("i", offset: 4, type: .int), variable("u", offset: 8, type: .uint),
+            variable("b", offset: 12, type: .bool),
+            variable("v3", offset: 16, size: 12, kind: .vector, columns: 3),
+            variable("i2", offset: 32, size: 8, type: .int, kind: .vector, columns: 2),
+            variable("u4", offset: 48, size: 16, type: .uint, kind: .vector, columns: 4),
+            variable("columns", offset: 64, size: 40, kind: .matrix_columns, rows: 2, columns: 3),
+            variable("rows", offset: 112, size: 28, kind: .matrix_rows, rows: 2, columns: 3),
+            variable("array", offset: 144, size: 28, kind: .vector, columns: 3, elements: 2),
+            variable("matrices", offset: 176, size: 92, kind: .matrix_rows, rows: 3, columns: 3, elements: 2),
+        ]
+        let layout = try layout(variables, size: 272)
+        let matrix23 = WPECBufferValue.matrix(WPEFloatMatrix(columns: [[1, 2], [3, 4], [5, 6]]))
+        let matrix33 = WPECBufferValue.matrix(WPEFloatMatrix(columns: [SIMD3<Float>(1, 2, 3), SIMD3(4, 5, 6),
+                                                                       SIMD3(7, 8, 9)]))
+        let values: [WPECBufferValue] = [
+            .float(-2.5), .int(.min), .uint(.max), .bool(true), .vector([1, 2, 3]), .vector([1, 2]),
+            .intVector([-1, 7]), .uintVector([.max, 1, 2, 3]), matrix23, matrix33,
+            .matrix(WPEFloatMatrix(columns: [[1, 2], [3], [4, 5]])),
+            .array([.vector([1, 2, 3]), .vector([4, 5, 6])]), .array([.vector([1, 2, 3])]),
+            .array([.vector([1, 2, 3]), .vector([4, 5, 6]), .vector([7, 8, 9])]), .array([.vector([1, 2, 3]), .float(1)]),
+            .array([matrix33, matrix33]), .array([.array([.float(1)])]),
+        ]
+        func outcome(_ body: () throws -> Void) -> WPEParityBindingError? {
+            do {
+                try body()
+                return nil
+            } catch {
+                return error as? WPEParityBindingError
+            }
+        }
+        var matched = 0
+        for variable in variables {
+            for value in values {
+                var packer = WPECBufferPacker(layout: layout)
+                var direct = [UInt8](repeating: 0, count: layout.size)
+                let packed = outcome { try packer.write(value, to: variable.name) }
+                let written = outcome {
+                    try direct.withUnsafeMutableBytes { try WPECBufferWriter.write(value, to: variable, at: $0.baseAddress!) }
+                }
+                XCTAssertEqual(written, packed, "\(variable.name) \(value)")
+                if packed == nil {
+                    XCTAssertEqual(direct, packer.bytes, "\(variable.name) \(value)")
+                    matched += 1
+                }
+            }
+        }
+        XCTAssertEqual(matched, variables.count + 1)
+    }
+
     func testInvalidReflectedLayoutsAreRejected() throws {
         XCTAssertThrowsError(try layout([variable(offset: 2)]))
         XCTAssertThrowsError(try layout([variable()], size: 15))

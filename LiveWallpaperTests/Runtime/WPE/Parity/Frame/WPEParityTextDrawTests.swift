@@ -273,7 +273,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         let renderer = fixture.renderer
         XCTAssertEqual(renderer.skipped, [:])
         func constants() throws -> [String: WPECBufferValue] {
-            try XCTUnwrap(renderer.lastFrameDraws.first?.draw.constants[.fragment])
+            try XCTUnwrap(renderer.lastFrameDraws.first?.draw.values(for: .fragment))
         }
         func vector(_ name: String) throws -> [Float] {
             let value = try constants()[name]

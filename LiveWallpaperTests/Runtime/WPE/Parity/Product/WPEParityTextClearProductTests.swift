@@ -162,7 +162,7 @@ extension WPEParitySceneDriverTests {
             textClearAssertMatrix(matrices.model, columns: context.modelColumns, exact: true, label: "slot28 M \(context)")
             textClearAssertMatrix(matrices.view, columns: identity, exact: true, label: "slot28 inherited V \(context)")
             textClearAssertMatrix(matrices.projection, columns: context.projectionColumns, label: "slot28 inherited P \(context)")
-            guard case let .matrix(mvp)? = encoded.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(mvp)? = encoded.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("original clearalpha VS must consume the actual encoded MVP")
             }
             // Native case9 uploads register i as mathematical row i (1400d8300.c); keep the fixed
@@ -232,7 +232,7 @@ extension WPEParitySceneDriverTests {
             }
             let published = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == publicationIndex }?.draw)
             XCTAssertGreaterThan(published.indexCount + published.vertexCount, 0)
-            guard case let .matrix(publicationMVP)? = published.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(publicationMVP)? = published.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("original tint publication must consume a real MVP")
             }
             publicationMVPs.append(publicationMVP.columns.flatMap(\.self))

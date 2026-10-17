@@ -102,7 +102,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(try XCTUnwrap(draw.textures["g_Texture1"]) === history,
                           "the real child slot must sample the actual pooled mip history, not a transparent fallback")
             _ = try XCTUnwrap(draw.textures["g_Texture0"])
-            guard case let .float(mips)? = draw.constants[.fragment]?["g_Texture1MipMapInfo"] else {
+            guard case let .float(mips)? = draw.values(for: .fragment)["g_Texture1MipMapInfo"] else {
                 return XCTFail("the original uniform bridge must reach the controlled LOD fragment")
             }
             XCTAssertEqual(mips, 3)

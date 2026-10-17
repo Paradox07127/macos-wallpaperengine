@@ -92,7 +92,7 @@ extension WPEParitySceneDriverTests {
             let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation.key }?.draw)
             XCTAssertGreaterThan(draw.indexCount + draw.vertexCount, 0)
             _ = try XCTUnwrap(draw.textures["g_Texture0"], "actual original white TEX must bind")
-            let constants = try XCTUnwrap(draw.constants[.fragment])
+            let constants = try XCTUnwrap(draw.values(for: .fragment))
             if frame == 3 {
                 XCTAssertNil(constants["g_LTube_Color"])
                 XCTAssertNil(constants["g_LTube_OriginA"])

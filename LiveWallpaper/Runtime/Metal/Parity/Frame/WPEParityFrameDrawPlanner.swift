@@ -209,8 +209,9 @@ struct WPEParityFrameDrawPlan {
             }
         }
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                 constants: state.constants, textures: state.textures, samplers: samplers,
-                                 vertexBuffer: vertices, primitiveType: .triangle, vertexCount: vertexCount)
+                                 constants: state.constants, uniforms: state.uniforms, textures: state.textures,
+                                 samplers: samplers, vertexBuffer: vertices, primitiveType: .triangle,
+                                 vertexCount: vertexCount)
         draw.indexBuffer = indices
         draw.indexCount = indexCount
         draw.indexType = indexType
@@ -263,10 +264,13 @@ struct WPEParityFrameDrawPlan {
             modelRotation: simd_float3x3(xyz(model.columns.0), xyz(model.columns.1), xyz(model.columns.2)),
             sceneView: camera.view
         )
-        var orientation: [String: WPECBufferValue] = [:]
-        for (name, vector) in [("Forward", vectors.forward), ("Right", vectors.right), ("Up", vectors.up)] {
-            orientation["g_Orientation" + name] = .vector([vector.x, vector.y, vector.z])
+        func vector(_ value: SIMD3<Float>) -> WPECBufferValue {
+            .vector([value.x, value.y, value.z])
         }
+        let orientation: [String: WPECBufferValue] = [
+            "g_OrientationForward": vector(vectors.forward), "g_OrientationRight": vector(vectors.right),
+            "g_OrientationUp": vector(vectors.up),
+        ]
         let vertices = batch.vertices
         guard let allocation = particles.upload(vertices, argumentBytes: particle.argumentBytes, to: arena) else {
             return nil
@@ -286,7 +290,8 @@ struct WPEParityFrameDrawPlan {
         ]
         var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
                                  constants: state.constants.mapValues { $0.merging(values) { $1 } },
-                                 textures: state.textures, samplers: samplers, vertexBuffer: allocation.buffer,
+                                 uniforms: state.uniforms, textures: state.textures, samplers: samplers,
+                                 vertexBuffer: allocation.buffer,
                                  primitiveType: .point, vertexCount: vertices.count)
         draw.vertexBufferOffset = allocation.offset
         draw.dropsWhenArenaIsFull = true
@@ -304,7 +309,8 @@ struct WPEParityFrameDrawPlan {
         return textures
     }
 
-    /// Per-stage constants (engine set, `engineExtras`, then the binding's `constants`) and the textures of `variant`.
+    /// Per-stage constants (the binding's `constants`, then the puppet's bones), the engine inputs they override
+    /// (engine set, then `engineExtras`) and the textures of `variant`.
     private func drawState(frame: WPEParityUniformFrame, uniforms: WPEParityUniformDraw, variant: Int,
                            table: [WPEResourceID: MTLTexture], textureSlots: inout [String: WPECBufferValue],
                            puppets: [String: WPEParityPuppetAnimator],
@@ -312,7 +318,8 @@ struct WPEParityFrameDrawPlan {
                            constants: [WPEHLSLStage: [String: WPECBufferValue]],
                            engineExtras: [String: WPECBufferValue] = [:],
                            replacementTextures: [Int: MTLTexture])
-        throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], textures: [String: MTLTexture]) {
+        throws -> (constants: [WPEHLSLStage: [String: WPECBufferValue]], uniforms: WPEParityDrawUniforms,
+                   textures: [String: MTLTexture]) {
         for (slot, failure) in mediaFormatFailures where replacementTextures[slot] != nil {
             throw WPEParityFrameSkip.program(failure)
         }
@@ -356,21 +363,24 @@ struct WPEParityFrameDrawPlan {
                 imageWidth: UInt32(texture.width), imageHeight: UInt32(texture.height), mipMapInfo: 1
             )
         }
-        var engine = WPEParityUniformSet.values(frame: frame, draw: uniforms)
-        // Only a bound sprite frame writes these; any other draw uploads what the slot last held.
-        for slot in 0 ..< WPEParityUniformTextures.slotCount {
-            for name in ["g_Texture\(slot)Rotation", "g_Texture\(slot)Translation"] {
-                if let value = engine[name] {
-                    textureSlots[name] = value
-                } else {
-                    engine[name] = textureSlots[name]
-                }
-            }
+        func spriteFrame(_ slot: Int) -> WPEParityUniformSpriteFrame? {
+            uniforms.textures.indices.contains(slot) ? uniforms.textures[slot]?.spriteFrame : nil
         }
-        engine.merge(engineExtras) { $1 }
+        // Only a bound sprite frame writes these; any other draw uploads what the slot last held.
+        for slot in 0 ..< min(uniforms.textures.count, WPEParityUniformTextures.slotCount) {
+            guard let sprite = spriteFrame(slot) else { continue }
+            let (rotation, translation) = (sprite.rotation, sprite.translation)
+            textureSlots[WPEParityUniformTextures.rotationNames[slot]] =
+                .vector([rotation.x, rotation.y, rotation.z, rotation.w])
+            textureSlots[WPEParityUniformTextures.translationNames[slot]] = .vector([translation.x, translation.y])
+        }
+        var extras = engineExtras
+        for (name, slot) in pipeline.textureTransforms where spriteFrame(slot) == nil && extras[name] == nil {
+            extras[name] = textureSlots[name]
+        }
         var stageConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
-        for stage in pipeline.geometry == nil ? [WPEHLSLStage.vertex, .fragment] : [.vertex, .geometry, .fragment] {
-            stageConstants[stage] = engine.merging(constants[stage] ?? [:]) { $1 }
+        for stage in pipeline.geometry == nil ? Self.meshStages : Self.geometryStages {
+            stageConstants[stage] = constants[stage] ?? [:]
         }
         if let animator = puppetID.flatMap({ puppets[$0] }) {
             stageConstants[.vertex, default: [:]].merge(animator.values) { $1 }
@@ -387,8 +397,11 @@ struct WPEParityFrameDrawPlan {
         }
         boundTextures.merge(spriteTextures) { $1 }
         boundTextures.merge(systemTextures) { $1 }
-        return (stageConstants, boundTextures)
+        return (stageConstants, WPEParityDrawUniforms(frame: frame, draw: uniforms, extras: extras), boundTextures)
     }
+
+    private static let meshStages: [WPEHLSLStage] = [.vertex, .fragment]
+    private static let geometryStages: [WPEHLSLStage] = [.vertex, .geometry, .fragment]
 
     private static func sprite(_ steps: [SpriteStep], at time: Double) -> SpriteStep? {
         steps.isEmpty ? nil : steps[sharedSprite(steps, at: time).frame]

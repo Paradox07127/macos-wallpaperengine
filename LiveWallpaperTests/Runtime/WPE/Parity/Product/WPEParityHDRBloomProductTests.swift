@@ -191,7 +191,7 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
             return try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
         }
         func uniform(_ position: Int, _ name: String, _ values: [Float]) throws {
-            let actual = try XCTUnwrap(components(draw(position).constants[.fragment]?[name]), name)
+            let actual = try XCTUnwrap(components(draw(position).values(for: .fragment)[name]), name)
             XCTAssertEqual(actual.count, values.count, name)
             for (a, b) in zip(actual, values) {
                 XCTAssertEqual(a, b, accuracy: 1e-6, name)

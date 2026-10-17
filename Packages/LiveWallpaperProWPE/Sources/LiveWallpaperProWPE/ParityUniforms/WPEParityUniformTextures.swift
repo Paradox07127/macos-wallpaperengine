@@ -47,6 +47,8 @@ public struct WPEParityUniformTexture: Sendable {
 /// g_TextureN* (1400d8300.c cases 0x2a-0x5b).
 public enum WPEParityUniformTextures {
     public static let slotCount = 10
+    public static let rotationNames = (0 ..< slotCount).map { "g_Texture\($0)Rotation" }
+    public static let translationNames = (0 ..< slotCount).map { "g_Texture\($0)Translation" }
 
     /// Rotation/Translation are emitted only for a bound texture with a sprite frame.
     public static func values(slot: Int, texture: WPEParityUniformTexture?) -> [String: WPECBufferValue] {

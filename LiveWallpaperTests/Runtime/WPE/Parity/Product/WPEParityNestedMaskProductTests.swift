@@ -118,7 +118,7 @@ extension WPEParitySceneDriverTests {
                     XCTAssertEqual(matrix[column], identity[column], "native merge \(name), q\(scale)")
                 }
             }
-            guard case let .matrix(mvp)? = encodedMerge.constants[.vertex]?["g_ModelViewProjectionMatrix"] else {
+            guard case let .matrix(mvp)? = encodedMerge.values(for: .vertex)["g_ModelViewProjectionMatrix"] else {
                 return XCTFail("the encoded merge must consume its original MVP uniform")
             }
             XCTAssertEqual(mvp.columns, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])

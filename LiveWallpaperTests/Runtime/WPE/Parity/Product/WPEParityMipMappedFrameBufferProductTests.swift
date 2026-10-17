@@ -47,7 +47,7 @@ extension WPEParitySceneDriverTests {
                     renderer.frames[0].operations[$0.operation].pass.rawValue == "2/albedo"
                 }?.draw)
                 XCTAssertTrue(try XCTUnwrap(draw.textures["g_Texture1"]) === texture)
-                XCTAssertEqual(mipComponents(draw.constants[.fragment]?["g_Texture1MipMapInfo"]), [Float(count)], label)
+                XCTAssertEqual(mipComponents(draw.values(for: .fragment)["g_Texture1MipMapInfo"]), [Float(count)], label)
                 let finalLevel = count - 1
                 let expected = [finalLevel & 1, (finalLevel >> 1) & 1, (finalLevel >> 2) & 1].map { $0 * 255 }
                 try assertMipPixel(readBack(renderer.backbuffer, device: device), width: width,
@@ -145,7 +145,7 @@ extension WPEParitySceneDriverTests {
                             XCTAssertTrue(try XCTUnwrap(draw.textures["g_Texture\(historySlot)"]) === history,
                                           "the real active slot must sample the history allocation: \(label)")
                             XCTAssertEqual(draw.samplers["g_Texture\(historySlot)SamplerState"], .wpe(filter: .linear, address: .clamp))
-                            XCTAssertEqual(mipComponents(draw.constants[.fragment]?["g_Texture\(historySlot)MipMapInfo"]), [3])
+                            XCTAssertEqual(mipComponents(draw.values(for: .fragment)["g_Texture\(historySlot)MipMapInfo"]), [3])
                             let level2 = try mipBytes(history, level: 2, queue: driver.executor.textureSourceCommandQueue)
                             try assertMipPixel(level2, width: 16, x: 12, y: 8,
                                                rgb: quality ? bytes[frame] : [0, 0, 0],
@@ -395,7 +395,7 @@ extension WPEParitySceneDriverTests {
                 }?.draw)
                 XCTAssertTrue(try XCTUnwrap(reader.textures["g_Texture1"]) === history)
                 XCTAssertEqual(reader.samplers["g_Texture1SamplerState"], .wpe(filter: .linear, address: .clamp))
-                XCTAssertEqual(mipComponents(reader.constants[.fragment]?["g_Texture1MipMapInfo"]), [3])
+                XCTAssertEqual(mipComponents(reader.values(for: .fragment)["g_Texture1MipMapInfo"]), [3])
                 let combine = try XCTUnwrap(renderer.lastFrameDraws.first {
                     renderer.frames[0].operations[$0.operation].pass.rawValue == "combine_hdr"
                 }?.draw)

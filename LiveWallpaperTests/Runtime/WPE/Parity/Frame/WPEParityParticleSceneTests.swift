@@ -271,7 +271,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         for (index, entry) in draws.enumerated() {
             let birthX = entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset, as: Float.self)
             XCTAssertEqual(birthX, 2, accuracy: 0.0001, "Event displacement belongs to the model, not the local birth")
-            guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+            guard case let .matrix(model)? = entry.draw.values(for: .vertex)["g_ModelMatrix"] else {
                 return XCTFail("missing model matrix")
             }
             // WPE stores transposed rows. Owner32 + event(±10 + 3) + static5 = model30/50;
@@ -344,7 +344,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
             for (entry, expected) in zip(draws, models) {
                 let birthX = entry.draw.vertexBuffer.contents().load(fromByteOffset: entry.draw.vertexBufferOffset, as: Float.self)
                 XCTAssertEqual(birthX, 2, accuracy: 0.0001)
-                guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+                guard case let .matrix(model)? = entry.draw.values(for: .vertex)["g_ModelMatrix"] else {
                     return XCTFail("missing model matrix")
                 }
                 XCTAssertEqual(model.columns[0][3], expected, accuracy: 0.0001)
@@ -441,7 +441,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
                     let bytes = entry.draw.vertexBuffer.contents().advanced(by: entry.draw.vertexBufferOffset)
                     XCTAssertEqual(bytes.load(as: Float.self), 2, accuracy: 0.0001)
                     XCTAssertEqual(bytes.load(fromByteOffset: 4, as: Float.self), 0, accuracy: 0.0001)
-                    guard case let .matrix(model)? = entry.draw.constants[.vertex]?["g_ModelMatrix"] else {
+                    guard case let .matrix(model)? = entry.draw.values(for: .vertex)["g_ModelMatrix"] else {
                         return XCTFail("missing model matrix")
                     }
                     XCTAssertEqual(model.columns[0][0], sx, accuracy: 0.0001)
@@ -630,7 +630,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         for lane in 0 ..< 3 {
             XCTAssertEqual(bytes.load(fromByteOffset: lane * 4, as: Float.self), birth[lane], accuracy: 0.0001)
         }
-        guard case let .matrix(model)? = draw.constants[.vertex]?["g_ModelMatrix"] else {
+        guard case let .matrix(model)? = draw.values(for: .vertex)["g_ModelMatrix"] else {
             throw NSError(domain: "WPEParityParticleSceneTests.RequiredModel", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Particle draw has no actual model uniform"])
         }
@@ -646,7 +646,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         }
         for (name, expected) in [("g_OrientationForward", [Float(0), 0, 1]),
                                  ("g_OrientationRight", right), ("g_OrientationUp", up)] {
-            let actual = try XCTUnwrap(Self.vector(draw.constants[.geometry]?[name]), name)
+            let actual = try XCTUnwrap(Self.vector(draw.values(for: .geometry)[name]), name)
             XCTAssertGreaterThanOrEqual(actual.count, 3, name)
             for lane in 0 ..< min(actual.count, 3) {
                 XCTAssertEqual(actual[lane], expected[lane], accuracy: 0.0001, name)
