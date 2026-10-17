@@ -563,6 +563,16 @@ final class WPELayerScriptInstance {
     #endif
 
     #if DEBUG
+    var retainedPerLayerEntryCountForTesting: Int {
+        let bridge = engine
+        return bridge.assignedVisible.count + bridge.assignedAlpha.count + bridge.assignedText.count
+            + bridge.assignedEffects.count + bridge.effectHandles.count + bridge.soundIntent.count
+            + bridge.assignedSoundVolume.count + bridge.otherTransformValues.count + bridge.createdAngles.count
+            + bridge.presentationMutations.count + bridge.assignedOtherTransforms.count + bridge.videoHandles.count
+    }
+    #endif
+
+    #if DEBUG
     /// Oracle-only input injection. Does not model the settings UI or invoke script callbacks.
     func injectOracleUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue]
@@ -2314,6 +2324,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
             presentationMutations[key] = nil
             assignedOtherTransforms[key] = nil
             videoHandles[key] = nil
+            assignedVisible[key] = nil
+            assignedAlpha[key] = nil
+            assignedText[key] = nil
+            soundIntent[key] = nil
+            assignedSoundVolume[key] = nil
         }
         pendingCreatedDestruction.removeAll(keepingCapacity: true)
     }

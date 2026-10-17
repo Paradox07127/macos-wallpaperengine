@@ -135,6 +135,25 @@ struct WPESceneScriptCreatedLayerQuotaTests {
         #expect(output.created.isEmpty)
     }
 
+    @Test("Destroying a created layer drops its per-layer assignment entries")
+    @MainActor
+    func destroyedCreatedLayersDropPerLayerEntries() throws {
+        let instance = try WPELayerScriptInstance(script: """
+        export function update() {
+            const l = thisScene.createLayer('models/bar.json');
+            l.visible = false;
+            l.alpha = 0.5;
+            thisScene.destroyLayer(l);
+        }
+        """, shared: WPESharedScriptState(sceneScriptLoadToken: preparedToken(generation: 22)), createdLayerBridge: .init(
+            imagePaths: ["models/bar.json"], orderedLayerNames: ["MAIN"], allowsSorting: false
+        ))
+        for _ in 0 ..< 300 {
+            _ = instance.tick()
+        }
+        #expect(instance.retainedPerLayerEntryCountForTesting <= 4)
+    }
+
     private func preparedToken(generation: Int) -> WPESceneScriptInstanceLimitToken {
         let token = WPESceneScriptInstanceLimitToken(generation: generation)
         #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
