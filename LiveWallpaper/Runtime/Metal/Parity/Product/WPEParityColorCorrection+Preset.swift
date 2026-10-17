@@ -21,7 +21,7 @@ enum WPEParityColorCorrectionPresetError: Error, Equatable, LocalizedError, Send
 }
 
 extension WPEParityColorCorrection {
-    /// A complete preset snapshot, not a property patch. R15's raw values feed the existing WPE normalisation;
+    /// A complete preset snapshot, not a property patch. Its raw values feed the existing WPE normalisation;
     /// malformed and unmeasured inputs remain explicit failures instead of inheriting the old additive grading.
     init(presetSnapshot values: [String: WallpaperEngineProjectPropertyValue]) throws(WPEParityColorCorrectionPresetError) {
         func number(_ field: String) throws(WPEParityColorCorrectionPresetError) -> Double? {

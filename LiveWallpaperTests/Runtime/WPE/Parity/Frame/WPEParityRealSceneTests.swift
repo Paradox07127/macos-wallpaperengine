@@ -46,7 +46,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertNotEqual(first, last, "the frame did not change over 30 frames")
     }
 
-    /// R17 C: with camerashake on, the shake moves every layer's view, so object 935's MVP changes with scene time.
+    /// With camerashake on, the shake moves every layer's view, so object 935's MVP changes with scene time.
     /// Parallax is off so only the shake can move the view.
     func testCameraShakeMovesLayerMatrices() async throws {
         func mvpChange(shake: Bool) async throws -> Float {
@@ -293,7 +293,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertGreaterThan(changed, 0, "the video texture held one frame until the 10 s deadline")
     }
 
-    /// R8 Q4: object 935's layer-mesh draw packs MVP rows as cbuffer registers. The spec values assume V = I, which
+    /// Object 935's layer-mesh draw packs MVP rows as cbuffer registers. The spec values assume V = I, which
     /// this scene's camera gives; the package's camera and layer rules give the same matrix.
     private func assertObject935(plan: WPEParityFramePlan, renderer: WPEParityFrameRenderer) throws {
         let index = try XCTUnwrap(plan.frames[0].draws.first { _, draw in

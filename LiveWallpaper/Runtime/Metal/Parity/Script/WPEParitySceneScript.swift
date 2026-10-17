@@ -264,7 +264,7 @@ final class WPEParitySceneScript {
         engine.resize(canvasSize: canvasSize, screenResolution: screenResolution, state: &state)
     }
 
-    /// Read native seeds from the authored/resolved JSON. Parser defaults currently differ from Windows H05.
+    /// Read native seeds from the authored/resolved JSON, not from the parser's defaults, which differ from WPE's.
     private static func generalFields(_ general: WPESceneJSONValue)
         -> [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
         func components(_ value: WPESceneJSONValue?) -> [Float]? {

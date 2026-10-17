@@ -33,7 +33,7 @@ struct WPEParityFrameDrawPlan {
         let perspective: Bool
         let compositeOwnerID: String?
         let renderer: WPEParityParticleRenderer
-        /// Set for SPRITESHEET draws with TEXS frames (R22 Q4).
+        /// Set for SPRITESHEET draws with TEXS frames.
         let renderVar1: SIMD4<Float>?
         /// Arena bytes of the largest batch one system, or one instance of an event group, can write.
         let maxBytes: Int
@@ -73,7 +73,7 @@ struct WPEParityFrameDrawPlan {
     let sprites: [Int: [SpriteStep]]
     /// The binding description's constants per stage; the engine uniform set does not carry them.
     let constants: [WPEHLSLStage: [String: WPECBufferValue]]
-    /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read (R22 Q3).
+    /// The binding's g_RenderVar0/1, which also land in the scene-wide store particle draws read.
     let renderVarWrites: (rv0: SIMD4<Float>?, rv1: SIMD4<Float>?)
     var textRenderVars: WPEParityTextDrawParameters?
     /// Native clip masks replace only RV0.x; the other lanes stay in the scene-wide store.
@@ -128,7 +128,7 @@ struct WPEParityFrameDrawPlan {
         }
     }
 
-    /// Slot16 model terms for glyph/background and final text draws (R23 Q6).
+    /// Slot16 model terms for glyph/background and final text draws.
     /// Slot28 clearalpha bypasses this placement and uses W' with the inherited camera.
     struct TextPlacement {
         let anchorOffset: SIMD2<Float>
@@ -229,7 +229,7 @@ struct WPEParityFrameDrawPlan {
     }
 
     /// One point-list draw per batch of live particles, its vertices copied into `arena`; none without live particles,
-    /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched (R22 Q3). `layers` holds the live
+    /// which also leaves `renderVars`, the scene-wide g_RenderVar store, untouched. `layers` holds the live
     /// layer transforms once any moved.
     func makeParticleDraw(_ batch: WPEParityParticleDrawBatch,
                           frame: WPEParityUniformFrame, camera: WPEParityCamera, variant: Int,
@@ -257,7 +257,7 @@ struct WPEParityFrameDrawPlan {
         func xyz(_ column: SIMD4<Float>) -> SIMD3<Float> {
             SIMD3(column.x, column.y, column.z)
         }
-        // R22 Q2: the frame's scene camera V, never the perspective or composite push.
+        // The frame's scene camera V, never the perspective or composite push.
         let vectors = WPEParityParticleOrientation.vectors(
             renderer: particle.renderer,
             modelRotation: simd_float3x3(xyz(model.columns.0), xyz(model.columns.1), xyz(model.columns.2)),
@@ -357,7 +357,7 @@ struct WPEParityFrameDrawPlan {
             )
         }
         var engine = WPEParityUniformSet.values(frame: frame, draw: uniforms)
-        // R6: only a bound sprite frame writes these; any other draw uploads what the slot last held.
+        // Only a bound sprite frame writes these; any other draw uploads what the slot last held.
         for slot in 0 ..< WPEParityUniformTextures.slotCount {
             for name in ["g_Texture\(slot)Rotation", "g_Texture\(slot)Translation"] {
                 if let value = engine[name] {
@@ -907,7 +907,7 @@ struct WPEParityFrameDrawPlanner {
             )
         case .post: nil
         }
-        // R10: the composite fill samples only the image part of a padded albedo texture.
+        // The composite fill samples only the image part of a padded albedo texture.
         let uvMax = uniformTextures[0].map {
             SIMD2(Float($0.imageWidth) / Float($0.textureWidth), Float($0.imageHeight) / Float($0.textureHeight))
         } ?? .one
@@ -972,7 +972,7 @@ struct WPEParityFrameDrawPlanner {
             let buffers = if case let .scene(draw) = description, draw.geometry == .modelMesh {
                 throw .pipeline("\(shader): \(draw.pass) has no model mesh")
             } else if let puppet {
-                // R12 B3: only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
+                // Only the direct draw scales by uvMax; the bit4 draw samples a composite, whose uvMax is 1.
                 try Self.puppetGeometry(puppet, segment: puppetSegment, uvMax: uvMax, inputs: inputs, device: device)
             } else if case let .scene(draw) = description, let text, let mesh = Self.textMesh(text, draw.geometry) {
                 Self.geometry(mesh.vertices, indices: mesh.indices, inputs: inputs, device: device)
@@ -1485,7 +1485,7 @@ struct WPEParityFrameDrawPlanner {
     }
 
     /// One glyph list of a text layer, or its background quad from (0, 0) to the FBO size with the glyph quads'
-    /// corner order and indices (R23 Q5).
+    /// corner order and indices.
     private static func textMesh(_ text: WPEParitySceneText,
                                  _ geometry: WPEParitySceneDraw.Geometry) -> (vertices: [Vertex], indices: [UInt16])? {
         switch geometry {

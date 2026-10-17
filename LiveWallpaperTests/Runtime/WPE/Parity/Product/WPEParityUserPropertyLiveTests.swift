@@ -7,8 +7,8 @@ import Metal
 import QuartzCore
 import XCTest
 
-/// User-property changes reach a running parity scene through the render actor's prepare/commit without a reload
-/// (R24 Q5), on the capture fixture 3815666789 with its object 17 bound to user properties.
+/// User-property changes reach a running parity scene through the render actor's prepare/commit without a reload,
+/// on the capture fixture 3815666789 with its object 17 bound to user properties.
 final class WPEParityUserPropertyLiveTests: XCTestCase {
     private static let size = CGSize(width: 1920, height: 1080)
     private static let sceneID = "3815666789"

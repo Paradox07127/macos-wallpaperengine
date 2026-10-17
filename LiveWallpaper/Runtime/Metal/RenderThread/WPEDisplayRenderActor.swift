@@ -654,6 +654,7 @@ actor WPEDisplayRenderActor {
         let retiringInputs = parityInputs
         (parityDriver, parityInputs) = (nil, nil)
         retiringInputs?.userShortcutIcons?.onChange = nil
+        retiringInputs?.userShortcuts?.setChangeHandler(nil)
         if let media = retiringInputs?.media {
             await MainActor.run { media.stop() }
         }

@@ -1,7 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Raw values are Wallpaper Engine's `commandtype` strings.
+/// Stored raw values; parity scene scripts see `web` as `website` and `cmd` as `command` in `commandtype`.
 enum UserShortcutKind: String, Codable, Sendable {
     case file, directory, web, cmd
 }

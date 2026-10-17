@@ -6,7 +6,7 @@ import LiveWallpaperProWPE
 import Metal
 import XCTest
 
-/// Effect visible bits and bloom constants change a running parity scene without a reload (R24 Q2, Q3, Q5), on the
+/// Effect visible bits and bloom constants change a running parity scene without a reload, on the
 /// capture fixture 3815666789, whose object 17 runs effects 19 (waterripple) and 50 (foliagesway).
 final class WPEParityEffectToggleTests: XCTestCase {
     private static let width = 1920

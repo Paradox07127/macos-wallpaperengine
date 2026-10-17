@@ -78,7 +78,7 @@ final class WPEParityFrameRenderer {
         let occurrence: Int
     }
 
-    /// One compiled graph per frame variant of a layout without the operations of hidden objects (R24 Q2).
+    /// One compiled graph per frame variant of a layout without the operations of hidden objects.
     private struct Graphs {
         let layout: Layout
         /// Per state object, whether it or an ancestor is hidden.
@@ -211,7 +211,7 @@ final class WPEParityFrameRenderer {
     private var audio = WPEParityAudioSpectrum()
     /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
     private var textureSlots: [String: WPECBufferValue] = [:]
-    /// g_RenderVar0/1 as the last draw left them, in frame draw order and across frames (R22 Q3).
+    /// g_RenderVar0/1 as the last draw left them, in frame draw order and across frames.
     private var renderVars = WPEParityRenderVarState()
     /// One bone animator per skinned puppet layer, keyed by object id.
     private(set) var puppets: [String: WPEParityPuppetAnimator] = [:]
@@ -229,7 +229,7 @@ final class WPEParityFrameRenderer {
     private let growsParticleShare: Bool
     static let maxParticleShare = 256 << 20
     private var layers: WPEParityLayerTransformSet
-    /// Every particle object and its state index; hidden ones are not stepped (R24 Q2).
+    /// Every particle object and its state index; hidden ones are not stepped.
     private let particleObjects: [(id: String, index: Int?)]
     /// The draws the last frame encoded, by draw operation, in encode order.
     private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
@@ -598,7 +598,7 @@ final class WPEParityFrameRenderer {
         var planner = try WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan,
                                                     preservingVideoImages: previous?.planner.videoImages ?? [:],
                                                     userProperties: Self.propertySnapshot(userPropertiesJSON))
-        // Disabled effects' programs too, so a toggle compiles nothing (R24 Q3).
+        // Disabled effects' programs too, so a toggle compiles nothing.
         let artifacts = await withTaskGroup(
             of: (WPEHLSLProgram, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self
         ) { group in
@@ -1581,7 +1581,7 @@ final class WPEParityFrameRenderer {
             try runScriptEvents(script, camera: camera, cursor: scriptCursor, buttonDown: input.buttonDown, timeOfDay: daytime)
         }
         consumeMediaInputs()
-        // R24 Q1: animations run after the object update and the camera, and render reads their values.
+        // Animations run after the object update and the camera, and render reads their values.
         animations.advance(dt: clock.frametime, state: &state)
         if let script {
             for event in animations.firedEvents {
@@ -1765,7 +1765,7 @@ final class WPEParityFrameRenderer {
                      state.object(objectID)?.alpha ?? text.object.alpha)
     }
 
-    /// The draw's constants, re-packed from the state only after its material pass changed (R24 Q3).
+    /// The draw's constants, re-packed from the state only after its material pass changed.
     private func materialConstants(_ operation: Int,
                                    _ plan: WPEParityFrameDrawPlan) -> [WPEHLSLStage: [String: WPECBufferValue]] {
         guard let pass = plan.materialPass else { return plan.constants }
@@ -1788,7 +1788,7 @@ final class WPEParityFrameRenderer {
     }
 
     /// Moves the layer worlds to the state's transforms when any changed, and every frame while a child hangs on a
-    /// puppet attachment point, whose bones this frame's animator step moved (R24 Q4).
+    /// puppet attachment point, whose bones this frame's animator step moved.
     private func applyTransforms() {
         let moved = state.transformGeneration != seenTransforms
         guard moved || layers.hasAttachments else { return }
@@ -2036,7 +2036,7 @@ final class WPEParityFrameRenderer {
     }
 
     /// Post-process constants for `bloom` where they differ from the planned ones; WPE refreshes them on the next
-    /// frame (R24 Q5).
+    /// frame.
     private func repackBloom() {
         postConstants.removeAll()
         let layout = graphs.layout

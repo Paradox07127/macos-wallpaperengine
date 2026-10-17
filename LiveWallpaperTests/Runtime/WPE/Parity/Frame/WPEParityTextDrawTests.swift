@@ -8,7 +8,7 @@ import Metal
 import simd
 import XCTest
 
-/// Text layer draws on Metal (R23 Q4–Q6): the capture scenes' text, and a synthetic orthographic "Hi" in NotoSans
+/// Text layer draws on Metal: the capture scenes' text, and a synthetic orthographic "Hi" in NotoSans
 /// compiled by wpe-shaderc.
 final class WPEParityTextDrawTests: XCTestCase {
     private static let textID = "5"

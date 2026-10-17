@@ -80,7 +80,7 @@ final class WPEParityProductControlsTests: XCTestCase {
         driver.cleanup()
     }
 
-    /// R8 Q1: cover is WPE's default alignment, which crops the canvas to the target aspect about its centre;
+    /// Cover is WPE's default alignment, which crops the canvas to the target aspect about its centre;
     /// stretch is mode 2, which never crops. Contain and center render the scene's aspect for the present to box.
     func testFitModesChooseTheCameraCropAndTarget() throws {
         let (document, assets) = try sceneInputs("3815666789", fixture: fixture())

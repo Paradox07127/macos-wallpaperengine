@@ -66,7 +66,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
                 case .spriteTrail:
                     lastSpriteTrail = rv0
                 case .rope, .ropeTrail:
-                    // R16 Q3: rope and ropetrail write only z and w (ropetrail x too with uvscrolling).
+                    // Rope and ropetrail write only z and w (ropetrail x too with uvscrolling).
                     guard let trail = lastSpriteTrail else { continue }
                     XCTAssertEqual(rv0[1], trail[1], "frame \(frame) operation \(operation)")
                     if !(entry.kind == .ropeTrail && entry.uvScrolling) {
