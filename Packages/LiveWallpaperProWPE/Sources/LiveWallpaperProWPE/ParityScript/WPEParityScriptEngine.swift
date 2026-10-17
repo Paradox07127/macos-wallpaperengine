@@ -995,11 +995,9 @@ public final class WPEParityScriptEngine {
     private func addConstants(_ values: WPESceneJSONValue?, layer: Int32, pass key: WPEParityMaterialPassKey,
                               state: WPEParitySceneState) {
         guard state.passIndex(of: key) != nil else { return }
-        if let effectID = key.effectID {
-            if let records = configuration.resolvedEffectRecords[.init(objectID: key.objectID, effectID: effectID)],
-               !records.contains(where: { $0.materialPass == key }) {
-                return
-            }
+        if let effectID = key.effectID, let records = configuration.resolvedEffectRecords[.init(objectID: key.objectID, effectID: effectID)],
+           !records.contains(where: { $0.materialPass == key }) {
+            return
         }
         let entries: [String: WPESceneJSONValue] = if case let .object(raw)? = values {
             raw
@@ -1387,8 +1385,7 @@ public final class WPEParityScriptEngine {
         set("sortLayer", sort)
         set("setParent", setParent)
         let registerAsset: @convention(block) (Double, String, Bool) -> Bool = { [weak self] binding, path, flag in
-            guard let self, let index = Int(exactly: binding), bindings.indices.contains(index) else { return false }
-            guard !bindings[index].registeredAssets.contains(where: { $0.path.utf8.elementsEqual(path.utf8) }) else { return false }
+            guard let self, let index = Int(exactly: binding), bindings.indices.contains(index), !bindings[index].registeredAssets.contains(where: { $0.path.utf8.elementsEqual(path.utf8) }) else { return false }
             bindings[index].registeredAssets.append(.init(path: path, flag: flag))
             bindings[index].assetsPrepared = false
             return true

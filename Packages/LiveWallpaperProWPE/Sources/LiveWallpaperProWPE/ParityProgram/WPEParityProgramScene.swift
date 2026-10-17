@@ -645,8 +645,7 @@ public struct WPEParityProgramScene: Sendable {
         }
         var fbos: [WPEParityAuthoredFBO] = []
         for case let .object(fbo) in array(file["fbos"]) {
-            guard WPEParityAuthoredFBO.conditionsMatch(fbo["conditions"], combos: combos) else { continue }
-            guard let name = string(fbo["name"]), let format = string(fbo["format"]) else { continue }
+            guard WPEParityAuthoredFBO.conditionsMatch(fbo["conditions"], combos: combos), let name = string(fbo["name"]), let format = string(fbo["format"]) else { continue }
             let clear = fboClear(fbo["clear"])
             fbos.append(WPEParityAuthoredFBO(name: name, scale: jsonNumber(fbo["scale"]) ?? 1, fit: jsonNumber(fbo["fit"]),
                                              format: format,
@@ -688,8 +687,7 @@ public struct WPEParityProgramScene: Sendable {
                                userTextureBindings: override.userTextures)
             }
             for case let .object(bind) in array(pass["bind"]) {
-                guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos) else { continue }
-                guard let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
+                guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos), let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
                 material.textures[Int32(index)] = name
             }
             if material.textures[0] == nil {

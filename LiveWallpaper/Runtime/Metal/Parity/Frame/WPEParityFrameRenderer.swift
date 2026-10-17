@@ -1530,8 +1530,7 @@ final class WPEParityFrameRenderer {
                 && change.previous.fieldParameters?.combos == change.current.fieldParameters?.combos
         }
         let kept = current.draws.filter { index, _ in
-            guard case let .scene(draw)? = current.frames[0].draws[index] else { return true }
-            guard changed.contains(draw.objectID) else { return true }
+            guard case let .scene(draw)? = current.frames[0].draws[index], changed.contains(draw.objectID) else { return true }
             // makeLayout still checks the actual program/source, resources and frame compatibility before reuse.
             guard case .textGlyphs = draw.geometry, let before = planner.texts[draw.objectID],
                   let after = prepared.texts[draw.objectID] else { return false }
@@ -2210,8 +2209,7 @@ final class WPEParityFrameRenderer {
             }
         }.sorted()
         let rebuilt = WPEParityPostProcessBuilder.build(config).draws
-        guard operations.count == rebuilt.count else { return }
-        guard zip(operations, rebuilt).allSatisfy({ operation, draw in
+        guard operations.count == rebuilt.count, zip(operations, rebuilt).allSatisfy({ operation, draw in
             guard case let .post(planned)? = layout.frames[0].draws[operation] else { return false }
             return planned.shader == draw.shader && planned.material == draw.material && planned.reads == draw.reads
         }) else { return }

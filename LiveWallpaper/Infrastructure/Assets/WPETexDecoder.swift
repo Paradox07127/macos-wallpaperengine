@@ -879,11 +879,7 @@ struct WPETexDecoder: Sendable {
         if parsed.bitmap.isVideoPayload || looksLikeMP4Payload(mip.payload) {
             throw WPETexDecodeError.unsupportedAnimation
         }
-        guard let format = parsed.info.format else {
-            throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
-        }
-
-        guard !format.requiresRawPayload else {
+        guard let format = parsed.info.format, !format.requiresRawPayload else {
             throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
         }
         if parsed.bitmap.usesEncodedImagePayload {

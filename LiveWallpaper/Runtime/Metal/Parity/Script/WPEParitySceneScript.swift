@@ -160,11 +160,9 @@ final class WPEParitySceneScript {
         }
         // 140189e10.c:115-122: topmost first, after the common sort/removal consumed by the draw projection.
         for id in state.commonOrder.reversed() {
-            guard let candidate = cursorCandidates[id] else { continue }
-            guard state.isAlive(candidate.id) else { continue }
+            guard let candidate = cursorCandidates[id], state.isAlive(candidate.id) else { continue }
             // 140189e10.c:115-123 reads the live bit13 before each hit test.
-            guard flag("solid", candidate, fallback: candidate.solid) else { continue }
-            guard let corners = try quad(candidate.id) else { continue }
+            guard flag("solid", candidate, fallback: candidate.solid), let corners = try quad(candidate.id) else { continue }
             targets.append(WPEParityCursorTarget(
                 id: candidate.id, quad: corners, visible: state.isVisible(candidate.id),
                 disablePropagation: flag("disablepropagation", candidate, fallback: candidate.disablePropagation)
