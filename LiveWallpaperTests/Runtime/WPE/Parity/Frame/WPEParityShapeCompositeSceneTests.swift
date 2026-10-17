@@ -44,10 +44,14 @@ final class WPEParityShapeCompositeSceneTests: XCTestCase {
         for _ in 0 ..< 2 {
             try await renderFrame(renderer)
         }
+        // A sorted perspective scene replans on its first frame; look the passes up in the encoded layout.
+        let encoded = renderer.frames[0]
+        func encodedIndex(_ pass: WPEPassIdentity) throws -> Int {
+            try XCTUnwrap(encoded.draws.keys.first { encoded.operations[$0].pass == pass }, "\(pass) has no draw")
+        }
         let executed = Set(renderer.lastFrameDraws.map(\.operation))
-        let model = try drawIndex("436/mesh0")
-        XCTAssertTrue(executed.contains(model), "436/mesh0 did not draw")
-        XCTAssertTrue(executed.contains(fill), "hidden 589 stopped filling its composite")
+        XCTAssertTrue(try executed.contains(encodedIndex("436/mesh0")), "436/mesh0 did not draw")
+        XCTAssertTrue(try executed.contains(encodedIndex("589/albedo")), "hidden 589 stopped filling its composite")
     }
 
     /// Shape 116's lightshafts pass draws its four-point quad additive with DIRECTDRAW=1.
