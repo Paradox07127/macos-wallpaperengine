@@ -593,7 +593,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                 "fbos": [["name": "media", "format": "rgba8888", "unique": true, "width": 32, "height": 32]],
                 "passes": [
                     ["material": "materials/\(name)-effect.json", "target": "media"],
-                    ["material": "materials/\(name)-compose.json"],
+                    // Without a bind table slot 0 would sample the layer's input instead of media.
+                    ["material": "materials/\(name)-compose.json", "bind": [["name": "media", "index": 0]]],
                 ],
             ])
             let baseDeclarations: [Any] = mergeUserTextures && name == "previous" ? [NSNull()] : [

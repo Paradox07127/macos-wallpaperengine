@@ -10,7 +10,7 @@ import XCTest
 
 extension WPEParitySceneDriverTests {
     /// Fixed TEXB4 bytes reach both the imported layer-image and direct effect-asset binding, through the
-    /// original passthrough shader and real Driver prepare/commit/present. No script or JSON binding owns the key.
+    /// original passthrough and blend shaders and real Driver prepare/commit/present. No script or JSON binding owns the key.
     @MainActor @objc func testConditionalTextureInitialSelectionAndLivePropertyReplaceBothRealConsumers() async throws {
         XCTAssertEqual(WPEMetalFXSpatialUpscaler.renderScale, 1, "Required isolated native-size product gate")
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
@@ -84,14 +84,14 @@ extension WPEParitySceneDriverTests {
         })
         let direct = try XCTUnwrap(frame.draws.first { _, value in
             guard case let .scene(draw) = value else { return false }
-            return draw.objectID == "2" && draw.effectID != nil && draw.shader == "passthrough"
+            return draw.objectID == "2" && draw.effectID != nil && draw.shader == "effects/blend"
         })
         guard case let .scene(description) = imported.value else { throw NSError(domain: "ConditionalTexture.Draw", code: 1) }
         XCTAssertTrue(description.reads.contains { id in frame.resources.contains { $0.id == id && $0.lifetime == .imported } })
         let importedDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == imported.key }?.draw)
         let directDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == direct.key }?.draw)
         let importedTexture = try XCTUnwrap(importedDraw.textures["g_Texture0"])
-        let directTexture = try XCTUnwrap(directDraw.textures["g_Texture0"])
+        let directTexture = try XCTUnwrap(directDraw.textures["g_Texture1"])
         XCTAssertTrue(importedTexture === directTexture, "One asset cache owner feeds both binding kinds")
         XCTAssertEqual(importedTexture.pixelFormat, .rgba8Unorm)
         XCTAssertEqual([importedTexture.width, importedTexture.height], [2, 2])
@@ -121,6 +121,8 @@ extension WPEParitySceneDriverTests {
                 ("shaders/flat.frag", "7e0503a1821089475b884e4e8b0fb1987108f7d00c5cb353da7695eac7796477"),
                 ("materials/util/solidlayer.json", "2bbc99c15f38041dfb636b4fb8afe975de500c3ad4eb5bd09b616564d46c7b59"),
                 ("models/util/solidlayer.json", "a39818343c99fbff21b3a21b962871618c63c0a9257cf944dc09d20d54e3f5ea"),
+                ("effects/blend/shaders/effects/blend.vert", "3ca25845f8f30cfcc3bff5bbe215185fbce79076d4185a065ee30b35791a6540"),
+                ("effects/blend/shaders/effects/blend.frag", "f7692b475727645060fba653173aba1ba13a0be5068d163889657102579e86b0"),
             ] {
                 let bytes = try XCTUnwrap(original.data(path), path)
                 _ = try XCTUnwrap(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() == expected ? true : nil,
@@ -149,13 +151,21 @@ extension WPEParitySceneDriverTests {
                        "49644469885c35751abd70e9d616f787a7848d863b77440a629ea00565b8c76f")
         let pass: [String: Any] = ["shader": "passthrough", "textures": ["conditional-product"],
                                    "combos": ["TRANSFORM": 1], "blending": "normal"]
-        let files: [String: Data] = try [
+        // BLENDMODE 0 is normal blending, so the opaque blend texture replaces the black layer input.
+        let blend: [String: Any] = ["shader": "effects/blend", "textures": [NSNull(), "conditional-product"],
+                                    "combos": ["BLENDMODE": 0], "blending": "normal"]
+        var files: [String: Data] = try [
             "materials/conditional-product.tex": tex,
             "models/conditional-product.json": JSONSerialization.data(withJSONObject: ["material": "materials/conditional-product.json"]),
             "materials/conditional-product.json": JSONSerialization.data(withJSONObject: ["passes": [pass]]),
-            "effects/conditional-product.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/conditional-product.json"]]]),
+            "materials/conditional-product-blend.json": JSONSerialization.data(withJSONObject: ["passes": [blend]]),
+            "effects/conditional-product.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/conditional-product-blend.json"]]]),
         ]
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        for stage in ["vert", "frag"] {
+            files["shaders/effects/blend.\(stage)"] = try XCTUnwrap(original.data("effects/blend/shaders/effects/blend.\(stage)"))
+        }
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 16], "clearcolor": "0 0 0",

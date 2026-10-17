@@ -176,10 +176,11 @@ final class WPEParityEffectToggleTests: XCTestCase {
 
     private static func sampledTexture(_ renderer: WPEParityFrameRenderer, objectID: String,
                                        effect: Bool) -> MTLTexture? {
-        renderer.lastFrameDraws.lazy.compactMap { operation, draw -> MTLTexture? in
+        let (shader, slot) = effect ? ("effects/blend", "g_Texture1") : ("passthrough", "g_Texture0")
+        return renderer.lastFrameDraws.lazy.compactMap { operation, draw -> MTLTexture? in
             guard case let .scene(scene)? = renderer.frames[0].draws[operation], scene.objectID == objectID,
-                  (scene.effectID != nil) == effect, scene.shader == "passthrough" else { return nil }
-            return draw.textures["g_Texture0"]
+                  (scene.effectID != nil) == effect, scene.shader == shader else { return nil }
+            return draw.textures[slot]
         }.first
     }
 
@@ -199,13 +200,22 @@ final class WPEParityEffectToggleTests: XCTestCase {
         }
         let pass: [String: Any] = ["shader": "passthrough", "textures": ["toggle"], "combos": ["TRANSFORM": 1],
                                    "blending": "normal"]
-        let files: [String: Data] = try [
+        // BLENDMODE 0 is normal blending, so the opaque blend texture replaces the layer input.
+        let blend: [String: Any] = ["shader": "effects/blend", "textures": [NSNull(), "toggle"],
+                                    "combos": ["BLENDMODE": 0], "blending": "normal"]
+        var files: [String: Data] = try [
             "materials/toggle.tex": texture,
             "models/toggle.json": JSONSerialization.data(withJSONObject: ["material": "materials/toggle.json"]),
             "materials/toggle.json": JSONSerialization.data(withJSONObject: ["passes": [pass]]),
-            "effects/toggle.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/toggle.json"]]]),
+            "materials/toggle-blend.json": JSONSerialization.data(withJSONObject: ["passes": [blend]]),
+            "effects/toggle.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/toggle-blend.json"]]]),
         ]
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }, .directory(wpeAssets)])
+        for stage in ["vert", "frag"] {
+            let stock = wpeAssets.appending(path: "effects/blend/shaders/effects/blend.\(stage)")
+            files["shaders/effects/blend.\(stage)"] = try Data(contentsOf: stock)
+        }
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }, .directory(wpeAssets)])
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 16], "clearcolor": "0 0 0",

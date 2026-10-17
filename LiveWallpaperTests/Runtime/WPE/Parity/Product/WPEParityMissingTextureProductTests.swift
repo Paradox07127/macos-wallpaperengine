@@ -23,15 +23,15 @@ extension WPEParitySceneDriverTests {
         let importedDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == imported }?.draw)
         let directDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == direct }?.draw)
         let texture = try XCTUnwrap(importedDraw.textures["g_Texture0"])
-        XCTAssertTrue(try XCTUnwrap(directDraw.textures["g_Texture0"]) === texture, "One placeholder feeds both binding kinds")
+        XCTAssertTrue(try XCTUnwrap(directDraw.textures["g_Texture1"]) === texture, "One placeholder feeds both binding kinds")
         XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
         XCTAssertEqual([texture.width, texture.height, texture.mipmapLevelCount], [6, 6, 1])
         var bytes = [UInt8](repeating: 0, count: 6 * 6 * 4)
         texture.getBytes(&bytes, bytesPerRow: 6 * 4, from: MTLRegionMake2D(0, 0, 6, 6), mipmapLevel: 0)
         XCTAssertEqual(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
                        "cb7648a7884ca5352905656ec4b792c8a4b5016534ea8ff94081734bcaa1565f")
-        for draw in [importedDraw, directDraw] {
-            XCTAssertEqual(draw.samplers["g_Texture0SamplerState"], WPEParitySamplerState.wpeFileTexture(flags: 9))
+        for (draw, sampler) in [(importedDraw, "g_Texture0SamplerState"), (directDraw, "g_Texture1SamplerState")] {
+            XCTAssertEqual(draw.samplers[sampler], WPEParitySamplerState.wpeFileTexture(flags: 9))
         }
         let raw = try readBack(renderer.backbuffer, device: renderer.backbuffer.device)
         let (width, height) = (renderer.backbuffer.width, renderer.backbuffer.height)
@@ -190,7 +190,7 @@ extension WPEParitySceneDriverTests {
         })
         let direct = try XCTUnwrap(frame.draws.first { _, value in
             guard case let .scene(draw) = value else { return false }
-            return draw.objectID == "2" && draw.effectID != nil && draw.shader == "passthrough"
+            return draw.objectID == "2" && draw.effectID != nil && draw.shader == "effects/blend"
         })
         return (imported.key, direct.key)
     }
@@ -205,6 +205,8 @@ extension WPEParitySceneDriverTests {
                 ("shaders/flat.frag", "7e0503a1821089475b884e4e8b0fb1987108f7d00c5cb353da7695eac7796477"),
                 ("materials/util/solidlayer.json", "2bbc99c15f38041dfb636b4fb8afe975de500c3ad4eb5bd09b616564d46c7b59"),
                 ("models/util/solidlayer.json", "a39818343c99fbff21b3a21b962871618c63c0a9257cf944dc09d20d54e3f5ea"),
+                ("effects/blend/shaders/effects/blend.vert", "3ca25845f8f30cfcc3bff5bbe215185fbce79076d4185a065ee30b35791a6540"),
+                ("effects/blend/shaders/effects/blend.frag", "f7692b475727645060fba653173aba1ba13a0be5068d163889657102579e86b0"),
             ] {
                 let bytes = try XCTUnwrap(original.data(path), path)
                 _ = try XCTUnwrap(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() == expected ? true : nil,
@@ -226,17 +228,25 @@ extension WPEParitySceneDriverTests {
         }
     }
 
-    /// Object 1 imports `texture` as its layer image; object 2's effect binds it directly.
+    /// Object 1 imports `texture` as its layer image; object 2's stock blend effect samples it as its slot-1 blend texture.
     private func missingTextureScene(original: WPEParityProgramAssets, texture: String,
                                      files extra: [String: Data]) throws -> (Data, WPEParityProgramAssets) {
         let pass: [String: Any] = ["shader": "passthrough", "textures": [texture],
                                    "combos": ["TRANSFORM": 1], "blending": "normal"]
-        let files: [String: Data] = try extra.merging([
+        // BLENDMODE 0 is normal blending, so the opaque blend texture replaces the black layer input.
+        let blend: [String: Any] = ["shader": "effects/blend", "textures": [NSNull(), texture],
+                                    "combos": ["BLENDMODE": 0], "blending": "normal"]
+        var files: [String: Data] = try extra.merging([
             "models/missing-product.json": JSONSerialization.data(withJSONObject: ["material": "materials/missing-product.json"]),
             "materials/missing-product.json": JSONSerialization.data(withJSONObject: ["passes": [pass]]),
-            "effects/missing-product.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/missing-product.json"]]]),
+            "materials/missing-product-blend.json": JSONSerialization.data(withJSONObject: ["passes": [blend]]),
+            "effects/missing-product.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/missing-product-blend.json"]]]),
         ]) { $1 }
-        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }] + original.sources)
+        for stage in ["vert", "frag"] {
+            files["shaders/effects/blend.\(stage)"] = try XCTUnwrap(original.data("effects/blend/shaders/effects/blend.\(stage)"))
+        }
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
         let json: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 16], "clearcolor": "0 0 0",
