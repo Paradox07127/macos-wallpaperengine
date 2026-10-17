@@ -66,8 +66,10 @@ struct WPEProjectSettingsPresentation: Equatable {
                 continue
             }
 
+            let isAuthorText = property.type == .text
+                && !property.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             guard !excludedKeys.contains(property.key),
-                  isInteractive(property.type),
+                  isInteractive(property.type) || isAuthorText,
                   !property.isPromotionalLink,
                   WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: property.condition, values: values) else {
                 continue
@@ -84,7 +86,9 @@ struct WPEProjectSettingsPresentation: Equatable {
             }
 
             currentProperties.append(property)
-            visibleKeys.insert(property.key)
+            if !isAuthorText {
+                visibleKeys.insert(property.key)
+            }
         }
         flushCurrentSection()
 

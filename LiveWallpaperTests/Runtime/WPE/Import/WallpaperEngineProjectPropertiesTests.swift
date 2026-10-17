@@ -661,6 +661,36 @@ struct WallpaperEngineProjectPropertiesTests {
         #expect(visible.sections[1].properties.map(\.key) == ["advancedSize"])
     }
 
+    @Test("Scene settings presentation shows author text rows in their group, honours conditions and hides promotional or empty text")
+    func sceneSettingsPresentationShowsAuthorTextRows() throws {
+        let manifest = """
+        {
+          "general": {
+            "properties": {
+              "g": { "type": "group", "text": "g", "order": 0 },
+              "showcycle": { "type": "bool", "text": "Show cycle", "value": true, "order": 1 },
+              "note": { "type": "text", "text": "Day cycle: 1 = 90 s", "condition": "showcycle.value == true", "order": 2 },
+              "promo": { "type": "text", "text": "<a href=\\"https://ko-fi.com/x\\">Ko-fi</a>", "order": 3 },
+              "blank": { "type": "text", "text": "", "order": 4 }
+            }
+          }
+        }
+        """
+        let schema = try WallpaperEngineProjectPropertySchema.parse(
+            data: Data(manifest.utf8),
+            preferredLanguages: ["en-US"]
+        )
+
+        let shown = WPEProjectSettingsPresentation(schema: schema, overrides: [:])
+        let hidden = WPEProjectSettingsPresentation(schema: schema, overrides: ["showcycle": .bool(false)])
+
+        #expect(shown.sections.map(\.id) == ["g"])
+        #expect(shown.sections.first?.properties.map(\.key) == ["showcycle", "note"])
+        #expect(shown.visibleKeys == ["showcycle"])
+        #expect(hidden.sections.map(\.id) == ["g"])
+        #expect(hidden.sections.first?.properties.map(\.key) == ["showcycle"])
+    }
+
     @Test("Scene settings presentation starts with all sections collapsed")
     func sceneSettingsPresentationStartsWithAllSectionsCollapsed() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(

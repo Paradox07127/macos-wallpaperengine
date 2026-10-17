@@ -540,9 +540,10 @@ struct SceneSettingsRows: View {
                 title: title,
                 iconColor: rowIconColor
             )
-        // Only the interactive types reach here: the presentation's `isInteractive`
-        // filter drops file/directory/text/unsupported and turns `group` into a
-        // section boundary before any row is built.
+        case .text:
+            WPEProjectTextBlock(text: title, isHeader: false)
+                .wpeAuthorLabelHelp(titleHelp)
+        // The presentation drops file/directory/unsupported and turns `group` into a section boundary.
         default:
             EmptyView()
         }
