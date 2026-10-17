@@ -239,7 +239,7 @@ public final class WPEParityScriptEngine {
         var animationLayer: Int32 = -1
     }
 
-    private enum Refresh {
+    enum Refresh {
         case object(slot: Int, objectID: String, WPEParitySceneState.Property)
         case effect(slot: Int, key: WPEParitySceneState.EffectKey)
         case constant(slot: Int, key: WPEParityMaterialPassKey, name: String)
@@ -311,7 +311,7 @@ public final class WPEParityScriptEngine {
     private var descriptors: [WPEParityScriptProperty] = []
     private var descriptorIndex: [WPEParityScriptProperty: Int] = [:]
     private var layers: [Layer] = []
-    private var refresh: [Refresh] = []
+    private(set) var refresh: [Refresh] = []
     private var effectKeys: [WPEParitySceneState.EffectKey] = []
     private var sceneBase = 0
     private var clock: Float = 0
@@ -1135,6 +1135,8 @@ public final class WPEParityScriptEngine {
                 return false
             }
             destroyedObjectIDs.append(id)
+            let layer = Int32(index)
+            refresh.removeAll { slots[$0.slot].layer == layer }
             return true
         }
         let sort: @convention(block) (Double, Double) -> Bool = { [weak self] index, position in

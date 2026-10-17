@@ -1108,6 +1108,37 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testCreateAndDestroyEveryTickKeepsTheRefreshMirrorBounded() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function update(value) {
+                const created = thisScene.createLayer({ image: 'models/B.json', name: 'created' });
+                if (created === null) throw Error('create rejected');
+                thisScene.destroyLayer(created);
+                return value;
+            }
+            """)]),
+            Self.layer(2, "B"),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.createLayer = { _, candidate in
+                guard let number = try? candidate.appendImageLayer(cloning: "2", id: nil, configure: { _ in })
+                else { return nil }
+                return .init(id: String(number), configJSON: #"{"id":\#(number),"image":"models/B.json"}"#)
+            }
+            configuration.destroyLayer = { id, state in state.removeObject(id) }
+        })
+        try scene.engine.start(state: &scene.state)
+        let baseline = scene.engine.refresh.count
+        for _ in 0 ..< 50 {
+            scene.engine.tick(dt: 0.01, state: &scene.state)
+        }
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(scene.engine.createdLayers.count, 50)
+        XCTAssertEqual(scene.engine.destroyedObjectIDs.count, 50)
+        XCTAssertEqual(scene.state.commonOrder, ["1", "2"])
+        XCTAssertEqual(scene.engine.refresh.count, baseline)
+    }
+
     func testVideoPauseUsesTheCachedWrapperAndRejectsBorrowedReceivers() throws {
         var paused: [String] = []
         var diagnostics: [String] = []
