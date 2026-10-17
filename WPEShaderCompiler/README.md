@@ -140,6 +140,11 @@ sections; do not replace it with a short attribution summary. Converter/runtime
 notice pairs in the observed SDK are byte-identical, so one copy of each suffices
 for this recorded file inventory.
 
+`embed-in-app.sh` modifies the redistributed `libmetalirconverter.dylib`: it is
+reduced to its arm64 slice and stripped of local symbols (`strip -x`).
+Apache-2.0 requires a prominent notice of that change, which
+`ThirdPartyNotices/README.txt` carries; keep the two in sync.
+
 The exact compiler-binary redistribution terms and the MSC installer EULA remain
 **unverified**. Including installed header licenses and acknowledgements does
 not settle those terms. Local implementation/build/runtime acceptance and final
