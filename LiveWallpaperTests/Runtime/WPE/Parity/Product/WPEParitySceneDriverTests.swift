@@ -218,6 +218,26 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(driver.renderer).backbuffer.width, 1600)
     }
 
+    /// Scene 3660962877 has a video .tex layer.
+    func testSceneLoadedWhileSuspendedStartsWithItsVideosNotPlaying() async throws {
+        let (document, assets) = try sceneInputs(sceneID: "3660962877")
+        let compiler = try makeCompiler()
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer { driver.cleanup() }
+        driver.applyPerformanceProfile(.suspended)
+        try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
+                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+        let renderer = try XCTUnwrap(driver.renderer)
+        let playing = document.imageObjects.compactMap { renderer.scriptVideoCommand($0.id, .isPlaying, 0) }
+        XCTAssertFalse(playing.isEmpty, "the scene has no video owner")
+        XCTAssertEqual(playing, playing.map { _ in 0 })
+
+        driver.applyPerformanceProfile(.quality)
+        let resumed = document.imageObjects.compactMap { renderer.scriptVideoCommand($0.id, .isPlaying, 0) }
+        XCTAssertEqual(resumed, resumed.map { _ in 1 })
+    }
+
     /// Scene 3509243656 has one sound layer; the driver plays it with WPE's rules and stops it on cleanup.
     func testSoundLayerStartsRuntimeAndCleanupStopsIt() async throws {
         let (document, assets) = try sceneInputs(sceneID: "3509243656")

@@ -329,7 +329,7 @@ final class WPEVideoTextureSource {
         guard player != nil else { return currentTexture }
 
         observeScriptPlaybackBoundary()
-        if scriptControlled, scriptHeldAtEnd || !playbackRequested || policySuspended {
+        if scriptControlled, scriptHeldAtEnd || !playbackRequested || policySuspended || unsampledPaused {
             return currentTexture
         }
 
@@ -376,6 +376,8 @@ final class WPEVideoTextureSource {
     private var scriptControlled = false
     private var playbackRequested = false
     private var policySuspended = false
+    /// Closed while no executed draw samples this video; only the parity renderer closes it.
+    private var unsampledPaused = false
     private var scriptRate = 1.0
     private var scriptLoop = true
     private var scriptAcknowledgedPausedSeekTime: Double?
@@ -385,8 +387,14 @@ final class WPEVideoTextureSource {
     /// Playhead first observed after the current seek completed; nil until then. An approximate seek lands on either side of its target.
     private var scriptSeekPlayheadBaseline: Double?
 
+    func setUnsampledPaused(_ paused: Bool) {
+        guard !isInvalidated, paused != unsampledPaused else { return }
+        unsampledPaused = paused
+        reconcilePlaybackIntent()
+    }
+
     private func reconcilePlaybackIntent() {
-        if playbackRequested, !policySuspended, !scriptHeldAtEnd {
+        if playbackRequested, !policySuspended, !unsampledPaused, !scriptHeldAtEnd {
             player?.defaultRate = Float(scriptRate)
             player?.play()
         } else {
@@ -418,7 +426,7 @@ final class WPEVideoTextureSource {
             sourceGeneration: scriptSourceGeneration,
             currentTime: scriptAcknowledgedPausedSeekTime ?? (scriptHeldAtEnd ? loopDurationSeconds : decoderTime),
             duration: loopDurationSeconds,
-            isPlaying: playbackRequested && !policySuspended && !scriptHeldAtEnd,
+            isPlaying: playbackRequested && !policySuspended && !unsampledPaused && !scriptHeldAtEnd,
             rate: scriptRate,
             loop: scriptLoop,
             hasPresentedFrame: latest != nil,
@@ -441,7 +449,7 @@ final class WPEVideoTextureSource {
             scriptSeekPlayheadBaseline = playhead
             return
         }
-        guard playbackRequested, !policySuspended, !scriptHeldAtEnd, (player?.rate ?? 0) > 0,
+        guard playbackRequested, !policySuspended, !unsampledPaused, !scriptHeldAtEnd, (player?.rate ?? 0) > 0,
               playhead > baseline else { return }
         scriptAcknowledgedPausedSeekTime = nil
     }

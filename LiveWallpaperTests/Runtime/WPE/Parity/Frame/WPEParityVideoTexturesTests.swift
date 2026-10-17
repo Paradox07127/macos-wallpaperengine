@@ -140,6 +140,65 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testVideoUnsampledForMoreThanThirtySubmittedFramesPausesAndResumesWhenSampledAgain() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let textureA = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let textureB = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bytes = try Data(contentsOf: url)
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: textureA, bytes: bytes),
+                                                                .init(texture: textureB, bytes: bytes)],
+                                                      workshopID: "parity-video-unsampled-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["1": textureA, "2": textureB])
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "2")?.isPlaying, true)
+
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[
+          {"id":1,"name":"A","image":"models/a.json","size":"64 64","alpha":{"value":1,"script":"let frame = 0; export function update(value) { frame += 1; const b = thisScene.getLayer('B'); if (frame === 2) b.visible = false; if (frame === 40) b.visible = true; thisLayer.color = new Vec3(b.getVideoTexture().isPlaying() ? 1 : 0, 1, 1); return value; }"}},
+          {"id":2,"name":"B","image":"models/b.json","size":"64 64"}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
+        let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
+        let assets = WPEParityProgramAssets(sources: [.lookup(root) {
+            $0 == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        let script = try WPEParitySceneScript(
+            document: document, state: state, assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64),
+            fieldDefaults: videos.scriptFieldDefaults, host: .init()
+        )
+        script.engine.videoTextureHandler = videos.command
+        try script.start(state: &state)
+        // One submitted frame: the script runs, then only visible layers' draws execute and sample their video.
+        func frame() {
+            script.tick(dt: 0.01, cursor: .zero, world: .zero, leftDown: false, timeOfDay: 0, state: &state)
+            videos.recordSampled(ownerIDs: ["1", "2"].filter { state.object($0)?.visible == true })
+        }
+        for _ in 1 ... 32 {
+            frame()
+        }
+        XCTAssertEqual(state.object("2")?.visible, false)
+        frame()
+        XCTAssertEqual(state.object("1")?.color.x, 0, "B has not been sampled for more than 30 submitted frames")
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "1")?.isPlaying, true, "A is sampled every frame")
+        for _ in 34 ... 41 {
+            frame()
+        }
+        XCTAssertEqual(state.object("2")?.visible, true)
+        XCTAssertEqual(state.object("1")?.color.x, 1, "B resumes once a draw samples it again")
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testSharedOwnersUseActualPlayerControlsAndPublishReadyDurationWithoutReplayingOldWrites() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())

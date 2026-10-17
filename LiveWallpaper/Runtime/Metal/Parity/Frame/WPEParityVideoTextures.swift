@@ -65,6 +65,28 @@ final class WPEParityVideoTextures {
         return 0
     }
 
+    /// WPE pauses a video no draw has bound for more than this many frames and plays it again once one does
+    /// (1400f3930.c:48-75).
+    static let unsampledFrameLimit = 30
+    private var submittedFrames = 0
+    /// Per source, the last submitted frame on which an executed draw of one of its owners ran.
+    private var lastSampledFrame: [Int]
+
+    /// Call once per submitted frame with the owners of the draws it executed; sources without an owner keep playing.
+    func recordSampled(ownerIDs: some Sequence<String>) {
+        submittedFrames += 1
+        for owner in ownerIDs {
+            if let index = owners[owner] {
+                lastSampledFrame[index] = submittedFrames
+            }
+        }
+        let owned = Set(owners.values)
+        for (index, video) in videos.enumerated() {
+            let unsampled = submittedFrames - lastSampledFrame[index] > Self.unsampledFrameLimit
+            video.source.setUnsampledPaused(owned.contains(index) && unsampled)
+        }
+    }
+
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         for video in videos {
             video.source.applyPerformanceProfile(profile)
@@ -159,6 +181,7 @@ final class WPEParityVideoTextures {
             videos.append((source, stream.texture))
         }
         self.videos = videos
+        lastSampledFrame = Array(repeating: 0, count: videos.count)
         scaler = Self.scaler(device: device)
     }
 

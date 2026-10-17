@@ -293,6 +293,9 @@ final class WPEParitySceneDriver {
                 particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
             )
             guard generation == loadGeneration else { throw CancellationError() }
+            if paused {
+                renderer.applyPerformanceProfile(.suspended)
+            }
             renderer.userShortcutIcons = userShortcutIcons
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(

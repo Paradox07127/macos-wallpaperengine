@@ -1649,8 +1649,19 @@ final class WPEParityFrameRenderer {
             particleStreams[block] = stream
             return stream
         }
+        var submitted = false
+        defer {
+            if submitted {
+                videos.recordSampled(ownerIDs: lastFrameDraws.compactMap { executed in
+                    guard case let .scene(description)? = graphs.layout.frames[variant].draws[executed.operation],
+                          description.effectID == nil else { return nil }
+                    return description.objectID
+                })
+            }
+        }
         return try executor.encodeFrame(on: queue, textures: targets.merging(planner.layerImages) { $1 },
                                         prepare: { commandBuffer in
+                                            submitted = true
                                             if !retiredTextures.isEmpty {
                                                 // The handler only drops the last reference; releasing an MTLTexture is thread-safe.
                                                 nonisolated(unsafe) let retired = retiredTextures
