@@ -172,7 +172,6 @@ final class WPEParityParticleSceneTests: XCTestCase {
         let (_, renderer, _) = try await makeRenderer(eventChildFixture: true)
         var early = 0
         var last = 0
-        var droppedAtFrame120 = 0
         for frame in 1 ... 180 {
             guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
                 return XCTFail("frame \(frame) was skipped")
@@ -183,15 +182,33 @@ final class WPEParityParticleSceneTests: XCTestCase {
             if frame <= 10 {
                 early += last
             }
-            if frame == 120 {
-                droppedAtFrame120 = renderer.droppedParticleBatches
-            }
         }
         print("event-child fixture: \(early) instance draws in frames 1-10, \(last) in frame 180, "
-            + "\(renderer.droppedParticleBatches) dropped")
+            + "\(renderer.droppedParticleBatches) dropped, share \(renderer.particleShare) bytes")
         XCTAssertGreaterThan(early, 0)
         XCTAssertGreaterThan(last, 60)
-        XCTAssertEqual(renderer.droppedParticleBatches, droppedAtFrame120)
+        XCTAssertEqual(renderer.droppedParticleBatches, 0)
+    }
+
+    func testEventSpawnInstancesFitTheDefaultShareInTheFirstFrame() async throws {
+        var root = Self.burstParticle(renderer: [["name": "sprite"]])
+        root["maxcount"] = 64
+        root["emitter"] = [["name": "sphererandom", "rate": 1000, "distancemax": 0]]
+        root["children"] = [["name": "particles/child.json", "type": "eventspawn", "maxcount": 64]]
+        let child = Self.burstParticle(renderer: [["name": "sprite"]])
+        let (renderer, _) = try await syntheticRenderer(["particles/root.json": root, "particles/child.json": child])
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 1.0 / 30) else { return XCTFail("skipped") }
+        await buffer.completed()
+        XCTAssertNil(buffer.error)
+        let live = try XCTUnwrap(renderer.particleLiveCount("1"))
+        let draws = renderer.lastFrameDraws.count { renderer.particleRenderer($0.operation) != nil }
+        print("eventspawn fixture: \(live) live particles, \(draws) particle draws, "
+            + "\(renderer.droppedParticleBatches) dropped, share \(renderer.particleShare) bytes")
+        // Every root particle spawned one instance holding one burst particle: half the live particles are instances.
+        XCTAssertGreaterThan(live, 2)
+        XCTAssertEqual(draws, 1 + live / 2)
+        XCTAssertEqual(renderer.droppedParticleBatches, 0)
     }
 
     private static func vector(_ value: WPECBufferValue?) -> [Float]? {

@@ -253,6 +253,8 @@ final class WPEParityFrameRenderer {
     /// False when the caller fixed the particle share.
     private let growsParticleShare: Bool
     static let maxParticleShare = 256 << 20
+    /// Particle objects whose dropped batches were already logged.
+    private var loggedParticleDrops: Set<String> = []
     private static let silence = [Float](repeating: 0, count: 64)
     private var layers: WPEParityLayerTransformSet
     /// Every particle object and its state index; hidden ones are not stepped.
@@ -359,6 +361,11 @@ final class WPEParityFrameRenderer {
     var droppedParticleBatches: Int {
         let current = graphs.executors.reduce(particles.dropped + retiredDrops) { $0 + $1.droppedDraws }
         return previousGraphs?.executors.reduce(current) { $0 + $1.droppedDraws } ?? current
+    }
+
+    /// Arena bytes a frame's particle draws may take now.
+    var particleShare: Int {
+        particles.budget
     }
 
     /// Live particles of a particle object, children included.
@@ -629,10 +636,8 @@ final class WPEParityFrameRenderer {
     }
     #endif
 
-    /// `particleArenaBytes` fixes each frame's particle share of the arena. By default the share starts with every
-    /// particle draw at full capacity, an event group as one instance, and doubles after each frame that drops
-    /// particle batches, up to `maxParticleShare`. `workshopID` keys the video disk cache; nil uses the scene
-    /// directory's name.
+    /// `particleArenaBytes` fixes each frame's particle share; nil grows it to each frame's measured particle demand.
+    /// `workshopID` keys the video disk cache; nil uses the scene directory's name.
     nonisolated(nonsending) init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
                                  particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
                                  workshopID: String? = nil, continuing previous: WPEParityFrameRenderer? = nil,
@@ -1732,11 +1737,12 @@ final class WPEParityFrameRenderer {
         executor.restoreResourceBindings(resourceBindings)
         // Encoding can throw after submitting a prefix. Carry every reached swap into the next frame too.
         defer { resourceBindings = executor.resourceBindings }
-        var particleStreams: [Int: WPEParityParticleDrawStream] = [:]
+        // A failed stream is kept so its error surfaces where the block encodes, after the frame's earlier steps.
+        var particleStreams: [Int: Result<WPEParityParticleDrawStream, any Error>] = [:]
         let blocks = graphs.layout.frames[variant].particleBlocks
         func stream(for block: Int) throws -> WPEParityParticleDrawStream? {
             if let cached = particleStreams[block] {
-                return cached
+                return try cached.get()
             }
             let particleBlock = blocks[block]
             let objectID = particleBlock.objectID
@@ -1744,18 +1750,34 @@ final class WPEParityFrameRenderer {
             let failures = particleBaseFailures[objectID, default: [:]]
             let worldModel = particleBlock.compositeOwnerID.map { layers.model($0).inverse }
                 ?? matrix_identity_float4x4
-            let stream = try particles.scene.drawStream(objectID: objectID, ownerModel: layers.world(objectID),
-                                                        worldModel: worldModel) { path in
-                if failures[path] != nil {
-                    return nil
+            let stream = Result {
+                try particles.scene.drawStream(objectID: objectID, ownerModel: layers.world(objectID),
+                                               worldModel: worldModel) { path in
+                    if failures[path] != nil {
+                        return nil
+                    }
+                    guard let fact = facts[path] else {
+                        throw WPEParityFrameSkip.program("missing particle base-material fact: \(objectID) \(path)")
+                    }
+                    return fact
                 }
-                guard let fact = facts[path] else {
-                    throw WPEParityFrameSkip.program("missing particle base-material fact: \(objectID) \(path)")
-                }
-                return fact
             }
             particleStreams[block] = stream
-            return stream
+            return try stream.get()
+        }
+        var particleDemand = 0
+        for case let .particlePrefix(block) in graphs.operations[variant] {
+            guard let stream = try? stream(for: block) else { continue }
+            for batch in stream.batches {
+                guard let operation = graphs.particleDraws[batch.key],
+                      case let .particles(particle)? = draws[operation]?.geometry else { continue }
+                particleDemand += WPEParityFrameArena.aligned(batch.vertices.bytes.count) + particle.argumentBytes
+            }
+        }
+        // The arena takes a new capacity only when a frame begins, so the share is sized before encoding.
+        if growsParticleShare, particleDemand > particles.budget {
+            particles.budget = min(max(particleDemand, particles.budget * 2), Self.maxParticleShare)
+            arena.capacity = baseArenaBytes + particles.budget
         }
         var submitted = false
         defer {
@@ -1787,7 +1809,7 @@ final class WPEParityFrameRenderer {
                                             try videos.encode(into: commandBuffer)
                                         }, shouldTransfer: { step in
                                             if case let .particleSnapshot(block) = graphs.operations[variant][step] {
-                                                return particleStreams[block]?.snapshotBoundary != nil
+                                                return (try? particleStreams[block]?.get())?.snapshotBoundary != nil
                                             }
                                             return true
                                         }, clearColor: { pass in
@@ -1825,6 +1847,9 @@ final class WPEParityFrameRenderer {
                                                                                                 userShortcutTexture: { shortcutTextures[$0] }) {
                                                         // Encode argument tables before the next batch reserves any vertex bytes.
                                                         try encode(provided, operation: operation)
+                                                    } else if loggedParticleDrops.insert(batch.key.objectID).inserted {
+                                                        Logger.warning("Particle object \(batch.key.objectID) dropped draw batches: frame demand "
+                                                            + "\(particleDemand) bytes, share \(particles.budget) bytes", category: .wpeRender)
                                                     }
                                                 }
                                             case let .layout(operation):

@@ -294,6 +294,26 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
     }
 
+    /// Workshop 3330774573: event-spawned instances outgrow the initial particle share within 30 frames.
+    func testScene3330774573GrowingEventInstancesDropNoParticleBatch() async throws {
+        try await assertNoParticleBatchDropped("3330774573")
+    }
+
+    /// Workshop 3659880761: event-spawned instances outgrow the initial particle share within 30 frames.
+    func testScene3659880761GrowingEventInstancesDropNoParticleBatch() async throws {
+        try await assertNoParticleBatchDropped("3659880761")
+    }
+
+    private func assertNoParticleBatchDropped(_ workshopID: String) async throws {
+        let driver = try await loadWorkshopScene(workshopID)
+        defer { driver.cleanup() }
+        try await presentFrames(driver, count: 120, label: "scene \(workshopID)")
+        let renderer = try XCTUnwrap(driver.renderer)
+        print("scene \(workshopID): \(renderer.droppedParticleBatches) particle batches dropped over 120 frames, "
+            + "share \(renderer.particleShare) bytes")
+        XCTAssertEqual(renderer.droppedParticleBatches, 0)
+    }
+
     /// Loads a Workshop scene from the Steam library through the product driver, scripts included.
     private func loadWorkshopScene(_ workshopID: String) async throws -> WPEParitySceneDriver {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
