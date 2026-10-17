@@ -1612,7 +1612,11 @@ final class WPEParityFrameRenderer {
         applyLayerFields()
         updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
         selectCamera(dt: clock.frametime)
-        let fadeAlpha = cameraPaths.fadeAlpha
+        // A cleared camerafade flag hides the fade each frame; setting it back cannot add a fade that never loaded.
+        var fadeAlpha = cameraPaths.fadeAlpha
+        if case let .vector(value)? = state.scriptField("camerafade", of: ""), value.x == 0 {
+            fadeAlpha = 0
+        }
         let camera = pathCamera
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         let updateParallax = cameraParallax

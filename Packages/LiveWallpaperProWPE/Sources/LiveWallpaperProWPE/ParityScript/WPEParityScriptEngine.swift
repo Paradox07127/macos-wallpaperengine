@@ -897,7 +897,7 @@ public final class WPEParityScriptEngine {
             let parsed = Self.parse(document.resolvedGeneralJSON[descriptor.name.lowercased()], descriptor)
             // Strict scene JSON must not be replaced by a generic number-derived product seed.
             // Existing canonical fields are retained by seedMissingFields and mirror.
-            let strictSceneSeed = descriptor.isSceneBloomField || descriptor.isSceneCameraParallax
+            let strictSceneSeed = descriptor.isSceneBloomField || descriptor.isSceneCameraFade || descriptor.isSceneCameraParallax
                 || descriptor.isSceneCameraShake || descriptor.isSceneProjection
             let value = strictSceneSeed ? parsed ?? Self.generalDefault(descriptor)
                 : configuration.fieldDefaults[key] ?? parsed ?? Self.generalDefault(descriptor)
@@ -1839,7 +1839,7 @@ public final class WPEParityScriptEngine {
         case "ambientcolor", "skylightcolor": .vector(.zero)
         case "bloomstrength": .vector(SIMD4(2, 0, 0, 0))
         case "bloomthreshold": .vector(SIMD4(0.65, 0, 0, 0))
-        case "bloom": .vector(SIMD4(1, 0, 0, 0))
+        case "bloom", "camerafade": .vector(SIMD4(1, 0, 0, 0))
         // 1401870c2..1870ee: four DWORD defaults in SceneObject O, not context/Main offsets.
         case "bloomhdrstrength": .vector(SIMD4(Float(bitPattern: 0x4000_0000), 0, 0, 0))
         case "bloomhdrthreshold": .vector(SIMD4(Float(bitPattern: 0x3F80_0000), 0, 0, 0))
@@ -1868,7 +1868,7 @@ public final class WPEParityScriptEngine {
     private static func parse(_ raw: WPESceneJSONValue?,
                               _ descriptor: WPEParityScriptProperty) -> WPEParitySceneState.ScriptValue? {
         let sceneCameraField = descriptor.isSceneCameraParallax || descriptor.isSceneCameraShake || descriptor.isSceneProjection
-        if descriptor.isSceneBloom || (sceneCameraField && descriptor.type == .flagBool) {
+        if descriptor.isSceneBloom || descriptor.isSceneCameraFade || (sceneCameraField && descriptor.type == .flagBool) {
             return WPEParityScriptProperty.sceneBoolValue(fromJSON: raw).map { .vector(SIMD4($0 ? 1 : 0, 0, 0, 0)) }
         }
         if descriptor.isSceneBloomFloat || (sceneCameraField && descriptor.type == .float) {

@@ -94,6 +94,10 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         owner == .scene && name == "bloom" && type == .flagBool && target == .field
     }
 
+    var isSceneCameraFade: Bool {
+        owner == .scene && name == "camerafade" && type == .flagBool && target == .field
+    }
+
     var isSceneBloomFloat: Bool {
         guard owner == .scene, type == .float, target == .field else { return false }
         switch name {
@@ -340,6 +344,7 @@ public struct WPEParityScriptProperty: Hashable, Sendable {
         WPEParityScriptProperty(name: "ambientcolor", owner: .scene, type: .vec3, invalidation: .lighting),
         WPEParityScriptProperty(name: "skylightcolor", owner: .scene, type: .vec3, invalidation: .lighting),
         WPEParityScriptProperty(name: "bloom", owner: .scene, type: .flagBool),
+        WPEParityScriptProperty(name: "camerafade", owner: .scene, type: .flagBool),
         WPEParityScriptProperty(name: "bloomhdrstrength", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "bloomhdrthreshold", owner: .scene, type: .float, invalidation: .bloom),
         WPEParityScriptProperty(name: "bloomhdrfeather", owner: .scene, type: .float, invalidation: .bloom),

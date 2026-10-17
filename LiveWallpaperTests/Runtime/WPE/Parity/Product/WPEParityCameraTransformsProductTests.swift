@@ -213,5 +213,68 @@ extension WPEParitySceneDriverTests {
                                                                                to: document(cameraVisible: false))))
         try await frame(3, eye: SIMD3(10, 20, 30), center: SIMD3(10, 20, 29))
     }
+
+    /// The fade draw re-reads the camerafade flag every frame, so a script clearing it drops the fade from the next frame.
+    func testScriptClearingCameraFadeStopsTheCameraPathFadeDraw() async throws {
+        let original = try sceneInputs().1
+        let compiler = try makeCompiler()
+        let keyframes: [[String: Any]] = [
+            ["timestamp": 0, "eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            ["timestamp": 1, "eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+        ]
+        var files = try [
+            "models/fade-witness.json": ["material": "materials/fade-witness.json"] as [String: Any],
+            "materials/fade-witness.json": ["passes": [["shader": "genericimage2", "textures": ["fade-red"],
+                                                        "blending": "normal", "cullmode": "nocull"]]],
+            "cameras/fade-path.json": ["paths": [["duration": 10, "transforms": keyframes]]],
+        ].mapValues { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        files["materials/fade-red.tex"] = cameraWitnessTexture([255, 0, 0, 255])
+        let snapshot = files
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }] + original.sources)
+        let script = """
+        export function update(v) {
+          thisScene.camerafade = false;
+          return v;
+        }
+        """
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0", "paths": ["cameras/fade-path.json"]],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128], "clearenabled": true,
+                        "clearcolor": "0 0 0", "bloom": false, "bloomstrength": ["value": 2, "script": script]],
+            "objects": [["id": 1, "image": "models/fade-witness.json", "origin": "128 64 0", "size": "48 96"]],
+        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 256, height: 128), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "fade-cache")))
+        let renderer = try XCTUnwrap(driver.renderer)
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 256, height: 128)
+        layer.framebufferOnly = false
+        layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        func frame(_ index: Int) async throws -> Int {
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100 + Double(index) * 0.1,
+                                                                     pointer: SIMD2(repeating: 0.5)))
+            await command.completed()
+            try await settle(driver, label: "fade frame \(index)")
+            XCTAssertNil(command.error)
+            XCTAssertTrue(driver.renderer === renderer)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            return renderer.lastFrameDraws.count
+        }
+        XCTAssertEqual(renderer.state.scriptField("camerafade", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        // The flag is read before this frame's script update, so the first frame still draws the fade.
+        let faded = try await frame(0)
+        let fadeAlpha = try XCTUnwrap(renderer.lastFrameDraws.last?.draw.constants[.fragment]?["g_Alpha"])
+        guard case let .float(alpha) = fadeAlpha else { return XCTFail("fade g_Alpha is not a Float: \(fadeAlpha)") }
+        XCTAssertGreaterThan(alpha, 0, "the first frame sits inside the path's opening fade")
+        XCTAssertEqual(renderer.state.scriptField("camerafade", of: ""), .vector(.zero))
+        let cleared = try await frame(1)
+        XCTAssertEqual(cleared, faded - 1, "the fade draw still ran after the script cleared camerafade")
+    }
 }
 #endif

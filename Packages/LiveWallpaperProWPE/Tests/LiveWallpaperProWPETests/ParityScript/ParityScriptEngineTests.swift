@@ -591,6 +591,47 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    func testSceneCameraFadeReadsLoadedFlagAndAcceptsOnlyBoolWrites() throws {
+        let assets = try Self.fixedAssets()
+        func document(_ general: [String: Any]) throws -> WPESceneDocument {
+            var generalJSON: [String: Any] = ["orthogonalprojection": ["width": 200, "height": 100]]
+            generalJSON.merge(general) { _, new in new }
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+                "general": generalJSON,
+                "objects": [],
+            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        }
+        let script = """
+        if (typeof thisScene.camerafade !== 'boolean' || thisScene.camerafade !== EXPECTED) throw new Error('loaded camerafade');
+        export function update(v) {
+          thisScene.camerafade = 0;
+          thisScene.camerafade = '0';
+          if (thisScene.camerafade !== EXPECTED) throw new Error('non-Bool camerafade write');
+          thisScene.camerafade = false;
+          if (thisScene.camerafade !== false) throw new Error('camerafade write false');
+          return v;
+        }
+        """
+        for (seed, expected) in [(nil, true), (false as Any?, false), (true as Any?, true)] as [(Any?, Bool)] {
+            let witness = script.replacingOccurrences(of: "EXPECTED", with: "\(expected)")
+            var general: [String: Any] = ["bloomstrength": ["value": 2, "script": witness]]
+            if let seed {
+                general["camerafade"] = seed
+            }
+            let scene = try document(general)
+            var state = WPEParitySceneState(document: scene, hdr: false)
+            let engine = try WPEParityScriptEngine.prepare(document: scene, state: &state, configuration: .init(
+                assets: assets, canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
+            ), volume: { _, _ in XCTFail("No sound object") }, command: { _, _, _ in false })
+            try engine.start(state: &state)
+            XCTAssertEqual(state.scriptField("camerafade", of: ""), .vector(SIMD4(expected ? 1 : 0, 0, 0, 0)))
+            engine.tick(dt: 0, state: &state)
+            XCTAssertEqual(state.scriptField("camerafade", of: ""), .vector(.zero))
+            XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        }
+    }
+
     func testLookAtMethodsUseLocalTypedSlotsAndNativeCameraSign() throws {
         let imageScript = """
         const globalReturn = thisObject.lookAt(new Vec3(11, 20, 30));
