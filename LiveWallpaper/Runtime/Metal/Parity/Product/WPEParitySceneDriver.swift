@@ -819,10 +819,16 @@ final class WPEParitySceneDriver {
 
     /// WPE's HLSL carries only the declarations its combos leave live, so a mention is a read.
     static func readsAudio(_ plan: WPEParityFramePlan) -> Bool {
-        plan.document.general.supportsAudioProcessing || plan.programs.values.contains { program in
-            [program.hlsl.vertex, program.hlsl.geometry, program.hlsl.fragment].contains { stage in
-                stage.flatMap { String(bytes: $0, encoding: .utf8) }?.contains("g_AudioSpectrum") == true
-            }
+        if plan.document.general.supportsAudioProcessing {
+            return true
+        }
+        let name = Array("g_AudioSpectrum".utf8)
+        var searched: Set<WPEHLSLProgram> = []
+        return plan.programs.values.contains { program in
+            searched.insert(program.hlsl).inserted
+                && [program.hlsl.vertex, program.hlsl.geometry, program.hlsl.fragment].contains { stage in
+                    stage?.firstRange(of: name) != nil
+                }
         }
     }
 
