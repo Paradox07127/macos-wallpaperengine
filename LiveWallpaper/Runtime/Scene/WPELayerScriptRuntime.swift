@@ -2307,6 +2307,14 @@ class WPELayerScriptBridge: @unchecked Sendable {
         guard !pendingCreatedDestruction.isEmpty else { return }
         createdLayers.removeAll { pendingCreatedDestruction.contains($0.key) }
         modelLayers.removeLayers(pendingCreatedDestruction)
+        destroyedCreatedKeys.subtract(pendingCreatedDestruction)
+        for key in pendingCreatedDestruction {
+            otherTransformValues[key] = nil
+            createdAngles[key] = nil
+            presentationMutations[key] = nil
+            assignedOtherTransforms[key] = nil
+            videoHandles[key] = nil
+        }
         pendingCreatedDestruction.removeAll(keepingCapacity: true)
     }
 

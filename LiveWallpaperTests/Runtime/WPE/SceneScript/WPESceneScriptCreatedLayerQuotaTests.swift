@@ -113,6 +113,28 @@ struct WPESceneScriptCreatedLayerQuotaTests {
         #expect(token.resourceSnapshot.createdLayers == 0)
     }
 
+    @Test("Retired created layers drop out of the destroyed-key set instead of accumulating")
+    @MainActor
+    func retiredCreatedLayersDoNotAccumulateTombstones() throws {
+        let instance = try WPELayerScriptInstance(script: """
+        export function update() {
+            const l = thisScene.createLayer('models/bar.json');
+            thisScene.destroyLayer(l);
+        }
+        """, shared: WPESharedScriptState(sceneScriptLoadToken: preparedToken(generation: 21)), createdLayerBridge: .init(
+            imagePaths: ["models/bar.json"], orderedLayerNames: ["MAIN"], allowsSorting: false
+        ))
+        var last: WPELayerScriptOutput?
+        for _ in 0 ..< 300 {
+            if let output = instance.tick() {
+                last = output
+            }
+        }
+        let output = try #require(last)
+        #expect(output.destroyedCreatedKeys.count <= 2)
+        #expect(output.created.isEmpty)
+    }
+
     private func preparedToken(generation: Int) -> WPESceneScriptInstanceLimitToken {
         let token = WPESceneScriptInstanceLimitToken(generation: generation)
         #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
