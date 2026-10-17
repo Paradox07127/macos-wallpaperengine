@@ -460,4 +460,22 @@ final class ParityParticleFieldOperatorTests: XCTestCase {
             assertEqual(system.children[0].controlPointTranslation(0), referenced ? SIMD3(4, 5, 6) : SIMD3(7, 8, 9))
         }
     }
+
+    /// 1c2a40 widens an inverted in-ramp and a zero-width out-ramp before qualifying the blend (3554161528's
+    /// oscillatealpha: in 1→0, out 3→3), so the weight stays 1 instead of fading with age.
+    func testBlendRampsAreWidenedBeforeQualification() {
+        func blend(_ keys: String) -> WPEParityParticleBlend? {
+            System(json: Support.json("""
+            {"maxcount":1,"emitter":[{"name":"sphererandom","rate":0,"instantaneous":1,"distancemax":0}],
+             "operator":[{"name":"oscillatealpha"\(keys)}]}
+            """), rng: WPEParityMT19937(seed: 7), is3D: false).config.operators.first?.blend
+        }
+        let inverted = blend(#","blendinstart":1,"blendinend":0,"blendoutstart":3,"blendoutend":3"#)
+        for t: Float in [0, 0.25, 0.5, 0.9] {
+            XCTAssertEqual(inverted?.weight(t: t) ?? 1, 1, accuracy: 0.0001, "t \(t)")
+        }
+        let ramp = blend(#","blendinstart":0,"blendinend":0.5"#)
+        XCTAssertEqual(ramp?.weight(t: 0.25) ?? -1, 0.5, accuracy: 0.001)
+        XCTAssertNil(blend(""))
+    }
 }

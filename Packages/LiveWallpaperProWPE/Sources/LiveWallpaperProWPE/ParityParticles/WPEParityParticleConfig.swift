@@ -503,18 +503,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             diagnostics.append("operator \(name) skipped")
             return
         }
-        var blend: WPEParityParticleBlend?
-        let fallback = WPEParityParticleBlend()
-        if entry["blendinstart"] != nil || entry["blendinend"] != nil {
-            blend = fallback
-            blend?.inStart = number("blendinstart", 0)
-            blend?.inEnd = number("blendinend", 0)
-        }
-        if entry["blendoutstart"] != nil || entry["blendoutend"] != nil {
-            blend = blend ?? fallback
-            blend?.outStart = number("blendoutstart", 1)
-            blend?.outEnd = number("blendoutend", 1)
-        }
+        var blend = WPEParityParticleBlend.compiled(
+            inStart: number("blendinstart", 0), inEnd: number("blendinend", 0),
+            outStart: number("blendoutstart", 1), outEnd: number("blendoutend", 1)
+        )
         switch kind {
         case .collisionPlane, .collisionSphere, .collisionBox:
             // 1cf5f7→1cc446 goes directly to iteration/clone; these compiler branches never call 1c2a40.

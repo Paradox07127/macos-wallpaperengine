@@ -19,6 +19,23 @@ struct WPEParityParticleBlend: Equatable, Sendable {
     var outStart: Float = 1
     var outEnd: Float = 2
 
+    /// 1c2a40 compiles 0/0 and 1/1 defaults, widens ramps, then conditionally changes the operator opcode.
+    static func compiled(inStart: Float, inEnd: Float, outStart: Float, outEnd: Float) -> Self? {
+        let epsilon = Float(bitPattern: 0x38D1_B717)
+        var inStart = inStart, outEnd = outEnd
+        if inStart > inEnd - epsilon {
+            inStart = inEnd - epsilon
+        }
+        if !(outEnd > outStart + epsilon) {
+            outEnd = outStart + epsilon
+        }
+        let threshold = Float(bitPattern: 0x3C23_D70A)
+        guard inEnd > threshold || outStart < Float(bitPattern: 0x3F7D_70A4),
+              outStart - inEnd > threshold || inEnd - inStart > threshold || outEnd - outStart > threshold
+        else { return nil }
+        return Self(inStart: inStart, inEnd: inEnd, outStart: outStart, outEnd: outEnd)
+    }
+
     func weight(t: Float) -> Float {
         WPEParityParticleMath.saturate((t - inStart) / (inEnd - inStart))
             * WPEParityParticleMath.saturate((outEnd - t) / (outEnd - outStart))
