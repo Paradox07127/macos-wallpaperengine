@@ -151,6 +151,52 @@ final class ParityModelDataConsumerTests: XCTestCase {
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
+    func testRepeatedModelDataCallsLeaveAnEngineReleasableOnASmallStack() throws {
+        let script = #"""
+        const vertices = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+        export function init(v) {
+          const model = thisScene.createModelData({vertexBuffer:vertices,vertexFormat:[IModelData.POSITION],
+            material:'materials/model.json',isVertexBufferDynamic:true});
+          for (let i = 0; i < 5000; i++) model.applyData({vertexBuffer:vertices});
+          const marker = {tag:'getter'};
+          let caught = false;
+          try { model.applyData({get vertexBuffer() { throw marker; }}); }
+          catch(e) { caught = e === marker; }
+          if (!caught) throw Error('getter failure');
+          return v;
+        }
+        """#
+        let document = try Self.document(script)
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
+        let baseClasses = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        let provider = WPEParityScriptModelDataProvider(
+            maximumArrayEntries: 16, maximumBufferBytes: 4096,
+            resolveMaterial: { value, _ in try Data(XCTUnwrap(value.toString()).utf8) },
+            admitShape: { _, _ in nil }
+        )
+        let box = EngineBox()
+        box.engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64), modelData: provider
+        ))
+        try box.engine?.start(state: &state)
+        XCTAssertEqual(box.engine?.exceptionCount, 0, box.engine?.exceptions.joined(separator: "\n") ?? "")
+        weak let released = box.engine
+        let done = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            box.engine = nil
+            done.signal()
+        }
+        thread.stackSize = 256 * 1024
+        thread.start()
+        XCTAssertEqual(done.wait(timeout: .now() + 30), .success, "releasing the engine did not finish")
+        XCTAssertNil(released)
+    }
+
     private static func document(_ script: String) throws -> WPESceneDocument {
         let json: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                                    "general": ["orthogonalprojection": ["width": 64, "height": 64]],
@@ -167,6 +213,11 @@ final class ParityModelDataConsumerTests: XCTestCase {
     private static func word(_ data: Data, _ index: Int) -> UInt32 {
         data.withUnsafeBytes { UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: index * 4, as: UInt32.self)) }
     }
+}
+
+/// Thread.start orders the hand-off to the release thread and the semaphore orders it back; never touched concurrently.
+private final class EngineBox: @unchecked Sendable {
+    var engine: WPEParityScriptEngine?
 }
 
 private struct NoScripts: WPESceneTransformScriptResolving {

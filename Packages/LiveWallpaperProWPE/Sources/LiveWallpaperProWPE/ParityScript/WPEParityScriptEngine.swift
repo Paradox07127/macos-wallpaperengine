@@ -317,6 +317,8 @@ public final class WPEParityScriptEngine {
     private var clock: Float = 0
     private var preparedFrame = false
     private var wasDown = false
+    /// While set, the context's exception handler stores exceptions in `context.exception` instead of recording them.
+    private var capturesExceptionsAsValues = false
     private var dispatchCounts = [Int](repeating: 0, count: WPEParityScriptEvent.allCases.count)
     private let sourceObjects: [WPESceneJSONValue]
     private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
@@ -393,8 +395,15 @@ public final class WPEParityScriptEngine {
         guard let baseClasses = configuration.assets.data("scripts/jsclasses/baseclasses.js") else {
             throw Failure.missingBaseClasses
         }
-        context.exceptionHandler = { [weak self] _, exception in
-            self?.record(exception?.toString() ?? "")
+        // Never read this handler back to restore it: each Swift read/write round trip wraps it in one more block,
+        // and releasing a chain thousands deep overflows the stack.
+        context.exceptionHandler = { [weak self] context, exception in
+            guard let self else { return }
+            if capturesExceptionsAsValues {
+                context?.exception = exception
+            } else {
+                record(exception?.toString() ?? "")
+            }
         }
         context.evaluateScript(String(bytes: baseClasses, encoding: .utf8) ?? "",
                                withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
@@ -1495,10 +1504,10 @@ public final class WPEParityScriptEngine {
         }
         flushWrites(to: &state.pointee)
         // Getter failures remain ordinary catchable JS values; the converter must not count them as uncaught.
-        let exceptionHandler = context.exceptionHandler
+        let capturedOutside = capturesExceptionsAsValues
         context.exception = nil
-        context.exceptionHandler = { context, exception in context?.exception = exception }
-        defer { context.exceptionHandler = exceptionHandler }
+        capturesExceptionsAsValues = true
+        defer { capturesExceptionsAsValues = capturedOutside }
         let assetContext = Int(exactly: bindingIndex).flatMap(assetContext(of:))
         return WPEParityScriptModels.perform(input, token: token, assetContext: assetContext,
                                              provider: provider) { patch in

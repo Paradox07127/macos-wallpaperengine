@@ -4831,6 +4831,36 @@ export function init(value) {
         #expect(target.objectForKeyedSubscript("marked")?.toDouble() == 7)
     }
 
+    @Test("Building host tick helpers repeatedly leaves the exception handler releasable on a small stack")
+    func repeatedHostTickHelpersLeaveExceptionHandlerReleasable() throws {
+        // Thread.start orders the hand-off to the release thread and the semaphore orders it back.
+        final class Box: @unchecked Sendable {
+            var context: JSContext?
+        }
+        let context = try #require(JSContext())
+        var uncaught = 0
+        context.exceptionHandler = { _, _ in uncaught += 1 }
+        // Drain here so no autoreleased handler outlives the hand-off and gets released on the main stack instead.
+        autoreleasepool {
+            for _ in 0 ..< 5000 {
+                _ = wpeMakeHostTickHelper(in: context, factory: "(function () { return function () {}; })", targets: [])
+            }
+            context.evaluateScript("throw new Error('after helpers');")
+        }
+        #expect(uncaught == 1)
+        let box = Box()
+        box.context = context
+        let done = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            box.context?.exceptionHandler = nil
+            done.signal()
+        }
+        thread.stackSize = 256 * 1024
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        #expect(done.wait(timeout: .now() + 30) == .success, "releasing the exception handler did not finish")
+    }
+
     /// The clock helper must reach `engine` through the scope chain, not an object
     /// captured at setup: a script may replace the global and must still be fed.
     @Test("Replacing the engine global still receives the clock")

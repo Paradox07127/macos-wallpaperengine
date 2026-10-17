@@ -2818,14 +2818,10 @@ func wpeMakeHostTickHelper(
     factory: String,
     targets: [JSValue]
 ) -> JSValue? {
-    // Must be a no-op block, not nil: JSC notifyException calls the handler unconditionally, so nil crashes on the first throw.
+    // Never swap and restore exceptionHandler here: each Swift read/write round trip wraps it in one more block,
+    // and releasing a chain thousands deep overflows the stack. Host factories do not throw.
     let priorException = context.exception
-    let priorHandler = context.exceptionHandler
-    context.exceptionHandler = { _, _ in }
-    defer {
-        context.exception = priorException
-        context.exceptionHandler = priorHandler
-    }
+    defer { context.exception = priorException }
     guard let factoryValue = context.evaluateScript(factory),
           factoryValue.isObject, factoryValue.hasProperty("call"),
           let helper = factoryValue.call(withArguments: targets),
