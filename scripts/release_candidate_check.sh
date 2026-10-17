@@ -41,13 +41,13 @@ fail_with_log() {
   exit 1
 }
 
-assert_no_removed_dynamic_links() {
+# Pro links the system libc++ through its statically linked C++ text stack
+# (HarfBuzz, msdfgen); Lite has no C++ and keeps the ban.
+assert_no_libcxx_link() {
   local binary="$1"
   local label="$2"
-  # Sparkle used to be listed here. It ships again as of 2026-08-23 and every
-  # app binary links it on purpose, so only libc++ remains banned.
   if otool -L "$binary" | grep -Eq 'libc\+\+'; then
-    echo "ERROR: $label links a removed libc++ dependency." >&2
+    echo "ERROR: $label links libc++." >&2
     otool -L "$binary" >&2
     exit 1
   fi
@@ -167,7 +167,6 @@ python3 scripts/xcode_test_runner.py \
 # Developer ID entitlements and notarization remain a separate signing-machine gate.
 PRO_DEBUG_BIN="$DERIVED_DATA/Build/Products/Debug/Loomscreen Pro.app/Contents/MacOS/Loomscreen Pro"
 [[ -x "$PRO_DEBUG_BIN" ]] || fail_with_log "Pro Debug test action did not produce the app binary."
-assert_no_removed_dynamic_links "$PRO_DEBUG_BIN" "Pro Debug"
 
 DERIVED_DATA_PRO_RELEASE="${DERIVED_DATA}ProRelease"
 PRO_ARCHIVE_PATH="${PRO_ARCHIVE_PATH:-$ARCHIVE_SCRATCH/LiveWallpaper-LinkMatrix.xcarchive}"
@@ -194,7 +193,6 @@ python3 scripts/check_third_party_notices.py --app "$PRO_ARCHIVED_APP" --sku pro
 [[ -x "$PRO_RELEASE_BIN" ]] || fail_with_log "Pro Release archive did not produce Loomscreen Pro.app."
 assert_arm64_binary "$PRO_RELEASE_BIN" "Pro Release archive"
 codesign --verify --deep --strict --verbose=2 "$PRO_ARCHIVED_APP"
-assert_no_removed_dynamic_links "$PRO_RELEASE_BIN" "Pro Release archive"
 
 
 DERIVED_DATA_LITE_DEBUG="${DERIVED_DATA}LiteDebug"
@@ -209,7 +207,7 @@ xcodebuild build \
   > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaperLite Debug build failed."
 LITE_DEBUG_BIN="$DERIVED_DATA_LITE_DEBUG/Build/Products/Debug/Loomscreen.app/Contents/MacOS/Loomscreen"
 [[ -x "$LITE_DEBUG_BIN" ]] || fail_with_log "Lite Debug build did not produce the app binary."
-assert_no_removed_dynamic_links "$LITE_DEBUG_BIN" "Lite Debug"
+assert_no_libcxx_link "$LITE_DEBUG_BIN" "Lite Debug"
 
 DERIVED_DATA_LITE_RELEASE="${DERIVED_DATA}LiteRelease"
 LITE_ARCHIVE_PATH="${LITE_ARCHIVE_PATH:-$ARCHIVE_SCRATCH/Loomscreen-LinkMatrix.xcarchive}"
@@ -238,7 +236,7 @@ assert_universal_binary "$LITE_RELEASE_BIN" "Lite Release archive"
 assert_universal_binary "$LITE_ARCHIVED_APP/Contents/Extensions/SystemWallpaperProviderLite.appex/Contents/MacOS/SystemWallpaperProviderLite" "Lite system wallpaper extension"
 assert_universal_binary "$LITE_ARCHIVED_APP/Contents/XPCServices/WallpaperMaintenance.xpc/Contents/MacOS/WallpaperMaintenance" "Lite WallpaperMaintenance service"
 codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
-assert_no_removed_dynamic_links "$LITE_RELEASE_BIN" "Lite Release archive"
+assert_no_libcxx_link "$LITE_RELEASE_BIN" "Lite Release archive"
 
 # Lite must remain free of Pro renderer and SceneScript components.
 for lite_binary in "$LITE_DEBUG_BIN" "$LITE_RELEASE_BIN"; do
