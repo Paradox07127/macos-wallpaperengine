@@ -100,6 +100,55 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(uncovered, 0)
     }
 
+    /// A text layer's cursor box is model · anchor · blockOffset ± size/2 (1402585c0.c:35-148, 140256f20.c:302-325),
+    /// so it centres on the drawn glyph block; an image layer's box stays model ± size/2.
+    func testCursorBoxCentresOnTheDrawnTextBlockAndLeavesImagesAlone() async throws {
+        for anchor in ["none", "topleft"] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+            var general = try XCTUnwrap(json["general"] as? [String: Any])
+            // A 1024x768 canvas on the 1024x512 target crops 128 px off its top and bottom.
+            general["orthogonalprojection"] = ["width": Self.width, "height": 768]
+            json["general"] = general
+            var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+            let fields: [String: Any] = ["horizontalalign": "left", "anchor": anchor, "origin": "512 384 0"]
+            objects[0].merge(fields) { _, next in next }
+            objects.insert(["id": 2, "image": "models/util/solidlayer.json", "size": "200 100",
+                            "origin": "300 200 0", "color": "0 0 1", "alpha": 1], at: 0)
+            json["objects"] = objects
+            let fixture = try await makeSyntheticRenderer(effect: false, scene: JSONSerialization.data(withJSONObject: json),
+                                                          alignment: WPEParityCameraAlignment(mode: 0))
+            let renderer = fixture.renderer
+            try await encode(renderer, label: "cursor box \(anchor)")
+
+            let text = try XCTUnwrap(renderer.texts[Self.textID])
+            let mesh = try XCTUnwrap(text.layout.mesh)
+            XCTAssertNotEqual(text.layout.blockOffset.x, 0, "a left-aligned block must shift off the origin")
+            let anchorOffset = WPEParityTextMatrices.anchorOffset(text.object.anchor,
+                                                                  margins: renderer.pathCamera.cropMargins,
+                                                                  orthographic: true)
+            XCTAssertEqual(anchorOffset == .zero, anchor == "none", "\(anchor) offset \(anchorOffset)")
+            let operation = try XCTUnwrap(renderer.frames[0].draws.first { _, draw in
+                guard case let .scene(scene) = draw else { return false }
+                return scene.objectID == Self.textID && scene.geometry == .textGlyphs(.mono)
+            }?.key)
+            let mvp = try XCTUnwrap(renderer.uniforms(operation)).matrices.modelViewProjection
+            let blockCentre = SIMD2<Float>(mesh.minX + mesh.maxX, mesh.bottom + mesh.top) * 0.5
+            let clip: SIMD4<Float> = mvp * SIMD4(blockCentre.x, blockCentre.y, 0, 1)
+            let ndc = SIMD2<Float>(clip.x, clip.y) / clip.w
+            let drawn = SIMD2<Float>((ndc.x + 1) * 0.5, (1 - ndc.y) * 0.5) * SIMD2(Float(Self.width), Float(Self.height))
+            let corners = try XCTUnwrap(renderer.cursorQuad(Self.textID, camera: renderer.pathCamera))
+            let centre = (corners.0 + corners.1 + corners.2 + corners.3) / 4
+            XCTAssertLessThan(simd_distance(centre, drawn), 0.01, "\(anchor): cursor box \(centre), glyph block \(drawn)")
+
+            // The image spans canvas (200...400, 150...250); the visible canvas rows are 128...640.
+            let image = try XCTUnwrap(renderer.cursorQuad("2", camera: renderer.pathCamera))
+            let expected: [SIMD2<Float>] = [SIMD2(200, 490), SIMD2(400, 490), SIMD2(400, 390), SIMD2(200, 390)]
+            for (actual, wanted) in zip([image.0, image.1, image.2, image.3], expected) {
+                XCTAssertLessThan(simd_distance(actual, wanted), 0.01, "\(anchor): image corner \(actual), want \(wanted)")
+            }
+        }
+    }
+
     /// FUN_1401e5b60 pushes onto the parent's composite camera before slot30 draws text. At FOV90, a 1024x512
     /// composite gives D=256; z=128 doubles the glyphs around pixel(256,384), versus the ortho(896,64).
     func testPerspectiveTextInParentCompositeUsesThePushedCameraOnce() async throws {
@@ -1737,14 +1786,15 @@ final class WPEParityTextDrawTests: XCTestCase {
     }
 
     private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil,
-                                       settings: WPEParityProgramSettings = .init(), scripted: Bool = false) async throws -> Fixture {
+                                       settings: WPEParityProgramSettings = .init(), scripted: Bool = false,
+                                       alignment: WPEParityCameraAlignment = .noCrop) async throws -> Fixture {
         let wpeAssets = try wpeAssets()
         let document = try Self.parse(scene ?? Self.syntheticScene(effect: effect))
         // The tint effect keeps its material and shaders in its own folder.
         let assets = WPEParityProgramAssets(sceneDirectory: scratch,
                                             assetRoots: [wpeAssets, wpeAssets.appending(path: "effects/tint")])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: settings,
-                                          width: Self.width, height: Self.height)
+                                          width: Self.width, height: Self.height, alignment: alignment)
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         // Shared between the tests of this class, so only the first compiles cold.
         let cache = FileManager.default.temporaryDirectory.appending(path: "parity-text-cache",

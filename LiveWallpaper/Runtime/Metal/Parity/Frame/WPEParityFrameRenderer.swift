@@ -1366,7 +1366,14 @@ final class WPEParityFrameRenderer {
         guard let size = layers.layers[id]?.size, size.x > 0, size.y > 0 else { return nil }
         var placed = layers
         placed.camera = camera
-        let matrix = try placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * placed.model(id)
+        var model = placed.model(id)
+        // A text box also takes its glyphs' anchor (1402585c0.c:35-148) and block offset (140256f20.c:302-325).
+        if let text = texts[id] {
+            let anchor = WPEParityTextMatrices.anchorOffset(text.object.anchor, margins: camera.cropMargins,
+                                                            orthographic: text.orthographic)
+            model = WPEParityTextMatrices.layerModel(model, anchorOffset: anchor, blockOffset: text.layout.blockOffset)
+        }
+        let matrix = try placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * model
         let pixels = logicalSize
         func corner(_ x: Float, _ y: Float) -> SIMD2<Float> {
             let clip = matrix * SIMD4(x, y, 0, 1)
