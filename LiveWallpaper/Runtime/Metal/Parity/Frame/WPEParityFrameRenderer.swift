@@ -122,7 +122,12 @@ final class WPEParityFrameRenderer {
     private var seenEffects = 0
     private var seenMembership = 0
     private var seenModelData = 0
-    private var graphs: Graphs
+    private var graphs: Graphs {
+        didSet { drawVideoSources = nil }
+    }
+
+    /// Per layout draw operation, the video sources its passes bind; nil until the next frame after the graphs changed.
+    private var drawVideoSources: [Int: Set<Int>]?
     /// The graphs before the last visibility change, kept so toggling back does not recompile.
     private var previousGraphs: Graphs?
     /// Dropped draws of graphs no longer kept.
@@ -1736,11 +1741,8 @@ final class WPEParityFrameRenderer {
         var submitted = false
         defer {
             if submitted {
-                videos.recordSampled(ownerIDs: lastFrameDraws.compactMap { executed in
-                    guard case let .scene(description)? = graphs.layout.frames[variant].draws[executed.operation],
-                          description.effectID == nil else { return nil }
-                    return description.objectID
-                })
+                let bound = drawVideoSources ?? bindVideoSources()
+                videos.recordSampled(sources: lastFrameDraws.lazy.flatMap { bound[$0.operation] ?? [] })
             }
         }
         let textures = frameTextures ?? targets.merging(planner.layerImages) { $1 }
@@ -1984,6 +1986,45 @@ final class WPEParityFrameRenderer {
         }
         seenVisibility = state.visibilityGeneration
         seenEffects = state.effectVisibilityGeneration
+    }
+
+    /// Resolved at frame submission, after every graph replacement path has also updated the planner's images.
+    private func bindVideoSources() -> [Int: Set<Int>] {
+        let sources = Self.videoSources(of: graphs.layout.draws.mapValues(\.textures), videos: videos.textures,
+                                        layerImages: planner.layerImages)
+        drawVideoSources = sources
+        videos.setBoundSources(Set(sources.values.joined()))
+        return sources
+    }
+
+    /// Per draw operation, the indices into `videos` of the textures any slot of any of its passes binds;
+    /// draws binding none are absent.
+    static func videoSources(of draws: [Int: [[String: WPEParityFrameDrawPlan.TextureSource]]], videos: [MTLTexture],
+                             layerImages: [WPEResourceID: MTLTexture]) -> [Int: Set<Int>] {
+        guard !videos.isEmpty else { return [:] }
+        var indices: [ObjectIdentifier: Int] = [:]
+        for (index, texture) in videos.enumerated() {
+            indices[ObjectIdentifier(texture)] = index
+        }
+        var sources: [Int: Set<Int>] = [:]
+        for (operation, passes) in draws {
+            var bound: Set<Int> = []
+            for slots in passes {
+                for source in slots.values {
+                    let texture: MTLTexture? = switch source {
+                    case let .image(image): image
+                    case let .resource(id): layerImages[id]
+                    }
+                    if let texture, let index = indices[ObjectIdentifier(texture)] {
+                        bound.insert(index)
+                    }
+                }
+            }
+            if !bound.isEmpty {
+                sources[operation] = bound
+            }
+        }
+        return sources
     }
 
     /// Drops the images and targets only objects removed since `previous` used; the next committed frame retires them.

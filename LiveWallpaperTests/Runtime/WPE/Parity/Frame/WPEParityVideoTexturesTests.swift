@@ -212,6 +212,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
                                                       workshopID: "parity-video-unsampled-\(UUID().uuidString)",
                                                       device: device, queue: queue)
         videos.setOwners(["1": textureA, "2": textureB])
+        videos.setBoundSources([0, 1])
         XCTAssertEqual(videos.playbackSnapshot(ownerID: "2")?.isPlaying, true)
 
         let json = #"""
@@ -238,7 +239,8 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         // One submitted frame: the script runs, then only visible layers' draws execute and sample their video.
         func frame() {
             script.tick(dt: 0.01, cursor: .zero, world: .zero, leftDown: false, timeOfDay: 0, state: &state)
-            videos.recordSampled(ownerIDs: ["1", "2"].filter { state.object($0)?.visible == true })
+            let sources = ["1": 0, "2": 1]
+            videos.recordSampled(sources: sources.filter { state.object($0.key)?.visible == true }.values)
         }
         for _ in 1 ... 32 {
             frame()
@@ -253,6 +255,44 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(state.object("2")?.visible, true)
         XCTAssertEqual(state.object("1")?.color.x, 1, "B resumes once a draw samples it again")
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testVideoBoundByAnotherLayersExecutedPassKeepsPlayingWhileItsOwnerIsHidden() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let textureA = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let textureB = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let staticTexture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bytes = try Data(contentsOf: url)
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: textureA, bytes: bytes),
+                                                                .init(texture: textureB, bytes: bytes)],
+                                                      workshopID: "parity-video-bound-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["hidden": textureA, "b": textureB])
+        let layerB = WPEResourceID("_layer_b")
+        // Draw 0 is a visible layer's effect binding A off slot zero; draw 3 is A's hidden owner; draw 1 binds B.
+        let sources = WPEParityFrameRenderer.videoSources(
+            of: [0: [["g_Texture0": .image(staticTexture)],
+                     ["g_Texture0": .resource("_rt_effect"), "g_Texture1": .image(textureA)]],
+                 1: [["g_Texture0": .resource(layerB)]],
+                 2: [["g_Texture0": .image(staticTexture)]],
+                 3: [["g_Texture0": .image(textureA)]]],
+            videos: videos.textures, layerImages: [layerB: textureB]
+        )
+        XCTAssertEqual(sources, [0: [0], 1: [1], 3: [0]])
+        videos.setBoundSources(Set(sources.values.joined()))
+        for _ in 0 ... WPEParityVideoTextures.unsampledFrameLimit + 1 {
+            videos.recordSampled(sources: sources[0] ?? [])
+        }
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "hidden")?.isPlaying, true,
+                       "Another layer's executed pass samples A every frame")
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "b")?.isPlaying, false,
+                       "No executed draw has bound B for more than 30 submitted frames")
     }
 
     func testSharedOwnersUseActualPlayerControlsAndPublishReadyDurationWithoutReplayingOldWrites() async throws {

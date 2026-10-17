@@ -69,21 +69,24 @@ final class WPEParityVideoTextures {
     /// (1400f3930.c:48-75).
     static let unsampledFrameLimit = 30
     private var submittedFrames = 0
-    /// Per source, the last submitted frame on which an executed draw of one of its owners ran.
+    /// Per source, the last submitted frame on which an executed draw bound its texture.
     private var lastSampledFrame: [Int]
+    /// Sources some draw of the current layout binds; a source no draw binds keeps playing.
+    private var boundSources: Set<Int> = []
 
-    /// Call once per submitted frame with the owners of the draws it executed; sources without an owner keep playing.
-    func recordSampled(ownerIDs: some Sequence<String>) {
+    func setBoundSources(_ sources: Set<Int>) {
+        boundSources = sources
+    }
+
+    /// Call once per submitted frame with the sources the draws it executed bound.
+    func recordSampled(sources: some Sequence<Int>) {
         submittedFrames += 1
-        for owner in ownerIDs {
-            if let index = owners[owner] {
-                lastSampledFrame[index] = submittedFrames
-            }
+        for index in sources {
+            lastSampledFrame[index] = submittedFrames
         }
-        let owned = Set(owners.values)
         for (index, video) in videos.enumerated() {
             let unsampled = submittedFrames - lastSampledFrame[index] > Self.unsampledFrameLimit
-            video.source.setUnsampledPaused(owned.contains(index) && unsampled)
+            video.source.setUnsampledPaused(boundSources.contains(index) && unsampled)
         }
     }
 
