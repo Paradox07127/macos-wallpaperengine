@@ -172,7 +172,123 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertEqual(Array(pixels[offset ..< offset + 3]), [255, 255, 255])
     }
 
+    /// A first writer whose fragment stage may discard does not overwrite the whole target, so the target keeps its
+    /// own texture: the checker the first frame drew survives where the second frame discards.
+    func testDiscardingFirstWriterKeepsItsTargetDedicated() async throws {
+        let harness = try await makeFirstWriterDriver(discards: true)
+        defer { harness.driver.cleanup() }
+        let renderer = try XCTUnwrap(harness.driver.renderer)
+        let target = try XCTUnwrap(Self.firstWriterTarget(renderer))
+        XCTAssertFalse(renderer.aliasedRenderTargets.contains(target), "a discarding first writer is aliased")
+        try await encode(renderer)
+        // The clock caps a step at 0.25 s, which takes the second frame past the shader's 0.1 s switch.
+        try await encode(renderer, elapsed: 0.25)
+        let texture = try XCTUnwrap(renderer.renderTarget(target))
+        let device = renderer.backbuffer.device
+        let fixture = try Fixture(renderer: renderer, device: device, queue: XCTUnwrap(device.makeCommandQueue()))
+        let pixels = try readBack(texture, fixture)
+        func pixel(_ u: Double, _ v: Double) -> [UInt8] {
+            let offset = (Int(v * Double(texture.height)) * texture.width + Int(u * Double(texture.width))) * 4
+            return Array(pixels[offset ..< offset + 4])
+        }
+        XCTAssertEqual(pixel(0.125, 0.25), [0, 255, 0, 255], "the second frame did not draw the left half")
+        let row = [pixel(0.625, 0.25), pixel(0.875, 0.25)]
+        XCTAssertEqual(Set(row), [[0, 0, 0, 255], [255, 255, 255, 255]], "the first frame's checker is lost")
+        XCTAssertEqual([pixel(0.625, 0.75), pixel(0.875, 0.75)], row.reversed(), "the first frame's checker is lost")
+    }
+
+    func testFullscreenOpaqueFirstWriterIsAliased() async throws {
+        let harness = try await makeFirstWriterDriver(discards: false)
+        defer { harness.driver.cleanup() }
+        let renderer = try XCTUnwrap(harness.driver.renderer)
+        let target = try XCTUnwrap(Self.firstWriterTarget(renderer))
+        XCTAssertTrue(renderer.aliasedRenderTargets.contains(target),
+                      "aliased \(renderer.aliasedRenderTargets.sorted()) lacks \(target)")
+    }
+
     // MARK: Helpers
+
+    private static func firstWriterTarget(_ renderer: WPEParityFrameRenderer) -> WPEResourceID? {
+        renderer.frames[0].draws.values.lazy.compactMap { description -> WPEResourceID? in
+            guard case let .scene(draw) = description, draw.shader == "firstwriter" else { return nil }
+            return draw.target
+        }.first
+    }
+
+    /// A 32x32 solid layer whose first effect draws `firstwriter` into its own FBO and then passes that FBO through;
+    /// a second effect keeps the first one out of the passes that draw with the layer's matrices.
+    private func makeFirstWriterDriver(discards: Bool) async throws -> DriverHarness {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
+        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
+            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
+        }
+        let compiler: WPEParityHelperShaderCompiler
+        switch WPEParityShaderToolchain.makeCompiler() {
+        case let .success(found): compiler = found
+        case let .failure(reason): throw XCTSkip("\(reason)")
+        }
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_TexCoord;
+        void main() {
+        \tgl_Position = vec4(a_Position, 1.0);
+        \tv_TexCoord = a_TexCoord;
+        }
+        """
+        // A 4x2 checker of black and white cells before 0.1 s, green after; `discards` drops the right half then.
+        let fragment = """
+        varying vec2 v_TexCoord;
+        uniform float g_Time;
+        void main() {
+        \(discards ? "\tif (g_Time > 0.1 && v_TexCoord.x > 0.5) discard;" : "")
+        \tfloat column = step(0.25, v_TexCoord.x) - step(0.5, v_TexCoord.x) + step(0.75, v_TexCoord.x);
+        \tfloat on = abs(column - step(0.5, v_TexCoord.y));
+        \tgl_FragColor = g_Time > 0.1 ? vec4(0.0, 1.0, 0.0, 1.0) : vec4(on, on, on, 1.0);
+        }
+        """
+        let opaque: [String: Any] = ["blending": "normal", "depthtest": "disabled", "depthwrite": "disabled",
+                                     "cullmode": "nocull"]
+        let effect: [String: Any] = [
+            "fbos": [["name": "firstwriter", "format": "rgba8888", "scale": 1]],
+            "passes": [
+                ["material": "materials/firstwriter.json", "target": "firstwriter"],
+                ["material": "materials/util/passthrough.json", "bind": [["index": 0, "name": "firstwriter"]]],
+            ],
+        ]
+        let files: [String: Data] = try [
+            "shaders/firstwriter.vert": Data(vertex.utf8),
+            "shaders/firstwriter.frag": Data(fragment.utf8),
+            "materials/firstwriter.json": JSONSerialization.data(withJSONObject: [
+                "passes": [opaque.merging(["shader": "firstwriter"]) { $1 }],
+            ]),
+            "effects/firstwriter.json": JSONSerialization.data(withJSONObject: effect),
+            "materials/tail.json": JSONSerialization.data(withJSONObject: [
+                "passes": [opaque.merging(["shader": "passthrough", "textures": [NSNull()]]) { $1 }],
+            ]),
+            "effects/tail.json": JSONSerialization.data(withJSONObject: ["passes": [["material": "materials/tail.json"]]]),
+        ]
+        let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }, .directory(wpeAssets)])
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 32, "height": 32], "clearcolor": "0 0 0",
+                        "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
+            "objects": [["id": 1, "name": "layer", "image": "models/util/solidlayer.json", "origin": "16 16 0",
+                         "size": "32 32", "color": "0 0 0", "alpha": 1,
+                         "effects": [["id": 7, "file": "effects/firstwriter.json"], ["id": 8, "file": "effects/tail.json"]]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:])
+        var settings = WPEParityProgramSettings(bloom: false)
+        settings.renderTargetAliasing = true
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        try await driver.load(document: document, assets: assets, settings: settings,
+                              drawableSize: CGSize(width: 32, height: 32), pixelFormat: .rgba8Unorm,
+                              compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+        return DriverHarness(driver: driver, json: json)
+    }
 
     private static func sampledTexture(_ renderer: WPEParityFrameRenderer, objectID: String,
                                        effect: Bool) -> MTLTexture? {
@@ -274,8 +390,8 @@ final class WPEParityEffectToggleTests: XCTestCase {
         json["objects"] = objects
     }
 
-    private func encode(_ renderer: WPEParityFrameRenderer) async throws {
-        guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+    private func encode(_ renderer: WPEParityFrameRenderer, elapsed: Double = 1.0 / 60) async throws {
+        guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: elapsed) else {
             return XCTFail("frame was skipped")
         }
         await commandBuffer.completed()
