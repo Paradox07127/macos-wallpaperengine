@@ -137,9 +137,9 @@ final class WPEParityVideoTextures {
                 let loop = state.scriptField("video.loop", of: owner)
                 let previous = observedControls[owner]
                 if rate != previous?.rate, case let .vector(value)? = rate,
-                   value.x.isFinite, (0.5 ... 2).contains(value.x),
+                   value.x.isFinite, value.x > 0,
                    source.scriptPlaybackSnapshot?.rate != Double(value.x) {
-                    source.scriptSetRate(Double(value.x))
+                    source.scriptSetAnyPositiveRate(Double(value.x))
                 }
                 if loop != previous?.loop, case let .vector(value)? = loop, value.x.isFinite,
                    source.scriptPlaybackSnapshot?.loop != (value.x != 0) {

@@ -517,7 +517,13 @@ final class WPEVideoTextureSource {
     }
 
     func scriptSetRate(_ rate: Double) {
-        guard !isInvalidated, rate.isFinite, (0.5 ... 2).contains(rate) else { return }
+        guard (0.5 ... 2).contains(rate) else { return }
+        scriptSetAnyPositiveRate(rate)
+    }
+
+    /// Wallpaper Engine forwards a scene script's rate to the player unclamped; only non-positive or non-finite rates are dropped.
+    func scriptSetAnyPositiveRate(_ rate: Double) {
+        guard !isInvalidated, rate.isFinite, rate > 0 else { return }
         enterScriptControlledMode()
         scriptRate = rate
         reconcilePlaybackIntent()

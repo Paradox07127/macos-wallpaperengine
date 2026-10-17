@@ -261,13 +261,19 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(field("b", "rate"), .vector(SIMD4(0.75, 0, 0, 0)),
                        "A field generation change must not replay a's old rate onto the shared source")
 
-        // Preserve the existing source's supported rate policy until the Windows out-of-range rule is known.
         state.setScriptField("video.rate", of: "b", to: .vector(SIMD4(3, 0, 0, 0)), invalidating: .mediaPlayer)
         videos.applyScriptFields(state: &state)
-        XCTAssertEqual(field("a", "rate"), .vector(SIMD4(0.75, 0, 0, 0)))
+        XCTAssertEqual(videos.playbackSnapshot(ownerID: "a")?.rate, 3, "Scene scripts pass rates above 2 through")
+        XCTAssertEqual(field("a", "rate"), .vector(SIMD4(3, 0, 0, 0)))
+        for rejected: Float in [0, -1, .nan] {
+            state.setScriptField("video.rate", of: "b", to: .vector(SIMD4(rejected, 0, 0, 0)),
+                                 invalidating: .mediaPlayer)
+            videos.applyScriptFields(state: &state)
+            XCTAssertEqual(videos.playbackSnapshot(ownerID: "b")?.rate, 3, "Rate \(rejected) must be ignored")
+        }
         videos.setOwners(["b": texture])
         XCTAssertNil(field("a", "rate"))
-        XCTAssertEqual(field("b", "rate"), .vector(SIMD4(0.75, 0, 0, 0)))
+        XCTAssertEqual(field("b", "rate"), .vector(SIMD4(3, 0, 0, 0)))
         XCTAssertTrue(videos.textures[0] === texture)
     }
 
