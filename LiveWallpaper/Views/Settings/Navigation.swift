@@ -551,7 +551,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     label: "Caches",
                     anchor: .storageCaches,
                     rows: ["Scene Video Texture Cache", "Workshop Search Cache", "Workshop Preview Images",
-                           "Shader Translation Cache", "Audio Transcode Cache", "Web Wallpaper Cache", "Other System Caches",
+                           "Shader Translation Cache", "Compressed Texture Cache", "Audio Transcode Cache", "Web Wallpaper Cache", "Other System Caches",
                            "Memory Caches"],
                     keywords: [
                         "cache", "caches", "video cache", "scene video texture cache",

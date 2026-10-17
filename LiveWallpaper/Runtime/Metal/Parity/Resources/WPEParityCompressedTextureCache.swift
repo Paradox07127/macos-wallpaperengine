@@ -22,7 +22,7 @@ final class WPEParityCompressedTextureCache: Sendable {
 
     private static let schema = 1
     private static let magic = Data("LWTC".utf8)
-    private let rootURL: URL
+    let rootURL: URL
     private let sizeBudget: Int
     private let index = OSAllocatedUnfairLock(initialState: Index())
 
@@ -106,6 +106,25 @@ final class WPEParityCompressedTextureCache: Sendable {
         index.withLock { state in
             if let removed = state.files?.removeValue(forKey: key) {
                 state.bytes -= removed.bytes
+            }
+        }
+    }
+
+    /// Bytes of the files the index tracks.
+    var diskBytes: Int {
+        loadIndexIfNeeded()
+        return index.withLock { $0.bytes }
+    }
+
+    /// Unlinking leaves a reader's mapped pages valid, and files are only ever replaced by rename, never rewritten.
+    func removeAll() {
+        index.withLock { state in
+            // nil makes the next access rescan, so a write that lands mid-clear is counted from disk.
+            state.files = nil
+            state.bytes = 0
+            let fileManager = FileManager.default
+            for url in (try? fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil)) ?? [] {
+                try? fileManager.removeItem(at: url)
             }
         }
     }

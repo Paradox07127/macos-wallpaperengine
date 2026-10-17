@@ -58,7 +58,32 @@ struct StorageSourceCoverageTests {
         }
         #expect(AppStorageLocation.Kind.localWallpapers.canRevealInFinder)
         #expect(!AppStorageLocation.Kind.localWallpapers.canClear)
-        #expect(AppStorageLocation.Kind.allCases.filter(\.canClear).count == 6)
+        #expect(AppStorageLocation.Kind.allCases.filter(\.canClear).count == 7)
+    }
+
+    @Test @MainActor func compressedTextureCacheIsAClearableLocationAtTheRenderersRoot() {
+        let kind = AppStorageLocation.Kind.compressedTextures
+        #expect(kind.isCache && kind.canClear && kind.canRevealInFinder)
+        let locations = AppStorageLocation.current(systemWallpaperRoot: FileManager.default.temporaryDirectory)
+        #expect(locations.filter { $0.kind == kind }.map(\.url) == [WPEParityTextureCompression.shared.cache.rootURL])
+    }
+
+    @Test func clearingTheCompressedTextureCacheDropsEveryEntry() throws {
+        let caches = FileManager.default.temporaryDirectory.appendingPathComponent("compressed-textures-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: caches) }
+        let cache = WPEParityCompressedTextureCache(cachesURL: caches)
+        let levels = [Data(repeating: 7, count: 4096), Data(repeating: 9, count: 1024)]
+        cache.write(.blocks(levels), for: "first")
+        cache.write(.rejected, for: "second")
+        #expect(cache.diskBytes > 0)
+        #expect(cache.read("first", levelByteCounts: levels.map(\.count)) != nil)
+
+        cache.removeAll()
+
+        #expect(cache.diskBytes == 0)
+        #expect(cache.read("first", levelByteCounts: levels.map(\.count)) == nil)
+        #expect(cache.read("second", levelByteCounts: []) == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: cache.rootURL.path).isEmpty)
     }
 
     @Test func bundleAndCredentialsAreDisjointFromSupportData() async throws {

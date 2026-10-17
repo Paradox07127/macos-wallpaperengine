@@ -7,7 +7,7 @@ extension WPECacheManagementView {
     private func diskColor(_ kind: AppStorageLocation.Kind) -> Color {
         switch kind {
         case .video, .configuration: DesignTokens.Colors.accent
-        case .query, .shaders, .temporary: DesignTokens.Colors.LibraryTint.schemes
+        case .query, .shaders, .compressedTextures, .temporary: DesignTokens.Colors.LibraryTint.schemes
         case .previews, .diagnostics: DesignTokens.Colors.Gauge.medium
         case .audio, .webData: DesignTokens.Colors.LibraryTint.aerials
         case .webCache, .covers, .legacyScenes: DesignTokens.Colors.Gauge.low

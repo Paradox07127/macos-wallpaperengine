@@ -6,23 +6,23 @@ import LiveWallpaperCore
 /// including hidden files; directory symlinks are never followed during a walk.
 struct AppStorageLocation: Sendable, Identifiable {
     enum Kind: String, Sendable, CaseIterable {
-        case video, query, previews, shaders, audio, webCache
+        case video, query, previews, shaders, compressedTextures, audio, webCache
         case configuration, covers, legacyScenes, diagnostics, logs
         case webData, preferences, support, systemCaches, temporary, systemMetadata
         case steamTools, steamProfiles, credentials, application, localWallpapers
 
         var isCache: Bool {
-            [.video, .query, .previews, .shaders, .audio, .webCache, .systemCaches].contains(self)
+            [.video, .query, .previews, .shaders, .compressedTextures, .audio, .webCache, .systemCaches].contains(self)
         }
 
         var canClear: Bool {
-            [.video, .query, .previews, .shaders, .audio, .webCache].contains(self)
+            [.video, .query, .previews, .shaders, .compressedTextures, .audio, .webCache].contains(self)
         }
 
         /// Account and application data are informational; reveal only content and regenerable files.
         var canRevealInFinder: Bool {
             switch self {
-            case .video, .query, .previews, .shaders, .audio, .webCache,
+            case .video, .query, .previews, .shaders, .compressedTextures, .audio, .webCache,
                  .covers, .legacyScenes, .diagnostics, .logs, .temporary, .localWallpapers: true
             default: false
             }
@@ -136,6 +136,7 @@ extension AppStorageLocation {
             .init(kind: .query, url: WorkshopQueryCache.defaultDirectoryURL()),
             .init(kind: .previews, url: WorkshopPreviewDiskCache.defaultDirectoryURL()),
             .init(kind: .shaders, url: WPEShaderTranslationCache.defaultRootURL),
+            .init(kind: .compressedTextures, url: WPEParityTextureCompression.shared.cache.rootURL),
             .init(kind: .audio, url: OggAudioTranscoder.defaultCacheDirectory),
             .init(kind: .webCache, url: caches.appendingPathComponent("WebKit", isDirectory: true)),
             .init(kind: .configuration, url: configuration),
