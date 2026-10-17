@@ -64,9 +64,9 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         surface
     }
 
-    func updateSpanViewport(_ canvas: CGRect, density: CGFloat, interactiveFrames: [CGRect]) {
+    func updateSpanViewport(_ canvas: CGRect, density: CGFloat, interactiveFrames: [CGRect], mirrorFrames: [CGRect] = []) {
         updateFrame(to: canvas)
-        surface.pointerGeometryOverride = .init(viewFrameInScreen: canvas, interactiveFrames: interactiveFrames)
+        surface.pointerGeometryOverride = .init(viewFrameInScreen: canvas, interactiveFrames: interactiveFrames, mirrorFrames: mirrorFrames)
         surface.mailbox.publishGeometry(surface.pointerGeometryOverride!)
         // updateFrame refreshed against the previous override; panels must follow the new canvas.
         refreshHotZones()
@@ -560,9 +560,21 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         guard hasRenderer, hotZonesActive || hotZoneController != nil else { return }
         let controller = hotZoneController ?? makeHotZoneController()
         controller.isEnabled = hotZonesActive
-        let viewFrame = hotZoneViewFrame
-        let zones = surface.mailbox.interactiveZones.map { SceneHotZoneRouter.screenRect(forZone: $0, in: viewFrame) }
-        controller.update(zones: Self.clippedHotZoneRects(zones, to: hotZoneClipFrames))
+        controller.update(zones: Self.hotZoneScreenRects(surface.mailbox.interactiveZones, viewFrame: hotZoneViewFrame,
+                                                         mirrorFrames: hotZoneMirrorFrames, clips: hotZoneClipFrames))
+    }
+
+    /// `zones` are drawable UV; each mirrored display shows the whole view, so every zone gets a rect on each of them.
+    nonisolated static func hotZoneScreenRects(_ zones: [CGRect], viewFrame: CGRect, mirrorFrames: [CGRect],
+                                               clips: [CGRect]?) -> [CGRect] {
+        let frames = mirrorFrames.isEmpty ? [viewFrame] : mirrorFrames
+        let rects = frames.flatMap { frame in zones.map { SceneHotZoneRouter.screenRect(forZone: $0, in: frame) } }
+        return clippedHotZoneRects(rects, to: clips)
+    }
+
+    /// The mirrored display under `location` stands in for the view, matching how the mailbox maps that location.
+    nonisolated static func hotZoneViewFrame(at location: CGPoint, viewFrame: CGRect, mirrorFrames: [CGRect]) -> CGRect {
+        mirrorFrames.first { $0.contains(location) } ?? viewFrame
     }
 
     /// The same geometry the surface's pointer publisher writes into the mailbox, read fresh on every refresh.
@@ -570,9 +582,15 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         (surface.pointerGeometryOverride ?? WPEPointerPublisher.geometry(of: surface.mtkView)).viewFrameInScreen
     }
 
+    private var hotZoneMirrorFrames: [CGRect] {
+        surface.pointerGeometryOverride?.mirrorFrames ?? []
+    }
+
     private func makeHotZoneController() -> SceneHotZoneController {
         let controller = SceneHotZoneController { [weak self] event in
-            guard let self, hotZoneRouter.route(event, to: surface.mailbox, viewFrame: hotZoneViewFrame) else { return }
+            guard let self else { return }
+            let viewFrame = Self.hotZoneViewFrame(at: event.screenLocation, viewFrame: hotZoneViewFrame, mirrorFrames: hotZoneMirrorFrames)
+            guard hotZoneRouter.route(event, to: surface.mailbox, viewFrame: viewFrame) else { return }
             Task { [renderActor] in await renderActor.renderFrame() }
         }
         hotZoneController = controller

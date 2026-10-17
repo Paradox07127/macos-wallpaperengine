@@ -46,6 +46,52 @@ struct SceneHotZoneRoutingTests {
                 "the panel would stay at the previous canvas and swallow desktop clicks there")
     }
 
+    @Test("A mirrored canvas gets hot-zone panels on every mirrored screen, not just the largest one")
+    func mirroredViewportPlacesPanelsOnEachScreen() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let window = VideoWallpaperWindow(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let session = SceneWallpaperSession(window: window, renderActor: WPEDisplayRenderActor(backing: .renderThread),
+                                            surface: surface)
+        defer { session.cleanup() }
+        let zone = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        session.setClickCaptureEnabled(true)
+        surface.mailbox.publishInteractiveZones([zone])
+        let canvas = CGRect(x: 1000, y: 2000, width: 800, height: 400)
+        let small = CGRect(x: 3000, y: 4000, width: 400, height: 200)
+        session.updateSpanViewport(canvas, density: 1, interactiveFrames: [canvas, small], mirrorFrames: [canvas, small])
+        for frame in [canvas, small] {
+            let expected = TestHostWindowParking.parkedFrame(SceneHotZoneRouter.screenRect(forZone: zone, in: frame))
+            #expect(NSApp.windows.contains { $0 is NSPanel && $0.isVisible && $0.frame == expected },
+                    "a mirrored screen would have no panel, so its clickable objects would never receive a press")
+        }
+    }
+
+    @Test("Each mirrored screen gets its own copy of every zone, scaled to that screen and clipped to the clip frames")
+    func mirroredZonesProjectPerScreen() {
+        let zone = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        let large = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        let small = CGRect(x: 2560, y: 0, width: 1920, height: 1080)
+        let onLarge = CGRect(x: 0, y: 720, width: 1280, height: 720)
+        let onSmall = CGRect(x: 2560, y: 540, width: 960, height: 540)
+        #expect(SceneWallpaperSession.hotZoneScreenRects([zone], viewFrame: large, mirrorFrames: [large, small], clips: [large, small])
+            == [onLarge, onSmall], "the smaller screen would get no panel or one sized for the larger screen")
+        #expect(SceneWallpaperSession.hotZoneScreenRects([zone], viewFrame: large, mirrorFrames: [large, small], clips: [small])
+            == [onSmall], "a screen with clicks off would still swallow presses")
+        #expect(SceneWallpaperSession.hotZoneScreenRects([zone], viewFrame: large, mirrorFrames: [], clips: nil) == [onLarge])
+    }
+
+    @Test("A hot-zone press on a mirrored screen resolves against that screen; elsewhere against the view")
+    func mirroredEventViewFrame() {
+        let large = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        let small = CGRect(x: 2560, y: 0, width: 1920, height: 1080)
+        #expect(SceneWallpaperSession.hotZoneViewFrame(at: CGPoint(x: 3000, y: 100), viewFrame: large, mirrorFrames: [large, small])
+            == small, "a release dragged off the smaller screen would clamp against the larger one")
+        #expect(SceneWallpaperSession.hotZoneViewFrame(at: CGPoint(x: 9000, y: 100), viewFrame: large, mirrorFrames: [large, small])
+            == large)
+        #expect(SceneWallpaperSession.hotZoneViewFrame(at: CGPoint(x: 3000, y: 100), viewFrame: large, mirrorFrames: []) == large)
+    }
+
     @Test("A drawable-UV zone maps to the screen rect it covers, flipping to a bottom-left origin", arguments: [
         (CGRect(x: 100, y: 200, width: 400, height: 300), CGRect(x: 0.25, y: 0.1, width: 0.5, height: 0.2),
          CGRect(x: 200, y: 410, width: 200, height: 60)),

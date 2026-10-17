@@ -30,12 +30,19 @@ final class SceneSpanWallpaperGroup {
         case mirror
     }
 
+    struct MirrorInput: Equatable {
+        var mouseInteraction: Bool
+        var clickCapture: Bool
+    }
+
     let id: UUID
     var descriptor: SceneDescriptor
     let owner: SceneWallpaperSession
     let frames: WPESceneSpanFrames
     let density: CGFloat
     let layout: Layout
+    /// The input settings the mirror lead was admitted with; nil = span group.
+    let mirrorInput: MirrorInput?
     private var members: [CGDirectDisplayID: Member] = [:]
     private var displayFrames: [CGDirectDisplayID: CGRect]
     private var recovery: Task<Void, Never>?
@@ -44,7 +51,8 @@ final class SceneSpanWallpaperGroup {
     var onMemberDiverged: ((CGDirectDisplayID) -> Void)?
 
     init(id: UUID, descriptor: SceneDescriptor, owner: SceneWallpaperSession,
-         frames: WPESceneSpanFrames, density: CGFloat, displayFrames: [CGDirectDisplayID: CGRect], layout: Layout = .span) {
+         frames: WPESceneSpanFrames, density: CGFloat, displayFrames: [CGDirectDisplayID: CGRect], layout: Layout = .span,
+         mirrorInput: MirrorInput? = nil) {
         self.id = id
         self.descriptor = descriptor
         self.owner = owner
@@ -52,6 +60,7 @@ final class SceneSpanWallpaperGroup {
         self.density = density
         self.displayFrames = displayFrames
         self.layout = layout
+        self.mirrorInput = mirrorInput
         owner.onRuntimeErrorChange = { [weak self] in
             self?.sessions.forEach { $0.onRuntimeErrorChange?() }
         }
@@ -178,13 +187,8 @@ final class SceneSpanWallpaperGroup {
         owner.setHibernationEligible(!sessions.isEmpty && sessions.allSatisfy(\.hibernationEligible))
         owner.setCriticalMemoryPressureActive(sessions.contains(where: \.criticalPressure))
         let interactiveFrames = active.filter { $0.mouseEnabled || $0.clickEnabled }.map(\.displayFrame)
-        owner.updateSpanViewport(canvasFrame, density: density, interactiveFrames: interactiveFrames)
-        if layout == .mirror {
-            let geometry = WPEPointerMailbox.Geometry(viewFrameInScreen: canvasFrame, interactiveFrames: interactiveFrames,
-                                                      mirrorFrames: Array(displayFrames.values))
-            owner.spanSurface.pointerGeometryOverride = geometry
-            owner.spanSurface.mailbox.publishGeometry(geometry)
-        }
+        owner.updateSpanViewport(canvasFrame, density: density, interactiveFrames: interactiveFrames,
+                                 mirrorFrames: layout == .mirror ? Array(displayFrames.values) : [])
         owner.spanSurface.setSpanClockScreen(Self.clockLeader(active.compactMap { $0.wallpaperWindow?.screen },
                                                               refreshRate: { $0.configuredFramesPerSecond }))
     }
@@ -400,11 +404,20 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     func setMouseInteractionEnabled(_ enabled: Bool) {
+        guard !leavesMirrorLead(enabled, lead: group.mirrorInput?.mouseInteraction, current: mouseEnabled) else { return }
         mouseEnabled = enabled; group.reconcile()
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
+        guard !leavesMirrorLead(enabled, lead: group.mirrorInput?.clickCapture, current: clickEnabled) else { return }
         clickEnabled = enabled; reconcile()
+    }
+
+    /// Activation parks click capture off until commit, so a call that leaves this member's value unchanged is not a divergence.
+    private func leavesMirrorLead(_ enabled: Bool, lead: Bool?, current: Bool) -> Bool {
+        guard let lead, enabled != lead, enabled != current else { return false }
+        group.onMemberDiverged?(screenID)
+        return true
     }
 
     func setHotZoneInputSuspended(_ suspended: Bool) {

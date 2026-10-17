@@ -118,7 +118,8 @@ extension ScreenManager {
         ) else { return nil }
         let id = UUID()
         let group = SceneSpanWallpaperGroup(id: id, descriptor: lead.descriptor, owner: owner, frames: frames,
-                                            density: density, displayFrames: layouts, layout: .mirror)
+                                            density: density, displayFrames: layouts, layout: .mirror,
+                                            mirrorInput: .init(mouseInteraction: lead.mouseInteraction, clickCapture: lead.clickCapture))
         // A superseded group keeps presenting until its members are restored into this one.
         sceneMirrorGroups = sceneMirrorGroups.filter { !$0.value.lead.canMirror(lead) }
         sceneMirrorGroups[id] = SceneMirrorEntry(lead: lead, group: group)

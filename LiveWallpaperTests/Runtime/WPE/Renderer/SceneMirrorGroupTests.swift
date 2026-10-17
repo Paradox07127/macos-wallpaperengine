@@ -80,6 +80,48 @@ struct SceneMirrorGroupTests {
         #expect(group.canvasFrame == screens[1].frame)
     }
 
+    @Test("Changing one mirrored screen's mouse or click setting restores that screen on a runtime of its own")
+    func inputChangeDivergesMember() throws {
+        let (owner, _) = try SceneSpanGroupTests.makeOwner()
+        defer { owner.cleanup() }
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
+                                            density: 1, displayFrames: [:], layout: .mirror,
+                                            mirrorInput: .init(mouseInteraction: true, clickCapture: true))
+        var diverged: [CGDirectDisplayID] = []
+        group.onMemberDiverged = { diverged.append($0) }
+        let member = try group.makeMember(for: screen, configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(Self.descriptor)))
+        defer { member.cleanup() }
+        member.setMouseInteractionEnabled(true)
+        member.setClickCaptureEnabled(false)
+        member.setClickCaptureEnabled(true)
+        #expect(diverged.isEmpty, "activation parking click capture off until commit would rebuild the screen in a loop")
+
+        member.setMouseInteractionEnabled(false)
+        #expect(diverged == [screen.id], "the screen would keep showing mouse-driven effects driven from the other screen")
+        #expect(member.mouseEnabled, "the shared runtime would take the diverging screen's setting")
+        member.setClickCaptureEnabled(false)
+        #expect(diverged == [screen.id, screen.id], "the screen would keep forwarding clicks into the shared runtime")
+        #expect(member.clickEnabled)
+    }
+
+    @Test("Changing a spanned screen's mouse setting stays on the shared runtime")
+    func spanInputChangeStaysShared() throws {
+        let (owner, _) = try SceneSpanGroupTests.makeOwner()
+        defer { owner.cleanup() }
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
+                                            density: 1, displayFrames: [:])
+        var diverged: [CGDirectDisplayID] = []
+        group.onMemberDiverged = { diverged.append($0) }
+        let member = try group.makeMember(for: screen, configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(Self.descriptor)))
+        defer { member.cleanup() }
+        member.setMouseInteractionEnabled(false)
+        member.setClickCaptureEnabled(true)
+        #expect(diverged.isEmpty)
+        #expect(!member.mouseEnabled && member.clickEnabled)
+    }
+
     @Test("The shared clock follows the fastest playing screen")
     func clockFollowsHighestRefresh() {
         let members: [(id: CGDirectDisplayID, hz: Int)] = [(1, 60), (2, 120), (3, 120)]
@@ -102,7 +144,8 @@ struct SceneMirrorGroupTests {
         defer { owner.cleanup() }
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: Self.descriptor, owner: owner, frames: WPESceneSpanFrames(),
-                                            density: 1, displayFrames: [screen.id &+ 1: canvas], layout: .mirror)
+                                            density: 1, displayFrames: [screen.id &+ 1: canvas], layout: .mirror,
+                                            mirrorInput: .init(mouseInteraction: true, clickCapture: true))
         let member = try group.makeMember(for: screen, configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(Self.descriptor)))
         defer { member.cleanup() }
         member.updateFrame(to: small)
