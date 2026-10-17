@@ -287,6 +287,8 @@ public final class WPEParityScriptEngine {
     /// Rebound like materialFunctionHandler. Arguments: layer ID, kind, the callback's flushed state; returns the
     /// native vfunc+0x80 matrix (images W′, others W), nil = no transform owner for the layer.
     public var transformMatrixHandler: ((String, WPEParityScriptLayerKind, WPEParitySceneState) -> simd_float4x4?)?
+    /// Rebound like materialFunctionHandler. Runs the body on the image layer's puppet; false = the layer has none.
+    public var puppetHandler: ((String, (inout WPEParityPuppetAnimator) -> Void) -> Bool)?
 
     /// Rebound with the current renderer's prepared artifacts before init and when a renderer takes over.
     public var modelDataAdmissionHandler: ((WPEParitySceneModelData.Shape, WPEParityModelDataMutation) throws
@@ -327,6 +329,14 @@ public final class WPEParityScriptEngine {
     /// The Prelude's `host.animationCommand` op numbers.
     private enum AnimationCommand: Int {
         case play, pause, stop, isPlaying, setFrame, getFrame, getRate, setRate, fps, frameCount, duration
+    }
+
+    /// Native IImageLayer bone and blend-shape methods except the physics pair (140211070.c:332-698); the Prelude's
+    /// `host.puppetCommand` op numbers are these raw values.
+    private enum PuppetCommand: Int {
+        case boneCount, boneIndex, boneParentIndex, boneTransform, setBoneTransform, localBoneTransform
+        case setLocalBoneTransform, localBoneAngles, setLocalBoneAngles, localBoneOrigin, setLocalBoneOrigin
+        case blendShapeIndex, blendShapeWeight, setBlendShapeWeight
     }
 
     /// Consumers may capture the actor's scene RNG only for this synchronous body. Nested scopes restore it.
@@ -1061,6 +1071,99 @@ public final class WPEParityScriptEngine {
         return index
     }
 
+    /// nil = no puppet, an unresolved key, or a world transform without the layer's matrix; setters answer [].
+    private func puppetCommand(_ layer: Layer, _ command: PuppetCommand, key: JSValue, values: [Float]) -> [Float]? {
+        guard let handler = puppetHandler else {
+            configuration.log(1, "bone and blend shape methods are unsupported without a product puppet consumer")
+            return nil
+        }
+        // 1401fdf90.c:1601-1659: a bone's scene matrix is the layer's vfunc+0x80 matrix times its puppet world.
+        var object = matrix_identity_float4x4
+        if command == .boneTransform || command == .setBoneTransform {
+            guard let state = activeState else {
+                configuration.log(1, "getBoneTransform and setBoneTransform are unsupported outside a scene callback")
+                return nil
+            }
+            guard state.pointee.isAlive(layer.id) else { return nil }
+            flushWrites(to: &state.pointee)
+            guard let matrix = transformMatrixHandler?(layer.id, layer.kind, state.pointee) else {
+                configuration.log(1, "getBoneTransform and setBoneTransform are unsupported without a product transform owner")
+                return nil
+            }
+            object = matrix
+        }
+        var result: [Float]?
+        let found = handler(layer.id) { puppet in
+            result = Self.perform(command, on: &puppet, key: key, values: values, object: object)
+        }
+        return found ? result : nil
+    }
+
+    private static func perform(_ command: PuppetCommand, on puppet: inout WPEParityPuppetAnimator, key: JSValue,
+                                values: [Float], object: simd_float4x4) -> [Float]? {
+        // 14020fa10.c:22-95 and 1402105c0.c:18-58: an int32 below the count, or the first entry with that non-empty name.
+        func resolve(count: Int, named: (String) -> Int?) -> Int? {
+            if key.isString {
+                return named(key.toString())
+            }
+            guard key.isNumber, let index = Int(exactly: key.toDouble()), index >= 0, index < count else { return nil }
+            return index
+        }
+        let matrix = values.count == 16 ? simd_float4x4((0 ..< 4).map { SIMD4(values[$0 * 4 ..< $0 * 4 + 4]) }) : nil
+        let vector = values.count == 3 ? SIMD3(values[0], values[1], values[2]) : nil
+        func floats(_ matrix: simd_float4x4) -> [Float] {
+            [matrix.columns.0, matrix.columns.1, matrix.columns.2, matrix.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
+        }
+        switch command {
+        case .boneCount:
+            return [Float(puppet.boneLocal.count)]
+        case .boneIndex:
+            return [Float(puppet.boneIndex(named: key.toString()) ?? -1)]
+        case .blendShapeIndex:
+            return [Float(puppet.blendShapeIndex(named: key.toString()) ?? -1)]
+        case .blendShapeWeight, .setBlendShapeWeight:
+            guard let shape = resolve(count: puppet.blendShapeCount, named: puppet.blendShapeIndex(named:)) else { return nil }
+            guard command == .setBlendShapeWeight else { return [puppet.blendShapeWeight(at: shape)] }
+            guard let weight = values.first else { return nil }
+            puppet.setBlendShapeWeight(weight, at: shape)
+            return []
+        default:
+            break
+        }
+        guard let bone = resolve(count: puppet.boneLocal.count, named: puppet.boneIndex(named:)) else { return nil }
+        let local = puppet.boneLocal[bone]
+        switch command {
+        case .boneParentIndex:
+            return [Float(puppet.parentIndex(of: bone) ?? -1)]
+        case .boneTransform:
+            return floats(object * puppet.boneWorld[bone])
+        case .localBoneTransform:
+            return floats(local)
+        case .localBoneAngles:
+            let angles = WPEParityPuppetAnimator.angles(of: local)
+            return [angles.x, angles.y, angles.z]
+        case .localBoneOrigin:
+            return [local.columns.3.x, local.columns.3.y, local.columns.3.z]
+        case .setBoneTransform:
+            guard let matrix else { return nil }
+            puppet.setBoneWorld(object.inverse * matrix, at: bone)
+        case .setLocalBoneTransform:
+            guard let matrix else { return nil }
+            puppet.setBoneLocal(matrix, at: bone)
+        case .setLocalBoneAngles:
+            guard let vector else { return nil }
+            puppet.setBoneLocal(WPEParityPuppetAnimator.replacingRotation(of: local, angles: vector), at: bone)
+        case .setLocalBoneOrigin:
+            guard let vector else { return nil }
+            var moved = local
+            moved.columns.3 = SIMD4(vector, local.columns.3.w)
+            puppet.setBoneLocal(moved, at: bone)
+        case .boneCount, .boneIndex, .blendShapeIndex, .blendShapeWeight, .setBlendShapeWeight:
+            return nil
+        }
+        return []
+    }
+
     private func installHost(state: WPEParitySceneState) {
         let host = JSValue(newObjectIn: context)!
         func set(_ key: String, _ value: Any) {
@@ -1304,6 +1407,12 @@ public final class WPEParityScriptEngine {
             let columns = [matrix.columns.0, matrix.columns.1, matrix.columns.2, matrix.columns.3]
             return columns.flatMap { [$0.x, $0.y, $0.z, $0.w] }.map { NSNumber(value: $0) } as NSArray
         }
+        let puppetCommand: @convention(block) (Double, Double, JSValue, NSArray) -> NSArray? = { [weak self] index, raw, key, values in
+            guard let self, let index = Self.checkedLayerIndex(index, count: layers.count), layers[index].kind == .image,
+                  let raw = Int(exactly: raw), let command = PuppetCommand(rawValue: raw) else { return nil }
+            let numbers = (values as? [NSNumber])?.map(\.floatValue) ?? []
+            return puppetCommand(layers[index], command, key: key, values: numbers)?.map { NSNumber(value: $0) } as NSArray?
+        }
         // 14018da30.c:7-13: root eye, center, up and zoom as ten numbers.
         let cameraTransforms: @convention(block) () -> NSArray? = { [weak self] in
             guard let self else { return nil }
@@ -1384,6 +1493,7 @@ public final class WPEParityScriptEngine {
         set("animationName", animationName)
         set("lookAtAngles", lookAtAngles)
         set("transformMatrix", transformMatrix)
+        set("puppetCommand", puppetCommand)
         set("cameraTransforms", cameraTransforms)
         set("setCameraTransforms", setCameraTransforms)
         set("cameraKind", WPEParityScriptLayerKind.camera.rawValue)

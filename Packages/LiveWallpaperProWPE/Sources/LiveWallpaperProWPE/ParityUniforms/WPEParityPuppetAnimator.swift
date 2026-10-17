@@ -166,11 +166,14 @@ public struct WPEParityPuppetAnimator: Sendable {
     public private(set) var palette: [simd_float4x4] = []
     /// This frame's world matrix per MDLS bone (puppet+0x2c8), the parent matrix attachments compose with.
     public private(set) var boneWorld: [simd_float4x4] = []
+    /// This frame's local matrix per MDLS bone (puppet+0x310); every update rewrites it from the layers (1401fdf90.c:1506).
+    public private(set) var boneLocal: [simd_float4x4] = []
     /// MDLA +f0 curves, reset to one each update and consumed by the native SKINNING_ALPHA vertex path.
     public private(set) var bonesAlpha: [Float] = []
     /// Authored layer identities whose native ended condition fired in the last object update, in layer order.
     public private(set) var endedLayers: [Int] = []
     private let parents: [Int?]
+    private let boneNames: [String]
     private let restLocal: [simd_float4x4]
     /// puppet+0x230: each rest local split into T, R, S; the first layer's base and every additive reference.
     private let restPose: [Pose]
@@ -202,6 +205,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         }
         // The MDLS parser keeps a parent only when it precedes the bone, so one forward pass composes worlds.
         parents = model.bones.enumerated().map { index, bone in bone.parentIndex.flatMap { $0 < index ? $0 : nil } }
+        boneNames = model.bones.map(\.name)
         let rawLocal = model.bones.map {
             WPEMdlParser.matrix(fromColumnMajorFloats: $0.rawMatrix) ?? matrix_identity_float4x4
         }
@@ -211,6 +215,7 @@ public struct WPEParityPuppetAnimator: Sendable {
         restPose = restLocal.map { Self.pose(of: $0) }
         inverseBindWorld = Self.world(locals: rawLocal, parents: parents).map(\.inverse)
         boneWorld = Self.world(locals: restLocal, parents: parents)
+        boneLocal = restLocal
         palette = boneWorld
         if model.meshes.first.map({ $0.flags & 4 != 0 }) == true {
             bonesAlpha = [Float](repeating: 1, count: restLocal.count)
@@ -271,6 +276,67 @@ public struct WPEParityPuppetAnimator: Sendable {
         guard let index = layers.firstIndex(where: { $0.sceneIndex == sceneIndex }) else { return false }
         layers[index].control(action)
         return true
+    }
+
+    /// The first bone with this non-empty name.
+    public func boneIndex(named name: String) -> Int? {
+        name.isEmpty ? nil : boneNames.firstIndex(of: name)
+    }
+
+    /// nil = a root bone.
+    public func parentIndex(of bone: Int) -> Int? {
+        parents[bone]
+    }
+
+    /// A script write into this frame's pose: descendants recompose now, the next update overwrites it.
+    public mutating func setBoneLocal(_ matrix: simd_float4x4, at bone: Int) {
+        boneLocal[bone] = matrix
+        compose(from: bone)
+    }
+
+    /// Writes the local that puts `bone` at `world` (puppet space) under its parent's current world.
+    public mutating func setBoneWorld(_ world: simd_float4x4, at bone: Int) {
+        setBoneLocal(parents[bone].map { boneWorld[$0].inverse * world } ?? world, at: bone)
+    }
+
+    /// The first mesh0 morph target with this non-empty name.
+    public func blendShapeIndex(named name: String) -> Int? {
+        name.isEmpty ? nil : morph?.targets.firstIndex { $0.name == name }
+    }
+
+    public var blendShapeCount: Int {
+        morphWeights.count
+    }
+
+    public func blendShapeWeight(at index: Int) -> Float {
+        morphWeights[index]
+    }
+
+    /// 1402105c0.c:46-58: a weight below FLT_EPSILON clears the target's bit, `1 << (index & 31)` sign-extended.
+    public mutating func setBlendShapeWeight(_ weight: Float, at index: Int) {
+        morphWeights[index] = weight
+        let bit = UInt64(bitPattern: Int64(Int32(bitPattern: UInt32(1) << UInt32(index & 31))))
+        if abs(weight) < .ulpOfOne {
+            morphMask &= ~bit
+        } else {
+            morphMask |= bit
+        }
+    }
+
+    /// 14020fa10.c:36-57: X, Y, Z radians of the Z·Y·X rotation in the 3×3, read without removing scale.
+    public static func angles(of matrix: simd_float4x4) -> SIMD3<Float> {
+        let (x, y, z) = (matrix.columns.0, matrix.columns.1, matrix.columns.2)
+        let yaw = atan2(x.y, x.x)
+        let pitch = atan2(-x.z, (y.z * y.z + z.z * z.z).squareRoot())
+        let roll = atan2(sin(yaw) * z.x - cos(yaw) * z.y, cos(yaw) * y.y - sin(yaw) * y.x)
+        return SIMD3(roll, pitch, yaw)
+    }
+
+    /// 14020fce0.c:42-62: the 3×3 becomes the unscaled Z·Y·X rotation; the translation column stays.
+    public static func replacingRotation(of matrix: simd_float4x4, angles: SIMD3<Float>) -> simd_float4x4 {
+        var result = simd_float4x4(rotation(euler: angles))
+        result.columns.3 = matrix.columns.3
+        return result
     }
 
     /// 3 float4 per bone for `float4x3 g_Bones[BONECOUNT]`: math rows 0, 1, 2 with translation in .w.
@@ -391,8 +457,15 @@ public struct WPEParityPuppetAnimator: Sendable {
             }
         }
         for bone in poses.indices {
-            let local = poses[bone]?.matrix ?? restLocal[bone]
-            boneWorld[bone] = parents[bone].map { boneWorld[$0] * local } ?? local
+            boneLocal[bone] = poses[bone]?.matrix ?? restLocal[bone]
+        }
+        compose(from: 0)
+    }
+
+    /// Parents precede their children, so recomposing from `first` covers every descendant of it.
+    private mutating func compose(from first: Int) {
+        for bone in first ..< boneLocal.count {
+            boneWorld[bone] = parents[bone].map { boneWorld[$0] * boneLocal[bone] } ?? boneLocal[bone]
             palette[bone] = boneWorld[bone] * inverseBindWorld[bone]
         }
     }

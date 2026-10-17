@@ -484,6 +484,15 @@ final class WPEParityFrameRenderer {
         }
     }
 
+    /// Writes land in the puppet the draw planner reads after this frame's script tick.
+    var scriptPuppet: (String, (inout WPEParityPuppetAnimator) -> Void) -> Bool {
+        { [weak self] id, body in
+            guard let self, puppets[id] != nil else { return false }
+            body(&puppets[id]!)
+            return true
+        }
+    }
+
     /// Nil when the object has no loaded particle system.
     var scriptParticleSystem: (String, WPEParityScriptEngine.ParticleCommand, Int32) -> Double? {
         { [weak self] id, command, count in
@@ -962,6 +971,7 @@ final class WPEParityFrameRenderer {
         script?.engine.transformMatrixHandler = scriptTransformMatrix
         script?.engine.textureAnimationHandler = scriptTextureAnimation
         script?.engine.animationLayerHandler = scriptAnimationLayer
+        script?.engine.puppetHandler = scriptPuppet
         script?.engine.particleSystemHandler = scriptParticleSystem
         script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
@@ -1043,6 +1053,7 @@ final class WPEParityFrameRenderer {
         script.engine.videoTextureHandler = scriptVideoCommand
         script.engine.textureAnimationHandler = scriptTextureAnimation
         script.engine.animationLayerHandler = scriptAnimationLayer
+        script.engine.puppetHandler = scriptPuppet
         script.engine.particleSystemHandler = scriptParticleSystem
         script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission

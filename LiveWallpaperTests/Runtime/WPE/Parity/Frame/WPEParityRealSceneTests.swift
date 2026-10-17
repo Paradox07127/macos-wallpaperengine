@@ -314,11 +314,56 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertEqual(renderer.droppedParticleBatches, 0)
     }
 
-    /// Loads a Workshop scene from the Steam library through the product driver, scripts included.
-    private func loadWorkshopScene(_ workshopID: String) async throws -> WPEParitySceneDriver {
+    /// Workshop 3749463715: a press near objects[16]'s puppet picks its nearest bone with getBoneCount and
+    /// getBoneTransform, and each update while held moves it toward the cursor with setBoneTransform.
+    func testScene3749463715ScriptDragMovesPuppetBones() async throws {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let samples = home.appending(path: "Developer/wpe-fixtures/workshop-samples-2026-10-17/steamapps",
+                                     directoryHint: .isDirectory)
+        let driver = try await loadWorkshopScene("3749463715", library: samples)
+        defer { driver.cleanup() }
+        let renderer = try XCTUnwrap(driver.renderer)
+        let layer = CAMetalLayer()
+        layer.device = renderer.backbuffer.device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: Self.width, height: Self.height)
+        var timestamp = 100.0
+        func bones(pointer: SIMD2<Double>, buttonDown: Bool) async throws -> [Float]? {
+            timestamp += 1.0 / 60
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: timestamp, pointer: pointer,
+                                                                     buttonDown: buttonDown))
+            await command.completed()
+            XCTAssertNil(command.error)
+            return renderer.lastFrameDraws.lazy.compactMap { operation, draw -> [Float]? in
+                guard case let .scene(scene)? = renderer.frames[0].draws[operation], scene.objectID == "562",
+                      case let .array(matrices)? = draw.constants[.vertex]?["g_Bones"] else { return nil }
+                return matrices.flatMap { value -> [Float] in
+                    guard case let .matrix(matrix) = value else { return [] }
+                    return matrix.columns.flatMap(\.self)
+                }
+            }.first
+        }
+        let first = try await bones(pointer: SIMD2(0.02, 0.02), buttonDown: false)
+        let idle = try await bones(pointer: SIMD2(0.02, 0.02), buttonDown: false)
+        let quad = try XCTUnwrap(renderer.cursorQuad("562", camera: renderer.pathCamera))
+        let center = (quad.0 + quad.1 + quad.2 + quad.3) / 4 / renderer.logicalSize
+        let press = SIMD2<Double>(Double(center.x), Double(center.y))
+        let held = try await bones(pointer: press, buttonDown: true)
+        let dragged = try await bones(pointer: press + SIMD2(30, 0) / SIMD2(Double(Self.width), Double(Self.height)),
+                                      buttonDown: true)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertFalse(engine.exceptions.contains { $0.contains("TypeError") }, engine.exceptions.joined(separator: "\n"))
+        XCTAssertNotNil(idle, "objects[16] uploads no g_Bones")
+        XCTAssertEqual(first, idle, "bones moved without a script write")
+        XCTAssertNotEqual(held, dragged, "the dragged bone did not reach g_Bones")
+    }
+
+    /// Loads a Workshop scene through the product driver, scripts included, from `library` (default: the Steam
+    /// library's steamapps); WPE's own assets always come from the Steam library or WPE_ASSETS_DIR.
+    private func loadWorkshopScene(_ workshopID: String, library: URL? = nil) async throws -> WPEParitySceneDriver {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
-        let folder = steam.appending(path: "workshop/content/431960/\(workshopID)", directoryHint: .isDirectory)
+        let folder = (library ?? steam).appending(path: "workshop/content/431960/\(workshopID)", directoryHint: .isDirectory)
         let package = folder.appending(path: "scene.pkg")
         let engineRoot = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"]
             .map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? steam.appending(path: "common/wallpaper_engine")

@@ -334,6 +334,47 @@ enum WPEParityScriptLayers {
         axis.x, axis.y, axis.z, camera ? 1 : 0, yawOnly ? 1 : 0);
       if (angles) write(layer.__base + anglesField.rel, 2, false, new Vec3(angles[0], angles[1], angles[2]));
     }
+    // IImageLayer bones and blend shapes (140211070.c:332-777). Op numbers are WPEParityScriptEngine.PuppetCommand
+    // raw values; the host answers null without a puppet or for an unresolved key, which reads as undefined.
+    function puppetCommand(layer, op, key, mask, values = []) {
+      if (!liveLayer(layer)) return;
+      const a = mask ? argument(key, mask) : { value: 0 };
+      const r = a ? host.puppetCommand(layer.__index, op, a.value, values) : null;
+      return r == null ? undefined : r;
+    }
+    const boneKey = 8 | 0x200;
+    const puppetMethods = {
+      getBoneCount() { const r = puppetCommand(this, 0); return r && r[0]; },
+      getBoneIndex(name) { const r = puppetCommand(this, 1, name, 0x200); return r && r[0]; },
+      getBoneParentIndex(child) { const r = puppetCommand(this, 2, child, boneKey); return r && r[0]; },
+      getBoneTransform(bone) { const r = puppetCommand(this, 3, bone, boneKey); return r && new Mat4(r); },
+      setBoneTransform(bone, transform) {
+        if (transform instanceof Mat4) puppetCommand(this, 4, bone, boneKey, transform.m);
+      },
+      getLocalBoneTransform(bone) { const r = puppetCommand(this, 5, bone, boneKey); return r && new Mat4(r); },
+      setLocalBoneTransform(bone, transform) {
+        if (transform instanceof Mat4) puppetCommand(this, 6, bone, boneKey, transform.m);
+      },
+      getLocalBoneAngles(bone) { const r = puppetCommand(this, 7, bone, boneKey); return r && new Vec3(r[0], r[1], r[2]); },
+      setLocalBoneAngles(bone, angles) {
+        const a = argument(angles, 0x20);
+        if (a) puppetCommand(this, 8, bone, boneKey, [a.value.x, a.value.y, a.value.z]);
+      },
+      getLocalBoneOrigin(bone) { const r = puppetCommand(this, 9, bone, boneKey); return r && new Vec3(r[0], r[1], r[2]); },
+      setLocalBoneOrigin(bone, origin) {
+        const a = argument(origin, 0x20);
+        if (a) puppetCommand(this, 10, bone, boneKey, [a.value.x, a.value.y, a.value.z]);
+      },
+      getBlendShapeIndex(name) { const r = puppetCommand(this, 11, name, 0x200); return r && r[0]; },
+      getBlendShapeWeight(shape) { const r = puppetCommand(this, 12, shape, boneKey); return r && r[0]; },
+      setBlendShapeWeight(shape, weight) {
+        const a = argument(weight, 4);
+        if (a) puppetCommand(this, 13, shape, boneKey, [a.value]);
+      },
+      // 140210990.c and 140210e10 feed the bone physics state, which nothing here simulates: accepted and dropped.
+      applyBonePhysicsImpulse() { host.log(1, 'applyBonePhysicsImpulse is ignored without a bone physics simulation'); },
+      resetBonePhysicsSimulation() { host.log(1, 'resetBonePhysicsSimulation is ignored without a bone physics simulation'); }
+    };
     const protos = host.kinds.map((fields, kind) => {
       const proto = Object.create(LayerProto), instance = {}, video = Object.create(VideoProto);
       const origin = fields.find(f => f.name === 'origin'), angles = fields.find(f => f.name === 'angles');
@@ -364,6 +405,7 @@ enum WPEParityScriptLayers {
         };
       }
       if (kind === host.imageKind) {
+        Object.assign(proto, puppetMethods);
         proto.getTextureAnimation = function () { return liveLayer(this) ? getTextureAnimation(this) : undefined; };
         proto.getAnimationLayerCount = function () { return liveLayer(this) ? puppetAnimationLayers(this).length : undefined; };
         proto.getAnimationLayer = function (key) {
