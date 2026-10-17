@@ -1060,9 +1060,8 @@ final class WPEParityFrameRenderer {
         }
     }
 
-    /// Called by the original binding's registration load gate before its init is dispatched.
-    /// Material and shader bytes resolve through ProgramScene; the existing shader table owns the result.
-    nonisolated(nonsending) func prepareRegisteredModelDataMaterial(
+    /// Loads a `general.precache` material as a ModelData program so a later createModelData finds its shader.
+    nonisolated(nonsending) func precacheMaterial(
         _ path: String, shaders: WPEParityFrameShaderSource
     ) async throws {
         guard plan.scene.modelDataMesh(materialPath: path) != nil else {

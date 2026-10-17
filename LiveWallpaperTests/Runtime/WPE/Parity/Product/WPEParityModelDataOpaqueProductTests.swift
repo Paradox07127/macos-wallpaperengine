@@ -92,7 +92,7 @@ extension WPEParitySceneDriverTests {
         let scene = try JSONSerialization.data(withJSONObject: [
             "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false],
-                        "clearcolor": "0 0 0", "bloom": false],
+                        "clearcolor": "0 0 0", "bloom": false, "precache": ["materials/opaque-model-data.json"]],
             "objects": [["id": 1, "name": "opaque controller", "image": "models/util/solidlayer.json", "size": "1 1",
                          "brightness": 0, "alpha": ["value": 0, "script": source]]],
         ], options: [.sortedKeys])

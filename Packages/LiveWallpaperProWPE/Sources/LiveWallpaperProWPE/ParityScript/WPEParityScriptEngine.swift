@@ -7,7 +7,6 @@ import simd
 public final class WPEParityScriptEngine {
     public enum Failure: Error, Equatable {
         case missingBaseClasses
-        case registeredAssetsNotPrepared([String])
     }
 
     /// Native ISound methods; only isPlaying exposes the consumer's Bool to JavaScript.
@@ -189,9 +188,6 @@ public final class WPEParityScriptEngine {
         public let objectID: String
         public let propertyPath: String
         public let modulePath: String
-        /// Registrations of every compiled, prepared binding in binding order; a projection of the one Binding array.
-        public let registeredAssets: [RegisteredAsset]
-        public let assetsPrepared: Bool
     }
 
     public struct RegisteredAsset: Equatable, Sendable {
@@ -213,8 +209,8 @@ public final class WPEParityScriptEngine {
         }
 
         fileprivate let bindingIndex: Int
+        /// Read only by the editor's precache export; the runtime never loads from it (0x181655810.c:258-271).
         public fileprivate(set) var registeredAssets: [RegisteredAsset] = []
-        fileprivate var assetsPrepared = true
         fileprivate let script: Int
         /// User key → its scriptproperties; an empty condition takes the value as is.
         fileprivate let userKeys: [String: [(name: String, condition: String)]]
@@ -479,32 +475,12 @@ public final class WPEParityScriptEngine {
         guard bindings.indices.contains(index) else { return nil }
         let binding = bindings[index]
         return AssetContext(bindingIndex: binding.bindingIndex, objectID: binding.objectID, propertyPath: binding.path,
-                            modulePath: "scripts/\(binding.name).js",
-                            registeredAssets: bindings.filter { $0.compiled && $0.assetsPrepared }.flatMap(\.registeredAssets),
-                            assetsPrepared: binding.assetsPrepared)
-    }
-
-    /// Runs the existing product loader once per unprepared binding. No VM or mutable State borrow spans await.
-    /// The caller keeps this engine on its owning actor and validates its existing load generation before attach.
-    public nonisolated(nonsending) func prepareRegisteredAssets(
-        using prepare: (AssetContext, [RegisteredAsset]) async throws -> Void
-    ) async throws {
-        for index in bindings.indices where bindings[index].compiled && !bindings[index].assetsPrepared {
-            try Task.checkCancellation()
-            try await prepare(assetContext(of: index)!, bindings[index].registeredAssets)
-            try Task.checkCancellation()
-            bindings[index].assetsPrepared = true
-        }
+                            modulePath: "scripts/\(binding.name).js")
     }
 
     /// Event 0 to every binding that exports `init`, once, after all objects loaded (140186c90.c:689-738).
     public func start(state: inout WPEParitySceneState) throws {
         guard !started else { return }
-        let pending = bindings.filter { $0.compiled && !$0.assetsPrepared }.flatMap { $0.registeredAssets.map(\.path) }
-        guard pending.isEmpty else {
-            configuration.log(2, "SceneScript dependencies were not prepared before init: \(pending.joined(separator: ", "))")
-            throw Failure.registeredAssetsNotPrepared(pending)
-        }
         started = true
         seedMissingFields(state: &state)
         run(state: &state) {
@@ -1387,7 +1363,6 @@ public final class WPEParityScriptEngine {
         let registerAsset: @convention(block) (Double, String, Bool) -> Bool = { [weak self] binding, path, flag in
             guard let self, let index = Int(exactly: binding), bindings.indices.contains(index), !bindings[index].registeredAssets.contains(where: { $0.path.utf8.elementsEqual(path.utf8) }) else { return false }
             bindings[index].registeredAssets.append(.init(path: path, flag: flag))
-            bindings[index].assetsPrepared = false
             return true
         }
         set("registerAsset", registerAsset)
@@ -1756,7 +1731,7 @@ public final class WPEParityScriptEngine {
         let registered = bindings[bindingIndex]
         bindings[bindingIndex] = Binding(objectID: objectID, path: path, name: name,
                                          exportBits: max(bits, 0), bindingIndex: bindingIndex,
-                                         registeredAssets: registered.registeredAssets, assetsPrepared: registered.assetsPrepared,
+                                         registeredAssets: registered.registeredAssets,
                                          script: handle, userKeys: userKeys)
     }
 

@@ -16,18 +16,15 @@ enum WPEParityModelDataLayerAdmission {
         WPEParityScriptModelDataProvider(
             maximumArrayEntries: Int(UInt32.max), maximumBufferBytes: Int.max,
             maximumSingleBufferBytes: device.maxBufferLength,
-            resolveMaterial: { value, context in
-                guard let context, context.assetsPrepared, value.isString, let path = value.toString(),
-                      context.registeredAssets.contains(where: {
-                          $0.path.utf8.elementsEqual(path.utf8)
-                      }) else {
-                    throw WPEParityModelDataFailure.safety("material requires its prepared binding registration")
+            // Get-or-load by path with no registration lookup (14018c720.c:323-333).
+            resolveMaterial: { value, _ in
+                guard let path = value.toString() else {
+                    throw WPEParityModelDataFailure.native(1)
                 }
-                // The complete native path composition contract remains separate. This finite literal subset
-                // has an actual binding registration, material reader and shader-load consumer.
+                // The complete native path composition contract remains separate.
                 let bytes = Data(path.utf8)
                 guard bytes.count <= 255, !bytes.contains(0), !path.contains("\\"), !path.contains("//") else {
-                    throw WPEParityModelDataFailure.safety("registered material filename requires unqualified path conversion")
+                    throw WPEParityModelDataFailure.safety("material filename requires unqualified path conversion")
                 }
                 guard plan.scene.modelDataMesh(materialPath: path) != nil else {
                     throw WPEParityModelDataFailure.native(1)

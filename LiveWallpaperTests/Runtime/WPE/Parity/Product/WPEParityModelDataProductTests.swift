@@ -10,7 +10,7 @@ import QuartzCore
 import XCTest
 
 extension WPEParitySceneDriverTests {
-    /// Shipped IModelData -> binding registration -> real loader -> canonical State -> original shader/Metal.
+    /// Shipped IModelData -> precache loader -> canonical State -> original shader/Metal.
     /// The large triangle actually addresses vertices 65536...65538; an R16 truncation draws only degenerate data.
     func testRegisteredModelDataConsumesWideIndicesUpdatesPrefixesAndRetainsSubmittedVersions() async throws {
         let source = #"""
@@ -75,7 +75,8 @@ extension WPEParitySceneDriverTests {
           thisScene.destroyModelData(model.__modelDataToken);
         }
         """#
-        let fixture = try modelDataFixture(script: source)
+        let fixture = try modelDataFixture(script: source, precache: ["materials/model-data.json", "materials/model-normal.json",
+                                                                      "materials/model-other.json"])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
@@ -233,7 +234,7 @@ extension WPEParitySceneDriverTests {
         let fixture = try modelDataFixture(script: source, extraObjects: [[
             "id": 2, "name": "canvas", "image": "models/util/composelayer.json", "origin": "36 16 0",
             "size": "16 16", "copybackground": false,
-        ]])
+        ]], precache: ["materials/model-data.json"])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
@@ -280,7 +281,7 @@ extension WPEParitySceneDriverTests {
         let fixture = try modelDataFixture(script: source, extraObjects: [[
             "id": 2, "name": "caller", "image": "models/util/solidlayer.json", "size": "1 1",
             "alpha": ["value": 0, "script": caller],
-        ]])
+        ]], precache: ["materials/model-data.json"])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
@@ -315,7 +316,7 @@ extension WPEParitySceneDriverTests {
           return layer ? 0.5 : 0.25;
         }
         """#
-        let fixture = try modelDataFixture(script: source)
+        let fixture = try modelDataFixture(script: source, precache: ["materials/model-data.json"])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
@@ -343,29 +344,92 @@ extension WPEParitySceneDriverTests {
         try modelDataPixel(readBack(renderer.backbuffer, device: device), width: 48, x: 24, y: 16, white: true)
     }
 
-    func testRegisteredModelMaterialFailureAbortsLoadAndStopsItsPreparedSound() async throws {
+    func testRegisteredNonMaterialAndMissingAssetsNeitherFailLoadNorBlockInit() async throws {
         let fixture = try modelDataFixture(script: """
+        if (engine.registerAsset('models/foo.mdl') !== 'models/foo.mdl') throw Error('model registration');
+        if (engine.registerAsset('particles/x.json') !== 'particles/x.json') throw Error('particle registration');
         engine.registerAsset('materials/missing-model-data.json', true);
-        export function init(value) { throw Error('init cannot run before missing dependency'); }
-        """, withSound: true)
+        export function init(value) { return 0.5; }
+        """)
         let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
         defer { driver.cleanup() }
-        driver.setAudioMuted(true)
-        do {
-            try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
-                                  drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
-                                  compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "missing-cache")),
-                                  soundResolver: fixture.soundResolver)
-            XCTFail("an unprepared registered material published a loaded scene")
-        } catch {
-            XCTAssertFalse(error is CancellationError)
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "registered-cache")))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertNil(driver.loadDiagnostics)
+        let renderer = try XCTUnwrap(driver.renderer)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
+        for path in ["models/foo.mdl", "particles/x.json", "materials/missing-model-data.json"] {
+            XCTAssertEqual(fixture.reads.count(path), 0, "registration must not read \(path)")
         }
-        XCTAssertFalse(driver.didLoad)
-        XCTAssertNil(driver.renderer)
-        XCTAssertNil(driver.soundRuntime, "the failed load must stop and drop its own prepared sound")
-        XCTAssertNotNil(driver.loadDiagnostics)
-        XCTAssertFalse(driver.requiresSystemAudioCapture, "a failed load must not keep its audio demand")
-        XCTAssertTrue(driver.userPropertyBindings.isEmpty)
+    }
+
+    func testPrecacheMaterialPathsKeepOnlyMaterialsPrefixedStrings() throws {
+        let general = try XCTUnwrap(WPESceneJSONValue(jsonValue: ["precache": [
+            "materials/a.json", "models/b.json", 7, NSNull(), ["materials/nested.json"], "materialsx.json", "Materials/c.json",
+        ]]))
+        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(general), ["materials/a.json", "materialsx.json"])
+        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(.object(["precache": .string("materials/a.json")])), [])
+        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(.object([:])), [])
+    }
+
+    func testPrecacheLoadsOnlyMaterialsEntriesAndSkipsAFailedOne() async throws {
+        let fixture = try modelDataFixture(script: "export function init(value) { return 0.5; }",
+                                           precache: ["models/b.json", 7, "materials/missing-model-data.json",
+                                                      "materials/model-data.json"])
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "precache-cache")))
+        XCTAssertTrue(driver.didLoad)
+        XCTAssertNil(driver.loadDiagnostics)
+        XCTAssertEqual(driver.renderer?.state.object("1")?.alpha, 0.5)
+        XCTAssertGreaterThan(fixture.reads.count("materials/model-data.json"), 0)
+        XCTAssertGreaterThan(fixture.reads.count("materials/missing-model-data.json"), 0)
+        XCTAssertEqual(fixture.reads.count("models/b.json"), 0, "a non-materials precache entry must be skipped")
+    }
+
+    func testCreatedModelDataResolvesUnregisteredMaterialAndReportsMissingOneAsInvalid() async throws {
+        let source = #"""
+        const make = material => thisScene.createModelData({shapes:[{
+          vertexBuffer:new Float32Array([-4,-4,0,0.5,0.5, 4,-4,0,0.5,0.5, 0,4,0,0.5,0.5]),
+          indexBuffer:new Uint16Array([0,1,2]),vertexFormat:[IModelData.POSITION,IModelData.UV],material}],
+          boundingBoxMins:new Vec3(-4,-4,0),boundingBoxMaxs:new Vec3(4,4,0)});
+        export function init(value) {
+          let missing = false;
+          try { make('materials/absent.json'); } catch (e) { missing = e.message === 'Invalid material'; }
+          const layer = thisScene.createLayer({id:700003,model:make('materials/model-data.json'),name:'unregistered',
+            origin:'24 16 0',perspective:false});
+          return layer && missing ? 0.5 : 0.25;
+        }
+        """#
+        let fixture = try modelDataFixture(script: source, precache: ["materials/model-data.json"])
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "unregistered-model-cache")))
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 48, height: 32)
+        layer.framebufferOnly = false
+        let renderer = try XCTUnwrap(driver.renderer)
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
+        let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
+        await command.completed()
+        try await settle(driver, label: "unregistered ModelData material")
+        XCTAssertNil(command.error)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.indexCount == 3 })
+        try modelDataPixel(readBack(renderer.backbuffer, device: device), width: 48, x: 24, y: 16, white: true)
     }
 
     func testScriptInitFailureLoadsSceneAndReportsScriptDiagnostic() async throws {
@@ -387,12 +451,11 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(layer, "scripts")
     }
 
-    func testRegisteredMaterialCancellationAbortsOwnedLoadBeforeInit() async throws {
+    func testPrecacheMaterialCancellationAbortsOwnedLoadBeforeInit() async throws {
         let cancellation = ModelDataLoadCancellation()
         let fixture = try modelDataFixture(script: """
-        engine.registerAsset('materials/model-data.json', true);
         export function init(value) { throw Error('cancelled dependency cannot initialize'); }
-        """, withSound: true, cancellation: cancellation)
+        """, withSound: true, precache: ["materials/model-data.json"], cancellation: cancellation)
         let cacheURL = scratch.appending(path: "cancel-cache")
         // The non-Sendable driver belongs entirely to this task, including post-load checks and cleanup.
         let loading = Task<Void, Error> {
@@ -415,7 +478,7 @@ extension WPEParitySceneDriverTests {
         }
         cancellation.install(loading)
         try await loading.value
-        XCTAssertTrue(cancellation.observed, "the real registered material reader must reach the cancellation boundary")
+        XCTAssertTrue(cancellation.observed, "the real precache material reader must reach the cancellation boundary")
     }
 
     private struct ModelDataFixture {
@@ -427,6 +490,7 @@ extension WPEParitySceneDriverTests {
     }
 
     private func modelDataFixture(script: String, withSound: Bool = false, extraObjects: [[String: Any]] = [],
+                                  precache: [Any]? = nil,
                                   cancellation: ModelDataLoadCancellation? = nil) throws -> ModelDataFixture {
         let original: WPEParityProgramAssets
         do {
@@ -500,10 +564,11 @@ extension WPEParitySceneDriverTests {
             objects += sounds
             soundResolver = WPEMultiRootResourceResolver(primaryRootURL: directory, dependencyMounts: [])
         }
+        var general: [String: Any] = ["orthogonalprojection": ["width": 48, "height": 32, "auto": false], "clearcolor": "0 0 0",
+                                      "bloom": false, "supportsaudioprocessing": withSound]
+        general["precache"] = precache
         let data = try JSONSerialization.data(withJSONObject: ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
-                                                               "general": ["orthogonalprojection": ["width": 48, "height": 32, "auto": false], "clearcolor": "0 0 0", "bloom": false,
-                                                                           "supportsaudioprocessing": withSound],
-                                                               "objects": objects], options: [.sortedKeys])
+                                                               "general": general, "objects": objects], options: [.sortedKeys])
         let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
                                                         makeTransformScriptResolver: { _, _ in NoScripts() })
         if withSound {
