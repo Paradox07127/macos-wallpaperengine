@@ -245,9 +245,10 @@ struct ParitySceneScaleTests {
                          ["name": "X", "format": "rgba8888", "width": 640, "height": 360, "scale": 2]],
                 "passes": [["material": "materials/base.json", "target": "F"],
                            ["material": "materials/base.json", "target": "X"],
-                           ["material": "materials/read.json"]],
+                           ["material": "materials/read.json", "bind": [["name": "F", "index": 0]]]],
             ],
-            "effects/read.json": ["passes": [["material": "materials/read.json"]]],
+            // Without a bind table slot 0 would sample the layer's input instead of F.
+            "effects/read.json": ["passes": [["material": "materials/read.json", "bind": [["name": "F", "index": 0]]]]],
         ]
         let files = try resources.mapValues { try JSONSerialization.data(withJSONObject: $0) }
         let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) { files[$0] }])

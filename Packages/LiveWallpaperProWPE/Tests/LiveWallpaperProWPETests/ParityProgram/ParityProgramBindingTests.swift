@@ -104,6 +104,40 @@ final class ParityProgramBindingTests: XCTestCase {
         }
     }
 
+    /// 1401ebf60.c:135-141: a layer effect pass without a bind table samples the layer's current input in slot 0,
+    /// whatever name its material authors there; a shape layer passes no layer index (14025faf0.c:160) and keeps it.
+    func testUnboundEffectPassSamplesLayerInputInSlotZeroOverAuthoredName() throws {
+        let authored = "_rt_imageLayerComposite_7_b"
+        let layer = ParitySceneDocuments.layer(effects: [
+            ParitySceneDocuments.effect(passes: [ParitySceneDocuments.pass("fx")]),
+        ])
+        let shape: [String: Any] = ["id": 9, "name": "9", "shape": "quad",
+                                    "effects": [["id": 1, "file": "effects/shape.json", "visible": true]]]
+        let scene = try ParitySceneDocuments.programScene([layer], objects: [shape], files: [
+            "materials/fx.json": #"{"passes":[{"shader":"fx","blending":"translucent","textures":["\#(authored)"]}]}"#,
+            "materials/shapefx.json": #"""
+            {"passes":[{"shader":"shapefx","blending":"translucent","textures":["util/authored"]}]}
+            """#,
+            "effects/shape.json": #"{"passes":[{"material":"materials/shapefx.json"}]}"#,
+        ])
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
+        let bindings = WPEParityProgramBuilder.bindings(frame: frame, scene: scene)
+        func effectDraw(_ objectID: String) throws -> (operation: Int, draw: WPEParitySceneDraw) {
+            let found = frame.draws.compactMap { operation, draw -> (Int, WPEParitySceneDraw)? in
+                guard case let .scene(scene) = draw, scene.objectID == objectID, scene.effectID != nil else { return nil }
+                return (operation, scene)
+            }
+            return try XCTUnwrap(found.first, "object \(objectID) plans no effect pass")
+        }
+        let (operation, draw) = try effectDraw("7")
+        let input = try XCTUnwrap(draw.reads.first)
+        XCTAssertNotEqual(input, WPEResourceID(authored))
+        XCTAssertEqual(bindings[operation]?.textures[0], .resource(input),
+                       "slot 0 samples the authored name, which the frame never declares")
+        let shapeOperation = try effectDraw("9").operation
+        XCTAssertEqual(bindings[shapeOperation]?.textures[0], .asset("util/authored"))
+    }
+
     private static func floats(_ value: WPECBufferValue?) -> [Float]? {
         switch value {
         case let .float(number)?: [number]

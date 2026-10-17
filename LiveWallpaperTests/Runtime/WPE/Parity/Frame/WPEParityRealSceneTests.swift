@@ -222,6 +222,18 @@ final class WPEParityRealSceneTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(encoded, 0, "no created layer was encoded in the last frame")
+        // 1401ebf60.c:135-141: the unbound we2d_particle_buffer pass samples the pooled composite in slot 0 over the
+        // authored `_b` name and writes the `_a` composite composelayer 92003 reads.
+        for id in ["92001", "92002"] {
+            let passes = sceneDraws(renderer, objectID: id).filter { $0.draw.effectID != nil }
+            XCTAssertFalse(passes.isEmpty, "composelayer \(id) plans no effect pass")
+            for (operation, draw) in passes {
+                XCTAssertNil(renderer.skipped[operation], "composelayer \(id) effect pass \(operation)")
+                XCTAssertTrue(draw.reads.first?.rawValue.hasPrefix("sc.") == true,
+                              "composelayer \(id) effect pass reads \(draw.reads)")
+                XCTAssertEqual(draw.target, WPEParitySceneResource.layerCompositeA(id))
+            }
+        }
     }
 
     /// Loads a Workshop scene from the Steam library through the product driver, scripts included.

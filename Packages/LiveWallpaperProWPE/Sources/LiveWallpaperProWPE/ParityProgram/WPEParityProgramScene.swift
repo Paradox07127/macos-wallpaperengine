@@ -190,7 +190,8 @@ public struct WPEParityProgramScene: Sendable {
                 : albedoSize?.y ?? image.size.map { Int($0.height.rounded()) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
                                        engineFlags: flags, materials: &materials, overridePasses: &overridePasses,
-                                       records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored)
+                                       records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored,
+                                       shape: image.isShapeQuad)
             authoredObjects.append(WPEParityAuthoredObject(id: image.id, width: objectWidth, height: objectHeight,
                                                            effects: effects))
             let loadedPuppet = Self.string(model?["puppet"]).flatMap { Self.puppet($0, assets: assets) }
@@ -459,7 +460,7 @@ public struct WPEParityProgramScene: Sendable {
                                 overridePasses: inout [MaterialKey: Int],
                                 records: inout [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]],
                                 functions: inout [WPEParitySceneState.EffectKey: WPEParityMaterialFunctions],
-                                authored: WPESceneJSONValue? = nil) -> [WPEParityAuthoredEffect] {
+                                authored: WPESceneJSONValue? = nil, shape: Bool = false) -> [WPEParityAuthoredEffect] {
         var loaded: [WPEParityAuthoredEffect] = []
         for effect in effects {
             guard let file = assets.json(effect.fileRelativePath) else { continue }
@@ -467,7 +468,8 @@ public struct WPEParityProgramScene: Sendable {
                 (Self.string(value["id"]) ?? Self.number(value["id"]).map { String(Int($0)) } ?? "\(index)") == effect.id
             }?.element
             let result = Self.effect(effect, objectID: objectID, file: file, assets: assets, engineFlags: engineFlags,
-                                     combos: configuration?["combos"], userTextureConfiguration: configuration)
+                                     combos: configuration?["combos"], userTextureConfiguration: configuration,
+                                     shape: shape)
             records[.init(objectID: objectID, effectID: effect.id)] = result.records
             functions[.init(objectID: objectID, effectID: effect.id)] = result.effect.materialFunctions
             loaded.append(result.effect)
@@ -671,7 +673,8 @@ public struct WPEParityProgramScene: Sendable {
 
     private static func effect(_ effect: WPESceneImageEffect, objectID: String,
                                file: WPESceneJSONValue, assets: WPEParityProgramAssets,
-                               engineFlags: WPEEngineComboFlags, combos: WPESceneJSONValue?, userTextureConfiguration: WPESceneJSONValue?)
+                               engineFlags: WPEEngineComboFlags, combos: WPESceneJSONValue?, userTextureConfiguration: WPESceneJSONValue?,
+                               shape: Bool)
         -> (effect: WPEParityAuthoredEffect,
             materials: [(WPEParitySceneMaterialSource, WPEParityProgramMaterial, pass: Int)],
             records: [WPEParityEffectPassRecord]) {
@@ -726,11 +729,15 @@ public struct WPEParityProgramScene: Sendable {
                                userTextures: userTextureConfiguration?["passes"]?[passIndex]?["usertextures"],
                                userTextureBindings: override.userTextures)
             }
+            var bound = false
             for case let .object(bind) in array(pass["bind"]) {
                 guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos), let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
                 material.textures[Int32(index)] = name
+                bound = true
             }
-            if material.textures[0] == nil {
+            // 1401ebf60.c:135-141: without a bind table a layer pass samples its current input in slot 0 over any
+            // authored name; a shape layer passes no layer index (14025faf0.c:160) and keeps the name.
+            if material.textures[0] == nil || !bound && !shape {
                 material.textures[0] = "previous"
             }
             if let blending = string(pass["blending"]) {
