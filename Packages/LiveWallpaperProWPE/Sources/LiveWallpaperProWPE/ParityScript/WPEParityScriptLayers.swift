@@ -8,6 +8,8 @@ enum WPEParityScriptLayers {
     function liveLayer(receiver) { return receiver != null && table[receiver.__index] === receiver; }
     // Identity only: playback remains in the product's existing video source.
     const videoOwners = new WeakMap();
+    // Keyed by the layer wrapper so a deleted layer's callbacks are unreachable from the engine.
+    let videoEndedCallbacks = new WeakMap();
     // Method overloads are a separate protocol from property writes: vectors require their native class,
     // int32 is selected before float, and serialized configuration is passed as text.
     function argument(value, mask) {
@@ -277,8 +279,38 @@ enum WPEParityScriptLayers {
       setCurrentTime(time) {
         const a = argument(time, 4);
         if (a && Number.isFinite(a.value)) videoCommand(this, 'setCurrentTime', 4, a.value);
+      },
+      addEndedCallback(callback) {
+        const index = videoOwners.get(this);
+        if (index === undefined) {
+          host.log(1, 'video.addEndedCallback is unsupported for an invalid video wrapper');
+          return;
+        }
+        const layer = table[index];
+        if (typeof callback !== 'function' || !liveLayer(layer)) return;
+        let list = videoEndedCallbacks.get(layer);
+        if (!list) videoEndedCallbacks.set(layer, list = []);
+        list.push({ owner: current, callback });
       }
     };
+    host.videoEnded = function (index) {
+      const layer = table[index];
+      const list = liveLayer(layer) ? videoEndedCallbacks.get(layer) : undefined;
+      if (!list) return;
+      for (const entry of list.slice()) {
+        const b = entry.owner;
+        if (b && b.dead) continue;
+        const previous = current;
+        current = b;
+        const previousAliases = b && b.aliases ? b.aliases(b.layer, b.owner, true) : null;
+        try { entry.callback(); } catch (e) { report(b, e); } finally {
+          if (previousAliases) b.aliases(previousAliases[0], previousAliases[1], false);
+          current = previous;
+        }
+      }
+      videoEndedCallbacks.set(layer, list.filter(entry => !(entry.owner && entry.owner.dead)));
+    };
+    host.clearVideoEnded = function () { videoEndedCallbacks = new WeakMap(); };
     // Command numbers are WPEParityScriptEngine.VideoCommand raw values. A missing consumer yields undefined.
     function videoCommand(video, name, command, value) {
       const index = videoOwners.get(video);

@@ -140,6 +140,62 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testLoopingVideoRunsTheEndedCallbackOncePerWrap() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 64,
+                                                                  height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        let url = try await Self.writeVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [.init(texture: texture, bytes: Data(contentsOf: url))],
+                                                      workshopID: "parity-video-ended-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.setOwners(["1": texture])
+
+        let json = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[
+          {"id":1,"name":"A","image":"models/a.json","size":"64 64","alpha":{"value":1,"script":"let ended = 0; export function init(value) { thisLayer.getVideoTexture().addEndedCallback(() => { ended += 1; }); return value; } export function update(value) { thisLayer.origin = new Vec3(ended, 0, 0); return value; }"}}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
+                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
+        let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
+        let assets = WPEParityProgramAssets(sources: [.lookup(root) {
+            $0 == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
+        }])
+        let script = try WPEParitySceneScript(
+            document: document, state: state, assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64),
+            fieldDefaults: videos.scriptFieldDefaults, host: .init()
+        )
+        script.engine.videoTextureHandler = videos.command
+        try script.start(state: &state)
+        // The fixture is one second long; each frame reports ends before the script's update, as the renderer does.
+        var increments: [Date] = []
+        var count: Float = 0
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, increments.count < 2 {
+            script.engine.videoEnded(ownerIDs: videos.takeEndedOwnerIDs(), state: &state)
+            script.tick(dt: 0.01, cursor: .zero, world: .zero, leftDown: false, timeOfDay: 0, state: &state)
+            let next = state.object("1")?.origin.x ?? 0
+            XCTAssertLessThanOrEqual(next - count, 1, "One wrap must fire the callback once")
+            if next > count {
+                increments.append(Date())
+            }
+            count = next
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(increments.count, 2, "A looping one-second video wraps twice within five seconds")
+        if increments.count == 2 {
+            XCTAssertGreaterThan(increments[1].timeIntervalSince(increments[0]), 0.7, "Callbacks fire per wrap, not per frame")
+        }
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testVideoUnsampledForMoreThanThirtySubmittedFramesPausesAndResumesWhenSampledAgain() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())

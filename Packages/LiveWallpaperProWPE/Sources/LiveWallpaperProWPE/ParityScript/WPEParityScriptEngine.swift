@@ -583,6 +583,17 @@ public final class WPEParityScriptEngine {
         }
     }
 
+    /// Runs the addEndedCallback callbacks of each video owner whose player reached its end once this frame.
+    public func videoEnded(ownerIDs: some Sequence<String>, state: inout WPEParitySceneState) {
+        let indices = ownerIDs.compactMap { id in layers.firstIndex { $0.id == id && $0.hasVideo } }
+        guard !indices.isEmpty else { return }
+        run(state: &state) {
+            for index in indices {
+                host.invokeMethod("videoEnded", withArguments: [index])
+            }
+        }
+    }
+
     /// Refresh both sizes before resizeScreen observes them; the payload is the screen size.
     public func resize(canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
                        state: inout WPEParitySceneState) {
@@ -647,6 +658,7 @@ public final class WPEParityScriptEngine {
         run(state: &state) {
             count(.destroy)
             host.invokeMethod("destroyAll", withArguments: [])
+            host.invokeMethod("clearVideoEnded", withArguments: [])
         }
     }
 

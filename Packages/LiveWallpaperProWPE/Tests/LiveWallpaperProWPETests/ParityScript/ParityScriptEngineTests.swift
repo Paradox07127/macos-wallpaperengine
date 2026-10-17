@@ -1231,6 +1231,48 @@ final class ParityScriptEngineTests: XCTestCase {
         }
     }
 
+    func testVideoEndedCallbacksRunOncePerReportedEndAndAThrowingCallbackDoesNotStopTheOthers() throws {
+        var diagnostics: [String] = []
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            let ended = 0;
+            export function init(value) {
+                const video = thisLayer.getVideoTexture();
+                const result = video.addEndedCallback(() => { throw new Error('ended callback failed'); });
+                video.addEndedCallback(() => { ended += 1; });
+                video.addEndedCallback.call({}, () => { ended += 100; });
+                thisLayer.color = new Vec3(result === undefined ? 1 : 99, 1, 1);
+                return value;
+            }
+            export function update(value) { thisLayer.origin = new Vec3(ended, 0, 0); return value; }
+            """)]),
+            Self.layer(2, "B"),
+        ], assets: Self.fixedAssets(), configure: { configuration in
+            configuration.fieldDefaults[.init(objectID: "1", name: "video.duration")] = .vector(SIMD4(1, 0, 0, 0))
+            configuration.log = { _, message in diagnostics.append(message) }
+        })
+        try scene.engine.start(state: &scene.state)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+        XCTAssertEqual(scene.state.object("1")?.color, .one)
+        XCTAssertEqual(diagnostics.filter { $0.contains("invalid video wrapper") }.count, 1)
+
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.origin.x, 0)
+        scene.engine.videoEnded(ownerIDs: ["1", "2", "missing"], state: &scene.state)
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.origin.x, 1)
+        XCTAssertEqual(scene.engine.exceptionCount, 1)
+        XCTAssertTrue(scene.engine.exceptions.first?.contains("ended callback failed") == true)
+        scene.engine.videoEnded(ownerIDs: ["1"], state: &scene.state)
+        scene.engine.tick(dt: 0.01, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.origin.x, 2, "Every reported end fires the callbacks again")
+        XCTAssertEqual(scene.engine.exceptionCount, 2)
+
+        scene.engine.destroy(state: &scene.state)
+        scene.engine.videoEnded(ownerIDs: ["1"], state: &scene.state)
+        XCTAssertEqual(scene.engine.exceptionCount, 2, "A destroyed engine must not run ended callbacks")
+    }
+
     func testLayerHostIndicesRejectNonIntegralAndOutOfBoundsValuesWithoutTrapping() throws {
         for value in [Double.nan, .infinity, -.infinity, 1e100, Double(Int.max), -1, 0.5, 3] {
             XCTAssertNil(WPEParityScriptEngine.checkedLayerIndex(value, count: 3))

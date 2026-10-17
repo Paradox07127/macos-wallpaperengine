@@ -1629,6 +1629,7 @@ final class WPEParityFrameRenderer {
             for event in animations.firedEvents {
                 script.engine.dispatch(.animationEvent, payloadJSON: event.payloadJSON, target: event.objectID, state: &state)
             }
+            script.engine.videoEnded(ownerIDs: videos.takeEndedOwnerIDs(), state: &state)
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
             script.tick(dt: clock.frametime, cursor: scriptCursor, world: cursorWorld(camera: camera),
                         leftDown: input.buttonDown, timeOfDay: daytime, state: &state)

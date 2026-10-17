@@ -1102,6 +1102,11 @@ final class WPEVideoTextureSource {
 
     var isActivelyPlaying: Bool { !isInvalidated && (player?.rate ?? 0) > 0 }
 
+    /// Completed plays of the item; grows on every loop wrap.
+    var completedLoopCount: Int {
+        playerLooper?.loopCount ?? 0
+    }
+
     /// Phase-align seek (does not enter script-controlled mode).
     func alignPlayhead(to seconds: TimeInterval) {
         guard !isInvalidated, !scriptControlled else { return }

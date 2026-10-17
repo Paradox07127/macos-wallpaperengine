@@ -102,6 +102,25 @@ final class WPEParityVideoTextures {
     }
     #endif
 
+    /// Per source, the completed play count already reported.
+    private var reportedLoops: [Int]
+
+    /// Call once per frame: each owner of a source that reached its end since the last call, once per occurrence.
+    func takeEndedOwnerIDs() -> [String] {
+        var ended: [String] = []
+        for (index, video) in videos.enumerated() {
+            let count = video.source.completedLoopCount
+            let occurrences = count - reportedLoops[index]
+            reportedLoops[index] = count
+            guard occurrences > 0 else { continue }
+            let owners = owners.filter { $0.value == index }.keys.sorted()
+            for _ in 0 ..< occurrences {
+                ended += owners
+            }
+        }
+        return ended
+    }
+
     func hasOwner(_ id: String) -> Bool {
         owners[id] != nil
     }
@@ -182,6 +201,7 @@ final class WPEParityVideoTextures {
         }
         self.videos = videos
         lastSampledFrame = Array(repeating: 0, count: videos.count)
+        reportedLoops = videos.map(\.source.completedLoopCount)
         scaler = Self.scaler(device: device)
     }
 
