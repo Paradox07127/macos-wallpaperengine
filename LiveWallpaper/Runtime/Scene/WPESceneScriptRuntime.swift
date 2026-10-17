@@ -533,9 +533,15 @@ final class WPESceneScriptTimerScheduler {
     /// false until the first advance; timers registered before it are relative to that first runtime, not 0.
     private var hasRuntimeBase = false
     private var isInvalidated = false
+    /// The running entry and rescheduled intervals sit outside the heap; rebuilding then would queue them twice.
+    private var isAdvancing = false
 
     var hasPendingTimers: Bool {
         !entriesByHandle.isEmpty
+    }
+
+    var queuedEntryCount: Int {
+        heap.count
     }
 
     func install(in context: JSContext, engine: JSValue) {
@@ -593,6 +599,8 @@ final class WPESceneScriptTimerScheduler {
             currentRuntimeSeconds = proposedRuntimeSeconds
         }
         currentRuntimeSeconds = max(currentRuntimeSeconds, proposedRuntimeSeconds)
+        isAdvancing = true
+        defer { isAdvancing = false }
         var callbackCount = 0
         // Re-inserted only after the sweep, so an interval fires at most once per advance even when now + interval <= now.
         var rescheduled: [Entry] = []
@@ -624,6 +632,8 @@ final class WPESceneScriptTimerScheduler {
             rescheduled.append(entry)
         }
         rescheduled.forEach(insert)
+        isAdvancing = false
+        compactIfNeeded()
         return .completed
     }
 
@@ -667,6 +677,13 @@ final class WPESceneScriptTimerScheduler {
     private func cancel(_ handle: UInt64) {
         guard let entry = entriesByHandle.removeValue(forKey: handle) else { return }
         entry.isCancelled = true
+        compactIfNeeded()
+    }
+
+    private func compactIfNeeded() {
+        guard !isAdvancing, heap.count > 2 * entriesByHandle.count + 64 else { return }
+        // A sorted array is a valid min-heap.
+        heap = entriesByHandle.values.sorted(by: orderedBefore)
     }
 
     private func orderedBefore(_ lhs: Entry, _ rhs: Entry) -> Bool {
