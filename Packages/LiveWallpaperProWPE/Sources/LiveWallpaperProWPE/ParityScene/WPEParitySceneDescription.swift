@@ -482,9 +482,11 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
     public var clearEnabled: Bool
     /// 1 renders straight into the backbuffer; more routes through `_rt_FullFrameBufferMultiSampled`.
     public var msaaSamples: Int
-    /// `general.transparentsorting`: transparent members draw after every other root, fullscreen ones last, each group
-    /// in paint order; WPE's view-distance key (1401865c0) is not applied.
+    /// `general.transparentsorting` in a perspective scene: transparent members draw after every other root, in
+    /// `transparentOrder`.
     public var transparentSorting: Bool
+    /// Member ids as the scene state last sorted them; empty keeps members in paint order.
+    public var transparentOrder: [String]
     /// Global fog flags 0x1800000 (`general.fogdistance` / `fogheight`) send every layer through its own `_a` composite.
     public var forcesLayerComposite: Bool
     /// The frame runs WPE's shadow pass into `_rt_shadowAtlas` before RenderScene.
@@ -494,8 +496,8 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
 
     public init(width: Int, height: Int, backbufferFormat: String = WPEParitySceneResource.colorFormat,
                 clearColor: SIMD3<Double> = .zero, clearEnabled: Bool = true,
-                msaaSamples: Int = 1, transparentSorting: Bool = false, forcesLayerComposite: Bool = false,
-                shadowAtlas: Bool = false,
+                msaaSamples: Int = 1, transparentSorting: Bool = false, transparentOrder: [String] = [],
+                forcesLayerComposite: Bool = false, shadowAtlas: Bool = false,
                 objects: [WPEParitySceneObject], diagnostics: [WPEParitySceneDiagnostic] = []) {
         self.width = width
         self.height = height
@@ -504,6 +506,7 @@ public struct WPEParitySceneDescription: Hashable, Sendable {
         self.clearEnabled = clearEnabled
         self.msaaSamples = msaaSamples
         self.transparentSorting = transparentSorting
+        self.transparentOrder = transparentOrder
         self.forcesLayerComposite = forcesLayerComposite
         self.shadowAtlas = shadowAtlas
         self.objects = objects

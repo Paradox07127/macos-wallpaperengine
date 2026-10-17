@@ -114,10 +114,14 @@ private struct WPEParitySceneEmitter {
             }
         }
         // 14018aac0.c:169-221: non-members first, then the member vector, whose fullscreen key −Inf sorts last.
-        self.roots = scene.transparentSorting
-            ? roots.filter { !$0.transparentMember } + roots.filter { $0.transparentMember && !$0.fullscreen }
-            + roots.filter { $0.transparentMember && $0.fullscreen }
-            : roots
+        let members = roots.filter(\.transparentMember)
+        let rank = Dictionary(scene.transparentOrder.enumerated().map { ($1, $0) }) { first, _ in first }
+        let sortedMembers = scene.transparentOrder.isEmpty
+            ? members.filter { !$0.fullscreen } + members.filter(\.fullscreen)
+            : members.enumerated().sorted {
+                (rank[$0.element.id] ?? .max, $0.offset) < (rank[$1.element.id] ?? .max, $1.offset)
+            }.map(\.element)
+        self.roots = scene.transparentSorting ? roots.filter { !$0.transparentMember } + sortedMembers : roots
         childrenByParent = children
         var layerComposites: [WPEResourceID: WPEParitySceneObject] = [:]
         for object in scene.objects where object.hasLayerComposite(scene) {

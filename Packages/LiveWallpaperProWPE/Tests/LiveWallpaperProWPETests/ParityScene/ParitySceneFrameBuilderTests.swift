@@ -169,6 +169,24 @@ struct ParitySceneFrameStructureTests {
         }
     }
 
+    @Test func transparentOrderPlacesMembersAfterOrdinaryRoots() {
+        var t = F.layer("T", sortKey: 0)
+        t.transparentMember = true
+        let o = F.layer("O", sortKey: 1)
+        var u = F.layer("U", sortKey: 3)
+        u.transparentMember = true
+        for (transparentOrder, expected) in [(["U", "T"], ["O", "U", "T"]), ([], ["O", "T", "U"])] {
+            var scene = F.scene([t, o, u], transparentSorting: true)
+            scene.transparentOrder = transparentOrder
+            let frame = WPEParitySceneFrameBuilder.build(scene)
+            let order = frame.operations.compactMap { operation -> String? in
+                guard case .draw = operation.kind else { return nil }
+                return frame.draws[operation.pass]?.objectID
+            }
+            #expect(order == expected, "transparentOrder \(transparentOrder)")
+        }
+    }
+
     @Test func layerWithoutEffectsDrawsDirectlyIntoScene() {
         #expect(F.lines(F.scene([F.layer()])) == [F.sceneBind] + F.sceneClear + [
             F.sceneBind, "draw genericimage2 [L/image] translucent rgb mesh",

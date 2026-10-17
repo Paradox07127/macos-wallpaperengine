@@ -7,7 +7,7 @@ final class ParityProgramTransparentMembershipTests: XCTestCase {
     private typealias D = ParitySceneDocuments
 
     func testMembershipFollowsBaseBlendPassthroughAndKind() throws {
-        let program = try Self.scene(general: ["transparentsorting": true])
+        let program = try Self.scene(general: ["transparentsorting": true, "orthogonalprojection": NSNull()])
         XCTAssertTrue(program.scene.transparentSorting)
         let members = Dictionary(uniqueKeysWithValues: program.scene.objects.map { ($0.id, $0.transparentMember) })
         XCTAssertEqual(members, [
@@ -18,7 +18,7 @@ final class ParityProgramTransparentMembershipTests: XCTestCase {
             "5": true, // normal, passthrough, no copybackground
             "6": false, // normal, passthrough, copybackground
             "7": false, // normal under colorBlendMode 31
-            "8": false, // model
+            "8": false, // model whose .mdl is missing
             "9": true, // particle system
         ])
         // The mode-31 row really draws additive; membership reads its base material instead.
@@ -41,11 +41,38 @@ final class ParityProgramTransparentMembershipTests: XCTestCase {
 
     /// Absent, false and non-bool keys leave sorting off; an object's immediate `value` is unwrapped.
     func testSortingNeedsAnAuthoredBoolTrue() throws {
-        XCTAssertFalse(try Self.scene(general: [:]).scene.transparentSorting)
+        let perspective: [String: Any] = ["orthogonalprojection": NSNull()]
+        XCTAssertFalse(try Self.scene(general: perspective).scene.transparentSorting)
         for value: Any in [false, 1, "true", ["value": false]] {
-            XCTAssertFalse(try Self.scene(general: ["transparentsorting": value]).scene.transparentSorting, "\(value)")
+            let general = perspective.merging(["transparentsorting": value]) { _, new in new }
+            XCTAssertFalse(try Self.scene(general: general).scene.transparentSorting, "\(value)")
         }
-        XCTAssertTrue(try Self.scene(general: ["transparentsorting": ["value": true]]).scene.transparentSorting)
+        let general = perspective.merging(["transparentsorting": ["value": true]]) { _, new in new }
+        XCTAssertTrue(try Self.scene(general: general).scene.transparentSorting)
+    }
+
+    func testOrthographicScenesNeverSort() throws {
+        XCTAssertFalse(try Self.scene(general: ["transparentsorting": true]).scene.transparentSorting)
+        let auto: [String: Any] = ["transparentsorting": true, "orthogonalprojection": ["auto": true]]
+        XCTAssertFalse(try Self.scene(general: auto).scene.transparentSorting)
+    }
+
+    /// A model joins unless one of its sub-mesh materials blends normal or alpha-to-coverage; a missing file never joins.
+    func testModelMembershipFollowsEverySubMeshBlend() throws {
+        var files: [String: Data] = [
+            "models/one.mdl": MembershipMDLFixture.data(materials: ["materials/translucent.json"]),
+            "models/mixed.mdl": MembershipMDLFixture.data(materials: ["materials/translucent.json",
+                                                                      "materials/normal.json"]),
+        ]
+        for blending in ["translucent", "normal"] {
+            files["materials/\(blending).json"] = Data(#"{"passes":[{"shader":"generic4","blending":"\#(blending)"}]}"#.utf8)
+        }
+        let program = try D.programScene([
+            D.layer("1", image: "models/one.mdl"), D.layer("2", image: "models/mixed.mdl"),
+            D.layer("3", image: "models/missing.mdl"),
+        ], binaries: files)
+        let members = Dictionary(uniqueKeysWithValues: program.scene.objects.map { ($0.id, $0.transparentMember) })
+        XCTAssertEqual(members, ["1": true, "2": false, "3": false])
     }
 
     /// One row per membership rule: image ids 1-7 by base material and layer keys, a model, a particle system.
@@ -76,5 +103,53 @@ final class ParityProgramTransparentMembershipTests: XCTestCase {
             ["id": 8, "name": "8", "image": "models/8.mdl", "size": "400 200"],
             ["id": 9, "name": "fx", "particle": "particles/fx.json"],
         ], binaries: files.mapValues { try JSONSerialization.data(withJSONObject: $0) })
+    }
+}
+
+/// MDLV0016 static model with one triangle submesh per material path.
+private enum MembershipMDLFixture {
+    static func data(materials: [String]) -> Data {
+        var data = Data()
+        data.append(contentsOf: Array("MDLV0016".utf8))
+        data.appendLE(UInt32(0x0000_0F00))
+        data.append(UInt8(0))
+        data.appendLE(UInt32(1))
+        data.appendLE(UInt32(materials.count))
+        for (index, material) in materials.enumerated() {
+            data.append(contentsOf: Array(material.utf8) + [0])
+            data.appendLE(UInt32(0))
+            data.appendLE(UInt32(0x0000_000F))
+            let minX = Float(index * 2)
+            var vertices = Data()
+            vertices.appendVertex(position: SIMD3<Float>(minX, 0, 0), uv: SIMD2<Float>(0, 1))
+            vertices.appendVertex(position: SIMD3<Float>(minX + 1, 0, 0), uv: SIMD2<Float>(1, 1))
+            vertices.appendVertex(position: SIMD3<Float>(minX, 1, 0), uv: SIMD2<Float>(0, 0))
+            data.appendLE(UInt32(vertices.count))
+            data.append(vertices)
+            data.appendLE(UInt32(3 * MemoryLayout<UInt16>.size))
+            for vertexIndex: UInt16 in [0, 1, 2] {
+                data.appendLE(vertexIndex)
+            }
+        }
+        return data
+    }
+}
+
+private extension Data {
+    mutating func appendLE(_ value: UInt16) {
+        var littleEndian = value.littleEndian
+        Swift.withUnsafeBytes(of: &littleEndian) { append(contentsOf: $0) }
+    }
+
+    mutating func appendLE(_ value: UInt32) {
+        var littleEndian = value.littleEndian
+        Swift.withUnsafeBytes(of: &littleEndian) { append(contentsOf: $0) }
+    }
+
+    /// Position, normal, tangent (vec4), UV: the 0x0F vertex layout.
+    mutating func appendVertex(position: SIMD3<Float>, uv: SIMD2<Float>) {
+        for value in [position.x, position.y, position.z, 0, 0, 1, 1, 0, 0, 1, uv.x, uv.y] {
+            appendLE(value.bitPattern)
+        }
     }
 }

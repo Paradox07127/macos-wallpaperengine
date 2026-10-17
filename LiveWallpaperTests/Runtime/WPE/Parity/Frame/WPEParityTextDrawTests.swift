@@ -46,9 +46,11 @@ final class WPEParityTextDrawTests: XCTestCase {
                     nil
                 }
             })
-            let operations = plan.frames[0].draws.compactMap { index, draw -> Int? in
+            try await encode(renderer, label: "scene \(sceneID)")
+            // A sorted perspective scene replans on its first frame, so indices come from the encoded layout.
+            let operations = renderer.frames[0].draws.compactMap { index, draw -> Int? in
                 guard case let .scene(scene) = draw, texts.contains(scene.objectID),
-                      plan.state.isVisible(scene.objectID) else { return nil }
+                      renderer.state.isVisible(scene.objectID) else { return nil }
                 return index
             }.sorted()
             print("scene \(sceneID): text objects \(texts.sorted()), visible text draws \(operations)")
@@ -56,7 +58,6 @@ final class WPEParityTextDrawTests: XCTestCase {
             for index in operations {
                 XCTAssertNil(renderer.skipped[index], "\(sceneID) operation \(index)")
             }
-            try await encode(renderer, label: "scene \(sceneID)")
             let encoded = Set(renderer.lastFrameDraws.map(\.operation))
             XCTAssertEqual(operations.filter { !encoded.contains($0) }, [], sceneID)
         }

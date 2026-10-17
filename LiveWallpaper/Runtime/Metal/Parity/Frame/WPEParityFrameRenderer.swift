@@ -1578,6 +1578,10 @@ final class WPEParityFrameRenderer {
         uniforms.lights = lights
         applyScriptText()
         try replanRelaidTexts()
+        // 14018aac0.c:206 keys with g_ViewForward, which comes from the pre-script camera (14017fa70.c:383-387).
+        if plan.scene.scene.transparentSorting {
+            state.sortTransparentMembers(viewForward: WPEParityUniformParallax.viewVectors(view: camera.view).forward)
+        }
         try selectGraphs()
         let graphs = graphs
         let draws = graphs.layout.draws

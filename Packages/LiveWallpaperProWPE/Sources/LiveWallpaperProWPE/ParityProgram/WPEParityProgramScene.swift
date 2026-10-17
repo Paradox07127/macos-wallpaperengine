@@ -45,7 +45,7 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
 
 /// A scene document, read with its wallpaper and WPE assets, turned into the parity frame inputs. Each albedo and
 /// effect pass keeps its merged material so frame draws find the JSON their combos come from. The frame is composed
-/// with one resolved MSAA sample count; transparent members keep paint order, without WPE's view-distance key.
+/// with one resolved MSAA sample count; transparent members draw in the view-distance order the scene state keeps.
 public struct WPEParityProgramScene: Sendable {
     struct MaterialKey: Hashable, Sendable {
         let objectID: String
@@ -233,9 +233,16 @@ public struct WPEParityProgramScene: Sendable {
                 ))
             }
             let passthrough = Self.flag(model?["passthrough"]) || image.config.passthrough
-            // 1401fac50.c:267-279: base material blend, not the mode-31 override; shapes and models never join.
-            let transparentMember = kind == .image
-                && (![.normal, .alphaToCoverage].contains(baseBlend) || passthrough && !image.copyBackground)
+            // 1401fac50.c:267-279: base material blend, not the mode-31 override; shapes never join. A loaded model
+            // joins unless a sub-mesh blends normal or A2C (140224c70.c:61, 258-262).
+            let transparentMember = switch kind {
+            case .image:
+                ![.normal, .alphaToCoverage].contains(baseBlend) || passthrough && !image.copyBackground
+            case let .model(sceneModel):
+                modelFile != nil && sceneModel.meshes.allSatisfy { ![.normal, .alphaToCoverage].contains($0.blend) }
+            default:
+                false
+            }
             sceneObjects.append(WPEParitySceneObject(
                 id: image.id, kind: kind, sortKey: document.objectPaintOrder[image.id] ?? index,
                 visible: Self.visible(image.id, document), width: objectWidth, height: objectHeight,
@@ -340,8 +347,9 @@ public struct WPEParityProgramScene: Sendable {
                                           clearColor: document.general.clearColor,
                                           clearEnabled: document.general.clearEnabled.resolvedValue,
                                           msaaSamples: samples,
-                                          // Scene+0xe0 bit 0x1000 (140199780.c:1368-1370); bit 0x8 is treated as clear.
-                                          transparentSorting: Self.authoredBool(document, "transparentsorting"),
+                                          // (e0 & 0x1008) == 0x1000 (14018aac0.c:169): bit 0x8, orthographic, never sorts.
+                                          transparentSorting: Self.authoredBool(document, "transparentsorting")
+                                              && !flags.orthographicProjection,
                                           forcesLayerComposite: flags.fogDistance || flags.fogHeight,
                                           shadowAtlas: flags.shadowQuality != 0 && [
                                               flags.spotShadowCookieLights, flags.spotShadowLights,
@@ -787,7 +795,10 @@ public extension WPEParitySceneState {
             constants[WPEParityMaterialPassKey(objectID: key.objectID, effectID: key.effectID,
                                                pass: scene.overridePasses[key] ?? 0)] = material.constants
         }
-        self.init(document: document, hdr: scene.engineFlags.hdr, constants: constants)
+        let members = scene.scene.objects.filter(\.transparentMember)
+        self.init(document: document, hdr: scene.engineFlags.hdr, constants: constants,
+                  transparentMembers: Set(members.map(\.id)),
+                  fullscreenMembers: Set(members.filter(\.fullscreen).map(\.id)))
     }
 }
 

@@ -128,6 +128,11 @@ public struct WPEParitySceneState: Sendable {
     /// Actual common-scene members in current order; transform-only parent placeholders are not members.
     /// Stable object/descriptor slots in `ids` never move when this order changes.
     public private(set) var commonOrder: [String]
+    /// The transparent member vector (14018aac0.c:206): creation order until the first sort, then far to near.
+    public private(set) var transparentOrder: [String]
+    private var transparentMembers: Set<String>
+    /// Members that key −∞ and so always sort last.
+    private var fullscreenMembers: Set<String>
     /// HDR frames multiply the layer colour by brightness.
     public let hdr: Bool
     /// Bumped by every origin, scale or angles change.
@@ -191,6 +196,13 @@ public struct WPEParitySceneState: Sendable {
         objects.append(object)
         parents.append(nil)
         commonOrder.append(id)
+        if transparentMembers.contains(templateID) {
+            transparentMembers.insert(id)
+            transparentOrder.append(id)
+            if fullscreenMembers.contains(templateID) {
+                fullscreenMembers.insert(id)
+            }
+        }
         if let loaded {
             // Append only: `effects` order is the load order every effect-visibility consumer indexes by.
             for (index, key) in loaded.effects.enumerated() where key.objectID == templateID {
@@ -310,7 +322,8 @@ public struct WPEParitySceneState: Sendable {
 
     /// Objects with a transform (image layers, groups, particles) start from the values the frame plan bakes; any other
     /// object the parent chain names holds only its visible bit. `constants` seeds each material pass.
-    public init(document: WPESceneDocument, hdr: Bool, constants: [WPEParityMaterialPassKey: [String: [Double]]] = [:]) {
+    public init(document: WPESceneDocument, hdr: Bool, constants: [WPEParityMaterialPassKey: [String: [Double]]] = [:],
+                transparentMembers: Set<String> = [], fullscreenMembers: Set<String> = []) {
         var ids: [String] = []
         var objects: [Object] = []
         var indexByID: [String: Int] = [:]
@@ -361,6 +374,10 @@ public struct WPEParitySceneState: Sendable {
                   commonIDs.insert(id).inserted else { return nil }
             return id
         }
+        // 14018ff60.c:347-349: members join the vector as they are created.
+        transparentOrder = commonOrder.filter(transparentMembers.contains)
+        self.transparentMembers = transparentMembers
+        self.fullscreenMembers = fullscreenMembers
         parents = ids.map { document.objectParentByID[$0].flatMap { indexByID[$0] } }
         self.hdr = hdr
         var passes: [Pass] = []
@@ -438,9 +455,25 @@ public struct WPEParitySceneState: Sendable {
         guard let index = index(of: id) else { return false }
         objects[index].alive = false
         commonOrder.removeAll { $0 == id }
+        transparentOrder.removeAll { $0 == id }
         scriptFields = scriptFields.filter { $0.key.objectID != id }
         membershipGeneration += 1
         return true
+    }
+
+    /// 1401865c0 keys each member by its own local origin, unparented; 14019ee60 moves one only past a strictly
+    /// smaller key, so ties keep the previous order. A changed order is a membership change.
+    public mutating func sortTransparentMembers(viewForward f: SIMD3<Float>) {
+        let keys = transparentOrder.map { id -> Float in
+            guard !fullscreenMembers.contains(id) else { return -.infinity }
+            let o = indexByID[id].map { objects[$0].origin } ?? .zero
+            // This summation order, unfused (0x1401865c0 asm :58-69).
+            return (o.y * f.y + o.x * f.x) + o.z * f.z
+        }
+        let order = transparentOrder.indices.sorted { keys[$0] > keys[$1] }.map { transparentOrder[$0] }
+        guard order != transparentOrder else { return }
+        transparentOrder = order
+        membershipGeneration += 1
     }
 
     /// 14018bbd0 removes the common member before clamping the unsigned low32 target position.

@@ -78,12 +78,29 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         }
     }
 
-    func testTransparentSortingDrawsTranslucentLayerAfterLaterOpaqueOne() async throws {
+    func testOrthographicSceneKeepsPaintOrderWhateverTheSortingFlag() async throws {
         for sorting in [true, false] {
             let fixture = try await makeSortingRenderer(transparentSorting: sorting)
             _ = try await render(fixture)
-            // Half-alpha red over blue, or opaque blue over the earlier red.
-            let expected = sorting ? [128, 0, 127] : [0, 0, 255]
+            // Opaque blue over the earlier red: an orthographic scene never sorts.
+            let expected = [0, 0, 255]
+            let actual = try pixel(fixture)
+            XCTAssertTrue(zip(actual, expected).allSatisfy { abs($0 - $1) <= 1 },
+                          "transparentsorting \(sorting): \(actual) != \(expected)")
+        }
+    }
+
+    func testPerspectiveSortingDrawsTheFartherMemberFirst() async throws {
+        for sorting in [true, false] {
+            let fixture = try await makePerspectiveSortingRenderer(transparentSorting: sorting)
+            // The first frame re-sorts and replans, so the plan's draw indices no longer name the subject.
+            guard case let .committed(buffer) = try fixture.renderer.encodeFrame(elapsed: 1.0 / 60) else {
+                return XCTFail("Frame was skipped")
+            }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            // Sorted: the nearer half red over the farther half blue; unsorted: blue, authored later, over red.
+            let expected = sorting ? [128, 0, 64] : [64, 0, 128]
             let actual = try pixel(fixture)
             XCTAssertTrue(zip(actual, expected).allSatisfy { abs($0 - $1) <= 1 },
                           "transparentsorting \(sorting): \(actual) != \(expected)")
@@ -132,6 +149,31 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         let blue: [String: Any] = ["id": 2, "image": "models/blue.json", "size": "32 32", "origin": "16 16 0"]
         let scene: [String: Any] = ["camera": ["eye": "0 0 1", "center": "0 0 0", "up": "0 1 0"],
                                     "general": ["orthogonalprojection": ["width": 32, "height": 32],
+                                                "clearcolor": "0 0 0", "cameraparallax": false, "camerashake": false,
+                                                "transparentsorting": transparentSorting],
+                                    "objects": [red, blue]]
+        return try await makeRenderer(scene: scene, files: files) { draw in
+            draw.objectID == "1" && draw.geometry == .layerMesh
+        }
+    }
+
+    /// Translucent half red at z=1 authored before translucent half blue at z=0, seen from z=30, no depth.
+    private func makePerspectiveSortingRenderer(transparentSorting: Bool) async throws -> Fixture {
+        var files: [String: Data] = ["materials/halfred.tex": Self.texture([255, 0, 0, 128]),
+                                     "materials/halfblue.tex": Self.texture([0, 0, 255, 128])]
+        func json(_ name: String, _ value: Any) throws {
+            files[name] = try JSONSerialization.data(withJSONObject: value, options: .sortedKeys)
+        }
+        for color in ["red", "blue"] {
+            try json("models/\(color).json", ["material": "materials/\(color).json"])
+            try json("materials/\(color).json", Self.material(shader: "genericimage2", texture: "half\(color)",
+                                                              depthTest: false, depthWrite: false,
+                                                              blending: "translucent", culls: false))
+        }
+        let red: [String: Any] = ["id": 1, "image": "models/red.json", "size": "32 32", "origin": "0 0 1"]
+        let blue: [String: Any] = ["id": 2, "image": "models/blue.json", "size": "32 32", "origin": "0 0 0"]
+        let scene: [String: Any] = ["camera": ["eye": "0 0 30", "center": "0 0 0", "up": "0 1 0"],
+                                    "general": ["orthogonalprojection": NSNull(), "fov": 50,
                                                 "clearcolor": "0 0 0", "cameraparallax": false, "camerashake": false,
                                                 "transparentsorting": transparentSorting],
                                     "objects": [red, blue]]

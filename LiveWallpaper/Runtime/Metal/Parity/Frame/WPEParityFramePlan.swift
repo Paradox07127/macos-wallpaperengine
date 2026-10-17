@@ -398,6 +398,7 @@ struct WPEParityFramePlan {
             }
             description.objects[index].parentID = parent.flatMap { objectIDs.contains($0) ? $0 : nil }
         }
+        description.transparentOrder = state.transparentOrder
         let commonRanks = Dictionary(uniqueKeysWithValues: state.commonOrder.enumerated().map { ($0.element, $0.offset) })
         for index in description.objects.indices {
             if let rank = commonRanks[description.objects[index].id] {
