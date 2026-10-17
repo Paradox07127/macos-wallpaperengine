@@ -63,6 +63,37 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(large.liveCount, 4)
     }
 
+    /// 0.2 s steps at rate 50 give 10 births per step, so the accumulator stays integral.
+    private func continuousEmitter(startTime: Float, emitterFlags: Int = 0) -> WPEParityParticleSystem {
+        system("""
+        {"maxcount": 512, "starttime": \(startTime),
+         "emitter": [{"name": "sphererandom", "rate": 50, "flags": \(emitterFlags)}],
+         "initializer": [{"name": "lifetimerandom", "min": 4, "max": 4}],
+         "operator": [{"name": "movement"}, {"name": "alphafade"}]}
+        """, rng: WPEParityMT19937(seed: 11))
+    }
+
+    func testLongStarttimeContinuousEmitterPrewarmsOnlyTheLifetimeWindow() {
+        let long = continuousEmitter(startTime: 400)
+        XCTAssertLessThanOrEqual(long.prewarmStepCount, 22)
+        let window = continuousEmitter(startTime: Float(long.prewarmStepCount) * long.prewarmStep)
+        XCTAssertEqual(window.prewarmStepCount, long.prewarmStepCount)
+        XCTAssertGreaterThan(long.liveCount, 0)
+        XCTAssertEqual(long.liveCount, window.liveCount)
+        func liveAges(_ particles: WPEParityParticleSystem) -> [Float] {
+            particles.lifetime.indices.filter { particles.lifetime[$0] != 0 }.map { particles.age[$0] }.sorted()
+        }
+        let longAges = liveAges(long), windowAges = liveAges(window)
+        XCTAssertEqual(longAges.count, windowAges.count)
+        for (lhs, rhs) in zip(longAges, windowAges) {
+            XCTAssertEqual(lhs, rhs, accuracy: 1e-4)
+        }
+    }
+
+    func testPeriodicEmitterKeepsTheFullPrewarm() {
+        XCTAssertEqual(continuousEmitter(startTime: 400, emitterFlags: 4).prewarmStepCount, 2000)
+    }
+
     func testBurstIsClampedToMaxCountAndExcessIsDropped() {
         var particles = system("""
         {"maxcount": 10,

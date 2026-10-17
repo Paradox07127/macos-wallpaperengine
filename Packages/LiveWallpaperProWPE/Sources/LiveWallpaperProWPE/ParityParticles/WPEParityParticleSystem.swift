@@ -513,16 +513,55 @@ public struct WPEParityParticleSystem {
                                   parentUpdateMatrix: simd_float4x4, parentWorldSpace: Bool) {
         guard config.startTime > 0 else { return }
         prewarmStep = capacity < 500 ? 0.05 : 0.2
+        var stepLimit = Float.infinity
+        if let horizon = prewarmHorizon, config.startTime > horizon {
+            // Stands in for the native full loop (D/14022ebe0.c:349-367); valid only because production prewarm uses a random seed.
+            stepLimit = (horizon / prewarmStep).rounded(.up) + 2
+        }
         let recorded = birthsRecordSpawnEvents
         birthsRecordSpawnEvents = false
         defer { birthsRecordSpawnEvents = recorded }
         var elapsed: Float = 0
-        while elapsed < config.startTime {
+        while elapsed < config.startTime, Float(prewarmStepCount) < stepLimit {
             simulate(dt: prewarmStep, parentControlPoints: parent, parentCount: parentCount,
                      parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
             elapsed += prewarmStep
             prewarmStepCount += 1
         }
+    }
+
+    /// Longest lifetime a birth can get, in seconds; nil when the prewarm's end state can also depend on older
+    /// births or on the step count (non-continuous emitters, children, rope trails, sequence counters, boids).
+    private var prewarmHorizon: Float? {
+        guard config.children.isEmpty, trailSegments == 0, config.emitters.allSatisfy({
+            !$0.periodic && $0.instantaneous == 0 && $0.duration <= 0 && $0.delay <= 0
+        }) else { return nil }
+        var longest: Float?
+        for initializer in config.initializers {
+            switch initializer {
+            case let .lifetime(low, high, exponent):
+                guard exponent > 0, (high - low).isFinite else { return nil }
+                longest = max(longest ?? low, low, high)
+            case .sequenceAround, .sequenceBetween:
+                return nil
+            case let .remap(field) where field.output == .maxLifetime:
+                return nil
+            default:
+                break
+            }
+        }
+        for entry in config.operators {
+            switch entry.kind {
+            case .boids:
+                return nil
+            case let .remap(field) where field.output == .maxLifetime:
+                return nil
+            default:
+                break
+            }
+        }
+        let horizon = max(max(longest ?? 1, 0.001) * instance.lifetime, 0.001)
+        return horizon.isFinite ? horizon : nil
     }
 
     /// The normal update wrapper advances this system's elapsed time and then its children (1402308a0).
