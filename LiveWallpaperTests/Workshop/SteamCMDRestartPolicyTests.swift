@@ -320,6 +320,19 @@ struct SteamWorkshopDownloadCompletionTests {
         #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
     }
 
+    @Test("Committed-item validation accepts a package named after the entry file")
+    func acceptsStemNamedPackage() throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent("123")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data(#"{"type":"scene","file":"ricepod.json"}"#.utf8).write(to: folder.appendingPathComponent("project.json"))
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data("payload".utf8).write(to: folder.appendingPathComponent("ricepod.pkg"))
+        #expect(SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+    }
+
     @Test("A successful receipt cannot rescue a refused replacement")
     func refusedRestartIsNotRescued() {
         var completion = SteamWorkshopDownloadCompletion(workshopID: "123")

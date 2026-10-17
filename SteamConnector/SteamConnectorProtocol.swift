@@ -708,8 +708,11 @@ struct SteamWorkshopDownloadCompletion {
         }
         guard let file = manifest["file"] as? String, !file.isEmpty,
               !file.hasPrefix("/"), !file.split(separator: "/").contains("..") else { return false }
-        // Packaged scenes (and packaged video/web) name their entry inside scene.pkg in project.json.
-        if validPayload(folder.appendingPathComponent("scene.pkg"), steamRoot: steamRoot) {
+        // Packaged scenes (and packaged video/web) name their entry inside the package; WPE names the package after
+        // the entry file's stem (ricepod.json → ricepod.pkg) and older items use scene.pkg.
+        let stemPackage = ((file as NSString).lastPathComponent as NSString).deletingPathExtension + ".pkg"
+        if validPayload(folder.appendingPathComponent(stemPackage), steamRoot: steamRoot)
+            || validPayload(folder.appendingPathComponent("scene.pkg"), steamRoot: steamRoot) {
             return true
         }
         let payload = folder.appendingPathComponent(file).standardizedFileURL
