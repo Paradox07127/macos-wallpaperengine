@@ -91,9 +91,11 @@ struct WPEDependencyMountResolver {
             return nil
         }
 
-        // Packaged dependency: assets live inside scene.pkg → mount the package
-        // for in-place reading (no extraction). Prefer this over the loose folder.
-        let pkgURL = siblingRoot.appendingPathComponent("scene.pkg")
+        // Packaged dependency: mount the package for in-place reading (no extraction). Prefer this over the loose folder.
+        let entryFile = (try? WallpaperEngineProject.read(from: siblingRoot))?.entryFile
+        let pkgURL = siblingRoot.appendingPathComponent(
+            WallpaperEngineProject.packageFileName(entryFile: entryFile, in: siblingRoot, fileManager: fileManager)
+        )
         if fileManager.fileExists(atPath: pkgURL.path) {
             return WPEAssetMount(workshopID: workshopID, packageURL: pkgURL)
         }

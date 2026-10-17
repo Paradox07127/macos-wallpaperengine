@@ -109,7 +109,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 skipped += 1
                 continue
             }
-            let package = folder.appending(path: "scene.pkg")
+            let package = folder.appending(path: project.packageFileName(in: folder))
             let hasPackage = FileManager.default.fileExists(atPath: package.path)
             let packageSHA256: Any = try hasPackage ? Self.sha256(of: package) as Any : NSNull()
             var record: [String: Any] = [

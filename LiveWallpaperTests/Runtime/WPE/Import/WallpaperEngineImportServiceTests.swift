@@ -313,6 +313,43 @@ struct WallpaperEngineImportServiceTests {
         #expect(!FileManager.default.fileExists(atPath: sceneCache.path))
     }
 
+    @Test(
+        "Packaged scene reads the package named after the project file, else scene.pkg",
+        arguments: [
+            ("ricepod.json", "ricepod.pkg"),
+            ("scene.json", "scene.pkg"),
+            ("ricepod.json", "scene.pkg"),
+        ]
+    )
+    func packagedSceneUsesProjectFileStemPackage(entryFile: String, packageFileName: String) async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": { "orthogonalprojection": { "width": 1920, "height": 1080 } },
+            "objects": [{ "id": "layer1", "name": "Layer 1", "type": "image", "image": "materials/layer1.png" }]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: entryFile,
+            pkgEntries: [
+                PackageEntrySpec(entryFile, Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes)),
+            ],
+            packageFileName: packageFileName
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+        guard case let .ready(.scene(descriptor), _) = result else {
+            Issue.record("Expected .ready scene, got \(result)")
+            return
+        }
+        #expect(descriptor.assetStorage == .packageSource(fileName: packageFileName))
+        #expect(descriptor.entryFile == entryFile)
+    }
+
     @Test("Unpacked scene folder with valid scene.json + image asset imports in place (.sourceDirectory)")
     func unpackedSceneFolderWithAssetReturnsReady() async throws {
         let pngBytes = try makeFixturePNG(width: 4, height: 4)
@@ -965,7 +1002,8 @@ struct WallpaperEngineImportServiceTests {
         pkgEntries: [PackageEntrySpec]?,
         manifestOverride: String? = nil,
         workshopIDOverride: String? = nil,
-        prefilledSiblingWorkshopIDs: [String] = []
+        prefilledSiblingWorkshopIDs: [String] = [],
+        packageFileName: String = "scene.pkg"
     ) throws -> ImportFixture {
         let fileManager = FileManager.default
         let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -995,7 +1033,7 @@ struct WallpaperEngineImportServiceTests {
         }
 
         if let pkgEntries {
-            try makePackage(entries: pkgEntries).write(to: folderURL.appendingPathComponent("scene.pkg"))
+            try makePackage(entries: pkgEntries).write(to: folderURL.appendingPathComponent(packageFileName))
         }
 
         let service = WallpaperEngineImportService(

@@ -66,7 +66,7 @@ final class WallpaperEngineImportService {
         folderURL: URL,
         sourceBookmark: Data
     ) async -> ImportResult {
-        let pkgURL = folderURL.appendingPathComponent("scene.pkg")
+        let pkgURL = folderURL.appendingPathComponent(project.packageFileName(in: folderURL, fileManager: fileManager))
         if fileManager.fileExists(atPath: pkgURL.path) {
             return await importPackagedVideo(project: project, pkgURL: pkgURL, sourceBookmark: sourceBookmark)
         }
@@ -143,7 +143,7 @@ final class WallpaperEngineImportService {
         folderURL: URL,
         sourceBookmark: Data
     ) async -> ImportResult {
-        let pkgURL = folderURL.appendingPathComponent("scene.pkg")
+        let pkgURL = folderURL.appendingPathComponent(project.packageFileName(in: folderURL, fileManager: fileManager))
         if fileManager.fileExists(atPath: pkgURL.path) {
             return await importPackagedWeb(
                 project: project,
@@ -267,7 +267,7 @@ final class WallpaperEngineImportService {
             ))
         }
 
-        let pkgURL = folderURL.appendingPathComponent("scene.pkg")
+        let pkgURL = folderURL.appendingPathComponent(project.packageFileName(in: folderURL, fileManager: fileManager))
         let packaged = fileManager.fileExists(atPath: pkgURL.path)
         do {
             if packaged {
@@ -276,7 +276,7 @@ final class WallpaperEngineImportService {
             return try await finishSceneSourceDirectoryImport(project: project, folderURL: folderURL, sourceBookmark: sourceBookmark)
         } catch {
             let origin = makeOrigin(project: project, sourceBookmark: sourceBookmark, cacheRelativePath: cacheRelativePath(for: project), resourceLocation: .cache)
-            let descriptor = SceneDescriptor(workshopID: project.workshopID, cacheRelativePath: cacheRelativePath(for: project), entryFile: project.entryFile, capabilityTier: .imageOnly, assetStorage: packaged ? .packageSource(fileName: "scene.pkg") : .sourceDirectory, dependencyWorkshopIDs: project.dependencyWorkshopIDs)
+            let descriptor = SceneDescriptor(workshopID: project.workshopID, cacheRelativePath: cacheRelativePath(for: project), entryFile: project.entryFile, capabilityTier: .imageOnly, assetStorage: packaged ? .packageSource(fileName: pkgURL.lastPathComponent) : .sourceDirectory, dependencyWorkshopIDs: project.dependencyWorkshopIDs)
             return .sceneFailure(cause: SceneFailureCause.make(error), origin: origin, descriptor: descriptor)
         }
     }

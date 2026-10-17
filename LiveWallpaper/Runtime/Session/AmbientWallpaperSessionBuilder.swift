@@ -595,7 +595,8 @@ final class AmbientWallpaperSessionBuilder {
             onOriginBookmarkRefresh: onOriginBookmarkRefresh
         ) else { return nil }
         if let packageURL = ResourceUtilities.containedRegularFileURL(
-            relativePath: "scene.pkg", inside: source.url
+            relativePath: WallpaperEngineProject.packageFileName(entryFile: origin?.entryFile, in: source.url),
+            inside: source.url
         ), let pkg = try? WPEPackageSceneAssetProvider(packageURL: packageURL) {
             let provider = WPESecurityScopedSceneAssetProvider(
                 wrapped: pkg, scopedURL: source.url, didStartAccessing: source.didStart

@@ -80,7 +80,9 @@ struct WPECachedContentResolver {
 
         let looseEntryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: entryFile)
         let looseEntryExists = looseEntryURL.map { fileManager.fileExists(atPath: $0.path) } ?? false
-        let pkgURL = folderURL.appendingPathComponent("scene.pkg")
+        let pkgURL = folderURL.appendingPathComponent(
+            WallpaperEngineProject.packageFileName(entryFile: entryFile, in: folderURL, fileManager: fileManager)
+        )
 
         switch origin.originalType {
         case .video:
@@ -240,7 +242,10 @@ struct WPECachedContentResolver {
         let assetStorage: SceneAssetStorage
         let sceneData: Data
 
-        let packageURL = folderURL.appendingPathComponent("scene.pkg", isDirectory: false)
+        let packageURL = folderURL.appendingPathComponent(
+            WallpaperEngineProject.packageFileName(entryFile: entryFile, in: folderURL, fileManager: fileManager),
+            isDirectory: false
+        )
         if fileManager.fileExists(atPath: packageURL.path),
            let packageProvider = try? WPEPackageSceneAssetProvider(packageURL: packageURL),
            let packageSceneData = try? packageProvider.data(atRelativePath: entryFile) {
