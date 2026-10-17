@@ -4,6 +4,9 @@ public struct WPECBufferLayout: Sendable {
         reflection.size
     }
 
+    /// Bound bytes: an element index into a float4[n] array reads up to register offset/16 + 4n-1, 16 bytes each.
+    public let boundLength: Int
+
     private let variablesByName: [String: WPEStageReflection.CBuffer.Variable]
 
     public init(_ reflection: WPEStageReflection.CBuffer) throws {
@@ -72,6 +75,10 @@ public struct WPECBufferLayout: Sendable {
         }
         self.reflection = reflection
         variablesByName = variables
+        boundLength = reflection.variables.reduce(reflection.size) { length, variable in
+            variable.class == .vector && variable.columns == 4 && variable.elements > 0
+                ? max(length, variable.offset + 64 * variable.elements) : length
+        }
     }
 
     public subscript(name: String) -> WPEStageReflection.CBuffer.Variable? {

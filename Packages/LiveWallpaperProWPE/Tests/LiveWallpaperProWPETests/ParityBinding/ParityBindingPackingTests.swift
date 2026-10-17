@@ -20,6 +20,19 @@ final class ParityBindingPackingTests: XCTestCase {
         (0 ..< 4).reduce(0) { $0 | UInt32(bytes[offset + $1]) << ($1 * 8) }
     }
 
+    /// `float g_AudioSpectrum64Left[64]` packs as float4[16], which a helper before main indexes up to 63.
+    func testBoundLengthCoversElementIndexedFloat4Arrays() throws {
+        let layout = try layout([
+            variable("g_Texture0Resolution", size: 16, kind: .vector, columns: 4),
+            variable("g_AudioSpectrum64Left", offset: 16, size: 256, kind: .vector, columns: 4, elements: 16),
+            variable("g_AudioSpectrum64Right", offset: 272, size: 256, kind: .vector, columns: 4, elements: 16),
+        ], size: 528)
+        XCTAssertEqual(layout.size, 528)
+        XCTAssertEqual(layout.boundLength, 272 + 64 * 16)
+        let plain = try self.layout([variable("v", size: 16, kind: .vector, columns: 4)], size: 16)
+        XCTAssertEqual(plain.boundLength, 16)
+    }
+
     func testScalarsAreFourBytesAndPreserveBits() throws {
         let layout = try layout([
             variable("f", size: 4), variable("i", offset: 4, type: .int),

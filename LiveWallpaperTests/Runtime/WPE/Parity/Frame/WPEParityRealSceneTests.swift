@@ -74,13 +74,14 @@ final class WPEParityRealSceneTests: XCTestCase {
                                     try oracle.write(value, to: variable.name)
                                 }
                             }
-                            var packed = [UInt8](repeating: 0xA5, count: layout.size)
+                            var packed = [UInt8](repeating: 0xA5, count: layout.boundLength)
                             try packed.withUnsafeMutableBytes {
                                 try WPEParityDrawEncoder.pack(cbuffer: index, of: reflected,
                                                               constants: draw.constants[stage],
                                                               uniforms: draw.uniforms, at: XCTUnwrap($0.baseAddress))
                             }
-                            XCTAssertEqual(packed, oracle.bytes, "scene \(scene.id) frame \(frame) operation "
+                            let tail = [UInt8](repeating: 0, count: layout.boundLength - layout.size)
+                            XCTAssertEqual(packed, oracle.bytes + tail, "scene \(scene.id) frame \(frame) operation "
                                 + "\(operation) \(stage) \(layout.reflection.name)")
                             compared += 1
                         }
@@ -244,6 +245,38 @@ final class WPEParityRealSceneTests: XCTestCase {
     /// Workshop 3662499296: its scripts create 63 layers from the workshop's `models/bar.json`.
     func testScene3662499296ColdCreatedLayersDraw() async throws {
         try await assertCreatedLayersDraw("3662499296", model: "models/workshop/2652493753/bar.json")
+    }
+
+    /// Workshop 3646240766 and 3719111841: the audioline effect's helper indexes its float4[16] spectrum arrays per
+    /// element, so each draw binds and reserves the cbuffer up to the last element index's register.
+    func testAudiolineSpectrumCBufferBindsItsElementIndexedReach() async throws {
+        for workshopID in ["3646240766", "3719111841"] {
+            let driver = try await loadWorkshopScene(workshopID)
+            defer { driver.cleanup() }
+            try await presentFrames(driver, count: 120, label: "scene \(workshopID)")
+            let renderer = try XCTUnwrap(driver.renderer)
+            let audioline = renderer.lastFrameDraws.filter { _, draw in
+                draw.pipeline.fragment.cbuffers.contains { $0["g_AudioSpectrum64Left"] != nil }
+            }
+            XCTAssertFalse(audioline.isEmpty, "scene \(workshopID) encoded no audioline draw")
+            for (operation, draw) in audioline {
+                let pipeline = draw.pipeline
+                let layout = try XCTUnwrap(pipeline.fragment.cbuffers.first { $0["g_AudioSpectrum64Left"] != nil })
+                XCTAssertEqual(layout.size, 528, "scene \(workshopID) operation \(operation)")
+                XCTAssertGreaterThanOrEqual(layout.boundLength, 1296, "scene \(workshopID) operation \(operation)")
+                let reserved = [pipeline.vertex, pipeline.geometry?.geometry, pipeline.fragment].compactMap(\.self)
+                    .filter { $0.bindingPlan.totalSize > 0 }
+                    .reduce(0) { total, stage in
+                        stage.cbuffers.filter {
+                            stage.bindingPlan.cbufferOffset(register: $0.reflection.register,
+                                                            space: $0.reflection.space) != nil
+                        }.reduce(total + WPEParityFrameArena.aligned(stage.bindingPlan.totalSize)) {
+                            $0 + WPEParityFrameArena.aligned($1.boundLength)
+                        }
+                    }
+                XCTAssertEqual(pipeline.argumentBytes, reserved, "scene \(workshopID) operation \(operation)")
+            }
+        }
     }
 
     private func assertCreatedLayersDraw(_ workshopID: String, model: String) async throws {

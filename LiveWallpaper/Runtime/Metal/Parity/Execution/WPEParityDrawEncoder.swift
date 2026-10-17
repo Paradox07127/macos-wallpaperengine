@@ -103,7 +103,7 @@ struct WPEParityDrawEncoder {
                 plan.cbufferOffset(register: $0.reflection.register, space: $0.reflection.space) != nil
             }
             return cbuffers.reduce(total + WPEParityFrameArena.aligned(plan.totalSize)) {
-                $0 + WPEParityFrameArena.aligned($1.size)
+                $0 + WPEParityFrameArena.aligned($1.boundLength)
             }
         }
     }
@@ -207,14 +207,14 @@ struct WPEParityDrawEncoder {
         for (index, layout) in stage.cbuffers.enumerated() {
             guard let entry = plan.cbufferOffset(register: layout.reflection.register,
                                                  space: layout.reflection.space) else { continue }
-            guard let allocation = frame.allocate(length: layout.size) else {
+            guard let allocation = frame.allocate(length: layout.boundLength) else {
                 throw WPEParityExecutionError.arenaExhausted
             }
             try Self.pack(cbuffer: index, of: stage, constants: constants, uniforms: draw.uniforms,
                           at: allocation.contents)
             // Buffer metadata: byte length in the low 32 bits (MSC bounds checks read it).
             try plan.writeEntry(at: entry, gpuAddress: allocation.gpuAddress, resourceID: 0,
-                                metadata: UInt64(UInt32(layout.size)), into: &table)
+                                metadata: UInt64(UInt32(layout.boundLength)), into: &table)
         }
 
         for resource in stage.reflection.resources {
@@ -252,7 +252,8 @@ struct WPEParityDrawEncoder {
     static func pack(cbuffer index: Int, of stage: WPEParityPipeline.Stage, constants: [String: WPECBufferValue]?,
                      uniforms: WPEParityDrawUniforms?, at base: UnsafeMutableRawPointer) throws {
         let layout = stage.cbuffers[index]
-        _ = base.initializeMemory(as: UInt8.self, repeating: 0, count: layout.size)
+        // Every frame: the arena's slots rotate, so an unzeroed tail would read an earlier frame's bytes.
+        _ = base.initializeMemory(as: UInt8.self, repeating: 0, count: layout.boundLength)
         for (variable, uniform) in zip(layout.reflection.variables, stage.engineUniforms[index]) {
             if let value = constants?[variable.name] {
                 try WPECBufferWriter.write(value, to: variable, at: base)

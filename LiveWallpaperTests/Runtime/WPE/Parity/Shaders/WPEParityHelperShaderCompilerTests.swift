@@ -242,6 +242,113 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         XCTAssertEqual(output, first + zero + zero + zero + zero + second + zero + zero)
     }
 
+    /// A helper before main indexes a float4[16] cbuffer array per element, as WPE's audio effects do; D3D11 reads
+    /// 0 past the buffer. https://learn.microsoft.com/en-us/windows/win32/api/d3d11_1/nf-d3d11_1-id3d11devicecontext1-pssetconstantbuffers1
+    func testCBufferArrayIndexedPastItsRegistersReadsZero() async throws {
+        let compiler = try makeCompiler(binaries())
+        let program = WPEHLSLProgram(vertex: Array("""
+        float4 main(uint id : SV_VertexID) : SV_Position {
+            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+            return float4(p[id], 0, 1);
+        }
+        """.utf8), fragment: Array("""
+        cbuffer g_bufDynamic:register(b0)
+        {
+        const float4 g_Spectrum[16];
+        }
+        float4 spectrum(uint index) {
+            return g_Spectrum[index];
+        }
+        float4 main(float4 position : SV_Position) : SV_Target {
+            return spectrum((uint)position.x * 9);
+        }
+        """.utf8))
+        let store = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(
+            cachesURL: workDirectory.appending(path: "cache")
+        ))
+        let request = WPEParityShaderCompileRequest(program: program, compilerIdentity: compiler.compilerIdentity,
+                                                    bindingABIVersion: 1)
+        XCTAssertTrue(request.options.boundsCheck)
+        let artifact = try await store.artifact(for: request)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let factory = WPEParityPipelineFactory(device: device)
+        let pipeline = try factory.makePipeline(artifact: artifact, blend: .wpe(.normal, modifiers: .writeAlpha),
+                                                colorPixelFormat: .rgba8Unorm)
+        let targetDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 8,
+                                                                        height: 1, mipmapped: false)
+        targetDescriptor.usage = .renderTarget
+        targetDescriptor.storageMode = .shared
+        let target = try XCTUnwrap(device.makeTexture(descriptor: targetDescriptor))
+        let arena = try XCTUnwrap(WPEParityFrameArena(device: device, capacity: 65536))
+        let command = try XCTUnwrap(queue.makeCommandBuffer())
+        let frame = try XCTUnwrap(arena.beginFrame(for: command))
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(1, 0, 1, 1)
+        pass.colorAttachments[0].storeAction = .store
+        let encoder = try XCTUnwrap(command.makeRenderCommandEncoder(descriptor: pass))
+        var draw = try WPEParityDraw(
+            pipeline: pipeline, depthStencil: .wpe(depthTest: false, depthWrite: false),
+            rasterizer: .wpe(flipFrontFace: false, cullingDisabled: true, slopeDepthBias: false, multisample: false),
+            vertexBuffer: XCTUnwrap(device.makeBuffer(length: 16, options: .storageModeShared)),
+            primitiveType: .triangle, vertexCount: 3
+        )
+        let element = WPECBufferValue.vector([1, 0.6, 0.2, 1])
+        draw.constants = [.fragment: ["g_Spectrum": .array(Array(repeating: element, count: 16))]]
+        try WPEParityDrawEncoder(factory: factory).encode(draw, frame: frame, hasDepthAttachment: false, on: encoder)
+        encoder.endEncoding()
+        command.commit()
+        await command.completed()
+        XCTAssertNil(command.error)
+
+        let entry = try XCTUnwrap(pipeline.fragment.bindingPlan.cbufferOffset(register: 0))
+        let arenaRange = frame.buffer.gpuAddress ..< frame.buffer.gpuAddress + UInt64(frame.buffer.length)
+        let contents = frame.buffer.contents()
+        let lengths = stride(from: entry, to: frame.buffer.length - 24, by: WPEParityFrameArena.alignment).compactMap {
+            arenaRange.contains(contents.loadUnaligned(fromByteOffset: $0, as: UInt64.self))
+                ? contents.loadUnaligned(fromByteOffset: $0 + 16, as: UInt32.self) : nil
+        }
+        // Index 63 reads register 63, which ends at byte 1024.
+        XCTAssertEqual(lengths, [1024], "cbuffer descriptor lengths")
+        var output = [UInt8](repeating: 255, count: 32)
+        target.getBytes(&output, bytesPerRow: 32, from: MTLRegionMake2D(0, 0, 8, 1), mipmapLevel: 0)
+        let inside: [UInt8] = [255, 153, 51, 255]
+        XCTAssertEqual(output, inside + inside + [UInt8](repeating: 0, count: 24))
+    }
+
+    /// WPE packs `float g_AudioSpectrum64Left[64]` as float4[16]; the reflection must keep that packing.
+    func testAudioSpectrumCBufferKeepsWPEPacking() async throws {
+        let compiler = try makeCompiler(binaries())
+        let program = WPEHLSLProgram(fragment: Array("""
+        cbuffer g_bufDynamic:register(b1)
+        {
+        const float4 g_Texture0Resolution;
+        const float4 g_AudioSpectrum64Left[16];
+        const float4 g_AudioSpectrum64Right[16];
+        }
+        float getMirroredAudioValue(int index) {
+            return (g_AudioSpectrum64Left[index].x + g_AudioSpectrum64Right[index].x) * 0.5;
+        }
+        float4 main(float4 position : SV_Position) : SV_Target {
+            float accessArrayg_AudioSpectrum64Left[64] = (float[64])g_AudioSpectrum64Left;
+            return float4(getMirroredAudioValue((int)position.x) * g_Texture0Resolution.x,
+                          accessArrayg_AudioSpectrum64Left[(int)position.y], 0, 1);
+        }
+        """.utf8))
+        let compiled = try await compiler.compile(WPEParityShaderCompileRequest(
+            program: program, compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1
+        ))
+        let output = try XCTUnwrap(compiled.stages[.fragment])
+        let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: output.reflectionJSON)
+        let cbuffer = try XCTUnwrap(reflection.cbuffers.first { $0.name == "g_bufDynamic" })
+        XCTAssertEqual(cbuffer.size, 528)
+        let right = try XCTUnwrap(cbuffer.variables.first { $0.name == "g_AudioSpectrum64Right" })
+        XCTAssertEqual([right.offset, right.size, right.elements, right.columns], [272, 256, 16, 4])
+        XCTAssertEqual(try WPECBufferLayout(cbuffer).boundLength, 1296)
+    }
+
     func testIdentityFollowsLibraryBytesNotPath() throws {
         let binaries = try binaries()
         let original = try makeCompiler(binaries).compilerIdentity
