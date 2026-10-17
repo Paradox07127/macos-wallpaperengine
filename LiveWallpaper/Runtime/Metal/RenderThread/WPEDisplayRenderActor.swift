@@ -185,10 +185,15 @@ actor WPEDisplayRenderActor {
         driver.spanFrames = inputs.span?.frames
         driver.executor.spanOutputTextureLimit = inputs.span?.outputTextureLimit
         parityInputs?.userShortcutIcons?.onChange = nil
+        parityInputs?.userShortcuts?.setChangeHandler(nil)
         (parityDriver, parityInputs) = (driver, inputs)
         inputs.userShortcutIcons?.onChange = { [weak self, weak icons = inputs.userShortcutIcons] in
             guard let icons else { return }
             Task { await self?.parityIconsChanged(icons) }
+        }
+        inputs.userShortcuts?.setChangeHandler { [weak self, weak bridge = inputs.userShortcuts] in
+            guard let bridge else { return }
+            Task { await self?.parityUserShortcutsChanged(bridge) }
         }
         startConfigConsumer()
     }
@@ -203,6 +208,7 @@ actor WPEDisplayRenderActor {
         driver.cleanup()
         (parityDriver, parityInputs) = (nil, nil)
         inputs.userShortcutIcons?.onChange = nil
+        inputs.userShortcuts?.setChangeHandler(nil)
         adopt(renderer)
         // No suspension until the replay ends: a command applied in between would reach neither scene.
         setFrameRateCeiling(driver.userPreferredFPS)
@@ -596,6 +602,12 @@ actor WPEDisplayRenderActor {
 
     private func parityIconsChanged(_ icons: WPEUserShortcutIconStore) {
         guard parityInputs?.userShortcutIcons === icons, parityDriver?.didLoad == true else { return }
+        requestParityFrame()
+    }
+
+    /// The next tick hands the rebound keys to applyUserProperties, so a parked scene needs that frame.
+    private func parityUserShortcutsChanged(_ bridge: WPEUserShortcutScriptBridge) {
+        guard parityInputs?.userShortcuts === bridge, parityDriver?.didLoad == true else { return }
         requestParityFrame()
     }
 

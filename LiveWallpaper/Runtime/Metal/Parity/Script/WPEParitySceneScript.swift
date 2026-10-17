@@ -34,6 +34,8 @@ final class WPEParitySceneScript {
         /// project.json `general.properties` with the user's values, `{key: {type, value, …}}`.
         var userPropertiesJSON = "{}"
         var openUserShortcut: (String) -> Bool = { _ in false }
+        /// The bindings scripts see as usershortcut `isbound`/`commandtype`/`file`; nil = every key unbound.
+        var userShortcuts: WPEUserShortcutScriptBridge?
         var media: WPESceneMediaEventMailbox?
         /// The existing product load generation; parity inputs are consumed atomically by the renderer.
         var mediaGeneration: Int?
@@ -67,6 +69,7 @@ final class WPEParitySceneScript {
     let cameraIDs: [String]
     let soundIDs: [String]
     private let media: WPESceneMediaEventMailbox?
+    private let userShortcuts: WPEUserShortcutScriptBridge?
     private let hasMediaSource: Bool
     private var userProperties: [String: Any]
     private var mediaProperties: [String: String] = [:]
@@ -93,9 +96,13 @@ final class WPEParitySceneScript {
          resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
          fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:], host: Host) throws {
         let defaults = Self.generalFields(document.resolvedGeneralJSON).merging(fieldDefaults) { _, value in value }
+        var properties = (try? JSONSerialization.jsonObject(with: Data(host.userPropertiesJSON.utf8))) as? [String: Any] ?? [:]
+        // Taken before the snapshot: a rebind in between stays marked for the first tick instead of being lost.
+        _ = host.userShortcuts?.takeChangedKeys()
+        Self.overlayUserShortcuts(&properties, bridge: host.userShortcuts)
         engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: assets, canvasSize: canvasSize, screenResolution: screenResolution,
-            userPropertiesJSON: host.userPropertiesJSON, materialConstants: materialConstants,
+            userPropertiesJSON: Self.json(properties), materialConstants: materialConstants,
             resolvedEffectRecords: resolvedEffectRecords,
             fieldDefaults: defaults, storage: host.storage.provider, modelData: host.modelData,
             createLayer: host.createLayer, destroyLayer: host.destroyLayer, canDestroyLayer: host.canDestroyLayer,
@@ -113,8 +120,9 @@ final class WPEParitySceneScript {
         handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0
         handlesMedia = bits & WPEParityScriptEvent.mediaBits != 0
         media = host.mediaGeneration == nil ? host.media : nil
+        userShortcuts = host.userShortcuts
         hasMediaSource = host.media != nil
-        userProperties = (try? JSONSerialization.jsonObject(with: Data(host.userPropertiesJSON.utf8))) as? [String: Any] ?? [:]
+        userProperties = properties
         var candidates: [CursorCandidate] = []
         var cameras: [String] = []
         for object in document.resolvedObjectsJSON {
@@ -196,6 +204,7 @@ final class WPEParitySceneScript {
                 // Native 171440 authors a fresh value-only change, even when merged metadata has a type.
                 changed[name] = ["value": value]
             }
+            Self.overlayUserShortcuts(&userProperties, bridge: userShortcuts)
             engine.applyUserProperties(changedJSON: Self.json(changed), mergedJSON: Self.json(userProperties), state: &state)
         }
         guard handlesMedia else { return }
@@ -213,7 +222,20 @@ final class WPEParitySceneScript {
             property["value"] = value
             userProperties[name] = property
         }
+        Self.overlayUserShortcuts(&userProperties, bridge: userShortcuts)
         engine.applyUserProperties(changedJSON: changedJSON, mergedJSON: Self.json(userProperties), state: &state)
+    }
+
+    /// 1401731d0.c:539-698: a usershortcut entry carries `isbound`, and when bound its `commandtype` and `file`.
+    private static func overlayUserShortcuts(_ properties: inout [String: Any], bridge: WPEUserShortcutScriptBridge?) {
+        let bound = bridge?.snapshot().bound ?? [:]
+        for (key, value) in properties {
+            guard var entry = value as? [String: Any], entry["type"] as? String == "usershortcut" else { continue }
+            entry["isbound"] = bound[key] != nil
+            entry["commandtype"] = bound[key].map { ["web": "website", "cmd": "command"][$0.commandType] ?? $0.commandType }
+            entry["file"] = bound[key]?.target
+            properties[key] = entry
+        }
     }
 
     private static func json(_ object: [String: Any]) -> String {
@@ -223,6 +245,11 @@ final class WPEParitySceneScript {
 
     func tick(dt: Float, cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool, timeOfDay: Float,
               state: inout WPEParitySceneState) {
+        if let userShortcuts, case let keys = userShortcuts.takeChangedKeys(), !keys.isEmpty {
+            Self.overlayUserShortcuts(&userProperties, bridge: userShortcuts)
+            engine.applyUserProperties(changedJSON: Self.json(userProperties.filter { keys.contains($0.key) }),
+                                       mergedJSON: Self.json(userProperties), state: &state)
+        }
         engine.tick(dt: dt, input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay),
                     state: &state)
     }

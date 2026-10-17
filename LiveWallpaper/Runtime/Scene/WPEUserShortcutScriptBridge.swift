@@ -37,6 +37,8 @@ final class WPEUserShortcutScriptBridge: Sendable {
         let commandType: String
         let displayName: String
         let revision: UInt64
+        /// The binding target: web URL, cmd shortcut name, or the last path component for file/directory.
+        var target = ""
     }
 
     private struct State {

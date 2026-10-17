@@ -918,7 +918,7 @@ struct WPEParitySceneInputs: Sendable {
         let bridge = userShortcuts
         return WPEParitySceneScript.Host(userPropertiesJSON: userPropertiesJSON,
                                          openUserShortcut: { bridge?.requestLaunch($0) ?? false },
-                                         media: media?.mailbox)
+                                         userShortcuts: bridge, media: media?.mailbox)
     }
 
     /// project.json's properties with the user's values, as engine.userProperties takes them.

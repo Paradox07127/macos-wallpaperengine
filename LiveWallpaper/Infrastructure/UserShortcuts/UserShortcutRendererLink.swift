@@ -87,7 +87,8 @@ final class UserShortcutRendererLink {
         let declared = registration.declared
         let bindings = store.bindings(forWallpaper: registration.wallpaperID)
         let bound = bindings.filter { declared.contains($0.key) }.mapValues {
-            WPEUserShortcutScriptBridge.Entry(commandType: $0.kind.rawValue, displayName: $0.displayName, revision: $0.revision)
+            WPEUserShortcutScriptBridge.Entry(commandType: $0.kind.rawValue, displayName: $0.displayName, revision: $0.revision,
+                                              target: $0.target)
         }
         bridge.setBindings(declared: declared, bound: bound)
         guard let icons = registration.icons else { return }

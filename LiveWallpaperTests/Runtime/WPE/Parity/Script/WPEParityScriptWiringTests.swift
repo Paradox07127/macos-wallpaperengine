@@ -184,6 +184,46 @@ final class WPEParityScriptWiringTests: XCTestCase {
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
+    /// 1401731d0.c:493-707: a usershortcut entry carries isbound, and when bound its commandtype and file.
+    func testScriptsSeeUserShortcutBindingStateAndItsChanges() async throws {
+        let fixture = try await makeFixture("3815666789") { json in
+            Self.edit(&json, object: 17) {
+                $0["alpha"] = ["value": 1, "script": """
+                export function applyUserProperties(p){ if (!p.hasOwnProperty('shortcut1')) return; \
+                var s = p.shortcut1; if (s.isbound === false) { thisLayer.alpha = 0.25; return; } \
+                thisLayer.alpha = (s.isbound === true && s.commandtype === 'website' \
+                && s.file === 'https://example.com/a') ? 1 : 0.5; }
+                """]
+            }
+        }
+        let bridge = WPEUserShortcutScriptBridge()
+        bridge.setBindings(declared: ["shortcut1"], bound: [:])
+        let script = try attachScript(fixture, host: .init(
+            userPropertiesJSON: #"{"shortcut1":{"type":"usershortcut","value":""}}"#, userShortcuts: bridge
+        ))
+        let operation = try XCTUnwrap(Self.operation(fixture.plan, object: "17") { $0.fillsComposite })
+        func alpha() throws -> Float? {
+            try Self.float(XCTUnwrap(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
+                .constants[.fragment]?["g_Alpha"])
+        }
+
+        try await encode(fixture.renderer)
+        XCTAssertEqual(try alpha(), 0.25, "an unbound shortcut must reach scripts as isbound false")
+
+        bridge.setBindings(declared: ["shortcut1"], bound: ["shortcut1": .init(
+            commandType: "web", displayName: "example.com", revision: 1, target: "https://example.com/a"
+        )])
+        try await encode(fixture.renderer)
+        XCTAssertEqual(try alpha(), 1, "a bound web shortcut must reach scripts as a website with its URL")
+        XCTAssertEqual(script.engine.dispatchCount(.applyUserProperties), 2)
+
+        bridge.setBindings(declared: ["shortcut1"], bound: [:])
+        try await encode(fixture.renderer)
+        XCTAssertEqual(try alpha(), 0.25, "clearing the binding must reach scripts as isbound false")
+        XCTAssertEqual(script.engine.dispatchCount(.applyUserProperties), 3)
+        XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testMaterialPathSelectsTheLastRealPassAndUpdatesItsProductionPixels() async throws {
         let (fixture, queue) = try await materialQueryFixture()
         let script = try attachScript(fixture)

@@ -42,7 +42,8 @@ struct UserShortcutRendererLinkTests {
         let snapshot = bridge.snapshot()
         let open = try #require(store.binding(for: Self.key("w1", "open")))
         #expect(snapshot.declared == ["open", "run"])
-        #expect(snapshot.bound == ["open": Entry(commandType: "web", displayName: "example.com", revision: open.revision)])
+        #expect(snapshot.bound == ["open": Entry(commandType: "web", displayName: "example.com", revision: open.revision,
+                                                 target: "https://example.com/a")])
     }
 
     @Test("Attaching gives bound keys an icon, unbound keys none, and clearing a binding drops its icon")
@@ -119,7 +120,7 @@ struct UserShortcutRendererLinkTests {
         try store.setShortcut(name: "Lights", arguments: "on", for: Self.key("w1", "run"))
 
         let run = try #require(store.binding(for: Self.key("w1", "run")))
-        let expected = ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision)]
+        let expected = ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision, target: "Lights")]
         #expect(first.snapshot().bound == expected)
         #expect(second.snapshot().bound == expected)
         #expect(first.snapshot().declared == ["run"])
@@ -229,7 +230,8 @@ struct UserShortcutRendererLinkTests {
 
         let run = try #require(store.binding(for: Self.key("w1", "run")))
         #expect(bridge.snapshot().declared == ["run"])
-        #expect(bridge.snapshot().bound == ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision)])
+        #expect(bridge.snapshot().bound == ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision,
+                                                         target: "Lights")])
         try store.setWebsite("https://example.com", for: Self.key("w1", "open"))
         #expect(bridge.snapshot().bound["open"] == nil, "a store change re-pushed the stale declared keys")
     }
