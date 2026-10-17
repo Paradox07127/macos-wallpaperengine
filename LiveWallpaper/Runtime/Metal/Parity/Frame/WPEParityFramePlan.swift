@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperProWPE
+import os
 
 /// Why a draw operation of the frame is not encoded.
 enum WPEParityFrameSkip: Error, Hashable, Sendable, CustomStringConvertible {
@@ -97,6 +98,10 @@ struct WPEParityFramePlan {
     /// The program of every draw any effect set has, disabled effects included, as WPE loads them.
     let programCache: [WPEParityProgramKey: Result<WPEParityProgram, WPEParityFrameSkip>]
     let particleMaterials: [WPEParityParticleMaterialProbe]
+    #if DEBUG
+    /// Calls of `layout(effects:texts:mipMappedFrameBufferRequested:)`, shared by every copy of this plan.
+    let layoutCalls = OSAllocatedUnfairLock(initialState: 0)
+    #endif
 
     var frames: [WPEParityFrame] {
         layout.frames
@@ -336,6 +341,9 @@ struct WPEParityFramePlan {
     func layout(effects state: WPEParitySceneState, texts: [String: WPEParitySceneText] = [:],
                 mipMappedFrameBufferRequested: Bool = false) throws
         -> WPEParityFrameLayout {
+        #if DEBUG
+        layoutCalls.withLock { $0 += 1 }
+        #endif
         var cache = programCache
         let post = postConfig(state: state, mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         let visible = Dictionary(zip(state.effects, state.effectVisibility)) { first, _ in first }

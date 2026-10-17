@@ -92,7 +92,12 @@ final class WPEParityFrameRenderer {
 
     let backbuffer: MTLTexture
     /// Render targets the renderer allocates; layer images are not among them.
-    private(set) var targets: [WPEResourceID: MTLTexture]
+    private(set) var targets: [WPEResourceID: MTLTexture] {
+        didSet { frameTextures = nil }
+    }
+
+    /// `targets` with the planner's layer images over them, as the frame encodes; nil once either changed.
+    private var frameTextures: [WPEResourceID: MTLTexture]?
     /// Object and material state the draws read every frame; animations write it, and so may callers between frames.
     var state: WPEParitySceneState
     /// Material constant re-packs after a pass's constants changed, over the renderer's life.
@@ -123,7 +128,10 @@ final class WPEParityFrameRenderer {
     /// Loaded text identity metadata; mutable colors remain only in SceneState.
     private let textBackgroundOwners: [WPEPassIdentity: String]
     /// Draws of later effect sets plan here, reusing its images and pipelines.
-    private var planner: WPEParityFrameDrawPlanner
+    private var planner: WPEParityFrameDrawPlanner {
+        didSet { frameTextures = nil }
+    }
+
     /// Every program the plan can draw with, compiled at load.
     private var artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
     private let mipMappedFrameBufferRequested: Bool
@@ -224,10 +232,11 @@ final class WPEParityFrameRenderer {
     private(set) var particleMaterialSkips: [String: WPEParityFrameSkip]
     private let arena: WPEParityFrameArena
     /// Arena bytes outside the particle share, for the other draws' cbuffers and tables.
-    private let baseArenaBytes: Int
+    private(set) var baseArenaBytes: Int
     /// False when the caller fixed the particle share.
     private let growsParticleShare: Bool
     static let maxParticleShare = 256 << 20
+    private static let silence = [Float](repeating: 0, count: 64)
     private var layers: WPEParityLayerTransformSet
     /// Every particle object and its state index; hidden ones are not stepped.
     private let particleObjects: [(id: String, index: Int?)]
@@ -261,6 +270,10 @@ final class WPEParityFrameRenderer {
 
     var compiledGraphs: [WPECompiledRenderGraph] {
         graphs.executors.map(\.graph)
+    }
+
+    var frameLayoutCalls: Int {
+        plan.layoutCalls.withLock { $0 }
     }
 
     /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
@@ -713,14 +726,11 @@ final class WPEParityFrameRenderer {
         }
         videos.setOwners(videoOwners)
 
-        // Each draw needs at most a few argument tables and cbuffers, all 256-byte aligned.
         let particleBytes = particleArenaBytes ?? draws.values.reduce(0) { total, draw in
             guard case let .particles(particle) = draw.geometry else { return total }
             return total + WPEParityFrameArena.aligned(particle.maxBytes) + particle.argumentBytes
         }
-        // Sized for the effect set with the most draws.
-        let drawCount = probes.reduce(draws.count) { max($0, $1.frame.draws.count) }
-        let baseArenaBytes = max(1 << 16, drawCount * 16 * 1024)
+        let baseArenaBytes = Self.baseArenaBytes(layout, shadowBatches: 1)
         guard let arena = WPEParityFrameArena(device: device, capacity: baseArenaBytes + particleBytes) else {
             throw WPEParityFrameRenderError.arenaUnavailable
         }
@@ -890,6 +900,7 @@ final class WPEParityFrameRenderer {
         seenScriptLighting = previous.seenScriptLighting
         lights = previous.lights
         shadowLayout = previous.shadowLayout
+        reserveArena(for: graphs.layout)
         // A script's bloom write reaches `bloom` below; the generation only marks it consumed.
         seenScriptBloom = previous.seenScriptBloom
         // The next frame takes the transforms, visibility and effects over from the copied state.
@@ -1272,7 +1283,11 @@ final class WPEParityFrameRenderer {
                 forward: WPEParityUniformParallax.viewVectors(view: camera.view).forward,
                 orthographic: plan.scene.engineFlags.orthographicProjection, previousAtlasSize: shadowLayout?.atlasSize
             )
+            let batches = shadowLayout?.batches.count
             shadowLayout = layout
+            if layout.batches.count != batches {
+                reserveArena(for: graphs.layout)
+            }
             if layout.atlasSize != .zero, let atlas = targets[atlasID],
                SIMD2(atlas.width, atlas.height) != layout.atlasSize {
                 targets[atlasID] = try Self.makeTarget(
@@ -1468,8 +1483,14 @@ final class WPEParityFrameRenderer {
             candidateLayers.setSize(id, size: SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
         }
         let current = graphs.layout
-        let planned = try plan.layout(effects: state, texts: prepared.texts,
-                                      mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
+        let requiresRebuild = prepared.delta.changes.contains { $0.requiresFrameRebuild }
+        // Of a text's inputs, only these reach the composed frame and its bindings rather than just its own draws.
+        let keepsFrame = !requiresRebuild && prepared.delta.changes.allSatisfy { change in
+            change.previous.layout.fboSize == change.current.layout.fboSize
+                && change.previous.atlasKey == change.current.atlasKey
+                && change.previous.layout.mesh?.colorAtlasScale == change.current.layout.mesh?.colorAtlasScale
+                && change.previous.fieldParameters?.combos == change.current.fieldParameters?.combos
+        }
         let kept = current.draws.filter { index, _ in
             guard case let .scene(draw)? = current.frames[0].draws[index] else { return true }
             guard changed.contains(draw.objectID) else { return true }
@@ -1478,11 +1499,21 @@ final class WPEParityFrameRenderer {
                   let after = prepared.texts[draw.objectID] else { return false }
             return before.layout == after.layout && before.atlasKey == after.atlasKey
         }
-        let reuse = Layout(planned: current.planned, effects: current.effects, draws: kept,
-                           skipped: current.skipped, fade: current.fade)
-        var layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+        let planned: WPEParityFrameLayout
+        var layout: Layout
+        if keepsFrame {
+            planned = current.planned
+            layout = Self.replanDraws(of: changed, in: current, keeping: kept, artifacts: artifacts,
+                                      planner: &candidatePlanner, encoder: drawEncoder, state: state)
+        } else {
+            planned = try plan.layout(effects: state, texts: prepared.texts,
+                                      mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
+            let reuse = Layout(planned: current.planned, effects: current.effects, draws: kept,
+                               skipped: current.skipped, fade: current.fade)
+            layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
                                          planner: &candidatePlanner, encoder: drawEncoder,
                                          state: state, reusing: reuse)
+        }
         // makeLayout records per-draw failures as skips. Required readers of this changed text cohort cannot
         // be silently dropped while its CPU atlas/ref/layout is accepted.
         for (index, description) in planned.frames[0].draws {
@@ -1504,7 +1535,6 @@ final class WPEParityFrameRenderer {
         layout = Layout(planned: layout.planned, effects: layout.effects, draws: rebound,
                         skipped: layout.skipped, fade: layout.fade)
         let readinessChanged = Set(layout.draws.keys) != Set(current.draws.keys)
-        let requiresRebuild = prepared.delta.changes.contains { $0.requiresFrameRebuild }
         let gpu: PreparedGraphs = if requiresRebuild || readinessChanged || layout.effects != current.effects {
             try prepareGraphs(layout)
         } else {
@@ -1527,8 +1557,14 @@ final class WPEParityFrameRenderer {
         layersMoved = true
         publishGraphs(gpu, cachePrevious: false)
         pipeline.atlases = candidatePlanner.textAtlases.atlases
-        packedConstants.removeAll()
-        fadeConstants.removeAll()
+        if keepsFrame {
+            for index in layout.draws.keys where kept[index] == nil {
+                packedConstants[index] = nil
+            }
+        } else {
+            packedConstants.removeAll()
+            fadeConstants.removeAll()
+        }
         for id in prepared.changedObjectIDs {
             guard let text = prepared.texts[id] else { continue }
             state.setScriptField("size", of: id, to: .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero)),
@@ -1574,8 +1610,7 @@ final class WPEParityFrameRenderer {
                              ortho: camera.size,
                              frametime: clock.frametime)
         }
-        let silence = [Float](repeating: 0, count: 64)
-        audio.advance(left: input.audio?.left ?? silence, right: input.audio?.right ?? silence,
+        audio.advance(left: input.audio?.left ?? Self.silence, right: input.audio?.right ?? Self.silence,
                       dt: clock.frametime, silence: input.audio == nil)
         var uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
                                              parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
@@ -1666,7 +1701,9 @@ final class WPEParityFrameRenderer {
                 })
             }
         }
-        return try executor.encodeFrame(on: queue, textures: targets.merging(planner.layerImages) { $1 },
+        let textures = frameTextures ?? targets.merging(planner.layerImages) { $1 }
+        frameTextures = textures
+        return try executor.encodeFrame(on: queue, textures: textures,
                                         prepare: { commandBuffer in
                                             submitted = true
                                             if !retiredTextures.isEmpty {
@@ -1875,6 +1912,7 @@ final class WPEParityFrameRenderer {
                 (graphs, previousGraphs) = (previous, graphs)
                 planner.use(graphs.layout.planned)
                 targetSamplers = Self.targetSamplers(graphs.layout, targets: targets)
+                reserveArena(for: graphs.layout)
             } else {
                 var layout = graphs.layout
                 if effects != layout.effects || !matchesPost(layout.post) {
@@ -2005,6 +2043,35 @@ final class WPEParityFrameRenderer {
         // Named pool history survives graph changes; Metal retains submitted texture versions.
         targets = prepared.targets
         targetSamplers = prepared.samplers
+        reserveArena(for: graphs.layout)
+    }
+
+    /// Raises the non-particle share to what `layout` needs. It never shrinks, so a cached graph still fits.
+    private func reserveArena(for layout: Layout) {
+        let needed = Self.baseArenaBytes(layout, shadowBatches: shadowLayout?.batches.count ?? 1)
+        guard needed > baseArenaBytes else { return }
+        arena.capacity += needed - baseArenaBytes
+        baseArenaBytes = needed
+    }
+
+    /// The largest frame variant's cbuffer and argument-table bytes outside particle draws, a shadow caster's once
+    /// per atlas batch, plus a quarter and 64 KiB.
+    private static func baseArenaBytes(_ layout: Layout, shadowBatches: Int) -> Int {
+        let bytes = layout.frames.map { frame in
+            layout.draws.reduce(0) { total, entry in
+                guard let description = frame.draws[entry.key] else { return total }
+                if case .particles = entry.value.geometry {
+                    return total
+                }
+                let casts = if case let .scene(draw) = description, draw.target == WPEParitySceneResource.shadowAtlas {
+                    shadowBatches
+                } else {
+                    1
+                }
+                return total + entry.value.pipeline.argumentBytes * casts
+            }
+        }.max() ?? 0
+        return bytes + bytes / 4 + (1 << 16)
     }
 
     /// Existing non-text callers use the same preparation and publication, with unchanged clear policy.
@@ -2154,6 +2221,32 @@ final class WPEParityFrameRenderer {
             }
         }?.key
         return Layout(planned: planned, effects: effects, draws: draws, skipped: skipped, fade: fade)
+    }
+
+    /// `current` with the draws of `objects` that `kept` lacks planned again in operation order, for a change that
+    /// leaves the composed frame as it is.
+    private static func replanDraws(of objects: Set<String>, in current: Layout, keeping kept: [Int: WPEParityFrameDrawPlan],
+                                    artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>],
+                                    planner: inout WPEParityFrameDrawPlanner, encoder: WPEParityDrawEncoder,
+                                    state: WPEParitySceneState) -> Layout {
+        planner.use(current.planned)
+        var draws = kept
+        var skipped = current.skipped
+        for (index, program) in current.planned.programs.sorted(by: { $0.key < $1.key }) {
+            guard draws[index] == nil, case let .scene(draw)? = current.frames[0].draws[index],
+                  objects.contains(draw.objectID) else { continue }
+            let artifact = artifacts[program.hlsl] ?? .failure(.noShader("\(program.shader): not compiled at load"))
+            do throws(WPEParityFrameSkip) {
+                let plan = try planner.makePlan(index, artifact: artifact.get(), state: state)
+                try prepare(plan, encoder: encoder)
+                draws[index] = plan
+                skipped[index] = nil
+            } catch {
+                skipped[index] = error
+            }
+        }
+        return Layout(planned: current.planned, effects: current.effects, draws: draws, skipped: skipped,
+                      fade: current.fade)
     }
 
     private static func requiredPost(_ draw: WPEParityFrameDraw) -> String? {
