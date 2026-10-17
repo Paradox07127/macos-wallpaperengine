@@ -314,6 +314,13 @@ grep -q 'ARCHIVE_ARCHS="arm64"' <<<"$pro_sku_block"
 grep -Fq '${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"}' scripts/release-app.sh
 grep -q -- '--format ULMO' scripts/release-app.sh
 
+# Release archives ship binary-plist strings.
+release_archive_block="$(sed -n '/^xcodebuild archive/,/archive-\$ARTIFACT\.log/p' scripts/release-app.sh)"
+if ! grep -Fq 'STRINGS_FILE_OUTPUT_ENCODING=binary' <<<"$release_archive_block"; then
+  echo "ERROR: release-app.sh no longer archives with STRINGS_FILE_OUTPUT_ENCODING=binary." >&2
+  exit 1
+fi
+
 # macOS refuses to load an appex whose CFBundleVersion differs from its containing
 # app's. Both shipped 0.6.5 with the extension still stamped 0.6.1/2, because the
 # appex plists hardcoded the numbers while the apps interpolated MARKETING_VERSION.

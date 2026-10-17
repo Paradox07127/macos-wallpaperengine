@@ -288,6 +288,7 @@ xcodebuild archive \
   DEVELOPMENT_TEAM="$EXPECTED_TEAM_ID" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
+  STRINGS_FILE_OUTPUT_ENCODING=binary \
   ${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"} \
   > "$OUTPUT_DIR/archive-$ARTIFACT.log" 2>&1 || {
     echo "ERROR: xcodebuild archive failed. Tail of log:" >&2
