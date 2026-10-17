@@ -56,6 +56,17 @@ final class WPEParityProductSettingsTests: XCTestCase {
                                                          defaults: suite.defaults).msaaSampleCount, 1)
     }
 
+    func testFactoryCarriesTheOffscreenScaleTierPreference() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityProductSettingsTests")
+        defer { suite.discard() }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        XCTAssertEqual(try WPEParityProductSettings.make(descriptor: descriptor(), device: device,
+                                                         defaults: suite.defaults).offscreenScaleTier, 0)
+        suite.defaults.set(2, forKey: WPEParityResourceSaverFlags.offscreenScaleTierDefaultsKey)
+        XCTAssertEqual(try WPEParityProductSettings.make(descriptor: descriptor(), device: device,
+                                                         defaults: suite.defaults).offscreenScaleTier, 2)
+    }
+
     func testFactoryPropagatesTypedPresetFailureEvenWithBloomDisabled() throws {
         let suite = try TestScratch.defaultsSuite(prefix: "WPEParityProductSettingsTests")
         defer { suite.discard() }

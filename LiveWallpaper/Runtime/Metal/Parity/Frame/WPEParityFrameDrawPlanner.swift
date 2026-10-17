@@ -1283,9 +1283,7 @@ struct WPEParityFrameDrawPlanner {
                 (texture, info) = (image, layerImageAssets[id]?.info)
             } else {
                 guard let resource = resources[id] else { return nil }
-                let (width, height) = (UInt32(resource.width), UInt32(resource.height))
-                return WPEParityUniformTexture(textureWidth: width, textureHeight: height, imageWidth: width,
-                                               imageHeight: height, mipMapInfo: Int32(resource.mipCount))
+                return Self.renderTargetUniformTexture(resource, logicalSizes: frame.logicalSizes)
             }
         case let .image(image):
             (texture, info) = (image, assetImages.values.first { $0.texture === image }?.info)
@@ -1299,6 +1297,15 @@ struct WPEParityFrameDrawPlanner {
                                        imageWidth: UInt32(imageWidth), imageHeight: UInt32(imageHeight),
                                        mipMapInfo: Int32(texture.mipmapLevelCount),
                                        spriteFrame: sprites.first?.frame)
+    }
+
+    /// A target allocated below its logical size still reports the logical size, which shaders' texel maths assume.
+    static func renderTargetUniformTexture(_ resource: WPELogicalResource,
+                                           logicalSizes: [WPEResourceID: SIMD2<Int>]) -> WPEParityUniformTexture {
+        let size = logicalSizes[resource.id] ?? SIMD2(resource.width, resource.height)
+        let (width, height) = (UInt32(size.x), UInt32(size.y))
+        return WPEParityUniformTexture(textureWidth: width, textureHeight: height, imageWidth: width,
+                                       imageHeight: height, mipMapInfo: Int32(resource.mipCount))
     }
 
     private func sprites(_ source: WPEParityFrameDrawPlan.TextureSource) -> [WPEParityFrameDrawPlan.SpriteStep] {

@@ -27,7 +27,9 @@ enum WPEParityProductSettings {
                                         msaaSampleCount: samples,
                                         mipMappedFrameBufferEnabled: requestedMipMappedFrameBuffer(defaults: defaults),
                                         colorCorrection: correction, displayHDR: displayHDR,
-                                        maximumPotentialEDR: Float(maximumPotentialEDR))
+                                        maximumPotentialEDR: Float(maximumPotentialEDR),
+                                        offscreenScaleTier: WPEParityResourceSaverFlags.resolve(defaults: defaults)
+                                            .offscreenScaleTier)
     }
 
     /// The picker offers only 1/2/4/8. Never increase a request to match a device capability.

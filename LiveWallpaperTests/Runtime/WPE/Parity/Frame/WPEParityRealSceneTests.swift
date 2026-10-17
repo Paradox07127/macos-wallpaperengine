@@ -176,6 +176,33 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertEqual(morph.pixelFormat, .rgba16Snorm)
     }
 
+    /// Each offscreen scale tier allocates no more render-target bytes than the one below it.
+    func testScene3509243656OffscreenScaleTiersShrinkRenderTargets() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "offscreen-tiers")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var bytes: [Int] = []
+        for tier in 0 ... 3 {
+            var settings = Self.settings
+            settings.offscreenScaleTier = tier
+            let (_, renderer, device, queue) = try await makeRenderer("3509243656", settings: settings)
+            for frame in 1 ... 60 {
+                try await renderFrame(renderer, label: "scene 3509243656 tier \(tier) frame \(frame)")
+            }
+            bytes.append(renderer.heapBytes + renderer.dedicatedTextureBytes)
+            print("scene 3509243656 tier \(tier): heap \(renderer.heapBytes) bytes, dedicated textures "
+                + "\(renderer.dedicatedTextureBytes) bytes")
+            let backbuffer = renderer.backbuffer
+            let url = directory.appending(path: "tier-\(tier).png")
+            try writePNG(readBack(backbuffer, device: device, queue: queue), width: backbuffer.width,
+                         height: backbuffer.height, to: url)
+            print("scene 3509243656 tier \(tier): frame 60 written to \(url.path)")
+        }
+        for tier in 1 ... 3 {
+            XCTAssertLessThanOrEqual(bytes[tier], bytes[tier - 1], "tier \(tier)")
+        }
+        XCTAssertLessThan(bytes[3], bytes[0])
+    }
+
     private func render(_ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }) async throws {
         let (plan, renderer, device, queue) = try await makeRenderer(sceneID, editGeneral: editGeneral)
 
@@ -251,7 +278,8 @@ final class WPEParityRealSceneTests: XCTestCase {
     }
 
     private func makeRenderer(
-        _ sceneID: String, editGeneral: (inout [String: Any]) -> Void = { _ in }
+        _ sceneID: String, settings: WPEParityProgramSettings = WPEParityRealSceneTests.settings,
+        editGeneral: (inout [String: Any]) -> Void = { _ in }
     ) async throws -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice, MTLCommandQueue) {
         guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
             throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
@@ -277,7 +305,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
-        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: Self.settings,
+        let plan = try WPEParityFramePlan(document: document, assets: assets, settings: settings,
                                           width: Self.width, height: Self.height)
 
         let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
