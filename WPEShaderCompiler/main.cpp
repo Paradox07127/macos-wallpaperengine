@@ -195,12 +195,16 @@ const char* dimension(D3D_SRV_DIMENSION value) {
 struct Reflection {
     std::string cbuffers = "[]", resources = "[]", arguments = "[]";
     std::string inputs = "[]", outputs = "[]", msc = "{}";
+    /// Semantic name + decimal index of each input whose DXC ReadWriteMask is 0.
+    std::vector<std::string> unreadInputs;
 
     std::string json(const Options& options) const {
         return "{\"schema\":1,\"stage\":" + quote(options.stage) + ",\"entry\":" + quote(options.entry)
             + ",\"cbuffers\":" + cbuffers + ",\"resources\":" + resources
             + ",\"topLevelArgumentBuffer\":" + arguments + ",\"vertexInputs\":" + inputs
-            + ",\"stageOutputs\":" + outputs + ",\"mscReflection\":" + msc + "}\n";
+            + ",\"stageOutputs\":" + outputs + ",\"mscReflection\":" + msc
+            + (options.stage == "vertex" && !unreadInputs.empty()
+                ? ",\"unusedVertexInputs\":" + array(unreadInputs) : "") + "}\n";
     }
 };
 
@@ -248,6 +252,13 @@ void reflectDXC(ID3D12ShaderReflection* shader, Reflection& reflection) {
     }
     reflection.cbuffers = array(cbuffers);
     reflection.resources = array(resources);
+    for (UINT i = 0; i < desc.InputParameters; ++i) {
+        D3D12_SIGNATURE_PARAMETER_DESC parameter{};
+        check(shader->GetInputParameterDesc(i, &parameter), "Input parameter");
+        if (parameter.ReadWriteMask == 0) {
+            reflection.unreadInputs.push_back(quote(parameter.SemanticName + std::to_string(parameter.SemanticIndex)));
+        }
+    }
 }
 
 IRFormat inputFormat(D3D_REGISTER_COMPONENT_TYPE type, unsigned columns) {

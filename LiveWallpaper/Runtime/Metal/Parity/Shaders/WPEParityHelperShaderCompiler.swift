@@ -99,6 +99,23 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
     /// `stageIn` compiles a vertex stage for MSC geometry emulation, which also yields a stage-in metallib.
     private func compile(_ stage: WPEParityShaderKey.Stage, hlsl: [UInt8], options: WPEParityShaderCompileOptions,
                          stageIn: Bool) async throws -> WPEParityCompiledStages.Stage {
+        let original = try await compileOnce(stage, hlsl: hlsl, options: options, stageIn: stageIn)
+        // 1400d5070.c:461-485: WPE drops the VS inputs reflection reports unread and compiles once more.
+        guard stage == .vertex else { return original }
+        let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: original.reflectionJSON)
+        guard let unread = reflection.unusedVertexInputs,
+              let pruned = WPEHLSLRewriter.pruningVertexInputs(hlsl, unusedSemantics: unread) else { return original }
+        do {
+            return try await compileOnce(stage, hlsl: pruned, options: options, stageIn: stageIn)
+        } catch {
+            Logger.notice("WPE parity vertex stage keeps its unread inputs \(unread): pruned recompile failed: \(error)",
+                          category: .wpeRender)
+            return original
+        }
+    }
+
+    private func compileOnce(_ stage: WPEParityShaderKey.Stage, hlsl: [UInt8], options: WPEParityShaderCompileOptions,
+                             stageIn: Bool) async throws -> WPEParityCompiledStages.Stage {
         let base = workDirectory.appending(path: UUID().uuidString)
         let input = base.appendingPathExtension("hlsl")
         let metallib = base.appendingPathExtension("metallib")

@@ -115,7 +115,9 @@ enabled only with `--bounds-check`. Output parent directories must already exist
 DXC uses `vs_6_0`, `ps_6_0`, or `gs_6_0` with `-HV 2016 -O3 -Ges -flegacy-macro-expansion`.
 Reflection follows the supplied schema 1: DXC provides cbuffer layouts and
 resources; MSC provides argument offsets, input/output signatures, and its raw
-JSON object. DXC diagnostics go to stderr; compilation and output I/O failures
+JSON object. A vertex stage with inputs DXC reports unread also gets
+`unusedVertexInputs`, the semantics the app prunes before compiling once more.
+DXC diagnostics go to stderr; compilation and output I/O failures
 return nonzero.
 
 Geometry programs run as MSC geometry emulation (a mesh pipeline). The geometry

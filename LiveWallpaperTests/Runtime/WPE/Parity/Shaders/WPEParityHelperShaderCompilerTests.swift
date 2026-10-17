@@ -55,6 +55,78 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDirectory.path), [])
     }
 
+    /// 1400d5070.c:461-485: an unread COLOR0 is removed and the VS recompiled; an unread BLENDINDICES0 stays.
+    func testUnreadVertexInputsArePrunedExceptBlendIndices() async throws {
+        let compiler = try makeCompiler(binaries())
+        let reflection = try await compileVertex("""
+        struct VS_INPUT {
+            float3 a_Position : POSITION0;
+            float4 a_Color : COLOR0;
+            uint4 a_BlendIndices : BLENDINDICES0;
+        };
+        float4 main(VS_INPUT IN) : SV_Position { return float4(IN.a_Position, 1); }
+        """, compiler: compiler)
+        XCTAssertEqual(reflection.vertexInputs.map(\.name), ["position0", "blendindices0"])
+        XCTAssertEqual(reflection.unusedVertexInputs, ["BLENDINDICES0"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDirectory.path), [])
+    }
+
+    /// 1400d5070.c:475-481: when the pruned VS does not compile, the first compile's output is kept.
+    func testFailedPrunedRecompileKeepsTheOriginalVertexStage() async throws {
+        let compiler = try makeCompiler(binaries())
+        // DXC proves the color unread, but the source still names it, so removing its declaration breaks the VS.
+        let reflection = try await compileVertex("""
+        struct VS_INPUT {
+            float3 a_Position : POSITION0;
+            float4 a_Color : COLOR0;
+        };
+        float4 main(VS_INPUT IN) : SV_Position {
+            float4 position = float4(IN.a_Position, 1);
+            if (false) { position += IN.a_Color; }
+            return position;
+        }
+        """, compiler: compiler)
+        XCTAssertEqual(reflection.vertexInputs.map(\.name), ["position0", "color0"])
+        XCTAssertEqual(reflection.unusedVertexInputs, ["COLOR0"])
+    }
+
+    /// Captures 0x2a/0x2c and 0x55/0x57 are WPE's first and pruned second compile of the same vertex stage.
+    func testCapturedVertexStagesCompileToTheEnginesPrunedInputs() async throws {
+        let compiler = try makeCompiler(binaries())
+        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
+            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
+        }
+        for (first, second) in [(0x2A, 0x2C), (0x55, 0x57)] {
+            func captured(_ number: Int) throws -> [UInt8] {
+                try Array(Data(contentsOf: root.appending(path: "hlsl/src_0x\(String(number, radix: 16)).hlsl")))
+            }
+            let original = try captured(first)
+            XCTAssertEqual(WPEHLSLRewriter.pruningVertexInputs(original, unusedSemantics: ["COLOR0"]),
+                           try captured(second))
+            let reflection = try await compileVertex(original, compiler: compiler)
+            XCTAssertEqual(reflection.vertexInputs.map(\.name), ["position0"], "capture \(first)")
+            XCTAssertNil(reflection.unusedVertexInputs, "capture \(first)")
+        }
+    }
+
+    private func compileVertex(_ source: String,
+                               compiler: WPEParityHelperShaderCompiler) async throws -> WPEStageReflection {
+        try await compileVertex(Array(source.utf8), compiler: compiler)
+    }
+
+    private func compileVertex(_ source: [UInt8],
+                               compiler: WPEParityHelperShaderCompiler) async throws -> WPEStageReflection {
+        let request = WPEParityShaderCompileRequest(program: .init(vertex: source),
+                                                    compilerIdentity: compiler.compilerIdentity, bindingABIVersion: 1)
+        let compiled = try await compiler.compile(request)
+        let output = try XCTUnwrap(compiled.stages[.vertex])
+        let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: output.reflectionJSON)
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let library = try device.makeLibrary(data: output.metallib.withUnsafeBytes { DispatchData(bytes: $0) })
+        XCTAssertNotNil(library.makeFunction(name: reflection.entry))
+        return reflection
+    }
+
     func testBrokenHLSLThrowsDXCMessage() async throws {
         let compiler = try makeCompiler(binaries())
         let program = WPEHLSLProgram(fragment: Array("float4 main() : SV_Target { return undeclared; }".utf8))

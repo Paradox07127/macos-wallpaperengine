@@ -124,11 +124,13 @@ public struct WPEStageReflection: Decodable, Sendable {
     public let vertexInputs: [StageAttribute]
     public let stageOutputs: [StageAttribute]
     public let mscReflection: [String: WPEReflectionJSONValue]
+    /// Semantic + decimal index (e.g. `COLOR0`) of each vertex input DXC reports unread; nil when there is none.
+    public let unusedVertexInputs: [String]?
 
     public init(schema: Int = 1, stage: Stage, entry: String = "main", cbuffers: [CBuffer],
                 resources: [Resource], topLevelArgumentBuffer: [ArgumentEntry],
                 vertexInputs: [StageAttribute] = [], stageOutputs: [StageAttribute] = [],
-                mscReflection: [String: WPEReflectionJSONValue] = [:]) {
+                mscReflection: [String: WPEReflectionJSONValue] = [:], unusedVertexInputs: [String]? = nil) {
         self.schema = schema
         self.stage = stage
         self.entry = entry
@@ -138,6 +140,7 @@ public struct WPEStageReflection: Decodable, Sendable {
         self.vertexInputs = vertexInputs
         self.stageOutputs = stageOutputs
         self.mscReflection = mscReflection
+        self.unusedVertexInputs = unusedVertexInputs
     }
 }
 

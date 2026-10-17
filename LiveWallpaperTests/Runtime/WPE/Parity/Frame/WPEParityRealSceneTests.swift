@@ -264,6 +264,36 @@ final class WPEParityRealSceneTests: XCTestCase {
         }
     }
 
+    /// Workshop 2468489223: skinned puppets 159, 247 and 417 have no normals in their MDLV, while genericimage4
+    /// declares NORMAL0 without reading it.
+    func testScene2468489223PuppetsWithoutNormalsDraw() async throws {
+        try await assertPuppetsDraw("2468489223", objects: ["159", "247", "417"])
+    }
+
+    func testScene2664591394PuppetWithoutNormalsDraws() async throws {
+        try await assertPuppetsDraw("2664591394", objects: ["18"])
+    }
+
+    func testScene2835012244PuppetWithoutNormalsDraws() async throws {
+        try await assertPuppetsDraw("2835012244", objects: ["23"])
+    }
+
+    private func assertPuppetsDraw(_ workshopID: String, objects: [String]) async throws {
+        let driver = try await loadWorkshopScene(workshopID)
+        defer { driver.cleanup() }
+        try await presentFrames(driver, count: 3, label: "scene \(workshopID)")
+        let renderer = try XCTUnwrap(driver.renderer)
+        let unbound = renderer.skipped.filter { "\($0.value)".contains("has 0 native elements") }
+        XCTAssertEqual(unbound, [:], "scene \(workshopID)")
+        let encoded = Set(renderer.lastFrameDraws.map(\.operation))
+        for id in objects {
+            let puppetDraws = sceneDraws(renderer, objectID: id).filter { $0.draw.geometry == .puppetMesh }
+            XCTAssertFalse(puppetDraws.isEmpty, "scene \(workshopID) object \(id) plans no puppet draw")
+            XCTAssertTrue(puppetDraws.contains { encoded.contains($0.operation) },
+                          "scene \(workshopID) object \(id) encoded no puppet draw")
+        }
+    }
+
     /// Loads a Workshop scene from the Steam library through the product driver, scripts included.
     private func loadWorkshopScene(_ workshopID: String) async throws -> WPEParitySceneDriver {
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
