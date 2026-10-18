@@ -77,6 +77,7 @@ embed() {
     chmod u+w "$staged"
     # Only MSC ships with local symbols; dxcompiler is stripped by its build. ThirdPartyNotices/README.txt declares this change.
     if [ "$source" = "$METAL_IR_CONVERTER" ]; then
+        codesign --remove-signature "$staged"
         /usr/bin/strip -x "$staged"
     fi
     codesign "${SIGN_OPTIONS[@]}" --identifier "$(basename "$destination")" "$@" "$staged"
