@@ -267,6 +267,11 @@ if ! grep -q 'scripts/generate-appcast.sh' scripts/release-app.sh; then
   echo "ERROR: release-app.sh no longer regenerates the Sparkle appcast." >&2
   exit 1
 fi
+# Pre-releases reach only beta-channel installs; untagged they would go to everyone.
+if ! grep -q 'CHANNEL_TAG=.*<sparkle:channel>beta</sparkle:channel>' scripts/generate-appcast.sh || ! grep -q -- '--channel beta' scripts/release-app.sh; then
+  echo "ERROR: pre-releases no longer land in the appcast's beta channel." >&2
+  exit 1
+fi
 if ! grep -q 'must equal --version' scripts/generate-appcast.sh; then
   echo "ERROR: generate-appcast.sh no longer requires sparkle:version to match the marketing version." >&2
   exit 1

@@ -15,10 +15,11 @@
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --dry-run
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --plan
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --skip-checks
-#   scripts/release-app.sh --sku lite --version 0.6.0-beta.1
+#   scripts/release-app.sh --sku lite --version 0.9.0b1
 #
-# A --version with a pre-release suffix must match MARKETING_VERSION exactly, names its own
-# artifacts, and has to be published with `gh release create --prerelease`.
+# A --version with a bN suffix must match MARKETING_VERSION exactly, names its own
+# artifacts, goes into the appcast's beta channel, and has to be published with
+# `gh release create --prerelease`.
 #
 # Output (per SKU product name):
 #   build/release/<Product>-X.Y.Z.dmg
@@ -46,7 +47,7 @@ while [[ $# -gt 0 ]]; do
     # Passed straight to generate-appcast.sh so the update dialog carries this
     # version's changelog instead of only the quarantine line.
     --notes-file)  NOTES_FILE="${2:-}"; shift 2 ;;
-    -h|--help)     sed -n '3,21p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '3,22p' "$0"; exit 0 ;;
     *) echo "ERROR: unknown argument '$1'" >&2; exit 64 ;;
   esac
 done
@@ -55,14 +56,14 @@ if [[ -z "$VERSION" ]]; then
   echo "ERROR: --version is required (e.g. --version 0.2.0)" >&2
   exit 64
 fi
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-  echo "ERROR: --version must be major.minor.patch[-prerelease] (got: $VERSION)" >&2
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
+  echo "ERROR: --version must be major.minor.patch[bN] (got: $VERSION)" >&2
   exit 64
 fi
 # A pre-release ships as its own artifact name and tag so it can never be mistaken for,
 # or overwrite, the final build of the same version.
 PRERELEASE=0
-[[ "$VERSION" == *-* ]] && PRERELEASE=1
+[[ "$VERSION" =~ b[0-9]+$ ]] && PRERELEASE=1
 
 # Leave Lite's universal architectures to the project. Pro's archive override
 # also keeps package dependencies and helpers from compiling unused Intel slices.
@@ -464,20 +465,19 @@ echo "== [$SKU] Computing SHA-256 =="
 
 echo "== [$SKU] Regenerating Sparkle appcast =="
 # The appcast is what installed copies actually read; a release whose DMG ships
-# without a matching appcast entry reaches nobody. Pre-releases are skipped on
-# purpose so a test build cannot be handed to everyone as an update.
-if [[ "$PRERELEASE" == "1" ]]; then
-  echo "  (skipped — pre-release builds are not offered as updates)"
-else
-  BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")"
-  scripts/generate-appcast.sh \
-    --sku "$SKU" \
-    --version "$VERSION" \
-    --build "$BUILD_NUMBER" \
-    --dmg "$DMG_PATH" \
-    --derived-data "$DERIVED_DATA" \
-    ${NOTES_FILE:+--notes-file "$NOTES_FILE"}
-fi
+# without a matching appcast entry reaches nobody. Pre-releases go to the beta
+# channel, which only copies opted into beta updates read.
+APPCAST_CHANNEL_ARGS=(--channel stable)
+[[ "$PRERELEASE" == "1" ]] && APPCAST_CHANNEL_ARGS=(--channel beta)
+BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")"
+scripts/generate-appcast.sh \
+  --sku "$SKU" \
+  "${APPCAST_CHANNEL_ARGS[@]}" \
+  --version "$VERSION" \
+  --build "$BUILD_NUMBER" \
+  --dmg "$DMG_PATH" \
+  --derived-data "$DERIVED_DATA" \
+  ${NOTES_FILE:+--notes-file "$NOTES_FILE"}
 
 DMG_SIZE_MB=$(( $(stat -f%z "$DMG_PATH") / 1024 / 1024 ))
 
@@ -490,7 +490,8 @@ echo "  Size:     ${DMG_SIZE_MB} MB"
 echo "  SHA-256:  $SHA_PATH"
 if [[ "$PRERELEASE" == "1" ]]; then
   echo "  Tag:      loomscreen-v${VERSION} — publish with 'gh release create --prerelease'"
-  echo "            (pre-releases are not written to the Sparkle appcast)"
+  echo "  Appcast:  appcast-${SKU}.xml beta channel — commit both SKUs' appcasts, create"
+  echo "            the GitHub release so the enclosure exists, then push to main."
 else
   echo "  Tag:      loomscreen-v${VERSION} (unified release; attach both SKUs)"
   echo "  Appcast:  appcast-${SKU}.xml — commit both SKUs' appcasts, create the"

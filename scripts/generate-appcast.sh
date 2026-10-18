@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Regenerate one SKU's Sparkle appcast from a released DMG.
 #
-# The appcast lists only the newest build. Sparkle only ever compares the user's
-# version against the newest item, and listing history would mean keeping every
-# past DMG on disk to re-sign it — GitHub Releases already is that history.
+# Each channel lists only its newest build: one untagged item (Sparkle's default
+# channel, stable) and at most one tagged <sparkle:channel>beta</sparkle:channel>.
+# Sparkle only ever compares the user's version against the newest item it may
+# see, and listing history would mean keeping every past DMG on disk to re-sign
+# it — GitHub Releases already is that history.
 #
 # Signing uses the EdDSA private key in the login keychain (generate_keys).
 # Losing that key means no installed copy can ever be updated again, so it is
@@ -14,10 +16,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_SLUG="Paradox07127/macos-wallpaperengine"
 TAG_PREFIX="loomscreen-v"
 
-SKU=""; VERSION=""; DMG=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""; NOTES_FILE=""
+SKU=""; VERSION=""; DMG=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""; NOTES_FILE=""; CHANNEL="stable"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sku)         SKU="${2:-}"; shift 2 ;;
+    --channel)     CHANNEL="${2:-}"; shift 2 ;;
     --version)     VERSION="${2:-}"; shift 2 ;;
     --build)       BUILD="${2:-}"; shift 2 ;;
     --dmg)         DMG="${2:-}"; shift 2 ;;
@@ -41,6 +44,16 @@ case "$SKU" in
 esac
 
 [[ -n "$VERSION" ]] || { echo "ERROR: --version is required (e.g. 0.5.8)" >&2; exit 64; }
+# Sparkle's standard comparator ignores a `-beta.N` suffix; `bN` orders correctly.
+case "$CHANNEL" in
+  stable) VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$' ;;
+  beta)   VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$' ;;
+  *) echo "ERROR: --channel must be 'stable' or 'beta' (got: ${CHANNEL:-<missing>})" >&2; exit 64 ;;
+esac
+if [[ ! "$VERSION" =~ $VERSION_PATTERN ]]; then
+  echo "ERROR: --version $VERSION does not fit the $CHANNEL channel (stable X.Y.Z, beta X.Y.ZbN)" >&2
+  exit 64
+fi
 [[ -f "$DMG" ]] || { echo "ERROR: --dmg not found: ${DMG:-<missing>}" >&2; exit 66; }
 # Sparkle compares sparkle:version to the running app's CFBundleVersion. Both
 # SKUs set CFBundleVersion to MARKETING_VERSION, so --build must equal --version.
@@ -50,15 +63,60 @@ if [[ "$BUILD" != "$VERSION" ]]; then
   echo "       Sparkle compares CFBundleVersion, which tracks MARKETING_VERSION." >&2
   exit 64
 fi
-if [[ -f "$APPCAST" ]]; then
-  OLD_BUILD="$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' "$APPCAST" | head -1)"
-  if [[ -n "$OLD_BUILD" && "$OLD_BUILD" != "$BUILD" ]]; then
-    newest="$(printf '%s\n%s\n' "$OLD_BUILD" "$BUILD" | sort -V | tail -1)"
-    if [[ "$newest" != "$BUILD" ]]; then
-      echo "ERROR: sparkle:version $BUILD is not newer than $OLD_BUILD in $(basename "$APPCAST")" >&2
-      exit 1
-    fi
-  fi
+
+# Succeeds when $1 orders after $2 the way Sparkle orders them: X.Y.Z numerically,
+# then a release after any of its own bN builds, then bN by N.
+version_gt() {
+  local a_core="${1%%b*}" b_core="${2%%b*}" a_beta="" b_beta="" i
+  [[ "$1" == *b* ]] && a_beta="${1##*b}"
+  [[ "$2" == *b* ]] && b_beta="${2##*b}"
+  local -a a_parts b_parts
+  IFS=. read -r -a a_parts <<<"$a_core"
+  IFS=. read -r -a b_parts <<<"$b_core"
+  for i in 0 1 2; do
+    (( 10#${a_parts[i]} > 10#${b_parts[i]} )) && return 0
+    (( 10#${a_parts[i]} < 10#${b_parts[i]} )) && return 1
+  done
+  [[ -z "$a_beta" ]] && { [[ -n "$b_beta" ]]; return; }
+  [[ -z "$b_beta" ]] && return 1
+  (( 10#$a_beta > 10#$b_beta ))
+}
+
+# Prints the items of one channel verbatim; the file is this script's own output.
+appcast_items() {
+  [[ -f "$APPCAST" ]] || return 0
+  awk -v want="$1" '
+    /<item>/ { buf = ""; inside = 1 }
+    inside { buf = buf $0 "\n" }
+    inside && /<\/item>/ {
+      inside = 0
+      is_beta = (buf ~ /<sparkle:channel>beta<\/sparkle:channel>/)
+      if ((want == "beta") == is_beta) printf "%s", buf
+    }
+  ' "$APPCAST"
+}
+
+item_version() {
+  sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' <<<"$1" | head -1
+}
+
+OLD_STABLE_ITEM="$(appcast_items stable)"
+OLD_BETA_ITEM="$(appcast_items beta)"
+OLD_STABLE="$(item_version "$OLD_STABLE_ITEM")"
+OLD_BETA="$(item_version "$OLD_BETA_ITEM")"
+if [[ "$CHANNEL" == "stable" ]]; then
+  OLD_SAME="$OLD_STABLE"
+else
+  OLD_SAME="$OLD_BETA"
+fi
+# Rewriting the same version is allowed so a failed release can be rerun.
+if [[ -n "$OLD_SAME" && "$OLD_SAME" != "$BUILD" ]] && ! version_gt "$BUILD" "$OLD_SAME"; then
+  echo "ERROR: sparkle:version $BUILD is not newer than $OLD_SAME in $(basename "$APPCAST")" >&2
+  exit 1
+fi
+if [[ "$CHANNEL" == "beta" && -n "$OLD_STABLE" ]] && ! version_gt "$BUILD" "$OLD_STABLE"; then
+  echo "ERROR: beta $BUILD is not newer than stable $OLD_STABLE in $(basename "$APPCAST")" >&2
+  exit 1
 fi
 
 # Ships with the SPM checkout rather than the repo, so resolve it instead of
@@ -162,17 +220,11 @@ if [[ -z "$MIN_OS" ]]; then
   exit 1
 fi
 
-cat > "$APPCAST" <<XML
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Generated by scripts/generate-appcast.sh — do not hand-edit. -->
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>$TITLE</title>
-    <link>https://raw.githubusercontent.com/$REPO_SLUG/main/$(basename "$APPCAST")</link>
-    <description>Updates for $TITLE</description>
-    <language>en</language>
+CHANNEL_TAG=""
+[[ "$CHANNEL" == "beta" ]] && CHANNEL_TAG=$'\n      <sparkle:channel>beta</sparkle:channel>'
+NEW_ITEM="$(cat <<XML
     <item>
-      <title>Version $VERSION</title>
+      <title>Version $VERSION</title>$CHANNEL_TAG
       <pubDate>$PUB_DATE</pubDate>
       <sparkle:version>$BUILD</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
@@ -182,11 +234,37 @@ $DESCRIPTION
       ]]></description>
       <enclosure url="$URL" type="application/octet-stream" $SIG_ATTRS />
     </item>
-  </channel>
-</rss>
 XML
+)"
 
-written="$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' "$APPCAST" | head -1)"
+if [[ "$CHANNEL" == "stable" ]]; then
+  STABLE_ITEM="$NEW_ITEM"
+  BETA_ITEM=""
+  if [[ -n "$OLD_BETA" ]] && version_gt "$OLD_BETA" "$BUILD"; then
+    BETA_ITEM="$OLD_BETA_ITEM"
+  fi
+else
+  STABLE_ITEM="$OLD_STABLE_ITEM"
+  BETA_ITEM="$NEW_ITEM"
+fi
+
+{
+  cat <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated by scripts/generate-appcast.sh — do not hand-edit. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>$TITLE</title>
+    <link>https://raw.githubusercontent.com/$REPO_SLUG/main/$(basename "$APPCAST")</link>
+    <description>Updates for $TITLE</description>
+    <language>en</language>
+XML
+  if [[ -n "$STABLE_ITEM" ]]; then printf '%s\n' "$STABLE_ITEM"; fi
+  if [[ -n "$BETA_ITEM" ]]; then printf '%s\n' "$BETA_ITEM"; fi
+  printf '  </channel>\n</rss>\n'
+} > "$APPCAST"
+
+written="$(item_version "$(appcast_items "$CHANNEL")")"
 if [[ "$written" != "$BUILD" ]]; then
   echo "ERROR: wrote sparkle:version=$written, expected $BUILD" >&2
   exit 1
