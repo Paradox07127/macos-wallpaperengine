@@ -248,6 +248,10 @@ final class ScreenManager {
         },
         advanceSceneMutationIntent: { [weak self] screenID in
             self?.advanceScenePropertyMutationIntent(for: screenID)
+        },
+        configurationDidCommit: { [weak self] screenID in
+            guard let screen = self?.screens.first(where: { $0.id == screenID }) else { return }
+            screen.configurationRevision &+= 1
         }
     )
     @ObservationIgnored var transitionRegistry: PlaybackTransitionRegistry {

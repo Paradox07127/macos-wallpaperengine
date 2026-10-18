@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import Testing
 import WebKit
-@testable import LiveWallpaper
 
 @Suite("ScreenManager ↔ PlaybackCoordinator coordination", .serialized)
 @MainActor
@@ -879,6 +880,28 @@ struct ScreenManagerCoordinationTests {
                 manager.updateMuted(target, for: screen)
             }
             #expect(manager.getConfiguration(for: screen)?.muted == target)
+        }
+    }
+
+    @Test("Reading a display's configuration tracks changes to that display and no other")
+    func configurationReadsTrackTheirOwnDisplay() async throws {
+        try await Self.runWithSeededConfiguration(videoVolume: 0.9) { manager, screen in
+            @MainActor final class Changes { var count = 0 }
+            let changes = Changes()
+            let current = try #require(manager.getConfiguration(for: screen)?.muted)
+            withObservationTracking {
+                _ = manager.getConfiguration(for: screen)?.muted
+            } onChange: {
+                MainActor.assumeIsolated { changes.count += 1 }
+            }
+
+            manager.saveConfiguration(ScreenConfiguration(
+                screenID: screen.id &+ 1, wallpaper: .html(source: .inline("<p>y</p>"), config: .default)
+            ))
+            #expect(changes.count == 0, "saving another display's configuration invalidated this display's readers")
+
+            manager.updateMuted(!current, for: screen)
+            #expect(changes.count == 1, "a mute change left the readers of this display's configuration stale")
         }
     }
 

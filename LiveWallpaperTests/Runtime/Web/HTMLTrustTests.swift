@@ -43,12 +43,12 @@ struct HTMLTrustVerdictTests {
         config.allowJavaScript = true
         config.muteAudio = false
 
-        let untrusted = PlaybackControls.webEffective(config, source: .url(url), trustedOrigins: [])
+        let untrusted = HTMLEffectivePolicy(config: config, source: .url(url), trustedOrigins: [])
         #expect(untrusted.limitedBy == origin)
         #expect(!untrusted.allowsJavaScript)
         #expect(untrusted.muted)
         // Control: once the origin is trusted the config's own values apply.
-        let trusted = PlaybackControls.webEffective(config, source: .url(url), trustedOrigins: [origin])
+        let trusted = HTMLEffectivePolicy(config: config, source: .url(url), trustedOrigins: [origin])
         #expect(trusted.limitedBy == nil && trusted.allowsJavaScript && !trusted.muted)
     }
 

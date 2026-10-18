@@ -294,24 +294,6 @@ struct PlaybackControls: View {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
-    /// What a web page runs with, which is what its controls show. `limitedBy` is the untrusted origin
-    /// overriding the config; nil when the config's own values apply.
-    static func webEffective(
-        _ config: HTMLConfig, source: HTMLSource?, trustedOrigins: Set<TrustedHTMLOrigin>
-    ) -> (limitedBy: TrustedHTMLOrigin?, allowsJavaScript: Bool, muted: Bool) {
-        let trust = source.map { HTMLTrust.evaluate(source: $0, trustedOrigins: trustedOrigins) } ?? .localContent
-        let limitedBy: TrustedHTMLOrigin? = if case let .untrustedRemote(origin) = trust {
-            origin
-        } else {
-            nil
-        }
-        return (
-            limitedBy,
-            trust.effectiveAllowJavaScript(requested: config.allowJavaScript),
-            trust.effectiveMuteAudio(requested: config.muteAudio)
-        )
-    }
-
     /// The saved target stays distinct from Max on every display.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
@@ -389,8 +371,10 @@ struct PlaybackControls: View {
     }
 
     /// nil when this is not a web page.
-    private var webEffective: (limitedBy: TrustedHTMLOrigin?, allowsJavaScript: Bool, muted: Bool)? {
-        htmlConfig.map { Self.webEffective($0.wrappedValue, source: webSource, trustedOrigins: trustStore.originSet) }
+    private var webEffective: HTMLEffectivePolicy? {
+        htmlConfig.map {
+            HTMLEffectivePolicy(config: $0.wrappedValue, source: webSource, trustedOrigins: trustStore.originSet)
+        }
     }
 
     private func originLimitedControl(
