@@ -525,7 +525,8 @@ struct WPEParityFramePlan {
                 return (index, artifact)
             }
             guard !unchecked.isEmpty else { continue }
-            let bindings = WPEParityProgramBuilder.bindings(frame: probe.frame, scene: scene)
+            let bindings = WPEParityProgramBuilder.bindings(frame: probe.frame, scene: scene,
+                                                            drawIndices: Set(unchecked.map(\.0)))
             for (index, artifact) in unchecked {
                 guard let binding = bindings[index] else { continue }
                 let resources = artifact.vertex.reflection.resources + artifact.fragment.reflection.resources

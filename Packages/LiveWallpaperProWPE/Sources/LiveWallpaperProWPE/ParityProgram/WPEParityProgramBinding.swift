@@ -63,8 +63,10 @@ public struct WPEParityProgramBinding: Sendable {
 
 public extension WPEParityProgramBuilder {
     /// Keyed by draw operation index like `frame.draws`; a draw without a material file has none.
+    /// `drawIndices` nil binds every draw.
     static func bindings(frame: WPEParityFrame, scene: WPEParityProgramScene,
-                         description: WPEParitySceneDescription? = nil) -> [Int: WPEParityProgramBinding] {
+                         description: WPEParitySceneDescription? = nil,
+                         drawIndices: Set<Int>? = nil) -> [Int: WPEParityProgramBinding] {
         let imported = Set(frame.resources.filter { $0.lifetime == .imported }.map(\.id))
         let resources = Set(frame.resources.map(\.id))
         let white = SIMD4<Float>(repeating: 1)
@@ -72,7 +74,7 @@ public extension WPEParityProgramBuilder {
         let objects = Dictionary((description ?? scene.scene).objects.map { ($0.id, $0) },
                                  uniquingKeysWith: { first, _ in first })
         var bindings: [Int: WPEParityProgramBinding] = [:]
-        for (index, draw) in frame.draws {
+        for (index, draw) in frame.draws where drawIndices?.contains(index) ?? true {
             switch draw {
             case let .scene(draw):
                 guard let material = scene.material(for: draw) else { continue }
