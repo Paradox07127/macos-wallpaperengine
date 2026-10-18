@@ -297,9 +297,9 @@ the existing copy is retained if preparation fails. The page
 reports provider compatibility and can pause publishing on an unsupported
 macOS build. See [Architecture](architecture.md#system-wallpaper-provider).
 
-The **Keep a video frame as the desktop picture** option saves persistent PNGs
-and refreshes enabled video displays every minute while unlocked and when the
-session becomes active. Each refresh uses a fresh file URL to avoid cached
+The **Keep a video frame as the desktop picture** option saves persistent PNGs.
+While the Mac stays unlocked, it refreshes enabled video displays once a minute;
+it also refreshes them when the session becomes active. Each refresh uses a fresh file URL to avoid cached
 images. A failed install keeps the previous image intact; successful refreshes
 retain the current and previous PNG per display. These desktop pictures remain
 after unlock. This desktop-picture API does not independently select a

@@ -132,36 +132,7 @@ public final class FullScreenDetector {
     // MARK: - Detection
 
     private func checkFullScreenState() {
-        var result: [CGDirectDisplayID: Bool] = [:]
-        var occlusion: [CGDirectDisplayID: Bool] = [:]
-        var fractions: [CGDirectDisplayID: CGFloat] = [:]
         let screens = NSScreen.screens
-
-        for screen in screens {
-            if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                result[id] = false
-                occlusion[id] = false
-                fractions[id] = 0
-            }
-        }
-
-        if !NSScreen.screensHaveSeparateSpaces {
-            let isFullScreen = NSApp.currentSystemPresentationOptions.contains(.fullScreen)
-            for key in result.keys {
-                result[key] = isFullScreen; occlusion[key] = isFullScreen; fractions[key] = isFullScreen ? 1 : 0
-            }
-        }
-
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            let isFullScreen = NSApp.currentSystemPresentationOptions.contains(.fullScreen)
-            for key in result.keys {
-                result[key] = isFullScreen; occlusion[key] = isFullScreen; fractions[key] = isFullScreen ? 1 : 0
-            }
-            updateIfChanged(result, occlusion, fractions)
-            return
-        }
-
         let screenFrames: [(id: CGDirectDisplayID, frame: CGRect)] = screens.compactMap { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
                 return nil
@@ -177,6 +148,47 @@ public final class FullScreenDetector {
             let top = screen.safeAreaInsets.top
             return (id, CGRect(x: bounds.minX, y: bounds.minY + top, width: bounds.width, height: bounds.height - top))
         })
+
+        detect(
+            screenFrames: screenFrames,
+            safeAreaFrames: safeAreaFrames,
+            screensHaveSeparateSpaces: NSScreen.screensHaveSeparateSpaces,
+            systemFullScreen: NSApp.currentSystemPresentationOptions.contains(.fullScreen)
+        ) {
+            CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        }
+    }
+
+    /// `windowList` is only fetched when the result depends on it; nil means the window server gave no list.
+    func detect(
+        screenFrames: [(id: CGDirectDisplayID, frame: CGRect)],
+        safeAreaFrames: [CGDirectDisplayID: CGRect],
+        screensHaveSeparateSpaces: Bool,
+        systemFullScreen: Bool,
+        windowList: () -> [[String: Any]]?
+    ) {
+        var result = Dictionary(uniqueKeysWithValues: screenFrames.map { ($0.id, false) })
+        var occlusion = result
+        var fractions = Dictionary(uniqueKeysWithValues: screenFrames.map { ($0.id, CGFloat.zero) })
+
+        if !screensHaveSeparateSpaces {
+            for key in result.keys {
+                result[key] = systemFullScreen; occlusion[key] = systemFullScreen; fractions[key] = systemFullScreen ? 1 : 0
+            }
+            // Only the app-window opt-in may scan here; otherwise the system flag is the whole answer.
+            guard tracksAppWindows else {
+                updateIfChanged(result, occlusion, fractions)
+                return
+            }
+        }
+
+        guard let windowList = windowList() else {
+            for key in result.keys {
+                result[key] = systemFullScreen; occlusion[key] = systemFullScreen; fractions[key] = systemFullScreen ? 1 : 0
+            }
+            updateIfChanged(result, occlusion, fractions)
+            return
+        }
 
         scanWindows(windowList, screenFrames: screenFrames, safeAreaFrames: safeAreaFrames, fullScreen: result)
     }

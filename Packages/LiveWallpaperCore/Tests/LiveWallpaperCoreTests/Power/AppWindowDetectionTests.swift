@@ -52,3 +52,56 @@ struct AppWindowDetectionTests {
         #expect(detector.appWindowScreens[2] == true)
     }
 }
+
+@Suite("Detection when displays share one Space")
+@MainActor
+struct SharedSpaceDetectionTests {
+    private let displays: [(id: CGDirectDisplayID, frame: CGRect)] = [
+        (1, CGRect(x: 0, y: 0, width: 1000, height: 1000)),
+        (2, CGRect(x: 1000, y: 0, width: 1000, height: 1000)),
+    ]
+    private let coveringWindow: [String: Any] = [
+        kCGWindowBounds as String: ["X": 0, "Y": 0, "Width": 1000, "Height": 900] as [String: CGFloat],
+        kCGWindowOwnerName as String: "WhatsApp",
+        kCGWindowLayer as String: 0,
+        kCGWindowAlpha as String: 1.0,
+    ]
+
+    private func detect(_ detector: FullScreenDetector, systemFullScreen: Bool) {
+        detector.detect(
+            screenFrames: displays,
+            safeAreaFrames: [:],
+            screensHaveSeparateSpaces: false,
+            systemFullScreen: systemFullScreen
+        ) { [coveringWindow] in [coveringWindow] }
+    }
+
+    @Test("Without app-window tracking only the system full-screen flag decides, windows are not scanned")
+    func systemFlagDecidesWithoutTracking() {
+        _ = NSApplication.shared
+        let detector = FullScreenDetector()
+        detector.setAppWindowTrackingEnabled(false)
+
+        detect(detector, systemFullScreen: false)
+        #expect(detector.hiddenScreens == [1: false, 2: false])
+        #expect(detector.occludedScreens == [1: false, 2: false], "A covering window must not occlude without separate Spaces")
+        #expect(detector.occlusionFractions == [1: 0, 2: 0])
+        #expect(detector.appWindowScreens.isEmpty)
+
+        detect(detector, systemFullScreen: true)
+        #expect(detector.hiddenScreens == [1: true, 2: true])
+        #expect(detector.occludedScreens == [1: true, 2: true])
+        #expect(detector.occlusionFractions == [1: 1, 2: 1])
+    }
+
+    @Test("With app-window tracking the window scan still runs")
+    func trackingScansWindows() {
+        _ = NSApplication.shared
+        let detector = FullScreenDetector()
+        detector.setAppWindowTrackingEnabled(true)
+
+        detect(detector, systemFullScreen: false)
+        #expect(detector.appWindowScreens == [1: true, 2: false])
+        #expect(detector.occludedScreens[1] == true)
+    }
+}

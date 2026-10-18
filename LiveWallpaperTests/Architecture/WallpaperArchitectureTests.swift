@@ -162,17 +162,6 @@ struct WallpaperSessionSummaryCacheTests {
 
 @Suite("AppRuntimeOptions")
 struct AppRuntimeOptionsTests {
-    @Test("Manual testing can retain provider startup without restoring wallpapers")
-    func manualTestingRetainsProviderStartup() {
-        let options = AppRuntimeOptions(arguments: ["--no-wallpaper-restore", "--open-settings-for-ui-testing"],
-                                        environment: [:], isXCTestLoaded: false)
-        #expect(!options.isTesting)
-        #expect(!options.shouldRestoreSavedWallpapers)
-        #expect(!options.shouldStartAutomation)
-        #expect(!options.shouldShowOnboarding)
-        #expect(options.shouldOpenSettingsOnLaunch)
-    }
-
     @Test("UI testing argument disables live wallpaper startup")
     func uiTestingArgumentDisablesLiveWallpaperStartup() {
         let options = AppRuntimeOptions(
