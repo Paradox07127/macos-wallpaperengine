@@ -253,7 +253,7 @@ actor WPEDisplayRenderActor {
         if let parityDriver, let parityInputs {
             let acquisitionStart = parityDriver.drawableAcquisitionSeconds
             let start = CACurrentMediaTime()
-            let pointer = parityDriver.pointerInput(parityInputs.mailbox.read())
+            let pointer = parityDriver.pointerInput(parityInputs.mailbox)
             // As the old renderer: the shared system-audio capture, not the scene's own sounds.
             let audio = parityAudioFeed.frame(broker: SystemAudioCaptureManager.broker,
                                               isCapturing: SystemAudioCaptureManager.isCapturing)

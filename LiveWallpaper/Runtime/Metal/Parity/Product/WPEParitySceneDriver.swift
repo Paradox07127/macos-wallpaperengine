@@ -139,6 +139,10 @@ final class WPEParitySceneDriver {
     private let device: MTLDevice
     private let presentState = WPEParityPresentState()
     private var paused = false
+    /// The left button as the edges handed to the renderer left it; also the frame's button state.
+    private var edgeButtonDown = false
+    /// Backbuffer UV of the script cursor when it differs from the shader pointer; nil = the shader pointer.
+    private var scriptPointer: SIMD2<Double>?
     private var lastTimestamp: CFTimeInterval?
     private var didLogFrameFailure = false
     /// CPU time in `encodeFrame` since the load, for the QA mean.
@@ -522,18 +526,39 @@ final class WPEParitySceneDriver {
     }
 
     /// The old renderer's gates (`sampleFrameContext`): the cursor follows only with mouse interaction on and over
-    /// the picture, else it rests at the centre; the left button counts only with click capture on. The position is
-    /// backbuffer UV with a top-left origin.
-    func pointerInput(_ reading: WPEPointerMailbox.Reading) -> (position: SIMD2<Double>, buttonDown: Bool) {
+    /// the picture, else it rests at the centre. Queued left-button edges go to the renderer in order, so a press
+    /// and release between two frames both reach the scripts. The position is backbuffer UV with a top-left origin.
+    func pointerInput(_ mailbox: WPEPointerMailbox) -> (position: SIMD2<Double>, buttonDown: Bool) {
         let centre = SIMD2<Double>(0.5, 0.5)
-        guard renderer != nil, let plannedTarget, reading.pointerSample.isInsideView,
-              let inScene = WPEPresentUniforms.make(
-                  fitMode: plannedTarget.presentFit, sourceWidth: plannedTarget.width,
-                  sourceHeight: plannedTarget.height, targetWidth: Int(drawableSize.width),
-                  targetHeight: Int(drawableSize.height)
-              ).scenePointer(fromDrawablePointer: reading.pointerSample.position) else { return (centre, false) }
-        let buttonDown = reading.clickCaptureEnabled && !reading.buttonsSuppressed && reading.pointerFrame.isDown
-        return (mouseInteractionEnabled ? inScene : centre, buttonDown)
+        let offScene = SIMD2<Float>(-1000, -1000)
+        scriptPointer = nil
+        let reading = mailbox.read()
+        guard let renderer, let plannedTarget else { return (centre, false) }
+        let batch = mailbox.takeButtonEvents(through: reading.buttonCursor)
+        let present = WPEPresentUniforms.make(
+            fitMode: plannedTarget.presentFit, sourceWidth: plannedTarget.width, sourceHeight: plannedTarget.height,
+            targetWidth: Int(drawableSize.width), targetHeight: Int(drawableSize.height)
+        )
+        if batch.cancelled {
+            renderer.buttonEdges.removeAll()
+            if edgeButtonDown {
+                renderer.buttonEdges.append((offScene, false))
+            }
+            edgeButtonDown = false
+        }
+        for edge in batch.edges {
+            let inScene = edge.isInsideView ? present.scenePointer(fromDrawablePointer: edge.frame.position) : nil
+            let down = edge.frame.isDown && inScene != nil
+            guard down != edgeButtonDown else { continue }
+            renderer.buttonEdges.append((inScene.map { SIMD2<Float>($0) } ?? offScene, down))
+            edgeButtonDown = down
+        }
+        guard reading.pointerSample.isInsideView,
+              let inScene = present.scenePointer(fromDrawablePointer: reading.pointerSample.position)
+        else { return (centre, edgeButtonDown) }
+        // With follow off, a clicked layer would otherwise see the cursor leave for the centre right after the click.
+        scriptPointer = mouseInteractionEnabled || reading.clickCaptureEnabled ? inScene : centre
+        return (mouseInteractionEnabled ? inScene : centre, edgeButtonDown)
     }
 
     /// Drawable-UV bounds (top-left origin) of the layers the last cursor pass found taking the left button; a rect
@@ -666,9 +691,10 @@ final class WPEParitySceneDriver {
         lastTimestamp = timestamp
         soundRuntime?.advance(by: elapsed)
         let backbuffer = renderer.backbuffer
-        let cursor = SIMD2<Float>(pointer * SIMD2(Double(backbuffer.width), Double(backbuffer.height)))
-        let input = WPEParityFrameInput(cursor: cursor, buttonDown: buttonDown,
-                                        audio: audio.map { ($0.left, $0.right) }, date: date)
+        let pixels = SIMD2(Double(backbuffer.width), Double(backbuffer.height))
+        let input = WPEParityFrameInput(cursor: SIMD2<Float>(pointer * pixels),
+                                        scriptCursor: scriptPointer.map { SIMD2<Float>($0 * pixels) },
+                                        buttonDown: buttonDown, audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
             let start = CACurrentMediaTime()
             let submission = try withScriptSound(renderer.script?.engine) {
@@ -930,6 +956,8 @@ final class WPEParitySceneDriver {
         lastTimestamp = nil
         loadDiagnostics = nil
         shaderErrorSummary = (0, [])
+        edgeButtonDown = false
+        scriptPointer = nil
         soundRuntime?.stop()
         soundRuntime = nil
         executor.lastPresentPass = nil

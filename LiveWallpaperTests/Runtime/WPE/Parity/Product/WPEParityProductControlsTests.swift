@@ -177,6 +177,44 @@ final class WPEParityProductControlsTests: XCTestCase {
         XCTAssertEqual(pressed.state, SIMD4(1, 1, 1, 0))
     }
 
+    func testDesktopClickWithinOneFrameReachesTheSceneScript() async throws {
+        let harness = try await clickHarness()
+        let before = try await clickCounts(harness.actor)
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(true), isInsideView: true, gatedByClickCapture: false)
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(false), isInsideView: true, gatedByClickCapture: false)
+        await harness.actor.renderFrame()
+        let after = try await clickCounts(harness.actor)
+        XCTAssertEqual(after.click - before.click, 1, "a press and release between two frames lost the click")
+        XCTAssertEqual(after.down - before.down, 1)
+        XCTAssertEqual(after.up - before.up, 1)
+        XCTAssertEqual(before.witness, 0.5)
+        XCTAssertEqual(after.witness, 1, "cursorClick never wrote its layer")
+    }
+
+    func testDesktopClickWithFollowCursorOffStaysOnTheClickedLayer() async throws {
+        let harness = try await clickHarness()
+        await harness.actor.setMouseInteractionEnabled(false)
+        let before = try await clickCounts(harness.actor)
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(true), isInsideView: true, gatedByClickCapture: false)
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(false), isInsideView: true, gatedByClickCapture: false)
+        await harness.actor.renderFrame()
+        let after = try await clickCounts(harness.actor)
+        XCTAssertEqual(after.click - before.click, 1)
+        XCTAssertEqual(after.leave, before.leave, "the script cursor jumped to the centre after the click")
+    }
+
+    func testReleaseAfterCancelledPressDoesNotClick() async throws {
+        let harness = try await clickHarness()
+        let before = try await clickCounts(harness.actor)
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(true), isInsideView: true, gatedByClickCapture: false)
+        await harness.actor.renderFrame()
+        harness.mailbox.resetButtonEvents()
+        harness.mailbox.publishDesktopButtonFrame(desktopPress(false), isInsideView: true, gatedByClickCapture: false)
+        await harness.actor.renderFrame()
+        let after = try await clickCounts(harness.actor)
+        XCTAssertEqual(after.click, before.click, "a press cut off by a reset still clicked")
+    }
+
     func testClickableLayersPublishInteractiveZonesUntilTeardown() async throws {
         // The dock's launcher layers are solid and export cursorClick; the dock is off unless the user enables it.
         let harness = try await makeHarness(sceneID: "3660962877", propertyOverrides: ["appdockenabled": .bool(true)])
@@ -302,6 +340,65 @@ final class WPEParityProductControlsTests: XCTestCase {
             try await actor.load()
         }
         return Harness(actor: actor, mailbox: mailbox, surface: surface)
+    }
+
+    private struct ClickCounts: Sendable {
+        let click: Int
+        let down: Int
+        let up: Int
+        let leave: Int
+        let witness: Float
+    }
+
+    /// A 160×96 scene whose solid layer 20 covers x 8...72, y 48...96 (y up): under view UV (0.25, 0.25), clear of
+    /// the centre. Its cursorClick raises its alpha from 0.5 to 1. Click capture is on and the mouse rests there.
+    private func clickHarness() async throws -> Harness {
+        let harness = try await makeHarness(sceneID: "3815666789", load: false)
+        let script = """
+        export function cursorEnter() {}
+        export function cursorLeave() {}
+        export function cursorDown() {}
+        export function cursorUp() {}
+        export function cursorClick() { thisLayer.alpha = 1; }
+        """
+        func panel(id: Int, origin: String, size: String, solid: Bool, alpha: Any) -> [String: Any] {
+            ["id": id, "name": "panel \(id)", "image": "models/util/solidlayer.json", "origin": origin,
+             "size": size, "solid": solid, "color": "0 0 0", "alpha": alpha]
+        }
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 160, "height": 96], "clearenabled": true,
+                        "clearcolor": "0 0 0", "camerashake": false, "cameraparallax": false],
+            "objects": [panel(id: 20, origin: "40 72 0", size: "64 48", solid: true,
+                              alpha: ["value": 0.5, "script": script]),
+                        panel(id: 30, origin: "80 48 0", size: "32 32", solid: false, alpha: 1)],
+        ]
+        try JSONSerialization.data(withJSONObject: json)
+            .write(to: scratch.appending(path: "wpe-cache/3815666789/scene.json"))
+        try await harness.actor.load()
+        await harness.actor.setClickCaptureEnabled(true)
+        harness.mailbox.publishGeometry(WPEPointerMailbox.Geometry(viewFrameInScreen: CGRect(x: 0, y: 0, width: 960,
+                                                                                             height: 540)))
+        harness.mailbox.publishMouseLocation(CGPoint(x: 240, y: 405), timestampNanos: 1)
+        return harness
+    }
+
+    private func desktopPress(_ down: Bool) -> WPEPointerFrame {
+        var frame = WPEPointerFrame(position: SIMD2(0.25, 0.25), clickPosition: SIMD2(0.25, 0.25), isDown: down,
+                                    isRightDown: false)
+        frame.gesture = 7
+        return frame
+    }
+
+    private func clickCounts(_ actor: WPEDisplayRenderActor) async throws -> ClickCounts {
+        let counts = await actor.run { actor -> ClickCounts? in
+            guard let renderer = actor.parityDriverForTesting?.renderer, let engine = renderer.script?.engine,
+                  let witness = renderer.state.object("20")?.alpha else { return nil }
+            return ClickCounts(click: engine.dispatchCount(.cursorClick), down: engine.dispatchCount(.cursorDown),
+                               up: engine.dispatchCount(.cursorUp), leave: engine.dispatchCount(.cursorLeave),
+                               witness: witness)
+        }
+        return try XCTUnwrap(counts, "the scene loaded without its script")
     }
 }
 

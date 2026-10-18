@@ -23,6 +23,8 @@ struct WPEParityFrameShaderSource: Sendable {
 struct WPEParityFrameInput {
     /// Physical render-target pixels, y down; SceneScript receives the corresponding logical client pixels.
     var cursor: SIMD2<Float> = .zero
+    /// The SceneScript cursor in the same pixels when it is not `cursor`; g_PointerPosition stays on `cursor`.
+    var scriptCursor: SIMD2<Float>?
     var buttonDown = false
     /// 64 linear bins per channel; nil is silence.
     var audio: (left: [Float], right: [Float])?
@@ -243,6 +245,8 @@ final class WPEParityFrameRenderer {
 
     private(set) var clock = WPEParityClock()
     private(set) var pointer = WPEParityUniformPointer()
+    /// Left-button edges in backbuffer UV (y down) for the next committed frame's cursor pass, in order.
+    var buttonEdges: [(position: SIMD2<Float>, down: Bool)] = []
     private var parallax = WPEParityUniformParallax()
     private var audio = WPEParityAudioSpectrum()
     /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
@@ -1501,17 +1505,17 @@ final class WPEParityFrameRenderer {
     }
 
     /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
-    private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, cursor: SIMD2<Float>,
-                                 buttonDown: Bool, timeOfDay: Float) throws {
-        let world = cursorWorld(camera: camera)
+    private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, pointer: SIMD2<Float>,
+                                 edges: [(position: SIMD2<Float>, down: Bool)], buttonDown: Bool,
+                                 timeOfDay: Float) throws {
         try script.updateCursorTargets(state: state, quad: { try cursorQuad($0, camera: camera) })
-        script.cursor(at: cursor, world: world, leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
+        for edge in edges {
+            script.cursor(at: edge.position * logicalSize, world: camera.cursorWorld(normalizedPointer: edge.position),
+                          leftDown: edge.down, timeOfDay: timeOfDay, state: &state)
+        }
+        script.cursor(at: pointer * logicalSize, world: camera.cursorWorld(normalizedPointer: pointer),
+                      leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
         script.dispatchMedia(state: &state)
-    }
-
-    /// Native viewport-depth .5 unprojection; only an orthographic scene drops the returned Z.
-    private func cursorWorld(camera: WPEParityCamera) -> SIMD3<Float> {
-        camera.cursorWorld(normalizedPointer: pointer.position)
     }
 
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
@@ -1720,6 +1724,8 @@ final class WPEParityFrameRenderer {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera
         guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
+        let edges = buttonEdges
+        buttonEdges.removeAll()
         let shortcutIcons = userShortcutIcons
         videos.bindUserVideos(shortcutIcons?.videoURLs ?? [:])
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
@@ -1734,7 +1740,8 @@ final class WPEParityFrameRenderer {
             textureAnimations[id]?.step(dt: clock.frametime, durations: planner.layerSprites(id).map { Float($0.duration) })
         }
         pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
-        let scriptCursor = input.cursor * logicalSize / SIMD2(Float(backbuffer.width), Float(backbuffer.height))
+        let scriptPointer = (input.scriptCursor ?? input.cursor) / screen.size
+        let scriptCursor = scriptPointer * logicalSize
         applyTransforms()
         applyLayerFields()
         updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
@@ -1760,10 +1767,11 @@ final class WPEParityFrameRenderer {
                                              audio: audio)
         if let script {
             script.prepareFrame(frame: UInt64(frameIndex), dt: clock.frametime, runtime: clock.timeUniform,
-                                cursor: scriptCursor, world: cursorWorld(camera: camera),
+                                cursor: scriptCursor, world: camera.cursorWorld(normalizedPointer: scriptPointer),
                                 leftDown: input.buttonDown, timeOfDay: daytime)
             script.updateAudio(audio.bins)
-            try runScriptEvents(script, camera: camera, cursor: scriptCursor, buttonDown: input.buttonDown, timeOfDay: daytime)
+            try runScriptEvents(script, camera: camera, pointer: scriptPointer, edges: edges,
+                                buttonDown: input.buttonDown, timeOfDay: daytime)
         }
         consumeMediaInputs()
         // Animations run after the object update and the camera, and render reads their values.
@@ -1774,8 +1782,8 @@ final class WPEParityFrameRenderer {
             }
             script.engine.videoEnded(ownerIDs: videos.takeEndedOwnerIDs(), state: &state)
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
-            script.tick(dt: clock.frametime, cursor: scriptCursor, world: cursorWorld(camera: camera),
-                        leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
+            script.tick(dt: clock.frametime, cursor: scriptCursor,
+                        world: camera.cursorWorld(normalizedPointer: scriptPointer), leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
         }
         // 18aac0 reads the post-tick Bool/amount with the smoother already advanced by 1891a0 above.
         let renderCamera = pathCamera
