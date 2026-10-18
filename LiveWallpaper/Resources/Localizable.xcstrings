@@ -3085,66 +3085,6 @@
         }
       }
     },
-    "%lld videos" : {
-      "comment" : "System Wallpaper status bar: the number of videos macOS has a copy of. %lld is the count.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld video"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld videos"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld vídeo"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld vídeos"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画 %lld 本"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 部影片"
-          }
-        }
-      }
-    },
     "%lld videos and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
       "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
       "extractionState" : "manual",
@@ -5943,42 +5883,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入系統桌布"
-          }
-        }
-      }
-    },
-    "Add Video" : {
-      "comment" : "Title of the sheet that adds a video to System Wallpaper.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオを追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入影片"
           }
         }
       }
@@ -12626,76 +12530,6 @@
         }
       }
     },
-    "Capture this video's frame when locking" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capture this video's frame when locking"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturar el fotograma de este vídeo al bloquear"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ロック時にこのビデオのフレームをキャプチャ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "锁定时捕获此视频的画面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鎖定時擷取此影片的影格"
-          }
-        }
-      }
-    },
-    "Capture video frame when locking" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capture video frame when locking"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturar el fotograma del vídeo al bloquear"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ロック時にビデオフレームをキャプチャ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "锁定时捕获视频画面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鎖定時擷取影片影格"
-          }
-        }
-      }
-    },
     "Captured From" : {
       "comment" : "Scheme detail row: the display the scheme was saved from.",
       "localizations" : {
@@ -12727,42 +12561,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "來源顯示器"
-          }
-        }
-      }
-    },
-    "Captures this video's current frame at lock and sets it as the macOS desktop picture." : {
-      "comment" : "Tooltip for the lock-screen capture control on the preview overlay.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Captures this video's current frame at lock and sets it as the macOS desktop picture."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Captura el fotograma actual de este vídeo al bloquear y lo establece como fondo de pantalla de macOS."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ロック時にこの動画の現在のフレームを取り込み、macOS の壁紙に設定します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "锁屏时截取这个视频的当前帧，并设为 macOS 墙纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鎖定時擷取這個影片的當前影格，並設為 macOS 背景圖片。"
           }
         }
       }
@@ -44648,41 +44446,6 @@
         }
       }
     },
-    "No videos yet" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No videos yet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay vídeos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画はまだありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無影片"
-          }
-        }
-      }
-    },
     "No wallpaper configured" : {
       "localizations" : {
         "en" : {
@@ -62051,41 +61814,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋工作坊"
-          }
-        }
-      }
-    },
-    "Search videos" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search videos"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar vídeos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオを検索"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜尋影片"
           }
         }
       }
