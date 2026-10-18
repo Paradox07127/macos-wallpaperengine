@@ -62,6 +62,22 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         XCTAssertEqual(held.constantPacks, after.constantPacks, "an unchanged pass is not re-packed")
     }
 
+    func testScriptedMaterialConstantChangesTheCBufferWithoutReloading() async throws {
+        let harness = try await makeHarness(speedScript: "export function update(v){ return v; }")
+        let operation = try XCTUnwrap(harness.plan.programs.first { $0.value.shader == "effects/foliagesway" }?.key)
+        let before = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(before.speed[operation]), 5, accuracy: 1e-6)
+        let generation = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+
+        let committed = try await change(harness, "speed", from: .number(5), to: .number(9))
+        XCTAssertTrue(committed)
+        let after = try await frame(harness.actor)
+        XCTAssertEqual(try XCTUnwrap(after.speed[operation]), 9, accuracy: 1e-6)
+        XCTAssertEqual(after.renderer, before.renderer, "the renderer is not rebuilt")
+        let generationAfter = await harness.actor.rendererStateSnapshot()?.currentLoadGeneration
+        XCTAssertEqual(generationAfter, generation, "the scene did not reload")
+    }
+
     func testMaterialFileConstantFollowsAKeyTheSceneAlsoBinds() async throws {
         let harness = try await makeHarness(alphaKey: "drift", materialSpeedKey: "drift")
         let composite = try XCTUnwrap(harness.operation { $0.fillsComposite })
@@ -372,8 +388,9 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
     /// Object 17's alpha, visibility, foliagesway speed and a waterripple texture bound to user properties `opacity`,
     /// `show`, `speed` and `mask`; the scene is installed as a `.cache` scene and loaded by a fresh actor.
     /// With `materialSpeedKey`, the scene leaves `speeduv` to `materials/effects/foliagesway.json`, which binds it to
-    /// that key with value 5. `edit` runs on object 17 after these; `properties` go to project.json; `sound` is muted.
-    private func makeHarness(alphaKey: String = "opacity", materialSpeedKey: String? = nil,
+    /// that key with value 5; otherwise `speedScript` is attached to the scene's `speed` envelope.
+    /// `edit` runs on object 17 after these; `properties` go to project.json; `sound` is muted.
+    private func makeHarness(alphaKey: String = "opacity", materialSpeedKey: String? = nil, speedScript: String? = nil,
                              edit: ((inout [String: Any]) -> Void)? = nil, properties: [String: Any]? = nil,
                              withSound sound: [String: Any]? = nil) async throws -> Harness {
         let fixture = try fixture()
@@ -420,7 +437,9 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
             material["passes"] = passes
             try JSONSerialization.data(withJSONObject: material).write(to: materialURL)
         } else {
-            constants["speeduv"] = ["user": "speed", "value": 5]
+            var speed: [String: Any] = ["user": "speed", "value": 5]
+            speed["script"] = speedScript
+            constants["speeduv"] = speed
         }
         sway[0]["constantshadervalues"] = constants
         effects[1]["passes"] = sway

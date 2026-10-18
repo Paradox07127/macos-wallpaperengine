@@ -25,15 +25,15 @@ public enum WPEParityUserProperties {
     ]
 
     /// Every user property the scene JSON binds, with each target it reaches. A scripted object field keeps its user watch
-    /// (1401a4db0.c:39-142); scriptproperties, sound volume, particle instance overrides, camera-object zoom/fov,
-    /// parallaxDepth and the fields the renderer reads per frame or re-lays are `.incremental`, anything else (other
-    /// scripted fields included) is `.reload`.
+    /// (1401a4db0.c:39-142). Live (`.incremental`): the fields the renderer reads per frame or re-lays, and effect fields
+    /// even when scripted. Everything else, other scripted fields included, is `.reload`.
     public static func bindings(document: WPESceneDocument) -> [String: [WPEScenePropertyBinding]] {
         let layers = Set(WPEParityLayerTransform.layers(document: document).map(\.id))
         let images = Set(document.imageObjects.map(\.id))
         let particles = Set(document.particleObjects.map(\.id))
         let texts = Set(WPEParityTextObject.textObjects(in: document).map(\.id))
         let sounds = Set(document.soundObjects.map(\.id))
+        let lights = Set(document.lightObjects.map(\.id))
         let objects = WPEParityProgramScene.array(document.sourceJSON["objects"])
         var result: [String: [WPEScenePropertyBinding]] = [:]
         func target(_ path: [String], scripted: Bool) -> (WPEScenePropertyBindingTarget, WPEScenePropertyBindingKind,
@@ -66,9 +66,11 @@ public enum WPEParityUserProperties {
                 case .origin, .scale, .angles: (.objectResource(objectID: id, field: field[0]), .resource, true)
                 }
             }
-            guard !scripted else { return reload }
+            guard !scripted || field.first == "effects" else { return reload }
             if field == ["parallaxDepth"]
-                || (field == ["zoom"] || field == ["fov"]) && WPEParityProgramScene.string(objects[index]["camera"]) != nil {
+                || (field == ["zoom"] || field == ["fov"]) && WPEParityProgramScene.string(objects[index]["camera"]) != nil
+                || lights.contains(id) && field.count == 1
+                && WPEParityScriptProperty.light.contains(where: { $0.name == field[0] && $0.type == .float }) {
                 return (.objectResource(objectID: id, field: field[0]), .resource, true)
             }
             if texts.contains(id), field.count == 1, liveTextFields.contains(field[0]) {
@@ -82,12 +84,15 @@ public enum WPEParityUserProperties {
             if images.contains(id), field.count == 3, field[0] == "instance", field[1] == "constantshadervalues" {
                 return (.shaderUniform(objectID: id, effectID: nil, passID: nil, name: field[2]), .uniform, true)
             }
+            if images.contains(id), field.count == 3, field[0] == "animationlayers", Int(field[1]) != nil,
+               field[2] == "visible" || field[2] == "rate" {
+                return (.objectResource(objectID: id, field: joined), .resource, true)
+            }
             guard field.count > 2, field[0] == "effects", let effect = Int(field[1]) else { return reload }
             let effectID = objects[index]["effects"]?[effect].flatMap(WPEParitySceneAnimations.id) ?? field[1]
             if field.count == 3, field[2] == "visible" {
                 return (.imageEffect(objectID: id, effectID: effectID), .visible, true)
             }
-            guard images.contains(id) else { return reload }
             if field.count == 6, field[2] == "passes", field[4] == "constantshadervalues", let pass = Int(field[3]) {
                 return (.shaderUniform(objectID: id, effectID: effectID, passID: pass, name: field[5]), .uniform, true)
             }
@@ -172,9 +177,9 @@ public enum WPEParityUserProperties {
 }
 
 /// The state writes that take a running parity scene from one parse of its JSON to a parse with changed user values:
-/// every object field, effect visible bit, material constant, sound volume, particle instance field, camera-object
-/// zoom/fov and parallaxDepth whose parsed value differs, and the camera parallax terms, accepted bloom Bool delta and
-/// bloom constants read per frame.
+/// every object field, effect visible bit, image/text material constant, sound volume, particle instance field,
+/// camera-object zoom/fov, light Float field, image animation-layer visible/rate and parallaxDepth whose parsed value
+/// differs, and the camera parallax terms, accepted bloom Bool delta and bloom constants read per frame.
 public struct WPEParityUserPropertyUpdate: Sendable {
     public struct ObjectWrite: Sendable, Equatable {
         public let id: String
@@ -220,7 +225,8 @@ public struct WPEParityUserPropertyUpdate: Sendable {
     public private(set) var sounds: [SoundWrite] = []
     /// `instance.*` fields of particle layers whose parsed instance override differs.
     public private(set) var particles: [ScriptFieldWrite] = []
-    /// Camera-object fov/zoom and every object's parallaxDepth whose accepted JSON value differs.
+    /// Camera-object fov/zoom, light Float fields, image animation-layer visible/rate and every object's parallaxDepth
+    /// whose accepted JSON value differs.
     public private(set) var objectFields: [ScriptFieldWrite] = []
     public let cameraParallax: WPESceneCameraParallaxSettings
     /// The new parse's bloom values, which the post-process draws read on the next frame.
@@ -303,20 +309,21 @@ public struct WPEParityUserPropertyUpdate: Sendable {
                                                   invalidation: descriptor.invalidation))
             }
         }
+        let lights = Set(new.lightObjects.map(\.id))
         let earlierObjects = Dictionary(old.resolvedObjectsJSON.compactMap { object in
             WPEParitySceneAnimations.id(object).map { ($0, object) }
         }) { first, _ in first }
         for object in new.resolvedObjectsJSON {
             guard let id = WPEParitySceneAnimations.id(object), let earlier = earlierObjects[id] else { continue }
-            if WPEParityProgramScene.string(object["camera"]) != nil {
-                for descriptor in WPEParityScriptProperty.camera where descriptor.type == .float {
-                    guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: object[descriptor.name]),
-                          value != WPEParityScriptProperty.sceneFloatValue(fromJSON: earlier[descriptor.name]) else {
-                        continue
-                    }
-                    objectFields.append(ScriptFieldWrite(id: id, name: descriptor.fieldName, value: SIMD4(value, 0, 0, 0),
-                                                         invalidation: descriptor.invalidation))
+            let descriptors = WPEParityProgramScene.string(object["camera"]) != nil ? WPEParityScriptProperty.camera
+                : lights.contains(id) ? WPEParityScriptProperty.light : []
+            for descriptor in descriptors where descriptor.type == .float {
+                guard let value = WPEParityScriptProperty.sceneFloatValue(fromJSON: object[descriptor.name]),
+                      value != WPEParityScriptProperty.sceneFloatValue(fromJSON: earlier[descriptor.name]) else {
+                    continue
                 }
+                objectFields.append(ScriptFieldWrite(id: id, name: descriptor.fieldName, value: SIMD4(value, 0, 0, 0),
+                                                     invalidation: descriptor.invalidation))
             }
             if let depth = Self.nativeVec2(object["parallaxDepth"]), depth != Self.nativeVec2(earlier["parallaxDepth"]) {
                 objectFields.append(ScriptFieldWrite(id: id, name: "parallaxDepth", value: SIMD4(lowHalf: depth, highHalf: .zero),
@@ -330,13 +337,21 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             }
             diff(earlier.materialInstance?.constants ?? [:], image.materialInstance?.constants ?? [:],
                  pass: WPEParityMaterialPassKey(objectID: image.id))
-            for (effect, earlierEffect) in zip(image.effects, earlier.effects) {
-                for (pass, override) in effect.passOverrides.enumerated()
-                    where pass < earlierEffect.passOverrides.count {
-                    diff(earlierEffect.passOverrides[pass].constants, override.constants,
-                         pass: WPEParityMaterialPassKey(objectID: image.id, effectID: effect.id, pass: pass))
+            diffEffects(old: earlier.effects, new: image.effects, objectID: image.id)
+            for (index, (layer, earlierLayer)) in zip(image.animationLayers, earlier.animationLayers).enumerated() {
+                if layer.visible != earlierLayer.visible {
+                    objectFields.append(ScriptFieldWrite(id: image.id, name: "animationlayers.\(index).visible",
+                                                         value: SIMD4(layer.visible ? 1 : 0, 0, 0, 0), invalidation: .none))
+                }
+                if layer.rate != earlierLayer.rate {
+                    objectFields.append(ScriptFieldWrite(id: image.id, name: "animationlayers.\(index).rate",
+                                                         value: SIMD4(Float(layer.rate), 0, 0, 0), invalidation: .none))
                 }
             }
+        }
+        let earlierTextEffects = Dictionary(old.textObjects.map { ($0.id, $0.effects) }) { first, _ in first }
+        for text in new.textObjects {
+            diffEffects(old: earlierTextEffects[text.id] ?? [], new: text.effects, objectID: text.id)
         }
     }
 
@@ -410,6 +425,15 @@ public struct WPEParityUserPropertyUpdate: Sendable {
             guard let constant = WPEParityProgramConstants.components(entry.envelope, userValues: values)
                 .flatMap(WPEParitySceneState.Constant.init(components:)) else { continue }
             constants.append(ConstantWrite(pass: entry.pass, name: entry.name, constant: constant))
+        }
+    }
+
+    private mutating func diffEffects(old: [WPESceneImageEffect], new: [WPESceneImageEffect], objectID: String) {
+        for (effect, earlierEffect) in zip(new, old) {
+            for (pass, override) in effect.passOverrides.enumerated() where pass < earlierEffect.passOverrides.count {
+                diff(earlierEffect.passOverrides[pass].constants, override.constants,
+                     pass: WPEParityMaterialPassKey(objectID: objectID, effectID: effect.id, pass: pass))
+            }
         }
     }
 

@@ -118,6 +118,41 @@ final class ParityUserPropertiesTests: XCTestCase {
         XCTAssertEqual(state.scriptField("parallaxDepth", of: "1"), .vector(SIMD4(0.5, 0, 0, 0)))
     }
 
+    func testAnimationLayerTextEffectLightAndScriptedEffectConstantsBindLive() throws {
+        let bindings = try WPEParityUserProperties.bindings(document: Self.fieldTargetsDocument())
+        for key in ["pose", "pace", "tintalpha", "backlight", "accent"] {
+            XCTAssertEqual(bindings[key]?.map(\.action), [.incremental], key)
+        }
+    }
+
+    func testAnimationLayerTextEffectLightAndScriptedEffectConstantChangesWriteTheRunningScene() throws {
+        let before = try Self.fieldTargetsDocument()
+        let after = try Self.fieldTargetsDocument(["pose": .bool(false), "pace": .number(1.6), "tintalpha": .number(0.5),
+                                                   "backlight": .number(2), "accent": .string("0 1 0")])
+        let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: before, to: after))
+        XCTAssertTrue(update.constants.contains {
+            $0.pass == WPEParityMaterialPassKey(objectID: "5", effectID: "7", pass: 0) && $0.name == "alpha"
+                && $0.constant == WPEParitySceneState.Constant(components: [0.5])
+        }, "\(update.constants)")
+        XCTAssertTrue(update.constants.contains {
+            $0.pass == WPEParityMaterialPassKey(objectID: "6", effectID: "8", pass: 0) && $0.name == "color"
+                && $0.constant == WPEParitySceneState.Constant(components: [0, 1, 0])
+        }, "\(update.constants)")
+
+        var state = WPEParitySceneState(document: before, hdr: false)
+        let lighting = state.generation(.lighting)
+        update.apply(to: &state)
+        XCTAssertEqual(state.scriptField("animationlayers.0.visible", of: "20"), .vector(.zero))
+        XCTAssertEqual(state.scriptField("animationlayers.0.rate", of: "20"), .vector(SIMD4(1.6, 0, 0, 0)))
+        XCTAssertEqual(state.scriptField("intensity", of: "150"), .vector(SIMD4(2, 0, 0, 0)))
+        XCTAssertGreaterThan(state.generation(.lighting), lighting)
+    }
+
+    func testShapeQuadEffectConstantBindsLive() throws {
+        let bindings = try WPEParityUserProperties.bindings(document: Self.fieldTargetsDocument())
+        XCTAssertEqual(bindings["quadspeed"]?.map(\.action), [.incremental])
+    }
+
     func testBoolUserValueKeepsAuthoredParallaxDepthAndOneTokenLeavesYZero() throws {
         let source = #"""
         {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
@@ -289,6 +324,34 @@ final class ParityUserPropertiesTests: XCTestCase {
           {"id":10,"image":"models/b.json",
            "alpha":{"value":1,"script":"export var scriptProperties = createScriptProperties().addSlider({name:'level',value:1}).finish(); export function update(v){return v;}",
                     "scriptproperties":{"level":{"user":"level","value":1}}}}
+         ]}
+        """#
+        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues,
+                                                makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+    }
+
+    /// Puppet image 20 (animation layer visible/rate), text 5 (effect 7 constant), directional light 150 (intensity),
+    /// image 6 (scripted effect 8 constant) and shape quad 30 (effect 9 constant), every envelope user-bound.
+    private static func fieldTargetsDocument(_ userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) throws
+        -> WPESceneDocument {
+        let source = #"""
+        {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":32,"height":32}},
+         "objects":[
+          {"id":20,"image":"models/puppet.json",
+           "animationlayers":[{"id":1,"animation":1,"visible":{"user":"pose","value":true},
+                               "rate":{"user":"pace","value":0.8}}]},
+          {"id":5,"text":"Hi",
+           "effects":[{"id":7,"file":"effects/tint/effect.json",
+                       "passes":[{"constantshadervalues":{"alpha":{"user":"tintalpha","value":1}}}]}]},
+          {"id":150,"light":"ldirectional","intensity":{"user":"backlight","value":0.5}},
+          {"id":6,"image":"models/a.json",
+           "effects":[{"id":8,"file":"effects/tint/effect.json",
+                       "passes":[{"constantshadervalues":{"color":{"user":"accent","value":"1 0 0",
+                                                                    "script":"export function update(v){return v;}"}}}]}]},
+          {"id":30,"shape":"quad",
+           "effects":[{"id":9,"file":"effects/tint/effect.json",
+                       "passes":[{"constantshadervalues":{"speed":{"user":"quadspeed","value":1}}}]}]}
          ]}
         """#
         return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues,
