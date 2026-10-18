@@ -453,6 +453,10 @@ struct WPEParityFrameDrawPlanner {
     private(set) var layout: WPEParityFrameLayout
     private var frame: WPEParityFrame
     private var resources: [WPEResourceID: WPELogicalResource]
+    /// Per frame variant of `layout`, its resources by id; a repeated id keeps its first declaration.
+    private var variantResources: [[WPEResourceID: WPELogicalResource]]
+    /// The plan's scene objects by id; a repeated id keeps the first object.
+    private let objects: [String: WPEParitySceneObject]
     /// Colour and depth target bound at each draw operation; colour is nil for the depth-only shadow atlas.
     private var targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)]
     /// The scene camera and every layer's world matrix.
@@ -502,6 +506,8 @@ struct WPEParityFrameDrawPlanner {
         layout = plan.layout
         frame = plan.frames[0]
         resources = Self.resources(frame)
+        variantResources = Self.variantResources(layout)
+        objects = Dictionary(plan.scene.scene.objects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         targets = Self.targets(frame)
         // No camera path or camera object zoom yet.
         let renderTargetSize = SIMD2(Float(plan.width), Float(plan.height))
@@ -627,6 +633,7 @@ struct WPEParityFrameDrawPlanner {
         self.layout = layout
         frame = layout.frames[0]
         resources = Self.resources(frame)
+        variantResources = Self.variantResources(layout)
         targets = Self.targets(frame)
     }
 
@@ -718,6 +725,10 @@ struct WPEParityFrameDrawPlanner {
         Dictionary(uniqueKeysWithValues: frame.resources.map { ($0.id, $0) })
     }
 
+    private static func variantResources(_ layout: WPEParityFrameLayout) -> [[WPEResourceID: WPELogicalResource]] {
+        layout.frames.map { Dictionary($0.resources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+
     static func targets(_ frame: WPEParityFrame) -> [Int: (color: WPEResourceID?, depth: WPEResourceID?)] {
         var targets: [Int: (color: WPEResourceID?, depth: WPEResourceID?)] = [:]
         var bound: (color: WPEResourceID?, depth: WPEResourceID?)?
@@ -802,7 +813,7 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         let sceneObject: WPEParitySceneObject? = if case let .scene(draw) = description {
-            plan.scene.scene.objects.first { $0.id == draw.objectID }
+            objects[draw.objectID]
         } else {
             nil
         }
@@ -882,7 +893,7 @@ struct WPEParityFrameDrawPlanner {
                     switch source {
                     case let .image(texture): type = texture.textureType
                     case let .resource(id):
-                        guard let target = layout.frames[variant].resources.first(where: { $0.id == id }) else {
+                        guard let target = variantResources[variant][id] else {
                             throw .texture("\(shader) samples undeclared \(id)")
                         }
                         if target.lifetime == .imported, let image = layerImages[id] {
@@ -942,7 +953,7 @@ struct WPEParityFrameDrawPlanner {
         }
         let puppet: WPEParityScenePuppet? = if case let .scene(draw) = description,
                                                draw.geometry == .puppetMesh || puppetSegment != nil {
-            plan.scene.scene.objects.first { $0.id == draw.objectID }?.puppet
+            objects[draw.objectID]?.puppet
         } else {
             nil
         }
@@ -1460,6 +1471,8 @@ struct WPEParityFrameDrawPlanner {
         struct Input {
             let attribute: WPEPuppetVertexAttribute
             let columns: Int
+            /// Only the puppet's first UV pair is adjusted for its albedo image; UV.zw/UV1+ survive.
+            let scalesUV: Bool
         }
         var resolved: [Input] = []
         for input in inputs.sorted(by: { $0.index < $1.index }) {
@@ -1475,7 +1488,9 @@ struct WPEParityFrameDrawPlanner {
             guard attributes.count == 1, let attribute = attributes.first else {
                 throw .pipeline("MDLV input \(input.name) has \(attributes.count) native elements")
             }
-            resolved.append(Input(attribute: attribute, columns: input.columns))
+            resolved.append(Input(attribute: attribute, columns: input.columns,
+                                  scalesUV: attribute.semantic == "TEXCOORD" && attribute.semanticIndex == 0
+                                      && attribute.componentType == .float32))
         }
         let count = try rawVertexWordCount(stream, inputs: inputs)
         guard destination.count >= count else {
@@ -1492,9 +1507,7 @@ struct WPEParityFrameDrawPlanner {
                         if lane < attribute.componentCount {
                             let offset = vertex * stream.layout.stride + attribute.byteOffset + lane * 4
                             word = UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
-                            // Only the puppet's first UV pair is adjusted for its albedo image; UV.zw/UV1+ survive.
-                            if attribute.semantic == "TEXCOORD", attribute.semanticIndex == 0, lane < 2,
-                               attribute.componentType == .float32, uvMax[lane] != 1 {
+                            if input.scalesUV, lane < 2, uvMax[lane] != 1 {
                                 word = (Float(bitPattern: word) * uvMax[lane]).bitPattern
                             }
                         }
@@ -1511,13 +1524,14 @@ struct WPEParityFrameDrawPlanner {
                                                               uvMax: SIMD2<Float>,
                                                               device: MTLDevice) throws(WPEParityFrameSkip)
         -> (vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int)? {
-        let words = try rawVertexWords(stream, inputs: inputs, uvMax: uvMax)
-        guard let vertices = device.makeBuffer(length: max(16, words.count * 4), options: .storageModeShared),
+        let count = try rawVertexWordCount(stream, inputs: inputs)
+        guard let vertices = device.makeBuffer(length: max(16, count * 4), options: .storageModeShared),
               let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<Index>.stride,
                                                   options: .storageModeShared) else { return nil }
-        if !words.isEmpty {
-            vertices.contents().copyMemory(from: words, byteCount: words.count * 4)
-        }
+        try writeRawVertexWords(
+            stream, inputs: inputs, uvMax: uvMax,
+            to: UnsafeMutableBufferPointer(start: vertices.contents().assumingMemoryBound(to: UInt32.self), count: count)
+        )
         return (vertices, indexBuffer, indices.count)
     }
 
