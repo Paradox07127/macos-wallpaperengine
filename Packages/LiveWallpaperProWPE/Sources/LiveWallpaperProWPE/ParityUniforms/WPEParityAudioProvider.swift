@@ -3,7 +3,7 @@ import Foundation
 
 /// WPE 2.8 audio provider: 64 raw peak magnitudes per channel from the newest `frameSamples` samples.
 /// 1400d02b0.c (0x1400d18c4, 0x1400d1491, 0x1400d1c40-1d5d), 1400cf120.c:257-265, 1400c0c80.c:58-61.
-public struct WPEParityAudioProvider: Sendable {
+public final class WPEParityAudioProvider {
     /// N: DFT length; samples past `frameSamples` are the constant (127, 1/127).
     public let fftSize: Int
     /// M: bins k = 1..<M are analyzed.
@@ -15,6 +15,7 @@ public struct WPEParityAudioProvider: Sendable {
 
     private let binWeights: [Float]
     private let log2Size: vDSP_Length
+    private let setup: FFTSetup
     /// Chirp e^{-iπn²/N} for n < L.
     private let chirpReal: [Float]
     private let chirpImag: [Float]
@@ -61,18 +62,19 @@ public struct WPEParityAudioProvider: Sendable {
             }
         }
         let setup = vDSP_create_fftsetup(self.log2Size, FFTRadix(kFFTRadix2))!
-        defer { vDSP_destroy_fftsetup(setup) }
+        self.setup = setup
         Self.transform(&kernel, setup: setup, log2Size: self.log2Size, direction: FFTDirection(kFFTDirection_Forward))
         kernelReal = vDSP.multiply(1 / Float(size), kernel.real)
         kernelImag = vDSP.multiply(1 / Float(size), kernel.imag)
     }
 
+    deinit {
+        vDSP_destroy_fftsetup(setup)
+    }
+
     /// Left 64 then right 64 band peaks; `left`/`right` hold the newest `frameSamples` samples, oldest first.
     public func bins(left: [Float], right: [Float], volume: Float = 1) -> [Float] {
         precondition(left.count == frameSamples && right.count == frameSamples)
-        // An FFTSetup is not Sendable, so it cannot be a stored property of this Sendable value.
-        let setup = vDSP_create_fftsetup(log2Size, FFTRadix(kFFTRadix2))!
-        defer { vDSP_destroy_fftsetup(setup) }
         let scale = volume * 0.001 * (Float(analyzedBins) / (Float(fftSize) * 0.5))
         return channelBands(left, setup: setup).map { $0 * scale } + channelBands(right, setup: setup).map { $0 * scale }
     }
