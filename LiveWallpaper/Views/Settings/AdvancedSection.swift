@@ -106,6 +106,7 @@ extension GeneralSettingsView {
         preservePlaybackOnLock = settings.preservePlaybackOnLock
         pauseOnFullScreen = settings.pauseOnFullScreen
         pauseOnWindowOcclusion = settings.pauseOnWindowOcclusion
+        pauseOnAppWindow = settings.pauseOnAppWindow
         pauseInLowPowerMode = settings.pauseInLowPowerMode
         applicationRules = settings.applicationPerformanceRules
         showInDock = settings.showInDock

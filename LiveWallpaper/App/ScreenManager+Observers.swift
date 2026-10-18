@@ -297,6 +297,7 @@ extension ScreenManager {
         withObservationTracking {
             _ = fullScreenDetector.hiddenScreens
             _ = fullScreenDetector.occludedScreens
+            _ = fullScreenDetector.appWindowScreens
             // Adaptive throttle reacts to partial coverage below the 0.85
             // pause cutoff, so track the (quantized) fraction too.
             _ = fullScreenDetector.occlusionFractions
@@ -436,7 +437,8 @@ extension ScreenManager {
             memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             isFrontmostExcludedByRule: frontmostExcluded,
-            respondsToThermalThrottle: Self.respondsToThermalThrottle(screen.runtimeSession)
+            respondsToThermalThrottle: Self.respondsToThermalThrottle(screen.runtimeSession),
+            hasAppWindow: fullScreenDetector.appWindowScreens[screen.id] ?? false
         )
     }
 
@@ -506,6 +508,7 @@ extension ScreenManager {
         )
         let shouldEnablePolling = wallpaperPolicyNeedsPolling || hasEnabledDesktopMonitorOverlay
 
+        fullScreenDetector.setAppWindowTrackingEnabled(globalSettings.pauseOnAppWindow)
         fullScreenDetector.setFallbackPollingEnabled(shouldEnablePolling)
     }
 

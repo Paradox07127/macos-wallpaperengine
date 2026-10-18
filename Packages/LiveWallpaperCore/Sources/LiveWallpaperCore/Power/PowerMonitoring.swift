@@ -15,6 +15,7 @@ extension PowerMonitor: PowerMonitoring {}
 public protocol FullScreenDetecting: AnyObject {
     var hiddenScreens: [CGDirectDisplayID: Bool] { get }
     var occludedScreens: [CGDirectDisplayID: Bool] { get }
+    var appWindowScreens: [CGDirectDisplayID: Bool] { get }
     /// Union-coverage fraction (0...1), quantized; the continuous source behind the
     /// binary `occludedScreens` (>= 0.85).
     var occlusionFractions: [CGDirectDisplayID: CGFloat] { get }
@@ -26,6 +27,7 @@ public protocol FullScreenDetecting: AnyObject {
     /// a consumer that needs fresh coverage must not read them.
     var isFallbackPollingEnabled: Bool { get }
     func setFallbackPollingEnabled(_ enabled: Bool)
+    func setAppWindowTrackingEnabled(_ enabled: Bool)
     /// Permanent teardown, not the adaptive polling toggle.
     func stop()
 }

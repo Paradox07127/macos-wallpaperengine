@@ -12,6 +12,8 @@ public final class FullScreenDetector {
     /// once). Distinct from `hiddenScreens`, which needs a single window over the whole display.
     public private(set) var occludedScreens: [CGDirectDisplayID: Bool] = [:]
 
+    public private(set) var appWindowScreens: [CGDirectDisplayID: Bool] = [:]
+
     /// Union-coverage fraction (0...1) behind `occludedScreens`, quantized to
     /// `occlusionFractionStep` so observers only wake on meaningful change.
     public private(set) var occlusionFractions: [CGDirectDisplayID: CGFloat] = [:]
@@ -27,6 +29,7 @@ public final class FullScreenDetector {
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var pollTimer: AnyCancellable?
     @ObservationIgnored private let pollInterval: TimeInterval
+    @ObservationIgnored private var tracksAppWindows = false
 
     // MARK: - Initialization
 
@@ -95,12 +98,23 @@ public final class FullScreenDetector {
         }
     }
 
+    /// Window moves, closes and minimization need a short fallback scan, only while opted in.
+    public func setAppWindowTrackingEnabled(_ enabled: Bool) {
+        guard tracksAppWindows != enabled else { return }
+        tracksAppWindows = enabled
+        if isFallbackPollingEnabled {
+            stopPolling()
+            startPollingIfNeeded()
+        }
+    }
+
     private func startPollingIfNeeded() {
         guard pollTimer == nil else { return }
 
         // pollInterval/6 = 5s leeway at the shipped 30s interval, letting the
         // OS coalesce the fallback tick with other wakeups.
-        pollTimer = Timer.publish(every: pollInterval, tolerance: pollInterval / 6, on: .main, in: .common)
+        let interval = tracksAppWindows ? min(1, pollInterval) : pollInterval
+        pollTimer = Timer.publish(every: interval, tolerance: interval / 6, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.checkFullScreenState() }
     }
@@ -136,8 +150,6 @@ public final class FullScreenDetector {
             for key in result.keys {
                 result[key] = isFullScreen; occlusion[key] = isFullScreen; fractions[key] = isFullScreen ? 1 : 0
             }
-            updateIfChanged(result, occlusion, fractions)
-            return
         }
 
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
@@ -166,9 +178,23 @@ public final class FullScreenDetector {
             return (id, CGRect(x: bounds.minX, y: bounds.minY + top, width: bounds.width, height: bounds.height - top))
         })
 
+        scanWindows(windowList, screenFrames: screenFrames, safeAreaFrames: safeAreaFrames, fullScreen: result)
+    }
+
+    /// Shared scan for full-screen, coverage and any-window policies; metadata only, no screen capture.
+    func scanWindows(
+        _ windowList: [[String: Any]],
+        screenFrames: [(id: CGDirectDisplayID, frame: CGRect)],
+        safeAreaFrames: [CGDirectDisplayID: CGRect] = [:],
+        fullScreen: [CGDirectDisplayID: Bool] = [:]
+    ) {
+        var result = fullScreen
+        let occlusion = Dictionary(uniqueKeysWithValues: screenFrames.map { ($0.id, false) })
+        let fractions = Dictionary(uniqueKeysWithValues: screenFrames.map { ($0.id, CGFloat.zero) })
         // Clipped window rectangles per display, used for the union-area
         // occlusion test after the full-screen pass.
         var windowsByScreen: [CGDirectDisplayID: [CGRect]] = [:]
+        var systemPreviewFrames: [CGRect] = []
 
         // `layer == 0` is what keeps our own surfaces out: wallpapers sit at desktopWindow-1
         // and desktopIconWindow+1, overlays at +2, so none can occlude itself into a pause.
@@ -196,6 +222,16 @@ public final class FullScreenDetector {
                 width: boundsDict["Width"] ?? 0,
                 height: boundsDict["Height"] ?? 0
             )
+
+            // Stage Manager keeps parked app previews at layer zero and "onscreen".
+            // The list is front-to-back: only mask previews behind their system surface.
+            if ownerName == "WindowManager" {
+                systemPreviewFrames.append(windowFrame)
+                continue
+            }
+            if systemPreviewFrames.contains(where: { $0.contains(windowFrame) }) {
+                continue
+            }
 
             for (screenID, cgScreenFrame) in screenFrames {
                 let intersection = windowFrame.intersection(cgScreenFrame)
@@ -246,7 +282,7 @@ public final class FullScreenDetector {
             fractions[screenID] = min(1, max(0, quantized))
             occlusion[screenID] = fraction >= 0.85
         }
-        updateIfChanged(fullScreen, occlusion, fractions)
+        updateIfChanged(fullScreen, occlusion, fractions, appWindows: coverage.mapValues { $0 > 0 })
     }
 
     /// Union area, overlaps counted once: sweep the compressed x-edges and merge the
@@ -303,8 +339,12 @@ public final class FullScreenDetector {
     private func updateIfChanged(
         _ newFullScreen: [CGDirectDisplayID: Bool],
         _ newOcclusion: [CGDirectDisplayID: Bool],
-        _ newFractions: [CGDirectDisplayID: CGFloat]
+        _ newFractions: [CGDirectDisplayID: CGFloat],
+        appWindows: [CGDirectDisplayID: Bool] = [:]
     ) {
+        if appWindows != appWindowScreens {
+            appWindowScreens = appWindows
+        }
         if newFullScreen != hiddenScreens {
             hiddenScreens = newFullScreen
         }
