@@ -60,6 +60,59 @@ struct WPEParityShaderStoreTests {
         }
     }
 
+    /// Every compile waits until `open()`.
+    private actor GatedCompiler: WPEParityShaderCompiling {
+        private(set) var calls = 0
+        private var failuresRemaining: Int
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        init(failuresRemaining: Int = 0) {
+            self.failuresRemaining = failuresRemaining
+        }
+
+        func compile(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
+            calls += 1
+            if !isOpen {
+                await withCheckedContinuation { waiters.append($0) }
+            }
+            if failuresRemaining > 0 {
+                failuresRemaining -= 1
+                throw Compiler.Failure.failed
+            }
+            return Compiler.output(for: request)
+        }
+
+        func open() {
+            isOpen = true
+            waiters.forEach { $0.resume() }
+            waiters = []
+        }
+    }
+
+    /// Starts `first` on one store, then `second` on another sharing its in-flight table, and opens the compiler
+    /// once the second request has joined.
+    private func joinedPair(_ compiler: GatedCompiler, in directory: URL)
+        async -> (first: Result<WPEParityShaderArtifact, Error>, second: Result<WPEParityShaderArtifact, Error>,
+                  stores: [WPEParityShaderStore]) {
+        let table = WPEParityShaderInFlightTable()
+        let stores = ["a", "b"].map {
+            let disk = WPEParityShaderDiskCache(cachesURL: directory.appendingPathComponent($0, isDirectory: true))
+            return WPEParityShaderStore(compiler: compiler, diskCache: disk, inFlight: table)
+        }
+        let shader = request()
+        let first = Task { try await stores[0].artifact(for: shader) }
+        while await compiler.calls == 0 {
+            await Task.yield()
+        }
+        let second = Task { try await stores[1].artifact(for: shader) }
+        while stores[1].statistics.joinedRequests == 0 {
+            await Task.yield()
+        }
+        await compiler.open()
+        return await (first.result, second.result, stores)
+    }
+
     private func request(_ byte: UInt8 = 1, geometry: Bool = false) -> WPEParityShaderCompileRequest {
         .init(program: .init(vertex: [byte], geometry: geometry ? [3] : nil, fragment: [2]),
               compilerIdentity: "test DXC; test MSC", bindingABIVersion: 1)
@@ -240,6 +293,37 @@ struct WPEParityShaderStoreTests {
         #expect(await disk.read(request.key) == nil)
         _ = try await store.artifact(for: request)
         #expect(await compiler.calls == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func storesSharingInFlightTableCompileEachKeyOnce() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = GatedCompiler()
+        let (first, second, stores) = await joinedPair(compiler, in: directory)
+        #expect(try first.get().vertex.functionName == "vertexMain")
+        #expect(try second.get().vertex.functionName == "vertexMain")
+        #expect(await compiler.calls == 1)
+        #expect(stores[0].statistics.compilations == 1)
+        #expect(stores[0].statistics.joinedRequests == 0)
+        #expect(stores[1].statistics.compilations == 0)
+        #expect(stores[1].statistics.joinedRequests == 1)
+        _ = try await stores[1].artifact(for: request())
+        #expect(stores[1].statistics.memoryHits == 1)
+        #expect(await compiler.calls == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func sharedInFlightFailureReachesJoinedStoreAndRetries() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = GatedCompiler(failuresRemaining: 1)
+        let (first, second, stores) = await joinedPair(compiler, in: directory)
+        for result in [first, second] {
+            #expect(throws: Compiler.Failure.failed) { try result.get() }
+        }
+        #expect(await compiler.calls == 1)
+        _ = try await stores[1].artifact(for: request())
+        #expect(await compiler.calls == 2)
+        #expect(stores[1].statistics.compilations == 1)
     }
 
     @Test func corruptOrMissingFilesAreDeletedAndRecompiled() async throws {

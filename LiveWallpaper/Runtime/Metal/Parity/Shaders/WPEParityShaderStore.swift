@@ -60,6 +60,29 @@ final class WPEParityShaderCompileLimiter: Sendable {
     }
 }
 
+/// Loads running for each shader key; stores sharing one table start one load per key and join it otherwise.
+actor WPEParityShaderInFlightTable {
+    static let shared = WPEParityShaderInFlightTable()
+
+    private var tasks: [WPEParityShaderKey: Task<WPEParityShaderArtifact, Error>] = [:]
+
+    /// `joined` is false only for the caller whose `load` was started.
+    func task(for key: WPEParityShaderKey,
+              starting load: @escaping @Sendable () async throws -> WPEParityShaderArtifact)
+        -> (task: Task<WPEParityShaderArtifact, Error>, joined: Bool) {
+        if let task = tasks[key] {
+            return (task, true)
+        }
+        // Isolated to this actor, so the entry is removed before any waiter sees the outcome.
+        let task = Task {
+            defer { tasks[key] = nil }
+            return try await load()
+        }
+        tasks[key] = task
+        return (task, false)
+    }
+}
+
 actor WPEParityShaderStore {
     enum ArtifactError: Error {
         case invalidStages
@@ -81,8 +104,8 @@ actor WPEParityShaderStore {
     private let compiler: any WPEParityShaderCompiling
     private let diskCache: WPEParityShaderDiskCache
     private let limiter: WPEParityShaderCompileLimiter
+    private let inFlight: WPEParityShaderInFlightTable
     private var memory: [WPEParityShaderKey: WPEParityShaderArtifact] = [:]
-    private var inFlight: [WPEParityShaderKey: Task<WPEParityShaderArtifact, Error>] = [:]
     private nonisolated let counts = OSAllocatedUnfairLock(initialState: Statistics())
 
     nonisolated var statistics: Statistics {
@@ -90,10 +113,12 @@ actor WPEParityShaderStore {
     }
 
     init(compiler: any WPEParityShaderCompiling, diskCache: WPEParityShaderDiskCache,
-         limiter: WPEParityShaderCompileLimiter = .shared) {
+         limiter: WPEParityShaderCompileLimiter = .shared,
+         inFlight: WPEParityShaderInFlightTable = WPEParityShaderInFlightTable()) {
         self.compiler = compiler
         self.diskCache = diskCache
         self.limiter = limiter
+        self.inFlight = inFlight
     }
 
     func artifact(for request: WPEParityShaderCompileRequest) async throws -> WPEParityShaderArtifact {
@@ -102,17 +127,17 @@ actor WPEParityShaderStore {
             count(\.memoryHits)
             return artifact
         }
-        if let task = inFlight[request.key] {
-            count(\.joinedRequests)
+        let (task, joined) = await inFlight.task(for: request.key) { try await self.load(request) }
+        guard joined else {
             return try await task.value
         }
-        let task = Task { try await self.load(request) }
-        inFlight[request.key] = task
-        return try await task.value
+        count(\.joinedRequests)
+        let artifact = try await task.value
+        memory[request.key] = artifact
+        return artifact
     }
 
     private func load(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityShaderArtifact {
-        defer { inFlight[request.key] = nil }
         if let compiled = await diskCache.read(request.key) {
             if let artifact = try? Self.decode(compiled, for: request) {
                 count(\.diskHits)

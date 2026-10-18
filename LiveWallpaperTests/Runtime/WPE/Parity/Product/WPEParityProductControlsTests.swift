@@ -40,7 +40,8 @@ final class WPEParityProductControlsTests: XCTestCase {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         try await driver.load(document: document, assets: assets, settings: WPEParityProgramSettings(),
-                              drawableSize: Self.size, pixelFormat: .rgba8Unorm_srgb, compiler: fixture.compiler)
+                              drawableSize: Self.size, pixelFormat: .rgba8Unorm_srgb, compiler: fixture.compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
         let layer = CAMetalLayer()
         layer.device = device
         layer.pixelFormat = .rgba8Unorm_srgb

@@ -3,6 +3,8 @@ import Foundation
 import LiveWallpaperProWPE
 
 actor WPEParityShaderDiskCache {
+    static let shared = WPEParityShaderDiskCache()
+
     private static let stageInName = "vertex-stage-in.metallib"
     private let rootURL: URL
     private let sizeBudget: Int

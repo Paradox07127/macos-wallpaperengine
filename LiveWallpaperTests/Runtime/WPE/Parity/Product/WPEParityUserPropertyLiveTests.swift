@@ -154,7 +154,8 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         try await driver.load(document: document, assets: harness.assets, settings: WPEParityProgramSettings(),
-                              drawableSize: Self.size, pixelFormat: .rgba8Unorm_srgb, compiler: fixture.compiler)
+                              drawableSize: Self.size, pixelFormat: .rgba8Unorm_srgb, compiler: fixture.compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
         for _ in 1 ... 6 {

@@ -490,7 +490,8 @@ final class WPEParityEffectToggleTests: XCTestCase {
         let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
         try await driver.load(document: document, assets: assets(root, wpeAssets), settings: WPEParityProgramSettings(),
                               drawableSize: CGSize(width: Self.width, height: Self.height),
-                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler)
+                              pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
         return DriverHarness(driver: driver, json: json)
     }
 }

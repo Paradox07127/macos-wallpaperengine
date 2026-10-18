@@ -263,6 +263,37 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertTrue(runtime.debugTrackSnapshots().isEmpty, "cleanup stops and detaches every track")
     }
 
+    func testConcurrentLoadsOfOneSceneCompileEachShaderOnce() async throws {
+        let (_, assets) = try sceneInputs()
+        let compiler = try makeCompiler()
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 160, "height": 96], "clearenabled": true,
+                        "clearcolor": "0 0 0", "camerashake": false, "cameraparallax": false],
+            "objects": [["id": 20, "name": "solid", "image": "models/util/solidlayer.json", "origin": "80 48 0",
+                         "size": "12 12", "color": "0 1 0", "alpha": 1]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
+                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        @Sendable func load(_ cache: WPEParityShaderDiskCache) async throws -> WPEParityShaderStore.Statistics {
+            let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+            defer { driver.cleanup() }
+            try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                                  drawableSize: CGSize(width: 160, height: 96), pixelFormat: .rgba8Unorm,
+                                  compiler: compiler, diskCache: cache)
+            XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
+            return try XCTUnwrap(driver.diagnostics?.shaderCache)
+        }
+        let cold = try await load(WPEParityShaderDiskCache(cachesURL: scratch.appending(path: "cold")))
+        let shared = WPEParityShaderDiskCache(cachesURL: scratch.appending(path: "shared"))
+        async let first = load(shared)
+        async let second = load(shared)
+        let pair = try await [first, second]
+        XCTAssertGreaterThan(cold.compilations, 0)
+        XCTAssertEqual(pair.map(\.compilations).reduce(0, +), cold.compilations, "cold \(cold), pair \(pair)")
+        XCTAssertGreaterThan(pair.map(\.joinedRequests).reduce(0, +), 0, "pair \(pair)")
+    }
+
     /// The unsigned Debug test host cannot provide the inherited sandbox required by the shipping helper.
     /// Explicit test inputs use the current source build; the signed Release product gate uses its bundle.
     func makeCompiler() throws -> WPEParityHelperShaderCompiler {

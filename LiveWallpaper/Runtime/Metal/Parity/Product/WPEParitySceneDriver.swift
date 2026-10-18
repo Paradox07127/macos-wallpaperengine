@@ -239,7 +239,7 @@ final class WPEParitySceneDriver {
     nonisolated(nonsending) func load(
         document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
         drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
-        diskCache: WPEParityShaderDiskCache = WPEParityShaderDiskCache(),
+        diskCache: WPEParityShaderDiskCache = .shared,
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
         workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
         userShortcutIcons: WPEUserShortcutIconStore? = nil,
@@ -285,7 +285,7 @@ final class WPEParitySceneDriver {
                                           pixelFormat: pixelFormat, renderScale: renderScale)
             let target = selection.target
             let plan = try await Self.makePlan(document: document, assets: assets, settings: settings, target: target)
-            let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache)
+            let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache, inFlight: .shared)
             let shaders = WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
                                                      bindingABIVersion: 1)
             let renderer = try await WPEParityFrameRenderer(

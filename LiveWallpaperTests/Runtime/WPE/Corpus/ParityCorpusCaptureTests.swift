@@ -88,6 +88,9 @@ final class ParityCorpusCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         let compiler = try WPEParityShaderToolchain.makeCompiler().get()
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let cacheRoot = FileManager.default.temporaryDirectory.appending(path: "parity-capture-cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: cacheRoot) }
+        let diskCache = WPEParityShaderDiskCache(cachesURL: cacheRoot)
         let engineAssetsRoot = config.engineAssetsRoot.map { URL(fileURLWithPath: $0) }
             ?? TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_ENGINE_ASSETS_ROOT")
         print("[parity-capture] corpusRoot=\(config.corpusRoot) scenes=\(config.scenes ?? ["<all>"]) "
@@ -130,7 +133,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 }
                 let result = try await capture(
                     descriptor: descriptor, provider: provider, projectRoot: folder, engineAssetsRoot: engineAssetsRoot,
-                    compiler: compiler, device: device, size: CGSize(width: size[0], height: size[1]),
+                    compiler: compiler, diskCache: diskCache, device: device, size: CGSize(width: size[0], height: size[1]),
                     frames: config.frames, step: config.frameStepSeconds, replay: replay, seed: config.seed,
                     shadowQuality: config.shadowQuality, png: outDir.appending(path: "\(id).png"), record: &record
                 )
@@ -165,7 +168,8 @@ final class ParityCorpusCaptureTests: XCTestCase {
     /// Loads `descriptor` as `AmbientWallpaperSessionBuilder` prepares a parity scene, presents the schedule's frames
     /// and writes the last drawable to `png`. Draw and program skips land in `record` even when a frame fails.
     private func capture(descriptor: SceneDescriptor, provider: any WPESceneAssetProvider, projectRoot: URL,
-                         engineAssetsRoot: URL?, compiler: WPEParityHelperShaderCompiler, device: MTLDevice,
+                         engineAssetsRoot: URL?, compiler: WPEParityHelperShaderCompiler,
+                         diskCache: WPEParityShaderDiskCache, device: MTLDevice,
                          size: CGSize, frames: Int, step: Double, replay: Replay, seed: UInt32,
                          shadowQuality: Int32?, png: URL,
                          record: inout [String: Any]) async throws -> [String: Any] {
@@ -200,7 +204,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         record["shadowQuality"] = settings.shadowQuality
         try await driver.load(document: inputs.makeDocument(), assets: inputs.assets, settings: inputs.settings,
                               drawableSize: size, pixelFormat: inputs.pixelFormat, compiler: compiler,
-                              workshopID: descriptor.workshopID,
+                              diskCache: diskCache, workshopID: descriptor.workshopID,
                               scriptHost: scriptHost, particleSeed: seed)
         record["skippedDraws"] = driver.diagnostics?.skippedDraws ?? [:]
         record["skippedPrograms"] = driver.shaderErrorSummary.entries.map { ["shader": $0.shader, "reason": $0.reason] }
@@ -273,6 +277,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
             "materials/white.tex": white,
         ]
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-seed-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
         let assets = WPEParityProgramAssets(sources: [.lookup(root) { files[$0] }, .directory(engine)])
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
@@ -290,7 +295,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         defer { driver.cleanup() }
         try await driver.load(document: document, assets: assets, settings: WPEParityProgramSettings(bloom: false),
                               drawableSize: size, pixelFormat: layer.pixelFormat, compiler: compiler,
-                              particleSeed: seed)
+                              diskCache: WPEParityShaderDiskCache(cachesURL: root), particleSeed: seed)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let commandBuffer = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 0,
                                                                        pointer: SIMD2(0.5, 0.5)))
