@@ -176,7 +176,7 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
     }
 
     /// Raw UNORM like authored textures: shaders get the sRGB-encoded bytes and present decodes once.
-    private static func makeTexture(from image: WPEUserShortcutIconImage, device: MTLDevice) -> MTLTexture? {
+    static func makeTexture(from image: WPEUserShortcutIconImage, device: MTLDevice) -> MTLTexture? {
         let bytesPerRow = image.width * 4
         guard image.width > 0, image.height > 0, image.rgba.count == bytesPerRow * image.height else { return nil }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(

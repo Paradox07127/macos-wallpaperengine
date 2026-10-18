@@ -50,7 +50,8 @@ struct WPEParityFrameDrawPlan {
     /// One table per frame variant: on odd frames each FBO swap pair binds its other side.
     var textures: [[String: TextureSource]]
     /// System declarations eligible to replace an authored image, never a graph-owned RT or glyph atlas.
-    var mediaSlots: [Int: WPEMediaSystemTexture] = [:]
+    /// `aspect` is the slot width / height the image is centre-cropped to; nil binds it whole (keepaspect).
+    var mediaSlots: [Int: (kind: WPEMediaSystemTexture, aspect: Float?)] = [:]
     /// Usershortcut and scene-texture slots, resolved by the product icon store.
     var userImageSlots: [Int: WPEUserImageSlot] = [:]
     /// Full-image UVs for a media replacement of a padded authored albedo; built once, not on artwork changes.
@@ -162,7 +163,7 @@ struct WPEParityFrameDrawPlan {
                   constants: [WPEHLSLStage: [String: WPECBufferValue]]? = nil,
                   layerColor: SIMD4<Float>? = nil, renderVar0: SIMD4<Float>? = nil,
                   textRenderVarState: WPEParityRenderVarState? = nil,
-                  mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
+                  mediaTexture: (WPEMediaSystemTexture, Float?) -> MTLTexture? = { _, _ in nil },
                   userShortcutTexture: (WPEUserImageSlot) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw {
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
         let selectedGeometry = replacements[0] == nil ? geometry : mediaGeometry ?? geometry
@@ -238,7 +239,7 @@ struct WPEParityFrameDrawPlan {
                           textureSlots: inout [String: WPECBufferValue], renderVars: inout WPEParityRenderVarState,
                           particles: inout WPEParityParticleFrame,
                           layers live: WPEParityLayerTransformSet? = nil,
-                          mediaTexture: (WPEMediaSystemTexture) -> MTLTexture? = { _ in nil },
+                          mediaTexture: (WPEMediaSystemTexture, Float?) -> MTLTexture? = { _, _ in nil },
                           userShortcutTexture: (WPEUserImageSlot) -> MTLTexture? = { _ in nil }) throws -> WPEParityDraw? {
         guard case let .particles(particle) = geometry else { throw WPEParityExecutionError.geometryDrawUnsupported }
         let replacements = replacementTextures(mediaTexture: mediaTexture, userShortcutTexture: userShortcutTexture)
@@ -298,9 +299,9 @@ struct WPEParityFrameDrawPlan {
         return draw
     }
 
-    private func replacementTextures(mediaTexture: (WPEMediaSystemTexture) -> MTLTexture?,
+    private func replacementTextures(mediaTexture: (WPEMediaSystemTexture, Float?) -> MTLTexture?,
                                      userShortcutTexture: (WPEUserImageSlot) -> MTLTexture?) -> [Int: MTLTexture] {
-        var textures = mediaSlots.compactMapValues(mediaTexture)
+        var textures = mediaSlots.compactMapValues { mediaTexture($0.kind, $0.aspect) }
         for (slot, image) in userImageSlots {
             if let texture = userShortcutTexture(image) {
                 textures[slot] = texture
@@ -766,7 +767,7 @@ struct WPEParityFrameDrawPlanner {
         }) {
             throw .texture("\(shader): media usertexture provider '\(declaration.type ?? "")' is unsupported")
         }
-        var mediaSlots = binding.userTextureSlots.reduce(into: [Int: WPEMediaSystemTexture]()) { slots, entry in
+        var mediaKinds = binding.userTextureSlots.reduce(into: [Int: WPEMediaSystemTexture]()) { slots, entry in
             if entry.key >= 0, let kind = WPEMediaSystemTexture(bindingName: entry.value.name) {
                 slots[Int(entry.key)] = kind
             }
@@ -829,7 +830,7 @@ struct WPEParityFrameDrawPlanner {
         }
         let names = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .texture }.map(\.name))
         let samplerNames = Set(reflections.flatMap(\.1.resources).filter { $0.kind == .sampler }.map(\.name))
-        mediaSlots = mediaSlots.filter { names.contains("g_Texture\($0.key)") }
+        mediaKinds = mediaKinds.filter { names.contains("g_Texture\($0.key)") }
         userImageKeys = userImageKeys.filter { names.contains("g_Texture\($0.key)") }
         let text: WPEParitySceneText? = if case let .scene(draw) = description {
             texts[draw.objectID]
@@ -1012,16 +1013,21 @@ struct WPEParityFrameDrawPlanner {
             nil
         }
         // 0x1401556e0.c:149-213: the pass's usertexturereference, else the authored image (a sprite sheet's frame)
-        // sets the slot aspect a user image is fitted to.
-        let userImageSlots = userImageKeys.reduce(into: [Int: WPEUserImageSlot]()) { slots, entry in
-            let authored = uniformTextures.indices.contains(entry.key) ? uniformTextures[entry.key] : nil
+        // sets the slot aspect a user or system image is fitted to.
+        func slotAspect(_ slot: Int) -> Float? {
+            let authored = uniformTextures.indices.contains(slot) ? uniformTextures[slot] : nil
             let size = binding.userTextures.reference.map { SIMD2(Float($0.x), Float($0.y)) } ?? authored.map { texture in
                 texture.spriteFrame.map { SIMD2(hypot($0.widthX, $0.widthY), hypot($0.heightX, $0.heightY)) }
                     ?? SIMD2(Float(texture.imageWidth), Float(texture.imageHeight))
             }
-            let keeps = binding.userTextures.keepAspectSlots.contains(Int32(entry.key))
-            let aspect = size.flatMap { $0.x > 0 && $0.y > 0 && !keeps ? $0.x / $0.y : nil }
-            slots[entry.key] = WPEUserImageSlot(key: entry.value.key, aspect: aspect, pads: entry.value.pads)
+            let keeps = binding.userTextures.keepAspectSlots.contains(Int32(slot))
+            return size.flatMap { $0.x > 0 && $0.y > 0 && !keeps ? $0.x / $0.y : nil }
+        }
+        let userImageSlots = userImageKeys.reduce(into: [Int: WPEUserImageSlot]()) { slots, entry in
+            slots[entry.key] = WPEUserImageSlot(key: entry.value.key, aspect: slotAspect(entry.key), pads: entry.value.pads)
+        }
+        let mediaSlots = mediaKinds.reduce(into: [Int: (kind: WPEMediaSystemTexture, aspect: Float?)]()) { slots, entry in
+            slots[entry.key] = (entry.value, slotAspect(entry.key))
         }
         var mediaGeometry: WPEParityFrameDrawPlan.Geometry?
         if mediaSlots[0] != nil || userImageSlots[0] != nil, uvMax != .one {

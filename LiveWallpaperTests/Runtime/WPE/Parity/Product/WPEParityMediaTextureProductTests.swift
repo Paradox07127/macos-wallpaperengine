@@ -59,7 +59,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         let second = try await present(driver, layer: layer)
         assertPanels(second, width: 80, current: .b, previous: .a)
         let before = try pair(driver)
-        try assertBoundEffects(driver, current: before.currentID, previous: before.previousID)
+        try assertBoundEffects(driver)
 
         // The same immutable pair and merged declarations survive a real renderer replan.
         weak let retired = driver.renderer
@@ -71,7 +71,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         let resized = try await present(driver, layer: layer)
         assertPanels(resized, width: 160, current: .b, previous: .a)
         XCTAssertEqual(try pair(driver), before)
-        try assertBoundEffects(driver, current: before.currentID, previous: before.previousID)
+        try assertBoundEffects(driver)
     }
 
     func testUserShortcutIconsWakeOriginalEffectsAndRestoreFallbackAcrossReloadAndResize() async throws {
@@ -264,6 +264,37 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertFalse(sizes.contains([12, 12]), "the uncropped user image must not be bound, got \(sizes)")
     }
 
+    func testArtworkIsCenterCroppedToTheAuthoredSlotAspect() async throws {
+        // The authored slot is 2x2, so the 16x8 artwork keeps only its centred 8x8 square.
+        let sizes = try await boundArtworkSizes(makeFixture(scripted: false))
+        XCTAssertTrue(sizes.contains([8, 8]), "the bound artwork must have the cropped size, got \(sizes)")
+        XCTAssertFalse(sizes.contains([16, 8]), "the uncropped artwork must not be bound, got \(sizes)")
+    }
+
+    func testKeepAspectArtworkIsBoundWhole() async throws {
+        let sizes = try await boundArtworkSizes(makeFixture(scripted: false, keepAspect: true))
+        XCTAssertTrue(sizes.contains([16, 8]), "keepaspect must bind the whole artwork, got \(sizes)")
+        XCTAssertFalse(sizes.contains([8, 8]), "keepaspect must not crop the artwork, got \(sizes)")
+    }
+
+    /// The g_Texture1 sizes drawn after artwork A (16x8) is pushed; the quadrants show A either way.
+    private func boundArtworkSizes(_ fixture: Fixture) async throws -> [[Int]] {
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let source = MediaInputSource()
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        XCTAssertTrue(dispatcher.configureParity(generation: driver.loadGeneration, device: fixture.device,
+                                                 textureDemand: driver.hasMediaTextureDemand, onChange: {}))
+        source.push(artwork: fixture.a)
+        try await assertPanels(present(driver, layer: layer), width: 80, current: .a, previous: nil)
+        return try XCTUnwrap(driver.renderer).lastFrameDraws.compactMap {
+            $0.draw.textures["g_Texture1"].map { [$0.width, $0.height] }
+        }
+    }
+
     func testSceneTextureVideoPlaysInItsSlotAndClearingRestoresTheAuthoredFallback() async throws {
         let fixture = try makeFixture(scripted: false, sceneTextures: true)
         let clip = fixture.root.appending(path: "user-clip.mp4")
@@ -357,7 +388,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertEqual(b.previousName, a.currentName)
         XCTAssertNotEqual(b.currentName, a.currentName)
         XCTAssertEqual(b.revision, a.revision + 1)
-        try assertBoundEffects(driver, current: b.currentID, previous: b.previousID)
+        try assertBoundEffects(driver)
 
         // A normal load creates a fresh script but replays the existing B/A pair without another source event.
         let generation = driver.loadGeneration
@@ -381,7 +412,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         assertPanels(afterResize, width: 160, current: .b, previous: .a)
         assertSentinel(afterResize, width: 160, deliveries: 1, currentRevision: 2, previousRevision: 1)
         XCTAssertEqual(try pair(driver), b, "Resize must preserve B/A rather than seed previous from current")
-        try assertBoundEffects(driver, current: b.currentID, previous: b.previousID)
+        try assertBoundEffects(driver)
 
         // A/B's exact palette guard exercises byte identity independently. Midtone C also detects a missing
         // or duplicate sRGB conversion, which A/B's zero/one channels cannot expose.
@@ -478,12 +509,11 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         source.push(artwork: fixture.a)
         let first = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: SIMD2(0.5, 0.5)))
         let firstDrawable = try XCTUnwrap(layer.lastTexture)
+        // The first frame samples A through its square crop, so that crop is the GPU-read texture to track.
         weak var oldArtwork: (any MTLTexture)?
+        let oldName = try XCTUnwrap(pair(driver).currentName)
         try autoreleasepool {
-            let renderer = try XCTUnwrap(driver.renderer)
-            let old = try XCTUnwrap(renderer.mediaTextures?.current)
-            oldArtwork = old
-            try assertBoundEffects(driver, current: ObjectIdentifier(old), previous: nil)
+            oldArtwork = try XCTUnwrap(assertBoundEffects(driver).first)
         }
         XCTAssertNotNil(oldArtwork)
         source.push(artwork: fixture.b)
@@ -492,8 +522,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         source.push(artwork: fixture.c)
         let third = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 102, pointer: SIMD2(0.5, 0.5)))
         let latest = try pair(driver)
-        XCTAssertNotEqual(latest.currentID, oldArtwork.map(ObjectIdentifier.init))
-        XCTAssertNotEqual(latest.previousID, oldArtwork.map(ObjectIdentifier.init))
+        XCTAssertNotEqual(latest.currentName, oldName)
+        XCTAssertNotEqual(latest.previousName, oldName)
         XCTAssertNotEqual(first.status, .completed, "The GPU read must still be blocked")
         XCTAssertGreaterThan(driver.inFlightCount, 0)
         driver.cleanup()
@@ -582,7 +612,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
 
     private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
                              shortcutIcons: Bool = false, sceneTextures: Bool = false,
-                             currentSlotWidth: UInt32 = 2, video: Data? = nil) throws -> Fixture {
+                             currentSlotWidth: UInt32 = 2, video: Data? = nil, keepAspect: Bool = false) throws -> Fixture {
         let qualifiedInput = mergeUserTextures || shortcutIcons || sceneTextures
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -701,7 +731,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             let baseDeclarations: [Any] = mergeUserTextures && name == "previous" ? [NSNull()] : [
                 NSNull(), ["name": shortcutIcons ? "shortcut-\(name)"
                     : mergeUserTextures ? (name == "current" ? "$mediaPreviousThumbnail" : "$mediaThumbnail") : system,
-                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": false],
+                    "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": keepAspect],
             ]
             try json("materials/\(name)-effect.json", ["passes": [[
                 "shader": "combine", "textures": ["previous", "input/\(name)"],
@@ -836,21 +866,37 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                                  textures.previous?.width ?? 0, textures.previous?.height ?? 0])
     }
 
-    private func assertBoundEffects(_ driver: WPEParitySceneDriver, current: ObjectIdentifier?,
-                                    previous: ObjectIdentifier?) throws {
+    /// The renderer's current/previous artwork each reach g_Texture1 as the centred crop to the 2x2 slot's square.
+    @discardableResult
+    private func assertBoundEffects(_ driver: WPEParitySceneDriver) throws -> [any MTLTexture] {
         let renderer = try XCTUnwrap(driver.renderer)
+        let media = try XCTUnwrap(renderer.mediaTextures)
         let draws = renderer.lastFrameDraws.map(\.draw)
-        let ids = Set(draws.compactMap { $0.textures["g_Texture1"].map(ObjectIdentifier.init) })
-        if let current {
-            XCTAssertTrue(ids.contains(current), "Current must be bound to actual g_Texture1")
+        let bound = draws.compactMap { $0.textures["g_Texture1"] }
+        var crops: [any MTLTexture] = []
+        for (label, source) in [("Current", media.current), ("Previous", media.previous)] {
+            guard let source else { continue }
+            let rect = WPEUserShortcutIconImage.cropRect(width: source.width, height: source.height, aspect: 1)
+            let expected = bytes(of: source, in: MTLRegionMake2D(rect.x, rect.y, rect.width, rect.height))
+            let crop = bound.first {
+                $0.width == rect.width && $0.height == rect.height
+                    && bytes(of: $0, in: MTLRegionMake2D(0, 0, rect.width, rect.height)) == expected
+            }
+            XCTAssertNotNil(crop, "\(label) must be bound to actual g_Texture1 as its centred square crop")
+            crops += crop.map { [$0] } ?? []
         }
-        if let previous {
-            XCTAssertTrue(ids.contains(previous), "Previous must be bound to actual g_Texture1")
-        }
+        let media2D = crops + [media.current, media.previous].compactMap(\.self)
         let producer = draws.filter { $0.textures["g_Texture1"] != nil }.compactMap { $0.textures["g_Texture0"] }
         XCTAssertEqual(producer.count, 2, "Both original combine effects must draw")
-        XCTAssertTrue(producer.allSatisfy { ObjectIdentifier($0) != current && ObjectIdentifier($0) != previous },
+        XCTAssertTrue(producer.allSatisfy { slot0 in !media2D.contains { $0 === slot0 } },
                       "Slot 0 remains the effect producer; the null declaration must not shift media into it")
+        return crops
+    }
+
+    private func bytes(of texture: any MTLTexture, in region: MTLRegion) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: region.size.width * region.size.height * 4)
+        texture.getBytes(&bytes, bytesPerRow: region.size.width * 4, from: region, mipmapLevel: 0)
+        return bytes
     }
 
     private func actorFrame(_ actor: WPEDisplayRenderActor) async throws {

@@ -171,6 +171,8 @@ final class WPEParityFrameRenderer {
     private var media: WPESceneMediaEventMailbox?
     private var mediaGeneration = 0
     private(set) var mediaTextures: WPEMediaTextureStore.ParitySnapshot?
+    /// Centre crops of `mediaTextures` images; keyed by identity, so they are dropped with the snapshot.
+    private var mediaCrops: [MediaCrop: MTLTexture] = [:]
     var userShortcutIcons: WPEUserShortcutIconStore?
     private(set) var mediaDiagnostics: [String] = []
     var hasMediaTextureDemand: Bool {
@@ -1160,10 +1162,39 @@ final class WPEParityFrameRenderer {
         for input in media.drainParityInputs(generation: mediaGeneration) {
             if let textures = input.textures {
                 mediaTextures = textures
+                mediaCrops.removeAll()
             }
             mediaDiagnostics = input.diagnostics
             script?.applyMedia(properties: input.systemProperties, events: input.events, state: &state)
         }
+    }
+
+    /// Like the native cache name, round(aspect × 10) tells crops of one image apart.
+    private struct MediaCrop: Hashable {
+        let image: ObjectIdentifier
+        let tenths: Int
+    }
+
+    /// The snapshot image centre-cropped to the slot `aspect` (width / height); whole for keepaspect (nil).
+    private func croppedMediaTexture(_ kind: WPEMediaSystemTexture, aspect: Float?) -> MTLTexture? {
+        guard let image = mediaTextures?.texture(for: kind) else { return nil }
+        guard let aspect else { return image }
+        let key = MediaCrop(image: ObjectIdentifier(image), tenths: Int((aspect * 10).rounded()))
+        if let cropped = mediaCrops[key] {
+            return cropped
+        }
+        let rect = WPEUserShortcutIconImage.cropRect(width: image.width, height: image.height, aspect: aspect)
+        guard rect.width != image.width || rect.height != image.height else { return image }
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        // The image holds straight sRGB-encoded RGBA8; a byte copy keeps both, a CGContext redraw would premultiply.
+        var rgba = [UInt8](repeating: 0, count: rect.width * rect.height * 4)
+        image.getBytes(&rgba, bytesPerRow: rect.width * 4,
+                       from: MTLRegionMake2D(rect.x, rect.y, rect.width, rect.height), mipmapLevel: 0)
+        let cropped = WPEUserShortcutIconStore.makeTexture(
+            from: WPEUserShortcutIconImage(rgba: rgba, width: rect.width, height: rect.height), device: device
+        )
+        mediaCrops[key] = cropped
+        return cropped
     }
 
     /// Event 3 to every binding; later frames run no script.
@@ -1885,7 +1916,7 @@ final class WPEParityFrameRenderer {
                                                     if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: renderCamera, variant: variant,
                                                                                                 textures: textures, arena: arena, textureSlots: &textureSlots,
                                                                                                 renderVars: &renderVars, particles: &particles, layers: live,
-                                                                                                mediaTexture: { mediaTextures?.texture(for: $0) },
+                                                                                                mediaTexture: { croppedMediaTexture($0, aspect: $1) },
                                                                                                 userShortcutTexture: { videos.userTexture(for: $0) ?? shortcutIcons?.texture(for: $0) }) {
                                                         // Encode argument tables before the next batch reserves any vertex bytes.
                                                         try encode(provided, operation: operation)
@@ -1913,7 +1944,7 @@ final class WPEParityFrameRenderer {
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
                                                                                  renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
                                                                                  textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
-                                                                                 mediaTexture: { mediaTextures?.texture(for: $0) },
+                                                                                 mediaTexture: { croppedMediaTexture($0, aspect: $1) },
                                                                                  userShortcutTexture: { videos.userTexture(for: $0) ?? shortcutIcons?.texture(for: $0) })
                                                 guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
                                                       description.target == WPEParitySceneResource.shadowAtlas else {
