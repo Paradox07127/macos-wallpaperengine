@@ -151,6 +151,44 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertEqual(advanced.frame, seeked.frame + seeked.fps / 60, accuracy: 1e-3)
     }
 
+    /// An animation-layer field write reaches the puppet; other field writes reuse the field keys, which a created
+    /// or removed layer refreshes before the next write.
+    func testAnimationLayerFieldWritesReachPuppetAndKeysRefreshOnlyWithLayerMembership() async throws {
+        let compiler = try makeCompiler()
+        let plan = try makePlan()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let renderer = try await makeRenderer(plan, compiler: compiler,
+                                              cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
+                                              device: device, queue: queue)
+        func write(_ name: String, of id: String, _ value: Float) {
+            renderer.state.setScriptField(name, of: id, to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
+        }
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
+        let builds = renderer.animationLayerFieldIndexBuilds
+        write("unrelated", of: "", 1)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "unrelated field")
+        XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds, "an unrelated field rebuilt the puppet keys")
+        write("animationlayers.0.rate", of: "47", 3)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "rate field")
+        XCTAssertEqual(try XCTUnwrap(renderer.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 3)
+        XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds)
+
+        let template = try XCTUnwrap(plan.scene.scene.objects.first { object in
+            guard case .image = object.kind else { return false }
+            return object.puppet == nil && object.effects.isEmpty && renderer.state.index(of: object.id) != nil
+        })
+        let clone = try String(renderer.state.appendImageLayer(cloning: template.id, id: nil) { _ in })
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "created layer")
+        XCTAssertTrue(renderer.state.removeObject(clone))
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "removed layer")
+        write("animationlayers.0.rate", of: "47", 2)
+        try await renderFrame(renderer, elapsed: 1.0 / 60, label: "rate after layer churn")
+        XCTAssertEqual(try XCTUnwrap(renderer.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 2)
+        XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds + 1,
+                       "layer membership changes did not refresh the puppet keys exactly once")
+    }
+
     /// Workshop 3647999330: the rope's click flag makes object 545's update stop "sss" and play "LogoShake" by name.
     func testClickOnTheRopeStopsSssAndKeepsLogoShakePlaying() async throws {
         let compiler = try makeCompiler()

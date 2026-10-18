@@ -189,6 +189,15 @@ final class WPEParityFrameRenderer {
     private var seenAnimationLayerFields = -1
     /// Animation-layer script fields last pushed into `puppets`; an absent key compares with its scene JSON value.
     private var pushedAnimationLayerFields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:]
+    /// Each puppet animation layer's field keys; `seed` is the scene JSON value a key compares with before any push.
+    private struct AnimationLayerFields {
+        let objectID: String
+        let sceneIndex: Int
+        let fields: [(name: String, seed: WPEParitySceneState.ScriptValue, key: WPEParitySceneState.ScriptFieldKey)]
+    }
+
+    /// Built for the state membership generation it records.
+    private var animationLayerFields: (membership: Int, layers: [AnimationLayerFields])?
     private var lights: WPEParityUniformLights
     /// This frame's shadow atlas layout; nil when shadow quality is 0 or the plan declares no atlas.
     private(set) var shadowLayout: WPEParityShadowLayout?
@@ -294,6 +303,9 @@ final class WPEParityFrameRenderer {
     var frameLayoutCalls: Int {
         plan.layoutCalls.withLock { $0 }
     }
+
+    /// Times the per-puppet animation-layer field keys were built.
+    private(set) var animationLayerFieldIndexBuilds = 0
 
     /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
     func renderTarget(_ id: WPEResourceID, scope: WPEResourceBindingScope = .frame) -> MTLTexture? {
@@ -1261,46 +1273,64 @@ final class WPEParityFrameRenderer {
     private func applyAnimationLayerFields() {
         guard seenAnimationLayerFields != state.scriptFieldsGeneration else { return }
         seenAnimationLayerFields = state.scriptFieldsGeneration
+        if animationLayerFields?.membership != state.membershipGeneration {
+            animationLayerFields = (state.membershipGeneration, makeAnimationLayerFields())
+        }
+        for layer in animationLayerFields?.layers ?? [] {
+            var changed: [String: WPEParitySceneState.ScriptValue] = [:]
+            for field in layer.fields {
+                guard let value = state.scriptFields[field.key],
+                      value != (pushedAnimationLayerFields[field.key] ?? field.seed) else { continue }
+                pushedAnimationLayerFields[field.key] = value
+                changed[field.name] = value
+            }
+            guard !changed.isEmpty else { continue }
+            func float(_ name: String) -> Float? {
+                guard case let .vector(value)? = changed[name] else { return nil }
+                return value.x
+            }
+            func flag(_ name: String) -> Bool? {
+                float(name).map { $0 != 0 }
+            }
+            var name: String?
+            if case let .string(value)? = changed["name"] {
+                name = value
+            }
+            puppets[layer.objectID]?.updateLayer(at: layer.sceneIndex, enabled: flag("visible"), rate: float("rate"),
+                                                 blend: float("blend"), name: name, additive: flag("additive"),
+                                                 blendIn: flag("blendin"), blendOut: flag("blendout"),
+                                                 blendTime: float("blendtime"))
+        }
+    }
+
+    private func makeAnimationLayerFields() -> [AnimationLayerFields] {
+        #if DEBUG
+        animationLayerFieldIndexBuilds += 1
+        #endif
+        let authored = Dictionary(plan.document.imageObjects.map { ($0.id, $0.animationLayers) }) { first, _ in first }
+        func scalar(_ value: Double) -> WPEParitySceneState.ScriptValue {
+            .vector(SIMD4(Float(value), 0, 0, 0))
+        }
+        var result: [AnimationLayerFields] = []
         for (id, puppet) in puppets {
-            let authored = plan.document.imageObjects.first { $0.id == id }?.animationLayers ?? []
-            for layer in puppet.layers where authored.indices.contains(layer.sceneIndex) {
-                let scene = authored[layer.sceneIndex]
-                func scalar(_ value: Double) -> WPEParitySceneState.ScriptValue {
-                    .vector(SIMD4(Float(value), 0, 0, 0))
-                }
-                let seeds: [String: WPEParitySceneState.ScriptValue] = [
-                    "visible": scalar(scene.visible ? 1 : 0), "additive": scalar(scene.additive ? 1 : 0),
-                    "blendin": scalar(scene.blendIn ? 1 : 0), "blendout": scalar(scene.blendOut ? 1 : 0),
-                    "name": .string(scene.name), "rate": scalar(scene.rate), "blend": scalar(scene.blend),
-                    "blendtime": scalar(scene.blendTime),
+            let scenes = authored[id] ?? []
+            for layer in puppet.layers where scenes.indices.contains(layer.sceneIndex) {
+                let scene = scenes[layer.sceneIndex]
+                let seeds: [(String, WPEParitySceneState.ScriptValue)] = [
+                    ("visible", scalar(scene.visible ? 1 : 0)), ("additive", scalar(scene.additive ? 1 : 0)),
+                    ("blendin", scalar(scene.blendIn ? 1 : 0)), ("blendout", scalar(scene.blendOut ? 1 : 0)),
+                    ("name", .string(scene.name)), ("rate", scalar(scene.rate)), ("blend", scalar(scene.blend)),
+                    ("blendtime", scalar(scene.blendTime)),
                 ]
-                var changed: [String: WPEParitySceneState.ScriptValue] = [:]
-                for (name, seed) in seeds {
-                    let key = WPEParitySceneState.ScriptFieldKey(objectID: id,
-                                                                 name: "animationlayers.\(layer.sceneIndex).\(name)")
-                    guard let value = state.scriptField(key.name, of: id),
-                          value != (pushedAnimationLayerFields[key] ?? seed) else { continue }
-                    pushedAnimationLayerFields[key] = value
-                    changed[name] = value
+                let fields = seeds.map { name, seed in
+                    (name: name, seed: seed, key: WPEParitySceneState.ScriptFieldKey(
+                        objectID: id, name: "animationlayers.\(layer.sceneIndex).\(name)"
+                    ))
                 }
-                guard !changed.isEmpty else { continue }
-                func float(_ name: String) -> Float? {
-                    guard case let .vector(value)? = changed[name] else { return nil }
-                    return value.x
-                }
-                func flag(_ name: String) -> Bool? {
-                    float(name).map { $0 != 0 }
-                }
-                var name: String?
-                if case let .string(value)? = changed["name"] {
-                    name = value
-                }
-                puppets[id]?.updateLayer(at: layer.sceneIndex, enabled: flag("visible"), rate: float("rate"),
-                                         blend: float("blend"), name: name, additive: flag("additive"),
-                                         blendIn: flag("blendin"), blendOut: flag("blendout"),
-                                         blendTime: float("blendtime"))
+                result.append(AnimationLayerFields(objectID: id, sceneIndex: layer.sceneIndex, fields: fields))
             }
         }
+        return result
     }
 
     /// Bloom fields share canonical State with scripts and accepted document deltas.
@@ -2135,12 +2165,11 @@ final class WPEParityFrameRenderer {
                   var draw = draws[operation], case let .modelData(previous) = draw.geometry,
                   prepared.canReplaceDrawVersion(previous),
                   let placement = draw.placement, placement.objectID == description.objectID,
-                  placement.kind == .layer, placement.compositeOwnerID == nil, placement.text == nil,
-                  let transform = layers.layers[description.objectID], transform.parentID == nil,
+                  placement.kind == .layer, placement.text == nil, layers.layers[description.objectID] != nil,
                   layout.frames.allSatisfy({ frame in
                       guard case let .scene(other)? = frame.draws[operation] else { return false }
                       return other.pass == description.pass && other.objectID == description.objectID
-                          && other.geometry == .modelMesh && other.compositeOwnerID == nil
+                          && other.geometry == .modelMesh && other.compositeOwnerID == description.compositeOwnerID
                   }) else { return false }
             indices[description.objectID, default: []].insert(index)
             draw.geometry = .modelData(prepared)

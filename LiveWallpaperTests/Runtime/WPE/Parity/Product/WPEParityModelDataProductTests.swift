@@ -263,6 +263,80 @@ extension WPEParitySceneDriverTests {
         modelDataPixel(pixels, width: 48, x: 0, y: 31 - 0, white: false)
     }
 
+    /// Same-layout applyData on a mesh inside a compose layer swaps the buffer version without re-planning the frame,
+    /// and the composite shows the new vertices exactly as a full replan of the same data does.
+    func testSameLayoutApplyDataInsideComposeLayerKeepsGraphsAndMatchesFullReplan() async throws {
+        let source = #"""
+        const material = engine.registerAsset('materials/model-data.json', true);
+        let model, tick = 0;
+        function triangle(x) { return new Float32Array([x-4,-4,0,0.5,0.5, x+4,-4,0,0.5,0.5, x,4,0,0.5,0.5]); }
+        export function init(value) {
+          model = thisScene.createModelData({shapes:[{vertexBuffer:triangle(-4),indexBuffer:new Uint16Array([0,1,2]),
+            vertexFormat:[IModelData.POSITION,IModelData.UV],material:material,isVertexBufferDynamic:true}],
+            boundingBoxMins:new Vec3(-8,-4,0),boundingBoxMaxs:new Vec3(8,4,0)});
+          const layer = thisScene.createLayer({model:model,name:'child',origin:new Vec3(0,0,0),perspective:false});
+          layer.setParent(thisScene.getLayer('canvas'), false);
+          return 0;
+        }
+        export function update(value) {
+          tick += 1;
+          if (tick === 2) model.applyData({shapes:[{vertexBuffer:triangle(0)}]});
+          if (tick === 3) model.applyData({shapes:[{vertexBuffer:triangle(4)}]});
+          return 0;
+        }
+        """#
+        let fixture = try modelDataFixture(script: source, extraObjects: [[
+            "id": 2, "name": "canvas", "image": "models/util/composelayer.json", "origin": "36 16 0",
+            "size": "16 16", "copybackground": false,
+        ]], precache: ["materials/model-data.json"])
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "composite-model-update-cache")))
+        let layer = RecordingLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = CGSize(width: 48, height: 32)
+        layer.framebufferOnly = false
+        let renderer = try XCTUnwrap(driver.renderer)
+        let first = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
+        await first.completed()
+        XCTAssertEqual(renderer.state.parentID(of: "3"), "2")
+        let layouts = renderer.frameLayoutCalls
+        let executors = renderer.graphExecutorIdentities
+        for (index, timestamp) in [100.1, 100.2].enumerated() {
+            let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: timestamp, pointer: .zero))
+            await command.completed()
+            XCTAssertNil(command.error)
+            XCTAssertEqual(renderer.frameLayoutCalls, layouts, "applyData \(index + 1) re-planned the frame")
+            XCTAssertEqual(renderer.graphExecutorIdentities, executors, "applyData \(index + 1) replaced the graphs")
+        }
+        try await settle(driver, label: "composite ModelData update")
+        let engine = try XCTUnwrap(renderer.script?.engine)
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        let updated = try readBack(renderer.backbuffer, device: device)
+        // Canvas pixel (x, y), y up: the triangle moved from canvas x -4 to +4.
+        modelDataPixel(updated, width: 48, x: 40, y: 31 - 16, white: true)
+        modelDataPixel(updated, width: 48, x: 32, y: 31 - 16, white: false)
+        for size in [CGSize(width: 96, height: 64), CGSize(width: 48, height: 32)] {
+            driver.updateSurfaceGeometry(drawableSize: size)
+            let replanned = await driver.replan()
+            XCTAssertTrue(replanned)
+        }
+        let replanner = try XCTUnwrap(driver.renderer)
+        XCTAssertFalse(replanner === renderer)
+        let replannedFrame = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.3, pointer: .zero))
+        await replannedFrame.completed()
+        try await settle(driver, label: "composite ModelData full replan")
+        XCTAssertNil(replannedFrame.error)
+        XCTAssertEqual(try readBack(replanner.backbuffer, device: device), updated,
+                       "the buffer version swap drew a different composite than a full replan of the same data")
+    }
+
     /// The mesh is built during another object's init, so the material lookup runs on a binding that registered nothing.
     func testModelLayerUsesMaterialRegisteredByAnotherBinding() async throws {
         let source = #"""
