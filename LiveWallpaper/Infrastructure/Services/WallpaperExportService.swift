@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CryptoKit
 import Foundation
 import LiveWallpaperCore
 import Observation
@@ -54,31 +55,40 @@ final class WallpaperExportService {
         /// A remove (or a Remove All) landed while this publish was still
         /// copying, so committing would resurrect what the user just deleted.
         case supersededByRemoval
+        case preparationBusy
+        case invalidPreparationOptions
+        case liveWebUnsupported
 
         var errorDescription: String? {
             switch self {
             case .unsupportedContent:
-                return String(localized: "Only video wallpapers can be added to System Wallpaper.", bundle: .appLanguage)
-            case .packageEntryMissing(let name):
-                return String(
+                String(localized: "Only video wallpapers can be added to System Wallpaper.", bundle: .appLanguage)
+            case let .packageEntryMissing(name):
+                String(
                     localized: "The video “\(name)” is missing from its Workshop package.",
                     bundle: .appLanguage, comment: "Error shown when a Workshop wallpaper's packaged video cannot be located."
                 )
             case .thumbnailFailed:
-                return String(
+                String(
                     localized: "Couldn't create a preview image for this video.",
                     bundle: .appLanguage, comment: "Error shown when publishing to System Wallpaper fails because no thumbnail could be generated."
                 )
             case .manifestUnreadable:
-                return String(
+                String(
                     localized: "The System Wallpaper library index is damaged, so it wasn't changed.",
                     bundle: .appLanguage, comment: "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused."
                 )
             case .supersededByRemoval:
-                return String(
+                String(
                     localized: "Couldn't add the video: it was removed from System Wallpaper while it was still being copied.",
                     bundle: .appLanguage, comment: "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy."
                 )
+            case .preparationBusy:
+                String(localized: "Another wallpaper is being prepared. Wait or cancel it first.", bundle: .appLanguage)
+            case .invalidPreparationOptions:
+                String(localized: "Choose a valid recording duration, frame rate and resolution.", bundle: .appLanguage)
+            case .liveWebUnsupported:
+                String(localized: "A video copy cannot keep web clocks, calendars or live data accurate. Disable those elements before recording.", bundle: .appLanguage)
             }
         }
     }
@@ -102,6 +112,30 @@ final class WallpaperExportService {
     private(set) var lastError: String?
     private(set) var diskUsageBytes: Int64 = 0
     private(set) var playbackMode: SystemWallpaperPlaybackMode = .always
+    var preparationProgress: Double?
+    private(set) var preparingTitle: String?
+    @ObservationIgnored private var preparationTask: Task<Void, Error>?
+    @ObservationIgnored private var preparingItemID: String?
+    @ObservationIgnored var onItemPublished: (@MainActor (String) -> Void)?
+
+    static func sourceKey(for content: WallpaperContent) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try SHA256.hash(data: encoder.encode(content)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func selectItem(_ itemID: String, for displayID: UInt32) throws {
+        try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+            var manifest = try loadManifestForMutation()
+            guard manifest.items.contains(where: { $0.id == itemID }) else { throw ServiceError.unsupportedContent }
+            manifest.selectedItemID = itemID
+            manifest.displaySelections[String(displayID)] = itemID
+            try writeManifest(manifest)
+        }
+        postLibraryChanged()
+    }
+
+    @ObservationIgnored private(set) var preparationCancellationGeneration = 0
 
     @ObservationIgnored private let dependencies: Dependencies
     /// Publishes that have started copying but not yet committed, keyed by a per-publish token so two publishes of the same item stay distinct.
@@ -282,6 +316,7 @@ final class WallpaperExportService {
     private enum PublishSource {
         case bookmark(data: Data, packageEntryName: String?)
         case pickedFile(URL)
+        case sceneBundle(URL)
     }
 
     func publish(bookmark: WallpaperBookmark) async throws {
@@ -293,7 +328,7 @@ final class WallpaperExportService {
         try await publish(
             id: bookmark.id.uuidString,
             title: bookmark.label,
-            source: .bookmark(data: data, packageEntryName: entryName)
+            source: .bookmark(data: data, packageEntryName: entryName), sourceKey: Self.sourceKey(for: bookmark.content)
         )
     }
 
@@ -303,6 +338,91 @@ final class WallpaperExportService {
             title: fileURL.deletingPathExtension().lastPathComponent,
             source: .pickedFile(fileURL)
         )
+    }
+
+    func cancelPreparation() {
+        preparationCancellationGeneration &+= 1
+        preparationTask?.cancel()
+    }
+
+    /// Preparation is serial across every window, and cancellation drains its renderer before the slot is freed.
+    @available(macOS 26.0, *)
+    func prepareAndPublish(content: WallpaperContent, title: String, id: String,
+                           options: SystemWallpaperPreparationOptions, origin: WPEOrigin? = nil) async throws {
+        if case .video = content {
+            try await publish(content: content, title: title, id: id); return
+        }
+        guard preparationTask == nil else { throw ServiceError.preparationBusy }
+        guard options.isValid else { throw ServiceError.invalidPreparationOptions }
+        if case .html = content, options.containsLiveData {
+            throw ServiceError.liveWebUnsupported
+        }
+        let generation = clearGeneration
+        preparingItemID = id
+        preparingTitle = title
+        preparationProgress = 0
+        let task = Task { @MainActor in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("WallpaperPreparation-\(UUID())", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let movie = directory.appendingPathComponent("wallpaper.mov")
+            let progress: (Double) -> Void = { [weak self] in self?.preparationProgress = $0 }
+            switch content {
+            case let .html(source, config):
+                #if !LITE_BUILD
+                try await SystemWallpaperWebRecording.record(
+                    source: source, config: config, url: movie, size: options.size,
+                    duration: options.duration, framesPerSecond: options.framesPerSecond, progress: progress
+                )
+                #else
+                throw ServiceError.unsupportedContent
+                #endif
+            case let .scene(descriptor):
+                #if !LITE_BUILD
+                let source = try SystemWallpaperScenePreparation.resolve(descriptor, origin: origin)
+                if options.sceneMode == .live {
+                    let bundle = directory.appendingPathComponent("wallpaper.scene", isDirectory: true)
+                    let staging = Task.detached {
+                        try SystemWallpaperSceneBundle.stage(source: source, at: bundle,
+                                                             framesPerSecond: options.framesPerSecond, renderSize: options.size)
+                    }
+                    try await withTaskCancellationHandler(operation: { try await staging.value }, onCancel: { staging.cancel() })
+                    try Task.checkCancellation()
+                    let prepared = try SystemWallpaperSceneSource.published(at: bundle)
+                    try await SystemWallpaperScenePreparation.record(
+                        source: prepared, url: movie, size: options.size,
+                        duration: 1, framesPerSecond: options.framesPerSecond, progress: progress
+                    )
+                    guard let poster = await Self.generateThumbnailJPEG(for: movie) else { throw ServiceError.thumbnailFailed }
+                    try poster.write(to: bundle.appendingPathComponent("poster.jpg"), options: .atomic)
+                    try Task.checkCancellation()
+                    guard clearGeneration == generation else { throw ServiceError.supersededByRemoval }
+                    try await publish(id: id, title: title, source: .sceneBundle(bundle), preparationOptions: options,
+                                      sourceKey: Self.sourceKey(for: content))
+                    return
+                }
+                try await SystemWallpaperScenePreparation.record(
+                    source: source, url: movie, size: options.size,
+                    duration: options.duration, framesPerSecond: options.framesPerSecond, progress: progress
+                )
+                #else
+                throw ServiceError.unsupportedContent
+                #endif
+            case .video: break
+            }
+            try Task.checkCancellation()
+            guard clearGeneration == generation else { throw ServiceError.supersededByRemoval }
+            try await publish(id: id, title: title, source: .pickedFile(movie), preparationOptions: options,
+                              sourceKey: Self.sourceKey(for: content))
+        }
+        preparationTask = task
+        defer {
+            preparationTask = nil
+            preparingItemID = nil
+            preparationProgress = nil
+            preparingTitle = nil
+        }
+        try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
 
     /// The summary is assembled here because a successful publish clears `lastError`: a plain per-file loop reported only the last file's outcome.
@@ -340,13 +460,14 @@ final class WallpaperExportService {
         try await publish(
             id: id,
             title: title,
-            source: .bookmark(data: data, packageEntryName: entryName)
+            source: .bookmark(data: data, packageEntryName: entryName), sourceKey: Self.sourceKey(for: content)
         )
     }
 
-    private func publish(id: String, title: String, source: PublishSource) async throws {
+    private func publish(id: String, title: String, source: PublishSource,
+                         preparationOptions: SystemWallpaperPreparationOptions? = nil, sourceKey: String? = nil) async throws {
         do {
-            try await performPublish(id: id, title: title, source: source)
+            try await performPublish(id: id, title: title, source: source, preparationOptions: preparationOptions, sourceKey: sourceKey)
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -358,7 +479,8 @@ final class WallpaperExportService {
         }
     }
 
-    private func performPublish(id itemID: String, title: String, source: PublishSource) async throws {
+    private func performPublish(id itemID: String, title: String, source: PublishSource,
+                                preparationOptions: SystemWallpaperPreparationOptions?, sourceKey: String?) async throws {
         let resolver = dependencies.resolver
         let copyVideoFile = dependencies.copyVideoFile
         let extractVideoFromPackage = dependencies.extractVideoFromPackage
@@ -377,6 +499,9 @@ final class WallpaperExportService {
                 sourceURL = try resolver.resolve(data, target: .transient).get().url
                 packageEntryName = entryName
             case .pickedFile(let url):
+                sourceURL = url
+                packageEntryName = nil
+            case let .sceneBundle(url):
                 sourceURL = url
                 packageEntryName = nil
             }
@@ -399,7 +524,13 @@ final class WallpaperExportService {
                     // Keep the resolving bookmark's scope alive while validating and copying the local target.
                     // Copying the link itself would leave the provider dependent on the original source.
                     let readableSource = sourceURL.resolvingSymlinksInPath()
-                    guard try readableSource.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                    let isScene = if case .sceneBundle = source {
+                        true
+                    } else {
+                        false
+                    }
+                    let values = try readableSource.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+                    guard isScene ? values.isDirectory == true : values.isRegularFile == true else {
                         throw ServiceError.unsupportedContent
                     }
                     if let packageEntryName {
@@ -419,10 +550,24 @@ final class WallpaperExportService {
             return Staged(url: staging, ext: ext)
         }.value
 
+        if Task.isCancelled {
+            try? FileManager.default.removeItem(at: staged.url)
+            throw CancellationError()
+        }
+
         // Thumbnail from the staging copy so a failure aborts before the live copy or manifest is touched. No thumbnail means no tile in the wallpaper panel.
-        guard let jpeg = await dependencies.makeThumbnailJPEG(staged.url) else {
+        let thumbnail: Data? = if case .sceneBundle = source {
+            try? Data(contentsOf: staged.url.appendingPathComponent("poster.jpg"))
+        } else {
+            await dependencies.makeThumbnailJPEG(staged.url)
+        }
+        guard let jpeg = thumbnail else {
             try? FileManager.default.removeItem(at: staged.url)
             throw ServiceError.thumbnailFailed
+        }
+        if Task.isCancelled {
+            try? FileManager.default.removeItem(at: staged.url)
+            throw CancellationError()
         }
 
         // A remove that landed while this publish was copying wins: committing
@@ -498,7 +643,7 @@ final class WallpaperExportService {
                         title: title,
                         fileName: destination.lastPathComponent,
                         thumbnailFileName: thumbnailFileName,
-                        addedAt: dependencies.now()
+                        addedAt: dependencies.now(), preparationOptions: preparationOptions, sourceKey: sourceKey
                     ))
                     try writeManifest(manifest)
                     try? manager.removeItem(at: videoBackupURL)
@@ -523,9 +668,15 @@ final class WallpaperExportService {
         items = manifest.items
         refreshDiskUsage()
         postLibraryChanged()
+        if let sourceKey {
+            onItemPublished?(sourceKey)
+        }
     }
 
     func remove(itemID: String) throws {
+        if preparingItemID == itemID {
+            cancelPreparation()
+        }
         // A publish of this item that is still copying must not commit after
         // the user has asked for it to go away.
         activePublishes = activePublishes.filter { $0.value != itemID }
@@ -565,6 +716,7 @@ final class WallpaperExportService {
     }
 
     func clearLibrary() throws {
+        cancelPreparation()
         clearGeneration += 1
         activePublishes.removeAll()
         nonisolated(unsafe) var survivors: [String] = []

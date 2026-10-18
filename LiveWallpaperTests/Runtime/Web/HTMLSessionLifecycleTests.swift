@@ -1104,6 +1104,20 @@ struct HTMLNavigationGenerationStateTests {
 @Suite("HTML preparation retry generation")
 @MainActor
 struct HTMLPreparationRetryGenerationTests {
+    @Test("A blank document cannot publish a requested remote wallpaper")
+    func blankRemoteDocumentIsNotReady() async throws {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        defer { view.cleanup() }
+        let url = try #require(URL(string: "https://example.com/wallpaper"))
+        view.lastSource = .url(url)
+        let navigation = try #require(view.webView.loadHTMLString("", baseURL: nil))
+        view.navigationGenerationState.registerHostNavigation(navigation, generation: view.preparationGeneration)
+        view.webView(view.webView, didFinish: navigation)
+        #expect(view.completedNavigationGeneration == nil)
+        #expect(view.failedPreparationGeneration == view.preparationGeneration)
+        #expect(await view.prepareForDisplay(timeout: .milliseconds(100)) == .failed)
+    }
+
     @Test("Same-source automatic retry follows the new generation and becomes ready")
     func sameSourceRetryBecomesReady() async throws {
         let source = HTMLSource.url(

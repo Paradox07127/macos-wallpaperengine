@@ -9,6 +9,63 @@ import Testing
 @MainActor
 @Suite("WallpaperExportService")
 struct WallpaperExportServiceTests {
+    @Test("One stable system choice resolves the latest app selection on each display")
+    func selectedWallpaperFollowsEachDisplay() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let first = try rig.makeVideoBookmark(named: "first.mp4")
+        let second = try rig.makeVideoBookmark(named: "second.mp4")
+        let other = try rig.makeVideoBookmark(named: "other.mp4")
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: second.content), title: "Second")
+        coordinator.follow(ScreenConfiguration(screenID: 43, wallpaper: other.content), title: "Other")
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while clock.now < deadline {
+            if let manifest = try? rig.manifestOnDisk(), manifest.displaySelections.count == 2 {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let manifest = try rig.manifestOnDisk()
+        #expect(manifest.items.count == 2, "superseded pending selection was published")
+        #expect(manifest.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.title == "Second")
+        #expect(manifest.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43)?.title == "Other")
+        let copy = try #require(manifest.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42))
+        #expect(try Data(contentsOf: rig.videosDirectory.appendingPathComponent(copy.fileName)) == Data("fake-video-bytes".utf8))
+        #expect(manifest.item(for: copy.id)?.id == copy.id, "old per-item choices must still resolve")
+    }
+
+    @Test("Web selection waits for an explicitly prepared copy and follows its publication")
+    func selectedWebWaitsForPreparedCopy() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let content = WallpaperContent.html(source: .inline("<canvas></canvas>"), config: .default)
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: content), title: "Web")
+        for _ in 0 ..< 100 where rig.service.lastError == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(rig.service.lastError?.contains("Prepare this web wallpaper") == true)
+        #expect(rig.service.items.isEmpty)
+        let key = try WallpaperExportService.sourceKey(for: content)
+        let item = SystemWallpaperManifest.Item(id: "prepared-web", title: "Web", fileName: "web.mov", addedAt: Date(), sourceKey: key)
+        try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
+        try SystemWallpaperCoding.encoder.encode(SystemWallpaperManifest(version: 1, items: [item])).write(to: rig.manifestURL)
+        rig.service.refresh()
+        rig.service.onItemPublished?(key)
+        for _ in 0 ..< 100 {
+            if try rig.manifestOnDisk().displaySelections["42"] == item.id {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try rig.manifestOnDisk().displaySelections["42"] == item.id)
+    }
+
     private static let referenceNow = Date(timeIntervalSince1970: 1_760_000_000)
 
     private struct Rig {

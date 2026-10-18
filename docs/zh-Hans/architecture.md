@@ -138,9 +138,18 @@ macOS 26+ 上，`WallpaperExportService` 复制支持的视频文件并发布 ma
 `SystemWallpaperProvider` 读取。扩展独立于应用渲染、发布 heartbeat，并检查兼容性。
 活动壁纸由 macOS 选择，应用资源库状态不能代表所有系统侧状态。
 
+Pro 可将场景和依赖资源发布为独立资源包，扩展复用 WPE 渲染器并通过 IOSurface
+呈现画面。场景也可录制为视频；网页通过 ScreenCaptureKit 录制实际预览窗口。
+录制的视频不会更新时钟、日历或其他实时数据。实时场景不读取应用的音频和音乐状态。
+
 provider 使用的私有壁纸/XPC 桥接被限制在 `SystemWallpaperProvider/` 中，是随系统版本
-变化的平台边界，不是公开的通用壁纸 SDK。它不运行 WPE/HTML runtime 或应用叠加窗口。
+变化的平台边界，不是公开的通用壁纸 SDK。它不运行 HTML runtime 或应用叠加窗口。
+桌面动画暂停时，实时场景仍以每秒一帧更新日期和时间；隐藏或睡眠中的场景可休眠。
 provider 不兼容时可以关闭自身路径，不替换应用原有壁纸架构。
+
+所选项目与各显示器的目标保存在已有 provider manifest 中。发布的媒体、场景资源包
+及显示器目标属于本机，不随 `.lwconfig` 导出：目标 Mac 必须重新准备媒体并选择
+macOS 壁纸。应用内已有的壁纸设置与源引用仍按原方式备份。
 
 ## 设计与验证
 

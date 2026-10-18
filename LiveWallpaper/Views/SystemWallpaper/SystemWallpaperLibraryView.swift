@@ -17,6 +17,16 @@ struct SystemWallpaperLibraryView: View {
             if isFunctional {
                 toolbar
             }
+            if let progress = service.preparationProgress {
+                HStack {
+                    Text(verbatim: service.preparingTitle ?? "")
+                        .lineLimit(1)
+                    ProgressView(value: progress)
+                        .frame(maxWidth: 180)
+                    Button("Cancel Preparation") { service.cancelPreparation() }
+                }
+                .padding(DesignTokens.Spacing.lg)
+            }
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -29,7 +39,7 @@ struct SystemWallpaperLibraryView: View {
         LibraryToolbarRow {
             EmptyView()
         } search: {
-            LibrarySearchField(text: $searchText, prompt: "Search videos")
+            LibrarySearchField(text: $searchText, prompt: "Search wallpapers")
         } sort: {
             EmptyView()
         } actions: {
@@ -85,7 +95,7 @@ struct SystemWallpaperLibraryView: View {
 
     private var statusSummary: Text {
         filteredItems.count == service.items.count
-            ? Text("\(service.items.count) videos")
+            ? Text("\(service.items.count) wallpapers")
             : Text("\(filteredItems.count) of \(service.items.count) shown")
     }
 
@@ -110,6 +120,7 @@ struct SystemWallpaperLibraryView: View {
                                 thumbnailURL: service.thumbnailURL(for: item),
                                 videoURL: service.videoURL(for: item),
                                 isInUse: service.isItemInUse(item.id),
+                                onUpdate: updateAction(for: item),
                                 onRemove: {
                                     pendingDestructive = PendingDestructive(
                                         .removeSystemWallpaper(title: item.title, isInUse: service.isItemInUse(item.id))
@@ -120,6 +131,27 @@ struct SystemWallpaperLibraryView: View {
                     }
                 }
                 .libraryGridPadding()
+            }
+        }
+    }
+
+    private func updateAction(for item: SystemWallpaperManifest.Item) -> (() -> Void)? {
+        let candidates = SystemWallpaperCandidate.all(bookmarks: BookmarkStore.shared.bookmarks,
+                                                      service: service, includingPublished: true)
+        guard let candidate = candidates.first(where: { $0.publicationID == item.id }) else { return nil }
+        return {
+            Task { @MainActor in
+                var options = item.preparationOptions ?? SystemWallpaperPreparationOptions()
+                if item.fileName.hasSuffix(".scene") {
+                    options.sceneMode = .live
+                } else {
+                    options.sceneMode = .videoCopy
+                }
+                do { try await candidate.publish(using: service, options: options) } catch {
+                    if !(error is CancellationError) {
+                        service.reportPublishFailures([error.localizedDescription])
+                    }
+                }
             }
         }
     }
@@ -197,8 +229,8 @@ struct SystemWallpaperAddMenu: View {
 
     var body: some View {
         GlassIconButton("plus", size: .large) { showingAddSheet = true }
-            .help(Text("Add Video"))
-            .accessibilityLabel(Text("Add Video"))
+            .help(Text("Add Wallpaper"))
+            .accessibilityLabel(Text("Add Wallpaper"))
             .sheet(isPresented: $showingAddSheet) {
                 AppLanguageScope(defaults: .appScoped()) {
                     SystemWallpaperAddSheet()
@@ -230,6 +262,7 @@ struct SystemWallpaperTile: View {
     let thumbnailURL: URL?
     let videoURL: URL?
     let isInUse: Bool
+    var onUpdate: (() -> Void)?
     let onRemove: () -> Void
 
     @State private var isHovering = false
@@ -250,6 +283,9 @@ struct SystemWallpaperTile: View {
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
             .contextMenu {
+                if let onUpdate {
+                    Button("Update Wallpaper Copy", action: onUpdate)
+                }
                 if let videoURL {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([videoURL])
@@ -264,6 +300,9 @@ struct SystemWallpaperTile: View {
 
     private var overflowButton: some View {
         LibraryTileOverflowButton { dismiss in
+            if let onUpdate {
+                Button("Update Wallpaper Copy") { dismiss(); onUpdate() }
+            }
             if let videoURL {
                 Button("Show in Finder") {
                     dismiss()

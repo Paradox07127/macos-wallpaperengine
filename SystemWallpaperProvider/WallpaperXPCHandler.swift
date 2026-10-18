@@ -25,6 +25,22 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     nonisolated(unsafe) var agentProxyProvider: (() -> WallpaperExtensionProxyXPCProtocol?)?
 
     private static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
+    private nonisolated(unsafe) static var systemLocked = false
+    private nonisolated(unsafe) static var systemAsleep = false
+
+    static func updateSystemState(registry: SurfaceRegistry, store: SharedLibraryStore,
+                                  locked: Bool? = nil, asleep: Bool? = nil) {
+        queue.async {
+            if let locked {
+                systemLocked = locked
+            }
+            if let asleep {
+                systemAsleep = asleep
+            }
+            reapplyPolicy(registry: registry, store: store)
+        }
+    }
+
     /// Long enough to ride out a sleep/wake blink, short enough to stop
     /// burning power on a surface the system really did drop.
     private static let teardownGrace: TimeInterval = 15
@@ -83,6 +99,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             surface.teardownWorkItem?.cancel()
             surface.teardownWorkItem = nil
             surface.isPreview = isPreview
+            surface.displayID = displayID
 
             // Re-acquire of a live surface: keep the same contextId, only
             // re-frame or swap the asset (contract §3.1, §9 坑 9).
@@ -95,6 +112,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 surface.renderer.layer.frame = CGRect(origin: .zero, size: size)
+                surface.renderer.layer.contentsScale = scale
                 CATransaction.commit()
                 guard let context = PrivateClassFactory.remoteContext(contextId: surface.contextId) else {
                     reportUnbuildable("remote context")
@@ -112,7 +130,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 // The choice is gone from the library: stop, but keep the
                 // hosted context. The last frame is a better answer than the
                 // black one a fresh empty context would give.
-                if playableURL(for: choiceID) == nil {
+                if !canServeChoice(choiceID, displayID: displayID) {
                     surface.renderer.stop()
                     reply(context, nil)
                     return
@@ -141,7 +159,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             // as a black desktop, which is strictly worse than the Agent
             // keeping whatever it had (the panel can offer a stale tile long
             // after the app deleted the video behind it).
-            if let choiceID, playableURL(for: choiceID) == nil {
+            if let choiceID, !canServeChoice(choiceID, displayID: displayID) {
                 registry.remove(uuid)
                 reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 3))
                 return
@@ -167,6 +185,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             surface.renderer.layer.frame = CGRect(origin: .zero, size: size)
+            surface.renderer.layer.contentsScale = scale
             surface.bridge.rootLayer.addSublayer(surface.renderer.layer)
             CATransaction.commit()
             CATransaction.flush()
@@ -177,7 +196,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             // poster frame, not flat black, makes the switch read as the
             // wallpaper appearing rather than a black (or, on an untouched
             // surface, green) flash.
-            surface.renderer.enqueueStill(posterURL: posterURL(for: choiceID), size: size)
+            surface.renderer.enqueueStill(posterURL: posterURL(for: choiceID, displayID: displayID), size: size)
             CATransaction.flush()
 
             if let choiceID {
@@ -209,7 +228,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 surface.lastPresentationMode = mode
                 surface.lastActivityState = activity
                 // Ease rather than cut, so the wallpaper settles into a still.
-                surface.renderer.rampRate(to: Self.rate(for: surface, playbackMode: playbackMode))
+                surface.renderer.rampRate(to: Self.rate(for: surface, playbackMode: playbackMode), refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface))
             }
             wpxLog.info("update — mode=\(mode, privacy: .public) activity=\(activity, privacy: .public) targets=\(targets.count)")
             reply(nil)
@@ -273,8 +292,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             } else {
                 choiceID = activeChoiceID()
             }
-            guard let posterURL = posterURL(for: choiceID),
-                  let surface = SnapshotFactory.makeIOSurface(imageURL: posterURL),
+            let displayed: WallpaperSurface? = if let uuid {
+                registry.surface(for: uuid)
+            } else {
+                registry.all.first { $0.choiceID == choiceID && !$0.isPreview }
+            }
+            let snapshot = displayed?.renderer.snapshot()
+                ?? posterURL(for: choiceID, displayID: displayed?.displayID).flatMap { SnapshotFactory.makeIOSurface(imageURL: $0) }
+            guard let surface = snapshot,
                   let object = PrivateClassFactory.snapshot(surface: surface) else {
                 // No poster is not an error: the panel falls back to its own
                 // placeholder, exactly as it did before this was implemented.
@@ -461,12 +486,17 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// it — damaged manifest, entry gone, or asset deleted. Acquire consults
     /// this *before* building a context: handing the Agent a context we cannot
     /// fill is what turns a stale panel tile into a black desktop.
-    private func playableURL(for choiceID: String) -> URL? {
+    private func canServeChoice(_ choiceID: String, displayID: UInt32?) -> Bool {
+        guard store.loadManifestIfReadable() != nil else { return false }
+        return choiceID == SystemWallpaperManifest.selectedChoiceID || playableURL(for: choiceID, displayID: displayID) != nil
+    }
+
+    private func playableURL(for choiceID: String, displayID: UInt32? = nil) -> URL? {
         guard let manifest = store.loadManifestIfReadable() else {
             wpxLog.error("manifest unreadable — refusing to serve \(choiceID, privacy: .public)")
             return nil
         }
-        guard let item = manifest.items.first(where: { $0.id == choiceID }) else {
+        guard let item = manifest.item(for: choiceID, displayID: displayID) else {
             wpxLog.error("choice \(choiceID, privacy: .public) not in manifest")
             return nil
         }
@@ -480,18 +510,31 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     private func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
                                replyOnFirstFrame: (@Sendable (Error?) -> Void)?) {
-        guard let url = playableURL(for: choiceID) else {
+        guard let url = playableURL(for: choiceID, displayID: surface.displayID) else {
+            if choiceID == SystemWallpaperManifest.selectedChoiceID, store.loadManifestIfReadable()?.items.isEmpty == true {
+                replyOnFirstFrame?(nil)
+                return
+            }
             replyOnFirstFrame?(NSError(domain: "com.loomscreen.wallpaper", code: 3))
             return
         }
+        // Picker previews use their prepared poster; loading a full scene for every tile exhausts the provider budget.
+        if surface.isPreview, url.pathExtension == "scene" {
+            surface.renderer.enqueueStill(posterURL: posterURL(for: choiceID, displayID: surface.displayID), size: size)
+            replyOnFirstFrame?(nil)
+            return
+        }
         surface.playbackGeneration &+= 1
+        let item = store.loadManifest().item(for: choiceID, displayID: surface.displayID)
+        surface.publishedAt = item?.addedAt
+        surface.resolvedItemID = item?.id
         surface.playbackFailure = nil
         let generation = surface.playbackGeneration
         let uuid = surface.uuid
         let initialRate = surface.isPreview ? 1 : Self.rate(for: surface, playbackMode: store.loadManifest().playbackMode)
         let registry = registry
         let store = store
-        surface.renderer.start(url: url, initialRate: initialRate, onFirstFrame: {
+        surface.renderer.start(url: url, initialRate: initialRate, refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface), onFirstFrame: {
             replyOnFirstFrame?(nil)
         }, onFailure: { [weak registry] code in
             Self.queue.async { [weak registry] in
@@ -541,10 +584,13 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     }
 
     /// The JPEG the app writes next to each published video.
-    private func posterURL(for choiceID: String?) -> URL? {
+    private func posterURL(for choiceID: String?, displayID: UInt32? = nil) -> URL? {
         guard let choiceID,
-              let item = store.loadManifest().items.first(where: { $0.id == choiceID }),
-              let thumbnailFileName = item.thumbnailFileName else { return nil }
+              let item = store.loadManifest().item(for: choiceID, displayID: displayID),
+              let thumbnailFileName = item.thumbnailFileName else {
+            return choiceID == SystemWallpaperManifest.selectedChoiceID
+                ? Bundle.main.url(forResource: "SelectedWallpaper", withExtension: "png") : nil
+        }
         let url = store.videosDirectory().appendingPathComponent(thumbnailFileName)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
@@ -571,13 +617,24 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             guard let id = surface.choiceID, seen.insert(id).inserted else { continue }
             active.append(id)
         }
+        let manifest = store.loadManifest()
+        for surface in registry.all where !surface.isPreview {
+            if let id = manifest.item(for: surface.choiceID, displayID: surface.displayID)?.id,
+               seen.insert(id).inserted {
+                active.append(id)
+            }
+        }
         var failures: [String: String] = [:]
         for surface in registry.all where !surface.isPreview {
-            if let id = surface.choiceID, let failure = surface.playbackFailure {
+            if let id = manifest.item(for: surface.choiceID, displayID: surface.displayID)?.id ?? surface.choiceID,
+               let failure = surface.playbackFailure {
                 failures[id] = failure
             }
         }
-        store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active,
+        let serving = registry.all.filter { !$0.isPreview && $0.choiceID != nil }
+        let displayIDs: [UInt32]? = serving.isEmpty || serving.contains { $0.displayID == nil }
+            ? nil : Array(Set(serving.compactMap(\.displayID)))
+        store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active, activeDisplayIDs: displayIDs,
                              runtimeHealthy: true, playbackFailures: failures)
         syncHeartbeatKeepAlive(registry: registry, store: store)
     }
@@ -643,12 +700,21 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             thermalState: ProcessInfo.processInfo.thermalState,
             onBattery: isOnBattery(),
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
-            systemRequestedPause: surface.lastActivityState.contains("suspended")
+            systemRequestedPause: systemAsleep || surface.lastActivityState.contains("suspended")
                 || surface.lastPresentationMode == "idle",
-            isLockScreen: surface.lastPresentationMode == "locked",
+            isLockScreen: systemLocked || surface.lastPresentationMode == "locked",
             playbackMode: playbackMode
         )
         return PlaybackPolicy.rate(for: PlaybackPolicy.tier(for: input))
+    }
+
+    private static func hidesClockCalendar(_ surface: WallpaperSurface) -> Bool {
+        systemLocked || surface.lastPresentationMode == "locked"
+    }
+
+    private static func isVisible(_ surface: WallpaperSurface) -> Bool {
+        !systemAsleep && !surface.lastActivityState.contains("suspended") && surface.lastPresentationMode != "idle"
+            && ProcessInfo.processInfo.thermalState != .critical
     }
 
     /// Entered from the Darwin `libraryChanged` notification: the user just
@@ -664,10 +730,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 wpxLog.error("library changed — manifest unreadable, left surfaces alone")
                 return
             }
-            let live = Set(manifest.items.map(\.id))
             var dropped = 0
             for surface in registry.all {
-                if let choiceID = surface.choiceID, !live.contains(choiceID) {
+                if let choiceID = surface.choiceID, choiceID != SystemWallpaperManifest.selectedChoiceID,
+                   manifest.item(for: choiceID, displayID: surface.displayID) == nil {
                     // The user deleted this one in the app. Stop now: the app's
                     // delete path never reaches the Agent, so without this the
                     // desktop keeps playing a video the library no longer has.
@@ -677,7 +743,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     continue
                 }
                 guard !surface.isPreview else { continue }
-                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode))
+                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface))
             }
             if dropped > 0 { writeActiveHeartbeat(registry: registry, store: store) }
             wpxLog.info("policy re-applied — \(registry.all.count) surface(s), dropped \(dropped)")
@@ -690,6 +756,18 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// so the app is the only delete path users have.
     func libraryDidChange() {
         Self.queue.async { [self] in
+            guard let manifest = store.loadManifestIfReadable() else { return }
+            for surface in registry.all {
+                guard let id = surface.choiceID else { continue }
+                guard let item = manifest.item(for: id, displayID: surface.displayID) else {
+                    surface.renderer.stop()
+                    surface.resolvedItemID = nil
+                    continue
+                }
+                guard surface.publishedAt != item.addedAt || surface.resolvedItemID != item.id else { continue }
+                startPlayback(surface: surface, choiceID: id, size: surface.bridge.rootLayer.bounds.size, replyOnFirstFrame: nil)
+            }
+            writeActiveHeartbeat()
             pushSettingsViewModels()
             invalidateAgentSnapshots()
         }

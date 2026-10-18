@@ -65,6 +65,9 @@ contracts:
 	bash scripts/test_wallpaper_maintenance.sh
 	@echo "== System wallpaper video renderer lifecycle checks =="
 	bash scripts/test_wallpaper_video_renderer.sh
+	@echo "== System wallpaper selected tile checks =="
+	bash scripts/test_wallpaper_selected_persistence.sh
+	bash scripts/test_wallpaper_selected_choice.sh
 
 # A ratchet, not a sweep: most files still differ from SwiftFormat at whole-file
 # granularity, so only lines this change touched are judged. A whole-repo gate

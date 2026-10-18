@@ -157,10 +157,14 @@ preset keeps your changes.
   playhead reads; Pro Audio Response enables reactive visuals.
 - **Overlays**: add a Weather tile from the palette alongside CPU, Memory or other
   widgets. Choose system/manual location under **Settings → Integrations → Weather**.
-- **System Wallpaper** (macOS 26+): add a supported video and open macOS
-  Wallpaper settings to select it. The system provider can continue playing
-  with Loomscreen closed. This path does not include scenes, web or overlays,
-  and availability depends on the provider's compatibility check.
+- **System Wallpaper** (macOS 26+): add a video, a live scene (Pro), or an explicitly
+  recorded scene/web video copy. Choose **Loomscreen — Selected Wallpaper** once
+  in macOS Wallpaper settings; it then follows the app selection per display.
+  The provider can continue playing with Loomscreen closed. Recognized removable
+  clock/calendar widgets are hidden on lock for live scenes and in prepared
+  scene/web videos. Baked-in pixel/shared-canvas clocks remain intact. Web
+  recording opens a preview and needs Screen Recording consent; live web and
+  app overlays are not included. Provider compatibility controls availability.
 
 ## 11) After the first day
 

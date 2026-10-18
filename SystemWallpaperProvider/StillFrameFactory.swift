@@ -117,6 +117,10 @@ enum SnapshotFactory {
     static func makeIOSurface(imageURL: URL) -> IOSurface? {
         guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        return makeIOSurface(image: image)
+    }
+
+    static func makeIOSurface(image: CGImage) -> IOSurface? {
         let width = image.width
         let height = image.height
         let properties: [IOSurfacePropertyKey: any Sendable] = [

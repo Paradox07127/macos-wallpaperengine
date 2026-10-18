@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import JavaScriptCore
+import LiveWallpaperCore
 import os
 
 /// Process-wide record of gestures that already spent their one user command.
@@ -33,6 +34,13 @@ enum WPEUserShortcutGestureLedger {
 
 /// Per-scene user-shortcut bindings that scripts read and launch through.
 final class WPEUserShortcutScriptBridge: Sendable {
+    static func declaredKeys(manifestRoot: URL) -> Set<String> {
+        guard let schema = try? WallpaperEngineProjectPropertySchema.read(from: manifestRoot, includeSchemeColor: true) else {
+            return []
+        }
+        return Set(schema.properties.filter { $0.type == .userShortcut }.map(\.key))
+    }
+
     struct Entry: Sendable, Equatable {
         let commandType: String
         let displayName: String
