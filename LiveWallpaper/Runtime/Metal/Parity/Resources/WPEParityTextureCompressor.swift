@@ -172,8 +172,8 @@ final class WPEParityTextureCompressor: Sendable {
         let mse = level.bytes.withUnsafeBytes { texels in
             blocks.withUnsafeMutableBytes { output -> Float in
                 guard let source = texels.baseAddress, let destination = output.baseAddress else { return -1 }
-                var region = Self.region(source, level)
-                var buffer = Self.buffer(destination, level)
+                var region = Self.region(source, width: level.width, height: level.height)
+                var buffer = Self.buffer(destination, width: level.width, height: level.height)
                 return at_encoder_compress_texels(encoder, &region, &buffer, Self.errorThreshold, at_flags_default)
             }
         }
@@ -184,52 +184,58 @@ final class WPEParityTextureCompressor: Sendable {
     /// Normalized squared error with each texel's RGB error weighted by its source alpha and alpha error by 1.
     private static func alphaWeightedError(_ encoder: at_encoder_t, _ level: WPETexTextureMipmap, blocks: Data,
                                            position: Int) throws -> Double {
-        let count = level.width * level.height
-        var decoded = Data(count: count * 4)
-        let status = blocks.withUnsafeBytes { input in
-            decoded.withUnsafeMutableBytes { output -> at_error_t in
-                guard let source = input.baseAddress, let destination = output.baseAddress else {
-                    return at_error_invalid_parameter
-                }
-                var buffer = buffer(UnsafeMutableRawPointer(mutating: source), level)
-                var region = region(UnsafeRawPointer(destination), level)
-                return at_encoder_decompress_texels(encoder, &buffer, &region, at_flags_default)
-            }
-        }
-        guard status == at_error_success else { throw Failure.decode(level: position, code: Int(status.rawValue)) }
+        let width = level.width
         // Both sums are scaled by 255 so they stay integral: Σ(a·ΣΔc² + 255·Δa²) / (Σ(3a + 255) · 255²).
         let sums = level.bytes.withUnsafeBytes { source in
-            decoded.withUnsafeBytes { result in
-                perChunk(count) { texels -> (error: Int, weight: Int) in
-                    var error = 0
-                    var weight = 0
-                    for offset in stride(from: texels.lowerBound * 4, to: texels.upperBound * 4, by: 4) {
-                        let alpha = Int(source[offset + 3])
-                        let red = Int(source[offset]) - Int(result[offset])
-                        let green = Int(source[offset + 1]) - Int(result[offset + 1])
-                        let blue = Int(source[offset + 2]) - Int(result[offset + 2])
-                        let alphaDelta = alpha - Int(result[offset + 3])
-                        error += alpha * (red * red + green * green + blue * blue) + 255 * alphaDelta * alphaDelta
-                        weight += 3 * alpha + 255
+            blocks.withUnsafeBytes { input in
+                perChunk(width * level.height) { texels -> (error: Int, weight: Int, status: at_error_t) in
+                    // Decode just the block rows covering this chunk.
+                    let firstRow = texels.lowerBound / width / 4 * 4
+                    let rows = min(level.height, ((texels.upperBound - 1) / width / 4 + 1) * 4) - firstRow
+                    let base = firstRow * width * 4
+                    return withUnsafeTemporaryAllocation(byteCount: rows * width * 4, alignment: 16) { result in
+                        guard let encoded = input.baseAddress, let destination = result.baseAddress else {
+                            return (0, 0, at_error_invalid_parameter)
+                        }
+                        let rowBytes = blocksPerRow(width) * blockBytes
+                        var buffer = buffer(UnsafeMutableRawPointer(mutating: encoded + firstRow / 4 * rowBytes),
+                                            width: width, height: rows)
+                        var region = region(UnsafeRawPointer(destination), width: width, height: rows)
+                        let status = at_encoder_decompress_texels(encoder, &buffer, &region, at_flags_default)
+                        guard status == at_error_success else { return (0, 0, status) }
+                        var error = 0
+                        var weight = 0
+                        for offset in stride(from: texels.lowerBound * 4, to: texels.upperBound * 4, by: 4) {
+                            let alpha = Int(source[offset + 3])
+                            let red = Int(source[offset]) - Int(result[offset - base])
+                            let green = Int(source[offset + 1]) - Int(result[offset - base + 1])
+                            let blue = Int(source[offset + 2]) - Int(result[offset - base + 2])
+                            let alphaDelta = alpha - Int(result[offset - base + 3])
+                            error += alpha * (red * red + green * green + blue * blue) + 255 * alphaDelta * alphaDelta
+                            weight += 3 * alpha + 255
+                        }
+                        return (error, weight, at_error_success)
                     }
-                    return (error, weight)
                 }
             }
+        }
+        if let failed = sums.first(where: { $0.status != at_error_success }) {
+            throw Failure.decode(level: position, code: Int(failed.status.rawValue))
         }
         let error = sums.reduce(0) { $0 + $1.error }
         let weight = sums.reduce(0) { $0 + $1.weight }
         return Double(error) / (Double(weight) * 255 * 255)
     }
 
-    private static func region(_ texels: UnsafeRawPointer, _ level: WPETexTextureMipmap) -> at_texel_region_t {
+    private static func region(_ texels: UnsafeRawPointer, width: Int, height: Int) -> at_texel_region_t {
         at_texel_region_t(texels: UnsafeMutableRawPointer(mutating: texels),
-                          validSize: at_size_t(x: UInt32(level.width), y: UInt32(level.height), z: 1),
-                          rowBytes: level.width * 4, sliceBytes: level.width * level.height * 4)
+                          validSize: at_size_t(x: UInt32(width), y: UInt32(height), z: 1),
+                          rowBytes: width * 4, sliceBytes: width * height * 4)
     }
 
-    private static func buffer(_ blocks: UnsafeMutableRawPointer, _ level: WPETexTextureMipmap) -> at_block_buffer_t {
-        at_block_buffer_t(blocks: blocks, rowBytes: blocksPerRow(level.width) * blockBytes,
-                          sliceBytes: blockByteCount(width: level.width, height: level.height))
+    private static func buffer(_ blocks: UnsafeMutableRawPointer, width: Int, height: Int) -> at_block_buffer_t {
+        at_block_buffer_t(blocks: blocks, rowBytes: blocksPerRow(width) * blockBytes,
+                          sliceBytes: blockByteCount(width: width, height: height))
     }
 }
 #endif
