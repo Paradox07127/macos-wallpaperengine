@@ -177,6 +177,21 @@ final class WPEParityProductControlsTests: XCTestCase {
         XCTAssertEqual(pressed.state, SIMD4(1, 1, 1, 0))
     }
 
+    func testClickableLayersPublishInteractiveZonesUntilTeardown() async throws {
+        // The dock's launcher layers are solid and export cursorClick; the dock is off unless the user enables it.
+        let harness = try await makeHarness(sceneID: "3660962877", propertyOverrides: ["appdockenabled": .bool(true)])
+        await harness.actor.renderFrame()
+        let zones = harness.mailbox.interactiveZones
+        XCTAssertFalse(zones.isEmpty, "no hot zone published for the clickable layers")
+        let view = CGRect(x: 0, y: 0, width: 1, height: 1)
+        for zone in zones {
+            XCTAssertTrue(view.contains(zone), "\(zone) leaves the drawable")
+            XCTAssertLessThanOrEqual(zone.width * zone.height, 0.30, "\(zone) covers too much of the view")
+        }
+        await harness.actor.teardownRenderer()
+        XCTAssertTrue(harness.mailbox.interactiveZones.isEmpty, "zones outlive the scene")
+    }
+
     func testSceneReadingAudioSpectrumRequiresSystemAudioCapture() async throws {
         // Object 1003's Simple_Audio_Bars fragment shader reads g_AudioSpectrum16Left.
         let audio = try await makeHarness(sceneID: "3660962877")
@@ -243,7 +258,8 @@ final class WPEParityProductControlsTests: XCTestCase {
 
     /// The fixture scene installed as an extracted `.cache` scene in `directoryName` and adopted by a fresh actor.
     private func makeHarness(sceneID: String, workshopID: String? = nil, directoryName: String? = nil,
-                             presentFitMode: WPEPresentFitMode = .cover, load: Bool = true) async throws -> Harness {
+                             presentFitMode: WPEPresentFitMode = .cover, load: Bool = true,
+                             propertyOverrides: [String: WallpaperEngineProjectPropertyValue] = [:]) async throws -> Harness {
         let fixture = try fixture()
         let root = fixture.root
         let wpeAssets = fixture.wpeAssets
@@ -263,7 +279,8 @@ final class WPEParityProductControlsTests: XCTestCase {
         let surface = RecordingSurfaceControl()
         let inputs = WPEParitySceneInputs(
             descriptor: SceneDescriptor(workshopID: workshopID ?? sceneID, cacheRelativePath: relativePath,
-                                        entryFile: "scene.json", capabilityTier: .degraded),
+                                        entryFile: "scene.json", capabilityTier: .degraded,
+                                        propertyOverrides: propertyOverrides),
             entryResolver: SceneResourceResolver(cacheRootURL: sceneDirectory),
             projectRoot: sceneDirectory,
             assets: WPEParityProgramAssets(sceneDirectory: sceneDirectory,

@@ -206,6 +206,7 @@ actor WPEDisplayRenderActor {
         let profile: WallpaperPerformanceProfile = driver.isPaused ? .suspended : .quality
         let clickCaptureEnabled = inputs.mailbox.read().clickCaptureEnabled
         driver.cleanup()
+        inputs.mailbox.publishInteractiveZones([])
         (parityDriver, parityInputs) = (nil, nil)
         inputs.userShortcutIcons?.onChange = nil
         inputs.userShortcuts?.setChangeHandler(nil)
@@ -264,6 +265,7 @@ actor WPEDisplayRenderActor {
                                                    pointer: pointer.position, buttonDown: pointer.buttonDown,
                                                    audio: audio)
             }
+            parityInputs.mailbox.publishInteractiveZones(parityDriver.interactiveZones())
             thread?.noteFrameDuration(CACurrentMediaTime() - start,
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             if parityFramePending, presented != nil {
@@ -637,6 +639,7 @@ actor WPEDisplayRenderActor {
             guard parityDriver.didLoad else { return false }
             scenePropertyRendererGeneration &+= 1
             parityDriver.cleanup()
+            parityInputs?.mailbox.publishInteractiveZones([])
             applyParityPacing()
             return true
         }
@@ -652,6 +655,7 @@ actor WPEDisplayRenderActor {
         spanPresenter = nil
         parityDriver?.cleanup()
         let retiringInputs = parityInputs
+        retiringInputs?.mailbox.publishInteractiveZones([])
         (parityDriver, parityInputs) = (nil, nil)
         retiringInputs?.userShortcutIcons?.onChange = nil
         retiringInputs?.userShortcuts?.setChangeHandler(nil)

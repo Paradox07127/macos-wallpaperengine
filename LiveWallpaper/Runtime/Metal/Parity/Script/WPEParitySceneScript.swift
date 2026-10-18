@@ -65,6 +65,8 @@ final class WPEParitySceneScript {
     let handlesMedia: Bool
     /// Loaded candidate defaults by stable identity; each cursor pass projects State's current common order.
     private var cursorCandidates: [String: CursorCandidate]
+    /// Objects with a binding that exports a left-button handler.
+    private let buttonIDs: Set<String>
     /// Objects of the camera class, whose fov and zoom the next frame's camera reads.
     let cameraIDs: [String]
     let soundIDs: [String]
@@ -119,6 +121,9 @@ final class WPEParitySceneScript {
         let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }
         handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0
         handlesMedia = bits & WPEParityScriptEvent.mediaBits != 0
+        let buttonBits = [WPEParityScriptEvent.cursorClick, .cursorDown, .cursorUp].reduce(0) { $0 | $1.exportBit }
+        buttonIDs = Set(engine.bindings.lazy.filter { $0.exportBits & buttonBits != 0 && !$0.objectID.isEmpty }
+            .map(\.objectID))
         media = host.mediaGeneration == nil ? host.media : nil
         userShortcuts = host.userShortcuts
         hasMediaSource = host.media != nil
@@ -168,6 +173,13 @@ final class WPEParitySceneScript {
                 disablePropagation: flag("disablepropagation", candidate, fallback: candidate.disablePropagation)
             ))
         }
+    }
+
+    /// Client-pixel corners of this frame's visible, not fully transparent targets that take the left button.
+    func buttonQuads(state: WPEParitySceneState) -> [(SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)] {
+        targets.filter { target in
+            buttonIDs.contains(target.id) && target.visible && (state.value(.alpha, of: target.id)?.x ?? 1) > 0.001
+        }.map(\.quad)
     }
 
     /// The cursor pass over the targets of `updateCursorTargets` (14017fa70.c:473-474).

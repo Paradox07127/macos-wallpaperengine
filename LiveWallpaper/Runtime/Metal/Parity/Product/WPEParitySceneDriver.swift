@@ -536,6 +536,32 @@ final class WPEParitySceneDriver {
         return (mouseInteractionEnabled ? inScene : centre, buttonDown)
     }
 
+    /// Drawable-UV bounds (top-left origin) of the layers the last cursor pass found taking the left button; a rect
+    /// over 30% of the view is left out, as in the old renderer.
+    func interactiveZones() -> [CGRect] {
+        guard let renderer, let plannedTarget,
+              let quads = renderer.script?.buttonQuads(state: renderer.state), !quads.isEmpty else { return [] }
+        let present = WPEPresentUniforms.make(
+            fitMode: plannedTarget.presentFit, sourceWidth: plannedTarget.width, sourceHeight: plannedTarget.height,
+            targetWidth: Int(drawableSize.width), targetHeight: Int(drawableSize.height)
+        )
+        let pixels = SIMD2<Double>(renderer.logicalSize)
+        let view = CGRect(x: 0, y: 0, width: 1, height: 1)
+        var zones: [CGRect] = []
+        for quad in quads {
+            let corners = [quad.0, quad.1, quad.2, quad.3].map {
+                present.drawablePointer(fromScenePointer: SIMD2<Double>($0) / pixels)
+            }
+            let low = corners.dropFirst().reduce(corners[0]) { pointwiseMin($0, $1) }
+            let high = corners.dropFirst().reduce(corners[0]) { pointwiseMax($0, $1) }
+            let zone = CGRect(x: low.x, y: low.y, width: high.x - low.x, height: high.y - low.y).intersection(view)
+            let area = zone.isNull ? 0 : zone.width * zone.height
+            guard area > 0, area <= 0.30 else { continue }
+            zones.append(zone)
+        }
+        return zones.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }
+    }
+
     /// Renders one frame and presents it into `layer`'s next drawable as the fit mode's target asks. `timestamp` is
     /// the display link's; `pointer` is backbuffer UV with a top-left origin. Returns the committed present command
     /// buffer, or nil when nothing was presented.
