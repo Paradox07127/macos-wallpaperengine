@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Edits the device-local image binding only; never writes a scene override, so presets and change marks ignore it.
+/// Edits the device-local image or video binding only; never writes a scene override, so presets and change marks ignore it.
 struct SceneTextureBindingRow: View {
     let wallpaperID: String
     let propertyKey: String
@@ -15,8 +15,39 @@ struct SceneTextureBindingRow: View {
     @State private var isResolvable = true
     @State private var saveFailed = false
 
+    static let allowedContentTypes: [UTType] = [.image, .movie]
+        + SceneTextureVideo.extensions.sorted().compactMap { UTType(filenameExtension: $0) }
+
+    @State private var videoProblem: SceneTextureVideo.Problem?
+
     private var key: UserShortcutBindingKey {
         UserShortcutBindingKey(wallpaperID: wallpaperID, propertyKey: propertyKey)
+    }
+
+    private var subtitle: String? {
+        if saveFailed {
+            return String(
+                localized: "Couldn't save the chosen image.",
+                bundle: .appLanguage,
+                comment: "Shown under a scene image row when choosing or clearing the image couldn't be saved."
+            )
+        }
+        switch videoProblem {
+        case .unsupportedFormat:
+            return String(
+                localized: "This video format can't play on Mac. The author's image is shown instead.",
+                bundle: .appLanguage,
+                comment: "Shown under a scene image row when the chosen video's format (WebM, MKV, AVI or WMV) can't play on macOS."
+            )
+        case .unreadable:
+            return String(
+                localized: "This video can't be opened. The author's image is shown instead.",
+                bundle: .appLanguage,
+                comment: "Shown under a scene image row when the chosen video file is damaged or unreadable."
+            )
+        case nil:
+            return nil
+        }
     }
 
     var body: some View {
@@ -24,14 +55,10 @@ struct SceneTextureBindingRow: View {
             icon: WPEPropertyRowIcon.symbol(for: .sceneTexture),
             iconColor: iconColor,
             verbatimTitle: title,
-            verbatimSubtitle: saveFailed ? String(
-                localized: "Couldn't save the chosen image.",
-                bundle: .appLanguage,
-                comment: "Shown under a scene image row when choosing or clearing the image couldn't be saved."
-            ) : nil
+            verbatimSubtitle: subtitle
         ) {
             Menu {
-                Button("Choose Image", systemImage: "photo") { chooseImage() }
+                Button("Choose Image or Video", systemImage: "photo") { chooseImage() }
                 Divider()
                 Button("Clear", systemImage: "xmark.circle", role: .destructive) {
                     saveFailed = !UserShortcutBindingStore.shared.clear(key)
@@ -57,6 +84,13 @@ struct SceneTextureBindingRow: View {
         .onAppear(perform: refresh)
         .onChange(of: key) { _, _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: UserShortcutBindingStore.didChange)) { _ in refresh() }
+        .task(id: current) {
+            guard let current else {
+                videoProblem = nil
+                return
+            }
+            videoProblem = await SceneTextureVideo.problem(for: current)
+        }
     }
 
     private func refresh() {
@@ -74,7 +108,7 @@ struct SceneTextureBindingRow: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.image]
+        panel.allowedContentTypes = Self.allowedContentTypes
         let completion: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
             do {

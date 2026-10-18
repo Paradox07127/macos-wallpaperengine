@@ -77,6 +77,7 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
     private let device: MTLDevice
     private let lock = NSLock()
     private var icons: [String: Icon] = [:]
+    private var videos: [String: URL] = [:]
     /// passID → texture slot → user-shortcut property key; replaced on every scene load.
     private var slotsByPassID: [String: [Int: String]] = [:]
     private var changeHandler: (@Sendable () -> Void)?
@@ -121,6 +122,25 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
             onChange?()
         }
         return changed
+    }
+
+    /// nil clears the key; returns false when `url` is already bound, so its player keeps running.
+    @discardableResult
+    func setVideo(_ url: URL?, forKey propertyKey: String) -> Bool {
+        let changed = lock.withLock {
+            guard videos[propertyKey] != url else { return false }
+            videos[propertyKey] = url
+            return true
+        }
+        if changed {
+            onChange?()
+        }
+        return changed
+    }
+
+    /// Property key → the video file bound to that scene texture.
+    var videoURLs: [String: URL] {
+        lock.withLock { videos }
     }
 
     /// The image fitted to `slot`, built on first use and kept until `setIcon` replaces the key; nil = no image.

@@ -13438,36 +13438,36 @@
         }
       }
     },
-    "Choose Image" : {
+    "Choose Image or Video" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Image"
+            "value" : "Choose Image or Video"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elegir imagen"
+            "value" : "Elegir imagen o vídeo"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画像を選択"
+            "value" : "画像または動画を選択"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择图片"
+            "value" : "选择图片或视频"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇圖片"
+            "value" : "選擇圖片或影片"
           }
         }
       }
@@ -70788,6 +70788,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前 macOS 版本與桌布延伸功能不相容。"
+          }
+        }
+      }
+    },
+    "This video can't be opened. The author's image is shown instead." : {
+      "comment" : "Shown under a scene image row when the chosen video file is damaged or unreadable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This video can't be opened. The author's image is shown instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede abrir este vídeo. Se muestra la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この動画を開けません。代わりに作者の画像が表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开此视频，将显示作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法開啟此影片，將顯示作者的圖片。"
+          }
+        }
+      }
+    },
+    "This video format can't play on Mac. The author's image is shown instead." : {
+      "comment" : "Shown under a scene image row when the chosen video's format (WebM, MKV, AVI or WMV) can't play on macOS.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This video format can't play on Mac. The author's image is shown instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este formato de vídeo no se puede reproducir en Mac. Se muestra la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この動画形式は Mac で再生できません。代わりに作者の画像が表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 无法播放此视频格式，将显示作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 無法播放此影片格式，將顯示作者的圖片。"
           }
         }
       }

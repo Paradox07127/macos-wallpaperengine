@@ -68,6 +68,22 @@ struct WPEUserShortcutIconStoreTests {
         #expect(!store.setIcon(nil, forKey: "rj1"))
     }
 
+    @Test("setVideo publishes the bound file and wakes the renderer only when the file changes")
+    func setVideoPublishesTheFile() throws {
+        let store = try WPEUserShortcutIconStore(device: #require(MTLCreateSystemDefaultDevice()))
+        let changes = OSAllocatedUnfairLock(initialState: 0)
+        store.onChange = { changes.withLock { $0 += 1 } }
+        let clip = URL(filePath: "/tmp/clip.mp4")
+
+        #expect(store.setVideo(clip, forKey: "background"))
+        #expect(!store.setVideo(clip, forKey: "background"), "rebinding the same file must not restart its player")
+        #expect(store.videoURLs == ["background": clip])
+        #expect(changes.withLock { $0 } == 1)
+        #expect(store.setVideo(nil, forKey: "background"))
+        #expect(store.videoURLs.isEmpty)
+        #expect(changes.withLock { $0 } == 2)
+    }
+
     // MARK: - Slot aspect
 
     @Test("A scene texture image is centre-cropped to the slot aspect with truncated size and halved offset")

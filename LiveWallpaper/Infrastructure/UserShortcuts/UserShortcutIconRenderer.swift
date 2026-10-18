@@ -1,7 +1,50 @@
 #if !LITE_BUILD
 import AppKit
+import AVFoundation
 import ImageIO
 import LiveWallpaperCore
+
+/// Video files a scene texture slot accepts in place of an image, as Wallpaper Engine does.
+enum SceneTextureVideo {
+    static let extensions: Set<String> = ["mp4", "webm", "mov", "m4v", "avi", "wmv", "mkv"]
+    /// Accepted containers AVFoundation can't open; their slot keeps the author's image.
+    static let unplayableExtensions: Set<String> = ["webm", "avi", "wmv", "mkv"]
+
+    enum Problem: Equatable, Sendable {
+        case unsupportedFormat, unreadable
+    }
+
+    static func isVideo(_ url: URL) -> Bool {
+        extensions.contains(url.pathExtension.lowercased())
+    }
+
+    static func isPlayable(_ url: URL) -> Bool {
+        isVideo(url) && !unplayableExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// nil for anything that is not a video file, and for a video the slot can play.
+    static func problem(at url: URL) async -> Problem? {
+        guard isVideo(url) else { return nil }
+        guard isPlayable(url) else { return .unsupportedFormat }
+        let asset = AVURLAsset(url: url)
+        guard let playable = try? await asset.load(.isPlayable), playable,
+              let tracks = try? await asset.loadTracks(withMediaType: .video), !tracks.isEmpty else { return .unreadable }
+        return nil
+    }
+
+    static func problem(for binding: UserShortcutBinding) async -> Problem? {
+        guard binding.kind == .file, case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
+            binding.bookmark, target: .transient
+        ) else { return nil }
+        let scoped = resolved.url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                resolved.url.stopAccessingSecurityScopedResource()
+            }
+        }
+        return await problem(at: resolved.url)
+    }
+}
 
 /// The icon a scene's `usershortcut` texture slot shows for a binding.
 @MainActor
@@ -29,12 +72,20 @@ enum UserShortcutIconRenderer {
         }
     }
 
+    /// The bound video file the slot plays; nil for anything else, including the videos AVFoundation can't open.
+    static func sceneVideo(for binding: UserShortcutBinding) -> URL? {
+        guard binding.kind == .file, case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
+            binding.bookmark, target: .transient
+        ), SceneTextureVideo.isPlayable(resolved.url) else { return nil }
+        return resolved.url
+    }
+
     /// The bound image file at its own size, capped at `maxSceneTextureEdge`; nil (author's texture) for anything
     /// that is not a decodable image file.
     static func sceneTexture(for binding: UserShortcutBinding) -> WPEUserShortcutIconImage? {
         guard binding.kind == .file, case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
             binding.bookmark, target: .transient
-        ) else { return nil }
+        ), !SceneTextureVideo.isVideo(resolved.url) else { return nil }
         return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
             guard let source = CGImageSourceCreateWithURL(resolved.url as CFURL, nil),
                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

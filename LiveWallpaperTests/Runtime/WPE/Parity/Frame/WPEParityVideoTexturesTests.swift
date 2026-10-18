@@ -436,6 +436,157 @@ final class WPEParityVideoTexturesTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(videos.playbackSnapshot(ownerID: "a")).currentTime, 0.75, accuracy: 0.02)
     }
 
+    func testBoundVideoFilePlaysMutedLoopsCentreCroppedAndKeepsTheFileWhenUnbound() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let url = try await Self.writeTwoColourVideo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [], workshopID: "parity-user-video-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.bindUserVideos(["clip": url])
+        let source = try XCTUnwrap(videos.userVideoSourceForTesting("clip"), "a bound file must start a video source")
+        XCTAssertEqual(source.playerForTesting?.isMuted, true)
+        XCTAssertEqual(source.playerForTesting?.volume, 0)
+
+        // A square slot keeps the middle 64 columns of the 128x64 clip, never its green side bars.
+        let slot = WPEUserImageSlot(key: "clip", aspect: 1, pads: false)
+        var seen: [String] = []
+        var size: [Int] = []
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, source.completedLoopCount < 1 || Set(seen).count < 2 {
+            let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
+            try videos.encode(into: commandBuffer)
+            let texture = videos.userTexture(for: slot)
+            await Self.commit(commandBuffer)
+            videos.finishFrame()
+            videos.recordSampled(sources: [])
+            if let texture, texture.width > 1 {
+                size = [texture.width, texture.height]
+                for x in [4, 32, 60] {
+                    let colour = try Self.colour(Self.readPixel(texture, x: x, y: 32, queue: queue))
+                    XCTAssertNotEqual(colour, "green", "the crop must drop the clip's side bars")
+                    if x == 32, colour != "other", seen.last != colour {
+                        seen.append(colour)
+                    }
+                }
+            }
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        XCTAssertEqual(size, [64, 64], "the bound clip must be centre-cropped to the square slot")
+        XCTAssertTrue(seen.contains("red") && seen.contains("blue"), "the slot must sample the playing clip, saw \(seen)")
+        XCTAssertGreaterThanOrEqual(source.completedLoopCount, 1, "a bound clip loops")
+        XCTAssertEqual(source.scriptPlaybackSnapshot?.rate, 1)
+
+        videos.bindUserVideos([:])
+        XCTAssertNil(videos.userVideoSourceForTesting("clip"))
+        XCTAssertNil(videos.userTexture(for: slot), "an unbound slot shows the authored texture")
+        XCTAssertFalse(source.isActivelyPlaying, "unbinding retires the source")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path(percentEncoded: false)),
+                      "retiring a bound video must not delete the user's file")
+    }
+
+    func testUnopenableVideoFileKeepsTheAuthoredTexture() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("parity-broken-\(UUID().uuidString).mp4")
+        try Data((0 ..< 4096).map { UInt8(truncatingIfNeeded: $0 &* 31) }).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let videos = try await WPEParityVideoTextures(streams: [], workshopID: "parity-user-video-\(UUID().uuidString)",
+                                                      device: device, queue: queue)
+        videos.bindUserVideos(["clip": url])
+        let source = try XCTUnwrap(videos.userVideoSourceForTesting("clip"))
+        let slot = WPEUserImageSlot(key: "clip", aspect: nil, pads: false)
+        let deadline = Date().addingTimeInterval(4)
+        while Date() < deadline, source.openState == nil {
+            let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
+            try videos.encode(into: commandBuffer)
+            XCTAssertNil(videos.userTexture(for: slot), "a file still opening shows the authored texture")
+            await Self.commit(commandBuffer)
+            videos.finishFrame()
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        XCTAssertEqual(source.openState, false, "the player must report the file as unplayable")
+        XCTAssertNil(videos.userTexture(for: slot), "an unplayable file keeps the authored texture")
+    }
+
+    private static func commit(_ commandBuffer: MTLCommandBuffer) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
+    }
+
+    private static func readPixel(_ texture: MTLTexture, x: Int, y: Int, queue: MTLCommandQueue) throws -> [UInt8] {
+        let buffer = try XCTUnwrap(queue.device.makeBuffer(length: 4, options: .storageModeShared))
+        let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
+        let blit = try XCTUnwrap(commandBuffer.makeBlitCommandEncoder())
+        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: x, y: y, z: 0),
+                  sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: buffer, destinationOffset: 0,
+                  destinationBytesPerRow: 4, destinationBytesPerImage: 4)
+        blit.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return Array(UnsafeRawBufferPointer(start: buffer.contents(), count: 4))
+    }
+
+    /// `bgra` is a BGRA8 texel.
+    private static func colour(_ bgra: [UInt8]) -> String {
+        let (blue, green, red) = (Int(bgra[0]), Int(bgra[1]), Int(bgra[2]))
+        let dominant = [("red", red, green + blue), ("blue", blue, red + green), ("green", green, red + blue)]
+        return dominant.first { $0.1 > 180 && $0.2 < 160 }?.0 ?? "other"
+    }
+
+    /// One second of 128x64 H.264: green 32-column side bars around a red first half-second, then blue.
+    private static func writeTwoColourVideo() async throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("parity-two-colour-\(UUID().uuidString).mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 128, AVVideoHeightKey: 64,
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: 128, kCVPixelBufferHeightKey as String: 64,
+        ])
+        guard writer.canAdd(input) else { throw FixtureError.writer }
+        writer.add(input)
+        guard writer.startWriting() else { throw writer.error ?? FixtureError.writer }
+        writer.startSession(atSourceTime: .zero)
+        let deadline = Date().addingTimeInterval(3)
+        for frame in 0 ..< 24 {
+            while !input.isReadyForMoreMediaData {
+                guard Date() < deadline, writer.status == .writing else { throw writer.error ?? FixtureError.writer }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            var pixelBuffer: CVPixelBuffer?
+            guard CVPixelBufferCreate(kCFAllocatorDefault, 128, 64, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+                == kCVReturnSuccess, let pixelBuffer else { throw FixtureError.pixelBuffer }
+            CVPixelBufferLockBaseAddress(pixelBuffer, [])
+            if let base = CVPixelBufferGetBaseAddress(pixelBuffer) {
+                let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
+                let middle: [UInt8] = frame < 12 ? [0, 0, 255, 255] : [255, 0, 0, 255]
+                for row in 0 ..< 64 {
+                    for column in 0 ..< 128 {
+                        let texel = (32 ..< 96).contains(column) ? middle : [0, 255, 0, 255]
+                        for channel in 0 ..< 4 {
+                            base.storeBytes(of: texel[channel], toByteOffset: row * rowBytes + column * 4 + channel, as: UInt8.self)
+                        }
+                    }
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+            guard adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 24)) else {
+                throw writer.error ?? FixtureError.writer
+            }
+        }
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        guard writer.status == .completed else { throw writer.error ?? FixtureError.writer }
+        return url
+    }
+
     private static func state() throws -> WPEParitySceneState {
         let json: [String: Any] = [
             "camera": ["center": "0 0 0"],

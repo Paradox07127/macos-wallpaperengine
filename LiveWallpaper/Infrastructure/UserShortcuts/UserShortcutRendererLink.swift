@@ -12,7 +12,7 @@ final class UserShortcutRendererLink {
         weak var icons: WPEUserShortcutIconStore?
         let wallpaperID: String
         var declared: Set<String>
-        /// Scene texture keys: their bound image goes to `icons` only, never to the script bridge.
+        /// Scene texture keys: their bound image or video goes to `icons` only, never to the script bridge.
         let textureKeys: Set<String>
     }
 
@@ -96,7 +96,9 @@ final class UserShortcutRendererLink {
             icons.setIcon(bindings[key].flatMap(UserShortcutIconRenderer.icon(for:)), forKey: key)
         }
         for key in registration.textureKeys {
-            icons.setIcon(bindings[key].flatMap(UserShortcutIconRenderer.sceneTexture(for:)), forKey: key)
+            let video = bindings[key].flatMap(UserShortcutIconRenderer.sceneVideo(for:))
+            icons.setVideo(video, forKey: key)
+            icons.setIcon(video == nil ? bindings[key].flatMap(UserShortcutIconRenderer.sceneTexture(for:)) : nil, forKey: key)
         }
     }
 

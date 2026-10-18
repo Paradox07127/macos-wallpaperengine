@@ -1,10 +1,12 @@
 #if !LITE_BUILD
+import AVFoundation
 import Foundation
 import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
 import Testing
+import UniformTypeIdentifiers
 
 @MainActor
 @Suite("User shortcut renderer link")
@@ -132,6 +134,102 @@ struct UserShortcutRendererLinkTests {
         try Self.writePNG(rgba: [200, 100, 50, 255], width: 1, height: 1, to: file)
         link.updateDeclaredKeys([], for: bridge)
         #expect(Self.hasIcon(icons, "background"), "an earlier decode failure must not stick once the file decodes")
+    }
+
+    @Test("A bound scene texture video reaches the renderer as a file, never as a decoded image; unplayable formats keep the fallback")
+    func sceneTextureVideoBindingPushesTheFile() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clip = folder.appendingPathComponent("clip.mp4")
+        let webm = folder.appendingPathComponent("clip.webm")
+        // A PNG under a video name: the image decoder would accept it, so an icon proves the video went through it.
+        for url in [clip, webm] {
+            try Self.writePNG(rgba: [1, 2, 3, 255], width: 1, height: 1, to: url)
+        }
+        let store = Self.makeStore()
+        try store.setFile(clip, arguments: nil, for: Self.key("w1", "background"))
+        let link = UserShortcutRendererLink(store: store)
+        let icons = try Self.makeIcons()
+        let bridge = WPEUserShortcutScriptBridge()
+
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: [], textureKeys: ["background"])
+
+        #expect(icons.videoURLs["background"]?.lastPathComponent == "clip.mp4")
+        #expect(!Self.hasIcon(icons, "background"), "a video must not go through the image decoder")
+
+        try store.setFile(webm, arguments: nil, for: Self.key("w1", "background"))
+        #expect(icons.videoURLs["background"] == nil, "AVFoundation can't open WebM, so it must not reach the player")
+        #expect(!Self.hasIcon(icons, "background"), "an unplayable video keeps the author's image")
+
+        try store.setFile(clip, arguments: nil, for: Self.key("w1", "background"))
+        store.clear(Self.key("w1", "background"))
+        #expect(icons.videoURLs["background"] == nil, "a cleared video must fall back to the author's image")
+        withExtendedLifetime(bridge) {}
+    }
+
+    @Test("The binding row diagnoses video files that will show the author's image instead", .timeLimit(.minutes(1)))
+    func sceneTextureVideoDiagnostics() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UserShortcutRendererLinkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let playable = folder.appendingPathComponent("playable.mov")
+        try await Self.writeVideo(to: playable)
+        let broken = folder.appendingPathComponent("broken.mp4")
+        try Data((0 ..< 2048).map { UInt8(truncatingIfNeeded: $0 &* 13) }).write(to: broken)
+        let webm = folder.appendingPathComponent("clip.webm")
+        try Data([0x1A, 0x45, 0xDF, 0xA3]).write(to: webm)
+        let png = folder.appendingPathComponent("still.png")
+        try Self.writePNG(rgba: [1, 2, 3, 255], width: 1, height: 1, to: png)
+
+        #expect(await SceneTextureVideo.problem(at: playable) == nil)
+        #expect(await SceneTextureVideo.problem(at: broken) == .unreadable)
+        #expect(await SceneTextureVideo.problem(at: webm) == .unsupportedFormat)
+        #expect(await SceneTextureVideo.problem(at: png) == nil, "images are not diagnosed as videos")
+
+        let store = Self.makeStore()
+        try store.setFile(broken, arguments: nil, for: Self.key("w1", "background"))
+        let binding = try #require(store.binding(for: Self.key("w1", "background")))
+        #expect(await SceneTextureVideo.problem(for: binding) == .unreadable, "the row reads the bound file through its bookmark")
+    }
+
+    @Test("The scene texture picker offers images and the video containers Wallpaper Engine accepts")
+    func sceneTexturePickerAcceptsVideos() throws {
+        for fileExtension in ["png", "jpg", "mp4", "webm", "mov", "m4v", "avi", "wmv", "mkv"] {
+            let type = try #require(UTType(filenameExtension: fileExtension))
+            #expect(SceneTextureBindingRow.allowedContentTypes.contains { type.conforms(to: $0) }, "\(fileExtension)")
+        }
+    }
+
+    /// A few frames of 16x16 H.264.
+    private static func writeVideo(to url: URL) async throws {
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 16, AVVideoHeightKey: 16,
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: 16, kCVPixelBufferHeightKey as String: 16,
+        ])
+        writer.add(input)
+        #expect(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        for frame in 0 ..< 4 {
+            while !input.isReadyForMoreMediaData {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            var pixelBuffer: CVPixelBuffer?
+            #expect(CVPixelBufferCreate(kCFAllocatorDefault, 16, 16, kCVPixelFormatType_32BGRA, nil, &pixelBuffer) == kCVReturnSuccess)
+            #expect(try adaptor.append(#require(pixelBuffer), withPresentationTime: CMTime(value: Int64(frame), timescale: 24)))
+        }
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        #expect(writer.status == .completed)
     }
 
     private static func writePNG(rgba: [UInt8], width: Int, height: Int, to url: URL) throws {

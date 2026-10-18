@@ -5,7 +5,8 @@ import LiveWallpaperProWPE
 import Metal
 import MetalPerformanceShaders
 
-/// Plays each video .tex of a scene into the fixed texture its draws sample.
+/// Plays each video .tex of a scene into the fixed texture its draws sample, and each video file the user bound to
+/// one of its scene textures.
 final class WPEParityVideoTextures {
     /// A video .tex as planned: the texture draws sample and the MP4 stream from its first mip.
     struct Stream {
@@ -88,10 +89,21 @@ final class WPEParityVideoTextures {
             let unsampled = submittedFrames - lastSampledFrame[index] > Self.unsampledFrameLimit
             video.source.setUnsampledPaused(boundSources.contains(index) && unsampled)
         }
+        for key in sampledUserVideos {
+            userVideos[key]?.lastSampledFrame = submittedFrames
+        }
+        sampledUserVideos.removeAll()
+        for video in userVideos.values {
+            video.source.setUnsampledPaused(submittedFrames - video.lastSampledFrame > Self.unsampledFrameLimit)
+        }
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        self.profile = profile
         for video in videos {
+            video.source.applyPerformanceProfile(profile)
+        }
+        for video in userVideos.values {
             video.source.applyPerformanceProfile(profile)
         }
     }
@@ -206,7 +218,86 @@ final class WPEParityVideoTextures {
         lastSampledFrame = Array(repeating: 0, count: videos.count)
         reportedLoops = videos.map(\.source.completedLoopCount)
         scaler = Self.scaler(device: device)
+        self.device = device
+        self.queue = queue
     }
+
+    /// A video file the user bound to a scene texture: muted, looping and wall-clock paced like a video .tex.
+    private struct UserVideo {
+        let url: URL
+        let source: WPEVideoTextureSource
+        let scoped: Bool
+        var lastSampledFrame: Int
+        /// Per rounded slot aspect (tenths; nil = keepaspect), that aspect's crop; nil until a frame fills it.
+        var crops: [Int?: (aspect: Float?, texture: MTLTexture?)] = [:]
+    }
+
+    private var userVideos: [String: UserVideo] = [:]
+    private var sampledUserVideos: Set<String> = []
+    private var encodedUserVideos: Set<String> = []
+    private var profile: WallpaperPerformanceProfile = .quality
+    private let device: MTLDevice
+    private let queue: MTLCommandQueue
+    /// Transparent black, what a slot samples between opening its video and the first decoded frame.
+    private lazy var blank: MTLTexture? = {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 1, height: 1,
+                                                                  mipmapped: false)
+        descriptor.usage = .shaderRead
+        let texture = device.makeTexture(descriptor: descriptor)
+        texture?.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 0, count: 4),
+                         bytesPerRow: 4)
+        return texture
+    }()
+
+    /// Property key → bound file; starts a player for each new file and retires the ones no longer bound.
+    func bindUserVideos(_ urls: [String: URL]) {
+        for (key, video) in userVideos where urls[key] != video.url {
+            Self.retire(video)
+            userVideos[key] = nil
+        }
+        for (key, url) in urls where userVideos[key] == nil {
+            let scoped = url.startAccessingSecurityScopedResource()
+            // Without an onInvalidate the source deletes its file on retirement: here that is the user's own video.
+            guard let source = try? WPEVideoTextureSource(device: device, videoURL: url, commandQueue: queue,
+                                                          onInvalidate: { _ in }) else {
+                if scoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+                continue
+            }
+            source.applyPerformanceProfile(profile)
+            userVideos[key] = UserVideo(url: url, source: source, scoped: scoped, lastSampledFrame: submittedFrames)
+        }
+    }
+
+    /// The video bound to `slot.key`, centre-cropped to the slot aspect; transparent black until its first frame.
+    /// nil (the authored texture) without a video, while the file is still opening, or once it can't be played.
+    func userTexture(for slot: WPEUserImageSlot) -> MTLTexture? {
+        guard let video = userVideos[slot.key] else { return nil }
+        sampledUserVideos.insert(slot.key)
+        guard video.source.openState == true else { return nil }
+        let fit = slot.aspect.map { Int(($0 * 10).rounded()) }
+        if let texture = video.crops[fit]?.texture {
+            return texture
+        }
+        if video.crops[fit] == nil {
+            userVideos[slot.key]?.crops[fit] = (slot.aspect, nil)
+        }
+        return blank
+    }
+
+    private static func retire(_ video: UserVideo) {
+        video.source.invalidate()
+        if video.scoped {
+            video.url.stopAccessingSecurityScopedResource()
+        }
+    }
+
+    #if DEBUG
+    func userVideoSourceForTesting(_ key: String) -> WPEVideoTextureSource? {
+        userVideos[key]?.source
+    }
+    #endif
 
     /// The default zero edge mode blends the border texels with transparent black.
     static func scaler(device: MTLDevice) -> MPSImageBilinearScale {
@@ -218,6 +309,9 @@ final class WPEParityVideoTextures {
     deinit {
         for video in videos {
             video.source.invalidate()
+        }
+        for video in userVideos.values {
+            Self.retire(video)
         }
     }
 
@@ -232,6 +326,42 @@ final class WPEParityVideoTextures {
             encoded.insert(index)
             try Self.stretch(frame, into: video.texture, scaler: scaler, commandBuffer: commandBuffer)
         }
+        for (key, video) in userVideos {
+            guard let frame = video.source.texture(at: 0) else { continue }
+            let staged = video.source.hasStagedFrameWork
+            if staged {
+                video.source.encodeStagedFrameWork(into: commandBuffer)
+                guard !video.source.stagedFrameWorkEncodingFailed else { continue }
+                encodedUserVideos.insert(key)
+            }
+            for (fit, crop) in video.crops where staged || crop.texture == nil {
+                userVideos[key]?.crops[fit]?.texture = centreCrop(frame, aspect: crop.aspect, into: crop.texture,
+                                                                  commandBuffer: commandBuffer)
+            }
+        }
+    }
+
+    /// `frame`'s centred region of the slot aspect, copied 1:1 into `texture` or into a new texture of that size.
+    private func centreCrop(_ frame: MTLTexture, aspect: Float?, into texture: MTLTexture?,
+                            commandBuffer: MTLCommandBuffer) -> MTLTexture? {
+        let rect = aspect.map { WPEUserShortcutIconImage.cropRect(width: frame.width, height: frame.height, aspect: $0) }
+            ?? (x: 0, y: 0, width: frame.width, height: frame.height)
+        var target = texture
+        if target?.width != rect.width || target?.height != rect.height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: rect.width,
+                                                                      height: rect.height, mipmapped: false)
+            descriptor.storageMode = .private
+            descriptor.usage = [.shaderRead, .shaderWrite]
+            target = device.makeTexture(descriptor: descriptor)
+        }
+        guard let target else { return nil }
+        var transform = MPSScaleTransform(scaleX: 1, scaleY: 1, translateX: -Double(rect.x), translateY: -Double(rect.y))
+        withUnsafePointer(to: &transform) { transform in
+            scaler.scaleTransform = transform
+            scaler.encode(commandBuffer: commandBuffer, sourceTexture: frame, destinationTexture: target)
+        }
+        scaler.scaleTransform = nil
+        return target
     }
 
     /// Call after every frame: `encode` only runs on a command buffer that is then committed, so the sources it
@@ -245,6 +375,14 @@ final class WPEParityVideoTextures {
             }
         }
         encoded.removeAll()
+        for (key, video) in userVideos {
+            if encodedUserVideos.contains(key) {
+                video.source.commitStagedFrameWork()
+            } else {
+                video.source.rollbackStagedFrameWork()
+            }
+        }
+        encodedUserVideos.removeAll()
     }
 
     /// Fills `texture` with `frame`, as WPE's TransferVideoFrame stretches into the fixed texture (1400f3480.c:18-52).

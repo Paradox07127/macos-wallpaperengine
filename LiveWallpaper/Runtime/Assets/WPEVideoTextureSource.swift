@@ -1115,6 +1115,15 @@ final class WPEVideoTextureSource {
 
     var isActivelyPlaying: Bool { !isInvalidated && (player?.rate ?? 0) > 0 }
 
+    /// nil while the player is still opening the file; false once it can't play it.
+    var openState: Bool? {
+        switch playerLooper?.status {
+        case .ready?: true
+        case .failed?, .cancelled?: false
+        default: nil
+        }
+    }
+
     /// Completed plays of the item; grows on every loop wrap.
     var completedLoopCount: Int {
         playerLooper?.loopCount ?? 0

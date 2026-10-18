@@ -264,6 +264,61 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertFalse(sizes.contains([12, 12]), "the uncropped user image must not be bound, got \(sizes)")
     }
 
+    func testSceneTextureVideoPlaysInItsSlotAndClearingRestoresTheAuthoredFallback() async throws {
+        let fixture = try makeFixture(scripted: false, sceneTextures: true)
+        let clip = fixture.root.appending(path: "user-clip.mp4")
+        try await Self.writeVideo(colours: [[255, 0, 0], [0, 0, 255]]).write(to: clip)
+        let images = WPEUserShortcutIconStore(device: fixture.device)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        var inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "scene-texture-video", cacheRelativePath: "scene-texture-video",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        inputs.userShortcutIcons = images
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run { try? FileManager.default.removeItem(at: fixtureRoot) }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
+
+        XCTAssertTrue(images.setVideo(clip, forKey: "texture-current"))
+        try await waitUntil("A scene texture video did not wake the parked product actor") { surface.lastIsPaused == false }
+        let playing = await actor.run { $0.parityDriverForTesting?.needsContinuousFrames == true }
+        XCTAssertTrue(playing, "a bound video must keep the scene producing frames")
+        // Panel 0 samples the slot; the clip turns from red to blue halfway through each loop.
+        var seen: [String] = []
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline, seen.count < 3 {
+            try await actorFrame(actor)
+            let pixels = try readBack(XCTUnwrap(layer.lastTexture))
+            let offset = (24 * 80 + 8) * 4
+            let (blue, green, red) = (Int(pixels[offset]), Int(pixels[offset + 1]), Int(pixels[offset + 2]))
+            let colour = red > 180 && green < 80 && blue < 80 ? "red" : blue > 180 && green < 80 && red < 80 ? "blue" : nil
+            if let colour, seen.last != colour {
+                seen.append(colour)
+            }
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        XCTAssertEqual(seen.count, 3, "the slot must sample the playing, looping clip, saw \(seen)")
+        let pixels = try readBack(XCTUnwrap(layer.lastTexture))
+        assertPanel(pixels, width: 80, panel: 1, artwork: nil, fallback: [0, 0, 128, 255])
+
+        XCTAssertTrue(images.setVideo(nil, forKey: "texture-current"))
+        try await actorFrame(actor)
+        try assertPanels(readBack(XCTUnwrap(layer.lastTexture)), width: 80, current: nil, previous: nil)
+    }
+
     func testOriginalEffectsConsumeSameFrameMediaAndScriptThenPreservePairAcrossReloadAndResize() async throws {
         let fixture = try makeFixture(scripted: true)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -942,8 +997,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         return data
     }
 
-    /// One second of 64x64 H.264 whose 24 frames are increasingly bright gray.
-    private static func writeVideo() async throws -> Data {
+    /// One second of 64x64 H.264 whose 24 frames are increasingly bright gray, or `colours` (RGB) in equal runs.
+    private static func writeVideo(colours: [[UInt8]] = []) async throws -> Data {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("parity-media-video-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: url) }
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -970,7 +1025,17 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                 == kCVReturnSuccess, let pixelBuffer else { throw MediaFixtureError.video }
             CVPixelBufferLockBaseAddress(pixelBuffer, [])
             if let base = CVPixelBufferGetBaseAddress(pixelBuffer) {
-                memset(base, Int32(40 + frame * 8), CVPixelBufferGetBytesPerRow(pixelBuffer) * 64)
+                let length = CVPixelBufferGetBytesPerRow(pixelBuffer) * 64
+                if colours.isEmpty {
+                    memset(base, Int32(40 + frame * 8), length)
+                } else {
+                    let rgb = colours[frame * colours.count / 24]
+                    for offset in stride(from: 0, to: length, by: 4) {
+                        for (channel, value) in [rgb[2], rgb[1], rgb[0], 255].enumerated() {
+                            base.storeBytes(of: value, toByteOffset: offset + channel, as: UInt8.self)
+                        }
+                    }
+                }
             }
             CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
             guard adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 24)) else {
