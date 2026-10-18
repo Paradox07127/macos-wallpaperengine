@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-/// One particle object instance simulated in WPE 2.8.42's order: SoA slots sized maxcount, children nested.
+/// One particle object instance simulated in WPE 2.8.42's order: SoA slots up to maxcount, children nested.
 /// Not Sendable because every system of a scene shares the scene's `WPEParityMT19937`.
 public struct WPEParityParticleSystem {
     /// `instanceoverride` multipliers; color is 0–1 and alpha/color seed each birth.
@@ -99,22 +99,23 @@ public struct WPEParityParticleSystem {
     public internal(set) var prewarmStepCount = 0
     public internal(set) var liveCount = 0
 
-    /// Slot arrays of length maxcount; a slot is live while `lifetime[slot] != 0`.
-    public internal(set) var position: [SIMD3<Float>]
-    public internal(set) var velocity: [SIMD3<Float>]
-    public internal(set) var rotation: [SIMD3<Float>]
-    public internal(set) var angularVelocity: [SIMD3<Float>]
-    public internal(set) var color: [SIMD3<Float>]
-    public internal(set) var initialColor: [SIMD3<Float>]
-    public internal(set) var alpha: [Float]
-    public internal(set) var initialAlpha: [Float]
-    public internal(set) var size: [Float]
-    public internal(set) var initialSize: [Float]
-    public internal(set) var age: [Float]
-    public internal(set) var lifetime: [Float]
+    /// Slot arrays, grown by doubling up to `capacity` and never shrunk; only indices below `highWater` are
+    /// valid to read. A slot is live while `lifetime[slot] != 0`.
+    public internal(set) var position: [SIMD3<Float>] = []
+    public internal(set) var velocity: [SIMD3<Float>] = []
+    public internal(set) var rotation: [SIMD3<Float>] = []
+    public internal(set) var angularVelocity: [SIMD3<Float>] = []
+    public internal(set) var color: [SIMD3<Float>] = []
+    public internal(set) var initialColor: [SIMD3<Float>] = []
+    public internal(set) var alpha: [Float] = []
+    public internal(set) var initialAlpha: [Float] = []
+    public internal(set) var size: [Float] = []
+    public internal(set) var initialSize: [Float] = []
+    public internal(set) var age: [Float] = []
+    public internal(set) var lifetime: [Float] = []
     /// The first U[0,1) drawn at birth; oscillate* and randomframe read it.
-    public internal(set) var birthU: [Float]
-    public internal(set) var frame: [Float]
+    public internal(set) var birthU: [Float] = []
+    public internal(set) var frame: [Float] = []
 
     /// `static` children in JSON order.
     public internal(set) var children: [WPEParityParticleSystem] = []
@@ -131,8 +132,8 @@ public struct WPEParityParticleSystem {
     var freeHint = 0
     var highWater = 0
     /// Birth-order list for the rope renderer (140236cd0.c:82-109).
-    var birthNext: [Int32]
-    var birthPrevious: [Int32]
+    var birthNext: [Int32] = []
+    var birthPrevious: [Int32] = []
     var birthHead: Int32 = -1
     var birthTail: Int32 = -1
     /// Ropetrail history ring per slot, pushed every length/segments seconds (1401d2340.c:776-779).
@@ -156,7 +157,7 @@ public struct WPEParityParticleSystem {
                                       count: WPEParityParticleControlPoint.count)
     var controlPointsSeeded = false
     /// Positions at the start of the operator pass: the path segment controlpointattract tests.
-    var previousPosition: [SIMD3<Float>]
+    var previousPosition: [SIMD3<Float>] = []
     /// One per initializer; only the mapsequence entries move theirs.
     var sequenceStates: [WPEParityParticleSequenceState]
     /// Frame counter boids splits its slot blocks by (ctx+0x144).
@@ -220,35 +221,14 @@ public struct WPEParityParticleSystem {
         frameContext.worldSpace = config.flags & 1 != 0
         frameContext.objectMatrix = frameContext.worldSpace
             ? self.instanceTransform : parentUpdateMatrix * self.instanceTransform
-        // count scales emission only; the slots stay at maxcount (14022ebe0.c:355).
-        let capacity = config.maxCount
-        self.capacity = capacity
-        position = Array(repeating: .zero, count: capacity)
-        velocity = position
-        rotation = position
-        angularVelocity = position
-        color = position
-        initialColor = position
-        alpha = Array(repeating: 0, count: capacity)
-        initialAlpha = alpha
-        size = alpha
-        initialSize = alpha
-        age = alpha
-        lifetime = alpha
-        birthU = alpha
-        frame = alpha
-        previousPosition = position
+        // count scales emission only; the capacity stays at maxcount (14022ebe0.c:355).
+        capacity = config.maxCount
         sequenceStates = config.initializers.map(Self.sequenceState)
-        birthNext = Array(repeating: -1, count: capacity)
-        birthPrevious = birthNext
         emitterStates = config.emitters.map(Self.emitterState)
         if let trail = config.renderers.first(where: { $0.kind == .ropeTrail }) {
             trailSegments = trail.segments
             trailInterval = trail.length / Float(trail.segments)
             trailTimer = trailInterval
-            trailPoints = Array(repeating: .zero, count: capacity * trail.segments)
-            trailCount = Array(repeating: 0, count: capacity)
-            trailHead = trailCount
         }
         initializeControlPoints()
         updateColorn(rootColornValid: rootColornValid)
@@ -647,8 +627,8 @@ public struct WPEParityParticleSystem {
         }
         for (childIndex, child) in config.children.enumerated() where child.trigger != .always {
             let group = childGroup[childIndex]
-            var index = 0
-            while index < eventChildren[group].count {
+            var kept = 0
+            for index in eventChildren[group].indices {
                 let slot = eventChildren[group][index].parentSlot
                 let sample = parentSample(slot: slot)
                 if child.trigger == .follow, sample != nil {
@@ -671,11 +651,13 @@ public struct WPEParityParticleSystem {
                     if child.trigger == .follow, slot != -1 {
                         releaseFollowReference(parentSlot: slot)
                     }
-                    finishedEventChildren[group].append(eventChildren[group].remove(at: index))
+                    finishedEventChildren[group].append(eventChildren[group][index])
                 } else {
-                    index += 1
+                    eventChildren[group].swapAt(kept, index)
+                    kept += 1
                 }
             }
+            eventChildren[group].removeLast(eventChildren[group].count - kept)
         }
     }
 
@@ -881,8 +863,11 @@ public struct WPEParityParticleSystem {
     /// (140238185/238bda → 23b340:281–283 → 1f87a0).
     mutating func spawn(_ emitter: WPEParityParticleEmitterConfig) {
         var slot = freeHint
-        while lifetime[slot] != 0 {
+        while slot < lifetime.count, lifetime[slot] != 0 {
             slot += 1
+        }
+        if slot == lifetime.count {
+            growSlots()
         }
         freeHint = slot + 1
         highWater = max(highWater, slot + 1)
@@ -930,6 +915,35 @@ public struct WPEParityParticleSystem {
         for (index, child) in config.children.enumerated() where child.trigger == .spawn || child.trigger == .follow {
             pendingEvents.append(PendingEvent(child: index, position: position[slot], slot: slot))
         }
+    }
+
+    /// New slots hold exactly what a restart writes, so growth is invisible to the simulation.
+    mutating func growSlots() {
+        let added = min(max(lifetime.count * 2, 1), capacity) - lifetime.count
+        func grow<Element>(_ array: inout [Element], by count: Int, with value: Element) {
+            array.append(contentsOf: repeatElement(value, count: count))
+        }
+        grow(&position, by: added, with: .zero)
+        grow(&velocity, by: added, with: .zero)
+        grow(&rotation, by: added, with: .zero)
+        grow(&angularVelocity, by: added, with: .zero)
+        grow(&color, by: added, with: .zero)
+        grow(&initialColor, by: added, with: .zero)
+        grow(&previousPosition, by: added, with: .zero)
+        grow(&alpha, by: added, with: 0)
+        grow(&initialAlpha, by: added, with: 0)
+        grow(&size, by: added, with: 0)
+        grow(&initialSize, by: added, with: 0)
+        grow(&age, by: added, with: 0)
+        grow(&lifetime, by: added, with: 0)
+        grow(&birthU, by: added, with: 0)
+        grow(&frame, by: added, with: 0)
+        grow(&birthNext, by: added, with: -1)
+        grow(&birthPrevious, by: added, with: -1)
+        guard trailSegments > 0 else { return }
+        grow(&trailPoints, by: added * trailSegments, with: .zero)
+        grow(&trailCount, by: added, with: 0)
+        grow(&trailHead, by: added, with: 0)
     }
 
     /// 14023b340.c:360-1032.

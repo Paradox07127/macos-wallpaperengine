@@ -324,6 +324,9 @@ final class ParityParticleSpaceTests: XCTestCase {
                 {"flags":\(parentWorld ? 1 : 0),"maxcount":3,"renderer":[],
                  "children":[{"name":"child","flags":1,"controlpointstartindex":6,"origin":"3 0 0"}]}
                 """, owner: translation(100), assets: ["child": childJSON])
+                while parent.lifetime.count < 3 {
+                    parent.growSlots()
+                }
                 parent.highWater = 3
                 parent.liveCount = 2
                 parent.lifetime[0] = 10
@@ -351,6 +354,9 @@ final class ParityParticleSpaceTests: XCTestCase {
         var parent = system("""
         {"maxcount":2,"renderer":[],"children":[{"name":"child","flags":1,"controlpointstartindex":6}]}
         """, assets: ["child": childJSON])
+        while parent.lifetime.count < 2 {
+            parent.growSlots()
+        }
         parent.highWater = 2
         parent.liveCount = 2
         parent.lifetime[0] = 10

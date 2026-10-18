@@ -1398,7 +1398,7 @@ final class ParityParticleSceneTests: XCTestCase {
         scene.advance(dt: 0.35, frames: ["5": .init()])
         let root = try XCTUnwrap(Self.root(scene))
         XCTAssertGreaterThan(root.liveCount, 0)
-        for slot in 0 ..< root.capacity where root.lifetime[slot] != 0 {
+        for slot in 0 ..< root.highWater where root.lifetime[slot] != 0 {
             XCTAssertLessThan(simd_reduce_max(abs(root.initialColor[slot] - SIMD3(21, 200, 0) / 255)), 1e-4,
                               "\(root.initialColor[slot])")
         }
