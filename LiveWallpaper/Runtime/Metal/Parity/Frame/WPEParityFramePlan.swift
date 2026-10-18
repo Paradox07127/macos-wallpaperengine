@@ -196,12 +196,11 @@ struct WPEParityFramePlan {
 
         // Main prepares utility materials from fixed quality/HDR switches, independently of live bloom.
         // Resolve both reachable branches in the existing cache; no texture or second artifact store is made.
-        for variant in Self.postVariants(post) {
-            let frame = try WPEParityFrameComposer.compose(
-                scene: Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), post: variant,
-                physicalBackbufferSize: physicalBackbufferSize,
-                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
-            )
+        for frame in try WPEParityFrameComposer.compose(
+            scene: Self.loaded(scene.scene(logicalViewport: SIMD2(width, height))), posts: Self.postVariants(post),
+            physicalBackbufferSize: physicalBackbufferSize,
+            physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+        ) {
             _ = Self.programs(frame, scene: scene, cache: &cache)
             constantBindings += WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values
         }
@@ -564,11 +563,10 @@ struct WPEParityFramePlan {
             let enabled = scene.scene.objects.flatMap { object in object.effects.map { visible(object.id, $0.id) } }
             guard enabledSets.insert(enabled).inserted else { continue }
             let description = Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height)))
-            for variant in variants {
-                let frame = try WPEParityFrameComposer.compose(
-                    scene: description, post: variant, physicalBackbufferSize: physicalBackbufferSize,
-                    physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
-                )
+            for frame in try WPEParityFrameComposer.compose(
+                scene: description, posts: variants, physicalBackbufferSize: physicalBackbufferSize,
+                physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
+            ) {
                 guard seen.insert(frame.operations.map(\.pass)).inserted else { continue }
                 let resolved = Self.programs(frame, scene: scene, cache: &cache)
                 probes.append((frame, resolved.programs, resolved.skipped))

@@ -32,9 +32,19 @@ public enum WPEParityFrameComposer {
                                physicalBackbufferSize: SIMD2<Int>? = nil,
                                physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
                                pixelScale: Double = 1) throws(WPEParityFrameCompositionError) -> WPEParityFrame {
-        guard scene.msaaSamples == post.msaaSampleCount else {
+        try compose(scene: scene, posts: [post], physicalBackbufferSize: physicalBackbufferSize,
+                    physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale)[0]
+    }
+
+    /// One frame per post, in order; the scene frame is built once and merged with each.
+    public static func compose(scene: WPEParitySceneDescription, posts: [WPEParityPostProcessConfig],
+                               physicalBackbufferSize: SIMD2<Int>? = nil,
+                               physicalCanvasSize: @escaping @Sendable (SIMD2<Int>) -> SIMD2<Int> = { $0 },
+                               pixelScale: Double = 1) throws(WPEParityFrameCompositionError) -> [WPEParityFrame] {
+        for post in posts where scene.msaaSamples != post.msaaSampleCount {
             throw .sampleCountMismatch(scene: scene.msaaSamples, post: post.msaaSampleCount)
         }
+        guard !posts.isEmpty else { return [] }
         let sceneFrame = WPEParitySceneFrameBuilder.build(
             scene, physicalBackbufferSize: physicalBackbufferSize,
             physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
@@ -42,11 +52,16 @@ public enum WPEParityFrameComposer {
         let actual = sceneFrame.resources.first { $0.id == WPEParitySceneResource.backbuffer }
         let sceneBackbuffer = actual.map { "\($0.width)x\($0.height) \($0.format)" }
             ?? "missing backbuffer"
-        let postBackbuffer = "\(post.backbufferWidth)x\(post.backbufferHeight) \(post.backbufferFormat)"
-        guard sceneBackbuffer == postBackbuffer else {
-            throw .backbufferMismatch(scene: sceneBackbuffer, post: postBackbuffer)
+        var frames: [WPEParityFrame] = []
+        frames.reserveCapacity(posts.count)
+        for post in posts {
+            let postBackbuffer = "\(post.backbufferWidth)x\(post.backbufferHeight) \(post.backbufferFormat)"
+            guard sceneBackbuffer == postBackbuffer else {
+                throw .backbufferMismatch(scene: sceneBackbuffer, post: postBackbuffer)
+            }
+            try frames.append(merge(sceneFrame, WPEParityPostProcessBuilder.build(post)))
         }
-        return try merge(sceneFrame, WPEParityPostProcessBuilder.build(post))
+        return frames
     }
 
     static func merge(_ sceneFrame: WPEParitySceneFrame,
