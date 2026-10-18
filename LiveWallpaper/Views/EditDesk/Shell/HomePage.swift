@@ -1166,10 +1166,10 @@ struct HomePage: View {
         }
     }
 
-    /// Drops the cover of a display that no longer has a wallpaper; true when one was dropped, so an
-    /// in-flight capture of the removed wallpaper can be superseded.
+    /// Drops the cover of a display that no longer has a wallpaper; true when it has none, so an
+    /// in-flight capture of the removed wallpaper is superseded even before its first cover landed.
     static func reconcileCover(_ display: inout StageDisplay, hasConfiguration: Bool) -> Bool {
-        guard !hasConfiguration, display.cover != nil else { return false }
+        guard !hasConfiguration else { return false }
         display.cover = nil
         return true
     }

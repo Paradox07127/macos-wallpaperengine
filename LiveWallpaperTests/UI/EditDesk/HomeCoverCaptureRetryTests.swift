@@ -83,6 +83,14 @@ struct HomeCoverCaptureRetryTests {
         #expect(display.cover == nil, "the detail top bar keeps showing the removed wallpaper")
     }
 
+    @Test("A display whose wallpaper was removed before its first cover landed stops that capture")
+    func aRemovedWallpaperWithoutCoverStopsItsCapture() {
+        var display = Self.display(cover: nil)
+        let superseded = HomePage.reconcileCover(&display, hasConfiguration: false)
+        #expect(superseded, "the first capture of the removed wallpaper lands after the removal")
+        #expect(display.cover == nil)
+    }
+
     @Test("A display still running a wallpaper keeps its cover while a new one is captured")
     func aRunningWallpaperKeepsItsCover() throws {
         let frame = try Self.pixel()

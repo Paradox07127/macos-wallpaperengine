@@ -93,7 +93,9 @@ struct BrowsePane: View {
     private var mainColumn: some View {
         gridColumn
             .onAppear { reloadInUseBadges() }
-            .onChange(of: screenManager.screens.map(\.configurationRevision)) { reloadInUseBadges() }
+            .onChange(of: Dictionary(screenManager.screens.map { ($0.id, $0.configurationRevision) }, uniquingKeysWith: { $1 })) {
+                reloadInUseBadges()
+            }
     }
 
     private var gridColumn: some View {
