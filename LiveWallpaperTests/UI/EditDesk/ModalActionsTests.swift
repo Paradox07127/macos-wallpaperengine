@@ -581,6 +581,17 @@ struct ModalActionsTests {
         }
     }
 
+    /// Which configuration changes recapture the cover is tested as a value (`coverSignature`) in `HomeCoverCaptureRetryTests`.
+    @Test("The stage follows each display's configuration revision rather than every configuration-change notification")
+    func stageFollowsConfigurationRevisions() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        #expect(
+            !home.contains("publisher(for: .wallpaperConfigurationDidChange)"),
+            "a volume or mute save still recaptures the cover through the change notification"
+        )
+        #expect(home.contains("configurationRevision"), "the stage never hears that a display's configuration was committed")
+    }
+
     @Test("A live frame handed to the modal is its preview, and nothing is decoded")
     func livePreviewSkipsTheDecode() async throws {
         let fixture = Fixture()
