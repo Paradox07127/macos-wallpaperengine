@@ -1369,13 +1369,17 @@ public enum WPEMdlParser {
         var vertices: [WPEPuppetVertex] = []
         vertices.reserveCapacity(Int(vertexCount))
         let vertexStart = reader.currentOffset
-
-        for _ in 0..<vertexCount {
-            vertices.append(try parseVertex(
-                attributes: vertexLayout.attributes,
-                auditRecorder: auditRecorder,
-                reader: &reader
-            ))
+        let attributes = vertexLayout.attributes
+        try reader.withUnsafeBytes(byteCount: Int(vertexByteCount)) { bytes in
+            for vertexIndex in 0 ..< Int(vertexCount) {
+                let vertexOffset = vertexIndex * vertexStride
+                vertices.append(parseVertex(
+                    attributes: attributes,
+                    auditRecorder: auditRecorder,
+                    bytes: UnsafeRawBufferPointer(rebasing: bytes[vertexOffset ..< vertexOffset + vertexStride]),
+                    fileOffset: vertexStart + vertexOffset
+                ))
+            }
         }
         let vertexStream = WPEPuppetVertexStream(data: reader.bytes(in: vertexStart ..< reader.currentOffset),
                                                  layout: vertexLayout)
@@ -1391,15 +1395,17 @@ public enum WPEMdlParser {
               Int(indexByteCount) <= reader.dataCount - reader.currentOffset else {
             throw WPEMdlParserError.invalidIndexBuffer(indexByteCount)
         }
-        let indexCount = indexByteCount / indexStride
-        var indices: [UInt32] = []
-        indices.reserveCapacity(Int(indexCount))
-        for _ in 0..<indexCount {
+        let indexCount = Int(indexByteCount / indexStride)
+        let indices: [UInt32] = try reader.withUnsafeBytes(byteCount: Int(indexByteCount)) { bytes in
             switch indexElementWidth {
             case .uint16:
-                indices.append(UInt32(try reader.readUInt16()))
+                (0 ..< indexCount).map {
+                    UInt32(UInt16(littleEndian: bytes.loadUnaligned(fromByteOffset: $0 * 2, as: UInt16.self)))
+                }
             case .uint32:
-                indices.append(try reader.readUInt32())
+                (0 ..< indexCount).map {
+                    UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: $0 * 4, as: UInt32.self))
+                }
             }
         }
         // The buffer goes to the GPU as written and the puppet vertex shader indexes `vertices[vertexID]` with it, so an index past the table is an out-of-bounds GPU read, not a later parse error.
@@ -1495,8 +1501,19 @@ public enum WPEMdlParser {
     private static func parseVertex(
         attributes: [WPEPuppetVertexAttribute],
         auditRecorder: WPEMdlParseAuditRecorder?,
-        reader: inout WPEMdlBinaryReader
-    ) throws -> WPEPuppetVertex {
+        bytes: UnsafeRawBufferPointer,
+        fileOffset: Int
+    ) -> WPEPuppetVertex {
+        func float(_ offset: Int) -> Float {
+            Float(bitPattern: UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self)))
+        }
+        func int32(_ offset: Int) -> Int32 {
+            Int32(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: Int32.self))
+        }
+        func recordSkip(_ label: @autoclosure () -> String, _ range: Range<Int>) {
+            auditRecorder?.recordKnownSkip(label: label(),
+                                           range: fileOffset + range.lowerBound ..< fileOffset + range.upperBound)
+        }
         var position = SIMD3<Float>(0, 0, 0)
         // Consumed by the 3D scene-model path only. `(0, 0, 1)` when unauthored:
         // generic2/generic4 normalize it, so a zero vector would produce NaN.
@@ -1507,17 +1524,16 @@ public enum WPEMdlParser {
         var hasPosition = false
         var hasTexcoord0 = false
         for attribute in attributes {
-            let (flag, size) = (attribute.flag, attribute.byteSize)
+            let (flag, size, at) = (attribute.flag, attribute.byteSize, attribute.byteOffset)
             switch flag {
             case WPEMdlMeshFlags.position where !hasPosition, WPEMdlMeshFlags.positionVec4 where !hasPosition:
-                position = try SIMD3<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat())
+                position = SIMD3<Float>(float(at), float(at + 4), float(at + 8))
                 hasPosition = true
                 if size > 12 {
-                    try skipKnownBytes(byteCount: size - 12, reader: &reader, auditRecorder: auditRecorder,
-                                       label: "MDLV vertex position w")
+                    recordSkip("MDLV vertex position w", at + 12 ..< at + size)
                 }
             case WPEMdlMeshFlags.normal:
-                normal = try SIMD3<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat())
+                normal = SIMD3<Float>(float(at), float(at + 4), float(at + 8))
                 // An authored zero is the same NaN as unauthored; a NaN compares false against the threshold, so finiteness is checked on its own.
                 let lengthSquared = simd_length_squared(normal)
                 if !lengthSquared.isFinite || lengthSquared < 1e-12 {
@@ -1525,21 +1541,17 @@ public enum WPEMdlParser {
                 }
             case WPEMdlMeshFlags.skinBlendIndices:
                 // BLENDINDICES is R32G32B32A32_UINT.
-                skinBlendIndices = try SIMD4<Int32>(reader.readInt32(), reader.readInt32(), reader.readInt32(),
-                                                    reader.readInt32())
+                skinBlendIndices = SIMD4<Int32>(int32(at), int32(at + 4), int32(at + 8), int32(at + 12))
             case WPEMdlMeshFlags.skinBlendWeights:
-                skinBlendWeights = try SIMD4<Float>(reader.readFloat(), reader.readFloat(), reader.readFloat(),
-                                                    reader.readFloat())
+                skinBlendWeights = SIMD4<Float>(float(at), float(at + 4), float(at + 8), float(at + 12))
             case _ where WPEMdlMeshFlags.texcoord0.contains(flag) && !hasTexcoord0:
-                uv = try SIMD2<Float>(reader.readFloat(), reader.readFloat())
+                uv = SIMD2<Float>(float(at), float(at + 4))
                 hasTexcoord0 = true
                 if size > 8 {
-                    try skipKnownBytes(byteCount: size - 8, reader: &reader, auditRecorder: auditRecorder,
-                                       label: "MDLV vertex texcoord0 zw")
+                    recordSkip("MDLV vertex texcoord0 zw", at + 8 ..< at + size)
                 }
             default:
-                try skipKnownBytes(byteCount: size, reader: &reader, auditRecorder: auditRecorder,
-                                   label: "MDLV vertex attribute 0x\(String(flag, radix: 16))")
+                recordSkip("MDLV vertex attribute 0x\(String(flag, radix: 16))", at ..< at + size)
             }
         }
 
@@ -2289,6 +2301,14 @@ private struct WPEMdlBinaryReader {
         let b2 = UInt32(try readUInt8())
         let b3 = UInt32(try readUInt8())
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    /// Hands `body` the next `byteCount` bytes and advances past them.
+    mutating func withUnsafeBytes<R>(byteCount: Int, _ body: (UnsafeRawBufferPointer) throws -> R) throws -> R {
+        try ensureAvailable(byteCount: byteCount)
+        let start = offset
+        offset += byteCount
+        return try data.withUnsafeBytes { try body(UnsafeRawBufferPointer(rebasing: $0[start ..< start + byteCount])) }
     }
 
     mutating func readInt32() throws -> Int32 {
