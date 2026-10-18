@@ -33,9 +33,8 @@ final class WPEParityCompressedTextureCache: Sendable {
     }
 
     /// `source` digests the TEX file bytes; `selection` is the chosen conditional variant flags, which change the
-    /// decoded texels without changing the file.
-    static func key(source: SHA256.Digest, selection: [UInt32: UInt32]?, imageID: Int,
-                    levels: [WPETexTextureMipmap], alpha: WPEParityTextureCompressor.AlphaMode) -> String {
+    /// decoded texels without changing the file. `levels` is the image's authored mip table, read without decoding.
+    static func key(source: SHA256.Digest, selection: [UInt32: UInt32]?, imageID: Int, levels: [WPETexMipmap]) -> String {
         let variants = (selection ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         let fields = [
             "schema=\(schema)",
@@ -46,7 +45,6 @@ final class WPEParityCompressedTextureCache: Sendable {
             "format=astc_4x4_ldr",
             "psnr=\(WPEParityTextureCompressor.minimumPSNR)",
             "threshold=\(WPEParityTextureCompressor.errorThreshold)",
-            "alpha=\(alpha.rawValue)",
             "size=\(levels.first.map { "\($0.width)x\($0.height)" } ?? "")",
             "os=\(ProcessInfo.processInfo.operatingSystemVersionString)",
         ]

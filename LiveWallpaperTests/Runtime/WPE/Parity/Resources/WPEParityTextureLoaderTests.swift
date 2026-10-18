@@ -649,6 +649,39 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         XCTAssertEqual(compressor.encodeCount, 1)
     }
 
+    func testCachedCompressedLoadUploadsTheCachedBlocksWithoutDecodingTheSource() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let data = tex(format: 0, images: [gradientChain(512, levels: 2)])
+        let directory = try cacheDirectory()
+        var loads: [(texture: MTLTexture, inflatedBytes: Int)] = []
+        for _ in 0 ..< 2 {
+            let meter = WPETexInflateMeter()
+            let compression = WPEParityTextureCompression(compressor: WPEParityTextureCompressor(),
+                                                          cache: WPEParityCompressedTextureCache(cachesURL: directory))
+            let image = try WPETexDecoder.$inflateMeter.withValue(meter) {
+                try WPEParityTextureLoader.load(span: WPEMappedByteSpan(data: data), device: device,
+                                                compression: compression)
+            }
+            loads.append((image.texture, meter.materializedMipBytes))
+        }
+        XCTAssertGreaterThan(loads[0].inflatedBytes, 0)
+        XCTAssertEqual(loads[1].inflatedBytes, 0, "the cached load decoded the source mips")
+        XCTAssertEqual(loads[1].texture.pixelFormat, .astc_4x4_ldr)
+        XCTAssertEqual(loads[1].texture.mipmapLevelCount, 2)
+        for level in 0 ..< 2 {
+            XCTAssertEqual(astcBlocks(loads[1].texture, level: level), astcBlocks(loads[0].texture, level: level),
+                           "mip \(level) differs from the encoded upload")
+        }
+    }
+
+    private func astcBlocks(_ texture: MTLTexture, level: Int) -> [UInt8] {
+        let (width, height) = (max(texture.width >> level, 1), max(texture.height >> level, 1))
+        let rowBytes = WPEParityTextureCompressor.blocksPerRow(width) * WPEParityTextureCompressor.blockBytes
+        var bytes = [UInt8](repeating: 0, count: WPEParityTextureCompressor.blockByteCount(width: width, height: height))
+        texture.getBytes(&bytes, bytesPerRow: rowBytes, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: level)
+        return bytes
+    }
+
     /// Smooth, opaque and distinct per call, so the chain passes the PSNR gate and no other test shares its bytes.
     private func gradientChain(_ size: Int, levels: Int) -> [Mip] {
         let salt = UInt8.random(in: 0 ... 63)
