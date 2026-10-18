@@ -28,7 +28,7 @@ final class ParityProgramBindingTests: XCTestCase {
     }
 
     /// Material and annotation names reach the same real RT binding/read; compiled activity is the app's separate
-    /// request fact. An unknown RT retains its identity and does not become an asset.
+    /// request fact. An RT name no frame resource declares binds as a texture asset.
     func testMipSnapshotDefaultsAndExplicitSlotsKeepTheSameDeclaredHistoryRead() throws {
         for effectPass in [false, true] {
             for explicit in [false, true] {
@@ -85,7 +85,7 @@ final class ParityProgramBindingTests: XCTestCase {
                 XCTAssertFalse(draw.reads.contains("_rt_Unknown"), "unknown producer stays unsupported: \(label)")
                 let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[operation])
                 XCTAssertEqual(binding.textures[1], .resource(WPEResourceID(name)), label)
-                XCTAssertEqual(binding.textures[2], .resource("_rt_Unknown"), label)
+                XCTAssertEqual(binding.textures[2], .asset("_rt_Unknown"), label)
                 let graph = try WPERenderGraphCompiler.compile(resources: frame.resources, operations: frame.operations)
                 let read = try XCTUnwrap(graph.accesses[operation].reads.first {
                     $0.subresource.resource == WPEResourceID(name)
@@ -399,8 +399,7 @@ final class ParityProgramBindingTests: XCTestCase {
         XCTAssertFalse(binding.depthWrite)
     }
 
-    /// The post graph owns FFB/bloom slots. RT-looking names must remain resources so missing reads cannot
-    /// masquerade as `materials/<RT>.tex` assets at readiness.
+    /// The post graph owns FFB/bloom slots; an RT name no frame resource declares binds as a texture asset.
     func testPostGraphReadsOverrideMaterialAssetsAndRetainResourceIdentity() throws {
         let (scene, frame) = try Self.postFixture(
             bloom: true, combineTextures: ["util/stale-scene", "lut/stale-bloom", "_rt_NotDeclared",
@@ -415,11 +414,48 @@ final class ParityProgramBindingTests: XCTestCase {
         }?.key)
         let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[operation])
         XCTAssertEqual(binding.textures, [0: .resource("_rt_FullFrameBuffer"), 1: .resource("_rt_Bloom"),
-                                          2: .resource("_rt_NotDeclared"), 3: .resource("backbuffer"),
+                                          2: .asset("_rt_NotDeclared"), 3: .resource("backbuffer"),
                                           4: .resource("_rt_FullFrameBuffer"), 5: .asset("util/free")])
         guard case let .draw(draw) = frame.operations[operation].kind else { return XCTFail("missing combine draw") }
         XCTAssertEqual(draw.reads.map(\.resource), ["_rt_FullFrameBuffer", "_rt_Bloom"])
         XCTAssertFalse(frame.resources.contains { $0.id == "_rt_NotDeclared" })
+    }
+
+    /// 1400ec220.c:223-234: a name the render-target cache misses loads as a texture file, so a missing one samples
+    /// the checker; only a name the frame declares stays a resource.
+    func testRenderTargetNameWithoutAFrameResourceBindsAsATextureAsset() throws {
+        let missing = "_rt_NotARenderTarget"
+        let declared: WPEResourceID = "_rt_FullFrameBuffer"
+        let (postScene, postFrame) = try Self.postFixture(bloom: true, combineTextures: ["", "", missing, "_rt_FullFrameBuffer"])
+        let combine = try XCTUnwrap(postFrame.draws.first { _, draw in
+            if case let .post(post) = draw {
+                post.shader == "combine"
+            } else {
+                false
+            }
+        }?.key)
+        let post = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: postFrame, scene: postScene)[combine])
+        XCTAssertEqual(post.textures[2], .asset(missing))
+        XCTAssertEqual(post.textures[3], .resource(declared))
+
+        let layer = ParitySceneDocuments.layer(effects: [
+            ParitySceneDocuments.effect(passes: [ParitySceneDocuments.pass("fx")]),
+        ])
+        let scene = try ParitySceneDocuments.programScene([layer], files: [
+            "materials/fx.json": #"""
+            {"passes":[{"shader":"fx","blending":"translucent","textures":[null,"\#(missing)","_rt_FullFrameBuffer"]}]}
+            """#,
+        ])
+        let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
+        XCTAssertTrue(frame.resources.contains { $0.id == declared })
+        XCTAssertFalse(frame.resources.contains { $0.id == WPEResourceID(missing) })
+        let effect = try XCTUnwrap(frame.draws.first { _, draw in
+            guard case let .scene(draw) = draw else { return false }
+            return draw.objectID == "7" && draw.effectID != nil
+        }?.key)
+        let binding = try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene)[effect])
+        XCTAssertEqual(binding.textures[1], .asset(missing))
+        XCTAssertEqual(binding.textures[2], .resource(declared))
     }
 
     private static func postFixture(bloom: Bool, correction: WPEParityColorCorrection = .init(),

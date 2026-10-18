@@ -104,7 +104,8 @@ public extension WPEParityProgramBuilder {
                 }
                 let (constants, names, uniforms) = resolve(material, assets: scene.assets,
                                                            layerColor: layerColor ?? fixedColor)
-                var slots = textures(names, draw: draw, object: object, imported: imported)
+                var slots = textures(names, draw: draw, object: object, imported: imported,
+                                     known: resources.union(draw.reads))
                 slots[0] = atlas ?? slots[0]
                 slots[1] = companion ?? slots[1]
                 // 140206ae0.c:344-352: MORPHING binds the puppet's morph texture to slot 5.
@@ -137,8 +138,7 @@ public extension WPEParityProgramBuilder {
                     let id = WPEResourceID(name)
                     if name == "previous" {
                         textures[slot] = draw.reads.first.map { .resource($0) }
-                    } else if name.hasPrefix("_rt_") || resources.contains(id) {
-                        // Undeclared RT reads must still fail the planner's graph-read check, not load an asset.
+                    } else if resources.contains(id) {
                         textures[slot] = .resource(id)
                     } else {
                         textures[slot] = .asset(name)
@@ -248,7 +248,8 @@ public extension WPEParityProgramBuilder {
 
     /// Effect FBO names resolve through the pass `binds`, which the frame lists after the composite in `reads`.
     private static func textures(_ names: [Int32: String], draw: WPEParitySceneDraw, object: WPEParitySceneObject?,
-                                 imported: Set<WPEResourceID>) -> [Int32: WPEParityProgramBinding.TextureSource] {
+                                 imported: Set<WPEResourceID>, known: Set<WPEResourceID>)
+        -> [Int32: WPEParityProgramBinding.TextureSource] {
         var textures: [Int32: WPEParityProgramBinding.TextureSource] = [:]
         // Slot 0 of a draw outside an effect is its first read: the layer image, the snapshot a compose layer draws
         // over, or the bit4 composite. A material without textures still reads its layer image. Particles and models
@@ -258,7 +259,8 @@ public extension WPEParityProgramBuilder {
         default: false
         }
         if !materialSlotsOnly, draw.effectID == nil, let first = draw.reads.first {
-            if imported.contains(first), let name = names[0], name.hasPrefix("_rt_") {
+            if imported.contains(first), let name = names[0], name.hasPrefix("_rt_"),
+               known.contains(WPEResourceID(name)) {
                 textures[0] = .resource(WPEResourceID(name))
             } else {
                 textures[0] = imported.contains(first) ? .imported(first, asset: names[0]) : .resource(first)
@@ -278,7 +280,7 @@ public extension WPEParityProgramBuilder {
                 textures[slot] = previous.map { .resource($0) }
             } else if let position = binds.firstIndex(of: name), position + bindsStart < draw.reads.count {
                 textures[slot] = .resource(draw.reads[position + bindsStart])
-            } else if name.hasPrefix("_rt_") {
+            } else if name.hasPrefix("_rt_"), known.contains(WPEResourceID(name)) {
                 textures[slot] = .resource(WPEResourceID(name))
             } else {
                 textures[slot] = .asset(name)

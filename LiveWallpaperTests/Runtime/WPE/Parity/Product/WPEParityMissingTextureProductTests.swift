@@ -45,6 +45,23 @@ extension WPEParitySceneDriverTests {
         }
     }
 
+    /// A `_rt_` name no render target of the scene answers to loads as a texture file (1400ec220.c:223-234), so both
+    /// binding kinds draw the 6×6 checker instead of skipping.
+    @MainActor @objc func testUndeclaredRenderTargetNameDrawsTheCheckerPlaceholder() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        let (imported, direct) = try await missingTextureRender(driver, device: device, texture: "_rt_NotARenderTarget",
+                                                                files: [:])
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+        for (operation, sampler) in [(imported, "g_Texture0"), (direct, "g_Texture1")] {
+            let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw, "\(operation)")
+            let texture = try XCTUnwrap(draw.textures[sampler], sampler)
+            XCTAssertEqual([texture.width, texture.height, texture.mipmapLevelCount], [6, 6, 1], sampler)
+        }
+    }
+
     /// A present file the decoder rejects stays a typed texture skip; only a missing file gets the placeholder.
     @MainActor @objc func testMalformedMaterialTextureStillSkipsTheDraw() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())

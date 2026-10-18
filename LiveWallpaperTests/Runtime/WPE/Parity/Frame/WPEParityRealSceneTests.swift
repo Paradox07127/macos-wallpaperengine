@@ -391,6 +391,24 @@ final class WPEParityRealSceneTests: XCTestCase {
         XCTAssertNotEqual(held, dragged, "the dragged bone did not reach g_Bones")
     }
 
+    /// Workshop 1979606285: the crystal material samples `_rt_Reflection`, which the scene never creates; WPE loads it
+    /// as a missing texture (1400ec220.c:223-234), so the crystal draws still run.
+    func testScene1979606285CrystalDrawsSampleTheUncreatedReflectionTarget() async throws {
+        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
+        let samples = home.appending(path: "Developer/wpe-fixtures/workshop-samples-2026-10-17/steamapps",
+                                     directoryHint: .isDirectory)
+        let driver = try await loadWorkshopScene("1979606285", library: samples)
+        defer { driver.cleanup() }
+        try await presentFrames(driver, count: 1, label: "scene 1979606285")
+        let renderer = try XCTUnwrap(driver.renderer)
+        let crystal = renderer.frames[0].draws.compactMap { operation, draw -> Int? in
+            guard case let .scene(scene) = draw, scene.shader.contains("crystal") else { return nil }
+            return operation
+        }
+        XCTAssertFalse(crystal.isEmpty, "no crystal draw planned")
+        XCTAssertEqual(crystal.compactMap { renderer.skipped[$0].map { "\($0)" } }, [])
+    }
+
     /// Loads a Workshop scene through the product driver, scripts included, from `library` (default: the Steam
     /// library's steamapps); WPE's own assets always come from the Steam library or WPE_ASSETS_DIR.
     private func loadWorkshopScene(_ workshopID: String, library: URL? = nil) async throws -> WPEParitySceneDriver {
