@@ -923,6 +923,28 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testMirrorSkipsUnchangedFieldSlotsAndReadsExternalFieldWrites() throws {
+        var scene = try Self.scene([
+            ["id": 1, "name": "T", "text": "Hi", "alpha": Self.scripted(1, """
+            export function update(value) { return thisLayer.pointsize / 100; }
+            """)],
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        let objectEntries = scene.engine.refresh.filter { entry in
+            guard case .object = entry else { return false }
+            return true
+        }.count
+        XCTAssertLessThan(objectEntries, scene.engine.refresh.count)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.engine.mirroredEntries, objectEntries, "an unchanged State still mirrors every slot")
+        scene.state.setScriptField("pointsize", of: "1", to: .vector(SIMD4(50, 0, 0, 0)), invalidating: .textLayout)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertGreaterThan(scene.engine.mirroredEntries, objectEntries)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 0.5)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testDateEpochMakesDateNowFollowEngineRuntime() throws {
         var scene = try Self.scene([
             Self.layer(1, "A", ["alpha": Self.scripted(0, """

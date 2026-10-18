@@ -298,6 +298,9 @@ public final class WPEParityScriptEngine {
     private let configuration: Configuration
     private var host: JSValue!
     private var tickFunction: JSValue!
+    private var setStringsFunction: JSValue!
+    /// String slot writes `sendStrings` has not yet delivered.
+    private var pendingStrings: [(slot: Int, value: String)] = []
     private var floats: UnsafeMutablePointer<Float>
     private var integers: UnsafeMutablePointer<Int32>
     private var dirtyFlags: UnsafeMutablePointer<UInt8>
@@ -309,7 +312,16 @@ public final class WPEParityScriptEngine {
     private var descriptors: [WPEParityScriptProperty] = []
     private var descriptorIndex: [WPEParityScriptProperty: Int] = [:]
     private var layers: [Layer] = []
-    private(set) var refresh: [Refresh] = []
+    private(set) var refresh: [Refresh] = [] {
+        didSet { mirrorPlan = nil }
+    }
+
+    private var mirrorPlan: MirrorPlan?
+    /// State's effect, constant and field generations when those slots last matched it; nil = mirror them all.
+    private var mirroredGenerations: MirroredGenerations?
+    private var flushedSlots: [Int] = []
+    /// Refresh entries the last mirror visited.
+    private(set) var mirroredEntries = 0
     private var effectKeys: [WPEParitySceneState.EffectKey] = []
     private var sceneBase = 0
     private var clock: Float = 0
@@ -694,42 +706,172 @@ public final class WPEParityScriptEngine {
     }
 
     private func flushWrites(to state: inout WPEParitySceneState) {
-        let count = Int(dirty[0])
-        guard count > 0 else { return }
-        for entry in 1 ... count {
-            let slot = Int(dirty[entry])
-            dirtyFlags[slot] = 0
-            apply(slot: slot, to: &state)
+        // State changed since the last mirror or flush by a writer other than this flush: those slots are stale.
+        if mirroredGenerations != MirroredGenerations(state) {
+            mirroredGenerations = nil
         }
-        dirty[0] = 0
+        let count = Int(dirty[0])
+        if count > 0 {
+            for entry in 1 ... count {
+                let slot = Int(dirty[entry])
+                dirtyFlags[slot] = 0
+                flushedSlots.append(slot)
+                apply(slot: slot, to: &state)
+            }
+            dirty[0] = 0
+        }
+        if mirroredGenerations != nil {
+            mirroredGenerations = MirroredGenerations(state)
+        }
+    }
+
+    private struct MirroredGenerations: Equatable {
+        let effects: Int
+        let constants: Int
+        let fields: Int
+
+        init(_ state: WPEParitySceneState) {
+            (effects, constants, fields) = (state.effectVisibilityGeneration, state.constantsGeneration,
+                                            state.scriptFieldsGeneration)
+        }
     }
 
     private func mirror(_ state: WPEParitySceneState) {
+        mirroredEntries = 0
         if mirroredMembershipGeneration != state.membershipGeneration {
             // A temporary projection of the existing wrapper slots; neither State nor Engine slots are reordered.
             let indices = Dictionary(layers.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
             host.invokeMethod("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
             mirroredMembershipGeneration = state.membershipGeneration
         }
+        let plan = mirrorPlan ?? makeMirrorPlan()
+        mirrorPlan = plan
+        let current = MirroredGenerations(state)
+        let effects = mirroredGenerations?.effects != current.effects
+        let constants = mirroredGenerations?.constants != current.constants
+        let fields = mirroredGenerations?.fields != current.fields
         // Module bodies run in the convenience init outside `run`; their unflushed writes must win over State.
-        for entry in refresh where dirtyFlags[entry.slot] == 0 {
+        for (id, entries) in plan.objects {
+            mirroredEntries += entries.count
+            guard let object = state.object(id) else { continue }
+            for (slot, property) in entries where dirtyFlags[slot] == 0 {
+                store(Self.value(property, of: object), at: slot)
+            }
+        }
+        if effects {
+            mirroredEntries += plan.effects.count
+            for entry in plan.effects where dirtyFlags[entry.slot] == 0 {
+                mirror(entry, from: state)
+            }
+        }
+        if constants {
+            for (key, entries) in plan.constants {
+                mirroredEntries += entries.count
+                guard let pass = state.passIndex(of: key) else { continue }
+                let values = state.constants(pass: pass)
+                for (slot, name) in entries where dirtyFlags[slot] == 0 {
+                    if let constant = values[name] {
+                        store(constant.value, at: slot)
+                    }
+                }
+            }
+        }
+        if fields {
+            mirroredEntries += plan.fields.count
+            for entry in plan.fields where dirtyFlags[entry.slot] == 0 {
+                mirror(entry, from: state)
+            }
+        }
+        // State compares -0 equal to 0 and canonically equal strings as equal, so it can keep a value whose bits
+        // differ from the slot a script wrote; a skipped category still restores those slots.
+        for slot in flushedSlots where dirtyFlags[slot] == 0 {
+            guard let entry = plan.entries[slot] else { continue }
+            switch entry {
+            case .effect where !effects, .constant where !constants, .field where !fields:
+                mirroredEntries += 1
+                mirror(entry, from: state)
+            default:
+                break
+            }
+        }
+        flushedSlots.removeAll(keepingCapacity: true)
+        mirroredGenerations = current
+        sendStrings()
+    }
+
+    /// `refresh` grouped for `mirror`: object entries by layer and constant entries by pass, in first-seen order.
+    private struct MirrorPlan {
+        var objects: [(id: String, entries: [(slot: Int, property: WPEParitySceneState.Property)])] = []
+        var effects: [Refresh] = []
+        var constants: [(key: WPEParityMaterialPassKey, entries: [(slot: Int, name: String)])] = []
+        var fields: [Refresh] = []
+        /// Effect, constant and field entries by slot.
+        var entries: [Int: Refresh] = [:]
+    }
+
+    private func makeMirrorPlan() -> MirrorPlan {
+        var plan = MirrorPlan()
+        var objectGroups: [String: Int] = [:]
+        var constantGroups: [WPEParityMaterialPassKey: Int] = [:]
+        for entry in refresh {
             switch entry {
             case let .object(slot, objectID, property):
-                if let value = state.value(property, of: objectID) {
-                    store(value, at: slot)
+                let group = objectGroups[objectID] ?? plan.objects.count
+                if group == plan.objects.count {
+                    objectGroups[objectID] = group
+                    plan.objects.append((objectID, []))
                 }
-            case let .effect(slot, key):
-                if let visible = state.isEffectVisible(key.effectID, of: key.objectID) {
-                    floats[slot * 4] = visible ? 1 : 0
-                }
+                plan.objects[group].entries.append((slot, property))
+            case .effect:
+                plan.effects.append(entry)
+                plan.entries[entry.slot] = entry
             case let .constant(slot, key, name):
-                if let constant = state.constant(name, of: key) {
-                    store(constant.value, at: slot)
+                plan.entries[slot] = entry
+                let group = constantGroups[key] ?? plan.constants.count
+                if group == plan.constants.count {
+                    constantGroups[key] = group
+                    plan.constants.append((key, []))
                 }
-            case let .field(slot, objectID, name):
-                if let value = state.scriptField(name, of: objectID) {
-                    store(value, at: slot)
-                }
+                plan.constants[group].entries.append((slot, name))
+            case .field:
+                plan.fields.append(entry)
+                plan.entries[entry.slot] = entry
+            }
+        }
+        return plan
+    }
+
+    /// `WPEParitySceneState.value(_:of:)` of an already looked-up object.
+    private static func value(_ property: WPEParitySceneState.Property,
+                              of object: WPEParitySceneState.Object) -> SIMD4<Float> {
+        switch property {
+        case .origin: SIMD4(object.origin, 0)
+        case .scale: SIMD4(object.scale, 0)
+        case .angles: SIMD4(object.angles, 0)
+        case .alpha: SIMD4(object.alpha, 0, 0, 0)
+        case .color: SIMD4(object.color, 0)
+        case .brightness: SIMD4(object.brightness, 0, 0, 0)
+        case .visible: SIMD4(object.visible ? 1 : 0, 0, 0, 0)
+        }
+    }
+
+    private func mirror(_ entry: Refresh, from state: WPEParitySceneState) {
+        switch entry {
+        case let .object(slot, objectID, property):
+            if let value = state.value(property, of: objectID) {
+                store(value, at: slot)
+            }
+        case let .effect(slot, key):
+            if let visible = state.isEffectVisible(key.effectID, of: key.objectID) {
+                floats[slot * 4] = visible ? 1 : 0
+            }
+        case let .constant(slot, key, name):
+            if let constant = state.constant(name, of: key) {
+                store(constant.value, at: slot)
+            }
+        case let .field(slot, objectID, name):
+            if let value = state.scriptField(name, of: objectID) {
+                store(value, at: slot)
             }
         }
     }
@@ -748,11 +890,50 @@ public final class WPEParityScriptEngine {
         case let .integer(integer): integers[slot] = integer
         case let .string(string):
             if host != nil {
-                let descriptor = descriptors[Int(slots[slot].descriptor)]
-                let values: Any = descriptor.stringValues.map { $0 as Any } ?? NSNull()
-                host.invokeMethod("setString", withArguments: [slot, string, values])
+                pendingStrings.append((slot, string))
             }
         }
+    }
+
+    /// Writes every string `store` queued into the VM with one call.
+    private func sendStrings() {
+        guard !pendingStrings.isEmpty else { return }
+        let vm = context.jsGlobalContextRef
+        // Protected while it is built: values referenced only from Swift memory are invisible to the collector.
+        let entries = JSObjectMakeArray(vm, 0, nil, nil)
+        JSValueProtect(vm, entries)
+        defer { JSValueUnprotect(vm, entries) }
+        var count: UInt32 = 0
+        func append(_ value: JSValueRef?) {
+            JSObjectSetPropertyAtIndex(vm, entries, count, value, nil)
+            count += 1
+        }
+        for (slot, string) in pendingStrings {
+            append(JSValueMakeNumber(vm, Double(slot)))
+            append(Self.makeString(vm, string))
+            if let values = descriptors[Int(slots[slot].descriptor)].stringValues {
+                let list = JSObjectMakeArray(vm, 0, nil, nil)
+                append(list)
+                for (index, value) in values.enumerated() {
+                    JSObjectSetPropertyAtIndex(vm, list, UInt32(index), Self.makeString(vm, value), nil)
+                }
+            } else {
+                append(JSValueMakeNull(vm))
+            }
+        }
+        pendingStrings.removeAll(keepingCapacity: true)
+        var argument: JSValueRef? = entries
+        var exception: JSValueRef?
+        JSObjectCallAsFunction(vm, setStringsFunction.jsValueRef, nil, 1, &argument, &exception)
+        if let exception {
+            record(JSValue(jsValueRef: exception, in: context).toString())
+        }
+    }
+
+    private static func makeString(_ vm: JSContextRef?, _ string: String) -> JSValueRef? {
+        let text = JSStringCreateWithCFString(string as CFString)
+        defer { JSStringRelease(text) }
+        return JSValueMakeString(vm, text)
     }
 
     private func seedMissingFields(state: inout WPEParitySceneState, first: Int = 0) {
@@ -779,7 +960,10 @@ public final class WPEParityScriptEngine {
         let base = floats + index * 4
         let value = SIMD4(base[0], base[1], base[2], base[3])
         let layer = slot.layer >= 0 ? layers[Int(slot.layer)] : nil
-        guard layer.map({ state.isAlive($0.id) }) ?? true else { return }
+        guard layer.map({ state.isAlive($0.id) }) ?? true else {
+            mirroredGenerations = nil
+            return
+        }
         switch descriptor.target {
         case let .object(property):
             if let id = layer?.id, let stateIndex = state.index(of: id) {
@@ -1531,6 +1715,7 @@ public final class WPEParityScriptEngine {
             .call(withArguments: [host])
         self.host = host
         tickFunction = host.forProperty("tick")
+        setStringsFunction = host.forProperty("setStrings")
         for (index, layer) in layers.enumerated() {
             addHostLayer(index, layer, state: state)
         }
@@ -1539,6 +1724,7 @@ public final class WPEParityScriptEngine {
                 store(.string(string), at: slot)
             }
         }
+        sendStrings()
         host.invokeMethod("setUserProperties", withArguments: [configuration.userPropertiesJSON])
     }
 
@@ -1675,6 +1861,7 @@ public final class WPEParityScriptEngine {
             store(value, at: slot)
         }
         seedMissingFields(state: &state.pointee, first: start)
+        mirroredGenerations = nil
         mirror(state.pointee)
         addHostLayer(index, layers[index], state: state.pointee)
         compileLayerBindings(index, source: config)

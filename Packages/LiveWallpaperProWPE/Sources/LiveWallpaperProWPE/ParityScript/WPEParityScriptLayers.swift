@@ -460,6 +460,10 @@ enum WPEParityScriptLayers {
     host.setString = function (slot, value, values) {
       S[slot] = values ? { value: values.includes(value) ? value : values[0], values } : value;
     };
+    // Flat (slot, value, values) triples.
+    host.setStrings = function (entries) {
+      for (let i = 0; i < entries.length; i += 3) host.setString(entries[i], entries[i + 1], entries[i + 2]);
+    };
     host.getString = function (slot) { return read(slot, 5, false); };
     host.setCommonOrder = function (indices) {
       const members = new Set();
