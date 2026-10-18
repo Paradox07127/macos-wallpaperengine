@@ -16,7 +16,9 @@ enum WPESceneParallaxBindingInference {
         to data: Data,
         schema: WallpaperEngineProjectPropertySchema
     ) -> Data {
-        guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        // Every `fieldLabels` key starts with "cameraparallax", so a scene without this text has nothing to repair.
+        guard data.range(of: Data("thisScene.cameraparallax".utf8)) != nil,
+              var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               var general = root["general"] as? [String: Any] else { return data }
         guard let source = String(bytes: data, encoding: .utf8) else { return data }
         var boundKeys: Set<String> = []
