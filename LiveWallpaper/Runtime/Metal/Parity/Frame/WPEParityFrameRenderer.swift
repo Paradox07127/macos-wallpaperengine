@@ -276,6 +276,8 @@ final class WPEParityFrameRenderer {
     private let particleObjects: [(id: String, index: Int?)]
     /// The draws the last frame encoded, by draw operation, in encode order.
     private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
+    /// `lastFrameDraws`' operations, so per-frame reads of them do not copy each draw.
+    private var lastFrameOperations: [Int] = []
     private var frameIndex = 0
     private var targetSamplers: [ObjectIdentifier: WPEParitySamplerState] = [:]
     private var resourceBindings: WPEParityResourceBindings = [:]
@@ -1762,9 +1764,9 @@ final class WPEParityFrameRenderer {
         }
         audio.advance(left: input.audio?.left ?? Self.silence, right: input.audio?.right ?? Self.silence,
                       dt: clock.frametime, silence: input.audio == nil)
-        var uniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
-                                             parallax: parallax, eyePosition: camera.eyePosition, view: camera.view,
-                                             audio: audio)
+        var frameUniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
+                                                  parallax: parallax, eyePosition: camera.eyePosition,
+                                                  view: camera.view, audio: audio)
         if let script {
             script.prepareFrame(frame: UInt64(frameIndex), dt: clock.frametime, runtime: clock.timeUniform,
                                 cursor: scriptCursor, world: camera.cursorWorld(normalizedPointer: scriptPointer),
@@ -1792,7 +1794,8 @@ final class WPEParityFrameRenderer {
         applyLayerFields()
         applyScriptBloom()
         try applyScriptLighting(camera: renderCamera)
-        uniforms.lights = lights
+        frameUniforms.lights = lights
+        let uniforms = frameUniforms
         applyScriptText()
         try replanRelaidTexts()
         // 14018aac0.c:206 keys with g_ViewForward, which comes from the pre-script camera (14017fa70.c:383-387).
@@ -1814,6 +1817,7 @@ final class WPEParityFrameRenderer {
             }
         }
         lastFrameDraws.removeAll(keepingCapacity: true)
+        lastFrameOperations.removeAll(keepingCapacity: true)
         let executor = graphs.executors[variant]
         executor.restoreResourceBindings(resourceBindings)
         // Encoding can throw after submitting a prefix. Carry every reached swap into the next frame too.
@@ -1864,7 +1868,7 @@ final class WPEParityFrameRenderer {
         defer {
             if submitted {
                 let bound = drawVideoSources ?? bindVideoSources()
-                videos.recordSampled(sources: lastFrameDraws.lazy.flatMap { bound[$0.operation] ?? [] })
+                videos.recordSampled(sources: lastFrameOperations.lazy.flatMap { bound[$0] ?? [] })
             }
         }
         let textures = frameTextures ?? targets.merging(planner.layerImages) { $1 }
@@ -1898,14 +1902,14 @@ final class WPEParityFrameRenderer {
                                             return WPEClearColor(red: Double(color.x), green: Double(color.y),
                                                                  blue: Double(color.z), alpha: Double(color.w))
                                         }, visit: { step, textures, arena, emit in
-                                            func encode(_ provided: WPEParityDraw, operation: Int) throws {
-                                                var provided = provided
+                                            func encode(_ provided: consuming WPEParityDraw, operation: Int) throws {
                                                 for (name, texture) in provided.textures {
                                                     if let sampler = targetSamplers[ObjectIdentifier(texture)] {
                                                         provided.samplers[name + "SamplerState"] = sampler
                                                     }
                                                 }
                                                 lastFrameDraws.append((operation, provided))
+                                                lastFrameOperations.append(operation)
                                                 try emit(provided)
                                             }
                                             let source = graphs.operations[variant][step]
@@ -1944,7 +1948,8 @@ final class WPEParityFrameRenderer {
                                                     fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
                                                 }
                                                 plan.applyRenderVarWrites(to: &renderVars)
-                                                let color = drawColor(operation: operation, variant: variant, plan: plan)
+                                                let frameDraw = graphs.layout.frames[variant].draws[operation]
+                                                let color = drawColor(frameDraw, plan: plan)
                                                 let provided = try plan.makeDraw(frame: uniforms, camera: renderCamera, variant: variant, textures: textures,
                                                                                  textureSlots: &textureSlots, puppets: puppets,
                                                                                  textureAnimations: textureAnimations, layers: live,
@@ -1954,7 +1959,7 @@ final class WPEParityFrameRenderer {
                                                                                  textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
                                                                                  mediaTexture: { croppedMediaTexture($0, aspect: $1) },
                                                                                  userShortcutTexture: { videos.userTexture(for: $0) ?? shortcutIcons?.texture(for: $0) })
-                                                guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
+                                                guard case let .scene(description)? = frameDraw,
                                                       description.target == WPEParitySceneResource.shadowAtlas else {
                                                     try encode(provided, operation: operation)
                                                     return
@@ -1979,8 +1984,8 @@ final class WPEParityFrameRenderer {
     }
 
     /// Text background brightness has no layout hook. Consume it here without rebuilding glyph geometry or atlases.
-    private func drawColor(operation: Int, variant: Int, plan: WPEParityFrameDrawPlan) -> SIMD4<Float>? {
-        guard case let .scene(description)? = graphs.layout.frames[variant].draws[operation],
+    private func drawColor(_ frameDraw: WPEParityFrameDraw?, plan: WPEParityFrameDrawPlan) -> SIMD4<Float>? {
+        guard case let .scene(description)? = frameDraw,
               description.geometry == .textBackground else {
             return plan.layerColor.map { state.layerColor(at: $0.object) }
         }

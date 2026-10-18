@@ -209,14 +209,11 @@ struct WPEParityFrameDrawPlan {
                 state.constants[stage]?["g_Alpha"] = .float(color.w)
             }
         }
-        var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                 constants: state.constants, uniforms: state.uniforms, textures: state.textures,
-                                 samplers: samplers, vertexBuffer: vertices, primitiveType: .triangle,
-                                 vertexCount: vertexCount)
-        draw.indexBuffer = indices
-        draw.indexCount = indexCount
-        draw.indexType = indexType
-        return draw
+        return WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
+                             constants: state.constants, uniforms: state.uniforms, textures: state.textures,
+                             samplers: samplers, vertexBuffer: vertices, primitiveType: .triangle,
+                             vertexCount: vertexCount, indexBuffer: indices, indexCount: indexCount,
+                             indexType: indexType)
     }
 
     func applyRenderVarWrites(to state: inout WPEParityRenderVarState) {
@@ -289,14 +286,11 @@ struct WPEParityFrameDrawPlan {
             "g_RenderVar0": .vector([rv0.x, rv0.y, rv0.z, rv0.w]),
             "g_RenderVar1": .vector([rv1.x, rv1.y, rv1.z, rv1.w]),
         ]
-        var draw = WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
-                                 constants: state.constants.mapValues { $0.merging(values) { $1 } },
-                                 uniforms: state.uniforms, textures: state.textures, samplers: samplers,
-                                 vertexBuffer: allocation.buffer,
-                                 primitiveType: .point, vertexCount: vertices.count)
-        draw.vertexBufferOffset = allocation.offset
-        draw.dropsWhenArenaIsFull = true
-        return draw
+        return WPEParityDraw(pipeline: pipeline, depthStencil: depthStencil, rasterizer: rasterizer,
+                             constants: state.constants.mapValues { $0.merging(values) { $1 } },
+                             uniforms: state.uniforms, textures: state.textures, samplers: samplers,
+                             vertexBuffer: allocation.buffer, vertexBufferOffset: allocation.offset,
+                             primitiveType: .point, vertexCount: vertices.count, dropsWhenArenaIsFull: true)
     }
 
     private func replacementTextures(mediaTexture: (WPEMediaSystemTexture, Float?) -> MTLTexture?,
@@ -379,21 +373,22 @@ struct WPEParityFrameDrawPlan {
         for (name, slot) in pipeline.textureTransforms where spriteFrame(slot) == nil && extras[name] == nil {
             extras[name] = textureSlots[name]
         }
+        let stages = pipeline.geometry == nil ? Self.meshStages : Self.geometryStages
         var stageConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
-        for stage in pipeline.geometry == nil ? Self.meshStages : Self.geometryStages {
+        stageConstants.reserveCapacity(stages.count)
+        for stage in stages {
             stageConstants[stage] = constants[stage] ?? [:]
         }
         if let animator = puppetID.flatMap({ puppets[$0] }) {
             stageConstants[.vertex, default: [:]].merge(animator.values) { $1 }
         }
-        var boundTextures: [String: MTLTexture] = [:]
-        for (name, source) in textures[variant] {
+        var boundTextures: [String: MTLTexture] = try textures[variant].mapValues { source in
             switch source {
             case let .resource(id):
                 guard let texture = table[id] else { throw WPEParityGraphExecutionError.missingTexture(id) }
-                boundTextures[name] = texture
+                return texture
             case let .image(texture):
-                boundTextures[name] = texture
+                return texture
             }
         }
         boundTextures.merge(spriteTextures) { $1 }

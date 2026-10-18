@@ -136,6 +136,7 @@ struct WPEParityDrawEncoder {
         }
 
         var textureStages: [ObjectIdentifier: (MTLTexture, MTLRenderStages)] = [:]
+        textureStages.reserveCapacity(draw.textures.count)
         if let offset = try encodeArguments(draw.pipeline.vertex, stages: emulation == nil ? .vertex : .object,
                                             constants: draw.constants[.vertex], draw: draw, frame: frame,
                                             textureStages: &textureStages) {

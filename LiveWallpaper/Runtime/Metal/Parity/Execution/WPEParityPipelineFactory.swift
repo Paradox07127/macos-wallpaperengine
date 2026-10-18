@@ -35,7 +35,7 @@ enum WPEParityExecutionError: Error, Equatable {
 }
 
 /// A render pipeline plus the per-stage layouts the draw encoder needs to fill MSC argument buffers.
-struct WPEParityPipeline {
+final class WPEParityPipeline {
     struct Stage {
         let reflection: WPEStageReflection
         let bindingPlan: WPEStageBindingPlan
