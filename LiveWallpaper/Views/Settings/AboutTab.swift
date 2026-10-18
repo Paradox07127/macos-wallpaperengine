@@ -59,6 +59,14 @@ extension GeneralSettingsView {
 
                 UpdateStatusLine()
                     .padding(.top, 2)
+
+                HStack(spacing: 6) {
+                    Text("Update channel")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                    updateChannelPicker
+                        .controlSize(.small)
+                }
             }
         }
     }

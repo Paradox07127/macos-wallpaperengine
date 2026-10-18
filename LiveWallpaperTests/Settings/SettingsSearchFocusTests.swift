@@ -43,8 +43,8 @@ struct SettingsSearchFocusTests {
         let focus = try Self.focus(.performancePower, "pause")
         #expect(focus?.anchor == .performancePause)
         #expect(focus?.rows == [
-            "Pause on full-screen apps", "Pause in Low Power Mode", "Pause when windows cover the desktop",
-            "Pause on battery", "Application Pause Rules",
+            "Pause on full-screen apps", "Pause when an app window is visible", "Pause in Low Power Mode",
+            "Pause when windows cover the desktop", "Pause on battery", "Application Pause Rules",
         ])
         #expect(focus?.scrollRow == "Pause on full-screen apps")
     }

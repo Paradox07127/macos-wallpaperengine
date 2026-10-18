@@ -6,6 +6,24 @@ import SwiftUI
 #endif
 
 extension GeneralSettingsView {
+    /// Shared by the General and About tabs. Saves in the binding: an `.onChange` would only run on the tab on screen.
+    var updateChannelPicker: some View {
+        Picker("", selection: Binding(
+            get: { updateChannel },
+            set: { channel in
+                guard channel != updateChannel else { return }
+                updateChannel = channel
+                SparkleUpdaterController.shared.updateChannel = channel
+            }
+        )) {
+            Text("Stable").tag(UpdateChannel.stable)
+            Text("Beta").tag(UpdateChannel.beta)
+        }
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel(Text("Update channel"))
+    }
+
     @ViewBuilder
     var generalSection: some View {
         Section {
@@ -75,16 +93,7 @@ extension GeneralSettingsView {
                 title: "Update channel",
                 info: "Beta builds arrive before stable releases and may be less reliable."
             ) {
-                Picker("", selection: $updateChannel) {
-                    Text("Stable").tag(UpdateChannel.stable)
-                    Text("Beta").tag(UpdateChannel.beta)
-                }
-                .labelsHidden()
-                .fixedSize()
-                .onChange(of: updateChannel) { _, channel in
-                    SparkleUpdaterController.shared.updateChannel = channel
-                }
-                .accessibilityLabel(Text("Update channel"))
+                updateChannelPicker
             }
 
             SettingRow(
