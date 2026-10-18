@@ -309,8 +309,7 @@ struct WallpaperAutomationSheet: View {
         .frame(width: size.width, height: size.height)
         .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
         .onAppear(perform: load)
-        .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
-            guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
+        .onChange(of: screen.configurationRevision) {
             Self.endTrialIfSwitched(
                 &preview, shownBeforeTrial: &shownBeforeTrial,
                 currentSerial: manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial

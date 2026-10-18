@@ -905,6 +905,22 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("Resetting every wallpaper session invalidates each display's configuration readers")
+    func resettingSessionsInvalidatesConfigurationReaders() async throws {
+        try await Self.runWithSeededConfiguration(videoVolume: 0.9) { manager, screen in
+            @MainActor final class Changes { var fired = false }
+            let changes = Changes()
+            withObservationTracking {
+                _ = manager.getConfiguration(for: screen)
+            } onChange: {
+                MainActor.assumeIsolated { changes.fired = true }
+            }
+
+            manager.resetAllWallpaperSessions()
+            #expect(changes.fired, "a session reset left this display's configuration readers stale")
+        }
+    }
+
     @Test("updateVideoVolume mutates configuration and posts a change notification")
     func updateVideoVolumeForwardsThroughCoordinator() async throws {
         try await Self.runWithSeededConfiguration(videoVolume: 0.9) { manager, screen in

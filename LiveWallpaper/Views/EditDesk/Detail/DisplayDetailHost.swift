@@ -172,10 +172,7 @@ struct DisplayDetailHost: View {
             .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { reloadDraft(for: screen) }
             .onChange(of: screenManager.wallpaperSessionStateVersion) { reloadDraft(for: screen) }
             .onChange(of: screenManager.monitorOverlay(for: screen)) { overlaySession?.refreshAppliedConfiguration() }
-            .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
-                guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
-                reloadDraft(for: screen)
-            }
+            .onChange(of: screen.configurationRevision) { reloadDraft(for: screen) }
     }
 
     private func presentations(_ content: some View, for screen: Screen) -> some View {

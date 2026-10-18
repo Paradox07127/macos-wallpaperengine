@@ -213,7 +213,7 @@ extension ScreenManager {
         wallpaperLoads.clear(for: screen)
         let commit: @MainActor (_ saves: Bool) -> Bool = { [weak self, weak screen] saves in
             guard let self, let screen, !isTerminating, !isUserAbsent, isStillIntended() else { return false }
-            // Marked before the save: the automation panel reads the serial in the change notification.
+            // Marked before the save: the automation panel reads the serial when the configuration revision changes.
             if let source {
                 noteAutomaticSwitch(on: screen, source: source)
             }

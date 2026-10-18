@@ -565,6 +565,22 @@ struct ModalActionsTests {
         }
     }
 
+    @Test("Views refresh from each display's configuration revision, not the deferred change notification")
+    func viewsRefreshFromConfigurationRevision() throws {
+        for path in [
+            "LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift",
+            "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift",
+            "LiveWallpaper/Views/Workshop/BrowsePane.swift",
+        ] {
+            let source = try RepositoryRoot.source(path)
+            #expect(
+                !source.contains("publisher(for: .wallpaperConfigurationDidChange)"),
+                Comment(rawValue: "\(path) refreshes a tick late from the change notification")
+            )
+            #expect(source.contains("configurationRevision"), Comment(rawValue: "\(path) never observes a configuration revision"))
+        }
+    }
+
     @Test("A live frame handed to the modal is its preview, and nothing is decoded")
     func livePreviewSkipsTheDecode() async throws {
         let fixture = Fixture()

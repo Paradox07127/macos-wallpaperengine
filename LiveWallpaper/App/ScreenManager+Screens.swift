@@ -192,6 +192,7 @@ extension ScreenManager {
         let snapshot = screens
         for screen in snapshot {
             releaseRuntimeSession(screen)
+            screen.configurationRevision &+= 1
         }
         Task { @MainActor in
             for screen in snapshot {
