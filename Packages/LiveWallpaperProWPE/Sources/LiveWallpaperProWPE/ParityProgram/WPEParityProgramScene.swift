@@ -146,7 +146,10 @@ public struct WPEParityProgramScene: Sendable {
         for (index, image) in document.imageObjects.enumerated() {
             let isModel = image.imageRelativePath.lowercased().hasSuffix(".mdl")
             let modelFile = isModel
-                ? assets.data(image.imageRelativePath).flatMap { try? WPEMdlParser.parse(data: $0) } : nil
+                ? assets.data(image.imageRelativePath).flatMap {
+                    // Model draws upload `vertexStream`; `vertices` is only their fallback when a mesh has no stream.
+                    try? WPEMdlParser.parse(data: $0, decodesVertices: false)
+                } : nil
             if !isModel {
                 // FUN_1402222a0 draws models with g_Color4 = 1.
                 let color = SIMD3<Float>(image.color) * (flags.hdr ? Float(image.brightness) : 1)

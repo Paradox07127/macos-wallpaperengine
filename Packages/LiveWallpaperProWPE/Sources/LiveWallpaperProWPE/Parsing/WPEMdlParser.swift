@@ -1018,20 +1018,22 @@ public enum WPEMdlParser {
     private static let maxMeshCount: UInt32 = 4_096
     private static let maxBoneCount: UInt32 = 4_096
 
-    public static func parse(data: Data) throws -> WPEPuppetModel {
-        try parse(data: data, auditRecorder: nil)
+    /// `decodesVertices: false` leaves each mesh's `vertices` empty; its `vertexStream` still carries the bytes.
+    public static func parse(data: Data, decodesVertices: Bool = true) throws -> WPEPuppetModel {
+        try parse(data: data, decodesVertices: decodesVertices, auditRecorder: nil)
     }
 
     public static func parse(data: Data, audit: inout WPEMdlParseAudit?) throws -> WPEPuppetModel {
         audit = nil
         let auditRecorder = WPEMdlParseAuditRecorder(dataCount: data.count)
-        let model = try parse(data: data, auditRecorder: auditRecorder)
+        let model = try parse(data: data, decodesVertices: true, auditRecorder: auditRecorder)
         audit = auditRecorder.makeAudit()
         return model
     }
 
     private static func parse(
         data: Data,
+        decodesVertices: Bool,
         auditRecorder: WPEMdlParseAuditRecorder?
     ) throws -> WPEPuppetModel {
         var reader = WPEMdlBinaryReader(data: data)
@@ -1068,6 +1070,7 @@ public enum WPEMdlParser {
                 headerMeshFlags: headerMeshFlags,
                 skinCount: skinCount,
                 meshIndex: meshIndex,
+                decodesVertices: decodesVertices,
                 auditRecorder: auditRecorder,
                 reader: &reader
             ))
@@ -1317,6 +1320,7 @@ public enum WPEMdlParser {
         headerMeshFlags: UInt32,
         skinCount: UInt32,
         meshIndex: Int,
+        decodesVertices: Bool,
         auditRecorder: WPEMdlParseAuditRecorder?,
         reader: inout WPEMdlBinaryReader
     ) throws -> WPEPuppetMesh {
@@ -1367,19 +1371,23 @@ public enum WPEMdlParser {
         }
         let vertexCount = vertexByteCount / UInt32(vertexStride)
         var vertices: [WPEPuppetVertex] = []
-        vertices.reserveCapacity(Int(vertexCount))
         let vertexStart = reader.currentOffset
         let attributes = vertexLayout.attributes
-        try reader.withUnsafeBytes(byteCount: Int(vertexByteCount)) { bytes in
-            for vertexIndex in 0 ..< Int(vertexCount) {
-                let vertexOffset = vertexIndex * vertexStride
-                vertices.append(parseVertex(
-                    attributes: attributes,
-                    auditRecorder: auditRecorder,
-                    bytes: UnsafeRawBufferPointer(rebasing: bytes[vertexOffset ..< vertexOffset + vertexStride]),
-                    fileOffset: vertexStart + vertexOffset
-                ))
+        if decodesVertices {
+            vertices.reserveCapacity(Int(vertexCount))
+            try reader.withUnsafeBytes(byteCount: Int(vertexByteCount)) { bytes in
+                for vertexIndex in 0 ..< Int(vertexCount) {
+                    let vertexOffset = vertexIndex * vertexStride
+                    vertices.append(parseVertex(
+                        attributes: attributes,
+                        auditRecorder: auditRecorder,
+                        bytes: UnsafeRawBufferPointer(rebasing: bytes[vertexOffset ..< vertexOffset + vertexStride]),
+                        fileOffset: vertexStart + vertexOffset
+                    ))
+                }
             }
+        } else {
+            try reader.skip(byteCount: Int(vertexByteCount))
         }
         let vertexStream = WPEPuppetVertexStream(data: reader.bytes(in: vertexStart ..< reader.currentOffset),
                                                  layout: vertexLayout)
