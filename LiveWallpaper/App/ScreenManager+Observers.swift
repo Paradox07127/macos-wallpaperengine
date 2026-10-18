@@ -558,7 +558,7 @@ extension ScreenManager {
 
     func captureDesktopSnapshotsForLockIfNeeded() {
         guard !isTerminating else { return }
-        guard SystemUserPresenceProbe.shared.screenLockState() == .unlocked else { return }
+        guard userPresenceProbe.screenLockState() == .unlocked else { return }
         let globalSettings = SettingsManager.shared.loadGlobalSettings()
         guard globalSettings.preservePlaybackOnLock else { return }
 
@@ -570,8 +570,14 @@ extension ScreenManager {
         for screen in screens {
             guard native?.ownsDisplay(screen.id, now: Date()) != true else { continue }
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-                  config.wallpaperType == .video,
-                  config.setAsLockScreen else { continue }
+                  LockScreenSnapshotCoordinator.shouldCapture(
+                    globallyEnabled: wallpapersGloballyEnabled,
+                    userPaused: !(screen.playbackController?.userIntendsToPlay ?? true),
+                    suspended: !(suspendReasonsByScreen[screen.id] ?? []).isEmpty,
+                    userAbsent: isUserAbsent,
+                    wallpaperType: config.wallpaperType,
+                    setAsLockScreen: config.setAsLockScreen
+                  ) else { continue }
             Task { await extractLockScreenFrame(for: screen) }
         }
     }

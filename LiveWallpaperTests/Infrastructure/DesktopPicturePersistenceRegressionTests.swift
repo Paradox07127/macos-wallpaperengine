@@ -30,8 +30,13 @@ struct DesktopPicturePersistenceRegressionTests {
             #expect(result == .captured)
         }
         #expect(Set(installed).count == 2, "Each refresh must have a fresh URL to bypass macOS image caching")
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LiveWallpaper/DesktopPictures", isDirectory: true)
-        #expect(installed.allSatisfy { $0.deletingLastPathComponent() == support }, "Installed images must outlive temporary-directory cleanup")
+        #expect(installed.allSatisfy { $0.deletingLastPathComponent() == DesktopPictureFrameExtractor.picturesDirectory })
+    }
+
+    @Test("Under a test process the pictures live in the redirected configuration root, not the user's container")
+    func picturesDirectoryFollowsConfigurationRoot() {
+        let root = ConfigurationDirectory().root
+        #expect(DesktopPictureFrameExtractor.picturesDirectory == root.appendingPathComponent("DesktopPictures", isDirectory: true))
+        #expect(root.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path))
     }
 }

@@ -5,9 +5,8 @@ import LiveWallpaperCore
 
 @MainActor
 enum DesktopPictureFrameExtractor {
-    static var picturesDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LiveWallpaper/DesktopPictures", isDirectory: true)
+    nonisolated static var picturesDirectory: URL {
+        ConfigurationDirectory().root.appendingPathComponent("DesktopPictures", isDirectory: true)
     }
 
     /// Returning true as soon as the player had an item, before decode/encode/write/install, would let every async failure below reach the log while the UI played a captured animation.
@@ -60,55 +59,71 @@ enum DesktopPictureFrameExtractor {
     ) async -> Outcome {
         let request = (latestRequest[screenID] ?? 0) &+ 1
         latestRequest[screenID] = request
+        let cgImage: CGImage
         do {
-            let cgImage = try await frame()
-            guard latestRequest[screenID] == request else { return .superseded }
-            let nsImage = NSImage(
-                cgImage: cgImage,
-                size: NSSize(width: cgImage.width, height: cgImage.height)
-            )
-
-            // A fresh URL prevents macOS from reusing a cached image, including after relaunch.
-            let pictureURL = picturesDirectory
-                .appendingPathComponent("LiveWallpaper_LockScreen_\(screenID)_\(UUID().uuidString).png")
-
-            guard let tiffData = nsImage.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
-                Logger.error("Failed to encode desktop picture frame for screen \(screenID)", category: .screenManager)
-                return .encodingFailed
-            }
-
-            do {
-                // `.atomic` writes a uniquely named sibling and renames it over the target, so the system never reads a half-written PNG.
-                try FileManager.default.createDirectory(at: picturesDirectory, withIntermediateDirectories: true)
-                try pngData.write(to: pictureURL, options: .atomic)
-            } catch {
-                // Distinct from the decode failure below: the frame was read
-                // fine and the disk refused it.
-                Logger.error("Failed to write desktop picture frame: \(error.localizedDescription)", category: .screenManager)
-                return .installFailed
-            }
-
-            do {
-                guard let nsScreen else { throw CocoaError(.fileNoSuchFile) }
-                try install(pictureURL, nsScreen)
-                removeOlderPictures(for: screenID, keeping: pictureURL)
-                Logger.info("Updated desktop picture for screen \(screenID)", category: .screenManager)
-                return .captured
-            } catch {
-                try? FileManager.default.removeItem(at: pictureURL)
-                Logger.error("Failed to set desktop picture: \(error.localizedDescription)", category: .screenManager)
-                return .installFailed
-            }
+            cgImage = try await frame()
         } catch {
             Logger.error("Failed to extract desktop picture frame: \(error.localizedDescription)", category: .screenManager)
             return .noFrameAvailable
         }
+        guard latestRequest[screenID] == request else { return .superseded }
+
+        let pictureURL: URL
+        do {
+            pictureURL = try await writePicture(cgImage, screenID: screenID)
+        } catch WriteFailure.encoding {
+            Logger.error("Failed to encode desktop picture frame for screen \(screenID)", category: .screenManager)
+            return .encodingFailed
+        } catch {
+            Logger.error("Failed to write desktop picture frame: \(error.localizedDescription)", category: .screenManager)
+            return .installFailed
+        }
+        // Encoding and writing suspended this request too; a newer one may have installed meanwhile.
+        guard latestRequest[screenID] == request else {
+            await removePicture(at: pictureURL)
+            return .superseded
+        }
+
+        do {
+            guard let nsScreen else { throw CocoaError(.fileNoSuchFile) }
+            try install(pictureURL, nsScreen)
+        } catch {
+            await removePicture(at: pictureURL)
+            Logger.error("Failed to set desktop picture: \(error.localizedDescription)", category: .screenManager)
+            return .installFailed
+        }
+        await removeOlderPictures(for: screenID, keeping: pictureURL)
+        Logger.info("Updated desktop picture for screen \(screenID)", category: .screenManager)
+        return .captured
+    }
+
+    private enum WriteFailure: Error {
+        case encoding
+    }
+
+    @concurrent
+    private nonisolated static func writePicture(_ image: CGImage, screenID: CGDirectDisplayID) async throws -> URL {
+        guard let pngData = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+            throw WriteFailure.encoding
+        }
+        let directory = picturesDirectory
+        // A fresh URL prevents macOS from reusing a cached image, including after relaunch.
+        let pictureURL = directory
+            .appendingPathComponent("LiveWallpaper_LockScreen_\(screenID)_\(UUID().uuidString).png")
+        // `.atomic` writes a uniquely named sibling and renames it over the target, so the system never reads a half-written PNG.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try pngData.write(to: pictureURL, options: .atomic)
+        return pictureURL
+    }
+
+    @concurrent
+    private nonisolated static func removePicture(at url: URL) async {
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// Keep the installed image and one previous image; failed installs never change either file.
-    private static func removeOlderPictures(for screenID: CGDirectDisplayID, keeping current: URL) {
+    @concurrent
+    private nonisolated static func removeOlderPictures(for screenID: CGDirectDisplayID, keeping current: URL) async {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey]
         let pictures = (try? FileManager.default.contentsOfDirectory(
             at: picturesDirectory, includingPropertiesForKeys: Array(keys)
