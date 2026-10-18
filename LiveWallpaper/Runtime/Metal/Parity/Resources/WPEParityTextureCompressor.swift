@@ -123,9 +123,13 @@ final class WPEParityTextureCompressor: Sendable {
         let chunks = max(1, (count + chunkTexels - 1) / chunkTexels)
         return [Result](unsafeUninitializedCapacity: chunks) { buffer, initialized in
             guard let base = buffer.baseAddress else { return }
-            DispatchQueue.concurrentPerform(iterations: chunks) { chunk in
-                let start = chunk * chunkTexels
-                (base + chunk).initialize(to: body(start ..< min(start + chunkTexels, count)))
+            withoutActuallyEscaping(body) { body in
+                // concurrentPerform joins every iteration before returning; each writes only its own slot.
+                nonisolated(unsafe) let (base, body) = (base, body)
+                DispatchQueue.concurrentPerform(iterations: chunks) { chunk in
+                    let start = chunk * chunkTexels
+                    (base + chunk).initialize(to: body(start ..< min(start + chunkTexels, count)))
+                }
             }
             initialized = chunks
         }
