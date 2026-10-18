@@ -212,8 +212,7 @@ final class VideoRenderer: @unchecked Sendable {
                 var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
                 guard CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
                                                                imageBuffer: buffer, formatDescription: format, sampleTiming: &timing,
-                                                               sampleBufferOut: &sample) == noErr else { return }
-                guard let sample else { return }
+                                                               sampleBufferOut: &sample) == noErr, let sample else { return }
                 if first {
                     renderer.flush()
                     if let timebase {

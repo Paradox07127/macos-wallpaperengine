@@ -58,11 +58,14 @@ final class WallpaperExportService {
         case preparationBusy
         case invalidPreparationOptions
         case liveWebUnsupported
+        case sceneSourceUnavailable
 
         var errorDescription: String? {
             switch self {
             case .unsupportedContent:
                 String(localized: "Only video wallpapers can be added to System Wallpaper.", bundle: .appLanguage)
+            case .sceneSourceUnavailable:
+                String(localized: "The scene source could not be opened. Check its location and access permission.", bundle: .appLanguage)
             case let .packageEntryMissing(name):
                 String(
                     localized: "The video “\(name)” is missing from its Workshop package.",
@@ -117,6 +120,10 @@ final class WallpaperExportService {
     @ObservationIgnored private var preparationTask: Task<Void, Error>?
     @ObservationIgnored private var preparingItemID: String?
     @ObservationIgnored var onItemPublished: (@MainActor (String) -> Void)?
+    @ObservationIgnored var onHeartbeatRefreshed: (@MainActor () -> Void)?
+
+    /// Items with this ID prefix are copies the selected tile made; nothing else may use it, because unselected ones are deleted.
+    static let selectionCopyIDPrefix = "selected-"
 
     static func sourceKey(for content: WallpaperContent) throws -> String {
         let encoder = JSONEncoder()
@@ -124,14 +131,29 @@ final class WallpaperExportService {
         return try SHA256.hash(data: encoder.encode(content)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The beat has no per-display choice, so with different choices on several displays every serving display counts.
+    func showsSelectedTile(on displayID: UInt32) -> Bool {
+        guard let heartbeat, isFresh(heartbeat), heartbeat.showsChoice(SystemWallpaperManifest.selectedChoiceID) else { return false }
+        return heartbeat.activeDisplayIDs?.contains(displayID) ?? true
+    }
+
     func selectItem(_ itemID: String, for displayID: UInt32) throws {
-        try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+        let manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
             var manifest = try loadManifestForMutation()
             guard manifest.items.contains(where: { $0.id == itemID }) else { throw ServiceError.unsupportedContent }
             manifest.selectedItemID = itemID
             manifest.displaySelections[String(displayID)] = itemID
             try writeManifest(manifest)
+            let selected = Set(manifest.displaySelections.values)
+            for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
+                manifest = try SystemWallpaperLibrary.remove(
+                    id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) }
+                ) ?? manifest
+            }
+            return manifest
         }
+        items = manifest.items
+        refreshDiskUsage()
         postLibraryChanged()
     }
 
@@ -258,6 +280,7 @@ final class WallpaperExportService {
         heartbeat = loadHeartbeat()
         providerIsRunning = heartbeat?.provider.map { dependencies.isProviderRunning($0.pid) } ?? true
         maintenance.considerAutomaticRecovery(service: self)
+        onHeartbeatRefreshed?()
     }
 
     /// Idempotent: both System Wallpaper screens call it, and the watch outlives either.
@@ -893,11 +916,8 @@ final class WallpaperExportService {
     }
 
     private func refreshDiskUsage() {
-        let manager = FileManager.default
-        let files = (try? manager.contentsOfDirectory(
-            at: videosDirectory,
-            includingPropertiesForKeys: [.fileSizeKey]
-        )) ?? []
+        let files = FileManager.default.enumerator(at: videosDirectory, includingPropertiesForKeys: [.fileSizeKey])?
+            .compactMap { $0 as? URL } ?? []
         diskUsageBytes = files.reduce(Int64(0)) { total, file in
             total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }

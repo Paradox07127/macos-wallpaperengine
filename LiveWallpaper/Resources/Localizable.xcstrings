@@ -71,41 +71,6 @@
         }
       }
     },
-    "Prepare this web wallpaper in System Wallpaper › Add Wallpaper first. The selected tile will follow it when the video copy is ready." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prepare this web wallpaper in System Wallpaper › Add Wallpaper first. The selected tile will follow it when the video copy is ready."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先在“系统壁纸 › 添加壁纸”中准备此网页壁纸。视频副本准备好后，所选壁纸图块会自动跟随。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請先在「系統桌布 › 加入桌布」中準備此網頁桌布。影片副本準備好後，所選桌布圖塊會自動跟隨。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まず「システム壁紙 › 壁紙を追加」でこのWeb壁紙を準備してください。動画コピーの準備ができると、選択中の壁紙タイルに反映されます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prepara primero este fondo web en Fondo del sistema › Añadir fondo. La ficha seleccionada lo mostrará cuando la copia de vídeo esté lista."
-          }
-        }
-      }
-    },
     "%lld × %lld px" : {
       "extractionState" : "manual",
       "localizations" : {

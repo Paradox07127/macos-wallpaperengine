@@ -15,13 +15,13 @@ enum SystemWallpaperScenePreparation {
             .first { $0.origin.workshopID == descriptor.workshopID }?.origin
         guard let support = WPEPathSafety.defaultApplicationSupportRoot(fileManager: .default),
               WPEPathSafety.isSafeCacheRelativePath(descriptor.cacheRelativePath) else {
-            throw WallpaperExportService.ServiceError.unsupportedContent
+            throw WallpaperExportService.ServiceError.sceneSourceUnavailable
         }
         let cache = support.appendingPathComponent(descriptor.cacheRelativePath)
         guard let assets = AmbientWallpaperSessionBuilder().sceneAssets(
             descriptor: descriptor, origin: origin, cacheURL: cache,
             fileManager: .default, onOriginBookmarkRefresh: { _, _ in }
-        ) else { throw WallpaperExportService.ServiceError.unsupportedContent }
+        ) else { throw WallpaperExportService.ServiceError.sceneSourceUnavailable }
         let mounts = WPEDependencyMountResolver().mounts(dependencyWorkshopIDs: descriptor.dependencyWorkshopIDs, origin: origin)
         return SystemWallpaperSceneSource(
             descriptor: descriptor,

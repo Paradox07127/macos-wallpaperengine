@@ -25,8 +25,8 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     nonisolated(unsafe) var agentProxyProvider: (() -> WallpaperExtensionProxyXPCProtocol?)?
 
     private static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
-    private nonisolated(unsafe) static var systemLocked = false
-    private nonisolated(unsafe) static var systemAsleep = false
+    private nonisolated(unsafe) static var systemLocked = false // read and written only on `queue` (com.loomscreen.wallpaper.lifecycle)
+    private nonisolated(unsafe) static var systemAsleep = false // read and written only on `queue` (com.loomscreen.wallpaper.lifecycle)
 
     static func updateSystemState(registry: SurfaceRegistry, store: SharedLibraryStore,
                                   locked: Bool? = nil, asleep: Bool? = nil) {

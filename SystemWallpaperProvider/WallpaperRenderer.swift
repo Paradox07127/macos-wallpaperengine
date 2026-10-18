@@ -9,7 +9,7 @@ import Metal
 #endif
 
 /// Keeps video and live scenes behind the same surface lifecycle used by WallpaperAgent.
-final class WallpaperRenderer: @unchecked Sendable {
+final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAllocatedUnfairLock, `video` on its own render queue, `activeScenes` MainActor
     var layer: CALayer {
         video.layer
     }

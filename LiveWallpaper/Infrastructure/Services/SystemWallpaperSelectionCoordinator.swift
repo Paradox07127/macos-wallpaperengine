@@ -9,11 +9,17 @@ final class SystemWallpaperSelectionCoordinator {
         let title: String
         let key: String
         let clearGeneration: Int
+
+        var token: String {
+            "\(clearGeneration)-\(key)"
+        }
     }
 
     private let service: WallpaperExportService
     private var selections: [UInt32: Selection] = [:]
     private var pending: [UInt32: Selection] = [:]
+    /// Selection token last acted on per display, so heartbeat refreshes do not retry a finished or failed attempt.
+    private var attempted: [UInt32: String] = [:]
     private var worker: Task<Void, Never>?
     private var preparingDisplay: UInt32?
 
@@ -25,6 +31,13 @@ final class SystemWallpaperSelectionCoordinator {
                 if case .html = selection.configuration.activeWallpaper {
                     pending[display] = selection
                 }
+            }
+            startWorker()
+        }
+        service.onHeartbeatRefreshed = { [weak self] in
+            guard let self else { return }
+            for (display, selection) in selections where attempted[display] != selection.token {
+                pending[display] = selection
             }
             startWorker()
         }
@@ -66,19 +79,18 @@ final class SystemWallpaperSelectionCoordinator {
                     while service.preparationProgress != nil {
                         try await Task.sleep(for: .milliseconds(100))
                     }
-                    guard isCurrent(selection, display: display) else { continue }
+                    guard isCurrent(selection, display: display), service.showsSelectedTile(on: display) else { continue }
+                    attempted[display] = selection.token
                     let itemID: String
                     if let prepared = service.items.first(where: { $0.sourceKey == selection.key }) {
                         itemID = prepared.id
                     } else {
                         guard #available(macOS 26.0, *) else { continue }
+                        // Web capture is never started here; `onItemPublished` follows a copy prepared by hand.
                         if case .html = selection.configuration.activeWallpaper {
-                            service.reportPublishFailures([
-                                String(localized: "Prepare this web wallpaper in System Wallpaper › Add Wallpaper first. The selected tile will follow it when the video copy is ready.", bundle: .appLanguage),
-                            ])
                             continue
                         }
-                        itemID = "selected-" + selection.key
+                        itemID = WallpaperExportService.selectionCopyIDPrefix + selection.key
                         preparingDisplay = display
                         defer { preparingDisplay = nil }
                         try await service.prepareAndPublish(

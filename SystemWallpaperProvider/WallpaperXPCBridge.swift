@@ -134,7 +134,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     private var powerObserver: PowerConditionObserver?
     private var sessionObserver: SessionConditionObserver?
 
-    private final class SessionConditionObserver: @unchecked Sendable {
+    private final class SessionConditionObserver: @unchecked Sendable { // `observers` is only touched in MainActor `start()`; the rest are `let`
         private let registry: SurfaceRegistry
         private let store: SharedLibraryStore
         private var observers: [NSObjectProtocol] = []

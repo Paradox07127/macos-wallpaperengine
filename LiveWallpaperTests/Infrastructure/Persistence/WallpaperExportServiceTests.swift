@@ -16,6 +16,7 @@ struct WallpaperExportServiceTests {
         let first = try rig.makeVideoBookmark(named: "first.mp4")
         let second = try rig.makeVideoBookmark(named: "second.mp4")
         let other = try rig.makeVideoBookmark(named: "other.mp4")
+        try rig.showSelectedTile(on: [42, 43])
         let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
         defer { coordinator.stop() }
         coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
@@ -43,13 +44,12 @@ struct WallpaperExportServiceTests {
         let rig = try makeRig()
         defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let content = WallpaperContent.html(source: .inline("<canvas></canvas>"), config: .default)
+        try rig.showSelectedTile(on: [42])
         let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
         defer { coordinator.stop() }
         coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: content), title: "Web")
-        for _ in 0 ..< 100 where rig.service.lastError == nil {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(rig.service.lastError?.contains("Prepare this web wallpaper") == true)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(rig.service.lastError == nil, "an unprepared web wallpaper is skipped, not reported")
         #expect(rig.service.items.isEmpty)
         let key = try WallpaperExportService.sourceKey(for: content)
         let item = SystemWallpaperManifest.Item(id: "prepared-web", title: "Web", fileName: "web.mov", addedAt: Date(), sourceKey: key)
@@ -64,6 +64,84 @@ struct WallpaperExportServiceTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(try rig.manifestOnDisk().displaySelections["42"] == item.id)
+    }
+
+    @Test("The selected tile is followed only on displays where the system shows it")
+    func selectionFollowsOnlyShownTile() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let elsewhere = try rig.makeVideoBookmark(named: "elsewhere.mp4")
+        let shown = try rig.makeVideoBookmark(named: "shown.mp4")
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        // The worker takes displays in ascending order, so 41 is decided before 42 lands.
+        coordinator.follow(ScreenConfiguration(screenID: 41, wallpaper: elsewhere.content), title: "Elsewhere")
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: shown.content), title: "Shown")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        let manifest = try rig.manifestOnDisk()
+        #expect(manifest.displaySelections["41"] == nil, "a display not showing the selected tile was written")
+        #expect(manifest.items.map(\.title) == ["Shown"], "a display not showing the selected tile was copied")
+
+        try rig.showSelectedTile(on: [41, 42])
+        rig.service.refreshProviderStatus()
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["41"] != nil }
+        #expect(try rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 41)?.title == "Elsewhere")
+    }
+
+    @Test("A superseded follow copy is removed once no display selects it, and added items stay")
+    func supersededFollowCopyRemoved() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let added = try rig.makeVideoBookmark(named: "added.mp4", label: "Added")
+        try await rig.service.publish(bookmark: added)
+        let first = try rig.makeVideoBookmark(named: "first.mp4")
+        let second = try rig.makeVideoBookmark(named: "second.mp4")
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        let firstCopy = try #require(rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42))
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: second.content), title: "Second")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != firstCopy.id }
+        let manifest = try rig.manifestOnDisk()
+        #expect(Set(manifest.items.map(\.title)) == ["Added", "Second"], "the superseded copy is still in the library")
+        #expect(!FileManager.default.fileExists(atPath: rig.videosDirectory.appendingPathComponent(firstCopy.fileName).path))
+        #expect(rig.service.items == manifest.items)
+    }
+
+    @Test("A followed copy is named after the wallpaper, not the display")
+    func followedCopyTitle() {
+        let video = ScreenConfiguration(screenID: 42, wallpaper: .video(bookmarkData: Data("clip".utf8), packageEntryName: nil))
+        let fileName: (Data) -> String? = { _ in "Ocean Waves.mp4" }
+        #expect(ScreenManager.systemWallpaperTitle(for: video, libraryBookmarks: [], bookmarkName: fileName) == "Ocean Waves")
+        let labelled = WallpaperBookmark(label: "Beach", content: video.activeWallpaper)
+        #expect(ScreenManager.systemWallpaperTitle(for: video, libraryBookmarks: [labelled], bookmarkName: fileName) == "Beach")
+    }
+
+    @Test("Disk usage counts the files inside published scene bundles")
+    func diskUsageCountsSceneBundles() throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bundle = rig.videosDirectory.appendingPathComponent("live.scene/Assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try Data(count: 4096).write(to: bundle.appendingPathComponent("scene.pkg"))
+        let item = SystemWallpaperManifest.Item(id: "live", title: "Live", fileName: "live.scene", addedAt: Self.referenceNow)
+        try SystemWallpaperCoding.encoder.encode(SystemWallpaperManifest(version: 1, items: [item])).write(to: rig.manifestURL)
+        rig.service.refresh()
+        #expect(rig.service.diskUsageBytes >= 4096)
+    }
+
+    private func waitUntil(_ condition: () throws -> Bool) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while clock.now < deadline {
+            if (try? condition()) == true {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private static let referenceNow = Date(timeIntervalSince1970: 1_760_000_000)
@@ -125,6 +203,15 @@ struct WallpaperExportServiceTests {
         func writeHeartbeat(_ heartbeat: SystemWallpaperHeartbeat) throws {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try JSONEncoder().encode(heartbeat).write(to: heartbeatURL)
+        }
+
+        @MainActor
+        func showSelectedTile(on displays: [UInt32]) throws {
+            try writeHeartbeat(SystemWallpaperHeartbeat(
+                timestamp: WallpaperExportServiceTests.referenceNow, activeChoiceID: SystemWallpaperManifest.selectedChoiceID,
+                activeChoiceIDs: [SystemWallpaperManifest.selectedChoiceID], activeDisplayIDs: displays
+            ))
+            service.refreshProviderStatus()
         }
 
         func manifestOnDisk() throws -> SystemWallpaperManifest {
