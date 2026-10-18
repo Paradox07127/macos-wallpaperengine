@@ -163,6 +163,23 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         XCTAssertEqual(enabled, true, "init's thisLayer.play() never reached the sound runtime")
     }
 
+    func testScriptPlayUsesTheMinAndMaxTimeTheScriptJustWrote() async throws {
+        let script = "export function init(value){ thisLayer.mintime=4; thisLayer.maxtime=4; thisLayer.play(); return value; }"
+        let sound: [String: Any] = [
+            "id": 902, "name": "sfx", "sound": ["sounds/Melodysheep - Ether.flac"], "playbackmode": "random",
+            "startsilent": true, "mintime": 1.0, "maxtime": 1.0, "volume": ["value": 1, "script": script],
+        ]
+        let harness = try await makeHarness(withSound: true) { json in
+            json["objects"] = (json["objects"] as? [[String: Any]] ?? []) + [sound]
+        }
+        let delay = await harness.actor.run { actor -> Double? in
+            let runtime = actor.parityDriverForTesting?.soundRuntime
+            runtime?.debugCompleteHeadSegment(forSoundID: "902")
+            return runtime?.debugTrackSnapshots().first { $0.id == "902" }?.pendingDelay
+        }
+        XCTAssertEqual(delay, 4, "play() scheduled its wait from the bounds before the script's writes")
+    }
+
     func testRendererStateCarriesParityDiagnostics() async throws {
         let harness = try await makeHarness()
         for _ in 1 ... 2 {

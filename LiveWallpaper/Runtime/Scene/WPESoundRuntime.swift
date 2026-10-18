@@ -334,8 +334,11 @@ final class WPESoundRuntime: Sendable {
             let track = state.tracks[index]
             switch command {
             case .play:
-                // PlayNext returns before anything else at zero per-sound gain (1401f5980.c:77-82).
-                guard track.sceneVolume > 0 else { break }
+                // PlayNext returns before anything else at zero per-sound gain (1401f5980.c:77-82), but an idle
+                // loop/random sound still becomes pending: a later volume write starts it (1401f4c20).
+                guard track.sceneVolume > 0
+                    || track.scheduler.mode != .single && (!track.enabled || track.scheduledFiles.isEmpty)
+                else { break }
                 // A random sound's timer covers its file and the wait after it; play needs it run out (:750).
                 let randomTimerRunning = track.waitsBetweenPlays && track.enabled
                     && (track.delayRemaining != nil || !track.scheduledFiles.isEmpty)
@@ -360,7 +363,8 @@ final class WPESoundRuntime: Sendable {
                 break
             }
             let current = state.tracks[index]
-            return current.enabled && !current.scriptPaused && !current.scheduledFiles.isEmpty
+            return current.enabled && !current.scriptPaused
+                && (!current.scheduledFiles.isEmpty || current.delayRemaining != nil)
         }
     }
 
@@ -386,6 +390,9 @@ final class WPESoundRuntime: Sendable {
             guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
             state.tracks[index].sceneVolume = Float(min(max(volume, 0), 1))
             applyAudioState(to: &state)
+            if rules == .wpe {
+                reconcileEngineRunState(state: &state)
+            }
         }
     }
 
@@ -509,7 +516,8 @@ final class WPESoundRuntime: Sendable {
         guard !state.tracks.isEmpty else { return }
 
         for index in state.tracks.indices where state.tracks[index].enabled && state.tracks[index].needsReschedule
-            && state.tracks[index].delayRemaining == nil {
+            && state.tracks[index].delayRemaining == nil
+            && (rules == .legacy || state.tracks[index].sceneVolume > 0) {
             if !fillSchedule(in: &state, trackIndex: index) {
                 state.tracks[index].enabled = false
             }

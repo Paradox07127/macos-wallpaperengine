@@ -672,7 +672,9 @@ final class WPEParitySceneDriver {
         -> Result {
         guard let engine else { return try body() }
         return try engine.withSoundConsumers(volume: { _, _ in }, command: {
-            soundRuntime?.applyScriptSoundCommand($1, forSoundID: $0, volume: $2.volume) ?? false
+            soundRuntime?.setRandomDelay(minTime: $2.minTime.map(Double.init), maxTime: $2.maxTime.map(Double.init),
+                                         forSoundID: $0)
+            return soundRuntime?.applyScriptSoundCommand($1, forSoundID: $0, volume: $2.volume) ?? false
         }, body: body)
     }
 

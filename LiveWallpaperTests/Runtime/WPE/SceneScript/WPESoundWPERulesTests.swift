@@ -321,7 +321,7 @@ struct WPESoundWPERulesTests {
         _ = send(.play)
         #expect(send(.isPlaying))
         runtime.debugCompleteHeadSegment(forSoundID: "s")
-        #expect(!send(.isPlaying))
+        #expect(send(.isPlaying), "the wait between plays counts as playing")
         #expect(try #require(runtime.debugTrackSnapshots().first).pendingDelay == 1)
 
         _ = send(.play)
@@ -330,7 +330,7 @@ struct WPESoundWPERulesTests {
         #expect(snapshot.scheduledSegmentCount == 0)
     }
 
-    @Test("Script play at volume 0 does not start the sound")
+    @Test("Script play at volume 0 queues nothing; raising the volume then starts a loop sound")
     func scriptPlayAtZeroVolume() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
@@ -340,8 +340,36 @@ struct WPESoundWPERulesTests {
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
         #expect(!runtime.applyScriptSoundCommand(.play, forSoundID: "s", volume: 0))
         let snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(!snapshot.isEnabled)
+        #expect(snapshot.scheduledSegmentCount == 0)
         #expect(snapshot.sceneVolume == 0)
+
+        runtime.setVolume(1, forSoundID: "s")
+        #expect(runtime.applyScriptSoundCommand(.isPlaying, forSoundID: "s", volume: 1))
+        #expect(try #require(runtime.debugTrackSnapshots().first).scheduledSegmentCount == 2)
+    }
+
+    @Test("Raising the volume does not start a single, never-played or stopped sound")
+    func raisingVolumeLeavesIdleSoundsIdle() throws {
+        let root = try Self.makeRoot(files: ["a.wav"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        defer { runtime.stop() }
+        runtime.setMuted(true)
+        #expect(runtime.prepare(sounds: [
+            Self.sound(id: "single", paths: ["a.wav"], mode: "single", startSilent: true),
+            Self.sound(id: "unplayed", paths: ["a.wav"], mode: "loop", startSilent: true),
+            Self.sound(id: "stopped", paths: ["a.wav"], mode: "loop"),
+        ]) == 3)
+        _ = runtime.applyScriptSoundCommand(.play, forSoundID: "single", volume: 0)
+        _ = runtime.applyScriptSoundCommand(.stop, forSoundID: "stopped", volume: 0)
+        for id in ["single", "unplayed", "stopped"] {
+            runtime.setVolume(1, forSoundID: id)
+            #expect(!runtime.applyScriptSoundCommand(.isPlaying, forSoundID: id, volume: 1), "\(id) started")
+        }
+        let tracks = Dictionary(uniqueKeysWithValues: runtime.debugTrackSnapshots().map { ($0.id, $0) })
+        #expect(tracks["single"]?.isEnabled == false)
+        #expect(tracks["unplayed"]?.isEnabled == false)
+        #expect(tracks["stopped"]?.scheduledSegmentCount == 0)
     }
 
     @Test("The old renderer keeps the engine running at master volume 0")
