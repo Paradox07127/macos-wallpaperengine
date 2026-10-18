@@ -507,12 +507,28 @@ struct WPEParityFramePlan {
         in probes: [(frame: WPEParityFrame, programs: [Int: WPEParityProgram], skipped: [Int: WPEParityFrameSkip])],
         artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
     ) -> Bool {
+        struct CheckedDraw: Hashable {
+            let draw: WPEParitySceneDraw
+            let imported: Int
+        }
         let mip = WPEResourceID("_rt_MipMappedFrameBuffer")
+        // A scene draw's binding depends only on the draw and its frame's imported resources: check each pair once.
+        var importedSets: [Set<WPEResourceID>: Int] = [:]
+        var checked: Set<CheckedDraw> = []
         for probe in probes {
+            let imported = Set(probe.frame.resources.filter { $0.lifetime == .imported }.map(\.id))
+            let importedID = importedSets[imported] ?? importedSets.count
+            importedSets[imported] = importedID
+            let unchecked = probe.programs.compactMap { index, program -> (Int, WPEParityShaderArtifact)? in
+                guard case let .scene(draw)? = probe.frame.draws[index],
+                      case let .success(artifact)? = artifacts[program.hlsl],
+                      checked.insert(CheckedDraw(draw: draw, imported: importedID)).inserted else { return nil }
+                return (index, artifact)
+            }
+            guard !unchecked.isEmpty else { continue }
             let bindings = WPEParityProgramBuilder.bindings(frame: probe.frame, scene: scene)
-            for (index, program) in probe.programs {
-                guard case .scene? = probe.frame.draws[index], let binding = bindings[index],
-                      case let .success(artifact)? = artifacts[program.hlsl] else { continue }
+            for (index, artifact) in unchecked {
+                guard let binding = bindings[index] else { continue }
                 let resources = artifact.vertex.reflection.resources + artifact.fragment.reflection.resources
                 if resources.contains(where: {
                     $0.kind == .texture && binding.textures[Int32($0.register)] == .resource(mip)
@@ -540,18 +556,25 @@ struct WPEParityFramePlan {
         }
         var cache = programCache
         var seen: Set<[WPEPassIdentity]> = []
-        return try sets.flatMap { visible in
-            try Self.postVariants(post).compactMap { variant in
+        var enabledSets: Set<[Bool]> = []
+        let variants = Self.postVariants(post)
+        var probes: [(frame: WPEParityFrame, programs: [Int: WPEParityProgram], skipped: [Int: WPEParityFrameSkip])] = []
+        for visible in sets {
+            // A set enabling the same effects as an earlier one composes the same frames, which `seen` would drop.
+            let enabled = scene.scene.objects.flatMap { object in object.effects.map { visible(object.id, $0.id) } }
+            guard enabledSets.insert(enabled).inserted else { continue }
+            let description = Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height)))
+            for variant in variants {
                 let frame = try WPEParityFrameComposer.compose(
-                    scene: Self.loaded(scene.scene(effectVisible: visible, logicalViewport: SIMD2(width, height))), post: variant,
-                    physicalBackbufferSize: physicalBackbufferSize,
+                    scene: description, post: variant, physicalBackbufferSize: physicalBackbufferSize,
                     physicalCanvasSize: physicalCanvasSize, pixelScale: pixelScale
                 )
-                guard seen.insert(frame.operations.map(\.pass)).inserted else { return nil }
+                guard seen.insert(frame.operations.map(\.pass)).inserted else { continue }
                 let resolved = Self.programs(frame, scene: scene, cache: &cache)
-                return (frame, resolved.programs, resolved.skipped)
+                probes.append((frame, resolved.programs, resolved.skipped))
             }
         }
+        return probes
     }
 
     private static func postVariants(_ post: WPEParityPostProcessConfig) -> [WPEParityPostProcessConfig] {
