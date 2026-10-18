@@ -90,15 +90,15 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
-                title: "Capture video frame when locking",
-                subtitle: "On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."
+                title: "Keep a video frame as the desktop picture",
+                subtitle: "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."
             ) {
                 Toggle("", isOn: $preservePlaybackOnLock)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: preservePlaybackOnLock) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Capture video frame when locking"))
-                    .accessibilityHint(Text("On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."))
+                    .accessibilityLabel(Text("Keep a video frame as the desktop picture"))
+                    .accessibilityHint(Text("Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."))
             }
 
             SettingRow(

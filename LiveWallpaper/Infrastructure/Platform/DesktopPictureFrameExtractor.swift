@@ -5,6 +5,11 @@ import LiveWallpaperCore
 
 @MainActor
 enum DesktopPictureFrameExtractor {
+    static var picturesDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LiveWallpaper/DesktopPictures", isDirectory: true)
+    }
+
     /// Returning true as soon as the player had an item, before decode/encode/write/install, would let every async failure below reach the log while the UI played a captured animation.
     enum Outcome: Equatable, Sendable {
         case captured
@@ -20,7 +25,10 @@ enum DesktopPictureFrameExtractor {
     static func applyCurrentFrame(
         from player: AVPlayer,
         screenID: CGDirectDisplayID,
-        nsScreen: NSScreen?
+        nsScreen: NSScreen?,
+        install: @MainActor (URL, NSScreen) throws -> Void = { url, screen in
+            try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
+        }
     ) async -> Outcome {
         guard let currentItem = player.currentItem else { return .noFrameAvailable }
 
@@ -36,7 +44,7 @@ enum DesktopPictureFrameExtractor {
             { try await generator.image(at: currentTime).image },
             screenID: screenID,
             nsScreen: nsScreen,
-            install: { url, screen in try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:]) }
+            install: install
         )
     }
 
@@ -60,8 +68,9 @@ enum DesktopPictureFrameExtractor {
                 size: NSSize(width: cgImage.width, height: cgImage.height)
             )
 
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("LiveWallpaper_LockScreen_\(screenID).png")
+            // A fresh URL prevents macOS from reusing a cached image, including after relaunch.
+            let pictureURL = picturesDirectory
+                .appendingPathComponent("LiveWallpaper_LockScreen_\(screenID)_\(UUID().uuidString).png")
 
             guard let tiffData = nsImage.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
@@ -72,7 +81,8 @@ enum DesktopPictureFrameExtractor {
 
             do {
                 // `.atomic` writes a uniquely named sibling and renames it over the target, so the system never reads a half-written PNG.
-                try pngData.write(to: tempURL, options: .atomic)
+                try FileManager.default.createDirectory(at: picturesDirectory, withIntermediateDirectories: true)
+                try pngData.write(to: pictureURL, options: .atomic)
             } catch {
                 // Distinct from the decode failure below: the frame was read
                 // fine and the disk refused it.
@@ -80,18 +90,39 @@ enum DesktopPictureFrameExtractor {
                 return .installFailed
             }
 
-            guard let nsScreen else { return .installFailed }
             do {
-                try install(tempURL, nsScreen)
+                guard let nsScreen else { throw CocoaError(.fileNoSuchFile) }
+                try install(pictureURL, nsScreen)
+                removeOlderPictures(for: screenID, keeping: pictureURL)
                 Logger.info("Updated desktop picture for screen \(screenID)", category: .screenManager)
                 return .captured
             } catch {
+                try? FileManager.default.removeItem(at: pictureURL)
                 Logger.error("Failed to set desktop picture: \(error.localizedDescription)", category: .screenManager)
                 return .installFailed
             }
         } catch {
             Logger.error("Failed to extract desktop picture frame: \(error.localizedDescription)", category: .screenManager)
             return .noFrameAvailable
+        }
+    }
+
+    /// Keep the installed image and one previous image; failed installs never change either file.
+    private static func removeOlderPictures(for screenID: CGDirectDisplayID, keeping current: URL) {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey]
+        let pictures = (try? FileManager.default.contentsOfDirectory(
+            at: picturesDirectory, includingPropertiesForKeys: Array(keys)
+        )) ?? []
+        let previous = pictures.filter {
+            $0 != current && $0.lastPathComponent.hasPrefix("LiveWallpaper_LockScreen_\(screenID)_")
+                && $0.pathExtension == "png"
+        }.sorted {
+            let lhs = (try? $0.resourceValues(forKeys: keys).contentModificationDate) ?? .distantPast
+            let rhs = (try? $1.resourceValues(forKeys: keys).contentModificationDate) ?? .distantPast
+            return lhs > rhs
+        }
+        for url in previous.dropFirst() {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 }
