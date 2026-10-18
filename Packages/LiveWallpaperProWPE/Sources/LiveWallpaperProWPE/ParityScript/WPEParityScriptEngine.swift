@@ -318,7 +318,9 @@ public final class WPEParityScriptEngine {
     /// While set, the context's exception handler stores exceptions in `context.exception` instead of recording them.
     private var capturesExceptionsAsValues = false
     private var dispatchCounts = [Int](repeating: 0, count: WPEParityScriptEvent.allCases.count)
-    private let sourceObjects: [WPESceneJSONValue]
+    private let materialConstantsByPass: [WPEParityMaterialPassKey: [ConstantKey: MaterialConstant]]
+    /// Material passes with constants, by owner: pass index 0, effectID nil = the layer's own material.
+    private let materialPassesByOwner: [WPEParityMaterialPassKey: Set<WPEParityMaterialPassKey>]
     private var activeState: UnsafeMutablePointer<WPEParitySceneState>?
     private var mirroredMembershipGeneration: Int?
     private var soundVolumeConsumer: ((String, SoundFields) -> Void)?
@@ -386,7 +388,14 @@ public final class WPEParityScriptEngine {
         materialFunctionHandler = configuration.executeMaterialFunction
         modelDataAdmissionHandler = configuration.modelData?.admitShape
         context = JSContext()
-        sourceObjects = WPEParityProgramScene.array(document.sourceJSON["objects"])
+        var byPass: [WPEParityMaterialPassKey: [ConstantKey: MaterialConstant]] = [:]
+        var byOwner: [WPEParityMaterialPassKey: Set<WPEParityMaterialPassKey>] = [:]
+        for (key, constant) in configuration.materialConstants {
+            byPass[key.pass, default: [:]][key] = constant
+            byOwner[WPEParityMaterialPassKey(objectID: key.pass.objectID, effectID: key.pass.effectID), default: []]
+                .insert(key.pass)
+        }
+        (materialConstantsByPass, materialPassesByOwner) = (byPass, byOwner)
         capacity = 0
         floats = .allocate(capacity: 1)
         integers = .allocate(capacity: 1)
@@ -960,13 +969,13 @@ public final class WPEParityScriptEngine {
                 addConstants(values["constantshadervalues"], layer: layerIndex,
                              pass: WPEParityMaterialPassKey(objectID: id, effectID: effectID, pass: pass), state: state)
             }
-            for pass in Set(configuration.materialConstants.keys.filter { $0.pass.objectID == id && $0.pass.effectID == effectID }.map(\.pass)) {
+            for pass in materialPassesByOwner[WPEParityMaterialPassKey(objectID: id, effectID: effectID)] ?? [] {
                 addConstants(nil, layer: layerIndex, pass: pass, state: state)
             }
         }
         addConstants(config["instance"]?["constantshadervalues"], layer: layerIndex,
                      pass: WPEParityMaterialPassKey(objectID: id), state: state)
-        for pass in Set(configuration.materialConstants.keys.filter { $0.pass.objectID == id && $0.pass.effectID == nil }.map(\.pass)) {
+        for pass in materialPassesByOwner[WPEParityMaterialPassKey(objectID: id)] ?? [] {
             addConstants(nil, layer: layerIndex, pass: pass, state: state)
         }
         return Int(layerIndex)
@@ -992,7 +1001,7 @@ public final class WPEParityScriptEngine {
         }
         let passIndex = state.passIndex(of: key)
         let native = passIndex.map { state.constants(pass: $0) } ?? [:]
-        let metadata = configuration.materialConstants.filter { $0.key.pass == key }
+        let metadata = materialConstantsByPass[key] ?? [:]
         let names = Set(entries.keys).union(native.keys).union(metadata.keys.map(\.name)).sorted()
         for name in names {
             guard constantSlots[key]?[name] == nil else { continue }
@@ -1730,9 +1739,11 @@ public final class WPEParityScriptEngine {
                        descriptor: descriptor, className: "general", source: document.sourceJSON["general"],
                        root: document.resolvedGeneralJSON)
         }
+        let sources = Dictionary(WPEParityProgramScene.array(document.sourceJSON["objects"]).compactMap { object in
+            WPEParitySceneAnimations.id(object).map { ($0, object) }
+        }) { first, _ in first }
         for (layerIndex, layer) in layers.enumerated() {
-            let source = sourceObjects.first { WPEParitySceneAnimations.id($0) == layer.id }
-            compileLayerBindings(layerIndex, source: source)
+            compileLayerBindings(layerIndex, source: sources[layer.id])
         }
     }
 
