@@ -70,6 +70,24 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "flask",
+                iconColor: .orange,
+                title: "Update channel",
+                info: "Beta builds arrive before stable releases and may be less reliable."
+            ) {
+                Picker("", selection: $updateChannel) {
+                    Text("Stable").tag(UpdateChannel.stable)
+                    Text("Beta").tag(UpdateChannel.beta)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: updateChannel) { _, channel in
+                    SparkleUpdaterController.shared.updateChannel = channel
+                }
+                .accessibilityLabel(Text("Update channel"))
+            }
+
+            SettingRow(
                 icon: "dock.rectangle",
                 iconColor: .indigo,
                 title: "Show in Dock",
