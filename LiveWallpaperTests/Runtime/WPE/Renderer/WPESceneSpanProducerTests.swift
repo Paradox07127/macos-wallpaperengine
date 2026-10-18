@@ -65,6 +65,72 @@ struct WPESceneSpanProducerTests {
         #expect(executor.outputTexturePool.count == 4)
     }
 
+    @Test("A bounded output pool shrinks back after a stall once its extra textures are released")
+    func boundedPoolShrinksAfterStall() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.spanOutputTextureLimit = 10
+        let size = CGSize(width: 16, height: 16)
+        var stalled: [WPESceneSpanFrame] = []
+        for sequence in 1 ... 7 {
+            let texture = try executor.makeOutputTexture(size: size)
+            stalled.append(.init(texture: texture, generation: 1, sequence: UInt64(sequence),
+                                 sourceSize: size, fitMode: .stretch, tracker: executor.presentTracker))
+        }
+        #expect(executor.outputTexturePool.count == 7)
+        stalled.removeAll()
+        var latest: WPESceneSpanFrame?
+        for sequence in 8 ... 20 {
+            let texture = try executor.makeOutputTexture(size: size)
+            latest = .init(texture: texture, generation: 1, sequence: UInt64(sequence),
+                           sourceSize: size, fitMode: .stretch, tracker: executor.presentTracker)
+        }
+        #expect(latest != nil)
+        #expect(executor.outputTexturePool.count <= 4, "Pool stayed at its stall size after every extra texture was released")
+    }
+
+    @Test("A steady span producer recycles its output textures instead of allocating new ones")
+    func steadyProducerDoesNotReallocate() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.spanOutputTextureLimit = 10
+        let size = CGSize(width: 16, height: 16)
+        var vended: [MTLTexture] = []
+        var latest: WPESceneSpanFrame?
+        for sequence in 1 ... 60 {
+            let texture = try executor.makeOutputTexture(size: size)
+            vended.append(texture)
+            latest = .init(texture: texture, generation: 1, sequence: UInt64(sequence),
+                           sourceSize: size, fitMode: .stretch, tracker: executor.presentTracker)
+        }
+        #expect(latest != nil)
+        let warm = vended.prefix(10)
+        let allocatedAfterWarmUp = vended.dropFirst(10).filter { texture in !warm.contains { $0 === texture } }
+        #expect(allocatedAfterWarmUp.isEmpty, "Steady frames allocated \(allocatedAfterWarmUp.count) new output textures")
+    }
+
+    @Test("A span producer holding more frames than the steady pool still recycles instead of allocating")
+    func deepInFlightProducerDoesNotReallocate() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.spanOutputTextureLimit = 10
+        let size = CGSize(width: 16, height: 16)
+        var held: [WPESceneSpanFrame] = []
+        var vended: [MTLTexture] = []
+        for sequence in 1 ... 60 {
+            let texture = try executor.makeOutputTexture(size: size)
+            vended.append(texture)
+            held.append(.init(texture: texture, generation: 1, sequence: UInt64(sequence),
+                              sourceSize: size, fitMode: .stretch, tracker: executor.presentTracker))
+            if held.count > 5 {
+                held.removeFirst()
+            }
+        }
+        let warm = vended.prefix(10)
+        let allocatedAfterWarmUp = vended.dropFirst(10).filter { texture in !warm.contains { $0 === texture } }
+        #expect(allocatedAfterWarmUp.isEmpty, "Frames with 5 held allocated \(allocatedAfterWarmUp.count) new output textures")
+    }
+
     @Test("The Metal present shader slices adjacent displays without repeating the full scene")
     func presentShaderSlices() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

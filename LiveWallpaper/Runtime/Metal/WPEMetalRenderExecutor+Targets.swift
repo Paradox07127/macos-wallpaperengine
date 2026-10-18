@@ -625,6 +625,14 @@ extension WPEMetalRenderExecutor {
         outputTexturePool.removeAll {
             $0.width != width || $0.height != height || $0.pixelFormat != pixelFormat
         }
+        // A capped pool never reaches the append-time trim below, so shed one released stall texture per vend;
+        // the last reusable one stays, or a producer holding more than the steady count would reallocate every frame.
+        if spanOutputTextureLimit != nil, outputTexturePool.count > Self.steadyOutputTexturePoolSize {
+            let reusable = outputTexturePool.indices.filter { isOutputTextureReusable(outputTexturePool[$0]) }
+            if reusable.count > 1 {
+                outputTexturePool.remove(at: reusable[0])
+            }
+        }
         if let recycled = outputTexturePool.first(where: isOutputTextureReusable) {
             noteVendedOutputTexture(recycled)
             return recycled
@@ -646,13 +654,15 @@ extension WPEMetalRenderExecutor {
         }
         texture.label = "WPE Metal executor output"
         outputTexturePool.append(texture)
-        // Steady state needs 3 (in-render + re-presented latest + history); the cap is 4 so a transient stall can exist until ARC reaps it.
-        if spanOutputTextureLimit == nil, outputTexturePool.count > 4 {
+        if spanOutputTextureLimit == nil, outputTexturePool.count > Self.steadyOutputTexturePoolSize {
             outputTexturePool.removeFirst()
         }
         noteVendedOutputTexture(texture)
         return texture
     }
+
+    /// Steady state needs 3 (in-render + re-presented latest + history); one spare so a transient stall can exist until ARC reaps it.
+    private static let steadyOutputTexturePoolSize = 4
 
     private func isOutputTextureReusable(_ texture: MTLTexture) -> Bool {
         let id = ObjectIdentifier(texture)
