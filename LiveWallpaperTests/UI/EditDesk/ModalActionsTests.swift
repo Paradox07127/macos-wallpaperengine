@@ -553,6 +553,18 @@ struct ModalActionsTests {
         )
     }
 
+    /// `reconcileCover` is tested as a value in `HomeCoverCaptureRetryTests`; here, that both stage paths run it.
+    @Test("A display left without a wallpaper drops its cover when its state is refreshed and when the stage is rebuilt")
+    func removedWallpaperCoversAreReconciled() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        for signature in ["private func refreshState(for id:", "private func syncDisplays("] {
+            let start = try #require(home.range(of: signature), Comment(rawValue: signature))
+            let rest = home[start.upperBound...]
+            let body = rest[..<(rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex)]
+            #expect(body.contains("reconcileCover("), "\(signature) keeps the cover of a wallpaper the display no longer runs")
+        }
+    }
+
     @Test("A live frame handed to the modal is its preview, and nothing is decoded")
     func livePreviewSkipsTheDecode() async throws {
         let fixture = Fixture()

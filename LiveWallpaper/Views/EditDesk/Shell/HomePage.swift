@@ -1079,6 +1079,9 @@ struct HomePage: View {
                 state: state(for: screen)
             )
             describeWallpaper(for: screen, in: &display)
+            if Self.reconcileCover(&display, hasConfiguration: screenManager.getConfiguration(for: screen) != nil) {
+                coverGenerations[screen.id, default: 0] &+= 1
+            }
             return display
         }
         for display in stage.displays where display.cover == nil && display.state != .empty {
@@ -1140,6 +1143,17 @@ struct HomePage: View {
               let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
         stage.displays[index].state = state(for: screen)
         describeWallpaper(for: screen, in: &stage.displays[index])
+        if Self.reconcileCover(&stage.displays[index], hasConfiguration: screenManager.getConfiguration(for: screen) != nil) {
+            coverGenerations[id, default: 0] &+= 1
+        }
+    }
+
+    /// Drops the cover of a display that no longer has a wallpaper; true when one was dropped, so an
+    /// in-flight capture of the removed wallpaper can be superseded.
+    static func reconcileCover(_ display: inout StageDisplay, hasConfiguration: Bool) -> Bool {
+        guard !hasConfiguration, display.cover != nil else { return false }
+        display.cover = nil
+        return true
     }
 
     /// What the display draws on its own screen and which transport buttons it offers. Recomputed
@@ -1197,6 +1211,8 @@ struct HomePage: View {
     /// Covers are stills of the app's own rendering (`WallpaperCoverCapture`), re-taken after
     /// every configuration change; the desktop itself is the live preview.
     private func refreshCover(for id: CGDirectDisplayID, crossfade: Bool) {
+        guard let screen = screenManager.screens.first(where: { $0.id == id }),
+              screenManager.getConfiguration(for: screen) != nil else { return }
         let generation = (coverGenerations[id] ?? 0) + 1
         coverGenerations[id] = generation
         #if !LITE_BUILD

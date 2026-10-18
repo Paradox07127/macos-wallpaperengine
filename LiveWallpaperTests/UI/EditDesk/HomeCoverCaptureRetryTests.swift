@@ -65,4 +65,28 @@ struct HomeCoverCaptureRetryTests {
         #expect(image == nil)
         #expect(calls == 1 + Self.delays.count)
     }
+
+    private static func display(cover: CGImage?) -> StageDisplay {
+        StageDisplay(
+            id: 1, fingerprint: "", frame: .zero, isBuiltin: false, name: "",
+            badgeText: "", statusText: "", cover: cover, state: .empty
+        )
+    }
+
+    @Test("A display whose wallpaper was removed drops the cover of the wallpaper it no longer runs")
+    func aRemovedWallpaperDropsItsCover() throws {
+        var display = try Self.display(cover: Self.pixel())
+        let cleared = HomePage.reconcileCover(&display, hasConfiguration: false)
+        #expect(cleared, "the in-flight capture of the removed wallpaper is not told to stand down")
+        #expect(display.cover == nil, "the detail top bar keeps showing the removed wallpaper")
+    }
+
+    @Test("A display still running a wallpaper keeps its cover while a new one is captured")
+    func aRunningWallpaperKeepsItsCover() throws {
+        let frame = try Self.pixel()
+        var display = Self.display(cover: frame)
+        let cleared = HomePage.reconcileCover(&display, hasConfiguration: true)
+        #expect(!cleared)
+        #expect(display.cover === frame, "the card flashes blank between two wallpapers")
+    }
 }
