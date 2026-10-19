@@ -178,8 +178,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         layer.pixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: false)
         layer.drawableSize = size
         layer.framebufferOnly = false
-        var settings = try WPEParityProductSettings.make(descriptor: descriptor, device: device,
-                                                         bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled)
+        var settings = try WPEParityProductSettings.make(descriptor: descriptor, device: device)
         if let shadowQuality {
             settings.shadowQuality = shadowQuality
         }

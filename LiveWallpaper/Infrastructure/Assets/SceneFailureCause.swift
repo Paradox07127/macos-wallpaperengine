@@ -30,14 +30,6 @@ enum SceneFailureCause {
             case .malformedPayload: return cause("texture.payload", error, retry: false)
             case .textureAllocationFailed: return cause("texture.allocation", error)
             }
-        case let error as WPERenderGraphError:
-            switch error {
-            case .fileMissing: return cause("graph.file_missing", error)
-            case .invalidJSON: return cause("graph.json", error, retry: false)
-            case .malformedMaterial: return cause("graph.material", error, retry: false)
-            case .malformedEffect: return cause("graph.effect", error, retry: false)
-            case .materialUnresolved: return cause("graph.reference", error, retry: false)
-            }
         case let error as WPESceneAssetProviderError:
             let code: String
             let reason: String

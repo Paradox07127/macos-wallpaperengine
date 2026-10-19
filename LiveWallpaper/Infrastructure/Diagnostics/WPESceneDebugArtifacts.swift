@@ -24,9 +24,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
     private var session: ActiveSession?
     private let sessionLock = NSLock()
     private let writeQueue = DispatchQueue(label: "wpe.scene.debug.artifacts", qos: .utility)
-    private let bindingDiagnosticsLock = NSLock()
-    private var bindingDiagnostics: [String] = []
-    private let maxBindingDiagnostics = 512
 
     #if DEBUG
     private let testingEnabledOverrideLock = NSLock()
@@ -55,8 +52,10 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         testingEnabledOverrideLock.lock()
         let testingOverride = testingEnabledOverride
         testingEnabledOverrideLock.unlock()
-        if let testingOverride { return testingOverride }
-        // The render oracle needs the canonical trace recorder to run, so enabling oracle mode implies artifacts are enabled (no need to set both defaults). Both stay live reads: WPEMetalSceneRendererTests flips the defaults key at runtime, and WPEOracleMode's testingOverride flips too.
+        if let testingOverride {
+            return testingOverride
+        }
+        // Oracle captures also use the shared artifact directory; both switches remain live reads.
         // DEBUG-only cost — Release compiles isEnabled to a constant false.
         return UserDefaults.appScoped().bool(forKey: Self.defaultsKey) || WPEOracleMode.isEnabled
         #else
@@ -219,150 +218,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         }
     }
 
-    func recordTextureBinding(
-        passID: String,
-        shader: String,
-        slot: Int,
-        reference: WPETextureReference?,
-        texture: MTLTexture?,
-        fallbackToPrimary: Bool
-    ) {
-        guard isEnabled else { return }
-        let event = "[binding] pass=\(passID) shader=\(shader) slot=\(slot) reference=\(textureReferenceDescription(reference)) texture=\(textureDescription(texture)) fallback=\(fallbackToPrimary)"
-        bindingDiagnosticsLock.lock()
-        bindingDiagnostics.append(event)
-        if bindingDiagnostics.count > maxBindingDiagnostics {
-            bindingDiagnostics.removeFirst(bindingDiagnostics.count - maxBindingDiagnostics)
-        }
-        bindingDiagnosticsLock.unlock()
-        appendLog(event, level: fallbackToPrimary ? .warning : .debug)
-    }
-
-    func recordPassList(_ pipeline: WPEPreparedRenderPipeline) {
-        guard isEnabled else { return }
-        var lines: [String] = []
-        for (layerIndex, layer) in pipeline.layers.enumerated() {
-            lines.append("layer[\(layerIndex)] id=\(layer.graphLayer.objectID) name=\(layer.graphLayer.objectName)")
-            for pass in layer.passes {
-                let textures = pass.textureBindings
-                    .sorted { $0.key < $1.key }
-                    .map { "\($0.key)=\(textureReferenceDescription($0.value))" }
-                    .joined(separator: ",")
-                lines.append(
-                    "  pass=\(pass.pass.id) shader=\(pass.pass.shader) source=\(textureReferenceDescription(pass.pass.source)) target=\(targetDescription(pass.pass.target)) blend=\(pass.pass.blending) textures=[\(textures)]"
-                )
-            }
-        }
-        recordNote(name: "pass-list.txt", contents: lines.joined(separator: "\n"))
-        appendLog("[pass-list] wrote \(pipeline.layers.reduce(0) { $0 + $1.passes.count }) pass entries")
-        recordLayerPlacements(pipeline)
-    }
-
-    /// Per-objectID skinning-gate notes for dumps; generation-stamped so reloads can't reuse stale verdicts.
-    private let layerPlacementsLock = NSLock()
-    private struct PuppetSkinningEntry {
-        let generation: Int
-        let summary: String
-    }
-    private var puppetSkinningByObjectID: [String: PuppetSkinningEntry] = [:]
-    private var layerPlacementsGeneration = 0
-    private struct LayerPlacementLine {
-        let puppetObjectID: String?
-        let text: String
-    }
-    private var layerPlacementLines: [LayerPlacementLine] = []
-
-    /// Per-frame puppet gate stamp; only changed/generation-promoted notes hit the log.
-    func recordPuppetSkinningStates(_ states: [(objectID: String, summary: String)]) {
-        guard isEnabled, !states.isEmpty else { return }
-        layerPlacementsLock.lock()
-        let generation = layerPlacementsGeneration
-        var changedSummaries: [(String, String)] = []
-        var needsRewrite = false
-        for (objectID, summary) in states {
-            let existing = puppetSkinningByObjectID[objectID]
-            guard existing?.generation != generation || existing?.summary != summary else { continue }
-            puppetSkinningByObjectID[objectID] = PuppetSkinningEntry(generation: generation, summary: summary)
-            needsRewrite = true
-            if existing?.summary != summary {
-                changedSummaries.append((objectID, summary))
-            }
-        }
-        let hasPlacements = !layerPlacementLines.isEmpty
-        layerPlacementsLock.unlock()
-        for (objectID, summary) in changedSummaries {
-            appendLog("[puppet-skin] id=\(objectID) skinning=\(summary)")
-        }
-        if needsRewrite, hasPlacements { writeLayerPlacementsNote() }
-    }
-
-    func recordLayerPlacements(_ pipeline: WPEPreparedRenderPipeline) {
-        guard isEnabled else { return }
-        func fmt(_ v: SIMD3<Double>) -> String { String(format: "(%.1f,%.1f,%.1f)", v.x, v.y, v.z) }
-        func fmt2(_ v: SIMD2<Double>) -> String { String(format: "(%.1f,%.1f)", v.x, v.y) }
-        var lines: [LayerPlacementLine] = []
-        var puppetObjectIDs: Set<String> = []
-        for layer in pipeline.layers {
-            let g = layer.graphLayer.geometry
-            let sizeStr = g.size.map { String(format: "%.0fx%.0f", $0.width, $0.height) } ?? "nil"
-            let isPuppet = layer.puppetModel != nil
-            if isPuppet { puppetObjectIDs.insert(layer.graphLayer.objectID) }
-            lines.append(LayerPlacementLine(
-                puppetObjectID: isPuppet ? layer.graphLayer.objectID : nil,
-                text: "id=\(layer.graphLayer.objectID) name=\(layer.graphLayer.objectName) "
-                    + "puppet=\(isPuppet ? 1 : 0) "
-                    + "parent=\(layer.graphLayer.parentObjectID ?? "-") attach=\(layer.graphLayer.attachment ?? "-") "
-                    + "origin=\(fmt(g.origin)) size=\(sizeStr) meshCenter=\(fmt2(g.puppetMeshCenter)) "
-                    + "scale=\(fmt(g.scale)) angles=\(fmt(g.angles)) align=\(g.alignment)"
-            ))
-            if let model = layer.puppetModel, !model.attachments.isEmpty {
-                for a in model.attachments {
-                    let bind = a.bindMatrix
-                    let bt = bind.count >= 16 ? String(format: "MDAT_T=(%.1f,%.1f)", bind[12], bind[13]) : "MDAT_T=?"
-                    let bone = model.bones.first { $0.index == a.boneIndex }
-                    let bw = bone.flatMap { $0.rawMatrix.count >= 16 ? $0.rawMatrix : nil }
-                    let bwt = bw.map { String(format: "boneWorld_T=(%.1f,%.1f)", $0[12], $0[13]) } ?? "boneWorld_T=?"
-                    lines.append(LayerPlacementLine(
-                        puppetObjectID: nil,
-                        text: "    anchor \(a.name) -> bone \(a.boneIndex)  \(bt)  \(bwt)"
-                    ))
-                }
-            }
-        }
-        layerPlacementsLock.lock()
-        layerPlacementLines = lines
-        // New pipeline generation: re-prove every gate.
-        layerPlacementsGeneration += 1
-        puppetSkinningByObjectID = puppetSkinningByObjectID.filter { puppetObjectIDs.contains($0.key) }
-        layerPlacementsLock.unlock()
-        writeLayerPlacementsNote()
-        appendLog("[placements] wrote \(pipeline.layers.count) layer placements")
-    }
-
-    private func writeLayerPlacementsNote() {
-        recordNote(name: "layer-placements.txt", contents: renderedLayerPlacementsContents())
-    }
-
-    private func renderedLayerPlacementsContents() -> String {
-        layerPlacementsLock.lock()
-        let lines = layerPlacementLines
-        let skinning = puppetSkinningByObjectID
-        let generation = layerPlacementsGeneration
-        layerPlacementsLock.unlock()
-        let rendered = lines.map { line -> String in
-            guard let id = line.puppetObjectID else { return line.text }
-            guard let entry = skinning[id] else { return line.text + " skinning=pending" }
-            return entry.generation == generation
-                ? line.text + " skinning=\(entry.summary)"
-                : line.text + " skinning=pending(last=\(entry.summary))"
-        }
-        return rendered.joined(separator: "\n")
-    }
-
-    func layerPlacementsContentsForTesting() -> String {
-        renderedLayerPlacementsContents()
-    }
-
     func recordFirstFrameStats(_ stats: WPEMetalTextureVisualStats) {
         guard isEnabled else { return }
         recordNote(name: "first-frame-stats.txt", contents: stats.description)
@@ -395,14 +250,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         appendLog(
             "[resolution] events=\(snapshot.events.count) resolved=\(snapshot.resolvedCount) missing=\(snapshot.missedRefs.count)"
         )
-    }
-
-    func drainBindingDiagnosticsForTesting() -> [String] {
-        bindingDiagnosticsLock.lock()
-        defer { bindingDiagnosticsLock.unlock() }
-        let current = bindingDiagnostics
-        bindingDiagnostics.removeAll(keepingCapacity: true)
-        return current
     }
 
     func recordShaderFailure(
@@ -643,37 +490,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
     }
 
-    private func textureReferenceDescription(_ reference: WPETextureReference?) -> String {
-        guard let reference else { return "<primary>" }
-        switch reference {
-        case .image(let path):
-            return "image(\(path))"
-        case .asset(let path):
-            return "asset(\(path))"
-        case .fbo(let name):
-            return "fbo(\(name))"
-        case .previous:
-            return "previous"
-        }
-    }
 
-    private func targetDescription(_ target: WPERenderTarget) -> String {
-        switch target {
-        case .scene:
-            return "scene"
-        case .layerComposite(let name):
-            return "layerComposite(\(name))"
-        case .fbo(let name):
-            return "fbo(\(name))"
-        }
-    }
-
-    private func textureDescription(_ texture: MTLTexture?) -> String {
-        guard let texture else { return "nil" }
-        if let label = texture.label, !label.isEmpty {
-            return label
-        }
-        return "\(texture.width)x\(texture.height):\(texture.pixelFormat.rawValue)"
-    }
 }
 #endif

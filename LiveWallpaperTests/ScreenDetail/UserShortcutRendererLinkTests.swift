@@ -425,16 +425,8 @@ struct UserShortcutRendererLinkTests {
         link.execute = { _ in }
         let bridge = WPEUserShortcutScriptBridge()
         try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open"])
-        let shared = WPESharedScriptState(userShortcuts: bridge)
-        let instance = try WPELayerScriptInstance(
-            script: "export function cursorClick() { shared.result = engine.openUserShortcut('hidden'); }",
-            shared: shared, setupBudget: 2, tickBudget: 0.5, governor: WPESceneScriptExecutionGovernor(limit: 4)
-        )
-        var click = WPEPointerFrame.neutral
-        click.gesture = WPEPointerGesture.next()
-        _ = instance.dispatchCursorEvent(.click, pointerFrame: click, runtimeSeconds: 1)
-
-        #expect(shared.get("result") as? Bool == false)
+        #expect(bridge.snapshot().declared == ["open"])
+        #expect(!bridge.requestLaunch("hidden"))
         #expect(bridge.snapshot().bound.isEmpty)
     }
 }

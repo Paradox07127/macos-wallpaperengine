@@ -1,10 +1,9 @@
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Testing
-@testable import LiveWallpaper
 
 struct WPEScenePreflightTests {
-
     @Test("A light-only scene has no drawable producer")
     func lightOnlySceneIsUnsupported() throws {
         let document = try WPESceneDocumentParser.parse(data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":"lamp","light":"lpoint"}]}"#.utf8))
@@ -202,7 +201,6 @@ struct WPEScenePreflightTests {
         #expect(entry.renderPassID == nil)
         #expect(entry.authoredEffectPath == "effects/dynamic/effect.json")
         #expect(entry.authoredShaderPath == nil)
-        #expect(entry.classification == .unsupportedMetadataOnly)
         #expect(entry.consumerDisposition == .noRuntimeTextureProviderConsumer)
         #expect(entry.metadataKind == "usertextures")
     }
@@ -268,155 +266,7 @@ struct WPEScenePreflightTests {
         #expect(entry.metadataSources == ["effect-override"])
     }
 
-    @Test("A media usertexture on a pass whose route never substitutes stays in the inventory")
-    func mediaOnNonSubstitutingRouteIsReported() throws {
-        // Control: the custom pass does substitute, so its declaration has a consumer.
-        let passes = ["copy", "effects/custom"].enumerated().map { index, shader in
-            WPERenderPass(
-                id: "pass-\(shader)",
-                phase: .effect(file: "effects/media/effect.json"),
-                shader: shader,
-                source: .previous,
-                target: .scene,
-                textures: [:],
-                binds: [:],
-                constants: [:],
-                combos: [:],
-                userTextureBindings: WPERenderUserTextureBindings(
-                    override: [WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system")]
-                ),
-                authoredJSON: WPERenderPassAuthoredJSON(effectIdentity: WPERenderEffectPassIdentity(
-                    objectID: "1",
-                    authoredEffectID: "e",
-                    authoredEffectPath: "effects/media/effect.json",
-                    effectPassIndex: index,
-                    authoredOverrideID: nil
-                )),
-                blending: "normal",
-                cullMode: "nocull",
-                depthTest: "disabled",
-                depthWrite: "disabled"
-            )
-        }
-        let layer = WPERenderLayer(
-            objectID: "1",
-            objectName: "bg",
-            imagePath: "materials/bg.json",
-            materialPath: nil,
-            geometry: WPERenderLayerGeometry(
-                origin: .zero, scale: SIMD3<Double>(1, 1, 1), angles: .zero, alignment: .center,
-                size: nil, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
-            ),
-            compositeA: "a",
-            compositeB: "b",
-            localFBOs: [],
-            passes: passes
-        )
-
-        let entries = WPEShaderImplementationInventory.graphEntries(
-            graph: WPERenderGraph(layers: [layer]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
-            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
-        )
-
-        let entry = try #require(entries.first)
-        #expect(entries.count == 1)
-        #expect(entry.renderPassID == "pass-copy")
-        #expect(entry.metadataSources == ["effect-override"])
-    }
-
-    @Test("A usershortcut on genericimage2 slot 0 has a consumer; slot 1 of the same material route does not")
-    func userShortcutOnGenericImage2MaterialSlots() throws {
-        let entries = WPEShaderImplementationInventory.graphEntries(
-            graph: WPERenderGraph(layers: [Self.makeRenderLayer(passes: [
-                Self.makeUserShortcutPass(id: "slot0", phase: .material, shader: "genericimage2", slot: 0),
-                Self.makeUserShortcutPass(id: "slot1", phase: .material, shader: "genericimage2", slot: 1),
-            ])]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
-            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
-        )
-
-        let entry = try #require(entries.first)
-        #expect(entries.count == 1)
-        #expect(entry.renderPassID == "slot1")
-        #expect(entry.metadataSources == ["effect-material"])
-    }
-
-    @Test("A usershortcut on godrays_combine is reported")
-    func userShortcutOnGodraysCombineIsReported() throws {
-        let identity = WPERenderEffectPassIdentity(
-            objectID: "1",
-            authoredEffectID: "e",
-            authoredEffectPath: "effects/godrays/effect.json",
-            effectPassIndex: 0,
-            authoredOverrideID: nil
-        )
-        let entries = WPEShaderImplementationInventory.graphEntries(
-            graph: WPERenderGraph(layers: [Self.makeRenderLayer(passes: [
-                Self.makeUserShortcutPass(
-                    id: "godrays",
-                    phase: .effect(file: "effects/godrays/effect.json"),
-                    shader: "effects/godrays_combine",
-                    slot: 0,
-                    effectIdentity: identity
-                ),
-            ])]),
-            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:),
-            substitutesUserShortcutIcon: WPEMetalShaderDispatcher.substitutesUserShortcutIcon
-        )
-
-        let entry = try #require(entries.first)
-        #expect(entries.count == 1)
-        #expect(entry.renderPassID == "godrays")
-        #expect(entry.stablePassID == identity.stablePassID)
-    }
-
     // MARK: - Fixtures
-
-    private static func makeUserShortcutPass(
-        id: String,
-        phase: WPERenderPassPhase,
-        shader: String,
-        slot: Int,
-        effectIdentity: WPERenderEffectPassIdentity? = nil
-    ) -> WPERenderPass {
-        WPERenderPass(
-            id: id,
-            phase: phase,
-            shader: shader,
-            source: .previous,
-            target: .scene,
-            textures: [:],
-            binds: [:],
-            constants: [:],
-            combos: [:],
-            userTextureBindings: WPERenderUserTextureBindings(
-                material: [WPESceneUserTextureBinding(name: "shortcut", type: "usershortcut", slot: slot)]
-            ),
-            authoredJSON: WPERenderPassAuthoredJSON(effectIdentity: effectIdentity),
-            blending: "normal",
-            cullMode: "nocull",
-            depthTest: "disabled",
-            depthWrite: "disabled"
-        )
-    }
-
-    private static func makeRenderLayer(passes: [WPERenderPass]) -> WPERenderLayer {
-        WPERenderLayer(
-            objectID: "1",
-            objectName: "bg",
-            imagePath: "materials/bg.json",
-            materialPath: nil,
-            geometry: WPERenderLayerGeometry(
-                origin: .zero, scale: SIMD3<Double>(1, 1, 1), angles: .zero, alignment: .center,
-                size: nil, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
-            ),
-            compositeA: "a",
-            compositeB: "b",
-            localFBOs: [],
-            passes: passes
-        )
-    }
 
     private static func makeProject(requiresWindowsPlugin: Bool = false) -> WallpaperEngineProject {
         WallpaperEngineProject(

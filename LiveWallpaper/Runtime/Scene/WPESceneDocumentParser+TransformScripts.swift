@@ -3,7 +3,13 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-extension WPETransformScriptEvaluator: WPESceneTransformScriptResolving {}
+/// Import and planning retain authored seeds. The bounded parity VM owns init and per-frame execution.
+private struct WPEAuthoredTransformSeedResolver: WPESceneTransformScriptResolving {
+    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
+                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
+        nil
+    }
+}
 
 extension WPESceneDocumentParser {
     static func parse(data: Data) throws -> WPESceneDocument {
@@ -14,9 +20,7 @@ extension WPESceneDocumentParser {
         data: Data,
         userValues: [String: WallpaperEngineProjectPropertyValue]
     ) throws -> WPESceneDocument {
-        try parse(data: data, userValues: userValues) {
-            WPETransformScriptEvaluator(canvasWidth: $0, canvasHeight: $1)
-        }
+        try parse(data: data, userValues: userValues, makeTransformScriptResolver: { _, _ in WPEAuthoredTransformSeedResolver() })
     }
 }
 #endif

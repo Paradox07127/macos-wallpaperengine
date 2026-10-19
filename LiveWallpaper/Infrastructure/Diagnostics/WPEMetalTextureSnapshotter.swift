@@ -29,8 +29,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
     /// Posters render at pane size, so a 4K rgba16Float readback is waste; GPU-scale to this max dimension before `getBytes`.
     static let posterMaxDimension = 1440
 
-    /// Full-resolution path: debug-artifacts first-frame capture
-    /// (`WPEMetalSceneRenderer+Load.swift`) and format tests.
+    /// Full-resolution diagnostic readback and format validation.
     func snapshot(from texture: MTLTexture) -> NSImage? {
         Self.makeImage(from: texture, colorTransfer: .authored, maxDimension: nil)
     }

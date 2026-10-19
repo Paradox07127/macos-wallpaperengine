@@ -77,7 +77,7 @@ final class WPEParityPresentState: Sendable {
 }
 
 /// Runs one scene on the parity renderer and presents its backbuffer to a layer. Confined to the render actor
-/// that owns it, like `WPEMetalSceneRenderer`; only `WPEParityPresentState` is touched from other threads.
+/// that owns it; only `WPEParityPresentState` is touched from other threads.
 final class WPEParitySceneDriver {
     /// Metal status is thread-safe; this immutable handle is read only after later work on the same queue completes.
     private struct SubmittedBuffer: @unchecked Sendable {
@@ -129,9 +129,9 @@ final class WPEParitySceneDriver {
     private(set) var drawableSize = CGSize.zero
     private(set) var fitMode = WPEPresentFitMode.cover
     private(set) var mouseInteractionEnabled = true
-    private(set) var userPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
+    private(set) var userPreferredFPS = WPESceneRenderPolicy.defaultPreferredFPS
     private(set) var adaptiveThrottleActive = false
-    /// The scene flag or a program reading `g_AudioSpectrum*`, as `WPEMetalSceneRenderer.sceneSupportsAudioProcessing`.
+    /// The scene flag or a program reading `g_AudioSpectrum*` enables audio processing.
     private var shaderRequiresAudio = false
     var requiresSystemAudioCapture: Bool {
         guard let renderer else { return false }
@@ -190,7 +190,7 @@ final class WPEParitySceneDriver {
     private var encodeSeconds = 0.0
     private var encodeCount = 0
 
-    /// The loaded scene changes its frame on its own, as `WPEMetalSceneRenderer.needsContinuousFrames`, or plays
+    /// The loaded scene changes its frame on its own, or plays
     /// sound, whose random intervals count down by frame time.
     var needsContinuousFrames: Bool {
         didLoad && runtimeFailure == nil && (renderer?.isStatic == false || soundRuntime != nil)
@@ -248,10 +248,10 @@ final class WPEParitySceneDriver {
         paused && (renderer?.clock.pauseRamp ?? 0) > 0
     }
 
-    /// As `WPEMetalSceneRenderer.effectiveFPS`.
+    /// Applies the user ceiling and adaptive throttle floor.
     var effectiveFPS: Int {
         guard adaptiveThrottleActive else { return userPreferredFPS }
-        return min(userPreferredFPS, max(WPEMetalSceneRenderer.adaptiveThrottleFloorFPS, userPreferredFPS / 2))
+        return min(userPreferredFPS, max(WPESceneRenderPolicy.adaptiveFrameRateFloor, userPreferredFPS / 2))
     }
 
     /// The loaded plan no longer matches the drawable size or fit mode.
@@ -968,7 +968,7 @@ final class WPEParitySceneDriver {
         WPEEngineAudioSettings.effectiveVolume(master: audioVolume, preset: audioPreset)
     }
 
-    /// A sizeless report means "not laid out yet", as in `WPEMetalSceneRenderer.updateSurfaceGeometry`.
+    /// A sizeless report means "not laid out yet", until the surface reports usable geometry.
     func updateSurfaceGeometry(drawableSize: CGSize) {
         guard drawableSize.width > 0, drawableSize.height > 0 else { return }
         self.drawableSize = drawableSize
@@ -1191,7 +1191,7 @@ struct WPEParityRuntimeDiagnostics: Sendable, Equatable {
 struct WPEParitySceneInputs: Sendable {
     var descriptor: SceneDescriptor
     let entryResolver: SceneResourceResolver
-    /// Holds project.json, as `WPEMetalSceneRenderer.projectManifestRootURL`.
+    /// Holds project.json.
     let projectRoot: URL
     let assets: WPEParityProgramAssets
     let settings: WPEParityProgramSettings
@@ -1211,12 +1211,12 @@ struct WPEParitySceneInputs: Sendable {
     let surfaceControl: any WPESurfaceControl
     let drawableSize: CGSize
     let pixelFormat: MTLPixelFormat
-    /// Resolves the scene's sound files, as `WPEMetalSceneRenderer.resourceResolver`; nil plays no sound.
+    /// Resolves the scene's sound files; nil plays no sound.
     var soundResolver: WPEMultiRootResourceResolver?
     var presentFitMode = WPEPresentFitMode.cover
     /// A span group's producer: where its frames go, and its output pool's cap as the old renderer's.
     var span: (frames: WPESceneSpanFrames, outputTextureLimit: Int)?
-    /// As `WPEMetalSceneRenderer.onRuntimeActivityChange`: called on the render actor when the activity changes.
+    /// Called on the render actor when the activity changes.
     var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
     /// The usershortcut product link's bridge for this scene: engine.openUserShortcut launches through it.
     var userShortcuts: WPEUserShortcutScriptBridge?
@@ -1242,7 +1242,7 @@ struct WPEParitySceneInputs: Sendable {
         )
     }
 
-    /// The entry scene parsed with the user's property values, as `WPEMetalSceneRenderer`'s load does; `patch` replaces
+    /// The entry scene parsed with the user's property values; `patch` replaces
     /// the values of its changed keys.
     func makeDocument(changing patch: WPEScenePropertyPatch? = nil) throws -> WPESceneDocument {
         let data = try entryResolver.data(relativePath: descriptor.entryFile)

@@ -97,28 +97,23 @@ struct AppStorageInventoryTests {
         #expect(await cache.data(for: url, size: .tile) == data)
     }
 
-    @Test func shaderCacheClearsMemoryAndEverySchemaWithoutTouchingOtherFiles() throws {
+    @Test func parityShaderCachePurgeLeavesSiblingFilesUntouched() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        let cache = WPEShaderTranslationCache(rootURL: root)
-        let payload = WPEShaderTranslationCache.Payload(
-            schemaVersion: WPEShaderTranslationCache.schemaVersion,
-            vertexFunctionName: "vertex", fragmentFunctionName: "fragment",
-            mslSource: "source", uniformLayout: [], samplerNames: [], textureSlotCount: 0
-        )
-        cache.store(payload, for: "fixture")
-        #expect(cache.lookup("fixture") == payload)
-        let stale = root.appendingPathComponent("v0", isDirectory: true)
-        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
-        try Data([1]).write(to: stale.appendingPathComponent("old.json"))
+        let shaders = root.appendingPathComponent("shader-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: shaders, withIntermediateDirectories: true)
+        try Data([1]).write(to: shaders.appendingPathComponent("compiled.metallib"))
         let retained = root.appendingPathComponent("keep.txt")
         try Data([2]).write(to: retained)
-        try cache.clearCache()
-        #expect(cache.lookup("fixture") == nil)
-        #expect(!FileManager.default.fileExists(atPath: stale.path))
-        #expect(FileManager.default.fileExists(atPath: retained.path))
-        cache.store(payload, for: "fixture")
-        #expect(cache.lookup("fixture") == payload)
+        let location = AppStorageLocation(kind: .shaders, url: shaders)
+        let before = await AppStorageScanner().scan([location])
+        #expect(before[0].fileCount == 1 && before[0].status == .complete)
+        let cache = WPEParityShaderDiskCache(rootURL: shaders)
+        try await cache.purge()
+        let after = await AppStorageScanner().scan([location])
+        #expect(after[0].status == .missing)
+        #expect(try Data(contentsOf: retained) == Data([2]))
+        try await cache.purge()
     }
 
     @Test func audioCacheRebuildsAfterClearingWithoutRemovingStagingFiles() async throws {

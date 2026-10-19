@@ -1205,7 +1205,7 @@ struct WPESceneDocumentParserTests {
         #expect(override.constantScripts["plain"] == nil)
     }
 
-    @Test("Effect-constant scripts count toward the per-scene runtime cap")
+    @Test("Effect-constant scripts preserve their authored bindings")
     func effectConstantScriptsCountTowardTheCap() throws {
         let script = "export function update(v) { return shared.x; }"
         let payload: [String: Any] = [
@@ -1224,16 +1224,7 @@ struct WPESceneDocumentParserTests {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         let document = try WPESceneDocumentParser.parse(data: data)
-        #expect(WPESceneScriptInstanceInventory(document: document).total == 2)
-    }
-
-    @Test("A scripted constant's arity comes from its authored value")
-    func scriptedConstantArityFollowsAuthoredValue() {
-        #expect(WPEMetalSceneRenderer.valueShape(of: .number(1)) == .scalar)
-        #expect(WPEMetalSceneRenderer.valueShape(of: .vector([0.25, 0.5])) == .vector2)
-        #expect(WPEMetalSceneRenderer.valueShape(of: .vector([1, 0, 0])) == .vector3)
-        // Unknown/absent authored value: WPE's own default for a bound uniform is a single float.
-        #expect(WPEMetalSceneRenderer.valueShape(of: nil) == .scalar)
+        #expect(document.imageObjects.first?.effects.first?.passOverrides.first?.constantScripts.count == 2)
     }
 
     @Test("An effect authored hidden behind a visibility script stays hidden")
@@ -1263,34 +1254,6 @@ struct WPESceneDocumentParserTests {
         #expect(try effect(false).visible == false, "the bare Bool form must still work")
         #expect(try effect(["value": true, "script": script]).visibleScript?.script == script)
         #expect(try effect(true).visibleScript == nil)
-    }
-
-    @Test("Script source-reuse diagnostics count bindings, distinct sources and the top repeat")
-    func scriptSourceReuseDiagnostics() throws {
-        let shared = "export function update(value) { return shared.accentColor; }"
-        let unique = "export function update(value) { return engine.runtime; }"
-        var objects: [[String: Any]] = (0..<5).map { index in
-            [
-                "id": "\(index)", "name": "img\(index)", "image": "models/util/solidlayer.json",
-                "color": ["value": "1 1 1", "script": shared]
-            ]
-        }
-        objects.append([
-            "id": "9", "name": "solo", "image": "models/util/solidlayer.json",
-            "scale": ["value": "1 1 1", "script": unique]
-        ])
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
-            "objects": objects
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
-        let document = try WPESceneDocumentParser.parse(data: data)
-
-        let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
-        #expect(reuse.bindings == 6)
-        #expect(reuse.distinct == 2)
-        #expect(reuse.maxRepeat == 5)
     }
 
     @Test("return shared.K update bodies classify as read fans; writers and side effects do not")
@@ -1360,36 +1323,6 @@ struct WPESceneDocumentParserTests {
         #expect(WPESharedReadFanAnalysis.vec3(from: true) == SIMD3(repeating: 1))
         #expect(WPESharedReadFanAnalysis.vec3(from: false) == SIMD3.zero)
         #expect(WPESharedReadFanAnalysis.vec3(from: Double.nan) == nil)
-    }
-
-    @Test("A scene binding an audio script requires capture even without the authored flag")
-    func scriptBoundAudioRequiresCapture() throws {
-        func document(script: String?) throws -> WPESceneDocument {
-            var object: [String: Any] = [
-                "id": "1", "name": "label", "type": "text", "text": "0%"
-            ]
-            if let script {
-                object["scale"] = ["value": "1 1 1", "script": script]
-            }
-            let payload: [String: Any] = [
-                "camera": ["center": "0 0 0"],
-                "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
-                "objects": [object]
-            ]
-            return try WPESceneDocumentParser.parse(
-                data: try JSONSerialization.data(withJSONObject: payload, options: [])
-            )
-        }
-        let audio = try document(script: """
-        const audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
-        export function update() { return audioBuffer.average[0]; }
-        """)
-        #expect(audio.general.supportsAudioProcessing == false, "the corpus never sets the flag")
-        #expect(WPESceneScriptInstanceInventory.usesAudioAPI(in: audio))
-
-        let silent = try document(script: "export function update(v) { return v; }")
-        #expect(!WPESceneScriptInstanceInventory.usesAudioAPI(in: silent))
-        #expect(!WPESceneScriptInstanceInventory.usesAudioAPI(in: try document(script: nil)))
     }
 
     @Test("Image and text `color` SceneScripts are parsed onto their objects")

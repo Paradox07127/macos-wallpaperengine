@@ -72,7 +72,7 @@ extension WPECacheManagementView {
         case .query: await workshopServices.queryCache.clear()
         case .previews: await WorkshopPreviewDiskCache.shared.clear()
         case .shaders:
-            try await Task.detached(priority: .utility) { try WPEShaderTranslationCache.shared.clearCache() }.value
+            try await WPEParityShaderDiskCache.shared.purge()
         case .compressedTextures:
             await Task.detached(priority: .utility) { WPEParityTextureCompression.shared.cache.removeAll() }.value
         case .audio: try await OggAudioTranscoder.shared.clearCache()

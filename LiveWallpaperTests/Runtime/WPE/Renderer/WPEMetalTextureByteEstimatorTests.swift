@@ -86,34 +86,6 @@ struct WPEMetalTextureByteEstimatorTests {
         ) == 16_777_216 * 3)
     }
 
-    @Test("Static-layer cache bills through Metal's own allocation size, not the estimator")
-    func staticLayerCacheBillsRealAllocationSize() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let queue = try #require(device.makeCommandQueue())
-        let commandBuffer = try #require(queue.makeCommandBuffer())
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba16Float, width: 17, height: 9, mipmapped: false
-        )
-        descriptor.storageMode = .private
-        descriptor.usage = [.shaderRead, .renderTarget]
-        let reserved = device.heapTextureSizeAndAlign(descriptor: descriptor).size
-        let texture = try #require(device.makeTexture(descriptor: descriptor))
-        #expect(texture.allocatedSize > 0)
-        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: reserved)
-        defer { cache.discardUnsubmittedWork(for: commandBuffer) }
-        #expect(cache.reserve(layerID: "layer", targetBytes: ["target": reserved], commandBuffer: commandBuffer))
-        #expect(cache.allocatedBytes == 0)
-        #expect(cache.recordSnapshot(texture, target: "target", layerID: "layer", commandBuffer: commandBuffer))
-        #expect(cache.accountedBytes == reserved)
-        #expect(cache.allocatedBytes == texture.allocatedSize)
-
-        let underReserved = WPEMetalStaticLayerCompositeCache(budgetBytes: reserved)
-        defer { underReserved.discardUnsubmittedWork(for: commandBuffer) }
-        #expect(underReserved.reserve(layerID: "layer", targetBytes: ["target": texture.allocatedSize - 1], commandBuffer: commandBuffer))
-        #expect(!underReserved.recordSnapshot(texture, target: "target", layerID: "layer", commandBuffer: commandBuffer))
-        #expect(underReserved.allocatedBytes == 0)
-    }
-
     @Test("Every memory tier ships a bounded texture-cache budget")
     func everyTierIsBounded() {
         for tier in WPEMemoryTier.allCases {

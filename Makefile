@@ -96,30 +96,20 @@ test-app-interaction:
 
 # GPU execution and temporal feedback cannot be certified by a headless shard.
 # Keep the local gate explicit and require every listed suite to execute.
-WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
-    WPEAuthoredVertexUniformReferenceTests WPEOrderedLayerPublicationTests \
-    WPERenderPipelineBuilderTests WPEMetalTextureLoaderTests WPEFrameUniformContextTests \
-    WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
-    WPEParticleInstanceCoordinatorTests WPEParticleInstanceModifierTests \
-    WPEParticleControlPointExecutionTests WPEParticleExpansionBudgetTests WPETextGlyphAtlasSizeTests WPETextRenderPipelineTests \
-    WPESceneClearColorTests WPESceneModelSubmeshMaterialRenderTests WPEParticleScriptVisibilityTests \
-    WPEUniformStageBindingTests WPEAttachmentPlanTests WPECameraMotionTests \
-    WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests WPEEffectFBOSwapTests \
-    WPEAlphaPipelineContractTests WPETexAnimatedTextureSourceSuspendTests WPETexLazyAnimatedTextureSourceTests \
-    WPEColorDomainProbeTests WPEBuiltinColorDomainTests WPEOraclePixelProbeTests WPEOnDemandVideoLifecycleTests WPECanonicalUniformTraceTests \
-    WPECanonicalPassRawStorageTests WPEVideoOutputCapTests WPEVideoTextureSourceTeardownTests \
-    WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests WPEQuadAnglesXYTests \
-    WPEUniformResolutionPlanTests WPEMetalSolidSceneRunTests WPERenderGraphBuilderTests \
-    WPEMetalSceneRendererTests WPESceneScriptWiringTests WPEScriptedVisibleBindingTests WPETransformScriptLayerPresentationTests WPESceneHibernateTests WPESceneSpanPresenterTests WPEMediaTextureProviderTests \
-    WPEDisplayedFrameCaptureTests WallpaperVideoPlayerDisplayedFrameCaptureTests \
-    SceneLoadProgressTests WPEPreparationCancellationTests WPEPuppetSkinningGateTests \
-    WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests WPEMetalFBOFormatMappingTests \
-    WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
-    WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
-    WPEProjectedQuadShaderTests WPEObjectQuadUniformsBytePinTests WPEProjectedComposeExecutorTests \
-    WPEDependencyComposeCaptureTests \
-    WPERenderThreadTests WPERenderThreadDrainRuntimeTests \
-    WPESceneTextDeliveryTests WPESignedAlignmentGeometryTests WPESceneScriptPlayerRelocationTests
+# Selected fixtures are synthetic or checked into this repository. External corpus parity
+# suites run explicitly with authorized fixture roots through app_tests.sh suites.
+WPE_METAL_SUITES := WPEParityMetalStateMappingTests WPEParityShaderStoreTests \
+    WPEParityProductSettingsTests WPEParityResourceSaverFlagsTests WPEParityColorCorrectionPresetTests \
+    WPEParityAudioFeedTests WPEParitySeedParsingTests SystemWallpaperSceneConfigurationTests \
+    SystemWallpaperPreparationTests WPEMetalTextureLoaderTests WPEMetalRenderScaleTests \
+    WPEMetalFXUpscalerTests WPEMetalUpscalePlanTests WPEDisplayHDROutputTests WPEMetalFrameSubmissionTests WPEGPUErrorSinkTests \
+    WPEVideoNV12ConversionTests WPEVideoHDRAndLegacyOutputTests WPEVideoSamplingFailureTests \
+    WPEVideoFrameConversionSchedulingTests WPEVideoOutputCapTests WPEVideoTextureSourceTeardownTests \
+    WPETexLazyAnimatedTextureSourceTests WPETexAnimatedTextureSourceSuspendTests WPETexAnimatedTextureSourceGateTests \
+    WPESceneSpanPresenterTests WPESceneSpanFramesTests WPEDisplayedFrameCaptureTests \
+    WallpaperVideoPlayerDisplayedFrameCaptureTests WPERenderThreadTests WPERenderThreadDrainRuntimeTests \
+    SceneLoadProgressTests WPEPreparationCancellationTests WPESceneHibernateTests
+
 
 # Wallpaper transitions draw with Metal into real windows, so they also stay out of the headless shard.
 TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitionShaderTests \

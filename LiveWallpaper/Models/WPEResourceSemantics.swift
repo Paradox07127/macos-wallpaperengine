@@ -50,42 +50,4 @@ struct WPEResourceSemantics: Equatable, Hashable, Codable, Sendable {
     }
 }
 
-enum WPEContractOrigin: String, Codable, Sendable {
-    case producer, declaration, externalImage, compatibility
-}
-
-struct WPEPassInputContract: Equatable, Sendable {
-    let reference: WPETextureReference
-    let semantics: WPEResourceSemantics
-    let origin: WPEContractOrigin
-}
-
-enum WPENativeInputAlphaOperation: UInt, Hashable, Codable, Sendable {
-    case none, premultiply, unpremultiply
-}
-
-struct WPENativeAlphaPolicy: Equatable, Hashable, Codable, Sendable {
-    let input: WPENativeInputAlphaOperation
-    let straightOutput: Bool
-    let independentCoverageInput: Bool
-
-    init(input: WPENativeInputAlphaOperation, straightOutput: Bool, independentCoverageInput: Bool = false) {
-        self.input = input
-        self.straightOutput = straightOutput
-        self.independentCoverageInput = independentCoverageInput
-    }
-
-    static let compatibility = Self(input: .none, straightOutput: false)
-}
-
-extension WPETextureReference {
-    var contractKey: String {
-        switch self {
-        case let .image(name): "image:" + name
-        case let .asset(name): "asset:" + name
-        case let .fbo(name): "fbo:" + name
-        case .previous: "previous"
-        }
-    }
-}
 #endif

@@ -1,3 +1,4 @@
+#if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
@@ -6,108 +7,52 @@ import Testing
 
 @Suite("WPE data texture colour space")
 struct WPEDataTextureColorSpaceTests {
-    @Test("Pulse Add evaluates authored encoded colours while preserving masks and alpha")
-    func pulseEncodedColourAmplitude() throws {
-        let low = try pulsePixel(time: -.pi / 2)
-        let middle = try pulsePixel(time: 0)
-        let high = try pulsePixel(time: .pi / 2)
-        #expect(abs(Int(low[0]) - 128) <= 2)
-        #expect(abs(Int(middle[0]) - 192) <= 2)
-        #expect(abs(Int(high[0]) - 255) <= 2)
-        #expect(high[3] == 255)
-        let masked = try pulsePixel(time: .pi / 2, mask: 128)
-        #expect(abs(Int(masked[0]) - 192) <= 2)
-        let transparent = try pulsePixel(time: .pi / 2, alpha: 0)
-        #expect(transparent == [0, 0, 0, 0])
-        let translucent = try pulsePixel(time: .pi / 2, alpha: 128)
-        #expect(abs(Int(translucent[0]) - 128) <= 2)
-        #expect(translucent[3] == 128)
-    }
-
-    @Test("Other effects use the same number arithmetic")
-    func otherEffectArithmeticStaysLinear() throws {
-        let high = try pulsePixel(time: .pi / 2, shaderName: "effects/other")
-        #expect(abs(Int(high[0]) - 255) <= 2)
-    }
-
-    /// mask 的原始值不能过颜色传输函数,所以它与 source 纹理格式刻意不同。
-    private func pulsePixel(
-        time: Float, mask: UInt8 = 255, alpha: UInt8 = 255,
-        shaderName: String = "effects/pulse"
-    ) throws -> [UInt8] {
+    @Test("Parity colour and mask uploads sample their encoded channels without alpha conversion", arguments: [UInt8(0), UInt8(128)])
+    func authoredColourMaskAndCoverageRemainIndependent(alpha: UInt8) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let translation = try WPEShaderTranspiler.translateFragment(
-            shaderName: shaderName,
-            preprocessedSource: """
-            uniform sampler2D g_Texture0;
-            uniform sampler2D g_Texture1;
-            uniform float g_Time;
-            varying vec2 v_TexCoord;
-            void main() {
-                vec4 sampleColor = texSample2D(g_Texture0, v_TexCoord);
-                float mask = texSample2D(g_Texture1, v_TexCoord).r;
-                float pulse = smoothstep(0.0, 1.0, sin(g_Time) * 0.5 + 0.5);
-                vec3 added = min(sampleColor.rgb + sampleColor.rgb, vec3(1.0));
-                vec3 animated = mix(sampleColor.rgb, added, pulse);
-                gl_FragColor = vec4(mix(sampleColor.rgb, animated, mask), sampleColor.a);
-            }
-            """,
-            premultipliedInputSlots: [0], premultipliedOutput: true
-        )
-        let vertex = """
-        vertex WPEStageIn pulse_probe_vertex(uint id [[vertex_id]]) {
-            float2 positions[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            WPEStageIn out;
-            out.position = float4(positions[id], 0, 1);
-            out.uv = float2(0.5);
-            return out;
+        let color = try WPEParityTextureLoader.load(span: .init(data: Self.tex(format: 0, bytes: [192, 128, 64, alpha])), device: device)
+        let mask = try WPEParityTextureLoader.load(span: .init(data: Self.tex(format: 9, bytes: [128])), device: device)
+        #expect(color.texture.pixelFormat == .rgba8Unorm)
+        #expect(mask.texture.pixelFormat == .r8Unorm)
+        let library = try device.makeLibrary(source: """
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void sample_data(texture2d<float> color [[texture(0)]], texture2d<float> mask [[texture(1)]],
+                                device float4 *values [[buffer(0)]]) {
+            constexpr sampler point(filter::nearest, address::clamp_to_edge);
+            values[0] = color.sample(point, float2(0.5));
+            values[1] = mask.sample(point, float2(0.5));
         }
-        """
-        let library = try device.makeLibrary(source: translation.mslSource + "\n" + vertex, options: nil)
-        let pipeline = MTLRenderPipelineDescriptor()
-        pipeline.vertexFunction = library.makeFunction(name: "pulse_probe_vertex")
-        pipeline.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: "wpe_translated_fragment", format: .rgba8Unorm)
-        pipeline.colorAttachments[0].pixelFormat = .rgba8Unorm
-        let state = try device.makeRenderPipelineState(descriptor: pipeline)
-        func texture(_ format: MTLPixelFormat, _ bytes: [UInt8]) throws -> MTLTexture {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: 1, height: 1, mipmapped: false
-            )
-            descriptor.storageMode = .shared
-            descriptor.usage = [.shaderRead, .renderTarget]
-            let result = try #require(device.makeTexture(descriptor: descriptor))
-            bytes.withUnsafeBytes {
-                result.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0,
-                               withBytes: $0.baseAddress!, bytesPerRow: 4)
-            }
-            return result
-        }
-        let grey = UInt8((128.0 * Double(alpha) / 255).rounded())
-        let source = try texture(.rgba8Unorm, [grey, grey, grey, alpha])
-        let maskTexture = try texture(.rgba8Unorm, [mask, mask, mask, 255])
-        let output = try texture(.rgba8Unorm, [0, 0, 0, 0])
-        let queue = try #require(device.makeCommandQueue())
-        let command = try #require(queue.makeCommandBuffer())
-        let descriptor = MTLRenderPassDescriptor()
-        descriptor.colorAttachments[0].texture = output
-        descriptor.colorAttachments[0].loadAction = .clear
-        descriptor.colorAttachments[0].storeAction = .store
-        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: descriptor))
-        encoder.setRenderPipelineState(state)
-        encoder.setFragmentTexture(source, index: 0)
-        encoder.setFragmentTexture(maskTexture, index: 1)
-        let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
-        encoder.setFragmentSamplerState(sampler, index: 0)
-        encoder.setFragmentSamplerState(sampler, index: 1)
-        var uniform = SIMD4<Float>(time, 0, 0, 0)
-        encoder.setFragmentBytes(&uniform, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        """, options: nil)
+        let pipeline = try device.makeComputePipelineState(function: #require(library.makeFunction(name: "sample_data")))
+        let output = try #require(device.makeBuffer(length: 2 * MemoryLayout<SIMD4<Float>>.stride, options: .storageModeShared))
+        let command = try #require(device.makeCommandQueue()?.makeCommandBuffer())
+        let encoder = try #require(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(color.texture, index: 0)
+        encoder.setTexture(mask.texture, index: 1)
+        encoder.setBuffer(output, offset: 0, index: 0)
+        encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
         encoder.endEncoding()
         command.commit()
         command.waitUntilCompleted()
-        #expect(command.status == .completed)
-        var bytes = [UInt8](repeating: 0, count: 4)
-        output.getBytes(&bytes, bytesPerRow: 4, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
-        return bytes
+        try #require(command.status == .completed && command.error == nil)
+        let actual = output.contents().bindMemory(to: SIMD4<Float>.self, capacity: 2)
+        let expected = [SIMD4<Float>(192, 128, 64, Float(alpha)) / 255, SIMD4<Float>(128.0 / 255, 0, 0, 1)]
+        for pixel in 0 ..< 2 {
+            for channel in 0 ..< 4 {
+                #expect(abs(actual[pixel][channel] - expected[pixel][channel]) < 0.0001)
+            }
+        }
+    }
+
+    private static func tex(format: UInt32, bytes: [UInt8]) -> Data {
+        var data = Data("TEXV0004\0".utf8)
+        for value: UInt32 in [format, 0, 1, 1, 1, 1, 1, 1, 1, UInt32(bytes.count)] {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        data.append(contentsOf: bytes)
+        return data
     }
 }
+#endif

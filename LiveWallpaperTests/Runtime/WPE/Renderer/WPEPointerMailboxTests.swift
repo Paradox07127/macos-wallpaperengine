@@ -56,9 +56,9 @@ struct WPEPointerMailboxTests {
         #expect(outside == .inactive)
     }
 
-    @Test("Mailbox mapping equals WPEMetalPointerSampler.sampleSceneUV")
+    @Test("Published view geometry agrees with AppKit screen-to-view coordinates")
     @MainActor
-    func matchesLiveSampler() {
+    func matchesAppKitViewCoordinates() {
         let window = NSWindow(
             contentRect: Self.frame,
             styleMask: .borderless,
@@ -77,7 +77,11 @@ struct WPEPointerMailboxTests {
             CGPoint(x: 1000, y: 900)
         ]
         for probe in probes {
-            let live = WPEMetalPointerSampler.sampleSceneUV(mouseLocation: probe, in: view)
+            let local = view.convert(window.convertPoint(fromScreen: probe), from: nil)
+            let live: WPEMetalPointerSample = view.bounds.contains(local)
+                ? .inside(SIMD2(Double((local.x - view.bounds.minX) / view.bounds.width),
+                                Double(1 - (local.y - view.bounds.minY) / view.bounds.height)))
+                : .inactive
             let boxed = WPEPointerMailbox.pointerSample(forScreenLocation: probe, geometry: geo)
             #expect(boxed == live, "probe \(probe): \(boxed) vs \(live)")
         }

@@ -38,8 +38,7 @@ actor WPEDisplayRenderActor {
     nonisolated let unownedExecutor: UnownedSerialExecutor
 
     #if !LITE_BUILD
-    private var renderer: WPEMetalSceneRenderer?
-    /// New pipeline driver; legacy ownership is removed after product migration.
+    /// The scene driver is confined to this actor.
     private var parityDriver: WPEParitySceneDriver?
     private var parityInputs: WPEParitySceneInputs?
     private var languageObservation: WPESceneLanguageObservation?
@@ -165,8 +164,6 @@ actor WPEDisplayRenderActor {
             if let parityDriver {
                 parityDriver.setSceneScriptLanguage(language)
                 requestParityFrame()
-            } else {
-                renderer?.setSceneScriptLanguage(language)
             }
         }
     }
@@ -175,14 +172,6 @@ actor WPEDisplayRenderActor {
     #if !LITE_BUILD
 
     // MARK: - Renderer Ownership
-
-    func adopt(_ renderer: sending WPEMetalSceneRenderer) {
-        scenePropertyRendererGeneration &+= 1
-        self.renderer = renderer
-        renderer.displayActor = self
-        renderer.installSceneScriptLanguageObservers(on: self)
-        startConfigConsumer()
-    }
 
     /// The driver is built here because it is not Sendable and must live on this actor.
     func adoptParity(_ inputs: WPEParitySceneInputs) throws {
@@ -208,34 +197,6 @@ actor WPEDisplayRenderActor {
             Task { await self?.parityUserShortcutsChanged(bridge) }
         }
         startConfigConsumer()
-    }
-
-    /// The parity driver already consumed the configuration commands, so its settings are replayed onto `renderer`.
-    func replaceParity(with renderer: sending WPEMetalSceneRenderer) async {
-        guard let driver = parityDriver, let inputs = parityInputs else {
-            preconditionFailure("replaceParity needs an adopted parity scene")
-        }
-        let profile: WallpaperPerformanceProfile = driver.isPaused ? .suspended : .quality
-        let clickCaptureEnabled = inputs.mailbox.read().clickCaptureEnabled
-        driver.cleanup()
-        inputs.mailbox.publishInteractiveZones([])
-        (parityDriver, parityInputs) = (nil, nil)
-        inputs.userShortcutIcons?.onChange = nil
-        inputs.userShortcuts?.setChangeHandler(nil)
-        adopt(renderer)
-        // No suspension until the replay ends: a command applied in between would reach neither scene.
-        setFrameRateCeiling(driver.userPreferredFPS)
-        setAdaptiveFrameRateThrottle(driver.adaptiveThrottleActive)
-        setAudioMuted(driver.audioMuted)
-        setAudioVolume(driver.audioVolume)
-        setMouseInteractionEnabled(driver.mouseInteractionEnabled)
-        setClickCaptureEnabled(clickCaptureEnabled)
-        setPresentFitMode(driver.fitMode)
-        updateSurfaceGeometry(drawableSize: driver.drawableSize)
-        applyPerformanceProfile(profile)
-        if let media = inputs.media {
-            await MainActor.run { media.stop() }
-        }
     }
 
     private func startConfigConsumer() {
@@ -293,26 +254,11 @@ actor WPEDisplayRenderActor {
             replanParityIfNeeded()
             return
         }
-        // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
-        guard let thread else {
-            renderer?.renderAndPresentFrame()
-            return
-        }
-        guard let renderer else { return }
-        let acquisitionStart = renderer.executor.drawableAcquisitionSeconds
-        let start = CACurrentMediaTime()
-        renderer.renderAndPresentFrame()
-        thread.noteFrameDuration(
-            CACurrentMediaTime() - start,
-            drawableWait: renderer.executor.drawableAcquisitionSeconds - acquisitionStart
-        )
     }
 
     /// A static scene re-presents its cached frame on a plain redraw; changed texture content needs a fresh encode.
     func forceContentRerender() {
-        guard let renderer else { return }
-        renderer.pendingForcedRerender = true
-        renderer.surfaceControl.setNeedsRedraw()
+        requestParityFrame()
     }
 
     func renderDisplayLinkFrame(at timestamp: Double) {
@@ -330,7 +276,7 @@ actor WPEDisplayRenderActor {
     private var displayLink: CADisplayLink?
     /// Buffered pacing so an install that races the first `applyPacing` still ends on the right state.
     private var linkPaused = true
-    private var linkPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
+    private var linkPreferredFPS = WPESceneRenderPolicy.defaultPreferredFPS
     private var linkDisplayFPS = 60
     private var frameCadence = FrameRateCadence()
 
@@ -415,7 +361,6 @@ actor WPEDisplayRenderActor {
             replanParityIfNeeded()
             return
         }
-        renderer?.updateSurfaceGeometry(drawableSize: drawableSize)
     }
 
     /// The re-plan builds off the frame path; frames keep the current plan until it is swapped in.
@@ -438,140 +383,18 @@ actor WPEDisplayRenderActor {
         applyParityPacing()
     }
 
-    func performStaticReload(
-        path: String,
-        record: WPEMetalSceneRenderer.StaticTextureCacheRecord,
-        resolver: WPEMultiRootResourceResolver,
-        loader: WPEMetalTextureLoader,
-        threshold: Int,
-        ticket: WPEStaticTextureReloadTaskOwner.Ticket
-    ) async {
-        await renderer?.performStaticTextureReload(
-            path: path,
-            record: record,
-            resolver: resolver,
-            loader: loader,
-            threshold: threshold,
-            ticket: ticket,
-            on: self
-        )
-    }
-
-    func harvestLazyPrefetches() {
-        guard let renderer else { return }
-        for source in renderer.dynamicTextureSources.values {
-            (source as? WPETexLazyAnimatedTextureSource)?.harvestCompletedPrefetches()
-        }
-    }
-
-    func rebuildOnDemandVideo(key: String, generation: Int) async {
-        guard let renderer else { return }
-        defer {
-            if renderer.loadGeneration == generation {
-                renderer.onDemandVideoTasks.removeValue(forKey: key)
-            }
-        }
-        guard !Task.isCancelled, renderer.loadGeneration == generation else { return }
-        let previous = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource
-        do {
-            // The generation must hold at PUBLICATION time, not just entry: a stale rebuild must not overwrite sources a wake reload just installed.
-            try await renderer.loadDynamicTextureOnActor(
-                path: key,
-                layerName: key,
-                publicationAllowed: { renderer.loadGeneration == generation },
-                on: self
-            )
-        } catch is CancellationError {
-            return
-        } catch {
-            Logger.warning("Scene \(renderer.descriptor.workshopID) [OnDemandVideo] rebuild failed for \(key): \(error)", category: .wpeRender)
-            return
-        }
-        guard renderer.loadGeneration == generation,
-              let source = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource else { return }
-        if let previous, previous !== source {
-            previous.invalidate()
-        }
-        renderer.sceneScriptVideoCommandBuffer.transportBySourceKey[key]?.apply(
-            to: source,
-            automaticPlayback: renderer.currentProfile == .quality
-        )
-        source.applyPerformanceProfile(renderer.currentProfile)
-        renderer.surfaceControl.setNeedsRedraw()
-    }
-
-    func prewarmShaders(pipeline: WPEPreparedRenderPipeline) async -> Set<String> {
-        await renderer?.prewarmCustomShaders(for: pipeline, on: self)
-        return await renderer?.prewarmAuthoredVertexShaders(for: pipeline, on: self) ?? []
-    }
-
-    func publishDeferredAudio(runtime: WPESoundRuntime, generation: Int) {
-        guard let renderer, !Task.isCancelled, renderer.loadGeneration == generation else {
-            runtime.stop()
-            return
-        }
-        runtime.setMuted(renderer.pendingAudioMuted)
-        runtime.setMasterVolume(renderer.effectiveAudioVolume)
-        renderer.soundRuntime = runtime
-        // Seed the suspend flag from the live profile BEFORE any later mute toggle: `pause()` records isSuspended so a subsequent un-mute can't start audio on a suspended wallpaper.
-        if renderer.currentProfile == .quality {
-            runtime.play()
-        } else {
-            runtime.pause()
-        }
-        renderer.publishRuntimeActivity()
-    }
-
     /// Once one present succeeds, later frame errors remain diagnostics and cannot revoke the already-visible readiness contract.
     func recordPresentCompletion(_ result: WPEFrameReadinessResult) {
-        if let parityDriver {
-            parityDriver.recordSpanPresent(result)
-            return
-        }
-        guard let renderer,
-              WPEFrameReadinessCoordinator.isCurrent(
-                  result,
-                  didLoad: renderer.didLoad,
-                  currentGeneration: renderer.loadGeneration,
-                  completedGeneration: renderer.completedPresentGeneration
-              ) else {
-            return
-        }
-        guard result.renderCompleted, result.presentCompleted else {
-            renderer.failedPresentGeneration = result.generation
-            return
-        }
-        renderer.completedPresentGeneration = result.generation
-        renderer.failedPresentGeneration = nil
-        if renderer.pendingAudioStartupDocument != nil {
-            renderer.beginDeferredAudioStartup()
-        }
+        parityDriver?.recordSpanPresent(result)
     }
 
     func load() async throws {
-        if parityDriver != nil {
-            try await loadParity()
-            return
-        }
-        try await renderer?.load(on: self)
-        if renderer?.spanFrames != nil {
-            renderer?.renderAndPresentFrame()
-        }
-        // First frames can still miss PSO signatures after prewarming.
-        thread?.boostRenderQoSWarmup()
+        try await loadParity()
     }
 
     func reload() async throws {
         scenePropertyRendererGeneration &+= 1
-        if parityDriver != nil {
-            try await loadParity()
-            return
-        }
-        try await renderer?.reload(on: self)
-        if renderer?.spanFrames != nil {
-            renderer?.renderAndPresentFrame()
-        }
-        thread?.boostRenderQoSWarmup()
+        try await loadParity()
     }
 
     private func loadParity() async throws {
@@ -667,15 +490,11 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return true
         }
-        guard let renderer else { return false }
-        scenePropertyRendererGeneration &+= 1
-        return await renderer.hibernate(on: self)
+        return false
     }
 
     func teardownRenderer() async {
         scenePropertyRendererGeneration &+= 1
-        let retiringRenderer = renderer
-        renderer = nil
         spanPresenter = nil
         parityDriver?.cleanup()
         languageObservation = nil
@@ -687,15 +506,6 @@ actor WPEDisplayRenderActor {
         retiringInputs?.userShortcuts?.setChangeHandler(nil)
         if let media = retiringInputs?.media {
             await MainActor.run { media.stop() }
-        }
-        if let retiringRenderer {
-            let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()
-            let staticDrain = await retiringRenderer.staticTextureReloadTaskOwner.quiesce()
-            retiringRenderer.cleanup()
-            await staticDrain.wait()
-            for task in videoTasks {
-                await task.value
-            }
         }
     }
 
@@ -712,7 +522,6 @@ actor WPEDisplayRenderActor {
         if spanPresenter != nil {
             setLinkPaused(profile == .suspended)
         }
-        renderer?.applyPerformanceProfile(profile)
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
@@ -724,7 +533,6 @@ actor WPEDisplayRenderActor {
         if spanPresenter != nil {
             setLinkPreferredFPS(framesPerSecond)
         }
-        renderer?.setFrameRateCeiling(framesPerSecond)
     }
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {
@@ -733,30 +541,24 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return
         }
-        renderer?.setAdaptiveFrameRateThrottle(active)
     }
 
     func setAudioMuted(_ muted: Bool) {
         parityDriver?.setAudioMuted(muted)
-        renderer?.setAudioMuted(muted)
     }
 
     func setAudioVolume(_ volume: Double) {
         parityDriver?.setAudioVolume(volume)
-        renderer?.setAudioVolume(volume)
     }
 
     #if DEBUG
     func currentPendingAudioVolume() -> Double? {
-        renderer?.pendingAudioVolume
+        parityDriver?.audioVolume
     }
     #endif
 
     func requiresSystemAudioCapture() -> Bool {
-        if let parityDriver {
-            return parityDriver.requiresSystemAudioCapture
-        }
-        return renderer?.sceneSupportsAudioProcessing ?? false
+        parityDriver?.requiresSystemAudioCapture ?? false
     }
 
     func setMouseInteractionEnabled(_ enabled: Bool) {
@@ -765,7 +567,6 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return
         }
-        renderer?.setMouseInteractionEnabled(enabled)
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
@@ -776,7 +577,6 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return
         }
-        renderer?.setClickCaptureEnabled(enabled)
     }
 
     func setPresentFitMode(_ mode: WPEPresentFitMode) {
@@ -785,7 +585,6 @@ actor WPEDisplayRenderActor {
             replanParityIfNeeded()
             return
         }
-        renderer?.setPresentFitMode(mode)
     }
 
     /// Reload only when an authored control changes; a layer-only exclusion needs no rebuild.
@@ -800,21 +599,13 @@ actor WPEDisplayRenderActor {
             }
             return
         }
-        guard let renderer else { return }
-        renderer.excludedObjectIDs = excludedObjectIDs
-        guard renderer.descriptor != descriptor else { return }
-        renderer.descriptor = descriptor
-        // A sleeping native surface has released its scene slot. Its normal wake reload applies these values.
-        if renderer.didLoad {
-            try await reload()
-        }
     }
 
     func scenePropertyBindings() -> [String: [WPEScenePropertyBinding]] {
         if let parityDriver {
             return parityDriver.userPropertyBindings
         }
-        return renderer?.scenePropertyBindings ?? [:]
+        return [:]
     }
 
     func prepareScenePropertyPatch(
@@ -835,14 +626,7 @@ actor WPEDisplayRenderActor {
             }
             return PreparedScenePropertyPatch(patch: patch, rendererGeneration: generation)
         }
-        guard authority.isCurrent(token),
-              renderer?.canApplyScenePropertyPatch(patch) == true else {
-            return nil
-        }
-        return PreparedScenePropertyPatch(
-            patch: patch,
-            rendererGeneration: scenePropertyRendererGeneration
-        )
+        return nil
     }
 
     func commitScenePropertyPatch(
@@ -859,11 +643,7 @@ actor WPEDisplayRenderActor {
             requestParityFrame()
             return true
         }
-        guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
-            return false
-        }
-        renderer.descriptor = updatedDescriptor
-        return true
+        return false
     }
 
     func captureLivePoster() async -> NSImage? {
@@ -873,22 +653,7 @@ actor WPEDisplayRenderActor {
                   !Task.isCancelled else { return nil }
             return await WPEMetalTextureSnapshotter.shared.snapshotAsync(from: copy)
         }
-        let id = UUID()
-        // Keep the suspension and its continuation on the owning actor. Nesting these
-        // closures in the renderer's isolated-parameter method lost executor inheritance
-        // on the cooperative pool, racing the render loop's dictionary drain.
-        return await withTaskCancellationHandler(operation: {
-            await withCheckedContinuation { continuation in
-                self.preconditionIsolated()
-                guard !Task.isCancelled, let renderer = self.renderer else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                renderer.enqueueLivePosterCapture(id: id, continuation: continuation)
-            }
-        }, onCancel: {
-            Task { await self.finishLivePosterCapture(id: id, image: nil) }
-        }, isolation: self)
+        return nil
     }
 
     /// Works while running or suspended; nil before presentation, after hibernation, or when replay fails.
@@ -904,15 +669,7 @@ actor WPEDisplayRenderActor {
                     }
                     return
                 }
-                guard !Task.isCancelled, let renderer = self.renderer, renderer.outputTexture != nil else {
-                    resumer.resume(returning: nil)
-                    return
-                }
-                renderer.executor.encodeDisplayedFrameCapture(
-                    colorSpace: renderer.metalLayer.layer.colorspace
-                ) { capture in
-                    resumer.resume(returning: capture)
-                }
+                resumer.resume(returning: nil)
             }
         }, onCancel: {
             resumer.resume(returning: nil)
@@ -929,51 +686,15 @@ actor WPEDisplayRenderActor {
             try await parityDriver.renderMovieFrame(into: destination, timestamp: CACurrentMediaTime())
             return
         }
-        guard let renderer else { throw WPEMetalRenderExecutorError.noRenderablePasses }
-        let production = WPEMetalFrameProductionCompletion()
-        var encoded = false
-        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs()) { source, commandBuffer in
-            try renderer.executor.encodePresentPass(
-                source: source, target: destination.texture, fitMode: renderer.presentFitMode,
-                worldSourceSize: renderer.sceneRenderSize, uniforms: nil, into: commandBuffer
-            )
-            let submission = production.registerSubmission()
-            commandBuffer.addCompletedHandler { buffer in submission.complete(succeeded: buffer.status == .completed) }
-            encoded = true
-            return true
-        }
-        production.seal()
-        guard encoded else { throw WPEMetalRenderExecutorError.commandBufferFailed }
-        let completed = await withCheckedContinuation { continuation in
-            production.observe { succeeded in continuation.resume(returning: succeeded) }
-        }
-        guard completed else { throw WPEMetalRenderExecutorError.commandBufferFailed }
-        try Task.checkCancellation()
+        throw WPEMetalRenderExecutorError.noRenderablePasses
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {
-        renderer?.loadDiagnostics ?? parityDriver?.loadDiagnostics
-    }
-
-    func isCurrentLoadGeneration(_ generation: Int) -> Bool {
-        renderer?.loadGeneration == generation
-    }
-
-    func finishLivePosterCapture(id: UUID, image: NSImage?) {
-        renderer?.finishLivePosterCapture(id: id, image: image)
-    }
-
-    /// Apply an intro→loop phase offset on this actor. `token` guards staleness (bumped by every reload/invalidate).
-    func applyIntroLoopOffset(_ offset: TimeInterval?, token: Int, scriptLoadToken: WPESceneScriptInstanceLimitToken) {
-        guard let renderer,
-              renderer.introPhaseToken == token,
-              renderer.isCurrentSceneScriptLoad(scriptLoadToken) else { return }
-        renderer.introLoopOffset = offset
+        parityDriver?.loadDiagnostics
     }
 
     func setProgressHandler(_ handler: @escaping @Sendable (String) -> Void) {
         progressHandler = handler
-        renderer?.onProgress = handler
     }
 
     func rendererStateSnapshot() -> WPERendererStateSnapshot? {
@@ -996,24 +717,7 @@ actor WPEDisplayRenderActor {
                 runtimeFailure: parityDriver.runtimeFailure
             )
         }
-        guard let renderer else { return nil }
-        let shader = renderer.shaderErrorSummary
-        let gpu = renderer.gpuErrorSummary
-        return WPERendererStateSnapshot(
-            isLoaded: renderer.didLoad,
-            currentLoadGeneration: renderer.loadGeneration,
-            completedPresentGeneration: renderer.completedPresentGeneration,
-            failedPresentGeneration: renderer.failedPresentGeneration,
-            hasPresentedFrame: renderer.hasPresentedFrame,
-            loadDiagnostics: renderer.loadDiagnostics,
-            resolution: renderer.resolutionDiagnostics,
-            shaderErrors: shader.entries.map { .init(shader: $0.shader, reason: $0.reason) },
-            shaderErrorCount: shader.count,
-            gpuErrorCount: gpu.count,
-            gpuErrorLast: gpu.last,
-            descriptor: renderer.descriptor,
-            compatibilitySummary: renderer.sceneTestingSummary
-        )
+        return nil
     }
     #endif
 }
@@ -1031,13 +735,6 @@ enum WPERendererConfigCommand: Sendable {
     case presentFitMode(WPEPresentFitMode)
     case surfaceGeometry(CGSize)
     case sceneScriptLanguage(String)
-}
-
-/// `@unchecked Sendable`: the renderer is built on main, transferred into the actor exactly
-/// once before any frame runs, and never touched on the constructing thread again. Unsound if
-/// the builder uses the renderer after wrapping, or hands the same renderer to two actors.
-struct WPERendererHandoff: @unchecked Sendable {
-    let renderer: WPEMetalSceneRenderer
 }
 
 struct WPERendererStateSnapshot: Sendable {

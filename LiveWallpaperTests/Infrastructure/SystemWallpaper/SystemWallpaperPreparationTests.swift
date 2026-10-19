@@ -492,7 +492,7 @@ struct SystemWallpaperPreparationTests {
         return url
     }
 
-    private func filledScene() throws -> MetalSceneFixture {
+    private func filledScene() throws -> PreparationSceneFixture {
         let root = try scratch()
         do {
             // These are real model/material/source shaders, compiled through the product helper. No renderer or
@@ -549,10 +549,9 @@ struct SystemWallpaperPreparationTests {
             let script = root.appendingPathComponent("scripts/jsclasses/baseclasses.js")
             try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: baseClasses, to: script)
-            return MetalSceneFixture(root: root,
-                                     descriptor: SceneDescriptor(workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
-                                                                 entryFile: "scene.json", capabilityTier: .imageOnly),
-                                     dependencyRoot: nil)
+            return PreparationSceneFixture(root: root,
+                                           descriptor: SceneDescriptor(workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
+                                                                       entryFile: "scene.json", capabilityTier: .imageOnly))
         } catch {
             try? FileManager.default.removeItem(at: root)
             throw error
@@ -605,6 +604,15 @@ struct SystemWallpaperPreparationTests {
         }
         #expect(reader.status == .completed)
         return frames
+    }
+}
+
+private struct PreparationSceneFixture {
+    let root: URL
+    let descriptor: SceneDescriptor
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: root)
     }
 }
 #endif

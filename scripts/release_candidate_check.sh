@@ -53,6 +53,35 @@ assert_no_libcxx_link() {
   fi
 }
 
+# Debug can put the app code in a sibling dylib while the executable is only a launcher.
+assert_lite_runtime_isolation() {
+  local binary="$1" payload symbols dependencies
+  local payloads=("$binary")
+  if [[ -f "${binary}.debug.dylib" ]]; then
+    payloads+=("${binary}.debug.dylib")
+  fi
+  for payload in "${payloads[@]}"; do
+    # Capture completely before matching: grep -q can close a large nm pipe early,
+    # making pipefail hide a forbidden symbol behind nm's SIGPIPE exit.
+    if ! symbols="$(nm "$payload" 2>/dev/null)"; then
+      echo "ERROR: Could not inspect Lite symbols: $payload" >&2
+      exit 1
+    fi
+    if grep -E 'WPEMetalRenderExecutor|WPEParitySceneDriver|WPEParityFrameRenderer|WPEParityScriptEngine' >/dev/null <<<"$symbols"; then
+      echo "ERROR: Lite binary contains a Pro-only renderer symbol: $payload" >&2
+      exit 1
+    fi
+    if ! dependencies="$(otool -L "$payload")"; then
+      echo "ERROR: Could not inspect Lite dependencies: $payload" >&2
+      exit 1
+    fi
+    if grep -E 'JavaScriptCore' >/dev/null <<<"$dependencies"; then
+      echo "ERROR: Lite binary unexpectedly links JavaScriptCore: $payload" >&2
+      exit 1
+    fi
+  done
+}
+
 require_fresh_archive_path() {
   local archive_path="$1"
   local label="$2"
@@ -238,16 +267,9 @@ assert_universal_binary "$LITE_ARCHIVED_APP/Contents/XPCServices/WallpaperMainte
 codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
 assert_no_libcxx_link "$LITE_RELEASE_BIN" "Lite Release archive"
 
-# Lite must remain free of Pro renderer and SceneScript components.
+# Lite must remain free of Pro renderer and SceneScript components in every code payload.
 for lite_binary in "$LITE_DEBUG_BIN" "$LITE_RELEASE_BIN"; do
-  if nm "$lite_binary" 2>/dev/null | grep -Eq 'WPEMetalSceneRenderer|WPEMetalRenderExecutor'; then
-    echo "ERROR: Lite binary contains a Pro-only renderer symbol." >&2
-    exit 1
-  fi
-  if otool -L "$lite_binary" | grep -q 'JavaScriptCore'; then
-    echo "ERROR: Lite binary unexpectedly links JavaScriptCore." >&2
-    exit 1
-  fi
+  assert_lite_runtime_isolation "$lite_binary"
 done
 # Both SKUs ship WallpaperMaintenance, which runs lsregister/pkill for the system
 # wallpaper extension outside the sandbox. Pro additionally ships SteamConnector,

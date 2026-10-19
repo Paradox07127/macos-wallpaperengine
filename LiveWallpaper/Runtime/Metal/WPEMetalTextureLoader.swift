@@ -5,9 +5,8 @@ import LiveWallpaperProWPE
 import Metal
 import MetalKit
 
-// `@unchecked Sendable` so the parallel texture-resolve lane in
-// `WPEMetalSceneRenderer.loadTextures` can capture the loader: all stored
-// properties are thread-safe and nothing is mutated after init.
+/// `@unchecked Sendable`: stored handles are thread-safe and immutable after init,
+/// so parallel texture-resolution work can share the loader.
 struct WPEMetalTextureLoader: @unchecked Sendable {
     private let device: MTLDevice
     private let capabilities: WPEMetalTextureCapabilities

@@ -62,8 +62,9 @@ SERIAL_SUITES=(
   WorkshopDownloadQueueTests
   SteamConnectorClientCancellationTests
   WallpaperVideoPlayerStartupPolicyTests
-  WPESceneScriptB2bResourceLimitTests
-  WPESceneScriptContainmentCharacterizationTests
+  WPEParitySeedParsingTests
+  WPEParityShaderStoreTests
+  SystemWallpaperSceneConfigurationTests
 )
 
 action="test"

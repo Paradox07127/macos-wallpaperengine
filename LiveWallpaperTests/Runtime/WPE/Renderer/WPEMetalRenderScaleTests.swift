@@ -6,38 +6,6 @@ import LiveWallpaperProWPE
 
 @Suite("WPE Metal render scale decoupling", .serialized)
 struct WPEMetalRenderScaleTests {
-    @Test("FBO divisors retain truncation and reject unrepresentable dimensions")
-    func divisorNumericBoundary() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let pool = WPEMetalRenderTargetPool(device: device, maximumTextureDimension2D: 1024)
-        for (scale, width, height) in [(2.0, 278, 250), (0, 557, 500), (-1, 557, 500),
-                                       (Double.nan, 557, 500), (Double.infinity, 557, 500),
-                                       (Double.greatestFiniteMagnitude, 1, 1)] {
-            let spec = WPERenderFBO(name: "numeric", scale: scale, format: "rgba8888")
-            let key = pool.diagnosticKey(for: .fbo(name: spec.name), spec: spec,
-                                         layer: Self.makeLayer(localFBOs: [spec]),
-                                         sceneSize: CGSize(width: 557, height: 500))
-            #expect(key.width == width)
-            #expect(key.height == height)
-        }
-        for scale in [Double.leastNonzeroMagnitude, 1e-300] {
-            let spec = WPERenderFBO(name: "numeric", scale: scale, format: "rgba8888")
-            let layer = Self.makeLayer(localFBOs: [spec])
-            let size = CGSize(width: 1, height: 1)
-            let key = pool.diagnosticKey(for: .fbo(name: spec.name), spec: spec, layer: layer, sceneSize: size)
-            #expect(key.width == 1 << 20)
-            #expect(key.height == 1 << 20)
-            let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [])])
-            pool.prepare(pipeline: pipeline, aliasIntervals: [.init(key: key, firstPass: 0, lastPass: 1)])
-            #expect(pool.aliasPlanDeviceQueryCount == 0)
-            #expect(throws: WPEMetalRenderExecutorError.renderTargetDimensionsExceedDeviceLimit(
-                targetName: spec.name, width: key.width, height: key.height, limit: 1024
-            )) {
-                _ = try pool.texture(for: .fbo(name: spec.name), layer: layer, sceneSize: size, avoiding: nil)
-            }
-        }
-    }
-
     // MARK: - scaledCanvasSize (the single conversion)
 
     @Test("Scale 1 is the identity for ANY size — the bit-identity guarantee")
@@ -61,175 +29,6 @@ struct WPEMetalRenderScaleTests {
         #expect(WPEMetalFXSpatialUpscaler.scaledCanvasSize(
             CGSize(width: 100, height: 100), pixelScale: 0.25
         ) == CGSize(width: 64, height: 64))
-    }
-
-    // MARK: - Pool key derivation under pixelScale
-
-    private static let sceneSize = CGSize(width: 1920, height: 1080)
-
-    private static func makeLayer(localFBOs: [WPERenderFBO] = []) -> WPERenderLayer {
-        WPERenderLayer(
-            objectID: "obj",
-            objectName: "obj",
-            imagePath: "",
-            materialPath: nil,
-            geometry: .identity,
-            compositeA: "comp_a",
-            compositeB: "comp_b",
-            localFBOs: localFBOs,
-            passes: []
-        )
-    }
-
-    private static func pool() throws -> WPEMetalRenderTargetPool {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        return WPEMetalRenderTargetPool(device: device)
-    }
-
-    @Test("pixelScale 1 keys are identical to the historical derivation")
-    func poolKeysIdentityAtScaleOne() throws {
-        let pool = try Self.pool()
-        pool.pixelScale = 1
-        let layer = Self.makeLayer()
-        let key = pool.diagnosticKey(
-            for: .fbo(name: "_rt_FullFrameBuffer"),
-            spec: WPERenderFBO(name: "_rt_FullFrameBuffer", scale: 1, format: "rgba8888"),
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        #expect(key.width == 1920)
-        #expect(key.height == 1080)
-        let half = pool.diagnosticKey(
-            for: .fbo(name: "_rt_HalfFrameBuffer"),
-            spec: WPERenderFBO(name: "_rt_HalfFrameBuffer", scale: 2, format: "rgba8888"),
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        #expect(half.width == 960)
-        #expect(half.height == 540)
-    }
-
-    @Test("Scene-sized FBO key matches the scaled scene output exactly (the blit invariant)")
-    func sceneAliasKeyMatchesScaledOutput() throws {
-        let pool = try Self.pool()
-        pool.pixelScale = 0.75
-        let key = pool.diagnosticKey(
-            for: .fbo(name: "_rt_FullFrameBuffer"),
-            spec: WPERenderFBO(name: "_rt_FullFrameBuffer", scale: 1, format: "rgba8888"),
-            layer: Self.makeLayer(),
-            sceneSize: Self.sceneSize
-        )
-        let output = WPEMetalFXSpatialUpscaler.scaledCanvasSize(Self.sceneSize, pixelScale: 0.75)
-        #expect(key.width == Int(output.width))
-        #expect(key.height == Int(output.height))
-        // Odd canvas: a key that Int-truncates instead of even-aligning differs by
-        // 1px and would make the alias-snapshot blit read out of bounds.
-        let oddScene = CGSize(width: 2233, height: 1081)
-        let oddKey = pool.diagnosticKey(
-            for: .fbo(name: "_rt_FullFrameBuffer"),
-            spec: WPERenderFBO(name: "_rt_FullFrameBuffer", scale: 1, format: "rgba8888"),
-            layer: Self.makeLayer(),
-            sceneSize: oddScene
-        )
-        let oddOutput = WPEMetalFXSpatialUpscaler.scaledCanvasSize(oddScene, pixelScale: 0.75)
-        #expect(oddKey.width == Int(oddOutput.width))
-        #expect(oddKey.height == Int(oddOutput.height))
-    }
-
-    @Test("Downsample divisors derive from the SCALED canvas head")
-    func divisorAppliesAfterScaledCanvas() throws {
-        let pool = try Self.pool()
-        pool.pixelScale = 0.75
-        let key = pool.diagnosticKey(
-            for: .fbo(name: "_rt_HalfFrameBuffer"),
-            spec: WPERenderFBO(name: "_rt_HalfFrameBuffer", scale: 2, format: "rgba8888"),
-            layer: Self.makeLayer(),
-            sceneSize: Self.sceneSize
-        )
-        // Head 1440x810 → divisor 2 → 720x405 (truncating, like WPE).
-        #expect(key.width == 720)
-        #expect(key.height == 405)
-    }
-
-    @Test("Authored pixelSize and fit scale with the canvas")
-    func pixelSizeAndFitScale() throws {
-        let pool = try Self.pool()
-        pool.pixelScale = 0.75
-        let layer = Self.makeLayer()
-        let sized = pool.diagnosticKey(
-            for: .fbo(name: "text"),
-            spec: WPERenderFBO(
-                name: "text", scale: 1, format: "rgba8888",
-                pixelSize: CGSize(width: 557, height: 500)
-            ),
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        let expected = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
-            CGSize(width: 557, height: 500), pixelScale: 0.75
-        )
-        #expect(sized.width == Int(expected.width))
-        #expect(sized.height == Int(expected.height))
-
-        let fitted = pool.diagnosticKey(
-            for: .fbo(name: "fx"),
-            spec: WPERenderFBO(name: "fx", scale: 1, fit: 512, format: "rgba8888"),
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        // fit is an absolute pixel edge → scales linearly: 512 × 0.75 = 384.
-        #expect(max(fitted.width, fitted.height) == 384)
-    }
-
-    @Test("Allocation dimensions agree with the diagnostic key under scaling")
-    func allocationMatchesDiagnosticKey() throws {
-        let fbo = WPERenderFBO(name: "fxBlur", scale: 2, format: "rgba8888")
-        let layer = Self.makeLayer(localFBOs: [fbo])
-        let pool = try Self.pool()
-        pool.pixelScale = 0.75
-        let key = pool.diagnosticKey(
-            for: .fbo(name: "fxBlur"),
-            spec: fbo,
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        let texture = try pool.texture(
-            for: .fbo(name: "fxBlur"),
-            layer: layer,
-            sceneSize: Self.sceneSize,
-            avoiding: nil
-        )
-        #expect(texture.width == key.width)
-        #expect(texture.height == key.height)
-    }
-
-    @Test("worldCanvasSize ignores pixelScale and equals scale-1 dimensions")
-    func worldCanvasSizeIsScaleInvariant() throws {
-        let fbo = WPERenderFBO(
-            name: "group", scale: 1, format: "rgba8888",
-            pixelSize: CGSize(width: 557, height: 500)
-        )
-        let layer = Self.makeLayer(localFBOs: [fbo])
-        let pool = try Self.pool()
-        pool.pixelScale = 0.75
-        let world = pool.worldCanvasSize(
-            for: .fbo(name: "group"),
-            layer: layer,
-            sceneSize: Self.sceneSize
-        )
-        #expect(world == CGSize(width: 557, height: 500))
-        #expect(pool.worldCanvasSize(
-            for: .scene, layer: layer, sceneSize: Self.sceneSize
-        ) == Self.sceneSize)
-        pool.pixelScale = 1
-        let texture = try pool.texture(
-            for: .fbo(name: "group"),
-            layer: layer,
-            sceneSize: Self.sceneSize,
-            avoiding: nil
-        )
-        #expect(CGFloat(texture.width) == world.width)
-        #expect(CGFloat(texture.height) == world.height)
     }
 
     // MARK: - Executor gating
@@ -329,31 +128,12 @@ struct WPEMetalRenderScaleTests {
         let texture = try #require(device.makeTexture(descriptor: descriptor))
 
         executor.outputTexturePool = [texture]
-        executor.bootstrapPreviousTextureCache[
-            .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
-        ] = WPEMetalBootstrapTexture(
-            texture: texture,
-            initialization: WPEMetalBootstrapInitialization(
-                commandBuffer: try #require(executor.textureSourceCommandQueue.makeCommandBuffer())
-            )
-        )
-        executor.sceneReadHazardSnapshotCache[
-            .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
-        ] = texture
-        // previousFrameHistory is validated against the WORLD size, which a scale
-        // change leaves alone, so without an explicit drop it serves stale resolutions.
-        executor.previousFrameHistory = .init(
-            sceneSize: CGSize(width: 1920, height: 1080),
-            sceneTexture: texture,
-            namedTextures: [:]
-        )
-
+        executor.linearPresentationTexture = texture
+        executor.recentOutputTextureIDs = [ObjectIdentifier(texture)]
         executor.releaseRenderScaleDependentResources()
-
         #expect(executor.outputTexturePool.isEmpty)
-        #expect(executor.bootstrapPreviousTextureCache.isEmpty)
-        #expect(executor.sceneReadHazardSnapshotCache.isEmpty)
-        #expect(executor.previousFrameHistory == nil)
+        #expect(executor.recentOutputTextureIDs.isEmpty)
+        #expect(executor.linearPresentationTexture == nil)
     }
 
     // MARK: - Registry world dimensions

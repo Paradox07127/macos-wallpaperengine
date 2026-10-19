@@ -63,37 +63,6 @@ struct WPETexLazyAnimatedTextureSourceTests {
         #expect(source.samplingDescriptor(at: 0, frameSlot: 0) == nil)
     }
 
-    @Test("Cross-axis TEXS bypasses the cropped lazy representation")
-    func crossAxisSamplingRoutesToEagerAtlasRepresentation() {
-        let axisAligned = WPETexStreamingFrame(
-            imageID: 0,
-            subRect: CGRect(x: 2, y: 0, width: 2, height: 2),
-            duration: 0.1,
-            samplingDescriptor: WPETexSpriteSamplingDescriptor(
-                rotation: SIMD4<Float>(0.5, 0, 0, 0.5),
-                translation: SIMD2<Float>(0.5, 0)
-            )
-        )
-        let crossAxis = WPETexStreamingFrame(
-            imageID: 0,
-            subRect: axisAligned.subRect,
-            duration: axisAligned.duration,
-            samplingDescriptor: WPETexSpriteSamplingDescriptor(
-                rotation: SIMD4<Float>(0.5, 0.25, -0.25, 0.5),
-                translation: SIMD2<Float>(0.5, 0)
-            )
-        )
-
-        #expect(WPEMetalSceneRenderer.shouldUseLazyAnimationRepresentation(
-            makeStreamingPayload(frames: [axisAligned]),
-            threshold: 0
-        ))
-        #expect(!WPEMetalSceneRenderer.shouldUseLazyAnimationRepresentation(
-            makeStreamingPayload(frames: [crossAxis]),
-            threshold: 0
-        ))
-    }
-
     @Test("A suspended profile drops upload slots but keeps decoded bytes")
     func suspendedReleasesWorkingSlotsKeepingDecodedBytes() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

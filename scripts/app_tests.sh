@@ -156,7 +156,6 @@ else
   # mode. The MDL tests that pinned a corpus COUNT were deleted instead — a
   # number that changes when Steam downloads one more item tests nothing.
   selectors+=(
-    "-skip-testing:LiveWallpaperTests/OracleCorpusCaptureTests/captureCorpus()"
     "-skip-testing:LiveWallpaperTests/WPECameraEvidenceCaptureTests/emitCameraEvidenceManifest()"
   )
 fi

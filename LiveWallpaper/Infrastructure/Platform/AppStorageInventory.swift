@@ -135,7 +135,7 @@ extension AppStorageLocation {
             .init(kind: .video, url: WPEVideoTextureDiskCache.defaultRootURL),
             .init(kind: .query, url: WorkshopQueryCache.defaultDirectoryURL()),
             .init(kind: .previews, url: WorkshopPreviewDiskCache.defaultDirectoryURL()),
-            .init(kind: .shaders, url: WPEShaderTranslationCache.defaultRootURL),
+            .init(kind: .shaders, url: WPEParityShaderDiskCache.defaultRootURL),
             .init(kind: .compressedTextures, url: WPEParityTextureCompression.shared.cache.rootURL),
             .init(kind: .audio, url: OggAudioTranscoder.defaultCacheDirectory),
             .init(kind: .webCache, url: caches.appendingPathComponent("WebKit", isDirectory: true)),

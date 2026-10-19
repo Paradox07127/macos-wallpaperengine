@@ -907,7 +907,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     /// A non-retryable code from the error itself (e.g. `texture.metal_format`) is finer than the diagnostic's category, so it wins.
     nonisolated static func failureCause(for error: Error, diagnostic: SceneLoadDiagnostic) -> WallpaperFailureCause {
-        let own = SceneFailureCause.make((error as? WPEMetalTextureLoadContextError)?.underlying ?? error)
+        let own = SceneFailureCause.make(error)
         return own.canRetry ? SceneFailureCause.make(diagnostic) : own
     }
 }

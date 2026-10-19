@@ -281,61 +281,6 @@ struct WPETexAnimatedTextureSourceGateTests {
         #expect(atlas.width == 4)
     }
 
-    @Test("Unreferenced container images are not billed")
-    func unreferencedImagesAreNotBilled() {
-        let payload = makeSharedStreamingPayload(extraUnreferencedImage: true)
-
-        // 3 images in the container, 2 referenced by the frame schedule.
-        #expect(payload.compressedImages.count == 3)
-        #expect(payload.totalUncompressedImageBytes == 3 * 4 * 4 * 4)
-        #expect(WPEMetalSceneRenderer.eagerAnimationGPUBytes(of: payload) == 2 * 4 * 4 * 4)
-    }
-
-    @Test("A padded stored byte count does not inflate the GPU estimate")
-    func paddedStoredByteCountIsIgnored() {
-        let payload = makeSharedStreamingPayload(paddedStoredByteCount: true)
-
-        #expect(payload.totalUncompressedImageBytes > 2 * 4 * 4 * 4)
-        #expect(WPEMetalSceneRenderer.eagerAnimationGPUBytes(of: payload) == 2 * 4 * 4 * 4)
-    }
-
-    @Test("Block-compressed images are billed per 4x4 block, not per pixel")
-    func blockCompressedImagesAreBilledPerBlock() {
-        let payload = makeBC3StreamingPayload()
-
-        // 8x8 BC3 = 2x2 blocks of 4x4 pixels, 16 B per block.
-        #expect(WPEMetalSceneRenderer.eagerAnimationGPUBytes(of: payload) == 2 * 2 * 16)
-    }
-
-    private func makeBC3StreamingPayload() -> WPETexStreamingPayload {
-        let blockBytes = Data(count: 2 * 2 * 16)
-        let mip = WPETexCompressedMipmap(
-            index: 0,
-            width: 8,
-            height: 8,
-            isCompressed: false,
-            compressedBytes: blockBytes,
-            decompressedByteCount: blockBytes.count
-        )
-        return WPETexStreamingPayload(
-            info: WPETexInfo(
-                containerVersion: 5,
-                infoVersion: 1,
-                width: 8,
-                height: 8,
-                textureFormatCode: WPETexFormat.dxt5.rawValue,
-                format: .dxt5,
-                mipmapCount: 1,
-                flags: 0
-            ),
-            compressedImages: [WPETexCompressedImage(width: 8, height: 8, payloads: [mip])],
-            frames: [
-                WPETexStreamingFrame(imageID: 0, subRect: CGRect(x: 0, y: 0, width: 8, height: 8), duration: 0.1)
-            ],
-            frameRate: 10,
-            loop: true
-        )
-    }
 }
 
 // MARK: - Shared fixture builders

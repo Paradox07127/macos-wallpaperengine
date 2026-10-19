@@ -314,7 +314,8 @@ exit "$code"
         self.assertIn("EntitlementAuditTests", required)
         self.assertIn("HTMLTrustVerdictTests", required)
         self.assertIn("ScreenRuntimeOwnershipTests", required)
-        self.assertIn("WPESceneScriptB2bResourceLimitTests", required)
+        self.assertIn("WPEParitySeedParsingTests", required)
+        self.assertIn("WPEParityShaderStoreTests", required)
         self.assertFalse(any(arg.startswith("-only-testing:") for arg in command))
         self.assertNotIn("--allow-skipped-suite", command)
 
@@ -354,6 +355,58 @@ exit "$code"
                 result = subprocess.run(["bash", "-c", program], text=True, capture_output=True,
                                         env=dict(os.environ, PROBE_ARCHS=archs), timeout=10)
                 self.assertEqual(result.returncode == 0, should_pass, result.stdout + result.stderr)
+
+    def test_lite_runtime_gate_checks_launcher_and_optional_debug_payload(self):
+        source = (ROOT / "scripts/release_candidate_check.sh").read_text()
+        function = re.search(r"^assert_lite_runtime_isolation\(\) \{\n.*?^\}", source, re.M | re.S)
+        self.assertIsNotNone(function)
+        self.assertIn('assert_lite_runtime_isolation "$lite_binary"', source)
+        cases = [("clean", False, True), ("clean", True, True),
+                 ("main-symbol", True, False), ("payload-symbol", True, False),
+                 ("main-jsc", True, False), ("payload-jsc", True, False),
+                 ("nm-failure", True, False), ("otool-failure", True, False)]
+        with tempfile.TemporaryDirectory(prefix="lite-runtime-contract-") as temporary:
+            root = Path(temporary)
+            binary = root / "Loomscreen"
+            binary.touch()
+            payload = root / "Loomscreen.debug.dylib"
+            marker = root / "nm-finished"
+            for mode, has_payload, should_pass in cases:
+                with self.subTest(mode=mode, has_payload=has_payload):
+                    payload.unlink(missing_ok=True)
+                    marker.unlink(missing_ok=True)
+                    if has_payload:
+                        payload.touch()
+                    # Only the production assertion is sourced. No actual Mach-O or build is needed.
+                    # A large nm stream with an early match proves the producer drains before rejection.
+                    stubs = r'''nm() {
+  [[ "$PROBE_MODE" != nm-failure ]] || return 1
+  case "$PROBE_MODE:$1" in
+    main-symbol:*/Loomscreen|payload-symbol:*/Loomscreen.debug.dylib)
+      printf '%s\n' WPEParityFrameRenderer ;;
+  esac
+  printf '%064d\n' {1..4000}
+  printf '%s\n' "$1" >> "$PROBE_NM_MARKER"
+}
+otool() {
+  [[ "$PROBE_MODE" != otool-failure ]] || return 1
+  case "$PROBE_MODE:$2" in
+    main-jsc:*/Loomscreen|payload-jsc:*/Loomscreen.debug.dylib)
+      printf '%s\n' JavaScriptCore ;;
+    *) printf '%s\n' Foundation ;;
+  esac
+}
+'''
+                    program = ("set -euo pipefail\n" + stubs + function.group(0)
+                               + "\nassert_lite_runtime_isolation " + shlex.quote(str(binary)) + "\n")
+                    result = subprocess.run(["bash", "-c", program], text=True, capture_output=True,
+                                            env=dict(os.environ, PROBE_MODE=mode, PROBE_NM_MARKER=str(marker)),
+                                            timeout=10)
+                    self.assertEqual(result.returncode == 0, should_pass, result.stdout + result.stderr)
+                    if mode != "nm-failure":
+                        self.assertTrue(marker.exists(), "nm was terminated before consuming its output")
+                    if mode.startswith("payload-"):
+                        self.assertIn(str(payload), result.stderr)
 
     def test_pro_archive_contract_does_not_read_lite_block(self):
         source = (ROOT / "scripts/release_contract_check.sh").read_text()

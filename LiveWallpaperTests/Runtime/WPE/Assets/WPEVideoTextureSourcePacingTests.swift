@@ -549,9 +549,6 @@ struct WPEVideoTextureSourcePacingTests {
         try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
         source.scriptPause()
         let before = try #require(source.scriptPlaybackSnapshot)
-        var evaluation = before
-        evaluation.applyEvaluationIntent(.stop)
-        #expect(evaluation.currentTime == 0)
         source.scriptStop()
         let immediate = try #require(source.scriptPlaybackSnapshot)
         #expect(immediate.acknowledgedPausedSeekTime == nil)
@@ -563,226 +560,14 @@ struct WPEVideoTextureSourcePacingTests {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             let record: [String: Any] = [
                 "beforeSourceTime": before.currentTime,
-                "sameEvaluationTime": evaluation.currentTime,
                 "immediateSourceTime": immediate.currentTime,
                 "immediateDecoderTime": immediate.decoderCurrentTime ?? -1,
                 "settledSourceTime": settled.currentTime,
-                "nativeSameEvaluationCompatibility": "source timing separately observed",
+                "observationScope": "native player source timing after scriptStop",
             ]
             try JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
                 .write(to: output.appendingPathComponent("mac-stop-without-seek.json"), options: .atomic)
         }
-    }
-    #endif
-
-    #if !LITE_BUILD
-    @Test(
-        "Observe exact-fixture paused seek source and VM clocks (opt-in, not native acceptance)",
-        .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO") != nil),
-        arguments: ["B", "I", "F", "K"]
-    )
-    func observeRealPausedSeek(history: String) async throws {
-        let fixture = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO"))
-        let output = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_OUTPUT"))
-        let bytes = try Data(contentsOf: fixture)
-        let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-        try #require(hash == "9532741c157d1464378042b67436a7fbc33078a874658517ce0315730865a73c")
-        let staged = FileManager.default.temporaryDirectory
-            .appendingPathComponent("wpe-paused-seek-\(UUID().uuidString).mp4")
-        try bytes.write(to: staged, options: .atomic)
-        defer { try? FileManager.default.removeItem(at: staged) }
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let source = try WPEVideoTextureSource(device: device, videoURL: staged)
-        defer { source.invalidate() }
-        try #require(source.isLiveDecoder)
-
-        let shared = WPESharedScriptState(layers: [
-            .init(id: "video", name: "video", size: SIMD2(256, 128), origin: .zero,
-                  index: 0, parentName: nil),
-        ])
-        let instance = try WPELayerScriptInstance(script: """
-        export function update() {
-            const video = thisLayer.getVideoTexture();
-            shared.beforeTime = video.getCurrentTime();
-            shared.beforePlaying = video.isPlaying();
-            if (shared.operation === 1) video.play();
-            if (shared.operation === 2) video.pause();
-            if (shared.operation === 3) { video.pause(); video.setCurrentTime(1.5); }
-            if (shared.operation === 4) video.setCurrentTime(0.25);
-            if (shared.operation === 5) video.setCurrentTime(0.75);
-            if (shared.operation === 6) video.setCurrentTime(0.5);
-            shared.sameTime = video.getCurrentTime();
-            shared.samePlaying = video.isPlaying();
-        }
-        """, shared: shared, ownLayerName: "video", ownObjectID: "video")
-        #expect(instance.initialOutput.own.videoCommands.isEmpty)
-        var checkpoints: [[String: Any]] = []
-        var evaluations: [[String: Any]] = []
-        var qualification: [String: Any] = [:]
-        var durationQualified = false
-        var completed = false
-        var retained: MTLTexture?
-        let artifact = output.appendingPathComponent("mac-paused-seek-\(history)-\(UUID().uuidString).json")
-        defer {
-            do {
-                try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-                let payload: [String: Any] = [
-                    "schema": 1, "history": history, "fixtureSHA256": hash,
-                    "fixturePath": fixture.path, "completed": completed,
-                    "nativeCompatibility": "not-assessed", "ownerLane": "MainActor",
-                    "clock": "ProcessInfo.systemUptime-seconds", "pumpSleepMilliseconds": 16,
-                    "os": ProcessInfo.processInfo.operatingSystemVersionString,
-                    "checkpoints": checkpoints, "evaluations": evaluations,
-                    "qualification": qualification,
-                ]
-                let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
-                try data.write(to: artifact, options: .atomic)
-            } catch {
-                Issue.record("Cannot write paused seek observation: \(error)")
-            }
-        }
-
-        func sample(_ label: String) throws -> WPEVideoPlaybackSnapshot {
-            let started = ProcessInfo.processInfo.systemUptime
-            let playhead = source.currentPlayheadSeconds
-            let texture = source.texture(at: 0)
-            if source.hasStagedFrameWork {
-                try #require(source.driveStagedFrameWorkForTesting())
-            }
-            let snapshot = try #require(source.scriptPlaybackSnapshot)
-            let sampled = ProcessInfo.processInfo.systemUptime
-            shared.publishVideoPlayback(["video": snapshot], sourceKeys: ["video": "framecode.mp4"])
-            shared.set("operation", 0)
-            let readback = try #require(instance.tick())
-            #expect(readback.own.videoCommands.isEmpty)
-            let vmTime = try #require(shared.get("sameTime") as? Double)
-            let vmPlaying = try #require(shared.get("samePlaying") as? Bool)
-            #expect(vmTime == snapshot.currentTime)
-            #expect(vmPlaying == snapshot.isPlaying)
-            #expect(playhead.isFinite && snapshot.currentTime.isFinite)
-            #expect(snapshot.duration.isFinite && snapshot.duration >= 0)
-            if durationQualified {
-                #expect(snapshot.duration == 2)
-            }
-            #expect(snapshot.loop && snapshot.rate == 1)
-            if label == "pause.before" || label == "pause.seek1_5.before" {
-                retained = texture
-            }
-            if retained != nil, !snapshot.isPlaying {
-                #expect(texture === retained)
-            }
-            checkpoints.append([
-                "label": label, "sampleStartedUptime": started, "sourceSampledUptime": sampled,
-                "sampleFinishedUptime": ProcessInfo.processInfo.systemUptime,
-                "currentPlayheadSeconds": playhead, "snapshotCurrentTime": snapshot.currentTime,
-                "snapshotDuration": snapshot.duration, "isPlaying": snapshot.isPlaying,
-                "rate": snapshot.rate, "loop": snapshot.loop,
-                "hasPresentedFrame": snapshot.hasPresentedFrame,
-                "sourceGeneration": snapshot.sourceGeneration.uuidString,
-                "textureIdentity": texture.map { String(describing: ObjectIdentifier($0)) } ?? "nil",
-                "matchesRetainedTexture": retained.map { texture === $0 } ?? false,
-                "publishedVMCurrentTime": vmTime, "publishedVMIsPlaying": vmPlaying,
-            ])
-            return snapshot
-        }
-
-        func command(_ label: String, operation: Int, expected: [WPELayerVideoCommand]) throws {
-            let before = try sample(label + ".before")
-            shared.set("operation", operation)
-            let evaluatedAt = ProcessInfo.processInfo.systemUptime
-            let commands = try #require(instance.tick()).own.videoCommands
-            try #require(commands == expected)
-            let vmBefore = try #require(shared.get("beforeTime") as? Double)
-            let vmSame = try #require(shared.get("sameTime") as? Double)
-            let vmPlaying = try #require(shared.get("samePlaying") as? Bool)
-            let requestedTargets = commands.compactMap { intent -> Double? in
-                if case let .seek(seconds) = intent {
-                    return seconds
-                }
-                return nil
-            }
-            #expect(vmBefore == before.currentTime)
-            let commitStarted = ProcessInfo.processInfo.systemUptime
-            for intent in commands {
-                switch intent {
-                case .play: source.scriptPlay()
-                case .pause: source.scriptPause()
-                case let .seek(seconds): source.scriptSetCurrentTime(seconds)
-                case .stop, .setRate, .setLoop:
-                    Issue.record("Unexpected observation command: \(intent)")
-                }
-            }
-            evaluations.append([
-                "label": label, "evaluationStartedUptime": evaluatedAt,
-                "commitStartedUptime": commitStarted,
-                "commitFinishedUptime": ProcessInfo.processInfo.systemUptime,
-                "publishedBeforeCurrentTime": before.currentTime,
-                "sameEvaluationBeforeTime": vmBefore, "sameEvaluationCurrentTime": vmSame,
-                "sameEvaluationIsPlaying": vmPlaying,
-                "typedCommands": commands.map { String(describing: $0) },
-                "requestedSeekTargetsSeconds": requestedTargets,
-            ])
-            _ = try sample(label + ".same")
-        }
-
-        func updates(_ label: String) async throws {
-            for iteration in 1 ... 10 {
-                _ = source.texture(at: 0)
-                try await Task.sleep(for: .milliseconds(16))
-                _ = try sample(label + ".u\(iteration)")
-            }
-        }
-
-        try command("warm.play", operation: 1, expected: [.play])
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        let minimumWarmTime = history == "F" ? 1.6 : 0.35
-        while ContinuousClock.now < deadline, source.currentPlayheadSeconds < minimumWarmTime {
-            _ = source.texture(at: 0)
-            try await Task.sleep(for: .milliseconds(16))
-        }
-        let warm = try sample("warm.qualified")
-        qualification["advancingWarmSource"] = warm.currentTime >= minimumWarmTime
-        try #require(warm.currentTime >= minimumWarmTime)
-        try #require(warm.duration == 2)
-        qualification["committedWarmSourceFrame"] = warm.hasPresentedFrame
-        try #require(warm.hasPresentedFrame)
-        durationQualified = true
-        retained = source.texture(at: 0)
-        if history == "B" {
-            try command("pause.seek1_5", operation: 3, expected: [.pause, .seek(1.5)])
-            try await updates("pause.seek1_5")
-        } else {
-            try command("pause", operation: 2, expected: [.pause])
-            try await updates("pause")
-        }
-        let frozenBefore = try sample("pause.freeze.before")
-        try await pump(source, for: .milliseconds(300))
-        let paused = try sample("pause.freeze.after")
-        #expect(abs(paused.currentTime - frozenBefore.currentTime) < 0.05)
-        #expect(!paused.isPlaying)
-        #expect(source.texture(at: 0) === retained)
-        let pausedPlayhead = source.currentPlayheadSeconds
-        qualification["actualPausedBeforeFirstSeparateSeek"] = paused.currentTime
-        qualification["actualPausedPlayheadBeforeFirstSeparateSeek"] = pausedPlayhead
-        qualification["actualPausedAboveQuarterSecond"] = pausedPlayhead > 0.25 && paused.currentTime > 0.25
-        qualification["priorSeekAt1_5WithinFreezeTolerance"] = history == "B" && abs(paused.currentTime - 1.5) < 0.05
-        try #require(pausedPlayhead > 0.25 && paused.currentTime > 0.25)
-
-        let firstTarget = history == "K" ? 0.75 : 0.25
-        try command("paused.seek\(firstTarget)", operation: history == "K" ? 5 : 4, expected: [.seek(firstTarget)])
-        try await updates("paused.seek\(firstTarget)")
-        #expect(source.texture(at: 0) === retained)
-        #expect(source.scriptPlaybackSnapshot?.isPlaying == false)
-        if history == "F" || history == "K" {
-            try command("paused.seek0_5", operation: 6, expected: [.seek(0.5)])
-            try await updates("paused.seek0_5")
-            #expect(source.texture(at: 0) === retained)
-            #expect(source.scriptPlaybackSnapshot?.isPlaying == false)
-        }
-        try command("resume.play", operation: 1, expected: [.play])
-        try await updates("resume.play")
-        #expect(source.scriptPlaybackSnapshot?.isPlaying == true)
-        completed = true
     }
     #endif
 
@@ -1177,31 +962,5 @@ struct WPEVideoOutputCapTests {
         #expect(capped.outputPixelSizeForTesting == downscale)
     }
 
-    @Test("Renderer helper clamps 8K source to a 4K drawable")
-    func rendererHelperClampsToDrawable() async throws {
-        let videoURL = try await SyntheticVideoFixture.writeMP4(
-            durationSeconds: 0.5,
-            frameRate: 24
-        )
-        defer { try? FileManager.default.removeItem(at: videoURL) }
 
-        let none = await WPEMetalSceneRenderer.videoOutputPixelSize(
-            fileURL: videoURL,
-            drawableSize: CGSize(width: 3840, height: 2160),
-            latchedTextureCap: nil
-        )
-        #expect(none == nil, "64² source on a 4K display must not upscale")
-
-        // helper 只在文件本身超过 cap 时才返回尺寸,所以这里用合成的 8K
-        // 源尺寸单独探 clamp 数学。
-        #expect(
-            WPEVideoOutputCap.clampedPixelSize(
-                source: CGSize(width: 7680, height: 4320),
-                maxEdge: WPEVideoOutputCap.maxOutputEdge(
-                    drawableSize: CGSize(width: 3840, height: 2160),
-                    latchedTextureCap: nil
-                ) ?? 0
-            ) == CGSize(width: 3840, height: 2160)
-        )
-    }
 }

@@ -2,40 +2,17 @@
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
-import LiveWallpaperProWPE
 import Metal
-import simd
 
-/// Async-path frame skip: every in-flight permit is taken, so the caller drops this frame. NOT a failure — deliberately kept out of `WPEMetalRenderExecutorError` (a user-facing `LocalizedError`).
 struct WPEMetalFrameInFlightBudgetExhausted: Error {}
 
 enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     case commandQueueUnavailable
     case libraryUnavailable
     case pipelineUnavailable(String)
-    case unsupportedShader(String)
-    /// Custom shader could not be translated or compiled. Carries the underlying compiler reason so the diagnostic surfaced to the UI is precise instead of just "unsupported".
-    case shaderTranslatorUnavailable(name: String, reason: String)
-    /// Metal refused to build a render pipeline state, most commonly a vertex/`[[stage_in]]` mismatch. Carries the raw underlying error so logs name the actual missing field instead of just the shader name.
     case pipelineStateBuildFailed(name: String, detail: String)
-    case missingTexture(WPETextureReference)
-    case renderTargetDimensionsExceedDeviceLimit(targetName: String, width: Int, height: Int, limit: Int)
     case noRenderablePasses
     case commandBufferFailed
-
-    /// A pass this executor can never draw because its shader will not translate or compile. These are ordinary workshop content rather than renderer faults — the pass skips its own draw instead of taking the whole scene down.
-    var untranslatableShaderReason: String? {
-        switch self {
-        case let .shaderTranslatorUnavailable(_, reason): reason
-        case let .unsupportedShader(name):
-            String(
-                localized: "error.render.executor.unsupported_shader_reason",
-                defaultValue: "shader '\(name)' unsupported by Metal renderer",
-                bundle: .appLanguage, comment: "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name."
-            )
-        default: nil
-        }
-    }
 
     var errorDescription: String? {
         switch self {
@@ -57,36 +34,11 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
                 defaultValue: "WPE Metal pipeline is unavailable for \(name).",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create a render pipeline."
             )
-        case let .unsupportedShader(name):
-            return String(
-                localized: "error.render.executor.unsupported_shader",
-                defaultValue: "WPE Metal executor does not support shader \(name).",
-                bundle: .appLanguage, comment: "Error shown when the Metal renderer does not support a shader."
-            )
-        case let .shaderTranslatorUnavailable(name, reason):
-            return String(
-                localized: "error.render.executor.shader_translator_unavailable",
-                defaultValue: "WPE shader '\(name)' is unsupported by the Metal renderer: \(reason)",
-                bundle: .appLanguage, comment: "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer."
-            )
         case let .pipelineStateBuildFailed(name, detail):
             return String(
                 localized: "error.render.executor.pipeline_state_build_failed",
                 defaultValue: "Metal pipeline build failed for '\(name)': \(detail)",
                 bundle: .appLanguage, comment: "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input)."
-            )
-        case let .missingTexture(reference):
-            let referenceDescription = String(describing: reference)
-            return String(
-                localized: "error.render.executor.missing_texture",
-                defaultValue: "WPE Metal executor is missing texture \(referenceDescription).",
-                bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot find a required texture."
-            )
-        case let .renderTargetDimensionsExceedDeviceLimit(targetName, width, height, limit):
-            return String(
-                localized: "error.render.executor.render_target_dimensions_exceed_device_limit",
-                defaultValue: "WPE Metal render target '\(targetName)' is \(width)x\(height), exceeding this device's \(limit)x\(limit) 2D texture limit.",
-                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU."
             )
         case .noRenderablePasses:
             return String(
@@ -117,19 +69,6 @@ struct WPESolidUniforms {
     var color: SIMD4<Float>
 }
 
-/// Layout MUST match `WPEBlendCompositeUniforms` in `WPEMetalBuiltins.metal`.
-/// The raw WPE `common_blending.h` BLENDMODE index the composite runs.
-struct WPEBlendCompositeUniforms {
-    var blendMode: Int32
-}
-
-/// Layout MUST match `WPEComposeLayerUniforms` in `WPEMetalBuiltins.metal`.
-/// `flags.x` carries the WPE `CLEARALPHA` combo (1 = clear sampled alpha).
-struct WPEComposeLayerUniforms {
-    var flags: SIMD4<Float>
-}
-
-/// Renderer-local (no `VideoFitMode` AVFoundation semantics). `stretch` = full-bleed (may distort); `contain` = letterbox; `cover` = crop-to-fill; `center` = original source size centered.
 enum WPEPresentFitMode: Equatable {
     case stretch
     case contain
@@ -258,321 +197,6 @@ struct WPEPresentUniforms {
         }
         return pointer
     }
-}
-
-// Per-effect uniform structs. Field order MUST match the matching MSL struct
-// in `WPEMetalBuiltins.metal` exactly so `setFragmentBytes(...)` lays out correctly.
-
-struct WPEColorBalanceUniforms {
-    var brightness: Float
-    var contrast: Float
-    var saturation: Float
-    var padding: Float = 0
-}
-
-struct WPEBlurUniforms {
-    var texelSize: SIMD2<Float>
-    var radius: Float
-    var padding: Float = 0
-}
-
-struct WPEVignetteUniforms {
-    var innerRadius: Float
-    var outerRadius: Float
-    var intensity: Float
-    var padding: Float = 0
-}
-
-struct WPEWaterUniforms {
-    var amplitude: Float
-    var frequency: Float
-    var speed: Float
-    var time: Float
-}
-
-/// Matches WPE's `effects/waterwaves` shader: a time-driven sine wave displaces the sample
-/// UV perpendicular to `direction`, scaled by `strength`² and localized by an opacity mask.
-struct WPEWaterWavesUniforms {
-    var time: Float
-    var speed: Float
-    var scale: Float
-    var strength: Float
-    var exponent: Float
-    /// Unit wave direction = rotate (0,1) by the `direction` angle (radians).
-    var directionX: Float
-    var directionY: Float
-    /// 1 when an opacity mask is bound in texture slot 1, else 0 (effect applies everywhere).
-    var hasMask: Float
-    /// WPE packs texture resolution as (textureWidth, textureHeight, imageWidth, imageHeight).
-    var texture1Resolution: SIMD4<Float> = .init(1, 1, 1, 1)
-}
-
-struct WPEShakeUniforms {
-    var magnitude: Float
-    var time: Float
-    var frequency: Float
-    var padding: Float = 0
-}
-
-// Layout MUST match `WPEGenericImageUniforms` in `WPEMetalBuiltins.metal`.
-
-struct WPEGenericImageUniforms {
-    var color: SIMD4<Float>
-    /// x = alpha (g_Alpha), y = brightness (g_Brightness), z = hasMask (0/1), w = padding. Packed as a vec4 because Metal `constant` buffers round up to vec4 boundaries anyway.
-    var alphaMaskUV: SIMD4<Float>
-    /// xy = texture0 logical/physical UV scale, zw = texture1 logical/physical UV scale.
-    var textureUVScale: SIMD4<Float>
-    /// TEXS sprite-frame basis in texture-UV space (g_Texture0Rotation); identity when unused.
-    var spriteRotation = SIMD4<Float>(1, 0, 0, 1)
-    /// xy = sprite frame origin (g_Texture0Translation), z = 1 when the pass declared SPRITESHEET.
-    var spriteTranslation = SIMD4<Float>.zero
-}
-
-struct WPEObjectQuadUniforms {
-    /// x/y = center in scene-centered pixel space, z/w = width/height in pixels.
-    var centerAndSize: SIMD4<Float>
-    /// x/y = scene width/height, z = z-axis rotation in radians, w reserved.
-    var sceneSizeAndRotation: SIMD4<Float>
-    /// x/y = UV sign for preserving negative WPE scale mirroring, z = local capture CLEARALPHA, w reserved.
-    var uvSignAndPadding: SIMD4<Float>
-    var cameraOrientation = matrix_identity_float4x4
-    var cameraWorldDepth = SIMD4<Float>.zero
-}
-
-/// Layout MUST match `WPEProjectedQuadUniforms` in `WPEMetalBuiltins.metal`.
-struct WPEProjectedQuadUniforms {
-    /// Clip (x, y, 0, w), y-up NDC, in `WPEProjectedComposeQuad.clipCorners` order BL, BR, TL, TR.
-    var clipCorners: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>)
-    /// Rows of the layer uv → scene uv capture homography, scaled so row 2 col 2 is 1; w unused.
-    var captureRow0: SIMD4<Float>
-    var captureRow1: SIMD4<Float>
-    var captureRow2: SIMD4<Float>
-    /// x = CLEARALPHA (> 0.5 makes the capture write transparent).
-    var flags: SIMD4<Float>
-
-    init(quad: WPEProjectedComposeQuad, clearAlpha: Bool) {
-        let corners = quad.clipCorners.map { SIMD4(Float($0.x), Float($0.y), 0, Float($0.z)) }
-        clipCorners = (corners[0], corners[1], corners[2], corners[3])
-        let pivot = quad.captureHomography[2, 2]
-        let rows = (pivot.isFinite && pivot != 0 ? quad.captureHomography * (1 / pivot) : quad.captureHomography).transpose
-        func row(_ value: SIMD3<Double>) -> SIMD4<Float> {
-            SIMD4(Float(value.x), Float(value.y), Float(value.z), 0)
-        }
-        captureRow0 = row(rows.columns.0)
-        captureRow1 = row(rows.columns.1)
-        captureRow2 = row(rows.columns.2)
-        flags = SIMD4(clearAlpha ? 1 : 0, 0, 0, 0)
-    }
-}
-
-/// Layout MUST match `WPEBloomUniforms` in `WPEMetalBuiltins.metal`.
-struct WPEBloomUniforms {
-    /// xy = source texel size, z = strength (prefilter) / RGB scatter (upsample), w pad.
-    var texelAndWeight: SIMD4<Float>
-    /// Prefilter soft-knee: (threshold, knee, 2(threshold−knee), 0.25/(threshold−knee)).
-    var blendParams: SIMD4<Float>
-    var tint: SIMD4<Float>
-}
-
-/// Layout MUST match `WPESceneModelGenericUniforms` in `WPEMetalBuiltins.metal`
-/// (generic4 scene-model material: tint + emissive map + hemispheric ambient + HDR).
-struct WPESceneModelGenericUniforms {
-    /// rgb = g_TintColor (raw, WPE uploads unconverted), a = g_TintAlpha × layer alpha.
-    var tintColorAlpha: SIMD4<Float>
-    /// rgb = g_EmissiveColor, w = g_EmissiveBrightness.
-    var emissive: SIMD4<Float>
-    /// rgb = g_LightAmbientColor, w = LIGHTING combo (0/1). The hemisphere mix
-    /// against `skylightColor` happens per fragment now that the mesh carries normals.
-    var ambientLighting: SIMD4<Float>
-    /// x = g_Brightness × layer brightness, y = emissive map bound (0/1),
-    /// z = scene HDR (0/1), w = REFLECTION combo (0/1).
-    var brightnessFlags: SIMD4<Float>
-    /// rgb = g_LightSkylightColor, w unused.
-    var skylightColor: SIMD4<Float>
-    /// x = g_Reflectivity, y = g_Roughness, z = g_Metallic, w = g_Texture3MipMapInfo.
-    var reflection: SIMD4<Float>
-    /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
-    var screen: SIMD4<Float>
-    /// chroma4 only, appended so generic2/generic4 keep their layout: rgb =
-    /// `g_TintFront`, w = `g_TintPigmentation`.
-    var chromaTintFront: SIMD4<Float>
-    /// chroma4 only: rgb = `g_TintBack`, w = `g_TintExponent`.
-    var chromaTintBack: SIMD4<Float>
-    /// chroma4 only: xy = the noise texture's pixel size (`g_Texture8Resolution`),
-    /// z = 1 when a noise texture is bound, w unused.
-    var chromaNoise: SIMD4<Float>
-}
-
-/// Layout MUST match `WPEShapeQuadUniforms` in `WPEMetalBuiltins.metal`. Four pre-transformed perspective-quad corners in triangle-strip order (p0, p1, p3, p2).
-struct WPEShapeQuadUniforms {
-    var corner0: SIMD4<Float>
-    var corner1: SIMD4<Float>
-    var corner2: SIMD4<Float>
-    var corner3: SIMD4<Float>
-    /// x/y = half scene width/height, z/w = padding.
-    var sceneHalfAndPad: SIMD4<Float>
-    var cameraOrientation = matrix_identity_float4x4
-    var cameraWorldDepth = SIMD4<Float>.zero
-}
-
-struct WPEMetalPuppetVertex {
-    var position: SIMD4<Float>
-    var uv: SIMD4<Float>
-    var skinBlendIndices: SIMD4<UInt32>
-    var skinBlendWeights: SIMD4<Float>
-    /// Model-local normal (w unused). Read only by the scene-model vertex; the
-    /// 2D puppet vertices ignore it.
-    var normal: SIMD4<Float>
-}
-
-struct WPEPuppetMeshUniforms {
-    /// x/y = local layer-composite target size, z = bone palette count, w = skinning enabled (1/0).
-    var localSizeAndMode: SIMD4<Float>
-    /// x/y = raw MDLV mesh center in puppet model coordinates, z/w reserved.
-    var meshCenterAndPadding: SIMD4<Float>
-}
-
-/// Layout MUST match `WPESceneModelMeshUniforms` in `WPEMetalBuiltins.metal`.
-struct WPESceneModelMeshUniforms {
-    var modelViewProjectionMatrix: simd_float4x4
-    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD position, and the view-projection alone (screen-space reflection offset).
-    var modelMatrix: simd_float4x4
-    var viewProjectionMatrix: simd_float4x4
-    /// `transpose(inverse(mat3(modelMatrix)))` for world normals (WPE `g_NormalModelMatrix`); identity when the 3×3 is singular.
-    var normalMatrix: simd_float3x3
-    /// x = bone palette count, y = skinning enabled (1/0), z/w reserved.
-    var modeAndPadding: SIMD4<Float>
-    /// xyz = g_EyePosition, w reserved.
-    var eyeAndPadding: SIMD4<Float>
-}
-
-/// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`. Placement fields copy 1:1 from `WPEObjectQuadUniforms`. The vertex applies that sign to mesh-local positions (mirroring geometry) instead of UVs.
-struct WPEPuppetSceneCompositeUniforms {
-    /// x/y = atlas/local layer size, z = bone palette count, w = skinning enabled (1/0).
-    var localSizeAndMode: SIMD4<Float>
-    /// x/y = raw MDLV mesh center, z/w = negative-scale mirror sign from object-quad uniforms.
-    var meshCenterAndScaleSign: SIMD4<Float>
-    /// Exact copy of `WPEObjectQuadUniforms.centerAndSize`.
-    var objectCenterAndSize: SIMD4<Float>
-    /// Exact copy of `WPEObjectQuadUniforms.sceneSizeAndRotation`.
-    var sceneSizeAndRotation: SIMD4<Float>
-    var cameraOrientation = matrix_identity_float4x4
-    var cameraWorldDepth = SIMD4<Float>.zero
-}
-
-struct WPEOpacityUniforms {
-    var opacity: Float
-    var hasMask: Float = 0
-    var maskScaleX: Float = 1
-    var maskScaleY: Float = 1
-}
-
-struct WPEScrollUniforms {
-    var speed: SIMD2<Float>
-    var time: Float
-    var padding: Float = 0
-}
-
-struct WPEPulseUniforms {
-    var frequency: Float
-    var amplitude: Float
-    var time: Float
-    var padding: Float = 0
-}
-
-struct WPEGodraysCombineUniforms {
-    /// 1 = COPYBG background bound at slot 2, mixed under the albedo.
-    var copyBackground: UInt32 = 0
-    /// Authored BLENDMODE combo (common_blending.h numbering; 0 = rays only).
-    var blendMode: UInt32 = 9
-    var sceneBackground: UInt32 = 0
-    var padding2: UInt32 = 0
-    var backgroundProjection = matrix_identity_float4x4
-}
-
-struct WPEIrisUniforms {
-    var radius: Float
-    var softness: Float
-    var padding0: Float = 0
-    var padding1: Float = 0
-}
-
-struct WPESpinUniforms {
-    var angularSpeed: Float
-    var time: Float
-    var padding0: Float = 0
-    var padding1: Float = 0
-}
-
-struct WPETintUniforms {
-    var color: SIMD4<Float>
-    var intensity: Float
-    var padding0: Float = 0
-    var padding1: Float = 0
-    var padding2: Float = 0
-}
-
-struct WPEFoliageSwayUniforms {
-    var amplitude: Float
-    var frequency: Float
-    var speed: Float
-    var time: Float
-}
-
-struct WPEWaterRippleUniforms {
-    var amplitude: Float
-    var frequency: Float
-    var speed: Float
-    var time: Float
-}
-
-struct WPEBlendUniforms {
-    var color: SIMD4<Float>
-    var opacity: Float
-    var padding0: Float = 0
-    var padding1: Float = 0
-    var padding2: Float = 0
-}
-
-struct WPEWaterFlowUniforms {
-    var direction: SIMD2<Float>
-    var speed: Float
-    var time: Float
-}
-
-struct WPEColorGradingUniforms {
-    var lift: SIMD4<Float>
-    var gamma: SIMD4<Float>
-    var gain: SIMD4<Float>
-}
-
-struct WPEShimmerUniforms {
-    var speed: Float
-    var intensity: Float
-    var time: Float
-    var padding: Float = 0
-}
-
-/// Layout MUST match `WPEParticleProjection` in WPEMetalBuiltins.metal.
-struct WPEParticleProjection {
-    var sceneSize: SIMD4<Float> // x = width, y = height (pixels)
-    var padding: SIMD4<Float> = .init(0, 0, 0, 0)
-    /// WPE `g_RenderVar0` for TRAILRENDERER: x = speed→length multiplier,
-    /// y = max length, z = min length, w > 0.5 = trail enabled.
-    var trail: SIMD4<Float> = .init(0, 0, 0, 0)
-    /// Signed model XY scale divided by the size's baked average; cos/sin of model Z rotation.
-    var modelShape = SIMD4<Float>(1, 1, 1, 0)
-    var viewProjection = matrix_identity_float4x4
-    var modelToWorld = matrix_identity_float4x4
-    var worldToModel = matrix_identity_float4x4
-    var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
-    var cameraClipTransform = SIMD4<Float>(1, 1, 0, 0)
-    var cameraOrientation = matrix_identity_float4x4
-}
-
-/// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized `effects/skew` MODE=1 vertex-displacement params (fractions of the quad extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.
-struct WPESkewParams {
-    var topBottomLeftRight: SIMD4<Float>
 }
 
 #endif

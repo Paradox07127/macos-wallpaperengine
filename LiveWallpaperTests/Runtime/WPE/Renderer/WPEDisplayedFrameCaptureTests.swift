@@ -12,20 +12,15 @@ import Testing
 @Suite("Displayed-frame capture", .serialized)
 struct WPEDisplayedFrameCaptureTests {
     @Test(
-        "Capture replays the present pass onto an owned texture, running or suspended",
-        .timeLimit(.minutes(1)),
-        arguments: [false, true]
+        "Capture replays the present pass onto an owned texture",
+        .timeLimit(.minutes(1))
     )
-    func captureMatchesPresentedDrawable(suspendFirst: Bool) async throws {
+    func captureMatchesPresentedDrawable() async throws {
         let stack = try await CaptureStack.presented(size: CGSize(width: 96, height: 64))
         defer { stack.teardown() }
         let drawable = try #require(stack.layer.lastDrawable).texture
         let expected = try stack.bytes(drawable)
-        if suspendFirst {
-            stack.renderer.applyPerformanceProfile(.suspended)
-        }
-
-        let capture = try #require(await stack.actor.captureDisplayedFrame())
+        let capture = try #require(await stack.capture())
 
         #expect(capture.texture.storageMode == .private)
         #expect(capture.texture.usage.contains([.renderTarget, .shaderRead]))
@@ -63,7 +58,7 @@ struct WPEDisplayedFrameCaptureTests {
         )
         #expect(frames.publish(
             .init(texture: source, generation: 1, sequence: 1, sourceSize: CGSize(width: 2, height: 2),
-                  fitMode: .stretch, colorTransfer: .linear, tracker: stack.renderer.executor.presentTracker),
+                  fitMode: .stretch, colorTransfer: .linear, tracker: stack.executor.presentTracker),
             generation: 1, sequence: 1
         ))
         presenter.present()
@@ -174,7 +169,7 @@ struct WPEDisplayedFrameCaptureTests {
             source.replace(region: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0,
                            withBytes: $0.baseAddress!, bytesPerRow: 64 * 4)
         }
-        let executor = stack.renderer.executor
+        let executor = stack.executor
         executor.metalFXUpscaler = nil
         let nativePresented = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch,
                                                    colorTransfer: .authored)
@@ -203,7 +198,7 @@ struct WPEDisplayedFrameCaptureTests {
         defer { stack.teardown() }
         let device = try #require(stack.layer.device)
         let source = try Self.linearSource(device: device, edge: 64, pixel: [0.214, 0.5, 2, 0.125])
-        let executor = stack.renderer.executor
+        let executor = stack.executor
         stack.layer.pixelFormat = .rgba16Float
         WPEDisplayHDROutput.apply(to: stack.layer, hdrOutputEnabled: true)
         let library = try #require(device.makeDefaultLibrary())
@@ -225,50 +220,40 @@ struct WPEDisplayedFrameCaptureTests {
     func nilBeforeFirstPresent() async throws {
         let stack = try CaptureStack.make(size: CGSize(width: 96, height: 64))
         defer { stack.teardown() }
-        await stack.actor.adopt(WPERendererHandoff(renderer: stack.renderer).renderer)
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 64, height: 64, mipmapped: false
-        )
-        descriptor.usage = [.renderTarget, .shaderRead]
-        stack.renderer.outputTexture = try #require(stack.layer.device?.makeTexture(descriptor: descriptor))
-
-        #expect(await stack.actor.captureDisplayedFrame() == nil)
+        #expect(await stack.capture() == nil)
     }
 
-    @Test("A hibernated scene has no output to capture", .timeLimit(.minutes(1)))
-    func nilAfterHibernate() async throws {
+    @Test("A retired presentation has no output to capture", .timeLimit(.minutes(1)))
+    func nilAfterRetirement() async throws {
         let stack = try await CaptureStack.presented(size: CGSize(width: 96, height: 64))
         defer { stack.teardown() }
-        stack.renderer.applyPerformanceProfile(.suspended)
-        #expect(await stack.actor.hibernate())
-        #expect(stack.renderer.outputTexture == nil)
+        stack.executor.releaseTransientResources()
 
-        #expect(await stack.actor.captureDisplayedFrame() == nil)
+        #expect(await stack.capture() == nil)
     }
 
-    @Test("A capture waiting on the GPU does not block frame ticks", .timeLimit(.minutes(1)))
+    @Test("A capture waiting on the GPU does not block CPU frame preparation", .timeLimit(.minutes(1)))
     func pendingCaptureLeavesRenderLoopRunning() async throws {
         let stack = try await CaptureStack.presented(size: CGSize(width: 96, height: 64))
         defer { stack.teardown() }
-        let renderer = stack.renderer
-        let source = try ObjectIdentifier(#require(renderer.outputTexture))
-        let tracker = renderer.executor.presentTracker
+        let source = try ObjectIdentifier(#require(stack.executor.lastPresentPass?.source))
+        let tracker = stack.executor.presentTracker
         try await Self.poll("earlier presents drained") { !tracker.isInFlight(source) }
 
         // Holds the queue so the capture stays in flight until the test releases it.
         let event = try #require(stack.layer.device?.makeSharedEvent())
-        let gate = try #require(renderer.executor.commandQueue.makeCommandBuffer())
+        let gate = try #require(stack.executor.commandQueue.makeCommandBuffer())
         gate.encodeWaitForEvent(event, value: 1)
         gate.commit()
 
         let finished = OSAllocatedUnfairLock(initialState: false)
-        let pending = Task { [actor = stack.actor] in
-            let capture = await actor.captureDisplayedFrame()
+        let pending = Task {
+            let capture = await stack.capture()
             finished.withLock { $0 = true }
             return capture
         }
         try await Self.poll("capture committed behind the gate") { tracker.isInFlight(source) }
-        renderer.renderAndPresentFrame()
+        _ = try stack.executor.makeOutputTexture(size: CGSize(width: 64, height: 64))
         #expect(!finished.withLock { $0 })
 
         event.signaledValue = 1
@@ -283,7 +268,7 @@ struct WPEDisplayedFrameCaptureTests {
         var samples: [Duration] = []
         for _ in 0 ..< 3 {
             let start = clock.now
-            let capture = try #require(await stack.actor.captureDisplayedFrame())
+            let capture = try #require(await stack.capture())
             samples.append(clock.now - start)
             #expect(capture.texture.width == 3840 && capture.texture.height == 2160)
         }
@@ -310,7 +295,7 @@ struct WPEDisplayedFrameCaptureTests {
                                        transfer: WPEPresentColorTransfer) async throws -> [UInt8] {
         let device = try #require(stack.layer.device)
         let library = try #require(device.makeDefaultLibrary())
-        let executor = stack.renderer.executor
+        let executor = stack.executor
         executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
         let didPresent = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch, colorTransfer: transfer)
         try #require(didPresent)
@@ -371,7 +356,7 @@ struct WPEDisplayedFrameCaptureTests {
         texture.storageMode = .private
         texture.usage = scaler.outputTextureUsage.union(.renderTarget)
         let target = try #require(device.makeTexture(descriptor: texture))
-        let command = try #require(stack.renderer.executor.commandQueue.makeCommandBuffer())
+        let command = try #require(stack.executor.commandQueue.makeCommandBuffer())
         scaler.colorTexture = source
         scaler.outputTexture = target
         scaler.inputContentWidth = 64
@@ -397,62 +382,54 @@ private final class DrawableRecordingLayer: CAMetalLayer {
 
 @MainActor
 private struct CaptureStack {
-    let fixture: MetalSceneFixture
-    let surface: WPERenderSurface
     let layer: DrawableRecordingLayer
-    let renderer: WPEMetalSceneRenderer
+    let executor: WPEMetalRenderExecutor
     let actor: WPEDisplayRenderActor
 
     static func make(size: CGSize) throws -> Self {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try MetalSceneFixture.solidColorScene()
-        // The stock fixture's layer has no size; stretch it over the whole 64x64 world.
-        let sceneURL = fixture.root.appendingPathComponent("scene.json")
-        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL)) as? [String: Any])
-        var objects = try #require(scene["objects"] as? [[String: Any]])
-        objects[0]["origin"] = "32 32 0"
-        objects[0]["size"] = "64 64"
-        scene["objects"] = objects
-        try JSONSerialization.data(withJSONObject: scene).write(to: sceneURL)
-        let surface = WPERenderSurface(frame: CGRect(origin: .zero, size: size), device: device, allowsHDR: false)
         let layer = DrawableRecordingLayer()
         layer.device = device
-        layer.pixelFormat = surface.metalLayer.pixelFormat
+        layer.pixelFormat = .rgba8Unorm_srgb
         WPEDisplayHDROutput.apply(to: layer, hdrOutputEnabled: false)
         layer.framebufferOnly = false
         layer.drawableSize = size
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: layer),
-            drawableSize: size,
-            presentFitMode: .contain,
-            device: device
-        )
-        return Self(
-            fixture: fixture, surface: surface, layer: layer, renderer: renderer,
-            actor: WPEDisplayRenderActor(backing: .main)
-        )
+        return try Self(layer: layer, executor: WPEMetalRenderExecutor(device: device),
+                        actor: WPEDisplayRenderActor(backing: .main))
     }
 
     static func presented(size: CGSize) async throws -> Self {
         let stack = try make(size: size)
-        await stack.actor.adopt(WPERendererHandoff(renderer: stack.renderer).renderer)
-        try await stack.actor.load()
-        stack.renderer.renderAndPresentFrame()
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 64, height: 64, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let source = try #require(stack.layer.device?.makeTexture(descriptor: descriptor))
+        let pixels = Array(repeating: [UInt8](arrayLiteral: 255, 0, 0, 255), count: 64 * 64).flatMap(\.self)
+        pixels.withUnsafeBytes {
+            source.replace(region: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0,
+                           withBytes: $0.baseAddress!, bytesPerRow: 64 * 4)
+        }
+        #expect(try stack.executor.present(texture: source, layer: stack.layer, fitMode: .contain))
         _ = try #require(stack.layer.lastDrawable)
         return stack
     }
 
-    func teardown() {
-        renderer.cleanup()
-        fixture.cleanup()
+    func capture() async -> WPEDisplayedFrameCapture? {
+        await withCheckedContinuation { continuation in
+            executor.encodeDisplayedFrameCapture(colorSpace: layer.colorspace) {
+                continuation.resume(returning: $0)
+            }
+        }
     }
 
-    /// Readback on the renderer's own queue, so it is ordered after every present and capture already committed.
+    func teardown() {
+        executor.releaseTransientResources()
+        actor.requestStop()
+    }
+
+    /// Readback on the presenter's own queue, so it is ordered after every present and capture already committed.
     func bytes(_ texture: MTLTexture) throws -> [UInt8] {
         let bytesPerPixel = texture.pixelFormat == .rgba16Float ? 8 : 4
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -460,7 +437,7 @@ private struct CaptureStack {
         )
         descriptor.storageMode = .shared
         let staging = try #require(texture.device.makeTexture(descriptor: descriptor))
-        let command = try #require(renderer.executor.commandQueue.makeCommandBuffer())
+        let command = try #require(executor.commandQueue.makeCommandBuffer())
         let blit = try #require(command.makeBlitCommandEncoder())
         blit.copy(
             from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),

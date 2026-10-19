@@ -61,11 +61,16 @@ struct StorageSourceCoverageTests {
         #expect(AppStorageLocation.Kind.allCases.filter(\.canClear).count == 7)
     }
 
-    @Test @MainActor func compressedTextureCacheIsAClearableLocationAtTheRenderersRoot() {
-        let kind = AppStorageLocation.Kind.compressedTextures
-        #expect(kind.isCache && kind.canClear && kind.canRevealInFinder)
+    @Test @MainActor func renderCachesAreClearableAtTheirProductionRoots() {
         let locations = AppStorageLocation.current(systemWallpaperRoot: FileManager.default.temporaryDirectory)
-        #expect(locations.filter { $0.kind == kind }.map(\.url) == [WPEParityTextureCompression.shared.cache.rootURL])
+        let roots: [(AppStorageLocation.Kind, URL)] = [
+            (.shaders, WPEParityShaderDiskCache.defaultRootURL),
+            (.compressedTextures, WPEParityTextureCompression.shared.cache.rootURL),
+        ]
+        for (kind, root) in roots {
+            #expect(kind.isCache && kind.canClear && kind.canRevealInFinder)
+            #expect(locations.filter { $0.kind == kind }.map(\.url) == [root])
+        }
     }
 
     @Test func clearingTheCompressedTextureCacheDropsEveryEntry() throws {

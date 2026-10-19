@@ -1,328 +1,128 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
 import os
 import Testing
 
 @Suite(.serialized, .timeLimit(.minutes(1)))
-@MainActor
 struct WPEUserShortcutBridgeTests {
-    private static let outsideMessage = "Cannot execute user command outside of cursor callbacks."
-    private static let perClickMessage = "Cannot execute more than one user command per cursor click."
-
-    private let governor = WPESceneScriptExecutionGovernor(limit: 4)
-
     private final class LaunchLog: Sendable {
-        private let keys = OSAllocatedUnfairLock(initialState: [String]())
-        var launched: [String] {
-            keys.withLock { $0 }
+        private let values = OSAllocatedUnfairLock(initialState: [UInt64]())
+        var revisions: [UInt64] {
+            values.withLock { $0 }
         }
 
-        func record(_ key: String) {
-            keys.withLock { $0.append(key) }
+        func record(_ revision: UInt64) {
+            values.withLock { $0.append(revision) }
         }
     }
 
-    private static let attemptScript = """
-    export function init() { shared.log = ''; }
-    function attempt(tag) {
-        try { shared.log += tag + ':' + engine.openUserShortcut('k') + ';'; }
-        catch (e) { shared.log += tag + ':' + e.name + ':' + e.message + ';'; }
-    }
-    export function cursorDown() { attempt('d'); }
-    export function cursorUp() { attempt('u'); }
-    export function cursorClick() { attempt('c'); }
-    """
-
-    private static func run(_ job: WPESceneScriptBatchDispatcher.Job?) -> Bool {
-        guard let job else { return false }
-        return WPESceneScriptBatchDispatcher.processShared
-            .submit([job], trackingCompletion: true)?
-            .wait(timeout: .now() + 5) == true
-    }
-
-    private func makeShared(bound: Bool) -> (WPESharedScriptState, LaunchLog) {
+    @Test("Binding changes are drained once and launches use the current revision")
+    func hostBindingsAndLaunchRevision() {
         let bridge = WPEUserShortcutScriptBridge()
         let log = LaunchLog()
-        bridge.setBindings(
-            declared: ["k"],
-            bound: bound ? ["k": .init(commandType: "web", displayName: "Example", revision: 1)] : [:]
-        )
-        bridge.setLauncher { key, _ in log.record(key) }
-        return (WPESharedScriptState(userShortcuts: bridge), log)
+        bridge.setLauncher { _, revision in log.record(revision) }
+        #expect(!bridge.requestLaunch("k"))
+        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 7)])
+        #expect(bridge.snapshot().declared == ["k"])
+        #expect(bridge.takeChangedKeys() == ["k"])
+        #expect(bridge.takeChangedKeys().isEmpty)
+        #expect(bridge.requestLaunch("k"))
+        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 8)])
+        #expect(bridge.requestLaunch("k"))
+        bridge.setBindings(declared: ["k"], bound: [:])
+        #expect(bridge.takeChangedKeys() == ["k"])
+        #expect(!bridge.requestLaunch("k"))
+        #expect(log.revisions == [7, 8])
     }
 
-    private func frame(_ gesture: UInt64, down: Bool = false) -> WPEPointerFrame {
-        var frame = WPEPointerFrame.neutral
-        frame.isDown = down
-        frame.gesture = gesture
-        return frame
-    }
-
-    private func layer(_ script: String, shared: WPESharedScriptState) throws -> WPELayerScriptInstance {
-        try WPELayerScriptInstance(script: script, shared: shared, setupBudget: 2, tickBudget: 0.5, governor: governor)
-    }
-
-    private func transform(_ script: String, shared: WPESharedScriptState) throws -> WPEDynamicTransformScriptInstance {
-        try WPEDynamicTransformScriptInstance(
-            script: script, seed: .zero, canvasSize: SIMD2(100, 100), shared: shared,
-            setupBudget: 2, tickBudget: 0.5, governor: governor
-        )
-    }
-
-    private func send(_ layer: WPELayerScriptInstance, _ event: WPELayerScriptCursorEvent, _ frame: WPEPointerFrame) {
-        _ = layer.dispatchCursorEvent(event, pointerFrame: frame, runtimeSeconds: 1)
-    }
-
-    private func send(_ transform: WPEDynamicTransformScriptInstance,
-                      _ event: WPELayerScriptCursorEvent, _ frame: WPEPointerFrame) -> Bool {
-        Self.run(transform.enqueueCursorEvents([.init(event: event, pointerFrame: frame, runtimeSeconds: 1)]))
-    }
-
-    @Test("Calling outside a cursor callback throws the WPE SyntaxError")
-    func outsideCursorCallbackThrows() throws {
-        let (shared, log) = makeShared(bound: true)
-        let instance = try layer("""
-        export function update() {
-            try { engine.openUserShortcut('k'); shared.outcome = 'returned'; }
-            catch (e) { shared.outcome = e.name + ':' + e.message + ':' + (e instanceof SyntaxError); }
-        }
-        """, shared: shared)
-        _ = instance.tick(runtimeSeconds: 1)
-        #expect(shared.get("outcome") as? String == "SyntaxError:\(Self.outsideMessage):true")
-        #expect(log.launched.isEmpty)
-    }
-
-    @Test("Unbound: the first call returns false and a second call in the same gesture throws")
-    func unboundReturnsFalseThenQuotaThrows() throws {
-        let (shared, log) = makeShared(bound: false)
-        let instance = try layer(Self.attemptScript, shared: shared)
-        send(instance, .click, frame(WPEPointerGesture.next()))
-        #expect(shared.get("log") as? String == "c:false;")
-        shared.set("log", "")
-        let gesture = WPEPointerGesture.next()
-        send(instance, .up, frame(gesture))
-        send(instance, .click, frame(gesture))
-        #expect(shared.get("log") as? String == "u:false;c:SyntaxError:\(Self.perClickMessage);")
-        #expect(log.launched.isEmpty)
-    }
-
-    @Test("Bound: down, up and click of one gesture launch exactly once")
-    func boundLaunchesOncePerGesture() throws {
-        let (shared, log) = makeShared(bound: true)
-        let instance = try layer(Self.attemptScript, shared: shared)
-        let gesture = WPEPointerGesture.next()
-        send(instance, .down, frame(gesture, down: true))
-        send(instance, .up, frame(gesture))
-        send(instance, .click, frame(gesture))
-        let quota = "SyntaxError:\(Self.perClickMessage)"
-        #expect(shared.get("log") as? String == "d:true;u:\(quota);c:\(quota);")
-        #expect(log.launched == ["k"])
-    }
-
-    @Test("A layer script and a transform script share one quota per gesture")
-    func quotaIsSharedAcrossContexts() throws {
-        let (shared, log) = makeShared(bound: true)
-        let layerInstance = try layer(Self.attemptScript, shared: shared)
-        let transformInstance = try transform("""
-        export function init(value) { shared.tlog = ''; return value; }
-        export function cursorClick() {
-            try { shared.tlog += engine.openUserShortcut('k'); }
-            catch (e) { shared.tlog += e.message; }
-        }
-        """, shared: shared)
-        defer { _ = transformInstance.destroy() }
-        let gesture = WPEPointerGesture.next()
-        send(layerInstance, .click, frame(gesture))
-        #expect(send(transformInstance, .click, frame(gesture)))
-        #expect(shared.get("log") as? String == "c:true;")
-        #expect(shared.get("tlog") as? String == Self.perClickMessage)
-        #expect(log.launched == ["k"])
-    }
-
-    @Test("Two gestures each get their own launch")
-    func distinctGesturesLaunchSeparately() throws {
-        let (shared, log) = makeShared(bound: true)
-        let instance = try layer(Self.attemptScript, shared: shared)
-        send(instance, .click, frame(WPEPointerGesture.next()))
-        send(instance, .click, frame(WPEPointerGesture.next()))
-        #expect(shared.get("log") as? String == "c:true;c:true;")
-        #expect(log.launched == ["k", "k"])
-    }
-
-    @Test("A release without a gesture number (cancellation) cannot launch")
-    func gestureZeroReleaseThrowsOutside() throws {
-        let (shared, log) = makeShared(bound: true)
-        let instance = try layer(Self.attemptScript, shared: shared)
-        send(instance, .up, frame(0))
-        #expect(shared.get("log") as? String == "u:SyntaxError:\(Self.outsideMessage);")
-        #expect(log.launched.isEmpty)
-    }
-
-    @Test("The bridge's own quota error never backs a cursor handler off; a script's own error does",
+    @Test("The bounded parity VM permits one shortcut per press, including an unbound shortcut",
           arguments: [false, true])
-    func quotaErrorIsExemptFromBackoff(useTransform: Bool) throws {
-        let (shared, _) = makeShared(bound: false)
+    func parityCursorQuota(bound: Bool) throws {
+        let bridge = WPEUserShortcutScriptBridge()
+        let log = LaunchLog()
+        bridge.setBindings(declared: ["k"], bound: bound
+            ? ["k": .init(commandType: "web", displayName: "Example", revision: 1)] : [:])
+        bridge.setLauncher { _, revision in log.record(revision) }
         let script = """
-        export function init(value) { shared.quota = 0; shared.own = 0; return value; }
-        export function cursorClick() {
-            if (shared.mode === 'quota') {
-                shared.quota += 1;
-                engine.openUserShortcut('k');
-                engine.openUserShortcut('k');
-            } else {
-                shared.own += 1;
-                engine.openUserShortcut('k');
-                try { engine.openUserShortcut('k'); } catch (e) { throw new Error('x'); }
+        export function init(value) { shared.accepted = 0; shared.denied = 0; return value; }
+        function attempt() {
+            try { shared.accepted += engine.openUserShortcut('k') ? 1 : 0.5; }
+            catch (error) {
+                if (!(error instanceof SyntaxError)) throw error;
+                shared.denied += 1;
             }
+        }
+        export function cursorDown() { attempt(); }
+        export function cursorUp() { attempt(); }
+        export function cursorClick() { attempt(); }
+        export function update(value) { return new Vec3(shared.accepted, shared.denied, 0); }
+        """
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 100, "height": 100]],
+            "objects": [["id": 1, "solid": true, "origin": ["value": "0 0 0", "script": script]]],
+        ]))
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js")
+            .standardizedFileURL
+        let bytes = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? bytes : nil
+        }])
+        let engine = try WPEParityScriptEngine.prepare(document: document, state: &state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(100, 100), screenResolution: SIMD2(100, 100),
+            openUserShortcut: { bridge.requestLaunch($0) }
+        ), volume: { _, _ in }, command: { _, _, _ in false })
+        try engine.start(state: &state)
+        var tracker = WPEParityCursorTracker()
+        let targets = [WPEParityCursorTarget(id: "1", quad: (.zero, SIMD2(10, 0), SIMD2(10, 10), SIMD2(0, 10)))]
+        for _ in 0 ..< 2 {
+            for down in [true, false] {
+                let events = tracker.update(targets: targets, cursor: SIMD2(5, 5), leftDown: down, moved: false)
+                engine.cursor(events, input: .init(leftDown: down), state: &state)
+            }
+        }
+        engine.tick(dt: 0, state: &state)
+        #expect(state.object("1")?.origin == SIMD3(bound ? 2 : 1, 4, 0))
+        #expect(log.revisions == (bound ? [1, 1] : []))
+        #expect(engine.exceptionCount == 0)
+    }
+
+    @Test("The parity VM rejects shortcut calls without a press")
+    func parityRejectsCallsOutsidePress() throws {
+        // Exercise the same binding through update, where no cursor press has opened the permit.
+        let script = """
+        export function update(value) {
+            try { engine.openUserShortcut('k'); return new Vec3(99, 0, 0); }
+            catch (error) { return new Vec3(error instanceof SyntaxError ? 1 : 2, 0, 0); }
         }
         """
-        let rounds = 5
-        func dispatchRounds(_ mode: String) throws {
-            shared.set("mode", mode)
-            if useTransform {
-                let instance = try transform(script, shared: shared)
-                defer { _ = instance.destroy() }
-                for _ in 0 ..< rounds {
-                    #expect(send(instance, .click, frame(WPEPointerGesture.next())))
-                }
-            } else {
-                let instance = try layer(script, shared: shared)
-                for _ in 0 ..< rounds {
-                    send(instance, .click, frame(WPEPointerGesture.next()))
-                }
-            }
-        }
-        try dispatchRounds("quota")
-        #expect(shared.get("quota") as? Double == Double(rounds))
-        try dispatchRounds("own")
-        let own = try #require(shared.get("own") as? Double)
-        #expect(own < Double(rounds), "a script-raised Error after catching the quota error was not backed off")
-    }
-
-    @Test("engine.userProperties exposes declared shortcuts and follows binding changes live")
-    func userPropertiesFollowBindings() throws {
-        let bridge = WPEUserShortcutScriptBridge()
-        bridge.setBindings(declared: ["k"], bound: [:])
-        let shared = WPESharedScriptState(userProperties: ["k": .string("plain")], userShortcuts: bridge)
-        let instance = try layer("""
-        export function init() {
-            const p = engine.userProperties.k;
-            shared.initial = [typeof p, p.isbound, typeof p.commandtype, typeof p.file].join(',');
-        }
-        export function update() {
-            const p = engine.userProperties.k;
-            shared.live = [p.isbound, p.commandtype, p.file].join(',');
-        }
-        """, shared: shared)
-        #expect(shared.get("initial") as? String == "object,false,undefined,undefined")
-        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 1)])
-        _ = instance.tick(runtimeSeconds: 1)
-        #expect(shared.get("live") as? String == "true,web,Example")
-    }
-
-    @Test("A bridge error clears an earlier script fault's backoff", arguments: [false, true])
-    func bridgeErrorResetsBackoff(useTransform: Bool) throws {
-        let (shared, _) = makeShared(bound: false)
-        let script = """
-        export function init(value) { shared.runs = 0; return value; }
-        export function cursorClick() {
-            shared.runs += 1;
-            if (shared.mode === 'quota') {
-                engine.openUserShortcut('k');
-                engine.openUserShortcut('k');
-            } else {
-                throw new Error('own');
-            }
-        }
-        """
-        // A first fault skips one click and a second consecutive one skips eight.
-        let modes = ["own", "own", "quota", "own", "own", "own"]
-        if useTransform {
-            let instance = try transform(script, shared: shared)
-            defer { _ = instance.destroy() }
-            for mode in modes {
-                shared.set("mode", mode)
-                #expect(send(instance, .click, frame(WPEPointerGesture.next())))
-            }
-        } else {
-            let instance = try layer(script, shared: shared)
-            for mode in modes {
-                shared.set("mode", mode)
-                send(instance, .click, frame(WPEPointerGesture.next()))
-            }
-        }
-        #expect(shared.get("runs") as? Double == 4, "the quota error left the earlier fault's streak in place")
-    }
-
-    @Test("A script that replaces SyntaxError still gets the native one from the bridge")
-    func replacedSyntaxErrorIsIgnored() throws {
-        let (shared, _) = makeShared(bound: true)
-        let instance = try layer("""
-        const Native = SyntaxError;
-        SyntaxError = function () { return { name: 'Fake', message: 'fake' }; };
-        export function update() {
-            try { engine.openUserShortcut('k'); shared.outcome = 'returned'; }
-            catch (e) { shared.outcome = e.name + ':' + e.message + ':' + (e instanceof Native); }
-        }
-        """, shared: shared)
-        _ = instance.tick(runtimeSeconds: 1)
-        #expect(shared.get("outcome") as? String == "SyntaxError:\(Self.outsideMessage):true")
-    }
-
-    @Test("A gesture evicted from the ledger stays spent")
-    func evictedGestureStaysSpent() {
-        let first = WPEPointerGesture.next()
-        #expect(WPEUserShortcutGestureLedger.claim(first))
-        for _ in 0 ..< 300 {
-            _ = WPEUserShortcutGestureLedger.claim(WPEPointerGesture.next())
-        }
-        #expect(!WPEUserShortcutGestureLedger.claim(first))
-    }
-
-    @Test("A release outside the view keeps its gesture, so its cursorUp may still launch")
-    func outsideReleaseKeepsGesture() {
-        let present = WPEPresentUniforms.make(
-            fitMode: .stretch, sourceWidth: 100, sourceHeight: 100, targetWidth: 100, targetHeight: 100
-        )
-        var release = frame(42)
-        release.dragged = true
-        let space = WPEMetalSceneRenderer.pointerSpace(
-            present: present, sample: .inactive, frame: release, followEnabled: false, clickEnabled: true
-        )
-        #expect(!space.clickPointerIsLive)
-        #expect(space.pointerFrame.gesture == 42)
-        #expect(space.pointerFrame.dragged)
-    }
-
-    @Test("applyUserProperties hands a usershortcut key the object engine.userProperties exposes")
-    func applyUserPropertiesCarriesShortcutObject() throws {
-        let bridge = WPEUserShortcutScriptBridge()
-        bridge.setBindings(declared: ["k"], bound: [:])
-        let shared = WPESharedScriptState(userProperties: ["k": .string("")], userShortcuts: bridge)
-        let instance = try layer("""
-        export function applyUserProperties(p) {
-            const s = p.k;
-            shared.seen = [typeof s, s.isbound, String(s.commandtype), String(s.file),
-                           'commandtype' in s, 'file' in s].join(',');
-        }
-        """, shared: shared)
-        _ = instance.applyUserProperties(["k": .string("")])
-        #expect(shared.get("seen") as? String == "object,false,undefined,undefined,true,true")
-        bridge.setBindings(declared: ["k"], bound: ["k": .init(commandType: "web", displayName: "Example", revision: 1)])
-        _ = instance.applyUserProperties(["k": .string("")])
-        #expect(shared.get("seen") as? String == "object,true,web,Example,true,true")
-    }
-
-    @Test("A cancellation-synthesised release carries no gesture number")
-    func cancelledReleaseHasNoGesture() throws {
-        let inbox = WPELayerScriptCursorInbox()
-        inbox.didDeliver(.init(event: .down, pointerFrame: frame(WPEPointerGesture.next(), down: true), runtimeSeconds: 1))
-        inbox.cancel()
-        let claim = try #require(inbox.claim())
-        let events = try #require(inbox.take(claim))
-        #expect(events.map(\.event) == [.up])
-        #expect(events.first?.pointerFrame.gesture == 0)
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 -1", "eye": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 100, "height": 100]],
+            "objects": [["id": 1, "solid": true, "origin": ["value": "0 0 0", "script": script]]],
+        ]))
+        var state = WPEParitySceneState(document: document, hdr: false)
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js")
+            .standardizedFileURL
+        let bytes = try Data(contentsOf: fixture)
+        let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
+            path == "scripts/jsclasses/baseclasses.js" ? bytes : nil
+        }])
+        let log = LaunchLog()
+        let engine = try WPEParityScriptEngine.prepare(document: document, state: &state, configuration: .init(
+            assets: assets, canvasSize: SIMD2(100, 100), screenResolution: SIMD2(100, 100),
+            openUserShortcut: { _ in log.record(1); return true }
+        ), volume: { _, _ in }, command: { _, _, _ in false })
+        try engine.start(state: &state)
+        engine.tick(dt: 0, state: &state)
+        #expect(state.object("1")?.origin == SIMD3(1, 0, 0))
+        #expect(log.revisions.isEmpty)
+        #expect(engine.exceptionCount == 0)
     }
 }
 #endif

@@ -241,7 +241,7 @@ struct WPESoundWPERulesTests {
             Self.sound(id: "b", paths: ["b.wav"], mode: "loop"),
         ]) == 2)
         guard runtime.play() else { return }
-        runtime.applyScriptCommand(.pause, layer: "b")
+        _ = runtime.applyScriptSoundCommand(.pause, forSoundID: "b", volume: 1)
 
         runtime.setMasterVolume(0)
         #expect(!runtime.debugEngineIsRunning())

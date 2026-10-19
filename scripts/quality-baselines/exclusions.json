@@ -2,16 +2,6 @@
   "schema_version": 1,
   "components": [
     {
-      "id": "wpe-metal-shader-dispatcher",
-      "owner": "wpe-rendering",
-      "reason": "Existing shader-dispatch lint and format debt needs a dedicated behavior-preserving cleanup after renderer characterization.",
-      "expires_on": "2027-01-31",
-      "paths": [
-        "LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift"
-      ],
-      "convergence_goal": "Characterize shader dispatch, remove inherited duplication, and reduce the full dispatcher family to the historical component cap."
-    },
-    {
       "id": "html-wallpaper-runtime",
       "owner": "video-web-runtime",
       "reason": "Existing WebKit runtime debt is isolated until a dedicated cleanup can retain navigation, trust, and lifecycle behavior.",
@@ -20,41 +10,6 @@
         "LiveWallpaper/Playback/Web/HTMLWallpaperView.swift"
       ],
       "convergence_goal": "Consolidate WebKit navigation, audio and lifecycle ownership after characterization; reduce the complete view family to the historical cap."
-    },
-    {
-      "id": "wpe-metal-scene-renderer",
-      "owner": "wpe-rendering",
-      "reason": "The renderer split intentionally preserved inherited violations; cleanup follows corpus-backed renderer characterization.",
-      "expires_on": "2027-01-31",
-      "paths": [
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+LivePoster.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Load.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Text.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Particles.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Scripts.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Lifecycle.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Textures.swift"
-      ],
-      "convergence_goal": "Extract independently owned script and particle state incrementally with corpus/pass equivalence; reduce the complete renderer family to the historical cap."
-    },
-    {
-      "id": "wpe-metal-render-executor",
-      "owner": "wpe-rendering",
-      "reason": "The executor split intentionally preserved inherited violations; cleanup must remain separate from frame-path behavior changes.",
-      "expires_on": "2027-01-31",
-      "paths": [
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutorTypes.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Text.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Particles.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Present.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Targets.swift",
-        "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Puppet.swift"
-      ],
-      "convergence_goal": "Consolidate frame submission and resource ownership with pass equivalence; reduce the complete executor family to the historical cap."
     },
     {
       "id": "screen-manager",
@@ -73,22 +28,6 @@
         "LiveWallpaper/App/ScreenManager+Automation.swift"
       ],
       "convergence_goal": "Extract independently owned lifecycle/overlay state with transaction and recovery characterization; reduce the complete manager family to the historical cap."
-    },
-    {
-      "id": "wpe-shader-transpiler",
-      "owner": "wpe-rendering",
-      "reason": "The transpiler split preserved parser-sensitive violations; cleanup requires shader corpus equivalence and a separate review.",
-      "expires_on": "2027-01-31",
-      "paths": [
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Preprocessor.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Main.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Substitutions.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Helpers.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Render.swift",
-        "LiveWallpaper/Runtime/Metal/WPEShaderTranspilerTypes.swift"
-      ],
-      "convergence_goal": "Remove duplicate shader transformations under corpus equivalence; reduce the complete transpiler family to the historical cap."
     }
   ]
 }

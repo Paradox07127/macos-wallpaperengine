@@ -171,20 +171,12 @@ enum WPERenderDiagnosticEnvironment {
     nonisolated static let renderFlagKeys = [
         "WPEMetalDisplayHDROutputEnabled",
         "WPEMetalFXRenderScale",
-        "WPEMetalMemorylessDepthEnabled",
-        "WPEMetalMipChainEnabled",
-        "WPEMetalSerializeFrames",
-        "WPEMetalPerspectiveNativeResolution",
         "WPEMetalSceneBloomEnabled",
-        "WPEMetalStaticLayerCacheEnabled",
-        "WPEMetalStaticLayerCacheBudgetMiB",
-        "WPEMetalTextureCacheBudgetMiB",
-        "WPEMetalIntroPhaseAlignEnabled",
-        "WPEParallaxGain",
-        "WPEParticlePrewarmEnabled",
-        "WPEPuppetAttachmentBindAnchor",
-        "WPEPuppetClipComposite",
-        "WPEPuppetDeferMeshWarp",
+        "loomscreen.wallpapers.offMainRender.v1",
+        "loomscreen.wallpapers.parityTextureCompression.v1",
+        "loomscreen.wallpapers.parityRenderTargetAliasing.v1",
+        "loomscreen.wallpapers.parityOffscreenScale.v1",
+        "loomscreen.wallpapers.sceneMirrorRendering.v1",
     ]
 
     static func lines() -> [String] {
@@ -219,13 +211,10 @@ enum WPERenderDiagnosticEnvironment {
         let defaults = UserDefaults.appScoped()
         var flags = renderFlagKeys.compactMap { key -> String? in
             guard let value = defaults.object(forKey: key) else { return nil }
-            return "\(key.dropFirst(3))=\(value)"
+            let name = key.hasPrefix("WPE") ? String(key.dropFirst(3)) : key
+            return "\(name)=\(value)"
         }
-        let effectiveBudget = WPEMetalSceneRenderer.textureCacheBudgetBytes
-            .map { "\($0 / 1_048_576)MiB" } ?? "unbounded"
-        flags.append(
-            "MemoryTier=\(WPEMemoryTier.current) textureBudget=\(effectiveBudget)"
-        )
+        flags.append("MemoryTier=\(WPEMemoryTier.current)")
         return flags
     }
 }

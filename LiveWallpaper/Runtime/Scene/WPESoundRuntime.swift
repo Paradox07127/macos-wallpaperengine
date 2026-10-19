@@ -301,28 +301,6 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    func applyScriptCommand(_ command: WPELayerSoundCommand, layer: String) {
-        state.withLock { state in
-            guard let index = state.tracks.firstIndex(where: { $0.name == layer }) else { return }
-            let player = state.tracks[index].player
-            switch command {
-            case .play:
-                state.tracks[index].enabled = true
-                reconcileEngineRunState(state: &state)
-            case .stop:
-                Self.stopTrack(at: index, state: &state)
-                reconcileEngineRunState(state: &state)
-            case .pause:
-                state.tracks[index].enabled = false
-                player.pause()
-                reconcileEngineRunState(state: &state)
-            case let .setVolume(volume):
-                state.tracks[index].sceneVolume = Float(min(max(volume, 0), 1))
-                applyAudioState(to: &state)
-            }
-        }
-    }
-
     /// SceneScript ISound under WPE rules; `volume` is the layer's current script volume. Returns isPlaying after the
     /// command. App mute, suspend and master volume only hold output and do not change the answer.
     func applyScriptSoundCommand(_ command: WPEParityScriptEngine.SoundCommand, forSoundID id: String,

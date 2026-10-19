@@ -462,10 +462,6 @@ final class WPESceneMediaEventDispatcher {
     /// Outlives `parity`: `stop()` does not restart the generated system texture names.
     private var parityArtworkRevision: UInt64 = 0
 
-    nonisolated static func isNeeded(by document: WPESceneDocument) -> Bool {
-        WPESceneScriptInstanceInventory.usesMediaAPI(in: document)
-    }
-
     init(
         source: any WPENowPlayingEventSource,
         now: @escaping @MainActor () -> Double = { Date().timeIntervalSince1970 }

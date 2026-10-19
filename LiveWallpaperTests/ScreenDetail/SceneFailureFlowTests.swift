@@ -184,7 +184,6 @@ struct SceneFailureFlowTests {
         let rendering: [SceneRenderingError] = [.cacheRootMissing, .parseFailed("invalid JSON"), .resourceFailed(.fileMissing(layer: "B", path: "materials/B.tex")), .metalRendererUnsupported(reason: "target format")]
         let resources: [SceneLoadDiagnostic] = [.texture(layer: "B", error: .unsupportedFormat(code: 42)), .legacyUnsupportedTexture(layer: "B"), .fileMissing(layer: "B", path: "materials/B.tex"), .crossPackageReference(layer: "B", path: "other/B.tex"), .materialUnresolved(layer: "B", reason: "custom pass"), .other(layer: "B", message: "failure details")]
         let metal: [WPEMetalTextureLoaderError] = [.unsupportedFormat(.bc7), .unsupportedCompressedFormat(.bc7), .malformedPayload("wrong length"), .textureAllocationFailed]
-        let graph: [WPERenderGraphError] = [.fileMissing("B"), .invalidJSON("B"), .malformedMaterial("B"), .malformedEffect("B"), .materialUnresolved("B")]
         for error in documents {
             #expect(SceneFailureCause.make(error).reason == error.localizedDescription)
         }
@@ -195,9 +194,6 @@ struct SceneFailureFlowTests {
             #expect(SceneFailureCause.make(error).reason == error.errorDescription)
         }
         for error in metal {
-            #expect(SceneFailureCause.make(error).reason == error.localizedDescription)
-        }
-        for error in graph {
             #expect(SceneFailureCause.make(error).reason == error.localizedDescription)
         }
         let models: [WPEMdlParserError] = [.invalidHeader, .implausibleCount(section: "bones", count: 12, limit: 8), .truncated(offset: 42, requested: 8, available: 1), .unterminatedString(offset: 3), .invalidString(offset: 8), .unsupportedSectionMarker(3), .invalidPartTable(42), .invalidVertexBuffer(byteCount: 7, stride: 8), .invalidIndexBuffer(3), .invalidSkeletonMatrix(7), .invalidElementMatrixPayload(actual: 3, expected: 16), .invalidAttachmentHeader(offset: 4), .invalidAnimationHeader(offset: 9), .invalidAnimationTail(offset: 1), .invalidAnimationChannelByteCount(animationID: 7, byteCount: 2, expected: 3), .invalidAnimationChannelDelimiter(animationID: 4, channelIndex: 3, marker: 2, byteCount: 1, expected: 0)]

@@ -44,7 +44,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         )
         view.colorPixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: hdrOutput)
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        view.preferredFramesPerSecond = WPEMetalSceneRenderer.defaultPreferredFPS
+        view.preferredFramesPerSecond = WPESceneRenderPolicy.defaultPreferredFPS
         view.autoresizingMask = [.width, .height]
         view.enableSetNeedsDisplay = false
         view.isPaused = true
