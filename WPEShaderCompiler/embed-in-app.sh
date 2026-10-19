@@ -5,7 +5,7 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTENTS="${TARGET_BUILD_DIR:?}/${CONTENTS_FOLDER_PATH:?}"
 NOTICES="$CONTENTS/Resources/WPEShaderCompilerNotices"
-NOTICE_FILES=(DXC-LICENSE.TXT DXC-ThirdPartyNotices.txt DirectX-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf)
+NOTICE_FILES=(DXC-LICENSE.TXT DXC-ThirdPartyNotices.txt DirectX-Headers-LICENSE MSC-LICENSE.txt MSC-Acknowledgements.rtf MSC-EULA.rtf)
 
 # The vendored FreeType/HarfBuzz/msdfgen code is linked even without the shader toolchain.
 # Each line is "<repo path> <bundled name>"; scripts/check_third_party_notices.py reads them.
@@ -68,18 +68,15 @@ embed() {
     local source=$1 destination=$2
     shift 2
     local staged="$destination.embedding"
-    # The helper is arm64-only, so the x86_64 slice of a universal library is never loaded.
-    if [ "$(/usr/bin/lipo -archs "$source")" = arm64 ]; then
+    # Preserve the original universal MSC library; EA1844 separately restricts modifications.
+    # The arm64 helper loads only its arm64 slice. Other inputs may retain the existing thinning policy.
+    if [ "$source" = "$METAL_IR_CONVERTER" ] || [ "$(/usr/bin/lipo -archs "$source")" = arm64 ]; then
         cp -f "$source" "$staged"
     else
         /usr/bin/lipo "$source" -thin arm64 -output "$staged"
     fi
     chmod u+w "$staged"
-    # Only MSC ships with local symbols; dxcompiler is stripped by its build. ThirdPartyNotices/README.txt declares this change.
-    if [ "$source" = "$METAL_IR_CONVERTER" ]; then
-        codesign --remove-signature "$staged"
-        /usr/bin/strip -x "$staged"
-    fi
+    # Re-sign for library validation; do not strip, patch install names or thin MSC.
     codesign "${SIGN_OPTIONS[@]}" --identifier "$(basename "$destination")" "$@" "$staged"
     codesign --verify --strict "$staged"
     mv -f "$staged" "$destination"

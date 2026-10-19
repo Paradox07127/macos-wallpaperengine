@@ -10,7 +10,7 @@ on the user's machine.
 
 Set `WPE_SHADER_TOOLCHAIN_ROOT` explicitly to an input directory. There is no
 installation-path or developer-home default. `toolchain-inputs.sha256` pins
-31 files relative to that directory: 24 headers, two libraries and five complete
+32 files relative to that directory: 24 headers, two libraries and six complete
 notices. `build.sh` verifies every pin before compiling the current `main.cpp`
 with the selected Xcode SDK's `clang++`; it does not copy a prebuilt helper.
 
@@ -22,7 +22,7 @@ include/metal_irconverter/      metal_irconverter.h and its 15 ir_*.h includes
 lib/                           libdxcompiler.dylib, libmetalirconverter.dylib
 licenses/                      DXC-LICENSE.TXT, DXC-ThirdPartyNotices.txt,
                                DirectX-Headers-LICENSE, MSC-LICENSE.txt,
-                               MSC-Acknowledgements.rtf
+                               MSC-Acknowledgements.rtf, MSC-EULA.rtf
 ```
 
 The pinned DXC inputs come from v1.9.2609, source commit
@@ -69,7 +69,7 @@ and removes old embedded toolchain files; a configured but invalid staging root
 fails rather than silently using old outputs.
 
 The phase copies the helper into `Contents/MacOS`, the two libraries into
-`Contents/Frameworks`, and all five notices unchanged into
+`Contents/Frameworks`, and all six notices unchanged into
 `Contents/Resources/WPEShaderCompilerNotices`. Before the toolchain check, so
 Debug builds get them too, it copies the vendored FreeType, HarfBuzz and msdfgen
 notices plus `ThirdPartyNotices/README.txt` into
@@ -142,13 +142,38 @@ sections; do not replace it with a short attribution summary. Converter/runtime
 notice pairs in the observed SDK are byte-identical, so one copy of each suffices
 for this recorded file inventory.
 
-`embed-in-app.sh` modifies the redistributed `libmetalirconverter.dylib`: it is
-reduced to its arm64 slice and stripped of local symbols (`strip -x`).
-Apache-2.0 requires a prominent notice of that change, which
-`ThirdPartyNotices/README.txt` carries; keep the two in sync.
+`embed-in-app.sh` preserves the original universal `libmetalirconverter.dylib` input
+without architecture thinning, symbol stripping or install-name changes. It only
+re-signs the copied library using the app's identity for Hardened Runtime library
+validation. The helper is arm64 and loads the arm64 slice; retaining the unused
+x86_64 slice does not change the Pro host architecture. DXC's existing build and
+thinning policy is separate.
 
-The exact compiler-binary redistribution terms and the MSC installer EULA remain
-**unverified**. Including installed header licenses and acknowledgements does
-not settle those terms. Local implementation/build/runtime acceptance and final
-distribution-license review remain separate; this change makes no claim that
-distribution permission is closed.
+The complete original `MSC-EULA.rtf` is also pinned and shipped. It is Apple's
+Software License Agreement for Metal Shader Converter, EA1844, dated 5/31/2023.
+Section 2B explicitly permits distribution of its defined Dynamic Libraries for
+the sole purpose of shader conversion. Section 2E separately restricts modification,
+subject to its stated exceptions; do not infer a compiler-binary modification
+grant from an installed header's generic Apache-2.0 notice.
+
+EULA provenance: the English `Resources/English.lproj/License.rtf` in the official
+Apple download at
+`https://download.developer.apple.com/Developer_Tools/Metal_Shader_Converter_3.1_beta_1/Metal_Shader_Converter_4.0_beta_3.pkg`.
+The package SHA256 is
+`bf85647b33ca54a0a8ba5b44e650db72aefbf097c98f291fa1dff8a4bfb0017e`;
+the unchanged license SHA256 is
+`20108dfe30663a2c6c717d9c5ca92486d9a4682c85c8ab344b20470feac8d0c3`.
+The package's Distribution file points to that license and records package version
+`1.0.1.1791495856`. The authenticated official download was expanded only; it was
+not installed or executed. `pkgutil --check-signature` reported an invalid package
+signature, so authenticated download provenance and that signature limitation are
+recorded separately rather than claiming package-signature verification.
+
+This beta 3 package is not the original installer for the earlier installed SDK
+inputs recorded above. No library or header input hash was replaced. The EULA is
+an explicit dynamic-library redistribution grant from the obtained Apple package;
+it does not establish byte-for-byte provenance or the exact original beta 2
+installer license for the existing pinned dylib, nor constitute a comprehensive
+legal/compliance audit. Keep the generic open-source licenses and acknowledgements
+alongside the Apple agreement; local build/runtime and final artifact acceptance
+remain separate gates.
