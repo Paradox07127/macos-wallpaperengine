@@ -4,7 +4,7 @@ import Foundation
 import LiveWallpaperCore
 import XCTest
 
-/// Scene 3815666789 built through `AmbientWallpaperSessionBuilder`, with and without `WPEParityRendererFlag`.
+/// The product builder always selects parity, including upgrades from every historical renderer selection.
 @MainActor
 final class WPEParityProductPathTests: XCTestCase {
     private static let workshopID = "3815666789"
@@ -18,75 +18,69 @@ final class WPEParityProductPathTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.defaultsKey)
-        UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.modeDefaultsKey)
+        UserDefaults.appScoped().removeObject(forKey: "loomscreen.wallpapers.parityRenderer.v1")
+        UserDefaults.appScoped().removeObject(forKey: "loomscreen.wallpapers.parityRendererMode.v1")
         try? FileManager.default.removeItem(at: scratch)
         try await super.tearDown()
     }
 
-    func testFlaggedSceneLoadsAndPresentsThroughParityDriver() async throws {
+    func testHistoricalRendererSelectionsAllLoadAndPresentThroughParity() async throws {
         if case let .failure(reason) = WPEParityShaderToolchain.makeCompiler() {
             throw XCTSkip("\(reason)")
         }
         let scene = try installScene()
-        UserDefaults.appScoped().set([Self.workshopID], forKey: WPEParityRendererFlag.defaultsKey)
-        let session = try XCTUnwrap(makeSession(scene))
-        defer { session.cleanup() }
-
-        // Generous: a cold shader disk cache compiles every program first.
-        let result = await session.prepareForDisplay(timeout: .seconds(120))
-        XCTAssertEqual(result, .ready, "load error: \(String(describing: session.loadError))")
-        let actor = session.spanRenderActor
-        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
-        XCTAssertTrue(usesParity)
-        let state = await actor.rendererStateSnapshot()
-        let snapshot = try XCTUnwrap(state)
-        XCTAssertTrue(snapshot.isLoaded)
-        XCTAssertTrue(snapshot.hasPresentedFrame)
-        XCTAssertEqual(snapshot.completedPresentGeneration, snapshot.currentLoadGeneration)
-        XCTAssertNil(snapshot.failedPresentGeneration)
-        XCTAssertEqual(snapshot.shaderErrorCount, 0, "\(snapshot.shaderErrors.map { "\($0.shader): \($0.reason)" })")
-        XCTAssertEqual(snapshot.descriptor?.workshopID, Self.workshopID)
-    }
-
-    func testUnflaggedSceneKeepsMetalSceneRenderer() async throws {
-        let scene = try installScene()
-        WPEParityRendererFlag.setMode(.off)
-        let session = try XCTUnwrap(makeSession(scene))
-        defer { session.cleanup() }
-
-        let actor = session.spanRenderActor
-        let deadline = Date().addingTimeInterval(10)
-        var adopted = await actor.rendererStateSnapshot() != nil
-        while !adopted, Date() < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-            adopted = await actor.rendererStateSnapshot() != nil
+        for mode in ["off", "listed", "all"] {
+            UserDefaults.appScoped().set(mode, forKey: "loomscreen.wallpapers.parityRendererMode.v1")
+            UserDefaults.appScoped().set(["unrelated-scene"], forKey: "loomscreen.wallpapers.parityRenderer.v1")
+            let session = try XCTUnwrap(makeSession(scene))
+            let result = await session.prepareForDisplay(timeout: .seconds(120))
+            XCTAssertEqual(result, .ready, "historical \(mode): \(String(describing: session.loadError))")
+            let state = await session.spanRenderActor.rendererStateSnapshot()
+            let snapshot = try XCTUnwrap(state)
+            XCTAssertNotNil(snapshot.parity)
+            XCTAssertTrue(snapshot.isLoaded)
+            XCTAssertTrue(snapshot.hasPresentedFrame)
+            XCTAssertEqual(snapshot.completedPresentGeneration, snapshot.currentLoadGeneration)
+            XCTAssertNil(snapshot.failedPresentGeneration)
+            XCTAssertEqual(snapshot.shaderErrorCount, 0, "\(snapshot.shaderErrors)")
+            XCTAssertEqual(snapshot.descriptor?.workshopID, Self.workshopID)
+            session.cleanup()
         }
-        XCTAssertTrue(adopted, "no renderer adopted")
-        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
-        XCTAssertFalse(usesParity)
     }
 
-    func testRejectedPresetFallsBackToMetalSceneRenderer() async throws {
+    func testRejectedPresetCreatesAnExplicitlyFailedCandidate() async throws {
         if case let .failure(reason) = WPEParityShaderToolchain.makeCompiler() {
             throw XCTSkip("\(reason)")
         }
-        // `wec_e` must be a bool; the parity color-correction preset rejects a number.
         let scene = try installScene(presetSnapshot: ["wec_e": .number(1)])
-        WPEParityRendererFlag.setMode(.all)
         let session = try XCTUnwrap(makeSession(scene))
         defer { session.cleanup() }
+        let result = await session.prepareForDisplay(timeout: .seconds(1))
+        XCTAssertEqual(result, .failed)
+        let error = try XCTUnwrap(session.loadError)
+        XCTAssertNotNil(session.runtimeError)
+        XCTAssertNotNil(session.loadFailureCause)
+        let state = await session.spanRenderActor.rendererStateSnapshot()
+        XCTAssertNil(state, "A rejected preset must not adopt a renderer")
+        await session.retry()
+        XCTAssertEqual(session.loadError?.errorDescription, error.errorDescription,
+                       "Retry cannot turn an unadopted failed candidate into a successful empty reload")
+    }
 
-        let actor = session.spanRenderActor
-        let deadline = Date().addingTimeInterval(10)
-        var adopted = await actor.rendererStateSnapshot() != nil
-        while !adopted, Date() < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-            adopted = await actor.rendererStateSnapshot() != nil
-        }
-        XCTAssertTrue(adopted, "no renderer adopted")
-        let usesParity = await actor.run { $0.parityDriverForTesting != nil }
-        XCTAssertFalse(usesParity)
+    func testUnavailableToolchainCreatesAnExplicitlyFailedCandidate() async throws {
+        let scene = try installScene()
+        let session = try XCTUnwrap(AmbientWallpaperSessionBuilder().makeSceneSession(
+            descriptor: scene.descriptor, frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            engineAssetsRootURL: scene.engineRoot, applicationSupportRootURL: scene.supportRoot,
+            makeParityCompiler: { .failure(.init(description: "required parity toolchain unavailable")) }
+        ))
+        defer { session.cleanup() }
+        let result = await session.prepareForDisplay(timeout: .seconds(1))
+        XCTAssertEqual(result, .failed)
+        XCTAssertTrue(try XCTUnwrap(session.loadError?.errorDescription).contains("required parity toolchain unavailable"))
+        XCTAssertNotNil(session.runtimeError)
+        let snapshot = await session.spanRenderActor.rendererStateSnapshot()
+        XCTAssertNil(snapshot)
     }
 
     private struct InstalledScene {

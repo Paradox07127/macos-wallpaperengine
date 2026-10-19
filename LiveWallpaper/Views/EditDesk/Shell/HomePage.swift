@@ -627,23 +627,6 @@ struct HomePage: View {
         ) ?? []
     }
 
-    #if !LITE_BUILD
-    private func sceneWorkshopID(_ item: LibraryItem) -> String? {
-        guard item.kind == .scene else { return nil }
-        switch item.source {
-        case let .workshop(entry): return entry.origin.workshopID
-        case let .bookmark(bookmark): return bookmark.wpeOrigin?.workshopID
-        case .aerial: return nil
-        }
-    }
-
-    private func reloadScreens(showing item: LibraryItem) {
-        for screen in screenManager.screens where item.onDisplays.contains(screen.id) {
-            screenManager.reloadWallpaperForScreen(screen)
-        }
-    }
-    #endif
-
     private func requestRename(_ item: LibraryItem) {
         itemNameDraft = item.title
         renamingItemID = item.id
@@ -961,12 +944,6 @@ struct HomePage: View {
                                     .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
                                     .contextMenu {
                                         WallpaperMenuRows(items: libraryMenu(for: item))
-                                        #if !LITE_BUILD
-                                        if let workshopID = sceneWorkshopID(item) {
-                                            Divider()
-                                            ParityRendererMenuToggle(workshopID: workshopID) { reloadScreens(showing: item) }
-                                        }
-                                        #endif
                                     }
                                     .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title.translatedWallpaperName, kind: item.kind)))
                                     .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
@@ -2058,27 +2035,3 @@ struct LibraryGridTile: View {
         }
     }
 }
-
-#if !LITE_BUILD
-/// A scene's parity-pipeline checkmark; a developer control, so its title is not localized.
-private struct ParityRendererMenuToggle: View {
-    let workshopID: String
-    let reload: @MainActor () -> Void
-    /// Observed so the row follows the Settings pipeline picker.
-    @AppStorage(WPEParityRendererFlag.modeDefaultsKey, store: .appScoped()) private var mode = WPEParityRendererFlag.defaultMode
-
-    var body: some View {
-        let state = WPEParityRendererFlag.menuState(workshopID: workshopID)
-        Toggle(isOn: Binding(
-            get: { WPEParityRendererFlag.menuState(workshopID: workshopID).isChecked },
-            set: { listed in
-                WPEParityRendererFlag.setListed(listed, workshopID: workshopID)
-                reload()
-            }
-        )) {
-            Text(verbatim: "Render with New Pipeline")
-        }
-        .disabled(!state.isEnabled)
-    }
-}
-#endif

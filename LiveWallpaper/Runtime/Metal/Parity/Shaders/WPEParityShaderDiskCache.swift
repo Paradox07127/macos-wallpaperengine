@@ -5,6 +5,12 @@ import LiveWallpaperProWPE
 actor WPEParityShaderDiskCache {
     static let shared = WPEParityShaderDiskCache()
 
+    nonisolated static var defaultRootURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(cacheDirectory, isDirectory: true)
+    }
+
+    private static let cacheDirectory = "wpe-parity-shaders/v1"
     private static let stageInName = "vertex-stage-in.metallib"
     private let rootURL: URL
     private let readOnly: Bool
@@ -18,7 +24,7 @@ actor WPEParityShaderDiskCache {
 
     init(cachesURL: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0],
          sizeBudget: Int = 64 * 1024 * 1024) {
-        rootURL = cachesURL.appendingPathComponent("wpe-parity-shaders/v1", isDirectory: true)
+        rootURL = cachesURL.appendingPathComponent(Self.cacheDirectory, isDirectory: true)
         self.sizeBudget = max(0, sizeBudget)
         readOnly = false
         usesSharedInFlight = true
@@ -124,6 +130,18 @@ actor WPEParityShaderDiskCache {
         if let removed = index?.removeValue(forKey: key.rawValue) {
             indexedBytes -= removed.bytes
         }
+    }
+
+    /// Active stores keep their compiled artifacts; later requests may repopulate this disk cache.
+    func purge() throws {
+        guard !readOnly else { return }
+        do {
+            try FileManager.default.removeItem(at: rootURL)
+        } catch CocoaError.fileNoSuchFile {
+            // A cache that has not been populated is already empty.
+        }
+        index = nil
+        indexedBytes = 0
     }
 
     private func entryURL(_ key: WPEParityShaderKey) -> URL {

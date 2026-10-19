@@ -1,189 +1,101 @@
 #if !LITE_BUILD && DEBUG
+import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
-import QuartzCore
 import XCTest
 
-/// A render actor whose parity load failed takes the old renderer for the same scene and keeps the settings sent so far.
-final class WPEParityFallbackTests: XCTestCase {
-    private static let size = CGSize(width: 1280, height: 720)
-    private static let sceneID = "3815666789"
-
-    private var scratch: URL!
-    private var actors: [WPEDisplayRenderActor] = []
-
-    override func setUp() {
-        super.setUp()
-        scratch = FileManager.default.temporaryDirectory.appending(path: "parity-fallback-\(UUID().uuidString)",
-                                                                   directoryHint: .isDirectory)
-    }
-
-    override func tearDown() async throws {
+/// A failed parity candidate publishes its error and leaves the installed wallpaper in place.
+@MainActor
+final class WPEParityFailureTests: XCTestCase {
+    override func tearDown() {
         WPEParitySceneDriver.remainingForcedLoadFailuresForTesting = 0
-        UserDefaults.appScoped().removeObject(forKey: WPEParityRendererFlag.modeDefaultsKey)
-        for actor in actors {
-            await actor.teardownRenderer()
-            await actor.shutdown()
-        }
-        try? FileManager.default.removeItem(at: scratch)
-        try await super.tearDown()
+        super.tearDown()
     }
 
-    func testFailedParityLoadFallsBackToTheOldRendererWithTheSentSettings() async throws {
-        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
-            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
-        }
-        let compiler: WPEParityHelperShaderCompiler
-        switch WPEParityShaderToolchain.makeCompiler() {
-        case let .success(found): compiler = found
-        case let .failure(reason): throw XCTSkip("\(reason)")
-        }
-        // The sandboxed test host's home is its container; the WPE install lives in the account's real home.
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
-        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
-            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
-        }
-        let relativePath = "wpe-cache/\(UUID().uuidString)"
-        let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: sceneDirectory.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: root.appending(path: "scene-sources/\(Self.sceneID)"), to: sceneDirectory)
-
+    func testParityLoadFailureKeepsTheInstalledWallpaperAndCapturesDiagnostics() async throws {
+        let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.screens.first))
+        let active = InstalledWallpaper()
+        screen.installRuntimeSession(active)
+        defer { screen.resetRuntimeSession() }
+        let fixture = try ParityLifecycleFixture.make()
+        defer { fixture.cleanup() }
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
-        let layer = CAMetalLayer()
-        layer.device = device
-        layer.pixelFormat = .rgba8Unorm_srgb
-        layer.drawableSize = Self.size
-        let mailbox = WPEPointerMailbox()
-        let descriptor = SceneDescriptor(workshopID: Self.sceneID, cacheRelativePath: relativePath,
-                                         entryFile: "scene.json", capabilityTier: .degraded)
-        let inputs = WPEParitySceneInputs(
-            descriptor: descriptor,
-            entryResolver: SceneResourceResolver(cacheRootURL: sceneDirectory),
-            projectRoot: sceneDirectory,
-            assets: WPEParityProgramAssets(sceneDirectory: sceneDirectory,
-                                           assetRoots: [root.appending(path: "wpeassets"), wpeAssets]),
-            settings: WPEParityProgramSettings(),
-            compiler: compiler,
-            device: device,
-            presentLayer: WPEPresentLayer(layer: layer),
-            mailbox: mailbox,
-            surfaceControl: NoOpSurfaceControl(),
-            drawableSize: Self.size,
-            pixelFormat: layer.pixelFormat
-        )
-        let actor = WPEDisplayRenderActor()
-        actors.append(actor)
-        try await actor.adoptParity(inputs)
-        await actor.setAudioVolume(0.25)
-        await actor.setFrameRateCeiling(24)
-
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let candidate = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
         WPEParitySceneDriver.remainingForcedLoadFailuresForTesting = 1
-        do {
-            try await actor.load()
-            XCTFail("the forced parity load failure did not throw")
-        } catch {}
-
-        // The parity scene paced a no-op surface; only the old renderer's pacer reaches the actor's link.
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: descriptor, cacheRootURL: sceneDirectory, dependencyMounts: [], engineAssetsRootURL: wpeAssets,
-            surfaceControl: WPERenderThreadFramePacer(surface: NoOpSurfaceControl(), renderActor: actor),
-            mailbox: mailbox, presentLayer: WPEPresentLayer(layer: layer), drawableSize: Self.size, device: device
+        candidate.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
+        var capturedFailure = false
+        let result = await WallpaperSessionTransaction.prepareAndCommit(
+            candidate, to: screen, replacing: active, timeout: .seconds(5), isStillCurrent: { true },
+            beforeDiscard: { result in
+                XCTAssertEqual(result, .failed)
+                XCTAssertNotNil(candidate.loadError)
+                XCTAssertNotNil(candidate.runtimeError)
+                XCTAssertNotNil(candidate.loadFailureCause)
+                XCTAssertNotNil(candidate.wallpaperWindow, "Diagnostics must be captured before cleanup")
+                XCTAssertTrue(screen.runtimeSession === active)
+                capturedFailure = true
+            }
         )
-        await actor.replaceParity(with: WPERendererHandoff(renderer: renderer).renderer)
-        try await actor.load()
-
-        let parityGone = await actor.run { $0.parityDriverForTesting == nil }
-        XCTAssertTrue(parityGone)
-        let snapshot = await actor.rendererStateSnapshot()
-        XCTAssertEqual(snapshot?.isLoaded, true)
-        XCTAssertNil(snapshot?.parity)
-        let volume = await actor.currentPendingAudioVolume()
-        XCTAssertEqual(volume, 0.25)
-        let linkFPS = await actor.run { $0.linkPreferredFPSForTesting }
-        XCTAssertEqual(linkFPS, 24)
-    }
-
-    @MainActor
-    func testSessionShowsTheOldRendererWhenTheParityLoadFails() async throws {
-        let scene = try installScene()
-        WPEParityRendererFlag.setMode(.all)
-        WPEParitySceneDriver.remainingForcedLoadFailuresForTesting = 1
-        let session = try XCTUnwrap(makeSession(scene))
-        defer { session.cleanup() }
-
-        let result = await session.prepareForDisplay(timeout: .seconds(60))
-        XCTAssertEqual(result, .ready, "load error: \(String(describing: session.loadError))")
-        XCTAssertEqual(session.adoptedScene?.renderer, "metal-fallback")
-        XCTAssertNil(session.loadError)
-    }
-
-    @MainActor
-    func testSessionFailsWhenTheOldRendererAlsoFails() async throws {
-        let scene = try installScene()
-        WPEParityRendererFlag.setMode(.all)
-        let session = try XCTUnwrap(makeSession(scene))
-        defer { session.cleanup() }
-        // The builder already checked the entry file; both renderers read it only when they load.
-        try FileManager.default.removeItem(at: scene.entryURL)
-
-        let result = await session.prepareForDisplay(timeout: .seconds(60))
         XCTAssertEqual(result, .failed)
-        XCTAssertEqual(session.adoptedScene?.renderer, "metal-fallback")
+        XCTAssertTrue(capturedFailure)
+        XCTAssertTrue(screen.runtimeSession === active)
+        XCTAssertEqual(active.cleanupCallCount, 0)
+        XCTAssertNil(candidate.wallpaperWindow)
+    }
+
+    func testParityReadFailureRemainsExplicitAndRetryCanHealTheSameScene() async throws {
+        let fixture = try ParityLifecycleFixture.make()
+        defer { fixture.cleanup() }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
+        defer { session.cleanup() }
+        let entry = fixture.root.appending(path: "scene.json")
+        let parked = fixture.root.appending(path: "scene.parked")
+        try FileManager.default.moveItem(at: entry, to: parked)
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
+        let result = await session.prepareForDisplay(timeout: .seconds(5))
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(session.adoptedScene?.renderer, "parity")
         XCTAssertNotNil(session.loadError)
-    }
-
-    private struct InstalledScene {
-        let descriptor: SceneDescriptor
-        let entryURL: URL
-        let engineRoot: URL
-    }
-
-    @MainActor
-    private func makeSession(_ scene: InstalledScene) -> SceneWallpaperSession? {
-        AmbientWallpaperSessionBuilder().makeSceneSession(
-            descriptor: scene.descriptor, frame: CGRect(x: 0, y: 0, width: 960, height: 540),
-            engineAssetsRootURL: scene.engineRoot, applicationSupportRootURL: scratch
-        )
-    }
-
-    /// Copies the fixture scene into the scratch app-support root as an extracted `.cache` scene.
-    private func installScene() throws -> InstalledScene {
-        guard let root = TestScratch.externalFixtureURL(pathKey: "WPE_HLSL_CAPTURE_DIR") else {
-            throw XCTSkip("Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_HLSL_CAPTURE_DIR=<hlsl-capture directory>")
-        }
-        if case let .failure(reason) = WPEParityShaderToolchain.makeCompiler() {
-            throw XCTSkip("\(reason)")
-        }
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let install = home.appending(path: "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let wpeAssets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) } ?? install
-        guard FileManager.default.fileExists(atPath: wpeAssets.appending(path: "materials/util").path) else {
-            throw XCTSkip("Set WPE_ASSETS_DIR to a WPE 2.8.42 assets directory (materials/util)")
-        }
-        let relativePath = "wpe-cache/\(Self.sceneID)"
-        let sceneDirectory = scratch.appending(path: relativePath, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: sceneDirectory.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: root.appending(path: "scene-sources/\(Self.sceneID)"), to: sceneDirectory)
-        let descriptor = SceneDescriptor(workshopID: Self.sceneID, cacheRelativePath: relativePath,
-                                         entryFile: "scene.json", capabilityTier: .degraded)
-        return InstalledScene(descriptor: descriptor, entryURL: sceneDirectory.appending(path: "scene.json"),
-                              engineRoot: wpeAssets.deletingLastPathComponent())
+        try FileManager.default.moveItem(at: parked, to: entry)
+        await session.retry()
+        XCTAssertNil(session.loadError)
+        let snapshot = await actor.rendererStateSnapshot()
+        XCTAssertTrue(try XCTUnwrap(snapshot).isLoaded)
+        XCTAssertNotNil(snapshot?.parity)
     }
 }
 
-private final class NoOpSurfaceControl: WPESurfaceControl {
-    func applyPacing(_: WPERenderPacingUpdate) {}
-    func setNeedsRedraw() {}
-    func drawImmediately() {}
-    func releaseDrawables() {}
-    func detach() {}
-    func setClickCaptureEnabled(_: Bool) {}
+@MainActor
+private final class InstalledWallpaper: WallpaperRuntimeSession {
+    let wallpaperType: WallpaperType = .video
+    let summary = WallpaperSessionSummary.notConfigured
+    let videoPlayer: WallpaperVideoPlayer? = nil
+    let wallpaperWindow: NSWindow? = nil
+    private(set) var cleanupCallCount = 0
+
+    func show() {}
+    func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+    func updateFrame(to _: CGRect) {}
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        .ready
+    }
+
+    func cleanup() {
+        cleanupCallCount += 1
+    }
 }
 #endif

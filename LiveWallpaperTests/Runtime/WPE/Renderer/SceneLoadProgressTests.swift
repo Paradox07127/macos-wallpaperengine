@@ -2,6 +2,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import Metal
 import os
 import Testing
@@ -34,26 +35,36 @@ struct SceneLoadProgressTests {
         return (blocker, release)
     }
 
+    @Test("Parity delivers actual read, pipeline and first-frame progress in order")
+    func parityLoadDeliversProgress() async throws {
+        let (session, actor) = try makeSession()
+        let fixture = try ParityLifecycleFixture.make()
+        defer { session.cleanup(); fixture.cleanup() }
+        try await actor.adoptParity(fixture.inputs(surface: session.spanSurface, actor: actor))
+        let progress = OSAllocatedUnfairLock<[String]>(initialState: [])
+        await actor.setProgressHandler { text in progress.withLock { $0.append(text) } }
+        try await actor.load()
+        #expect(progress.withLock { $0 } == [
+            String(localized: "Reading scene", bundle: .appLanguage),
+            String(localized: "Preparing render pipeline", bundle: .appLanguage),
+            String(localized: "Rendering scene", bundle: .appLanguage),
+        ])
+        #expect(await actor.rendererStateSnapshot()?.isLoaded == true)
+    }
+
     @Test("Preparing before actual startup adoption waits for the first legitimate scene and span load")
     func preparingBeforeAdoptionWaitsForFirstLoad() async throws {
         for spans in [false, true] {
             let (owner, actor) = try makeSession(backing: .renderThread)
-            let fixture = try MetalSceneFixture.solidColorScene()
+            let fixture = try ParityLifecycleFixture.make()
             defer { fixture.cleanup(); owner.cleanup() }
             let surface = owner.spanSurface
-            let device = try #require(surface.metalLayer.device)
             owner.wallpaperWindow?.contentView = surface.mtkView
             surface.attach(client: WPERenderSurfaceClientShim(renderActor: actor, backing: .renderThread))
-            let renderer = try WPEMetalSceneRenderer(
-                descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
-                surfaceControl: surface, mailbox: surface.mailbox,
-                presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-                drawableSize: surface.metalLayer.drawableSize, device: device
-            )
+
             let member = OSAllocatedUnfairLock<SceneSpanWallpaperSession?>(initialState: nil)
-            if spans {
-                let frames = WPESceneSpanFrames()
-                renderer.spanFrames = frames
+            let spanFrames = spans ? WPESceneSpanFrames() : nil
+            if let frames = spanFrames {
                 let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
                 let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: fixture.descriptor, owner: owner,
                                                     frames: frames, density: 1, displayFrames: [screen.id: screen.frame])
@@ -65,7 +76,7 @@ struct SceneLoadProgressTests {
             defer { member.withLock { $0 }?.cleanup() }
             let (blocker, release) = await block(actor)
             defer { release.signal() }
-            owner.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+            owner.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor, frames: spanFrames))
             let preparation = Task {
                 if let member = member.withLock({ $0 }) {
                     return await member.prepareForDisplay(timeout: .seconds(5))

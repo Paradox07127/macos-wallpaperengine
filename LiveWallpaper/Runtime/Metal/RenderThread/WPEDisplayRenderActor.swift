@@ -42,6 +42,8 @@ actor WPEDisplayRenderActor {
     /// New pipeline driver; legacy ownership is removed after product migration.
     private var parityDriver: WPEParitySceneDriver?
     private var parityInputs: WPEParitySceneInputs?
+    private var languageObservation: WPESceneLanguageObservation?
+    private var progressHandler: (@Sendable (String) -> Void)?
     private var parityReplanning = false
     /// A static parity scene runs the link until one frame after a change presents, then parks it.
     private var parityFramePending = false
@@ -159,7 +161,13 @@ actor WPEDisplayRenderActor {
         case let .clickCaptureEnabled(enabled): setClickCaptureEnabled(enabled)
         case let .presentFitMode(mode): setPresentFitMode(mode)
         case let .surfaceGeometry(size): updateSurfaceGeometry(drawableSize: size)
-        case let .sceneScriptLanguage(language): renderer?.setSceneScriptLanguage(language)
+        case let .sceneScriptLanguage(language):
+            if let parityDriver {
+                parityDriver.setSceneScriptLanguage(language)
+                requestParityFrame()
+            } else {
+                renderer?.setSceneScriptLanguage(language)
+            }
         }
     }
     #endif
@@ -180,6 +188,10 @@ actor WPEDisplayRenderActor {
     func adoptParity(_ inputs: WPEParitySceneInputs) throws {
         scenePropertyRendererGeneration &+= 1
         let driver = try WPEParitySceneDriver(device: inputs.device)
+        driver.setSceneScriptLanguage(inputs.sceneScriptLanguage ?? WPESceneLanguageObservation.currentLanguage())
+        languageObservation = WPESceneLanguageObservation { [weak self] language in
+            self?.submitConfig(.sceneScriptLanguage(language))
+        }
         driver.updateSurfaceGeometry(drawableSize: inputs.drawableSize)
         driver.setPresentFitMode(inputs.presentFitMode)
         driver.spanFrames = inputs.span?.frames
@@ -564,9 +576,11 @@ actor WPEDisplayRenderActor {
 
     private func loadParity() async throws {
         guard let parityDriver, let inputs = parityInputs else { return }
+        progressHandler?(String(localized: "Reading scene", bundle: .appLanguage, comment: "Scene load progress: parsing the scene package."))
         let (document, assets, userProperties) = try await CancellableBackgroundWork.run {
             try (inputs.makeDocument(), inputs.makeAssets(), inputs.scriptUserProperties())
         }
+        progressHandler?(String(localized: "Preparing render pipeline", bundle: .appLanguage, comment: "Scene load progress: compiling Metal pipeline state."))
         try await parityDriver.load(document: document, assets: assets, settings: inputs.settings,
                                     drawableSize: parityDriver.drawableSize, pixelFormat: inputs.pixelFormat,
                                     compiler: inputs.compiler, diskCache: inputs.diskCache,
@@ -597,6 +611,7 @@ actor WPEDisplayRenderActor {
         }
         guard self.parityDriver === parityDriver, parityDriver.loadGeneration == generation,
               parityDriver.didLoad else { throw CancellationError() }
+        progressHandler?(String(localized: "Rendering scene", bundle: .appLanguage, comment: "Scene load progress: first frame is being drawn."))
         requestParityFrame()
         // A resize or fit change that arrived while loading.
         replanParityIfNeeded()
@@ -663,6 +678,8 @@ actor WPEDisplayRenderActor {
         renderer = nil
         spanPresenter = nil
         parityDriver?.cleanup()
+        languageObservation = nil
+        progressHandler = nil
         let retiringInputs = parityInputs
         retiringInputs?.mailbox.publishInteractiveZones([])
         (parityDriver, parityInputs) = (nil, nil)
@@ -955,6 +972,7 @@ actor WPEDisplayRenderActor {
     }
 
     func setProgressHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        progressHandler = handler
         renderer?.onProgress = handler
     }
 
@@ -1044,5 +1062,28 @@ struct WPERendererStateSnapshot: Sendable {
     /// Set only for a scene on the parity pipeline.
     var parity: WPEParityRuntimeDiagnostics?
     var runtimeFailure: String?
+}
+#endif
+
+#if !LITE_BUILD
+/// NotificationCenter permits cross-thread delivery/removal; tokens are immutable and the callback owns no actor.
+private final class WPESceneLanguageObservation: @unchecked Sendable {
+    private let tokens: [NSObjectProtocol]
+
+    static func currentLanguage() -> String {
+        AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
+    }
+
+    init(deliver: @escaping @Sendable (String) -> Void) {
+        tokens = [UserDefaults.didChangeNotification, NSLocale.currentLocaleDidChangeNotification].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+                deliver(Self.currentLanguage())
+            }
+        }
+    }
+
+    deinit { for token in tokens {
+        NotificationCenter.default.removeObserver(token)
+    } }
 }
 #endif

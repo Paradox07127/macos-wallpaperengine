@@ -180,6 +180,8 @@ final class WPEParitySceneDriver {
     private var didLogFrameFailure = false
     private var submittedSceneBuffer: MTLCommandBuffer?
     private(set) var runtimeFailure: String?
+    private var sceneScriptLanguage: String?
+    private var deliveredScriptLanguage: String?
     var gpuErrorSummary: (count: Int, last: String?) {
         presentState.gpuErrors
     }
@@ -308,6 +310,7 @@ final class WPEParitySceneDriver {
         spanFrames?.reset(generation: generation)
         renderer?.destroyScript()
         renderer = nil
+        deliveredScriptLanguage = nil
         executor.lastPresentPass = nil
         planSource = nil
         plannedTarget = nil
@@ -457,6 +460,7 @@ final class WPEParitySceneDriver {
                         }
                     }
                     try withScriptSound(script.engine) { try renderer.attachScript(script) }
+                    try deliverScriptLanguage(to: renderer)
                 } catch let error as CancellationError {
                     throw error
                 } catch let error as WPEParityScriptEngine.Failure where error != .missingBaseClasses || requireCompleteShaders || shaderPolicy == .precompiledOnly {
@@ -476,7 +480,11 @@ final class WPEParitySceneDriver {
                 }
             }
             if generation == loadGeneration, !(error is CancellationError) {
-                loadDiagnostics = .other(layer: "scene", message: String(describing: error))
+                if case let WPESceneAssetProviderError.fileMissing(path) = error {
+                    loadDiagnostics = .fileMissing(layer: "scene", path: path)
+                } else {
+                    loadDiagnostics = .other(layer: "scene", message: String(describing: error))
+                }
                 Logger.warning("Parity scene load failed: \(error)", category: .wpeRender)
             }
             throw error
@@ -839,15 +847,40 @@ final class WPEParitySceneDriver {
             return true
         } catch {
             if error is WPEParityScriptEngine.Failure {
-                let message = String(describing: error)
-                runtimeFailure = message
-                loadDiagnostics = .other(layer: "scripts", message: message)
-                soundRuntime?.pause()
-                presentState.record(generation: loadGeneration, succeeded: false)
+                recordScriptFailure(error)
             }
             logFrameFailure(error)
             return false
         }
+    }
+
+    func setSceneScriptLanguage(_ language: String) {
+        guard sceneScriptLanguage != language else { return }
+        sceneScriptLanguage = language
+        guard let renderer else { return }
+        do { try deliverScriptLanguage(to: renderer) } catch { recordScriptFailure(error) }
+    }
+
+    private func deliverScriptLanguage(to renderer: WPEParityFrameRenderer) throws {
+        guard let language = sceneScriptLanguage, deliveredScriptLanguage != language,
+              let script = renderer.script,
+              let data = try? JSONSerialization.data(withJSONObject: ["language": language]),
+              let payload = String(data: data, encoding: .utf8) else { return }
+        withScriptSound(script.engine) {
+            script.engine.dispatch(.applyGeneralSettings, payloadJSON: payload, state: &renderer.state)
+        }
+        if let failure = script.engine.executionFailure {
+            throw failure
+        }
+        deliveredScriptLanguage = language
+    }
+
+    private func recordScriptFailure(_ error: any Error) {
+        let message = String(describing: error)
+        runtimeFailure = message
+        loadDiagnostics = .other(layer: "scripts", message: message)
+        soundRuntime?.pause()
+        presentState.record(generation: loadGeneration, succeeded: false)
     }
 
     /// ISound calls reach the sound runtime only while `body` runs; script volume writes still drain at frame end.
@@ -1105,9 +1138,15 @@ final class WPEParitySceneDriver {
     private static func makePlan(document: WPESceneDocument, assets: WPEParityProgramAssets,
                                  settings: WPEParityProgramSettings,
                                  target: RenderTarget) async throws -> sending WPEParityFramePlan {
-        try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: target.width,
-                               height: target.height, alignment: target.alignment,
-                               physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale)
+        for image in document.imageObjects {
+            let path = image.imageRelativePath
+            // The product asset provider admits safe dependency references such as ../<workshop>/models/.
+            // Keep lookup admission there rather than treating every dependency path as a local-file escape.
+            guard assets.data(path) != nil else { throw WPESceneAssetProviderError.fileMissing(path) }
+        }
+        return try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: target.width,
+                                      height: target.height, alignment: target.alignment,
+                                      physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale)
     }
 
     private func logFrameFailure(_ error: Error) {
@@ -1158,6 +1197,7 @@ struct WPEParitySceneInputs: Sendable {
     let settings: WPEParityProgramSettings
     let compiler: (any WPEParityShaderCompiling)?
     var compilerIdentity: String?
+    var sceneScriptLanguage: String?
     var shaderOptions = WPEParityShaderCompileOptions()
     var bindingABIVersion = 1
     var shaderPolicy = WPEParityShaderPolicy.compileAllowed

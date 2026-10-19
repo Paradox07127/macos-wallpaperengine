@@ -165,6 +165,9 @@ final class SettingsManager {
             schemesStore: screenSchemesStore
         )
 
+        // Scene rendering now has one implementation; old off/listed/all selections no longer choose a backend.
+        defaults.removeObject(forKey: "loomscreen.wallpapers.parityRenderer.v1")
+        defaults.removeObject(forKey: "loomscreen.wallpapers.parityRendererMode.v1")
         migrateLegacyUserDefaultsIfNeeded()
         stampBlobSchemaVersionIfNeeded()
         migrateLegacyWeatherOverlaysIfNeeded()

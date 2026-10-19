@@ -11,32 +11,35 @@ import Testing
 struct SceneFailureFlowTests {
     @MainActor
     @Test("A missing fullscreen model reaches the failed-attempt page with engine setup, even while a video is retained")
-    func fullscreenFailureOffersSetupOnAttemptPage() throws {
+    func fullscreenFailureOffersSetupOnAttemptPage() async throws {
         let path = "models/util/fullscreenlayer.json"
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("fullscreen-failure-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try ParityLifecycleFixture.make()
+        defer { fixture.cleanup() }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 256, "height": 128]],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128], "bloom": false],
             "objects": [["id": 183, "name": "Contrast Lighting", "image": path,
                          "effects": [["id": 185, "file": "effects/localcontrast/effect.json", "visible": true]]]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
-        let error = try #require(#expect(throws: WPERenderGraphError.self) {
-            _ = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
-        })
-        #expect(error == .fileMissing(path))
-
-        let descriptor = SceneDescriptor(workshopID: "2934020506", cacheRelativePath: "fixture", entryFile: "scene.json", capabilityTier: .imageOnly)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: descriptor, cacheRootURL: root, dependencyMounts: [],
-            frame: CGRect(x: 0, y: 0, width: 256, height: 128), device: #require(MTLCreateSystemDefaultDevice())
-        )
-        defer { renderer.cleanup() }
-        let diagnostic = renderer.diagnostic(for: error)
-        #expect(diagnostic == .fileMissing(layer: "scene", path: path))
-        let cause = SceneWallpaperSession.failureCause(for: error, diagnostic: diagnostic)
+        try JSONSerialization.data(withJSONObject: scene).write(to: fixture.root.appendingPathComponent("scene.json"))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 256, height: 128), device: device, allowsHDR: false)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let window = NSWindow(contentRect: surface.mtkView.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = surface.mtkView
+        let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
+        defer { session.cleanup() }
+        var inputs = fixture.inputs(surface: surface, actor: actor)
+        inputs.descriptor = SceneDescriptor(workshopID: "2934020506", cacheRelativePath: fixture.descriptor.cacheRelativePath,
+                                            entryFile: "scene.json", capabilityTier: .imageOnly)
+        session.startAdoptingParityScene(inputs)
+        #expect(await session.prepareForDisplay(timeout: .seconds(3)) == .failed)
+        #expect(session.adoptedScene?.renderer == "parity")
+        #expect(await actor.run { $0.parityDriverForTesting != nil })
+        #expect(await actor.rendererStateSnapshot()?.isLoaded == false)
+        #expect(await actor.loadDiagnostics() == .fileMissing(layer: "scene", path: path))
+        let cause = try #require(session.loadFailureCause)
         #expect(cause.code == "scene.file_missing")
         #expect(cause.reason.contains(path))
 
@@ -209,18 +212,14 @@ struct SceneFailureFlowTests {
 
     @Test("A fatal code from the load error is not replaced by the renderer's coarser diagnostic")
     func loadErrorKeepsItsFatalCode() {
-        let format = WPEMetalTextureLoadContextError(
-            layerName: "B", path: "materials/B.tex", underlying: WPEMetalTextureLoaderError.unsupportedFormat(.bc7)
-        )
+        let format = WPEMetalTextureLoaderError.unsupportedFormat(.bc7)
         let gap = SceneLoadDiagnostic.materialUnresolved(layer: "B", reason: "format")
         let kept = SceneWallpaperSession.failureCause(for: format, diagnostic: gap)
         #expect(kept.code == "texture.metal_format")
         #expect(kept.failureClass == .fatal)
 
         // Control: an error with no specific cause still takes the diagnostic's.
-        let missing = WPEMetalTextureLoadContextError(
-            layerName: "B", path: "materials/B.tex", underlying: SceneResourceResolver.ResolveError.fileMissing
-        )
+        let missing = SceneResourceResolver.ResolveError.fileMissing
         let filled = SceneWallpaperSession.failureCause(
             for: missing, diagnostic: .fileMissing(layer: "B", path: "materials/B.tex")
         )
@@ -246,5 +245,4 @@ struct SceneFailureFlowTests {
         #expect(cause.code == "scene.document.invalid_utf8")
         #expect(cause.reason == WPESceneDocumentError.invalidUTF8.localizedDescription)
     }
-
 }

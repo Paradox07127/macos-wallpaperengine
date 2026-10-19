@@ -142,10 +142,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// Cached present flag from `pollRendererState()`: nil/false/true → idle/loading/presented.
     private(set) var hasPresentedFrame: Bool? = false
     private(set) var rendererDiagnostics: SceneRendererDiagnostics?
-    /// The scene the session adopted and the renderer it built, "parity", "metal" or "metal-fallback"; nil before adoption.
+    /// The scene candidate and its parity pipeline; nil before preparation starts.
     private(set) var adoptedScene: (workshopID: String, renderer: String)?
-    /// Builds the old renderer for a failed parity scene; nil off the parity path and once it has been used.
-    private var metalFallback: (@MainActor (SceneWallpaperSession) throws -> WPERendererHandoff)?
+    /// A construction failure cannot be retried as a reload of an actor that never adopted a driver.
+    private var preparationFailure: SceneRenderingError?
 
     init(
         window: NSWindow,
@@ -634,66 +634,31 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         renderActor.submitConfig(.presentFitMode(WPEPresentFitMode(mode)))
     }
 
-    func startAdoptingRenderer(_ handoff: WPERendererHandoff) {
-        adoptedScene = (handoff.renderer.descriptor.workshopID, "metal")
-        let generation = lifecycleGeneration
-        startupTask = Task { [weak self, renderActor] in
-            await renderActor.adopt(handoff.renderer)
-            // If cleanup raced the adopt hop, skip the load; cleanup still releases the adopted renderer.
-            guard let self, isCurrentLifecycle(generation) else { return }
-            await beginLoad()
-        }
+    func failPreparation(workshopID: String, error: Error) {
+        adoptedScene = (workshopID, "parity")
+        didStartLoad = true
+        let failure = SceneRenderingError.resourceFailed(.other(layer: "scene", message: String(describing: error)))
+        preparationFailure = failure
+        loadFailureCause = SceneFailureCause.make(error)
+        loadError = failure
+        Logger.warning("Parity scene preparation failed for \(workshopID): \(error)", category: .screenManager)
     }
 
-    func startAdoptingParityScene(
-        _ inputs: WPEParitySceneInputs,
-        metalFallback: @escaping @MainActor (SceneWallpaperSession) throws -> WPERendererHandoff
-    ) {
+    func startAdoptingParityScene(_ inputs: WPEParitySceneInputs) {
         adoptedScene = (inputs.descriptor.workshopID, "parity")
-        self.metalFallback = metalFallback
         let generation = lifecycleGeneration
         startupTask = Task { [weak self, renderActor] in
             do {
                 try await renderActor.adoptParity(inputs)
             } catch {
                 guard let self, isCurrentLifecycle(generation) else { return }
-                Logger.warning("Parity scene driver could not be created: \(error)", category: .screenManager)
-                if await adoptMetalFallback(after: error, parityAdopted: false) {
-                    guard isCurrentLifecycle(generation) else { return }
-                    await beginLoad()
-                    return
-                }
-                loadError = await mapLoadFailure(error)
+                failPreparation(workshopID: inputs.descriptor.workshopID, error: error)
                 return
             }
+            // Cleanup drains the adoption before tearing down the actor.
             guard let self, isCurrentLifecycle(generation) else { return }
             await beginLoad()
         }
-    }
-
-    /// Puts the old renderer in place of a failed parity scene; false when there is no fallback left to try.
-    private func adoptMetalFallback(after error: Error, parityAdopted: Bool) async -> Bool {
-        guard !Task.isCancelled, let makeRenderer = metalFallback, let workshopID = adoptedScene?.workshopID else {
-            return false
-        }
-        metalFallback = nil
-        let handoff: WPERendererHandoff
-        do {
-            handoff = try makeRenderer(self)
-        } catch let fallbackError {
-            Logger.warning("Metal scene renderer fallback could not be created: \(fallbackError)", category: .screenManager)
-            return false
-        }
-        Logger.warning("Parity scene failed for \(workshopID), using the Metal scene renderer: \(error)",
-                       category: .screenManager)
-        if parityAdopted {
-            await renderActor.replaceParity(with: handoff.renderer)
-        } else {
-            // `replaceParity` traps without an adopted parity driver.
-            await renderActor.adopt(handoff.renderer)
-        }
-        adoptedScene = (workshopID, "metal-fallback")
-        return true
     }
 
     private func isCurrentLifecycle(_ generation: Int) -> Bool {
@@ -797,6 +762,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             loadError = .cacheRootMissing
             return
         }
+        if let preparationFailure {
+            loadError = preparationFailure
+            return
+        }
         isHibernated = false
         // Cancel+drain in-flight load before reload — cooperative cancel can append half-loaded state.
         loadTask?.cancel()
@@ -854,12 +823,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         } catch is CancellationError {
             return
         } catch let error as SceneRenderingError {
-            if await adoptMetalFallback(after: error, parityAdopted: true) {
-                // The actor's progress handler reaches only the old renderer.
-                await installProgressHandler()
-                await runLoadViaActor()
-                return
-            }
             // Before `loadError` publishes: preparation stops polling once it is set, so this is the failure's only diagnostics read.
             await pollRendererState()
             guard !Task.isCancelled else { return }
@@ -872,11 +835,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             loadFailureCause = SceneFailureCause.make(error)
             loadError = error
         } catch {
-            if await adoptMetalFallback(after: error, parityAdopted: true) {
-                await installProgressHandler()
-                await runLoadViaActor()
-                return
-            }
             await pollRendererState()
             guard !Task.isCancelled else { return }
             requiresSystemAudioCapture = false

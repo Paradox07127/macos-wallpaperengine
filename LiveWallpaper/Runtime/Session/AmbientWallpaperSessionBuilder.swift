@@ -256,6 +256,7 @@ final class AmbientWallpaperSessionBuilder {
         engineAssetsRootURL: URL? = nil,
         applicationSupportRootURL: URL? = nil,
         fileManager: FileManager = .default,
+        makeParityCompiler: () -> Result<WPEParityHelperShaderCompiler, WPEParityShaderToolchain.Unavailable> = WPEParityShaderToolchain.makeCompiler,
         onOriginBookmarkRefresh: @escaping WPEOriginRefreshHandler = { _, _ in }
     ) -> SceneWallpaperSession? {
         let supportRoot: URL
@@ -339,146 +340,85 @@ final class AmbientWallpaperSessionBuilder {
         // the layer here returns 0x0 — it stays zero until the first
         // `nextDrawable()`, whatever the window and layout have done.
         let seededDrawableSize = spanFrames == nil ? surface.backingDrawableSize : CGSize(width: frame.width * spanDensity, height: frame.height * spanDensity)
-        let makeMetalRenderer: @MainActor (SceneWallpaperSession) throws -> WPERendererHandoff = { session in
-            let renderer = try WPEMetalSceneRenderer(
-                descriptor: descriptor,
-                cacheRootURL: cacheURL,
-                assetProvider: assets.provider,
-                projectManifestRootURL: assets.projectRoot,
-                dependencyMounts: dependencyMounts,
-                engineAssetsRootURL: engineAssetsRootURL,
-                surfaceControl: surfaceControl,
-                mailbox: surface.mailbox,
-                presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-                drawableSize: seededDrawableSize,
-                presentFitMode: WPEPresentFitMode(fitMode),
-                device: device
+        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+        let compiler: WPEParityHelperShaderCompiler
+        switch makeParityCompiler() {
+        case let .success(available): compiler = available
+        case let .failure(error):
+            session.failPreparation(workshopID: descriptor.workshopID, error: error)
+            return session
+        }
+        let settings: WPEParityProgramSettings
+        do {
+            settings = try WPEParityProductSettings.make(
+                descriptor: descriptor, device: device,
+                bloomEnabled: (UserDefaults.appScoped().object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true,
+                displayHDR: WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: surface.mtkView.colorPixelFormat),
+                maximumPotentialEDR: window.screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1
             )
-            renderer.spanFrames = spanFrames
-            UserShortcutRendererLink.shared.attach(
-                renderer.userShortcutBridge,
-                icons: renderer.userShortcutIconStore,
-                wallpaperID: descriptor.workshopID,
-                declaredKeys: WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: assets.projectRoot)
-            )
-            if spanFrames != nil {
-                renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
-            }
-            // Unstructured MainActor hops aren't FIFO, so deliver latest-wins through a mailbox.
-            let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
-            renderer.onRuntimeActivityChange = { [weak session] activity in
+        } catch {
+            session.failPreparation(workshopID: descriptor.workshopID, error: error)
+            return session
+        }
+        let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
+        surface.attach(client: shim)
+        if spanFrames == nil {
+            window.orderBack(nil)
+        } else {
+            window.orderOut(nil)
+        }
+        if case .renderThread = backing {
+            surface.startDisplayLinkDriver(renderActor: renderActor)
+        }
+        let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
+        // The product shortcut link and now-playing feed are shared with the parity script host.
+        let userShortcuts = WPEUserShortcutScriptBridge()
+        let userShortcutIcons = WPEUserShortcutIconStore(device: device)
+        UserShortcutRendererLink.shared.attach(
+            userShortcuts, icons: userShortcutIcons, wallpaperID: descriptor.workshopID,
+            declaredKeys: WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: assets.projectRoot),
+            textureKeys: UserShortcutRendererLink.declaredTextureKeys(manifestRoot: assets.projectRoot)
+        )
+        var inputs = WPEParitySceneInputs(
+            descriptor: descriptor,
+            entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
+                ?? SceneResourceResolver(cacheRootURL: cacheURL),
+            projectRoot: assets.projectRoot,
+            assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,
+                                              dependencyMounts: dependencyMounts,
+                                              engineAssetsRootURL: engineAssetsRootURL,
+                                              userValues: WallpaperEngineProjectPropertySchema.effectiveSceneValues(
+                                                  descriptor: descriptor, cacheRootURL: assets.projectRoot
+                                              )),
+            settings: settings,
+            compiler: compiler,
+            device: device,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            mailbox: surface.mailbox,
+            surfaceControl: surfaceControl,
+            drawableSize: seededDrawableSize,
+            pixelFormat: surface.metalLayer.pixelFormat,
+            // The engine root's security scope is held open by the parity assets above.
+            soundResolver: assets.provider.map {
+                WPEMultiRootResourceResolver(primaryProvider: $0, dependencyMounts: dependencyMounts,
+                                             engineAssetsRootURL: engineAssetsRootURL)
+            } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
+                                              engineAssetsRootURL: engineAssetsRootURL),
+            presentFitMode: WPEPresentFitMode(fitMode),
+            span: spanFrames.map { ($0, max(spanMemberCount, 1) + 8) },
+            // Unstructured MainActor hops deliver the latest activity from this mailbox.
+            onRuntimeActivityChange: { [weak session] activity in
                 activityMailbox.withLock { $0 = activity }
                 Task { @MainActor in
                     guard let latest = activityMailbox.withLock({ $0 }) else { return }
                     session?.noteRendererRuntimeActivity(latest)
                 }
             }
-            return WPERendererHandoff(renderer: renderer)
-        }
-        if WPEParityRendererFlag.isEnabled(workshopID: descriptor.workshopID) {
-            switch WPEParityShaderToolchain.makeCompiler() {
-            case let .success(compiler):
-                let settings: WPEParityProgramSettings
-                do {
-                    settings = try WPEParityProductSettings.make(
-                        descriptor: descriptor, device: device,
-                        bloomEnabled: WPEMetalRenderExecutor.isSceneBloomEnabled,
-                        displayHDR: WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: surface.mtkView.colorPixelFormat),
-                        maximumPotentialEDR: window.screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1
-                    )
-                } catch {
-                    Logger.warning("Parity renderer rejected preset for \(descriptor.workshopID), using the Metal scene renderer: \(error)",
-                                   category: .screenManager)
-                    break
-                }
-                let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
-                surface.attach(client: shim)
-                if spanFrames == nil {
-                    window.orderBack(nil)
-                } else {
-                    window.orderOut(nil)
-                }
-                if case .renderThread = backing {
-                    surface.startDisplayLinkDriver(renderActor: renderActor)
-                }
-                let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
-                let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
-                // The old renderer's product link and now-playing feed; the parity engine replaces its scripts.
-                let userShortcuts = WPEUserShortcutScriptBridge()
-                let userShortcutIcons = WPEUserShortcutIconStore(device: device)
-                UserShortcutRendererLink.shared.attach(
-                    userShortcuts, icons: userShortcutIcons, wallpaperID: descriptor.workshopID,
-                    declaredKeys: WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: assets.projectRoot),
-                    textureKeys: UserShortcutRendererLink.declaredTextureKeys(manifestRoot: assets.projectRoot)
-                )
-                var inputs = WPEParitySceneInputs(
-                    descriptor: descriptor,
-                    entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
-                        ?? SceneResourceResolver(cacheRootURL: cacheURL),
-                    projectRoot: assets.projectRoot,
-                    assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,
-                                                      dependencyMounts: dependencyMounts,
-                                                      engineAssetsRootURL: engineAssetsRootURL,
-                                                      userValues: WallpaperEngineProjectPropertySchema.effectiveSceneValues(
-                                                          descriptor: descriptor, cacheRootURL: assets.projectRoot
-                                                      )),
-                    settings: settings,
-                    compiler: compiler,
-                    device: device,
-                    presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-                    mailbox: surface.mailbox,
-                    surfaceControl: surfaceControl,
-                    drawableSize: seededDrawableSize,
-                    pixelFormat: surface.metalLayer.pixelFormat,
-                    // The engine root's security scope is held open by the parity assets above.
-                    soundResolver: assets.provider.map {
-                        WPEMultiRootResourceResolver(primaryProvider: $0, dependencyMounts: dependencyMounts,
-                                                     engineAssetsRootURL: engineAssetsRootURL)
-                    } ?? WPEMultiRootResourceResolver(primaryRootURL: cacheURL, dependencyMounts: dependencyMounts,
-                                                      engineAssetsRootURL: engineAssetsRootURL),
-                    presentFitMode: WPEPresentFitMode(fitMode),
-                    span: spanFrames.map { ($0, max(spanMemberCount, 1) + 8) },
-                    // Latest-wins, as the Metal scene renderer's activity hop in `makeMetalRenderer`.
-                    onRuntimeActivityChange: { [weak session] activity in
-                        activityMailbox.withLock { $0 = activity }
-                        Task { @MainActor in
-                            guard let latest = activityMailbox.withLock({ $0 }) else { return }
-                            session?.noteRendererRuntimeActivity(latest)
-                        }
-                    }
-                )
-                inputs.userShortcuts = userShortcuts
-                inputs.userShortcutIcons = userShortcutIcons
-                inputs.media = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
-                session.startAdoptingParityScene(inputs, metalFallback: makeMetalRenderer)
-                return session
-            case let .failure(reason):
-                Logger.warning("Parity renderer unavailable for \(descriptor.workshopID), using the Metal scene renderer: \(reason)",
-                               category: .screenManager)
-            }
-        }
-        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
-        let handoff: WPERendererHandoff
-        do {
-            handoff = try makeMetalRenderer(session)
-        } catch {
-            Logger.warning("Metal scene renderer could not be created: \(error.localizedDescription)", category: .screenManager)
-            return nil
-        }
-        let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
-        surface.attach(client: shim)
-
-        if spanFrames == nil {
-            window.orderBack(nil)
-        } else {
-            window.orderOut(nil)
-        }
-
-        if case .renderThread = backing {
-            surface.startDisplayLinkDriver(renderActor: renderActor)
-        }
-
-        session.startAdoptingRenderer(handoff)
+        )
+        inputs.userShortcuts = userShortcuts
+        inputs.userShortcutIcons = userShortcutIcons
+        inputs.media = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
+        session.startAdoptingParityScene(inputs)
         return session
     }
 

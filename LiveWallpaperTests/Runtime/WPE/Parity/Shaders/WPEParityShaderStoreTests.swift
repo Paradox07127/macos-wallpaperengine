@@ -467,8 +467,23 @@ struct WPEParityShaderStoreTests {
         #expect(try Data(contentsOf: file) == Data([0]), "Read-only loading repaired or removed the capsule")
         let readOnly = WPEParityShaderDiskCache(rootURL: directory, readOnly: true)
         await readOnly.remove(shader.key)
+        try await readOnly.purge()
         await readOnly.write(Compiler.output(for: shader), for: shader.key)
         #expect(try Data(contentsOf: file) == Data([0]), "A read-only cache accepted a mutation")
+    }
+
+    @Test func purgedDiskCacheCanBeRepopulated() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = request(1), second = request(2)
+        let disk = WPEParityShaderDiskCache(cachesURL: directory)
+        await disk.write(Compiler.output(for: first), for: first.key)
+        #expect(FileManager.default.fileExists(atPath: entry(first, in: directory).path))
+        try await disk.purge()
+        #expect(!FileManager.default.fileExists(atPath: entry(first, in: directory).path))
+        try await disk.purge()
+        await disk.write(Compiler.output(for: second), for: second.key)
+        #expect(await disk.read(second.key) != nil)
     }
 
     @Test(.timeLimit(.minutes(1))) func capsuleCompilationPersistsInItsOwnRoot() async throws {

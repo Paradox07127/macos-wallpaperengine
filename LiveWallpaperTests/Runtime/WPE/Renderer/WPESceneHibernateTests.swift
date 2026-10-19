@@ -1,7 +1,6 @@
 #if !LITE_BUILD
 import AppKit
 import CoreGraphics
-import CryptoKit
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
@@ -14,87 +13,48 @@ import Testing
 @MainActor
 @Suite("WPE deep hibernate", .serialized)
 struct WPESceneHibernateTests {
-    @Test("Hibernate releases the loaded runtime state and reload restores the same frame")
+    @Test("Hibernate releases the parity renderer and reload creates a loaded replacement")
     func hibernateReleasesAndReloadRestoresFrame() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
-        let stack = try FrameDemandRendererStack.make(fixture)
-        let renderer = stack.renderer
-        defer { renderer.cleanup() }
-        try await stack.load()
-
-        let hashBefore = try Self.textureSHA256(try #require(renderer.outputTexture))
-
-        // The fixture scene is texture-free, so these injected sentinels are what proves
-        // the release paths run.
-        renderer.loadedTextures["sentinel"] = try Self.makeTexture(device: device)
-        renderer.dynamicTextureSources["sentinel"] = HibernateStubSource()
-        renderer.onDemandVideoKeyByID = ["obj": ["sentinel"]]
-        renderer.particleSystems = [try #require(WPEParticleSystem(
-            definition: WPEParticleDefinitionParser.parse(dictionary: [
-                "maxcount": 8,
-                "emitter": [["rate": 5]],
-            ]),
-            device: device,
-            seed: 0xB3
-        ))]
-
-        renderer.applyPerformanceProfile(.suspended)
-        #expect(stack.surface.mtkView.isPaused)
-
-        let hibernated = await stack.actor.hibernate()
-        #expect(hibernated)
-        #expect(!renderer.didLoad)
-        #expect(renderer.loadedTextures.isEmpty)
-        #expect(renderer.dynamicTextureSources.isEmpty)
-        #expect(renderer.onDemandVideoKeyByID.isEmpty)
-        #expect(renderer.particleSystems.isEmpty)
-        #expect(renderer.renderPipeline == nil)
-        #expect(renderer.outputTexture == nil)
-        #expect(renderer.soundRuntime == nil)
-        #expect(stack.surface.mtkView.isPaused)
-        renderer.renderAndPresentFrame()
-        #expect(renderer.outputTexture == nil)
-
-        try await stack.actor.reload()
-        renderer.applyPerformanceProfile(.quality)
-        #expect(renderer.didLoad)
-        let hashAfter = try Self.textureSHA256(try #require(renderer.outputTexture))
-        #expect(hashAfter == hashBefore)
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        defer { Task { await actor.teardownRenderer(); await actor.shutdown() } }
+        try await actor.adoptParity(fixture.inputs(surface: surface, actor: actor))
+        try await actor.load()
+        let before = try #require(await actor.rendererStateSnapshot()).currentLoadGeneration
+        await actor.applyPerformanceProfile(.suspended)
+        #expect(await actor.hibernate())
+        #expect(await actor.rendererStateSnapshot()?.isLoaded == false)
+        #expect(await actor.run { $0.parityDriverForTesting?.renderer == nil })
+        await actor.renderFrame()
+        #expect(await actor.run { $0.parityDriverForTesting?.renderer == nil })
+        try await actor.reload()
+        let after = try #require(await actor.rendererStateSnapshot()).currentLoadGeneration
+        #expect(after != before)
+        #expect(await actor.rendererStateSnapshot()?.isLoaded == true)
     }
 
     @Test("Hibernate refuses when nothing is loaded")
     func hibernateWithoutLoadIsRejected() async throws {
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
-        let stack = try FrameDemandRendererStack.make(fixture)
-        defer { stack.renderer.cleanup() }
-        await stack.actor.adopt(WPERendererHandoff(renderer: stack.renderer).renderer)
-
-        let hibernated = await stack.actor.hibernate()
-        #expect(hibernated == false)
+        let surface = try WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()))
+        let actor = WPEDisplayRenderActor(backing: .main)
+        defer { Task { await actor.teardownRenderer(); await actor.shutdown() } }
+        try await actor.adoptParity(fixture.inputs(surface: surface, actor: actor))
+        #expect(await actor.hibernate() == false)
     }
 
     @Test("Session hibernates after the eligibility dwell and wakes with a reload")
     func sessionHibernatesAndWakes() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
             styleMask: .borderless,
@@ -110,7 +70,7 @@ struct WPESceneHibernateTests {
             hibernationDelay: .milliseconds(50)
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
@@ -134,22 +94,11 @@ struct WPESceneHibernateTests {
     @Test("Testing reports count one attempt per session load and none while hibernated")
     func diagnosticAttemptsFollowSessionLoads() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         let session = SceneWallpaperSession(
@@ -160,7 +109,7 @@ struct WPESceneHibernateTests {
             hibernationDelay: .milliseconds(50)
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
@@ -187,22 +136,11 @@ struct WPESceneHibernateTests {
     @Test("The diagnostic poll leaves a hibernated renderer alone", .timeLimit(.minutes(1)))
     func diagnosticPollSkipsHibernatedRenderer() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         let session = SceneWallpaperSession(
@@ -213,43 +151,32 @@ struct WPESceneHibernateTests {
             hibernationDelay: .milliseconds(50)
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
         await session.pollRendererState()
-        let loadedSummary = try #require(session.rendererDiagnostics?.compatibilitySummary)
+        let loadedDiagnostics = try #require(session.rendererDiagnostics?.parity)
 
         session.applyPerformanceProfile(.suspended)
         session.setHibernationEligible(true)
         try await Self.poll("hibernate after dwell") { session.isHibernated }
-        let hibernatedSummary = try #require(await actor.rendererStateSnapshot()).compatibilitySummary
-        #expect(hibernatedSummary != loadedSummary, "retire left the summary unchanged, so this test cannot see a poll")
+        let hibernated = try #require(await actor.rendererStateSnapshot())
+        #expect(hibernated.parity == nil, "the released renderer must have no runtime diagnostics")
 
         try await Task.sleep(for: .seconds(4))
-        #expect(session.rendererDiagnostics?.compatibilitySummary != hibernatedSummary,
+        #expect(session.rendererDiagnostics?.parity == loadedDiagnostics,
                 "the 3 s diagnostic poll fetched a snapshot from the hibernated renderer")
     }
 
     @Test("Eligibility flapping cancels the dwell instead of hibernating")
     func eligibilityFlapCancelsDwell() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
             styleMask: .borderless,
@@ -265,7 +192,7 @@ struct WPESceneHibernateTests {
             hibernationDelay: .milliseconds(80)
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
@@ -483,22 +410,11 @@ struct WPESceneHibernateTests {
     @Test("A wake reload that fails is retried once and heals the session")
     func failedWakeReloadRetriesAutomatically() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
             styleMask: .borderless,
@@ -515,7 +431,7 @@ struct WPESceneHibernateTests {
             wakeRetryDelay: .milliseconds(400)
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
@@ -544,22 +460,11 @@ struct WPESceneHibernateTests {
     func newerWakeSupersedesPendingRetry() async throws {
         let retryDelay = Duration.milliseconds(1500)
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
             styleMask: .borderless,
@@ -576,7 +481,7 @@ struct WPESceneHibernateTests {
             wakeRetryDelay: retryDelay
         )
         defer { session.cleanup() }
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         try await Self.poll("initial load") {
             await actor.rendererStateSnapshot()?.isLoaded == true
         }
@@ -635,34 +540,12 @@ struct WPESceneHibernateTests {
         Issue.record("Timed out waiting for: \(label)")
     }
 
-    private static func makeTexture(device: MTLDevice) throws -> MTLTexture {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false
-        )
-        return try #require(device.makeTexture(descriptor: descriptor))
-    }
 
-    private static func textureSHA256(_ texture: MTLTexture) throws -> String {
-        try #require(texture.pixelFormat == .rgba8Unorm || texture.pixelFormat == .rgba8Unorm_srgb)
-        // Renderer outputs are `.private`; stage into CPU-visible storage first.
-        let texture = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))
-        let bytesPerRow = texture.width * 4
-        var bytes = [UInt8](repeating: 0, count: bytesPerRow * texture.height)
-        texture.getBytes(
-            &bytes,
-            bytesPerRow: bytesPerRow,
-            from: MTLRegionMake2D(0, 0, texture.width, texture.height),
-            mipmapLevel: 0
-        )
-        return SHA256.hash(data: Data(bytes))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
 }
 
 @MainActor
 private struct HibernateSessionHarness {
-    let fixture: FrameDemandFixture
+    let fixture: ParityLifecycleFixture
     let actor: WPEDisplayRenderActor
     let session: SceneWallpaperSession
 
@@ -671,21 +554,10 @@ private struct HibernateSessionHarness {
         userPauseHibernationDelay: Duration
     ) throws -> Self {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let fixture = try FrameDemandFixture.make()
+        let fixture = try ParityLifecycleFixture.make()
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let actor = WPEDisplayRenderActor(backing: .main)
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            projectManifestRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
-            device: device,
-            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
-        )
+
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
             styleMask: .borderless,
@@ -701,7 +573,7 @@ private struct HibernateSessionHarness {
             hibernationDelay: hibernationDelay,
             userPauseHibernationDelay: userPauseHibernationDelay
         )
-        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
         return Self(fixture: fixture, actor: actor, session: session)
     }
 
@@ -738,12 +610,6 @@ private final class HibernateFakePressureWatcher: MemoryPressureWatching {
         }
         handler?(level)
     }
-}
-
-private final class HibernateStubSource: WPEDynamicTextureSource {
-    func texture(at time: TimeInterval) -> MTLTexture? { nil }
-    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
-    func invalidate() {}
 }
 
 @MainActor

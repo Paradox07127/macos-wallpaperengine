@@ -2,6 +2,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import Metal
 import Testing
 
@@ -353,24 +354,17 @@ struct SceneSpanGroupTests {
     @Test("A member joining a failed shared runtime reloads it instead of inheriting the old error")
     func joiningFailedRuntimeRetriesLoad() async throws {
         let (owner, actor) = try Self.makeOwner()
-        let fixture = try MetalSceneFixture.solidColorScene()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup(); owner.cleanup() }
         let surface = owner.spanSurface
-        let device = try #require(surface.metalLayer.device)
         owner.wallpaperWindow?.contentView = surface.mtkView
         surface.attach(client: WPERenderSurfaceClientShim(renderActor: actor, backing: .renderThread))
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
-            surfaceControl: surface, mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize, device: device
-        )
+
         let frames = WPESceneSpanFrames()
-        renderer.spanFrames = frames
         let scene = fixture.root.appendingPathComponent("scene.json")
         let parked = fixture.root.appendingPathComponent("scene.parked")
         try FileManager.default.moveItem(at: scene, to: parked)
-        owner.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        owner.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor, frames: frames))
         for _ in 0 ..< 500 where owner.loadError == nil {
             try await Task.sleep(for: .milliseconds(10))
         }

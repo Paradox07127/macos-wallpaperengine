@@ -57,38 +57,32 @@ struct WallpaperSessionFrameCaptureTests {
     func sceneSessionForwardsToTheRenderActor() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let size = CGSize(width: 96, height: 64)
-        let fixture = try MetalSceneFixture.solidColorScene()
+        let fixture = try ParityLifecycleFixture.make()
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(origin: .zero, size: size), device: device, allowsHDR: false)
-        let layer = CAMetalLayer()
-        layer.device = device
-        layer.pixelFormat = surface.metalLayer.pixelFormat
-        WPEDisplayHDROutput.apply(to: layer, hdrOutputEnabled: false)
-        layer.drawableSize = size
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            dependencyMounts: [],
-            surfaceControl: surface,
-            mailbox: surface.mailbox,
-            presentLayer: WPEPresentLayer(layer: layer),
-            drawableSize: size,
-            presentFitMode: .contain,
-            device: device
-        )
         let actor = WPEDisplayRenderActor(backing: .main)
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.contentView = surface.mtkView
+        surface.attach(client: WPERenderSurfaceClientShim(renderActor: actor, backing: .main))
+        window.orderBack(nil)
         let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
         defer { session.cleanup() }
         let requestedFormat: MTLPixelFormat = .rgba16Float
         let requestedSpace = try #require(CGColorSpace(name: CGColorSpace.displayP3))
 
-        await actor.adopt(WPERendererHandoff(renderer: renderer).renderer)
+        try await actor.adoptParity(fixture.inputs(surface: surface, actor: actor))
         #expect(await session.captureDisplayedFrame(device: device, pixelFormat: requestedFormat, colorSpace: requestedSpace) == nil)
 
         try await actor.load()
-        renderer.renderAndPresentFrame()
+        for _ in 0 ..< 30 {
+            await actor.renderFrame()
+            if await actor.rendererStateSnapshot()?.hasPresentedFrame == true {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(await actor.rendererStateSnapshot()?.parity != nil)
         let direct = try #require(await actor.captureDisplayedFrame())
         let forwarded = try #require(
             await session.captureDisplayedFrame(device: device, pixelFormat: requestedFormat, colorSpace: requestedSpace)
@@ -99,6 +93,36 @@ struct WallpaperSessionFrameCaptureTests {
         #expect(forwarded.texture.width == direct.texture.width && forwarded.texture.height == direct.texture.height)
         #expect(forwarded.colorSpace?.name == direct.colorSpace?.name)
         #expect(forwarded.isEDR == direct.isEDR)
+        let actual = try await Self.pixels(direct.texture, device: device)
+        #expect(try await Self.pixels(forwarded.texture, device: device) == actual,
+                "the session changed the render actor's completed GPU frame")
+        let isRGBA = [.rgba8Unorm, MTLPixelFormat.rgba8Unorm_srgb].contains(direct.pixelFormat)
+        let blue = isRGBA ? 2 : 0
+        let red = isRGBA ? 0 : 2
+        #expect(actual[blue] > 240 && actual[1] < 10 && actual[red] < 10 && actual[3] > 240,
+                "the capture did not contain the fixture's blue clear frame")
+    }
+
+    private static func pixels(_ texture: any MTLTexture, device: any MTLDevice) async throws -> [UInt8] {
+        try #require([MTLPixelFormat.bgra8Unorm, .bgra8Unorm_srgb, .rgba8Unorm, .rgba8Unorm_srgb].contains(texture.pixelFormat))
+        let bytesPerRow = texture.width * 4
+        let count = bytesPerRow * texture.height
+        let buffer = try #require(device.makeBuffer(length: count, options: .storageModeShared))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: .init(),
+                  sourceSize: .init(width: texture.width, height: texture.height, depth: 1),
+                  to: buffer, destinationOffset: 0, destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: count)
+        blit.endEncoding()
+        let completed = await withCheckedContinuation { continuation in
+            command.addCompletedHandler { finished in
+                continuation.resume(returning: finished.status == .completed)
+            }
+            command.commit()
+        }
+        try #require(completed)
+        return Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: count))
     }
     #endif
 
