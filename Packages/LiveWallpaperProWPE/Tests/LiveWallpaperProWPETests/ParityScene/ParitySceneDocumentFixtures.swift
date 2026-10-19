@@ -111,8 +111,7 @@ enum ParitySceneDocuments {
             "objects": sceneObjects,
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         return WPEParityProgramScene(document: document,
                                      assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
                                      settings: settings)
@@ -132,12 +131,5 @@ enum ParitySceneDocuments {
         let layer = layer(width: width, height: height,
                           effects: [effect(fbos: [fbo], passes: [pass("p", target: name)])])
         return try convert([layer]).objects[0].effects[0].fbos
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

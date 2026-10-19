@@ -37,7 +37,7 @@ final class ParityScriptInputBoundaryTests: XCTestCase {
             "objects": [["id": 1, "name": "T", "text": "Hi", "alpha": ["value": 1, "script": script]]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -56,12 +56,5 @@ final class ParityScriptInputBoundaryTests: XCTestCase {
         XCTAssertEqual(state.scriptField("padding", of: "1"), .vector(SIMD4(32, 32, 0, 0)))
         XCTAssertEqual(state.scriptField("spacing", of: "1"), .vector(.zero))
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

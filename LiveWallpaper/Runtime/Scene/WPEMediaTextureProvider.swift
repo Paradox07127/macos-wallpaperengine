@@ -258,7 +258,6 @@ final class WPEMediaTextureStore: @unchecked Sendable {
                 bytesPerRow: bytesPerRow
             )
         }
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: .straightColor)
         return texture
     }
 }

@@ -49,17 +49,17 @@ struct WPEMmapPayloadSpanTests {
 
     // MARK: - Decoder produces zero-copy spans
 
-    @Test("Streaming payload mip spans alias the source container bytes")
-    func streamingPayloadSpansAliasSourceBytes() throws {
+    @Test("Raw metadata mip spans alias the source container bytes")
+    func rawMetadataSpansAliasSourceBytes() throws {
         let raw = Data(repeating: 0x5A, count: 4 * 4 * 4)
-        let container = makeStreamingTexContainer(width: 4, height: 4, payloads: [raw, raw])
+        let container = makeAnimatedTexContainer(width: 4, height: 4, payloads: [raw, raw])
 
-        let payload = try WPETexDecoder().extractStreamingPayload(data: container).get()
+        let payload = try WPETexDecoder().extractRawMetadata(data: container).get()
 
         let containerBase = container.withUnsafeBytes { $0.baseAddress! }
-        for image in payload.compressedImages {
-            let mip = try #require(image.payloads.first)
-            mip.compressedBytes.withUnsafeBytes { buffer in
+        for image in payload.bitmap.frames {
+            let mip = try #require(image.first)
+            mip.payload.withUnsafeBytes { buffer in
                 // 别名到 container 证明 parser 没有把压缩载荷拷到堆上。
                 #expect(buffer.baseAddress! >= containerBase)
                 #expect(buffer.baseAddress! + buffer.count <= containerBase + container.count)
@@ -70,20 +70,21 @@ struct WPEMmapPayloadSpanTests {
     @Test("Windowed parse honors the entry end bound inside a larger owner")
     func windowedParseHonorsEndBound() throws {
         let raw = Data(repeating: 0x33, count: 2 * 2 * 4)
-        let container = makeStreamingTexContainer(width: 2, height: 2, payloads: [raw])
+        let container = makeAnimatedTexContainer(width: 2, height: 2, payloads: [raw])
         var packed = Data([0xDE, 0xAD])
         let start = packed.count
         packed.append(container)
         packed.append(Data([0xBE, 0xEF, 0xFE]))
 
         let window = WPEMappedByteSpan(owner: packed, range: start..<(start + container.count))
-        let payload = try WPETexDecoder().extractStreamingPayload(span: window).get()
-        #expect(payload.compressedImages.count == 1)
+        let payload = try WPETexDecoder().extractTexturePayload(span: window).get()
+        #expect(payload.mipmaps.count == 1)
+        #expect(payload.mipmaps[0].bytes == raw)
 
         // A short window must fail with truncation, not read the trailer.
         let shortWindow = WPEMappedByteSpan(owner: packed, range: start..<(start + container.count - 4))
         #expect(throws: (any Error).self) {
-            try WPETexDecoder().extractStreamingPayload(span: shortWindow).get()
+            try WPETexDecoder().extractTexturePayload(span: shortWindow).get()
         }
     }
 
@@ -96,7 +97,7 @@ struct WPEMmapPayloadSpanTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let texBytes = makeStreamingTexContainer(
+        let texBytes = makeAnimatedTexContainer(
             width: 2, height: 2, payloads: [Data(repeating: 0x44, count: 16)]
         )
         let sceneJSON = #"{"k":"v"}"#.data(using: .utf8)!
@@ -119,8 +120,9 @@ struct WPEMmapPayloadSpanTests {
         let jsonBase = jsonWindow.owner.withUnsafeBytes { $0.baseAddress! }
         #expect(texBase == jsonBase)
 
-        let payload = try WPETexDecoder().extractStreamingPayload(span: texWindow).get()
-        #expect(payload.compressedImages.count == 1)
+        let payload = try WPETexDecoder().extractTexturePayload(span: texWindow).get()
+        #expect(payload.mipmaps.count == 1)
+        #expect(payload.mipmaps[0].bytes == Data(repeating: 0x44, count: 16))
 
         #expect(throws: WPESceneAssetProviderError.self) {
             _ = try provider.mappedWindow(atRelativePath: "missing.tex")
@@ -167,7 +169,7 @@ struct WPEMmapPayloadSpanTests {
         return header + blob
     }
 
-    private func makeStreamingTexContainer(width: Int, height: Int, payloads: [Data]) -> Data {
+    private func makeAnimatedTexContainer(width: Int, height: Int, payloads: [Data]) -> Data {
         var buffer = Data()
         func magic(_ value: String) {
             buffer.append(contentsOf: value.utf8)

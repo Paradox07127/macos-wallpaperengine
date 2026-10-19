@@ -23,7 +23,7 @@ final class ParityParticlePeriodicRestartTests: XCTestCase {
                 "camera": ["center": "0 0 0"],
                 "general": ["orthogonalprojection": ["width": 1920, "height": 1080]], "objects": [object],
             ]),
-            userValues: [:], makeTransformScriptResolver: { _, _ in Support.NoScripts() }
+            userValues: [:]
         )
         let snapshot = files
         let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/")) { snapshot[$0] }])

@@ -22,9 +22,6 @@ struct SceneResourceResolverTests {
         let capped = try resolver.resolveImage(relativePath: "huge.png", maxSourceEdge: 64)
         #expect(max(capped.image.width, capped.image.height) <= 64)
         #expect(min(capped.image.width, capped.image.height) > 0)
-        // 必须是缩略前的源尺寸:否则无 authored size 的图层会按四分之一比例排版。
-        #expect(capped.sourcePixelWidth == 256)
-        #expect(capped.sourcePixelHeight == 256)
     }
 
     @Test("Strip-shaped rasters stay full size under a source-edge cap")
@@ -116,8 +113,8 @@ struct SceneResourceResolverTests {
         }
     }
 
-    @Test("Probe rejects MP4-backed .tex that advertises RGBA8888")
-    func texProbeRejectsMP4BackedRGBA() throws {
+    @Test("Preview decode rejects MP4-backed .tex that advertises RGBA8888")
+    func texPreviewRejectsMP4BackedRGBA() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         try writeRGBA8888Tex(
@@ -128,26 +125,9 @@ struct SceneResourceResolverTests {
         )
 
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let result = resolver.probeImage(relativePath: "video.tex")
-        guard case .failure(.texture(.unsupportedAnimation)) = result else {
-            Issue.record("Expected unsupportedAnimation for MP4-backed .tex probe, got \(result)")
-            return
+        #expect(throws: SceneResourceResolver.ResolveError.texture(.unsupportedAnimation)) {
+            _ = try resolver.resolveImage(relativePath: "video.tex")
         }
-    }
-
-    @Test("Extensionless WPE TEX payload resolves as a texture")
-    func extensionlessTexPayloadResolvesAsTexture() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let particleDir = fixture.cacheRoot.appendingPathComponent("particle", isDirectory: true)
-        try FileManager.default.createDirectory(at: particleDir, withIntermediateDirectories: true)
-        try writeRGBA8888Tex(at: particleDir.appendingPathComponent("halo_2"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let payload = try resolver.resolveTexturePayload(relativePath: "particle/halo_2")
-
-        #expect(payload.info.width == 4)
-        #expect(payload.info.height == 4)
     }
 
     @Test("Model wrapper JSON resolves to materials/<name>.tex via material chain")
@@ -207,27 +187,6 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(resolver.exists(relativePath: "workshop/2328851328/particle/雪花.jpg"))
-    }
-
-    @Test("Renderable probe follows model material chain to terminal asset")
-    func renderableProbeFollowsMaterialChain() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-
-        let modelsDir = fixture.cacheRoot.appendingPathComponent("models", isDirectory: true)
-        let materialsDir = fixture.cacheRoot.appendingPathComponent("materials", isDirectory: true)
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: materialsDir, withIntermediateDirectories: true)
-        try Data(#"{ "material": "materials/foo.json" }"#.utf8).write(to: modelsDir.appendingPathComponent("foo.json"))
-        try Data(#"{ "passes": [{ "textures": ["missing"], "shader": "genericimage4" }] }"#.utf8).write(to: materialsDir.appendingPathComponent("foo.json"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let result = resolver.probeRenderableImage(relativePath: "models/foo.json")
-
-        guard case .failure(.fileMissing) = result else {
-            Issue.record("Expected missing terminal texture, got \(result)")
-            return
-        }
     }
 
     @Test("A missing built-in util model is a renderer gap, not a damaged material")

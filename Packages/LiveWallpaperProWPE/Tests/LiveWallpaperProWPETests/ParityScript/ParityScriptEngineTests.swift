@@ -30,7 +30,7 @@ final class ParityScriptEngineTests: XCTestCase {
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
                 "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"], "general": general,
                 "objects": [["id": 1, "image": "models/surface.json", "visible": visible]],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         let before = try document(invalidSeeds)
         XCTAssertTrue(before.general.usesPerspectiveProjection)
@@ -141,7 +141,7 @@ final class ParityScriptEngineTests: XCTestCase {
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
                 "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"], "general": general,
                 "objects": [["id": 1, "image": "models/surface.json", "visible": visible]],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         let before = try document(invalidSeeds)
         XCTAssertNil(WPEParityScriptProperty.sceneBoolValue(fromJSON: before.resolvedGeneralJSON[names[0]]))
@@ -240,8 +240,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"], "general": general,
                 "objects": [["id": 1, "image": "models/surface.json", "visible": visible]],
             ]
-            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         }
         let before = try document(invalidSeeds)
         XCTAssertNil(WPEParityScriptProperty.sceneBoolValue(fromJSON: before.resolvedGeneralJSON[names[0]]))
@@ -341,8 +340,7 @@ final class ParityScriptEngineTests: XCTestCase {
                "bloomtint":{"value":\(tint),"script":\(encodedTint)}},
              "objects":[{"id":1,"image":"models/surface.json","alpha":\(alpha)}]}
             """
-            return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: [:],
-                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+            return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: [:])
         }
         let assets = try Self.fixedAssets()
         let untrusted: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [
@@ -438,8 +436,7 @@ final class ParityScriptEngineTests: XCTestCase {
         ])
         func document(_ values: [String: WallpaperEngineProjectPropertyValue] = [:], alpha: Double = 1) throws
             -> WPESceneDocument {
-            try WPESceneDocumentParser.parse(data: source, userValues: values.merging(["fade": .number(alpha)]) { _, new in new },
-                                             makeTransformScriptResolver: { _, _ in NoScripts() })
+            try WPESceneDocumentParser.parse(data: source, userValues: values.merging(["fade": .number(alpha)]) { _, new in new })
         }
         let before = try document()
         for field in fields {
@@ -519,8 +516,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 "general": generalJSON,
                 "objects": [],
             ]
-            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                    makeTransformScriptResolver: { _, _ in NoScripts() })
+            return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         }
         // 14019b4e0 preserves constructor mask2 for invalid seeds; only immediate JSON Bool can replace it.
         let seeds: [(String, Any?, Bool)] = [
@@ -600,7 +596,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                 "general": generalJSON,
                 "objects": [],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         let script = """
         if (typeof thisScene.camerafade !== 'boolean' || thisScene.camerafade !== EXPECTED) throw new Error('loaded camerafade');
@@ -670,7 +666,7 @@ final class ParityScriptEngineTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         var logs: [String] = []
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
@@ -697,8 +693,7 @@ final class ParityScriptEngineTests: XCTestCase {
           {"id":1,"camera":"default","queuemode":{"value":"sequential\u0000suffix","script":"if (thisObject.queuemode !== 'random') throw new Error('initial enum'); export function init(v) { thisObject.queuemode = 'sequential\\u0000suffix'; if (thisObject.queuemode !== 'sequential') throw new Error('runtime cstring'); thisObject.queuemode = 'sequential'; if (thisObject.queuemode !== 'sequential') throw new Error('setter enum'); thisObject.queuemode = 'Sequential'; if (thisObject.queuemode !== 'random') throw new Error('case enum'); thisObject.queuemode = null; if (thisObject.queuemode !== 'random') throw new Error('nil enum'); return 'sequential'; } export function update(v) { thisObject.queuemode = 'unknown'; if (thisObject.queuemode !== 'random') throw new Error('unknown enum'); return 'SEQUENTIAL'; }"}},
           {"id":2,"text":{"value":"seed","script":"export function init(v) { thisObject.text = 'Sequential'; if (thisObject.text !== 'Sequential') throw new Error('ordinary string'); thisObject.text = null; if (thisObject.text !== 'Sequential') throw new Error('ordinary nil'); return 'SEQUENTIAL'; }"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(), canvasSize: SIMD2(200, 100), screenResolution: SIMD2(200, 100)
@@ -719,8 +714,7 @@ final class ParityScriptEngineTests: XCTestCase {
          "objects":[{"id":1,"light":"ltube","origin":"10 20 30","scale":"2 3 4",
           "controlpoint":{"script":"const cp = thisObject.controlpoint; if (cp.x !== 2 || cp.y !== 0 || cp.z !== 0) throw new Error('controlpoint default'); export function init(v) { return new Vec3(4, 5, 6); } export function update(v) { thisObject.controlpoint = new Vec3(7, 8, 9); return thisObject.controlpoint; }"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
@@ -748,8 +742,7 @@ final class ParityScriptEngineTests: XCTestCase {
           {"id":1,"light":"lpoint","intensity":{"script":"const sum = thisObject.color.x + thisObject.intensity + thisObject.radius + thisObject.exponent + thisObject.innercone + thisObject.outercone; if (!thisObject.solid || thisObject.parallaxDepth.x !== 1 || thisObject.parallaxDepth.y !== 1) throw new Error('native defaults'); export function init(v) { thisObject.color = new Vec3(0.25, 0.5, 1); return sum; }"}},
           {"id":2,"camera":"camera","visible":false,"zoom":{"script":"const fov = thisObject.fov; export function init(v) { return fov; }"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(),
@@ -771,8 +764,7 @@ final class ParityScriptEngineTests: XCTestCase {
           {"id":2,"light":"lpoint","parallaxDepth":{"user":"depth","value":"1 1"},"intensity":{"script":"export function init(v){return thisObject.parallaxDepth.x + 10*thisObject.parallaxDepth.y;}"}}]}
         """#
         let document = try WPESceneDocumentParser.parse(data: Data(json.utf8),
-                                                        userValues: ["flag": .bool(false), "depth": .string("0.5")],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: ["flag": .bool(false), "depth": .string("0.5")])
         var state = WPEParitySceneState(document: document, hdr: false)
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(),
@@ -791,8 +783,7 @@ final class ParityScriptEngineTests: XCTestCase {
          "objects":[
           {"id":1,"light":"lpoint","radius":{"user":"flag","value":3},"intensity":{"script":"export function init(v){return thisObject.radius;}"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: ["flag": .bool(false)],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: ["flag": .bool(false)])
         var state = WPEParitySceneState(document: document, hdr: false)
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
             assets: Self.fixedAssets(),
@@ -878,8 +869,7 @@ final class ParityScriptEngineTests: XCTestCase {
         let json: [String: Any] = ["camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": generalJSON,
                                    "objects": objects]
         let document = try WPESceneDocumentParser.parse(
-            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         let state = WPEParitySceneState(document: document, hdr: false, constants: constants)
         var configuration = WPEParityScriptEngine.Configuration(
@@ -1153,7 +1143,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 "objects": objects + [config.merging(["id": 3]) { _, new in new }],
             ]
             let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: candidateJSON),
-                                                            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                            userValues: [:])
             let prepared = WPEParitySceneState(document: document, hdr: false)
             let encoded = try JSONSerialization.data(withJSONObject: config)
             let configJSON = try rawJSON ?? XCTUnwrap(String(bytes: encoded, encoding: .utf8))
@@ -1202,7 +1192,7 @@ final class ParityScriptEngineTests: XCTestCase {
                 "objects": objects,
             ]
             let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                            userValues: [:])
             return WPEParitySceneState(document: document, hdr: false)
         }
         let current = try makeState(objects + [stateOnly])
@@ -2331,12 +2321,5 @@ final class ParityScriptEngineTests: XCTestCase {
                        ["top"])
         let away = blocking.update(targets: stop, cursor: SIMD2(50, 5), leftDown: false, moved: true)
         XCTAssertEqual(away.map { "\($0.event.functionName!) \($0.id)" }, ["cursorLeave top"])
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

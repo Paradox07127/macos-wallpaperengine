@@ -287,8 +287,7 @@ final class WPEParitySceneStateTests: XCTestCase {
         ) as? [String: Any])
         edit(&json)
         let document = try WPESceneDocumentParser.parse(
-            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoTransformScripts() }
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
@@ -328,8 +327,7 @@ final class WPEParitySceneStateTests: XCTestCase {
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoTransformScripts() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                           width: Self.width, height: Self.height)
@@ -370,12 +368,6 @@ final class WPEParitySceneStateTests: XCTestCase {
     }
 }
 
-private struct NoTransformScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 
 private struct ThrowingSceneAssetProvider: WPESceneAssetProvider {
     var entryNames: [String] {

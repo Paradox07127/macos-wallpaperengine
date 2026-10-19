@@ -5,16 +5,6 @@ import Testing
 
 @Suite("Particle instanceoverride alpha script")
 struct WPEParticleInstanceAlphaScriptTests {
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script _: String,
-            properties _: [String: WPESceneScriptPropertyValue],
-            seed _: SIMD3<Double>
-        ) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     /// Verbatim shape of 1607's override, trimmed to the alpha envelope.
     private static let alphaScriptSource = """
     'use strict';
@@ -28,8 +18,7 @@ struct WPEParticleInstanceAlphaScriptTests {
         let data = try JSONSerialization.data(withJSONObject: payload)
         return try WPESceneDocumentParser.parse(
             data: data,
-            userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: [:]
         )
     }
 

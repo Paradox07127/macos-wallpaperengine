@@ -1,6 +1,5 @@
 import Foundation
 import LiveWallpaperProWPE
-import Metal
 import Testing
 @testable import LiveWallpaper
 
@@ -47,39 +46,11 @@ struct WPETexMipValidationTests {
         }
     }
 
-    @Test("Raw malformed tail is rejected even when the inflate scope selects only level zero")
+    @Test("Malformed authored mip geometry is rejected by the decoder")
     func malformedFixture() {
-        for scope in [WPETexMipInflateScope.fullChain, .init(maxSourceEdge: nil, uploadsChain: false)] {
-            switch WPETexDecoder().extractTexturePayload(data: fixture(sizes: [(8, 8), (8, 8)]), scope: scope) {
-            case .success: Issue.record("Malformed mip chain escaped parser")
-            case .failure: break
-            }
-        }
-    }
-
-    @Test("Loader validates full geometry before Metal allocation even with mip upload disabled")
-    func loaderRejectsMalformed() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let valid = try WPETexDecoder().extractTexturePayload(data: fixture(sizes: [(8, 8)])).get()
-        let payload = WPETexTexturePayload(info: valid.info, mipmaps: [
-            valid.mipmaps[0], .init(index: 1, width: 8, height: 8, bytes: Data())
-        ], hasAnimationFrames: false)
-        #expect(throws: WPETexMipValidation.Invalid.self) {
-            try WPEMetalTextureLoader.makeTextureSynchronously(
-                from: payload, label: "malformed", device: device,
-                capabilities: WPEMetalTextureCapabilities(device: device)
-            )
-        }
-    }
-
-    @Test("Streaming payload bounds reject negative, short and oversized declarations before inflate")
-    func streamingBounds() throws {
-        for count in [-1, 63, WPETexCompressedMipmap.maxDecompressedByteCount + 1] {
-            let mip = WPETexCompressedMipmap(index: 0, width: 4, height: 4, isCompressed: false,
-                                             compressedBytes: Data(repeating: 0, count: 64), decompressedByteCount: count)
-            #expect(throws: WPETexMipValidation.Invalid.self) {
-                try WPETexMipValidation.decodedBytes(mip, format: .rgba8888)
-            }
+        switch WPETexDecoder().extractTexturePayload(data: fixture(sizes: [(8, 8), (8, 8)])) {
+        case .success: Issue.record("Malformed mip chain escaped parser")
+        case .failure: break
         }
     }
 

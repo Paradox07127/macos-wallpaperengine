@@ -256,8 +256,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
             data = try JSONSerialization.data(withJSONObject: json)
         }
         let document = try WPESceneDocumentParser.parse(
-            data: data, userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: data, userValues: [:]
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                       width: Self.width, height: Self.height)
@@ -345,10 +344,4 @@ final class WPEParityPuppetSceneTests: XCTestCase {
     }
 }
 
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

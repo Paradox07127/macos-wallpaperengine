@@ -188,17 +188,9 @@ final class ParityPostCameraTests: XCTestCase {
         let json: [String: Any] = ["camera": cameraJSON, "general": general,
                                    "objects": [["id": 1, "name": "layer"]]]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         return WPEParityProgramScene(document: document,
                                      assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
                                      settings: WPEParityProgramSettings(colorCorrection: colorCorrection))
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

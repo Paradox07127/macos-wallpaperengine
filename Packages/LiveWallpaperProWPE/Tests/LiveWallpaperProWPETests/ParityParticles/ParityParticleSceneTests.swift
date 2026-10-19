@@ -44,8 +44,7 @@ final class ParityParticleSceneTests: XCTestCase {
             sceneJSON["version"] = version
         }
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: sceneJSON),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let snapshot = files
         let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/")) { snapshot[$0] }])
         return WPEParityParticleScene(document: document, assets: assets, engineFlags: flags, seed: seed)
@@ -65,7 +64,7 @@ final class ParityParticleSceneTests: XCTestCase {
                 "camera": ["center": "0 0 0"],
                 "general": ["orthogonalprojection": ["width": 1920, "height": 1080]], "objects": five,
             ]),
-            userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() }
+            userValues: [:]
         )
         return WPEParitySceneState(document: document, hdr: hdr)
     }
@@ -394,8 +393,7 @@ final class ParityParticleSceneTests: XCTestCase {
                          "instanceoverride": ["controlpointangle1": "0 0 1"]]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: sceneJSON),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let override = try XCTUnwrap(document.particleObjects.first?.instanceOverride)
         XCTAssertEqual(override.controlPointAngles, [1: SIMD3(0, 0, 1)])
     }
@@ -430,8 +428,7 @@ final class ParityParticleSceneTests: XCTestCase {
     /// Returns the number of particle objects compared.
     private static func assertKeysAlign(_ directory: URL, assets roots: [URL], label: String) throws -> Int {
         let document = try WPESceneDocumentParser.parse(
-            data: Data(contentsOf: directory.appendingPathComponent("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: Data(contentsOf: directory.appendingPathComponent("scene.json")), userValues: [:]
         )
         let assets = WPEParityProgramAssets(sceneDirectory: directory, assetRoots: roots)
         let scene = WPEParityParticleScene(document: document, assets: assets, engineFlags: WPEEngineComboFlags(),
@@ -490,8 +487,7 @@ final class ParityParticleSceneTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try ParityProgramPuppetTests.unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(
-            data: Data(contentsOf: root.appendingPathComponent("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: Data(contentsOf: root.appendingPathComponent("scene.json")), userValues: [:]
         )
         let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [install])
         var scene = WPEParityParticleScene(document: document, assets: assets, engineFlags: WPEEngineComboFlags(),
@@ -1548,12 +1544,5 @@ final class ParityParticleSceneTests: XCTestCase {
             scene.advance(dt: 0.5, frames: ["5": .init()])
         }
         XCTAssertEqual(Self.root(scene)?.liveCount, 0, "the hidden reset would have re-enabled the stopped emitter")
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

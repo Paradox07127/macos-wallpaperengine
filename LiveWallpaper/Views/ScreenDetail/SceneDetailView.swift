@@ -219,8 +219,6 @@ extension SceneRenderState {
             .sceneParseFailed(detail)
         case let .resourceFailed(diagnostic):
             fallbackReason(for: diagnostic)
-        case .metalRendererUnsupported:
-            .sceneShaderUnsupported
         }
     }
 
@@ -237,8 +235,6 @@ extension SceneRenderState {
             default:
                 .texDecodeFailed(detail: error.errorDescription ?? "decode failed")
             }
-        case .legacyUnsupportedTexture:
-            .texUnsupportedFormat(code: -1)
         case .fileMissing, .crossPackageReference:
             .sceneResourceMissing
         case .materialUnresolved:

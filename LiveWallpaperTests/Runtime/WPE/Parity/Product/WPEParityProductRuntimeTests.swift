@@ -204,7 +204,7 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         let cache = try XCTUnwrap(parity.shaderCache)
         XCTAssertGreaterThan(cache.requests, 0)
         XCTAssertEqual(cache.requests, cache.memoryHits + cache.joinedRequests + cache.diskHits + cache.compilations)
-        let diagnostics = SceneRendererDiagnostics(loadDiagnostics: nil, resolution: snapshot.resolution,
+        let diagnostics = SceneRendererDiagnostics(loadDiagnostics: nil,
                                                    shaderErrors: .init(count: 0, entries: []),
                                                    gpuErrors: .init(count: 0, last: nil), parity: snapshot.parity)
         XCTAssertEqual(diagnostics.parity, parity)

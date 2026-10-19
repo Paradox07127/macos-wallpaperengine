@@ -1,32 +1,9 @@
 #if !LITE_BUILD
-import Accelerate
-import CoreGraphics
 import Foundation
 
 /// External raster images publish straight RGB and coverage alpha to WPE shaders.
 /// Raw TEX data and render targets bypass this boundary.
 enum WPERasterImageAlpha {
-    enum Failure: Error { case unsupportedImageFormat }
-
-    /// Keep the source color space, component precision and byte order. MetalKit
-    /// retains a CGImage's premultiplication; the external-image consumers do not.
-    static func straightImage(_ image: CGImage) throws -> CGImage {
-        let alpha: CGImageAlphaInfo
-        switch image.alphaInfo {
-        case .premultipliedFirst: alpha = .first
-        case .premultipliedLast: alpha = .last
-        default: return image
-        }
-        guard var format = vImage_CGImageFormat(cgImage: image) else {
-            throw Failure.unsupportedImageFormat
-        }
-        format.bitmapInfo = CGBitmapInfo(rawValue:
-            (format.bitmapInfo.rawValue & ~CGBitmapInfo.alphaInfoMask.rawValue) | alpha.rawValue)
-        let buffer = try vImage_Buffer(cgImage: image, format: format)
-        defer { buffer.free() }
-        return try buffer.createCGImage(format: format)
-    }
-
     static func unpremultiplyRGBA8(_ bytes: inout Data) {
         bytes.withUnsafeMutableBytes { unpremultiplyRGBA8($0.bindMemory(to: UInt8.self)) }
     }

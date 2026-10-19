@@ -65,7 +65,7 @@ final class ParityProgramBindingTests: XCTestCase {
                     "camera": ["center": "0 0 0"],
                     "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
                     "objects": [object],
-                ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                ]), userValues: [:])
                 // Binding resolves annotations after scene conversion; retain the same shader bytes for both.
                 let snapshot = files
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent("mip-binding-\(UUID().uuidString)")
@@ -370,7 +370,7 @@ final class ParityProgramBindingTests: XCTestCase {
             "objects": [["id": 7, "image": "models/probe.json", "size": "200 100", "instance": instance]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
         return try XCTUnwrap(WPEParityProgramBuilder.bindings(frame: frame, scene: scene).values.first {
@@ -484,7 +484,7 @@ final class ParityProgramBindingTests: XCTestCase {
             "objects": [["id": 1, "name": "layer"]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets,
                                           settings: .init(colorCorrection: correction))
         return try (scene, WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess))
@@ -516,8 +516,7 @@ final class ParityProgramBindingTests: XCTestCase {
             try data.write(to: url)
         }
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: userValues,
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: userValues)
         var assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [])
         assets.userValues = userValues
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
@@ -584,7 +583,7 @@ final class ParityProgramBindingTests: XCTestCase {
             ]]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         let later = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 3)
         let records = try XCTUnwrap(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "9")])
@@ -653,8 +652,7 @@ final class ParityProgramBindingTests: XCTestCase {
         func fragment(_ userValues: [String: WallpaperEngineProjectPropertyValue]) throws
             -> (constants: [String: WPECBufferValue]?, materials: Set<String>) {
             let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                            userValues: userValues,
-                                                            makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                            userValues: userValues)
             let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
             let frame = try WPEParityFrameComposer.compose(scene: scene.scene, post: scene.postProcess)
             let pass = WPEParityMaterialPassKey(objectID: "7", effectID: "9", pass: 0)
@@ -692,7 +690,7 @@ final class ParityProgramBindingTests: XCTestCase {
             ]]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         XCTAssertEqual(scene.resolvedEffectRecords[.init(objectID: "7", effectID: "0")]?.map(\.filePassIndex), [0])
     }
@@ -753,12 +751,5 @@ final class ParityProgramBindingTests: XCTestCase {
         let (albedo, albedoBinding) = try sceneDraw("genericimage4")
         XCTAssertEqual(albedoBinding.textures[0],
                        .imported(albedo.reads[0], asset: "AF3DD4AEF955193C9E71595ACC80BF57"))
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -84,7 +84,7 @@ final class ParityParticleNestedTests: XCTestCase {
             let assets = WPEParityProgramAssets(sources: [.lookup(URL(fileURLWithPath: "/")) { files[$0] }])
             let document = try WPESceneDocumentParser.parse(
                 data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":5,"name":"fx","particle":"particles/repeated.json"}]}"#.utf8),
-                userValues: [:], makeTransformScriptResolver: { _, _ in ParityParticleTestSupport.NoScripts() }
+                userValues: [:]
             )
             var diagnostics: [WPEParitySceneDiagnostic] = []
             let prototypes = WPEParityProgramScene.particleDraws(objectID: "5", path: "particles/repeated.json",

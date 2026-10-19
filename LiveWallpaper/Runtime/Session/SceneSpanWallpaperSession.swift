@@ -270,7 +270,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         frameRateCeiling = configuration.frameRateLimit.frameRate(forRefreshRate: Double(screen.nsScreen.configuredFramesPerSecond))
         volume = configuration.videoVolume
         mouseEnabled = configuration.sceneMouseInteractionEnabled
-        guard let device = MTLCreateSystemDefaultDevice() else { throw WPEMetalRenderExecutorError.commandQueueUnavailable }
+        guard let device = MTLCreateSystemDefaultDevice() else { throw WPEMetalRenderError.commandQueueUnavailable }
         let window = VideoWallpaperWindow(frame: screen.frame)
         self.window = window
         surface = WPERenderSurface(frame: CGRect(origin: .zero, size: screen.frame.size), device: device, targetScreen: screen.nsScreen, allowsHDR: false)

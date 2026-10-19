@@ -73,17 +73,10 @@ struct ParitySceneAnimationParentTests {
             "objects": [imageLayer()].filter { _ in !objects.contains { $0["id"] as? Int == 1 } } + objects,
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         var animations = WPEParitySceneAnimations(document: document, state: state, constantComponents: [:])
         animations.advance(dt: 0.5, state: &state)
         return state
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

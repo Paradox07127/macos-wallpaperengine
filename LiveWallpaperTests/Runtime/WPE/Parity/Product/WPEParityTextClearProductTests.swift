@@ -361,7 +361,7 @@ extension WPEParitySceneDriverTests {
             "objects": objects,
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         return (document, original)
     }
 

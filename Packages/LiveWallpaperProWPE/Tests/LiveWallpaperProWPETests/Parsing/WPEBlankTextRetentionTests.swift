@@ -5,16 +5,6 @@ import Testing
 
 @Suite("Declared blank text object retention")
 struct WPEBlankTextRetentionTests {
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script _: String,
-            properties _: [String: WPESceneScriptPropertyValue],
-            seed _: SIMD3<Double>
-        ) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     @Test("Declared blank strings retain identity without a text script", arguments: ["plain", "value", "text"])
     func declaredBlankTextRetainsIdentity(shape: String) throws {
         var object: [String: Any] = ["id": "blank", "name": "Blank label", "origin": "12 24 0"]
@@ -61,8 +51,7 @@ struct WPEBlankTextRetentionTests {
         ]
         return try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: payload),
-            userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: [:]
         )
     }
 }

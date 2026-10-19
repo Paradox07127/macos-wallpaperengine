@@ -81,7 +81,7 @@ final class ParityProgramMaterialBoundsTests: XCTestCase {
             path == Self.materialPath ? bytes : nil
         }])
         let document = try WPESceneDocumentParser.parse(data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[]}"#.utf8),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in MaterialBoundsNoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         let draw = WPEParitySceneDraw(pass: "test", objectID: "1", shader: "bounds",
                                       source: .init(materialPath: Self.materialPath), reads: [], target: "backbuffer",
@@ -95,12 +95,5 @@ final class ParityProgramMaterialBoundsTests: XCTestCase {
             .init(id: "7", json: ["id": 7, "image": "models/7.json", "size": "64 64"],
                   effects: [.init(id: "1", passes: [pass])]),
         ])
-    }
-}
-
-private struct MaterialBoundsNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

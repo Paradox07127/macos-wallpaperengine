@@ -184,7 +184,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         }
         let inputs = try WPEParitySceneInputs(
             descriptor: descriptor,
-            entryResolver: SceneResourceResolver(provider: provider, cacheRootURL: projectRoot),
+            entryResolver: SceneResourceResolver(provider: provider),
             projectRoot: projectRoot,
             assets: WPEParitySceneAssets.make(
                 provider: provider, projectRoot: projectRoot, dependencyMounts: [], engineAssetsRootURL: engineAssetsRoot,
@@ -282,7 +282,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 64], "clearcolor": "0 0 0"],
             "objects": [["id": 1, "particle": "particles/root.json", "origin": "32 32 0"]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in WPEParitySceneDriverTests.NoScripts() })
+        ]), userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let size = CGSize(width: 64, height: 64)
         let layer = WPEParitySceneDriverTests.RecordingLayer()

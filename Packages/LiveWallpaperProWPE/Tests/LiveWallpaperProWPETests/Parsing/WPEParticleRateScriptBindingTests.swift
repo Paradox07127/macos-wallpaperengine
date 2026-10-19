@@ -5,16 +5,6 @@ import Testing
 
 @Suite("Particle instanceoverride rate script bindings")
 struct WPEParticleRateScriptBindingTests {
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script _: String,
-            properties _: [String: WPESceneScriptPropertyValue],
-            seed _: SIMD3<Double>
-        ) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     private func document(overrideKey: String) throws -> WPESceneDocument {
         let data = try JSONSerialization.data(withJSONObject: [
             "camera": ["center": "0 0 0"],
@@ -38,8 +28,7 @@ struct WPEParticleRateScriptBindingTests {
         ])
         return try WPESceneDocumentParser.parse(
             data: data,
-            userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: [:]
         )
     }
 

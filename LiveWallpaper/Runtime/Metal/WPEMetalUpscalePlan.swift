@@ -2,9 +2,8 @@
 import CoreGraphics
 import Foundation
 
-/// Decided before anything is sized: source downsample at load is irreversible. Does not gate the present-time scaler (`preScalerRejection` does); the plan governs what we allocate.
+/// Chooses the render-target scale and present-time MetalFX eligibility.
 struct WPEMetalUpscalePlan: Equatable, Sendable {
-
     enum Verdict: String, Equatable, Sendable {
         case active
         case settingOff
@@ -27,26 +26,25 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
     let renderPixelScale: Double
     /// Largest scale (<= 1) at which no visible pixel is under-sampled. Independent of MetalFX: a scaler rejection falls back to this, not to 1.0.
     let displayFitScale: Double
-    /// Longest source-texture edge worth uploading, or nil when inactive.
-    let maxSourceTextureEdge: Int?
     /// The drawable this verdict was decided against. A present-time decline is only meaningful for THAT drawable — a reconfiguration can land a frame on a new size before the geometry callback.
     let plannedDrawableSize: CGSize
 
-    var isActive: Bool { verdict == .active }
+    var isActive: Bool {
+        verdict == .active
+    }
 
     static let inactive = WPEMetalUpscalePlan(
         verdict: .settingOff, renderPixelScale: 1.0, displayFitScale: 1.0,
-        maxSourceTextureEdge: nil, plannedDrawableSize: .zero
+        plannedDrawableSize: .zero
     )
 
-    /// Give up scaling for the rest of this scene after the present-time scaler declined. Keep `maxSourceTextureEdge`: those textures are already uploaded, and the reload path must keep matching them.
+    /// Give up scaling for the rest of this scene after the present-time scaler declined.
     func demotedToNative() -> WPEMetalUpscalePlan {
         WPEMetalUpscalePlan(
             verdict: .declinedAtPresent,
             // Not 1.0: scaler refusal says nothing about a canvas larger than the display. Going back to the authored canvas would restore the over-render this plan exists to prevent.
             renderPixelScale: displayFitScale,
             displayFitScale: displayFitScale,
-            maxSourceTextureEdge: maxSourceTextureEdge,
             plannedDrawableSize: plannedDrawableSize
         )
     }
@@ -57,7 +55,7 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         drawableSize == plannedDrawableSize
     }
 
-    /// Do not carry the texture cap over — the renderer latches it at upload (`latchedTextureCap`). A present-time decline is sticky: re-activating after the scaler refused would oscillate.
+    /// A present-time decline is sticky: re-activating after the scaler refused would oscillate.
     func adopting(_ fresh: WPEMetalUpscalePlan) -> WPEMetalUpscalePlan {
         guard verdict != .declinedAtPresent else {
             // The refusal sticks, but a new drawable still gets its own display clamp —
@@ -66,7 +64,6 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
                 verdict: .declinedAtPresent,
                 renderPixelScale: fresh.displayFitScale,
                 displayFitScale: fresh.displayFitScale,
-                maxSourceTextureEdge: maxSourceTextureEdge,
                 plannedDrawableSize: fresh.plannedDrawableSize
             )
         }
@@ -74,18 +71,17 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
             verdict: fresh.verdict,
             renderPixelScale: fresh.renderPixelScale,
             displayFitScale: fresh.displayFitScale,
-            maxSourceTextureEdge: fresh.maxSourceTextureEdge,
             plannedDrawableSize: fresh.plannedDrawableSize
         )
     }
 
-    /// No MetalFX upscale, but still never above what the display resolves. `maxSourceTextureEdge` stays nil: the cap is latched at upload, and a display clamp can change when the wallpaper moves screens.
+    /// No MetalFX upscale, but still never above what the display resolves.
     private static func inactive(
         _ verdict: Verdict, drawableSize: CGSize = .zero, displayFitScale: Double = 1.0
     ) -> WPEMetalUpscalePlan {
         WPEMetalUpscalePlan(
             verdict: verdict, renderPixelScale: displayFitScale, displayFitScale: displayFitScale,
-            maxSourceTextureEdge: nil, plannedDrawableSize: drawableSize
+            plannedDrawableSize: drawableSize
         )
     }
 
@@ -169,7 +165,6 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
             verdict: .active,
             renderPixelScale: effectiveScale,
             displayFitScale: displayFit,
-            maxSourceTextureEdge: Int(max(pixelSize.width, pixelSize.height)),
             plannedDrawableSize: drawableSize
         )
     }

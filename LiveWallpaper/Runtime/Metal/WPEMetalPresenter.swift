@@ -9,12 +9,14 @@ import os
 extension MTLCommandEncoder {
     /// Avoids building diagnostic strings unless pass labels are enabled.
     func applyTraceLabel(_ makeLabel: @autoclosure () -> String) {
-        if WPEMetalRenderExecutor.tracePassLabels { label = makeLabel() }
+        if WPEMetalPresenter.tracePassLabels {
+            label = makeLabel()
+        }
     }
 }
 
 /// Shared terminal presentation and output lifetime for parity frames and span consumers.
-final class WPEMetalRenderExecutor {
+final class WPEMetalPresenter {
     /// Off by default and read once. `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
     static let tracePassLabels: Bool = {
         let key = "WPETracePassLabels"
@@ -23,10 +25,10 @@ final class WPEMetalRenderExecutor {
         }
         return false
     }()
+
     static let outputPixelFormat = MTLPixelFormat.rgba8Unorm
     /// `.rgba16Float` for HDR so >1 emissive survives to the bloom prefilter (an 8-bit target clamps at scene write); SDR keeps authored channel numbers in 8-bit UNORM.
-    var currentOutputPixelFormat: MTLPixelFormat = WPEMetalRenderExecutor.outputPixelFormat
-
+    var currentOutputPixelFormat: MTLPixelFormat = WPEMetalPresenter.outputPixelFormat
 
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
@@ -39,7 +41,6 @@ final class WPEMetalRenderExecutor {
     var spanOutputTextureLimit: Int?
     var recentOutputTextureIDs: [ObjectIdentifier] = []
     let presentTracker = PresentInFlightTracker()
-    let gpuErrorSink = WPEGPUErrorSink()
     static let maxFramesInFlight = 2
     #if DEBUG
     var remainingForcedDrawableMissesForTesting = 0
@@ -82,13 +83,12 @@ final class WPEMetalRenderExecutor {
         let texture: MTLTexture
     }
 
-
     init(device: MTLDevice) throws {
         guard let queue = device.makeCommandQueue() else {
-            throw WPEMetalRenderExecutorError.commandQueueUnavailable
+            throw WPEMetalRenderError.commandQueueUnavailable
         }
         guard let library = device.makeDefaultLibrary() else {
-            throw WPEMetalRenderExecutorError.libraryUnavailable
+            throw WPEMetalRenderError.libraryUnavailable
         }
         self.device = device
         device.shouldMaximizeConcurrentCompilation = true
@@ -97,12 +97,10 @@ final class WPEMetalRenderExecutor {
         pipelineCache = WPEMetalPipelineCache(device: device, library: library)
     }
 
-    var textureSourceDevice: MTLDevice {
-        device
-    }
     var textureSourceCommandQueue: MTLCommandQueue {
         commandQueue
     }
+
     var upscalePlan: WPEMetalUpscalePlan = .inactive
     var lastPresentedDrawableSize: CGSize = .zero
     var lastPresentPass: WPEPresentPassRecord?
@@ -114,7 +112,9 @@ final class WPEMetalRenderExecutor {
         return presentSideDemotionPending
     }
 
-    func notePresentSideDemotion() { presentSideDemotionPending = true }
+    func notePresentSideDemotion() {
+        presentSideDemotionPending = true
+    }
 
     func releaseRenderScaleDependentResources() {
         linearPresentationTexture = nil
@@ -129,7 +129,7 @@ final class WPEMetalRenderExecutor {
     }
 
     func renderPipeline(vertexName: String = "wpe_fullscreen_vertex", fragmentName: String,
-                        colorPixelFormat: MTLPixelFormat = WPEMetalRenderExecutor.outputPixelFormat) throws -> MTLRenderPipelineState {
+                        colorPixelFormat: MTLPixelFormat = WPEMetalPresenter.outputPixelFormat) throws -> MTLRenderPipelineState {
         try pipelineCache.pipelineState(vertexName: vertexName, fragmentName: fragmentName, colorPixelFormat: colorPixelFormat)
     }
 
@@ -197,6 +197,5 @@ final class WPEMetalRenderExecutor {
             recentOutputTextureIDs.removeFirst(recentOutputTextureIDs.count - retain)
         }
     }
-
 }
 #endif

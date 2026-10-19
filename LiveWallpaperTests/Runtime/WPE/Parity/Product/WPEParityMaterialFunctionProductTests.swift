@@ -304,8 +304,7 @@ extension WPEParitySceneDriverTests {
                          "effects": [["id": 7, "file": "effects/material-function-product.json", "visible": true,
                                       "passes": overrides]]]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         return (document, assets)
     }
 

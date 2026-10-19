@@ -181,8 +181,8 @@ struct SceneFailureFlowTests {
             #expect(SceneFailureCause.make(error).reason.contains("B"))
         }
         let documents: [WPESceneDocumentError] = [.invalidUTF8, .rootNotObject, .missingCamera, .missingGeneral, .malformedField("camera.zoom")]
-        let rendering: [SceneRenderingError] = [.cacheRootMissing, .parseFailed("invalid JSON"), .resourceFailed(.fileMissing(layer: "B", path: "materials/B.tex")), .metalRendererUnsupported(reason: "target format")]
-        let resources: [SceneLoadDiagnostic] = [.texture(layer: "B", error: .unsupportedFormat(code: 42)), .legacyUnsupportedTexture(layer: "B"), .fileMissing(layer: "B", path: "materials/B.tex"), .crossPackageReference(layer: "B", path: "other/B.tex"), .materialUnresolved(layer: "B", reason: "custom pass"), .other(layer: "B", message: "failure details")]
+        let rendering: [SceneRenderingError] = [.cacheRootMissing, .parseFailed("invalid JSON"), .resourceFailed(.fileMissing(layer: "B", path: "materials/B.tex"))]
+        let resources: [SceneLoadDiagnostic] = [.texture(layer: "B", error: .unsupportedFormat(code: 42)), .fileMissing(layer: "B", path: "materials/B.tex"), .crossPackageReference(layer: "B", path: "other/B.tex"), .materialUnresolved(layer: "B", reason: "custom pass"), .other(layer: "B", message: "failure details")]
         let metal: [WPEMetalTextureLoaderError] = [.unsupportedFormat(.bc7), .unsupportedCompressedFormat(.bc7), .malformedPayload("wrong length"), .textureAllocationFailed]
         for error in documents {
             #expect(SceneFailureCause.make(error).reason == error.localizedDescription)

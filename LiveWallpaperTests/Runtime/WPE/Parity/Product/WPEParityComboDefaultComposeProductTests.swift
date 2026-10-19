@@ -69,7 +69,7 @@ extension WPEParitySceneDriverTests {
                  "scale": "2 2 2", "colorBlendMode": 18,
                  "effects": [["id": 11, "file": "effects/zeroalpha/effect.json", "visible": true]]],
             ],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

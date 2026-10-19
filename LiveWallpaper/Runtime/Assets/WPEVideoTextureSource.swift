@@ -1169,7 +1169,6 @@ final class WPEVideoTextureSource {
     #endif
 }
 
-extension WPEVideoTextureSource: WPEDynamicTextureSource {}
 
 /// The completed handler must capture only this flag — never the source, cache, or wrappers (that crashed after invalidate tore the pool down).
 private final class WPEFrameFenceFlag: @unchecked Sendable {

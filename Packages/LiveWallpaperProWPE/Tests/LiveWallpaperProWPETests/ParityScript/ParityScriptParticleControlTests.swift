@@ -119,7 +119,7 @@ final class ParityScriptParticleControlTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -140,12 +140,5 @@ final class ParityScriptParticleControlTests: XCTestCase {
         let particles = Particles(WPEParityParticleScene(document: document, assets: assets,
                                                          engineFlags: WPEEngineComboFlags(), seed: 7))
         return (engine, state, { log.messages }, particles)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

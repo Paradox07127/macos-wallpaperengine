@@ -236,7 +236,7 @@ extension WPEParitySceneDriverTests {
                          "color": "1 1 1", "alpha": 1, "colorBlendMode": 0, "copybackground": false]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         return (document, WPEParityProgramAssets(sources: [.directory(scratch)] + original.sources))
     }
 

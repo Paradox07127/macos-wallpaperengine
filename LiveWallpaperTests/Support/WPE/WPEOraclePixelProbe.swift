@@ -56,7 +56,7 @@ enum WPEOraclePixelProbe {
                 "format": format, "width": texture.width, "height": texture.height, "samples": samples]
     }
 
-    static func terminalLinearTexture(source: MTLTexture, executor: WPEMetalRenderExecutor) throws -> MTLTexture {
+    static func terminalLinearTexture(source: MTLTexture, executor: WPEMetalPresenter) throws -> MTLTexture {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false
         )

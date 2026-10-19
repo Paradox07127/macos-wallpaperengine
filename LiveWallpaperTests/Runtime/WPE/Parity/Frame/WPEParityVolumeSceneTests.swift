@@ -159,8 +159,7 @@ final class WPEParityVolumeSceneTests: XCTestCase {
         ]
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { files[$0] }, .directory(engine)])
         let scene = Data(#"{"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},"general":{"orthogonalprojection":{"width":4,"height":2},"clearcolor":"0 0 0"},"objects":[{"id":1,"image":"models/volume.json","size":"4 2","origin":"2 1 0"}]}"#.utf8)
-        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 4, height: 2)
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         let store = WPEParityShaderStore(compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "cache")))
@@ -216,10 +215,4 @@ final class WPEParityVolumeSceneTests: XCTestCase {
     }
 }
 
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

@@ -121,8 +121,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try Self.unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [wpeAssets])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
 
@@ -253,8 +252,7 @@ final class ParityProgramPuppetTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [wpeAssets])
         return WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
     }
@@ -334,12 +332,5 @@ final class ParityProgramPuppetTests: XCTestCase {
 private extension Data {
     mutating func append(uint32 value: UInt32) {
         Swift.withUnsafeBytes(of: value.littleEndian) { append(contentsOf: $0) }
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -101,7 +101,7 @@ final class WPEParityParticleThickLayoutTests: XCTestCase {
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 64], "clearcolor": "0 0 0"],
             "objects": [["id": 1, "particle": "particles/root.json", "origin": "32 32 0"]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false),
                                           width: 64, height: 64)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
@@ -177,10 +177,4 @@ final class WPEParityParticleThickLayoutTests: XCTestCase {
     }
 }
 
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

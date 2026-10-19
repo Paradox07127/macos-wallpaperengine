@@ -273,7 +273,7 @@ final class ParityScriptBoneTests: XCTestCase {
             "objects": [first, second],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -321,12 +321,5 @@ final class ParityScriptBoneTests: XCTestCase {
         let mesh = WPEPuppetMesh(materialPath: "", vertices: [], indices: [], parts: [],
                                  morph: WPEPuppetMorph(scale: 1, vertexCount: 1, targets: targets))
         return WPEPuppetModel(version: 23, meshes: [mesh], bones: bones, animations: [clip])
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

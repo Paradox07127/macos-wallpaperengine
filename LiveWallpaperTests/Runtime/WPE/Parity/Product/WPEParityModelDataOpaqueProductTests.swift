@@ -96,8 +96,7 @@ extension WPEParitySceneDriverTests {
             "objects": [["id": 1, "name": "opaque controller", "image": "models/util/solidlayer.json", "size": "1 1",
                          "brightness": 0, "alpha": ["value": 0, "script": source]]],
         ], options: [.sortedKeys])
-        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

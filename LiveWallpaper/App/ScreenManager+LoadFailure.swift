@@ -41,8 +41,7 @@ extension ScreenManager {
             }
             let diagnostics = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: session.rendererDiagnostics, errorCode: cause.code)
             failWallpaperAttempt(
-                id, for: screen, cause: cause, stage: .runtime, diagnostics: diagnostics,
-                missingResources: session.rendererDiagnostics?.resolution.failureMissingResources ?? []
+                id, for: screen, cause: cause, stage: .runtime, diagnostics: diagnostics
             )
         }
     }

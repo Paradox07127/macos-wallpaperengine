@@ -42,39 +42,12 @@ enum WPERenderDiagnosticReport {
         lines.append("")
 
         let loadDiagnostic = diagnostics?.loadDiagnostics?.errorDescription
-        let snapshot = diagnostics?.resolution
 
         if let loadDiagnostic {
             lines.append(loadDiagnostic)
         }
 
-        if let snapshot {
-            if loadDiagnostic == nil {
-                lines.append(
-                    snapshot.missedRefs.isEmpty
-                        ? "All declared refs resolved (\(snapshot.resolvedCount))."
-                        : "\(snapshot.missedRefs.count) ref(s) unresolved, \(snapshot.resolvedCount) resolved."
-                )
-            }
-            lines.append("")
-            lines.append("Resource Resolution")
-            lines.append(resolutionSummaryText(snapshot))
-            if snapshot.missedRefs.isEmpty {
-                lines.append("Misses: none")
-            } else {
-                lines.append("Misses:")
-                for event in snapshot.missedRefs.prefix(500) {
-                    lines.append("  \(event.ref): \(event.finalOutcome.debugLabel)")
-                }
-            }
-            let fallback = fallbackResolvedRefs(snapshot)
-            if !fallback.isEmpty {
-                lines.append("Resolved via fallback (not in scene package):")
-                for entry in fallback.prefix(40) {
-                    lines.append("  \(entry.ref) <- \(entry.origin)")
-                }
-            }
-        } else if loadDiagnostic == nil {
+        if diagnostics == nil, loadDiagnostic == nil {
             lines.append("No render diagnostics yet (scene not loaded).")
         }
 
@@ -126,44 +99,7 @@ enum WPERenderDiagnosticReport {
         return lines
     }
 
-    private nonisolated static func resolutionSummaryText(
-        _ snapshot: WPEResolutionDiagnosticsSnapshot
-    ) -> String {
-        let counts = snapshot.resolvedByOrigin
-        let dependencyCount = counts.reduce(0) { partial, entry in
-            if case .dependency = entry.key {
-                return partial + entry.value
-            }
-            return partial
-        }
-        var parts = [
-            "scene: \(counts[.scene, default: 0])",
-            "builtin: \(counts[.builtin, default: 0])",
-            "engineAssets: \(counts[.engineAssets, default: 0])",
-        ]
-        if dependencyCount > 0 {
-            parts.append("dependency: \(dependencyCount)")
-        }
-        return "Events: \(snapshot.events.count), resolved: \(snapshot.resolvedCount), \(parts.joined(separator: ", "))"
-    }
 
-    private nonisolated static func fallbackResolvedRefs(
-        _ snapshot: WPEResolutionDiagnosticsSnapshot
-    ) -> [(ref: String, origin: String)] {
-        var seen = Set<String>()
-        var result: [(ref: String, origin: String)] = []
-        for event in snapshot.events {
-            guard event.finalOutcome == .resolved,
-                  let hit = event.attempts.last,
-                  hit.outcome == .resolved,
-                  hit.origin != .scene,
-                  seen.insert(event.ref).inserted else {
-                continue
-            }
-            result.append((event.ref, hit.origin.debugLabel))
-        }
-        return result
-    }
 }
 
 @MainActor

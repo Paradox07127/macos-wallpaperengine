@@ -1,10 +1,9 @@
 import CoreGraphics
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("WPE MetalFX upscale plan")
 struct WPEMetalUpscalePlanTests {
-
     private static let hd = CGSize(width: 1920, height: 1080)
     private static let uhd = CGSize(width: 3840, height: 2160)
 
@@ -30,7 +29,7 @@ struct WPEMetalUpscalePlanTests {
 
     // MARK: - Every inactive verdict must be a true no-op
 
-    @Test("Inactive verdicts all render at full resolution and cap no textures")
+    @Test("Inactive verdicts all render at full resolution")
     func inactiveVerdictsAreTrueNoOps() {
         let inactive: [(String, WPEMetalUpscalePlan)] = [
             ("settingOff", Self.plan(renderScale: 1.0)),
@@ -42,7 +41,6 @@ struct WPEMetalUpscalePlanTests {
         for (label, plan) in inactive {
             #expect(plan.isActive == false, "\(label) must not be active")
             #expect(plan.renderPixelScale == 1.0, "\(label) must not scale targets")
-            #expect(plan.maxSourceTextureEdge == nil, "\(label) must not cap textures")
         }
     }
 
@@ -64,8 +62,6 @@ struct WPEMetalUpscalePlanTests {
         let plan = Self.plan()
         #expect(plan.verdict == .active)
         #expect(plan.renderPixelScale == 0.75)
-        // 1920x1080 x 0.75 = 1440x810, longest edge 1440.
-        #expect(plan.maxSourceTextureEdge == 1440)
     }
 
     @Test("A canvas larger than the screen is clamped to the screen BEFORE scaling")
@@ -105,9 +101,6 @@ struct WPEMetalUpscalePlanTests {
         let revived = atLoad.adopting(Self.plan(canvas: Self.uhd, drawable: Self.uhd))
         #expect(revived.verdict == .active)
         #expect(revived.renderPixelScale == 0.75)
-        // The cap is latched separately at upload time, so the refreshed plan
-        // simply reports what it would be.
-        #expect(revived.maxSourceTextureEdge == 2880)
     }
 
     @Test("A present-time decline is sticky across re-planning")
@@ -249,7 +242,6 @@ struct WPEMetalUpscalePlanTests {
             let plan = Self.plan(canvas: canvas, drawable: Self.uhd, renderScale: 1.0)
             #expect(plan.displayFitScale == 1.0)
             #expect(plan.renderPixelScale == 1.0)
-            #expect(plan.maxSourceTextureEdge == nil)
         }
     }
 
@@ -269,16 +261,5 @@ struct WPEMetalUpscalePlanTests {
         // A display reconfiguration can land a frame on a new drawable before
         // the geometry callback arrives; that refusal says nothing about this plan.
         #expect(plan.declineIsConclusive(forDrawableSize: Self.hd) == false)
-    }
-
-    @Test("The texture cap equals the longest edge actually rendered")
-    func textureCapMatchesRenderedEdge() {
-        for (canvas, drawable) in [(Self.hd, Self.uhd), (Self.uhd, Self.hd)] {
-            let plan = Self.plan(canvas: canvas, drawable: drawable)
-            let pixels = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
-                canvas, pixelScale: plan.renderPixelScale
-            )
-            #expect(plan.maxSourceTextureEdge == Int(max(pixels.width, pixels.height)))
-        }
     }
 }

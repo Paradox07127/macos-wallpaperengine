@@ -139,48 +139,6 @@ struct WallpaperFailureSelfCheckTests {
     }
 
     #if !LITE_BUILD
-    @Test("Missed refs carry whether engine assets were searched and the first dependency searched")
-    func resolutionSnapshotMissingResources() {
-        let missedPlain = WPEResolutionEvent(
-            ref: "a.tex",
-            attempts: [.init(origin: .scene, outcome: .fileMissing), .init(origin: .builtin, outcome: .fileMissing)],
-            finalOutcome: .fileMissing
-        )
-        let missedEverywhere = WPEResolutionEvent(
-            ref: "b.tex",
-            attempts: [
-                .init(origin: .scene, outcome: .fileMissing), .init(origin: .dependency("111"), outcome: .fileMissing),
-                .init(origin: .dependency("222"), outcome: .fileMissing), .init(origin: .engineAssets, outcome: .fileMissing),
-            ],
-            finalOutcome: .fileMissing
-        )
-        let resolved = WPEResolutionEvent(ref: "c.tex", attempts: [.init(origin: .scene, outcome: .resolved)], finalOutcome: .resolved)
-        let resources = WPEResolutionDiagnosticsSnapshot(events: [missedPlain, missedEverywhere, resolved]).failureMissingResources
-        #expect(resources == [
-            WallpaperFailureMissingResource(path: "a.tex", searchedEngineAssets: false, dependencyID: nil),
-            WallpaperFailureMissingResource(path: "b.tex", searchedEngineAssets: true, dependencyID: "111"),
-        ])
-
-        let many = (0 ..< 30).map {
-            WPEResolutionEvent(ref: "m\($0).tex", attempts: [.init(origin: .scene, outcome: .fileMissing)], finalOutcome: .fileMissing)
-        }
-        #expect(WPEResolutionDiagnosticsSnapshot(events: many).failureMissingResources.count == 20)
-
-        let repeated = WPEResolutionDiagnosticsSnapshot(events: [missedPlain, missedPlain] + many).failureMissingResources
-        #expect(repeated.count == 20)
-        #expect(repeated.filter { $0.path == "a.tex" }.count == 1)
-    }
-
-    @Test("A decode or format error is not recorded as a missing resource")
-    func otherErrorIsNotMissing() {
-        let missed = WPEResolutionEvent(ref: "a.tex", attempts: [.init(origin: .scene, outcome: .fileMissing)], finalOutcome: .fileMissing)
-        let undecodable = WPEResolutionEvent(
-            ref: "b.tex", attempts: [.init(origin: .scene, outcome: .otherError("decode"))], finalOutcome: .otherError("decode")
-        )
-        let resources = WPEResolutionDiagnosticsSnapshot(events: [missed, undecodable]).failureMissingResources
-        #expect(resources == [WallpaperFailureMissingResource(path: "a.tex", searchedEngineAssets: false, dependencyID: nil)])
-    }
-
     @Test("A stale but resolvable source bookmark is reachable; a deleted folder is not")
     func sourceReachabilityToleratesStaleBookmark() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "selfcheck-\(UUID().uuidString)", directoryHint: .isDirectory)

@@ -165,8 +165,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                          "alpha": ["value": 1, "user": "fade"]]],
         ]
         func document(_ users: [String: WallpaperEngineProjectPropertyValue] = [:]) throws -> WPESceneDocument {
-            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: users,
-                                             makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: users)
         }
         func host(_ animate: Bool) throws -> String {
             let values: [String: Any] = ["animate": ["type": "bool", "value": animate],
@@ -303,8 +302,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                                 "The overflow witness must actually be serialized as a real exponent token")
             }
             return try WPESceneDocumentParser.parse(data: data,
-                                                    userValues: ["toggle": .bool(bloom)],
-                                                    makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+                                                    userValues: ["toggle": .bool(bloom)])
         }
         func host(drive: Bool, iterations: Int = 2, blue: Bool = false) -> String {
             "{\"drive\":{\"type\":\"bool\",\"value\":\(drive)},\"iterations\":{\"type\":\"slider\",\"value\":\(iterations)},\"red\":{\"type\":\"slider\",\"value\":\(blue ? 0 : 1)},\"blue\":{\"type\":\"slider\",\"value\":\(blue ? 1 : 0)}}"
@@ -542,8 +540,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         ]
         func document(_ enabled: Bool) throws -> WPESceneDocument {
             try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
-                                             userValues: ["toggle": .bool(enabled)],
-                                             makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+                                             userValues: ["toggle": .bool(enabled)])
         }
         var previous = try document(false)
         let plan = try WPEParityFramePlan(document: previous, assets: assets,
@@ -611,8 +608,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 "objects": [["id": 1, "camera": "bloom witness", "origin": "0 0 0", "angles": "0 0 0"]],
             ]
             let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
-                                                            userValues: ["toggle": .bool(initial)],
-                                                            makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+                                                            userValues: ["toggle": .bool(initial)])
             let plan = try WPEParityFramePlan(document: document, assets: assets,
                                               settings: .init(bloom: true, hdrPostProcessing: true), width: 32, height: 32)
             XCTAssertTrue(plan.post.hdrEnabled)
@@ -917,8 +913,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
     }
 
     private func parse(_ json: [String: Any]) throws -> WPESceneDocument {
-        try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                         makeTransformScriptResolver: { _, _ in NoPostProcessScripts() })
+        try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
     }
 
     private func postIndex(_ name: String, in plan: WPEParityFramePlan) throws -> Int {
@@ -992,7 +987,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         descriptor.usage = [.renderTarget, .shaderRead]
         let target = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
         let commandBuffer = try XCTUnwrap(queue.makeCommandBuffer())
-        let executor = try WPEMetalRenderExecutor(device: device)
+        let executor = try WPEMetalPresenter(device: device)
         try executor.encodePresentPass(source: renderer.backbuffer, target: target, fitMode: .stretch,
                                        worldSourceSize: nil, uniforms: nil, colorTransfer: renderer.colorTransfer,
                                        into: commandBuffer)
@@ -1093,10 +1088,4 @@ final class WPEParityPostProcessProductTests: XCTestCase {
     }
 }
 
-private struct NoPostProcessScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

@@ -20,7 +20,7 @@ final class ParityScriptConsoleTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
             "objects": [["id": 1, "image": "models/a.json", "size": "64 64",
                          "alpha": ["value": 1, "script": script]]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         var logs: [String] = []
         let engine = try WPEParityScriptEngine(document: document, state: state, configuration: .init(
@@ -39,12 +39,5 @@ final class ParityScriptConsoleTests: XCTestCase {
         return WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
             path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
         }])
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

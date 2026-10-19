@@ -132,8 +132,7 @@ final class WPEParityModelSceneTests: XCTestCase {
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoModelScripts() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                       width: Self.width, height: Self.height)
@@ -158,10 +157,4 @@ final class WPEParityModelSceneTests: XCTestCase {
     }
 }
 
-private struct NoModelScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

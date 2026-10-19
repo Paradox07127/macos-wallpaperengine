@@ -13,7 +13,7 @@ struct WPESceneSpanPresenterTests {
     private struct Fixture {
         let presenter: WPESceneSpanPresenter
         let frames: WPESceneSpanFrames
-        let source: WPEMetalRenderExecutor
+        let source: WPEMetalPresenter
 
         func publish(sequence: UInt64) throws {
             let size = CGSize(width: 16, height: 16)
@@ -55,7 +55,7 @@ struct WPESceneSpanPresenterTests {
             state: WPESceneSpanPresentationState(), producer: WPEDisplayRenderActor(backing: .main),
             configuration: .init(canvasFrame: canvas, screenFrame: canvas), density: 1
         )
-        let source = try WPEMetalRenderExecutor(device: device)
+        let source = try WPEMetalPresenter(device: device)
         source.spanOutputTextureLimit = 4
         return Fixture(presenter: presenter, frames: frames, source: source)
     }

@@ -381,7 +381,7 @@ final class AmbientWallpaperSessionBuilder {
         )
         var inputs = WPEParitySceneInputs(
             descriptor: descriptor,
-            entryResolver: assets.provider.map { SceneResourceResolver(provider: $0, cacheRootURL: cacheURL) }
+            entryResolver: assets.provider.map { SceneResourceResolver(provider: $0) }
                 ?? SceneResourceResolver(cacheRootURL: cacheURL),
             projectRoot: assets.projectRoot,
             assets: WPEParitySceneAssets.make(provider: assets.provider, projectRoot: assets.projectRoot,

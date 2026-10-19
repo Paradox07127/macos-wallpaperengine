@@ -165,7 +165,7 @@ enum WPEParityTextureLoader {
                                                       digest: cacheSource.digest, device: device) {
             return cached
         }
-        let payload = try decoder.extractTexturePayload(span: span, scope: .fullChain, allowRawVolume: true,
+        let payload = try decoder.extractTexturePayload(span: span, allowRawVolume: true,
                                                         conditionalProperties: userProperties).get()
         guard payload.videoPayload == nil else { throw WPETexDecodeError.unsupportedAnimation }
         guard !payload.hasConditionalVariants || payload.conditionalSelection != nil else {

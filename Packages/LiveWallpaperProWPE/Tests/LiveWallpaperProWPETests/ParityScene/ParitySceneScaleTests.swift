@@ -229,12 +229,6 @@ struct ParitySceneScaleTests {
     }
 
     @Test func fullscreenViewportResizesTheDeclarationBeforeForeignReadersResolve() throws {
-        struct NoScripts: WPESceneTransformScriptResolving {
-            func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                             seed _: SIMD3<Double>) -> SIMD3<Double>? {
-                nil
-            }
-        }
         let resources: [String: Any] = [
             "models/full.json": ["fullscreen": true, "material": "materials/base.json"],
             "models/reader.json": ["material": "materials/base.json"],
@@ -263,7 +257,7 @@ struct ParitySceneScaleTests {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let program = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         for (viewport, expected) in [(SIMD2(3840, 2160), SIMD2(1920, 1080)),
                                      (SIMD2(2560, 1440), SIMD2(1280, 720))] {

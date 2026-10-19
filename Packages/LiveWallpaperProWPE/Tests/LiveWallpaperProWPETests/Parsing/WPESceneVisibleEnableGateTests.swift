@@ -8,15 +8,6 @@ import Testing
 /// from `value` while the gate is satisfied would leave the layer switched off.
 @Suite("Script-form visible honours its enable gate")
 struct WPESceneVisibleEnableGateTests {
-
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script: String,
-            properties: [String: WPESceneScriptPropertyValue],
-            seed: SIMD3<Double>
-        ) -> SIMD3<Double>? { nil }
-    }
-
     private func scene(display: String?) throws -> WPESceneDocument {
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -46,8 +37,7 @@ struct WPESceneVisibleEnableGateTests {
         if let display { userValues["display"] = .string(display) }
         return try WPESceneDocumentParser.parse(
             data: try JSONSerialization.data(withJSONObject: payload),
-            userValues: userValues,
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: userValues
         )
     }
 
@@ -94,8 +84,7 @@ struct WPESceneVisibleEnableGateTests {
         let data = try JSONSerialization.data(withJSONObject: payload)
         return try WPESceneDocumentParser.parse(
             data: data,
-            userValues: userValues,
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: userValues
         )
     }
 

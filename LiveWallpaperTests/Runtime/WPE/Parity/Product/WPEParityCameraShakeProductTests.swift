@@ -71,7 +71,7 @@ extension WPEParitySceneDriverTests {
                 : ["id": 1, "camera": "activity witness", "origin": "0 0 0"]
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
                 "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general, "objects": [object],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         func host(drive: Bool = true, enabled: Bool = true, amplitude: Double = 25, speed: Double = 0,
                   roughness: Double = 1, parallax: Bool = false) throws -> String {

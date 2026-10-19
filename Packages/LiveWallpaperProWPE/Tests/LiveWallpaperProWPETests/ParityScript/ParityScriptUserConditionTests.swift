@@ -95,7 +95,7 @@ final class ParityScriptUserConditionTests: XCTestCase {
             "objects": objects,
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -110,12 +110,5 @@ final class ParityScriptUserConditionTests: XCTestCase {
             volume: { _, _ in }, command: { _, _, _ in false }
         )
         return Scene(engine: engine, state: state)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

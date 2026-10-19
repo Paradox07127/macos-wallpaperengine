@@ -86,8 +86,7 @@ final class ParityModelDataTransactionTests: XCTestCase {
     private static func document(_ objects: [[String: Any]]) throws -> WPESceneDocument {
         let source: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                                      "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in TransactionNoScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
     }
 }
 
@@ -100,12 +99,5 @@ private final class CPUPreparedShape: WPEParityModelDataPreparedShape {
 
     init(tag: Int) {
         self.tag = tag
-    }
-}
-
-private struct TransactionNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

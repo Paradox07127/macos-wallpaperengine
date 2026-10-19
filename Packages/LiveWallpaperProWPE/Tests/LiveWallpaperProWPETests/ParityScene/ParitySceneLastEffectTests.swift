@@ -151,8 +151,7 @@ final class ParitySceneUniqueFBOWorkshopTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try ParityProgramPuppetTests.unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: WPEParityProgramAssets(sceneDirectory: root,
                                                                                              assetRoots: [wpeAssets]),
                                           settings: WPEParityProgramSettings())
@@ -180,12 +179,5 @@ final class ParitySceneUniqueFBOWorkshopTests: XCTestCase {
         let composed = try WPEParityFrameComposer.compose(scene: scene.scene, post: post)
         XCTAssertTrue(composed.resources.contains { $0.id == "_rt_MipMappedFrameBuffer" })
         _ = try WPERenderGraphCompiler.compile(resources: composed.resources, operations: composed.operations)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

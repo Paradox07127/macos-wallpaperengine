@@ -56,8 +56,7 @@ struct ParityProgramCaptureFixture {
 
     func document(_ sceneID: String) throws -> WPESceneDocument {
         let data = try Data(contentsOf: root.appendingPathComponent("scene-sources/\(sceneID)/scene.json"))
-        return try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoScriptResolver() })
+        return try WPESceneDocumentParser.parse(data: data, userValues: [:])
     }
 
     func run(_ sceneID: String, captureRange: ClosedRange<Int>,
@@ -138,12 +137,5 @@ struct ParityProgramCaptureFixture {
             }
         }
         return (Int.max, "same lines, bytes differ")
-    }
-}
-
-private struct NoScriptResolver: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -9,7 +9,7 @@ struct WPEDisplayHDROutputTests {
     @Test("off keeps the 8-bit sRGB drawable the pre-feature path used")
     func offKeepsLegacyFormat() {
         // Working attachments and the display attachment have distinct transfer contracts.
-        #expect(WPEMetalRenderExecutor.outputPixelFormat == .rgba8Unorm)
+        #expect(WPEMetalPresenter.outputPixelFormat == .rgba8Unorm)
         #expect(WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: false) == .rgba8Unorm_srgb)
     }
 

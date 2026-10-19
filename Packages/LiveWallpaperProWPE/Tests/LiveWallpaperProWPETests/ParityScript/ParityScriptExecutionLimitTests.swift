@@ -181,7 +181,7 @@ final class ParityScriptExecutionLimitTests: XCTestCase {
                          "alpha": ["value": 1, "script": script]]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoLimitTestTransformScripts() })
+                                                        userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -193,11 +193,5 @@ final class ParityScriptExecutionLimitTests: XCTestCase {
         let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { snapshot[$0] }])
         return (document, state, .init(assets: assets, canvasSize: SIMD2(64, 64), screenResolution: SIMD2(64, 64),
                                        executionLimits: limits ?? self.limits))
-    }
-}
-
-private struct NoLimitTestTransformScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue], seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

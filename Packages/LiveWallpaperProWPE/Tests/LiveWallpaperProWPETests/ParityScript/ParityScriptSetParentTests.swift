@@ -93,18 +93,10 @@ final class ParityScriptSetParentTests: XCTestCase {
                 ["id": 3, "name": "C", "image": "models/c.json", "size": "16 16"],
             ],
         ]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoTransformScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
     }
 }
 
 private final class LogLines {
     var lines: [String] = []
-}
-
-private struct NoTransformScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
 }

@@ -666,8 +666,7 @@ extension WPEParitySceneDriverTests {
         general["precache"] = precache
         let data = try JSONSerialization.data(withJSONObject: ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                                                                "general": general, "objects": objects], options: [.sortedKeys])
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         if withSound {
             let sound = try XCTUnwrap(document.soundObjects.first)
             let resolver = try XCTUnwrap(soundResolver)

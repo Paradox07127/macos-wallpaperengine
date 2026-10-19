@@ -240,7 +240,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         hasPresentedFrame = snapshot.hasPresentedFrame
         rendererDiagnostics = SceneRendererDiagnostics(
             loadDiagnostics: snapshot.loadDiagnostics,
-            resolution: snapshot.resolution,
+
             shaderErrors: .init(
                 count: snapshot.shaderErrorCount,
                 entries: snapshot.shaderErrors.map { .init(shader: $0.shader, reason: $0.reason) }

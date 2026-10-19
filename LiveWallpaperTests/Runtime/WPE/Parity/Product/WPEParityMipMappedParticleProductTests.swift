@@ -208,7 +208,7 @@ extension WPEParitySceneDriverTests {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var flags = WPEEngineComboFlags()
         flags.orthographicProjection = true
         let probes = WPEParityParticleScene.materialProbes(document: document, assets: assets, engineFlags: flags)

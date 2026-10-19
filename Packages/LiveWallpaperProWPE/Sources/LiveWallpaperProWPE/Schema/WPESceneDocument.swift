@@ -695,61 +695,6 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         self.scaleScript = scaleScript
         self.anglesScript = anglesScript
     }
-
-    public func resolvedAlpha(at time: Double) -> Double {
-        alphaAnimation?.scalar(at: time) ?? alpha
-    }
-
-    /// `liveColor` is the `color` SceneScript output; nil keeps the authored tint.
-    public func withLiveText(
-        _ liveText: String,
-        alpha liveAlpha: Double,
-        color liveColor: SIMD3<Double>? = nil
-    ) -> WPESceneTextObject {
-        WPESceneTextObject(
-            id: id,
-            name: name,
-            text: liveText,
-            textScript: textScript,
-            scriptProperties: scriptProperties,
-            fontRelativePath: fontRelativePath,
-            pointSize: pointSize,
-            color: liveColor ?? color,
-            brightness: brightness,
-            alpha: liveAlpha,
-            alphaAnimation: alphaAnimation,
-            origin: origin,
-            scale: scale,
-            angles: angles,
-            visible: visible,
-            horizontalAlignment: horizontalAlignment,
-            verticalAlignment: verticalAlignment,
-            maxWidth: maxWidth,
-            maxRows: maxRows,
-            limitUseEllipsis: limitUseEllipsis,
-            parallaxDepth: parallaxDepth,
-            boxSize: boxSize,
-            padding: padding,
-            copyBackground: copyBackground,
-            opaqueBackground: opaqueBackground,
-            backgroundColor: backgroundColor,
-            backgroundBrightness: backgroundBrightness,
-            effects: effects,
-            spacing: spacing,
-            parentObjectID: parentObjectID,
-            localOrigin: localOrigin,
-            localScale: localScale,
-            localAngles: localAngles,
-            alphaScript: alphaScript,
-            alphaScriptProperties: alphaScriptProperties,
-            visibleScript: visibleScript,
-            visibleScriptProperties: visibleScriptProperties,
-            originScript: originScript,
-            colorScript: colorScript,
-            scaleScript: scaleScript,
-            anglesScript: anglesScript
-        )
-    }
 }
 
 public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
@@ -1622,26 +1567,6 @@ public struct WPESceneAnimatedValue: Equatable, Sendable {
         self.parentKey = parentKey
     }
 
-    /// Unauthored channels keep the authored origin; relative origins add sampled offsets to it.
-    public func originVector(at time: Double) -> [Double]? {
-        guard let vectorFallback else { return vector(at: time) }
-        guard relative else {
-            let sampled = animation.values(at: time, fallbacks: vectorFallback)
-            return sampled + vectorFallback.dropFirst(sampled.count)
-        }
-        let offsets = animation.values(at: time, fallbacks: Array(repeating: 0, count: vectorFallback.count))
-        return vectorFallback.enumerated().map { index, seed in
-            seed + (offsets.indices.contains(index) ? offsets[index] : 0)
-        }
-    }
-
-    public func resolvedValue(at time: Double) -> WPESceneShaderConstantValue {
-        if let vectorFallback, animation.tracks.count > 1 {
-            return .vector(animation.values(at: time, fallbacks: vectorFallback))
-        }
-        return .number(scalar(at: time) ?? scalarFallback ?? 0)
-    }
-
     public func scalar(at time: Double) -> Double? {
         let fallback = scalarFallback ?? vectorFallback?.first ?? 0
         return animation.values(at: time, fallbacks: [fallback]).first
@@ -1682,13 +1607,6 @@ public enum WPESceneShaderConstantValue: Equatable, Sendable {
         default:
             return nil
         }
-    }
-
-    public func resolved(at time: Double) -> WPESceneShaderConstantValue {
-        if case .animated(let value) = self {
-            return value.resolvedValue(at: time)
-        }
-        return self
     }
 }
 

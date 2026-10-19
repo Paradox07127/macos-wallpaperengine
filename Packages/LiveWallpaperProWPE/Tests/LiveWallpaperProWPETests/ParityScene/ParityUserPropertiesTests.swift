@@ -12,8 +12,7 @@ final class ParityUserPropertiesTests: XCTestCase {
         """#
         func document(_ bloom: WallpaperEngineProjectPropertyValue, alpha: Double = 1) throws -> WPESceneDocument {
             try WPESceneDocumentParser.parse(data: Data(source.utf8),
-                                             userValues: ["toggle": bloom, "fade": .number(alpha)],
-                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+                                             userValues: ["toggle": bloom, "fade": .number(alpha)])
         }
         let before = try document(.bool(false))
         let enabled = try document(.bool(true))
@@ -68,8 +67,7 @@ final class ParityUserPropertiesTests: XCTestCase {
          "objects":[{"id":1,"image":"models/surface.json"}]}
         """#
         func document(_ zoom: Double) throws -> WPESceneDocument {
-            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["lens": .number(zoom)],
-                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["lens": .number(zoom)])
         }
         let before = try document(1)
         XCTAssertEqual(WPEParityUserProperties.bindings(document: before)["lens"]?.first?.action, .incremental)
@@ -94,8 +92,7 @@ final class ParityUserPropertiesTests: XCTestCase {
                       flag: Bool = true) throws -> WPESceneDocument {
             try WPESceneDocumentParser.parse(data: Data(source.utf8),
                                              userValues: ["lens": .number(lens), "angle": .number(angle),
-                                                          "depth": depth, "flag": .bool(flag)],
-                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+                                                          "depth": depth, "flag": .bool(flag)])
         }
         let before = try document()
         let bindings = WPEParityUserProperties.bindings(document: before)
@@ -163,8 +160,7 @@ final class ParityUserPropertiesTests: XCTestCase {
          ]}
         """#
         let document = try WPESceneDocumentParser.parse(data: Data(source.utf8),
-                                                        userValues: ["flag": .bool(true), "depth": .string("0.5")],
-                                                        makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+                                                        userValues: ["flag": .bool(true), "depth": .string("0.5")])
         let images = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0.parallaxDepth) })
         XCTAssertEqual(images["1"], SIMD2(0.25, 0.5))
         XCTAssertEqual(images["2"], SIMD2(0.5, 0))
@@ -184,8 +180,7 @@ final class ParityUserPropertiesTests: XCTestCase {
          ]}
         """#
         func document(_ flag: Bool) throws -> WPESceneDocument {
-            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["flag": .bool(flag)],
-                                             makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+            try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: ["flag": .bool(flag)])
         }
         let on = try document(true)
         let image = try XCTUnwrap(on.imageObjects.first { $0.id == "1" })
@@ -326,8 +321,7 @@ final class ParityUserPropertiesTests: XCTestCase {
                     "scriptproperties":{"level":{"user":"level","value":1}}}}
          ]}
         """#
-        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues,
-                                                makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues)
     }
 
     /// Puppet image 20 (animation layer visible/rate), text 5 (effect 7 constant), directional light 150 (intensity),
@@ -354,8 +348,7 @@ final class ParityUserPropertiesTests: XCTestCase {
                        "passes":[{"constantshadervalues":{"speed":{"user":"quadspeed","value":1}}}]}]}
          ]}
         """#
-        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues,
-                                                makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        return try WPESceneDocumentParser.parse(data: Data(source.utf8), userValues: userValues)
     }
 
     /// Image layers drawing `shaders/probe` through `materials/k.json` (user `k`, value 2.3) or `materials/m.json`
@@ -394,8 +387,7 @@ final class ParityUserPropertiesTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
             "objects": objects,
         ])
-        let document = try WPESceneDocumentParser.parse(data: sceneJSON, userValues: userValues,
-                                                        makeTransformScriptResolver: { _, _ in UserPropertiesNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: sceneJSON, userValues: userValues)
         var assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [])
         assets.userValues = userValues
         return (document, WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings()))
@@ -456,12 +448,5 @@ private extension Data {
         for value in [position.x, position.y, position.z, 0, 0, 1, 1, 0, 0, 1, uv.x, uv.y] {
             appendLittleEndian(value)
         }
-    }
-}
-
-private struct UserPropertiesNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

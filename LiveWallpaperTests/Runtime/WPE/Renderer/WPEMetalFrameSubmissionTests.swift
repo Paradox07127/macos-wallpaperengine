@@ -58,7 +58,7 @@ struct WPEMetalFrameSubmissionTests {
     @Test("Span output textures stay owned by consumers and shed stall allocations after release")
     func spanOutputOwnershipAndRecovery() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let executor = try WPEMetalRenderExecutor(device: device)
+        let executor = try WPEMetalPresenter(device: device)
         executor.spanOutputTextureLimit = 8
         let size = CGSize(width: 64, height: 64)
         var held: [MTLTexture] = []

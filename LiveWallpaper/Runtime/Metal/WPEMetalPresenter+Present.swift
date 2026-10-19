@@ -13,7 +13,7 @@ import simd
 /// across every executor instance (misses tend to burst on all displays at once).
 private let presentDrawableMissCount = OSAllocatedUnfairLock(initialState: 0)
 
-extension WPEMetalRenderExecutor {
+extension WPEMetalPresenter {
     /// Own command buffer: static re-present and sync/readback.
     func present(
         texture source: MTLTexture,
@@ -25,7 +25,7 @@ extension WPEMetalRenderExecutor {
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil
     ) throws -> Bool {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         guard try encodePresent(
@@ -86,8 +86,8 @@ extension WPEMetalRenderExecutor {
         var encodedByUpscaler = false
         if uniforms == nil {
             encodedByUpscaler = try encodeUpscaledPresent(source: source, target: drawable.texture,
-                                                         fitMode: fitMode, colorTransfer: colorTransfer,
-                                                         into: commandBuffer)
+                                                          fitMode: fitMode, colorTransfer: colorTransfer,
+                                                          into: commandBuffer)
         }
         if !encodedByUpscaler {
             // The plan sized this frame down expecting the scaler to restore it. It declined, so give up scaling for the rest of the scene rather than shipping a permanently bilinear-stretched low-resolution frame.
@@ -125,14 +125,10 @@ extension WPEMetalRenderExecutor {
         let sourceID = ObjectIdentifier(source)
         let completionSource = PresentCompletionTexture(texture: source)
         let tracker = presentTracker
-        let sink = gpuErrorSink
         tracker.increment(sourceID)
         commandBuffer.addCompletedHandler { cb in
             let releaseSource: @Sendable () -> Void = {
                 tracker.decrement(sourceID)
-            }
-            if cb.status == .error {
-                sink.record("present: \(cb.error?.localizedDescription ?? "unknown")")
             }
             if let presentCompletion {
                 presentCompletion(completionSource.texture, cb, releaseSource)
@@ -175,7 +171,9 @@ extension WPEMetalRenderExecutor {
         source: MTLTexture, colorTransfer: WPEPresentColorTransfer, into commandBuffer: MTLCommandBuffer
     ) throws -> MTLTexture {
         // The parity HDR tail has already converted its RGB. The scaler can read that float texture directly.
-        if colorTransfer == .linear { return source }
+        if colorTransfer == .linear {
+            return source
+        }
         if linearPresentationTexture?.width != source.width || linearPresentationTexture?.height != source.height {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false
@@ -185,7 +183,7 @@ extension WPEMetalRenderExecutor {
             linearPresentationTexture = device.makeTexture(descriptor: descriptor)
         }
         guard let destination = linearPresentationTexture else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination
@@ -196,7 +194,7 @@ extension WPEMetalRenderExecutor {
             colorPixelFormat: .rgba16Float
         )
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(source, index: 0)
@@ -233,7 +231,7 @@ extension WPEMetalRenderExecutor {
         )
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "present")
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         encoder.applyTraceLabel("present")
         WPEFrameOccupancyMeter.count(.presentEncoder)
@@ -250,6 +248,5 @@ extension WPEMetalRenderExecutor {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
     }
-
 }
 #endif

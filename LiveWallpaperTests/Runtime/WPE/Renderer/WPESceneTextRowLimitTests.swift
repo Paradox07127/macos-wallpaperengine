@@ -36,17 +36,6 @@ struct WPESceneTextRowLimitTests {
         #expect(zero.maxRows == 1)
     }
 
-    @Test("Row-limit fields survive the per-frame withLiveText copy")
-    func rowLimitSurvivesLiveTextCopy() throws {
-        let object = try textObject(
-            #""limitrows": true, "maxrows": 2, "limituseellipsis": true, "limitwidth": true, "maxwidth": 500"#
-        )
-        let live = object.withLiveText("world", alpha: 1)
-        #expect(live.text == "world")
-        #expect(live.maxRows == 2, "maxRows dropped by withLiveText")
-        #expect(live.limitUseEllipsis, "limitUseEllipsis dropped by withLiveText")
-        #expect(live.maxWidth == object.maxWidth, "control: a pre-existing field still survives")
-    }
 }
 
 struct WPEParticleInstanceControlPointTests {

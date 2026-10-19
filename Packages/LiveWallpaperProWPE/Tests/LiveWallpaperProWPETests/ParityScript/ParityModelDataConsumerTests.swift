@@ -202,8 +202,7 @@ final class ParityModelDataConsumerTests: XCTestCase {
                                    "general": ["orthogonalprojection": ["width": 64, "height": 64]],
                                    "objects": [["id": 1, "name": "owner", "image": "models/a.json", "size": "64 64",
                                                 "alpha": ["value": 1, "script": script]]]]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
     }
 
     private static func bytes(_ values: [some Any]) -> Data {
@@ -218,11 +217,4 @@ final class ParityModelDataConsumerTests: XCTestCase {
 /// Thread.start orders the hand-off to the release thread and the semaphore orders it back; never touched concurrently.
 private final class EngineBox: @unchecked Sendable {
     var engine: WPEParityScriptEngine?
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
 }

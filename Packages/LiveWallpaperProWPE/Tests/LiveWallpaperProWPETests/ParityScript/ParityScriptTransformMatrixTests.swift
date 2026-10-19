@@ -29,7 +29,7 @@ final class ParityScriptTransformMatrixTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -56,12 +56,5 @@ final class ParityScriptTransformMatrixTests: XCTestCase {
         XCTAssertEqual(queried.map(\.0), ["1"])
         XCTAssertEqual(queried.map(\.1), [.image])
         XCTAssertEqual(logs.filter { $0.contains("getTransformMatrix") }.count, 1, logs.joined(separator: "\n"))
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -40,12 +40,6 @@ struct WPESceneSectionStateTests {
     }
 
     @MainActor
-    @Test("A Metal renderer gap reads as an effect Loomscreen can't render, not a damaged project file")
-    func metalRendererGapMapping() {
-        #expect(SceneRenderState.mapToFallbackReason(.metalRendererUnsupported(reason: "target format")) == .sceneShaderUnsupported)
-    }
-
-    @MainActor
     @Test("A capability gap never offers Retry, and damage keeps its re-download advice")
     func diagnosticAdviceMatchesCause() {
         #expect(SceneRenderState.fallbackReason(for: .materialUnresolved(layer: "scene", reason: "no passes")) == .sceneShaderUnsupported)
@@ -53,7 +47,6 @@ struct WPESceneSectionStateTests {
             .texture(layer: "bg", error: .unsupportedFormat(code: 8)),
             .texture(layer: "bg", error: .metalUnavailable(format: .bc7)),
             .texture(layer: "bg", error: .unsupportedAnimation),
-            .legacyUnsupportedTexture(layer: "bg"),
         ]
         for diagnostic in capabilityGaps {
             let reason = SceneRenderState.fallbackReason(for: diagnostic)

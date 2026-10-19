@@ -99,8 +99,7 @@ extension WPEParitySceneDriverTests {
                         "clearcolor": "0 0 0", "bloom": false, "camerashake": false, "cameraparallax": false],
             "objects": objects,
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         let assets = WPEParityProgramAssets(sources: [.directory(scratch)] + original.sources)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)

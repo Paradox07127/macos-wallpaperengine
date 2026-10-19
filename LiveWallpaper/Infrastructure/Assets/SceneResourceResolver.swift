@@ -10,7 +10,6 @@ struct SceneResourceResolver: Sendable {
         case pathEscape
         case fileMissing
         case decodeFailed
-        case unsupportedTexture
         case texture(WPETexDecodeError)
         /// image → model/material JSON with no resolvable texture.
         case materialUnresolved(reason: String)
@@ -18,87 +17,25 @@ struct SceneResourceResolver: Sendable {
         case builtinLayerUnavailable(reason: String)
     }
 
-    /// Directory-backed cache root for diagnostics only (reads use `provider`).
-    let cacheRootURL: URL?
     private let provider: any WPESceneAssetProvider
     private let decoder: WPETexDecoder
     private static let rawImageExtensions: Set<String> = [
         "png", "jpg", "jpeg", "tga", "dds", "bmp", "gif", "webp"
     ]
 
-    private static func isTexturePayloadPath(_ relativePath: String) -> Bool {
-        let extensionName = (relativePath as NSString).pathExtension.lowercased()
-        return extensionName == "tex" || extensionName.isEmpty
-    }
-
     init(cacheRootURL: URL, decoder: WPETexDecoder = WPETexDecoder()) {
         let normalized = cacheRootURL.standardizedFileURL.resolvingSymlinksInPath()
-        self.cacheRootURL = normalized
         self.provider = WPEDirectorySceneAssetProvider(rootURL: normalized)
         self.decoder = decoder
     }
 
-    init(provider: any WPESceneAssetProvider, cacheRootURL: URL? = nil, decoder: WPETexDecoder = WPETexDecoder()) {
-        self.cacheRootURL = cacheRootURL
+    init(provider: any WPESceneAssetProvider, decoder: WPETexDecoder = WPETexDecoder()) {
         self.provider = provider
         self.decoder = decoder
     }
 
-    private func dumpRawTexMetadataIfActive(payload: WPEMappedByteSpan, targetName: String) {
-        guard WPESceneDebugArtifacts.shared.activeSessionFolder != nil else { return }
-        guard case .success(let metadata) = decoder.extractRawMetadata(span: payload) else { return }
-        WPESceneDebugArtifacts.shared.dumpRawTexMetadata(
-            name: (targetName as NSString).lastPathComponent,
-            info: metadata.info,
-            bitmap: metadata.bitmap
-        )
-    }
-
-    /// Full-resolution pixel size; differs from `image` only when `maxSourceEdge` produced a thumbnail.
-    /// World layout falls back to this when a layer authors no explicit size.
     struct ResolvedImage {
         let image: CGImage
-        let sourcePixelWidth: Int
-        let sourcePixelHeight: Int
-
-        init(image: CGImage, sourcePixelWidth: Int? = nil, sourcePixelHeight: Int? = nil) {
-            self.image = image
-            self.sourcePixelWidth = sourcePixelWidth ?? image.width
-            self.sourcePixelHeight = sourcePixelHeight ?? image.height
-        }
-    }
-
-    struct ResolvedTextureFormatProbe: Sendable {
-        let relativePath: String
-        let texPayload: WPEMappedByteSpan?
-    }
-
-    func resolveTextureFormatProbe(relativePath: String) throws -> ResolvedTextureFormatProbe {
-        guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
-        let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
-        let extensionName = (resolvedPath as NSString).pathExtension.lowercased()
-
-        if Self.isTexturePayloadPath(resolvedPath) {
-            do {
-                return try ResolvedTextureFormatProbe(
-                    relativePath: resolvedPath,
-                    texPayload: providerWindow(resolvedPath)
-                )
-            } catch ResolveError.fileMissing where extensionName == "tex" {
-                // Match resolveImageCandidate's missing-TEX raster fallback.
-                if let sibling = rasterSiblingPaths(forMissingTexPath: resolvedPath).first(where: {
-                    provider.exists(atRelativePath: $0)
-                }) {
-                    return ResolvedTextureFormatProbe(relativePath: sibling, texPayload: nil)
-                }
-                throw ResolveError.fileMissing
-            }
-        }
-
-        guard provider.exists(atRelativePath: resolvedPath) else {
-            throw ResolveError.fileMissing
-        }
-        return ResolvedTextureFormatProbe(relativePath: resolvedPath, texPayload: nil)
     }
 
     func resolveImage(relativePath: String, maxSourceEdge: Int? = nil) throws -> ResolvedImage {
@@ -131,7 +68,7 @@ struct SceneResourceResolver: Sendable {
                 }
                 throw ResolveError.fileMissing
             }
-            dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
+
             switch decoder.decode(span: payload) {
             case .success(let image):
                 return ResolvedImage(image: image)
@@ -203,56 +140,13 @@ struct SceneResourceResolver: Sendable {
                 kCGImageSourceThumbnailMaxPixelSize: maxSourceEdge
             ]
             if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) {
-                // Carry pre-thumbnail dimensions: world size must stay the asset's, not the capped resolution.
-                return ResolvedImage(
-                    image: thumbnail,
-                    sourcePixelWidth: width,
-                    sourcePixelHeight: height
-                )
+                return ResolvedImage(image: thumbnail)
             }
         }
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw ResolveError.decodeFailed
         }
         return ResolvedImage(image: image)
-    }
-
-    /// `scope` narrows which mip levels the decoder LZ4-inflates to the ones the upload will read; default is the whole chain.
-    func resolveTexturePayload(
-        relativePath: String,
-        scope: WPETexMipInflateScope = .fullChain
-    ) throws -> WPETexTexturePayload {
-        guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
-        let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
-        guard Self.isTexturePayloadPath(resolvedPath) else {
-            throw ResolveError.unsupportedTexture
-        }
-
-        let payload = try providerWindow(resolvedPath)
-        dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-        switch decoder.extractTexturePayload(span: payload, scope: scope) {
-        case .success(let texture):
-            return texture
-        case .failure(let error):
-            throw ResolveError.texture(error)
-        }
-    }
-
-    func resolveStreamingTexturePayload(relativePath: String) throws -> WPETexStreamingPayload {
-        guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
-        let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
-        guard Self.isTexturePayloadPath(resolvedPath) else {
-            throw ResolveError.unsupportedTexture
-        }
-
-        let payload = try providerWindow(resolvedPath)
-        dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-        switch decoder.extractStreamingPayload(span: payload) {
-        case .success(let streaming):
-            return streaming
-        case .failure(let error):
-            throw ResolveError.texture(error)
-        }
     }
 
     private func resolveImageReference(relativePath: String, depth: Int) throws -> String {
@@ -312,63 +206,6 @@ struct SceneResourceResolver: Sendable {
         }
         return nil
     }
-
-    func probeImage(relativePath: String) -> Result<WPETexInfo, ResolveError> {
-        guard !relativePath.isEmpty else { return .failure(.fileMissing) }
-        guard provider.exists(atRelativePath: relativePath) else {
-            return .failure(.fileMissing)
-        }
-        guard (relativePath as NSString).pathExtension.lowercased() == "tex" else {
-            return .failure(.unsupportedTexture)
-        }
-        let span: WPEMappedByteSpan
-        do {
-            span = try provider.mappedWindow(atRelativePath: relativePath)
-        } catch {
-            return .failure(.fileMissing)
-        }
-        switch decoder.probe(span: span) {
-        case .success(let info):
-            guard info.format?.isPhase21Decodable == true else {
-                return .success(info)
-            }
-            switch decoder.decode(span: span) {
-            case .success:
-                break
-            case .failure(let error):
-                return .failure(.texture(error))
-            }
-            return .success(info)
-        case .failure(let error):
-            return .failure(.texture(error))
-        }
-    }
-
-    #if DEBUG
-    func probeRenderableImage(relativePath: String) -> Result<Void, ResolveError> {
-        guard !relativePath.isEmpty else { return .failure(.fileMissing) }
-        let resolvedPath: String
-        do {
-            resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
-        } catch let error as ResolveError {
-            return .failure(error)
-        } catch {
-            return .failure(.fileMissing)
-        }
-
-        let lowered = (resolvedPath as NSString).pathExtension.lowercased()
-        if lowered == "tex" {
-            switch probeImage(relativePath: resolvedPath) {
-            case .success(let info):
-                return info.format?.isPhase21Decodable == true ? .success(()) : .failure(.unsupportedTexture)
-            case .failure(let error):
-                return .failure(error)
-            }
-        }
-
-        return exists(relativePath: resolvedPath) ? .success(()) : .failure(.fileMissing)
-    }
-    #endif
 
     func exists(relativePath: String) -> Bool {
         imageStorageCandidates(for: relativePath).contains { candidate in

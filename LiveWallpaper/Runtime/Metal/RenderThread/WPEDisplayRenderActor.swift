@@ -677,7 +677,7 @@ actor WPEDisplayRenderActor {
     }
 
     /// Export uses the normal frame and terminal colour pass, without acquiring a window drawable.
-    func renderMovieFrame(into destination: WPEMetalRenderExecutor.PresentCompletionTexture) async throws {
+    func renderMovieFrame(into destination: WPEMetalPresenter.PresentCompletionTexture) async throws {
         try Task.checkCancellation()
         if let parityDriver {
             if parityDriver.needsReplan {
@@ -686,7 +686,7 @@ actor WPEDisplayRenderActor {
             try await parityDriver.renderMovieFrame(into: destination, timestamp: CACurrentMediaTime())
             return
         }
-        throw WPEMetalRenderExecutorError.noRenderablePasses
+        throw WPEMetalRenderError.noRenderablePasses
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {
@@ -707,7 +707,7 @@ actor WPEDisplayRenderActor {
                 failedPresentGeneration: parityDriver.failedPresentGeneration,
                 hasPresentedFrame: parityDriver.hasPresentedFrame,
                 loadDiagnostics: parityDriver.loadDiagnostics,
-                resolution: WPEResolutionDiagnosticsSnapshot(events: []),
+
                 shaderErrors: shader.entries.map { .init(shader: $0.shader, reason: $0.reason) },
                 shaderErrorCount: shader.count,
                 gpuErrorCount: parityDriver.gpuErrorSummary.count,
@@ -749,7 +749,6 @@ struct WPERendererStateSnapshot: Sendable {
     let failedPresentGeneration: Int?
     let hasPresentedFrame: Bool
     let loadDiagnostics: SceneLoadDiagnostic?
-    let resolution: WPEResolutionDiagnosticsSnapshot
     let shaderErrors: [ShaderError]
     let shaderErrorCount: Int
     let gpuErrorCount: Int

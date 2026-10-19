@@ -63,7 +63,7 @@ final class ParitySoundConsumerTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in SoundNoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let base = try Data(contentsOf: fixture)
         let assets = WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
@@ -168,10 +168,3 @@ final class ParitySoundConsumerTests: XCTestCase {
 }
 
 private enum ScopeExit: Error { case forced }
-
-private struct SoundNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}

@@ -65,7 +65,7 @@ struct WPEMetalSnapshotQueueCacheTests {
             height: 64,
             mipmapped: false
         )
-        // Verbatim from WPEMetalRenderExecutor.makeOutputTexture.
+        // Verbatim from WPEMetalPresenter.makeOutputTexture.
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .private
         let texture = try #require(device.makeTexture(descriptor: descriptor))

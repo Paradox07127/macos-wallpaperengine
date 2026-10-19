@@ -196,7 +196,6 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
                 bytesPerRow: bytesPerRow
             )
         }
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: .straightColor)
         return texture
     }
 }

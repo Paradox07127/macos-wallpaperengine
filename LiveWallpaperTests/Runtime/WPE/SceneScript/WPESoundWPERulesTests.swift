@@ -5,30 +5,17 @@ import Foundation
 import LiveWallpaperProWPE
 import Testing
 
-/// WPE 2.8.42's sound layer rules, which only parity scenes opt into.
+/// The scene runtime uses WPE 2.8.42's sound layer rules.
 struct WPESoundWPERulesTests {
-    @Test("The old renderer's rules stay the default")
-    func legacyRulesAreTheDefault() throws {
-        let root = try Self.makeRoot(files: ["a.wav"])
-        defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
-        defer { runtime.stop() }
-        #expect(runtime.rules == .legacy)
-        #expect(WPESoundPathScheduler(playbackMode: "loop", seed: 1).rules == .legacy)
-
-        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", volume: 0.5)]) == 1)
-        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0.5)
-    }
-
     @Test("Loop picks every file uniformly at random, repeats allowed")
     func loopPicksRandomly() throws {
-        var scheduler = WPESoundPathScheduler(playbackMode: "loop", seed: 17, rules: .wpe)
+        var scheduler = WPESoundPathScheduler(playbackMode: "loop", seed: 17)
         var random = WPESoundSeededRandomNumberGenerator(seed: 17)
         var picks: [Int] = []
         var expected: [Int] = []
         for _ in 0 ..< 12 {
             let pick = try #require(scheduler.candidates(pathCount: 3).first)
-            scheduler.didSchedule(index: pick, pathCount: 3)
+            scheduler.didSchedule()
             picks.append(pick)
             expected.append(min(Int(random.unitInterval() * 3), 2))
         }
@@ -38,16 +25,16 @@ struct WPESoundWPERulesTests {
 
     @Test("Single plays one randomly picked file once")
     func singlePlaysOnce() throws {
-        var scheduler = WPESoundPathScheduler(playbackMode: "single", seed: 5, rules: .wpe)
+        var scheduler = WPESoundPathScheduler(playbackMode: "single", seed: 5)
         var random = WPESoundSeededRandomNumberGenerator(seed: 5)
         let pick = try #require(scheduler.candidates(pathCount: 4).first)
         #expect(pick == min(Int(random.unitInterval() * 4), 3))
-        scheduler.didSchedule(index: pick, pathCount: 4)
+        scheduler.didSchedule()
         #expect(scheduler.candidates(pathCount: 4).isEmpty)
 
         let root = try Self.makeRoot(files: ["a.wav", "b.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav", "b.wav"], mode: "single")]) == 1)
@@ -58,7 +45,7 @@ struct WPESoundWPERulesTests {
     func randomWaitsAfterTheFileEnds() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 2, maxTime: 5)]) == 1)
@@ -87,7 +74,7 @@ struct WPESoundWPERulesTests {
     func gainIsVolumeSquared() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", volume: 0.5, startSilent: true)]) == 1)
         #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0.25)
@@ -101,7 +88,7 @@ struct WPESoundWPERulesTests {
     func zeroGainFreezesTheTimer() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
@@ -128,7 +115,7 @@ struct WPESoundWPERulesTests {
     func subMilligainChangesStillReachWPEStreams() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
@@ -151,13 +138,6 @@ struct WPESoundWPERulesTests {
         #expect(resumed.pendingDelay == nil)
         #expect(resumed.scheduledSegmentCount == 1)
 
-        let legacy = WPESoundRuntime(resolver: Self.resolver(root))
-        defer { legacy.stop() }
-        #expect(legacy.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
-        legacy.setMasterVolume(0.0005)
-        legacy.setMasterVolume(0)
-        #expect(try #require(legacy.debugTrackSnapshots().first).playerVolume == Float(0.0005),
-                "legacy retains its existing gain-coalescing behavior")
     }
 
     @Test("A random track waits for the user-resolved mintime/maxtime, not the authored default")
@@ -175,7 +155,7 @@ struct WPESoundWPERulesTests {
         let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: ["delay": .number(4)])
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: document.soundObjects) == 1)
@@ -187,7 +167,7 @@ struct WPESoundWPERulesTests {
     func changingRandomBoundsAffectsNextPlayOnly() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "random", minTime: 1, maxTime: 1)]) == 1)
@@ -217,7 +197,7 @@ struct WPESoundWPERulesTests {
     func zeroAppVolumePausesPlayback() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
         // AVAudioEngine.start() needs an output device; bail on headless hosts.
@@ -234,7 +214,7 @@ struct WPESoundWPERulesTests {
     func scriptPausedTrackStaysPausedAfterVolumeReturns() throws {
         let root = try Self.makeRoot(files: ["a.wav", "b.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         #expect(runtime.prepare(sounds: [
             Self.sound(id: "a", paths: ["a.wav"], mode: "loop"),
@@ -255,12 +235,12 @@ struct WPESoundWPERulesTests {
     @Test("Script play starts a start-silent sound; pause holds its queue and play resumes it")
     func scriptPlayPausesAndResumes() throws {
         let seed: UInt64 = 0x5750_4553_4F55_4E44
-        var probe = WPESoundPathScheduler(playbackMode: "loop", seed: seed, rules: .wpe)
+        var probe = WPESoundPathScheduler(playbackMode: "loop", seed: seed)
         let picks = (0 ..< 3).compactMap { _ in probe.candidates(pathCount: 4).first }
         try #require(picks.count == 3 && picks[1] != picks[2], "a restarted queue must end on another file")
         let root = try Self.makeRoot(files: ["a.wav", "b.wav", "c.wav", "d.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), randomSeed: seed, rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root), randomSeed: seed)
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [
@@ -291,7 +271,7 @@ struct WPESoundWPERulesTests {
     func scriptStopThenPlay() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
@@ -311,7 +291,7 @@ struct WPESoundWPERulesTests {
     func scriptPlayWhileRandomWaits() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [
@@ -334,7 +314,7 @@ struct WPESoundWPERulesTests {
     func scriptPlayAtZeroVolume() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop", startSilent: true)]) == 1)
@@ -352,7 +332,7 @@ struct WPESoundWPERulesTests {
     func raisingVolumeLeavesIdleSoundsIdle() throws {
         let root = try Self.makeRoot(files: ["a.wav"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root), rules: .wpe)
+        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
         defer { runtime.stop() }
         runtime.setMuted(true)
         #expect(runtime.prepare(sounds: [
@@ -370,20 +350,6 @@ struct WPESoundWPERulesTests {
         #expect(tracks["single"]?.isEnabled == false)
         #expect(tracks["unplayed"]?.isEnabled == false)
         #expect(tracks["stopped"]?.scheduledSegmentCount == 0)
-    }
-
-    @Test("The old renderer keeps the engine running at master volume 0")
-    func legacyZeroAppVolumeKeepsRunning() throws {
-        let root = try Self.makeRoot(files: ["a.wav"])
-        defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = WPESoundRuntime(resolver: Self.resolver(root))
-        defer { runtime.stop() }
-        #expect(runtime.prepare(sounds: [Self.sound(paths: ["a.wav"], mode: "loop")]) == 1)
-        guard runtime.play() else { return }
-
-        runtime.setMasterVolume(0)
-        #expect(runtime.debugEngineIsRunning())
-        #expect(try #require(runtime.debugTrackSnapshots().first).playerVolume == 0)
     }
 
     private static func sound(id: String = "s", paths: [String], mode: String, volume: Double = 1,

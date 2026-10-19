@@ -41,7 +41,7 @@ final class ParityScriptPropertyTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let pass = WPEParityMaterialPassKey(objectID: "1", effectID: "5")
         var state = WPEParitySceneState(document: document, hdr: false, constants: [pass: ["k": [0, 0]]])
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -100,7 +100,7 @@ final class ParityScriptPropertyTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -135,7 +135,7 @@ final class ParityScriptPropertyTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
         let baseClasses = try Data(contentsOf: fixture)
@@ -164,12 +164,5 @@ final class ParityScriptPropertyTests: XCTestCase {
 
     func testDegreesToRadiansIsTheNativeConstant() {
         XCTAssertEqual(WPEParityScriptProperty.degreesToRadians.bitPattern, 0x3C8E_FA35)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

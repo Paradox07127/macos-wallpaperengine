@@ -123,8 +123,8 @@ struct WPETexDecoderTests {
         #expect(image.height == 4)
     }
 
-    @Test("Single-frame static .tex decodes eagerly at full size and declines the streaming path")
-    func singleFrameStaticDecodesEagerlyAndDeclinesStreaming() throws {
+    @Test("Single-frame static .tex decodes its full authored size")
+    func singleFrameStaticDecodesFullSize() throws {
         let buffer = makeRGBA8888TestImage(width: 256, height: 256)
 
         let eager = try WPETexDecoder().extractTexturePayload(data: buffer).get()
@@ -137,11 +137,6 @@ struct WPETexDecoderTests {
         #expect(mip.height == 256)
         #expect(mip.bytes.count == 256 * 256 * 4)
 
-        let streaming = WPETexDecoder().extractStreamingPayload(data: buffer)
-        guard case .failure(.unsupportedAnimation) = streaming else {
-            Issue.record("Expected single-frame static to decline streaming with unsupportedAnimation, got \(streaming)")
-            return
-        }
     }
 
     @Test("Decode accepts TEXB0003 PNG-backed texture")
@@ -469,8 +464,8 @@ struct WPETexDecoderTests {
         #expect(mismatches.isEmpty, "\(mismatches.count) texels differ, first: \(mismatches.prefix(4))")
     }
 
-    @Test("Streaming extraction preserves TEXS sub-rects and compressed image payloads")
-    func streamingExtractionPreservesSubRectsAndCompressedPayloads() throws {
+    @Test("Payload decoding preserves TEXS sub-rects and raw metadata keeps compressed bytes")
+    func payloadAndMetadataPreserveSubRectsAndCompressedBytes() throws {
         let width = 4
         let height = 4
         let raw0 = Data(repeating: 0x11, count: width * height * 4)
@@ -486,12 +481,14 @@ struct WPETexDecoderTests {
             decompressedByteCount: width * height * 4
         )
 
-        let payload = try WPETexDecoder().extractStreamingPayload(data: buffer).get()
-
-        #expect(payload.compressedImages.count == 2)
-        #expect(payload.compressedImages[0].payloads[0].compressedBytes.materializedData() == compressed0)
-        #expect(payload.compressedImages[0].payloads[0].isCompressed == true)
-        #expect(payload.compressedImages[0].payloads[0].decompressedByteCount == width * height * 4)
+        let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
+        #expect(metadata.bitmap.frames.count == 2)
+        #expect(metadata.bitmap.frames[0][0].payload.materializedData() == compressed0)
+        #expect(metadata.bitmap.frames[0][0].isCompressed == true)
+        #expect(metadata.bitmap.frames[0][0].decompressedByteCount == width * height * 4)
+        let decoded = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        #expect(decoded.mipmaps[0].bytes == raw0)
+        let payload = try #require(decoded.animationTrack)
         #expect(payload.frames.count == 4)
         #expect(payload.frames[0].imageID == 0)
         #expect(payload.frames[0].subRect == CGRect(x: 0, y: 0, width: 4, height: 2))
@@ -952,19 +949,19 @@ extension WPETexDecoderTests {
         return buffer
     }
 
-    @Test("TEXS rejects nonfinite time and every geometry lane before publishing either payload",
+    @Test("TEXS rejects nonfinite time and every geometry lane before publishing metadata or payload",
           arguments: [Float.nan, Float.infinity, -Float.infinity], Array(0 ... 6))
     func rejectsNonfiniteTEXS(value: Float, field: Int) throws {
         var data = try makeStreamingTestImage(width: 4, height: 4,
                                               compressedPayloads: [lz4RawCompress(Data(repeating: 0, count: 64))], decompressedByteCount: 64)
-        _ = try WPETexDecoder().extractStreamingPayload(data: data).get()
+        _ = try WPETexDecoder().extractRawMetadata(data: data).get()
         _ = try WPETexDecoder().extractTexturePayload(data: data).get()
         let marker = try #require(data.range(of: Data("TEXS0003\0".utf8)))
         // TEXS3: frameCount, gifWidth, gifHeight, imageID, then time and six geometry floats.
         let offset = marker.upperBound + 16 + field * 4
         var bits = value.bitPattern.littleEndian
         withUnsafeBytes(of: &bits) { data.replaceSubrange(offset ..< (offset + 4), with: $0) }
-        #expect(throws: (any Error).self) { try WPETexDecoder().extractStreamingPayload(data: data).get() }
+        #expect(throws: (any Error).self) { try WPETexDecoder().extractRawMetadata(data: data).get() }
         #expect(throws: (any Error).self) { try WPETexDecoder().extractTexturePayload(data: data).get() }
     }
 }

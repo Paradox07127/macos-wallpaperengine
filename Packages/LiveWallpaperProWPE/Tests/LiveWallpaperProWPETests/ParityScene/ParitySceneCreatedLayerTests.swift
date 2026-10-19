@@ -13,8 +13,7 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
                 ["id": 4, "image": "models/b.json"],
             ],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in CreatedLayerNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let membership = state.membershipGeneration
 
@@ -46,8 +45,7 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
             "objects": [["id": 1, "image": "models/a.json", "origin": "8 8 0", "effects": [effect]]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in CreatedLayerNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         let templatePass = WPEParityMaterialPassKey(objectID: "1", effectID: "5", pass: 0)
         let loaded = WPEParitySceneState(document: document, hdr: false, constants: [templatePass: ["k": [0.25]]])
         var state = loaded
@@ -92,8 +90,7 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
             "objects": [],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in CreatedLayerNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         let scene = WPEParityProgramScene(document: document, assets: assets, settings: .init())
         XCTAssertEqual(scene.createdImageTextures(defaults), ["a"])
         let plain = try XCTUnwrap(scene.createdImageObject(id: "1", image: defaults))
@@ -114,12 +111,5 @@ final class ParitySceneCreatedLayerTests: XCTestCase {
         XCTAssertEqual(additive.colorBlendMode, 31)
         XCTAssertEqual(additive.blend, .additive)
         XCTAssertFalse(additive.transparentMember, "Membership reads the base blend, not the mode-31 override")
-    }
-}
-
-private struct CreatedLayerNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

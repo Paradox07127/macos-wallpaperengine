@@ -286,8 +286,7 @@ extension WPEParitySceneDriverTests {
                  "intensity": 6, "radius": 200, "innercone": 30, "outercone": 45, "castshadow": true],
             ],
         ]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
     }
 
     /// MDLV0016 static model: one materials/shadowtest.json sub-mesh, a z = 0 quad with +z normals in the 0x0F

@@ -269,7 +269,6 @@ final class WPEParitySceneDriverTests: XCTestCase {
                               soundResolver: WPEMultiRootResourceResolver(primaryRootURL: sceneDirectory,
                                                                           dependencyMounts: []))
         let runtime = try XCTUnwrap(driver.soundRuntime)
-        XCTAssertEqual(runtime.rules, .wpe)
         let track = try XCTUnwrap(runtime.debugTrackSnapshots().first)
         XCTAssertEqual(track.playerVolume, 0, "muted before load")
         XCTAssertGreaterThan(track.scheduledSegmentCount, 0)
@@ -290,7 +289,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
                          "size": "12 12", "color": "0 1 0", "alpha": 1]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         @Sendable func load(_ cache: WPEParityShaderDiskCache) async throws -> WPEParityShaderStore.Statistics {
             let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
             defer { driver.cleanup() }
@@ -387,8 +386,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
         }
         let sceneDirectory = root.appending(path: "scene-sources/\(sceneID)")
         let document = try WPESceneDocumentParser.parse(
-            data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: Data(contentsOf: sceneDirectory.appending(path: "scene.json")), userValues: [:]
         )
         // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
         return (document, WPEParityProgramAssets(sceneDirectory: sceneDirectory,
@@ -424,11 +422,5 @@ final class WPEParitySceneDriverTests: XCTestCase {
         }
     }
 
-    struct NoScripts: WPESceneTransformScriptResolving {
-        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
-            nil
-        }
-    }
 }
 #endif

@@ -62,11 +62,9 @@ struct WPETexTexturePayloadTests {
     @Test("Embedded PNG data channels survive production Metal upload")
     func embeddedPNGDataChannelsSurviveMetalUpload() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let payload = try embeddedDataPayload()
-        let texture = try WPEMetalTextureLoader.makeTextureSynchronously(
-            from: payload, label: "normal", device: device,
-            capabilities: WPEMetalTextureCapabilities(device: device), usage: .normal
-        )
+        let texture = try WPEParityTextureLoader.load(
+            span: WPEMappedByteSpan(data: embeddedDataTEX()), device: device
+        ).texture
         #expect(texture.pixelFormat == .rgba8Unorm)
         let library = try device.makeLibrary(source: """
         #include <metal_stdlib>
@@ -124,12 +122,16 @@ struct WPETexTexturePayloadTests {
     }
 
     private func embeddedDataPayload() throws -> WPETexTexturePayload {
+        try WPETexDecoder().extractTexturePayload(data: embeddedDataTEX()).get()
+    }
+
+    private func embeddedDataTEX() throws -> Data {
         // Hand-encoded RGBA PNG avoids fixture authoring through a premultiplied CGContext.
         let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAABCAYAAAAW/mTzAAAAF0lEQVR4nGM40ODAAMSMQMwExBxA/B8AVlsIi0RWaPgAAAAASUVORK5CYII="))
-        return try WPETexDecoder().extractTexturePayload(data: makeImage(
+        return makeImage(
             width: 5, height: 1, formatCode: WPETexFormat.rgba8888.rawValue,
             payload: png, sourceImageFormatCode: 0
-        )).get()
+        )
     }
 
     @Test("Rejects encoded PNG larger than the TEXI header before rasterizing")

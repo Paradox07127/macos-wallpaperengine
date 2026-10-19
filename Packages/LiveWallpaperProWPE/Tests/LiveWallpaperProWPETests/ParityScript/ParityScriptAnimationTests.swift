@@ -151,7 +151,7 @@ final class ParityScriptAnimationTests: XCTestCase {
             "objects": [layer],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false, constants: constants)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -166,12 +166,5 @@ final class ParityScriptAnimationTests: XCTestCase {
         ))
         engine.propertyAnimationLookup = { animations.animation(objectID: $0, pass: $1, name: $2) }
         return Scene(state: state, animations: animations, engine: engine)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

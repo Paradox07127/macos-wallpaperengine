@@ -41,8 +41,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
           {"id":2,"name":"B","image":"models/shared.json","size":"64 64"},
           {"id":3,"name":"static","image":"models/static.json","size":"64 64"}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         // Fixed package fixture: this product bridge guard does not depend on installed Steam or captures.
         let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
@@ -117,8 +116,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
          "objects":[
           {"id":1,"name":"A","image":"models/shared.json","size":"64 64","alpha":{"value":1,"script":"export function init(value) { thisLayer.getVideoTexture().stop(); return value; } export function update(value) { const video = thisLayer.getVideoTexture(); video.play(); thisLayer.color = new Vec3(video.isPlaying() === true ? 1 : 99, typeof video.getCurrentTime() === 'number' ? 1 : 99, 1); return value; }"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
         let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
@@ -160,8 +158,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
          "objects":[
           {"id":1,"name":"A","image":"models/a.json","size":"64 64","alpha":{"value":1,"script":"let ended = 0; export function init(value) { thisLayer.getVideoTexture().addEndedCallback(() => { ended += 1; }); return value; } export function update(value) { thisLayer.origin = new Vec3(ended, 0, 0); return value; }"}}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
         let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
@@ -222,8 +219,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
           {"id":1,"name":"A","image":"models/a.json","size":"64 64","alpha":{"value":1,"script":"let frame = 0; export function update(value) { frame += 1; const b = thisScene.getLayer('B'); if (frame === 2) b.visible = false; if (frame === 40) b.visible = true; thisLayer.color = new Vec3(b.getVideoTexture().isPlaying() ? 1 : 0, 1, 1); return value; }"}},
           {"id":2,"name":"B","image":"models/b.json","size":"64 64"}]}
         """#
-        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let root = (0 ..< 6).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
         let baseClasses = try Data(contentsOf: root.appending(path: "Packages/LiveWallpaperProWPE/Tests/Fixtures/ParityScript/baseclasses.js"))
@@ -593,8 +589,7 @@ final class WPEParityVideoTexturesTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080]], "objects": [],
         ]
         let data = try JSONSerialization.data(withJSONObject: json)
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in VideoNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         return WPEParitySceneState(document: document, hdr: false)
     }
 
@@ -654,10 +649,4 @@ final class WPEParityVideoTexturesTests: XCTestCase {
     private enum FixtureError: Error { case writer, pixelBuffer }
 }
 
-private struct VideoNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

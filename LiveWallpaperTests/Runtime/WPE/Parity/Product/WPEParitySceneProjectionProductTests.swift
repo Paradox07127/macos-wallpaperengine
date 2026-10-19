@@ -69,7 +69,7 @@ extension WPEParitySceneDriverTests {
                     ["id": 3, "camera": "projection queue", "fov": 60, "path": "cameras/projection.json",
                      "queuemode": "sequential", "visible": activeQueue],
                 ],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         func host(fov: Double = 90, near: Double = 1, far: Double = 9, drive: Bool = true) throws -> String {
             let values: [String: Any] = ["drive": ["type": "bool", "value": drive], "fov": ["type": "slider", "value": fov],
@@ -216,7 +216,7 @@ extension WPEParitySceneDriverTests {
             ],
             "objects": [["id": 1, "image": "models/projection-witness.json", "origin": "32 32 0",
                          "size": "16 16", "perspective": true]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         try await cold.load(document: overrideDocument, assets: assets, settings: .init(bloom: false),
                             drawableSize: CGSize(width: 64, height: 64), pixelFormat: .bgra8Unorm_srgb,
                             compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "projection-override-cache")),

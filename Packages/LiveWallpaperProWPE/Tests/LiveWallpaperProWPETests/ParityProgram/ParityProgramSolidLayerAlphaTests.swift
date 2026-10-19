@@ -31,19 +31,12 @@ final class ParityProgramSolidLayerAlphaTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false)
         XCTAssertEqual(state.object("7")?.alpha, 1)
         let index = try XCTUnwrap(state.index(of: "7"))
         XCTAssertEqual(state.layerColor(at: index).w, 1)
         XCTAssertEqual(state.object("8")?.alpha, 0.25)
         XCTAssertEqual(state.object("9")?.alpha, 0)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

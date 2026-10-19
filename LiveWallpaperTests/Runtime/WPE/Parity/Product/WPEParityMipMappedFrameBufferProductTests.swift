@@ -550,8 +550,7 @@ extension WPEParitySceneDriverTests {
                         "bloomhdrfeather": 0.5, "bloomhdrscatter": 0.5, "bloomtint": "1 1 1"],
             "objects": objects,
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         return (document, assets)
     }
 

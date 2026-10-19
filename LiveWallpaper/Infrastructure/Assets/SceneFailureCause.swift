@@ -11,7 +11,6 @@ enum SceneFailureCause {
             case .cacheRootMissing: return cause("scene.cache_missing", error)
             case .parseFailed: return cause("scene.parse", error, retry: false)
             case let .resourceFailed(diagnostic): return make(diagnostic)
-            case .metalRendererUnsupported: return cause("scene.metal_unsupported", error, retry: false)
             }
         case let error as WPESceneDocumentError:
             let code = switch error {
@@ -81,7 +80,6 @@ enum SceneFailureCause {
         case let .texture(_, error):
             let nested = texture(error)
             return WallpaperFailureCause(code: nested.code, reason: diagnostic.errorDescription, canRetry: nested.canRetry, details: String(reflecting: diagnostic))
-        case .legacyUnsupportedTexture: (code, retry) = ("scene.legacy_texture", false)
         case .fileMissing: (code, retry) = ("scene.file_missing", true)
         case .crossPackageReference: (code, retry) = ("scene.cross_package", false)
         case .materialUnresolved: (code, retry) = ("scene.material", false)

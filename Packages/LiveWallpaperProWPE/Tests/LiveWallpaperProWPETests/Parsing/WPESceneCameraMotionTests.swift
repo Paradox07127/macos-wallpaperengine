@@ -2,68 +2,15 @@ import Foundation
 @testable import LiveWallpaperProWPE
 import Testing
 
-@Suite("Measured WPE camera curves and execution IR")
+@Suite("Shared numeric animation curves and camera parsing")
 struct WPESceneCameraMotionTests {
-    @Test("Root paths reproduce four same-draw g_Time/eye/zoom samples with one common phase offset")
-    func capturedPathCurve() throws {
-        let data = Data(#"{"paths":[{"duration":9,"name":"measured","transforms":[{"timestamp":0,"eye":"0 0 0","center":"0 0 -1","up":"0 1 0","zoom":1},{"timestamp":2,"eye":"80 0 0","center":"80 0 -1","up":"0 1 0","zoom":2}]}]}"#.utf8)
-        let path = try #require(WPESceneCameraPath.parse(data: data).first)
-        #expect(path.duration == 2)
-        #expect(path.authoredDuration == 9)
-        let captures = [(8.81788444519043, 27.123668222476955, 1.3390460014343262),
-                        (9.177789688110352, 44.93141195028278, 1.5616426467895508),
-                        (9.528105735778809, 61.55039920811899, 1.7693798542022705),
-                        (9.889918327331543, 75.21465128274605, 1.9401830434799194)]
-        // The first sample fixes this segment's phase, the other three constrain
-        // the curve; this is not a universal g_Time-to-path-clock offset.
-        let phaseOffset = 0.078971
-        for (time, eye, zoom) in captures {
-            let pose = try #require(path.sample(at: time - 8 - phaseOffset))
-            #expect(abs(pose.eye.x - eye) < 0.001)
-            #expect(abs(pose.zoom - zoom) < 0.00002)
-        }
-        #expect(path.sample(at: 3)?.eye.x == 80)
-    }
-
-    @Test("Angles animation requires complete channels and participates in frame demand")
+    @Test("Camera angles retain their authored animation channels")
     func cameraAnglesAnimation() throws {
         let data = Data(#"{"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},"general":{"orthogonalprojection":{"width":256,"height":128}},"objects":[{"id":3727,"camera":"default","angles":{"value":"0 0 0","animation":{"c0":[{"frame":0,"value":0},{"frame":90,"value":0.2}],"c1":[{"frame":0,"value":0},{"frame":90,"value":0.3}],"c2":[{"frame":0,"value":0},{"frame":90,"value":0.4}],"options":{"fps":18,"length":90,"mode":"single"}}}}]}"#.utf8)
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:], makeTransformScriptResolver: { _, _ in NoScriptResolver() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         let motion = try #require(document.cameraMotion)
-        #expect(motion.needsFrames(at: 1))
-        #expect(!motion.needsFrames(at: 6))
-        #expect(motion.sample(at: 2.5).angles == SIMD3<Double>(0.1, 0.15, 0.2))
-        #expect(motion.sample(at: 6).angles == SIMD3<Double>(0.2, 0.3, 0.4))
+        #expect(motion.anglesAnimation?.animation.tracks.count == 3)
         #expect(document.staticCamera.eye == .zero)
-    }
-
-    @Test("Three path keys keep each segment's independent easing and do not invent a transverse overshoot")
-    func independentPathSegments() throws {
-        let data = Data(#"{"paths":[{"duration":9,"name":"three keys","transforms":[{"timestamp":0,"eye":"0 0 0","center":"0 0 -1","up":"0 1 0","zoom":1},{"timestamp":1,"eye":"80 0 0","center":"80 0 -1","up":"0 1 0","zoom":2},{"timestamp":3,"eye":"160 40 0","center":"160 40 -1","up":"0 1 0","zoom":1}]}]}"#.utf8)
-        let path = try #require(WPESceneCameraPath.parse(data: data).first)
-        #expect(path.sample(at: 0.5)?.eye == SIMD3<Double>(40, 0, 0))
-        let second = try #require(path.sample(at: 2))
-        #expect(second.eye == SIMD3<Double>(120, 20, 0))
-        #expect(second.zoom == 1.5)
-    }
-
-    @Test("Authored duration controls a terminal hold with the captured inclusive boundary")
-    func capturedPathLoopDuration() throws {
-        for (authored, expected) in [(0.0, 1.0), (2, 1), (4, 3), (9, 8)] {
-            let json: [String: Any] = ["paths": [["duration": authored, "transforms": [
-                ["timestamp": 0, "eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0", "zoom": 1],
-                ["timestamp": 1, "eye": "80 0 0", "center": "80 0 -1", "up": "0 1 0", "zoom": 2],
-            ]]]]
-            let path = try #require(WPESceneCameraPath.parse(data: JSONSerialization.data(withJSONObject: json)).first)
-            #expect(path.playbackDuration == expected)
-            #expect(path.sample(at: 1.5)?.eye.x == 80)
-        }
-    }
-
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue], seed _: SIMD3<Double>) -> SIMD3<Double>? {
-            nil
-        }
     }
 
     @Test("Bézier uses half-span X and absolute Y, matching three simultaneous Windows controls")
@@ -129,9 +76,10 @@ struct WPESceneCameraMotionTests {
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
             "objects": [["id": 1, "camera": "default", "origin": "3 4 0", "zoom": 2],
                         ["id": 2, "camera": "default", "origin": "5 6 0", "visible": ["value": true, "user": "intro"], "zoom": 3]],
-        ]), userValues: ["intro": .bool(false)], makeTransformScriptResolver: { _, _ in NoScriptResolver() })
+        ]), userValues: ["intro": .bool(false)])
         #expect(doc.cameraMotion?.objectID == "1")
-        #expect(doc.cameraMotion?.seed == .init(origin: SIMD3(3, 4, 0), zoom: 2))
+        #expect(doc.cameraMotion?.origin == SIMD3(3, 4, 0))
+        #expect(doc.cameraMotion?.zoom == 2)
         #expect(doc.authoredCameraObjects.last?.sourceJSON["visible"]?["user"] == .string("intro"))
     }
 
@@ -150,30 +98,12 @@ struct WPESceneCameraMotionTests {
                 "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                 "general": ["orthogonalprojection": ["width": 256, "height": 128]],
                 "objects": [["id": 3727, "camera": "default", "origin": ["value": "0 0 0", "animation": animation], "zoom": 1]],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScriptResolver() })
+            ]), userValues: [:])
             let motion = try #require(doc.cameraMotion)
-            #expect(motion.seed.origin == .zero)
+            #expect(motion.origin == .zero)
             #expect((motion.originAnimation != nil) == complete)
-            #expect(motion.sample(at: 2.5).origin == (complete ? SIMD3(40, 20, 0) : .zero))
-            #expect(motion.needsFrames(at: 2.5) == complete)
             #expect(doc.authoredCameraObjects[0].sourceJSON["origin"]?["animation"] != nil)
         }
-    }
-
-    @Test("Relative sparse origin tracks follow the root clock and hold after completion")
-    func relativeParentClock() throws {
-        let origin = try #require(WPEValueParser.animatedValue(["value": "10 20 30", "animation": ["c0": [["frame": 0, "value": -4], ["frame": 10, "value": 0]], "options": ["fps": 100, "length": 100, "mode": "single"]]]))
-        let zoom = try #require(WPEValueParser.animatedValue(["value": 4.5, "animation": ["c0": [["frame": 0, "value": 3], ["frame": 10, "value": 1]], "options": ["fps": 10, "length": 10, "mode": "single"]]]))
-        let motion = WPESceneCameraMotion(objectID: "cam", origin: SIMD3(10, 20, 30), zoom: 4.5, originAnimation: origin, zoomAnimation: zoom, originIsRelative: true, originFollowsZoom: true)
-        #expect(motion.sample(at: 0.5).origin == SIMD3(8, 20, 30))
-        #expect(motion.sample(at: 0.5).zoom == 2)
-        #expect(motion.sample(at: 10).origin == SIMD3(10, 20, 30))
-        #expect(!motion.needsFrames(at: 10))
-        // A missing parent keeps the origin's own clock, including frame demand.
-        let orphan = WPESceneCameraMotion(objectID: "cam", origin: SIMD3(10, 20, 30), zoom: 1, originAnimation: origin, originIsRelative: true, originFollowsZoom: true)
-        #expect(orphan.needsFrames(at: 0.05))
-        #expect(orphan.sample(at: 0.05).origin == SIMD3(8, 20, 30))
-        #expect(!orphan.needsFrames(at: 2))
     }
 
     private func curve(front: (Double, Double), back: (Double, Double), magic: Bool) throws -> WPESceneAnimatedValue {

@@ -28,9 +28,6 @@ public enum SceneRenderingError: Error, LocalizedError, Equatable, Sendable {
     case cacheRootMissing
     case parseFailed(String)
     case resourceFailed(SceneLoadDiagnostic)
-    /// Metal-pipeline gap (shader translator missing, unsupported render
-    /// target, previous-frame effect); surfaces directly as the scene's load error.
-    case metalRendererUnsupported(reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -40,15 +37,12 @@ public enum SceneRenderingError: Error, LocalizedError, Equatable, Sendable {
             return String(localized: "error.scene.rendering.parse_failed", defaultValue: "Failed to parse scene.json: \(detail)", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json file cannot be parsed.")
         case .resourceFailed(let diagnostic):
             return diagnostic.errorDescription
-        case .metalRendererUnsupported(let reason):
-            return String(localized: "error.scene.rendering.metal_unsupported", defaultValue: "Metal renderer cannot stage this scene: \(reason)", bundle: .appLanguage, comment: "Error shown when the Metal scene renderer cannot stage a scene because of a Metal-specific gap (shader translator, unsupported target, etc.).")
         }
     }
 }
 
 public enum SceneLoadDiagnostic: Equatable, Sendable {
     case texture(layer: String, error: WPETexDecodeError)
-    case legacyUnsupportedTexture(layer: String)
     case fileMissing(layer: String, path: String)
     case crossPackageReference(layer: String, path: String)
     case materialUnresolved(layer: String, reason: String)
@@ -58,8 +52,6 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
         switch self {
         case let .texture(layer, error):
             String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded: \(error.errorDescription ?? "").", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer texture cannot be loaded. First placeholder is the layer name, second is the decoder's reason.")
-        case .legacyUnsupportedTexture(let layer):
-            String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
         case .fileMissing(let layer, let path):
             String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
         case let .crossPackageReference(layer, path):

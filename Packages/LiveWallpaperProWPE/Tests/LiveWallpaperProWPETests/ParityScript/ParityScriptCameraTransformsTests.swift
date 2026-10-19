@@ -15,7 +15,6 @@ final class ParityScriptCameraTransformsTests: XCTestCase {
         let zoomScript = """
         'use strict';
 
-
         export function applyUserProperties(changedUserProperties) {
             if (changedUserProperties.trainshake != undefined) {
                 let cameraTransforms = thisScene.getCameraTransforms();
@@ -79,7 +78,7 @@ final class ParityScriptCameraTransformsTests: XCTestCase {
     private static func document(general: [String: Any], objects: [[String: Any]]) throws -> WPESceneDocument {
         try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
             "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"], "general": general, "objects": objects,
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
     }
 
     private static func assets() throws -> WPEParityProgramAssets {
@@ -89,12 +88,5 @@ final class ParityScriptCameraTransformsTests: XCTestCase {
         return WPEParityProgramAssets(sources: [.lookup(fixture.deletingLastPathComponent()) { path in
             path == "scripts/jsclasses/baseclasses.js" ? baseClasses : nil
         }])
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

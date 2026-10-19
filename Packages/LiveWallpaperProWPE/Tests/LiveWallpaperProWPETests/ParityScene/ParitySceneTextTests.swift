@@ -162,8 +162,7 @@ final class ParitySceneTextTests: XCTestCase {
             ]],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in TextNoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)])
         let program = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
         guard case let .text(text)? = program.scene.objects.first?.kind else { return XCTFail("no text object") }
@@ -199,8 +198,7 @@ final class ParitySceneTextTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in TextNoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)])
         let program = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
         XCTAssertNil(program.textPreparationFailure)
@@ -217,13 +215,6 @@ final class ParitySceneTextTests: XCTestCase {
         let space = try XCTUnwrap(program.textAtlases[noto.atlasKey]?.mono.entry(forKey: 3))
         XCTAssertEqual([space.x1 - space.x0, space.y1 - space.y0], [24, 24])
         XCTAssertEqual(noto.layout.mesh?.mono.glyphKeys.filter { $0 == 3 }.count, 2)
-    }
-}
-
-private struct TextNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }
 

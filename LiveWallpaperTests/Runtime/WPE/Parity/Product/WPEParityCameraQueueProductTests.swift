@@ -73,7 +73,7 @@ extension WPEParitySceneDriverTests {
                 : ["id": 1, "camera": "activity witness", "origin": "0 0 0"]
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
                 "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": general, "objects": [object],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         func host(drive: Bool, enabled: Bool = true, amount: Double = 0.5, delay: Double = 0,
                   influence: Double = 1) throws -> String {
@@ -255,8 +255,7 @@ extension WPEParitySceneDriverTests {
         for path in files.keys.sorted() {
             print("camera queue input \(path) SHA256=\(SHA256.hash(data: files[path]!))")
         }
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

@@ -42,7 +42,7 @@ extension WPEParitySceneDriverTests {
                 ["id": 3, "image": "models/util/composelayer.json", "origin": "8 8 0", "size": "8 16",
                  "effects": [opacity]],
             ],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

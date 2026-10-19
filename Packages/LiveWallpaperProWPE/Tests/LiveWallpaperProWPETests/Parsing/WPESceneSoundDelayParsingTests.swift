@@ -5,16 +5,6 @@ import Testing
 
 @Suite("WPESceneDocumentParser sound random-mode delays")
 struct WPESceneSoundDelayParsingTests {
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script _: String,
-            properties _: [String: WPESceneScriptPropertyValue],
-            seed _: SIMD3<Double>
-        ) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     private static let json = #"""
     {
         "camera": {"center":"0 0 0"},
@@ -32,8 +22,7 @@ struct WPESceneSoundDelayParsingTests {
     private func parse(userValues: [String: WallpaperEngineProjectPropertyValue]) throws -> [String: WPESceneSoundObject] {
         let document = try WPESceneDocumentParser.parse(
             data: Data(Self.json.utf8),
-            userValues: userValues,
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: userValues
         )
         return Dictionary(document.soundObjects.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     }

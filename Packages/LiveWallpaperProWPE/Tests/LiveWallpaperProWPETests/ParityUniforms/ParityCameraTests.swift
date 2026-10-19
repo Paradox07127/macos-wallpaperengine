@@ -4,16 +4,8 @@ import simd
 import XCTest
 
 enum ParityCameraFixture {
-    private struct NoScripts: WPESceneTransformScriptResolving {
-        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     static func document(json: String) throws -> WPESceneDocument {
-        try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:],
-                                         makeTransformScriptResolver: { _, _ in NoScripts() })
+        try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
     }
 
     /// Scene 3660962877 from the HLSL capture: 3840×2160, V = I, object 935 rotated −90°.
@@ -26,8 +18,7 @@ enum ParityCameraFixture {
             throw XCTSkip("Set WPE_HLSL_CAPTURE_DIR to the capture directory containing scene-sources/")
         }
         let url = URL(fileURLWithPath: directory).appendingPathComponent("scene-sources/\(sceneID)/scene.json")
-        return try WPESceneDocumentParser.parse(data: Data(contentsOf: url), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+        return try WPESceneDocumentParser.parse(data: Data(contentsOf: url), userValues: [:])
     }
 }
 

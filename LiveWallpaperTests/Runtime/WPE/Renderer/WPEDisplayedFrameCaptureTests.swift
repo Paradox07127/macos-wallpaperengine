@@ -383,7 +383,7 @@ private final class DrawableRecordingLayer: CAMetalLayer {
 @MainActor
 private struct CaptureStack {
     let layer: DrawableRecordingLayer
-    let executor: WPEMetalRenderExecutor
+    let executor: WPEMetalPresenter
     let actor: WPEDisplayRenderActor
 
     static func make(size: CGSize) throws -> Self {
@@ -394,7 +394,7 @@ private struct CaptureStack {
         WPEDisplayHDROutput.apply(to: layer, hdrOutputEnabled: false)
         layer.framebufferOnly = false
         layer.drawableSize = size
-        return try Self(layer: layer, executor: WPEMetalRenderExecutor(device: device),
+        return try Self(layer: layer, executor: WPEMetalPresenter(device: device),
                         actor: WPEDisplayRenderActor(backing: .main))
     }
 

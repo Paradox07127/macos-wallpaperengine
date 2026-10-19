@@ -15,8 +15,7 @@ struct ParitySceneTransparentOrderTests {
             "objects": objects,
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in TransparentOrderNoScripts() })
+                                                        userValues: [:])
         return WPEParitySceneState(document: document, hdr: false,
                                    transparentMembers: Set(origins.indices.map { String($0 + 1) }),
                                    fullscreenMembers: fullscreen)
@@ -65,12 +64,5 @@ struct ParitySceneTransparentOrderTests {
         #expect(state.transparentOrder == ["1", "3"])
         let clone = try state.appendImageLayer(cloning: "1", id: 9) { _ in }
         #expect(state.transparentOrder == ["1", "3", String(clone)])
-    }
-}
-
-private struct TransparentOrderNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

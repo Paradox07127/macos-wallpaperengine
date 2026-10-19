@@ -38,7 +38,7 @@ extension WPEParitySceneDriverTests {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let defaults = UserDefaults.appScoped()
         _ = try XCTUnwrap(defaults !== UserDefaults.standard ? true : nil, "required isolated product defaults")
         let key = WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey

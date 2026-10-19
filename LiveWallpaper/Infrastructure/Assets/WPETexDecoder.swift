@@ -5,47 +5,8 @@ import Foundation
 import ImageIO
 import LiveWallpaperProWPE
 
-/// Skipped levels keep index/width/height (for `uploadMipStartIndex`) and carry empty `bytes`.
-struct WPETexMipInflateScope: Sendable, Equatable {
-    /// Longest-edge cap the consumer renders at; nil = no render-scale cap.
-    let maxSourceEdge: Int?
-    /// Consumer uploads every level from the start level down, not just one.
-    let uploadsChain: Bool
-
-    /// Historical behavior: inflate everything. Every caller that does math on
-    /// physical mip dimensions (particles, animation atlases) needs this.
-    static let fullChain = WPETexMipInflateScope(maxSourceEdge: nil, uploadsChain: true)
-
-    /// MUST mirror `WPEMetalTextureLoader.makeTextureSynchronously`; that function degrades to a single level rather than throwing if the two disagree.
-    func selectedLevels(levelSizes: [(width: Int, height: Int)], noInterpolation: Bool) -> Range<Int> {
-        guard let level0 = levelSizes.first else { return 0 ..< 0 }
-        // Data textures index by texel (nearest sampling, or a 4096×1 LUT
-        // strip); minifying them collapses distinct entries, so they pin to 0.
-        let isDataTexture = noInterpolation || min(level0.width, level0.height) <= 64
-        let start = isDataTexture ? 0 : Self.startLevel(levelSizes: levelSizes, maxEdge: maxSourceEdge)
-        guard uploadsChain, levelSizes.count - start > 1 else { return start ..< (start + 1) }
-        return start ..< levelSizes.count
-    }
-
-    /// The SMALLEST level that still covers `maxEdge` on its longest side.
-    /// Never scales UP; nil/degenerate caps keep level 0.
-    static func startLevel(levelSizes: [(width: Int, height: Int)], maxEdge: Int?) -> Int {
-        guard let maxEdge, maxEdge > 0, levelSizes.count > 1 else { return 0 }
-        var start = 0
-        for (index, level) in levelSizes.enumerated() {
-            if max(level.width, level.height) >= maxEdge {
-                start = index
-            } else {
-                break
-            }
-        }
-        return start
-    }
-}
-
 #if DEBUG
-/// Test-only meter for the mip-inflate scope; task-local so a parallel suite's decodes
-/// cannot leak into the count. `@unchecked Sendable` because `total` is only ever touched under `lock`.
+/// Task-local observation used to verify preallocation rejection and ASTC cache hits.
 final class WPETexInflateMeter: @unchecked Sendable {
     private let lock = NSLock()
     private var total = 0
@@ -103,23 +64,6 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    #if DEBUG
-    func extractStreamingPayload(data: Data) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
-        extractStreamingPayload(span: WPEMappedByteSpan(data: data))
-    }
-    #endif
-
-    func extractStreamingPayload(span: WPEMappedByteSpan) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
-        do {
-            let parsed = try parse(span: span)
-            return try .success(makeStreamingPayload(from: parsed))
-        } catch let error as WPETexDecodeError {
-            return .failure(error)
-        } catch {
-            return .failure(.decodeFailed(mipmap: 0, detail: error.localizedDescription))
-        }
-    }
-
     func extractRawMetadata(data: Data) -> Result<WPETexRawMetadata, WPETexDecodeError> {
         extractRawMetadata(span: WPEMappedByteSpan(data: data))
     }
@@ -135,21 +79,19 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// `scope` narrows 2D mip inflation. `allowRawVolume` opts a 3D-capable consumer into static volumes:
+    /// `allowRawVolume` opts a 3D-capable consumer into static volumes:
     /// raw non-BC payloads keep every authored mip; a single-mip encoded image unfolds to one RGBA8 level.
     func extractTexturePayload(
         data: Data,
-        scope: WPETexMipInflateScope = .fullChain,
         allowRawVolume: Bool = false,
         conditionalProperties: WPESceneJSONValue? = nil
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
-        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope, allowRawVolume: allowRawVolume,
+        extractTexturePayload(span: WPEMappedByteSpan(data: data), allowRawVolume: allowRawVolume,
                               conditionalProperties: conditionalProperties)
     }
 
     func extractTexturePayload(
         span: WPEMappedByteSpan,
-        scope: WPETexMipInflateScope = .fullChain,
         allowRawVolume: Bool = false,
         conditionalProperties: WPESceneJSONValue? = nil
     ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
@@ -191,7 +133,7 @@ struct WPETexDecoder: Sendable {
                             // Unlike base mips, the native patch decoder accepts shorter successful output.
                             let capacity = try WPETexMipValidation.layout(format: .rgba8888, width: record.width,
                                                                           height: record.height).byteCount
-                            guard capacity <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+                            guard capacity <= WPETexMipValidation.maxDecompressedByteCount else {
                                 throw WPETexDecodeError.decompressionFailed(mipmap: mip.index)
                             }
                             return try lz4Inflate(payload: record.payload, outputCount: capacity, mipmap: mip.index,
@@ -229,11 +171,10 @@ struct WPETexDecoder: Sendable {
 
             let firstFrameMipmaps = try normalizedTextureMipmaps(
                 parsed.bitmap.mipmaps,
-                info: parsed.info,
-                scope: scope
+                info: parsed.info
             )
             let animationTrack = try makeAnimationTrack(from: parsed,
-                                                        firstImageMipmaps: scope == .fullChain ? firstFrameMipmaps : nil)
+                                                        firstImageMipmaps: firstFrameMipmaps)
 
             return .success(WPETexTexturePayload(
                 info: parsed.info,
@@ -249,30 +190,18 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// `scope` defaults to the whole chain; only the static scene-layer upload
-    /// path narrows it (the animation track deliberately keeps every level).
     private func normalizedTextureMipmaps(
         _ mipmaps: [WPETexMipmap],
-        info: WPETexInfo,
-        scope: WPETexMipInflateScope = .fullChain
+        info: WPETexInfo
     ) throws -> [WPETexTextureMipmap] {
-        let selected = info.isVolume ? mipmaps.indices : scope.selectedLevels(
-            levelSizes: mipmaps.map { (width: $0.width, height: $0.height) },
-            noInterpolation: info.noInterpolation
-        )
-        return try mipmaps.enumerated().map { position, mipmap in
+        try mipmaps.map { mipmap in
             try WPETexTextureMipmap(
                 index: mipmap.index,
                 width: mipmap.width,
                 height: mipmap.height,
                 depth: mipmap.depth,
-                bytes: selected.contains(position)
-                    ? normalizedBytes(
-                        for: mipmap,
-                        format: info.format,
-                        textureFormatCode: info.textureFormatCode
-                    )
-                    : Data()
+                bytes: normalizedBytes(for: mipmap, format: info.format,
+                                       textureFormatCode: info.textureFormatCode)
             )
         }
     }
@@ -358,94 +287,7 @@ struct WPETexDecoder: Sendable {
         return WPETexVideoPayload(bytes: mip.payload.materializedData())
     }
 
-    private func makeStreamingPayload(from parsed: ParsedTex) throws -> WPETexStreamingPayload {
-        guard !parsed.info.isVolume else {
-            throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
-        }
-        guard !parsed.bitmap.isVideoPayload else {
-            throw WPETexDecodeError.unsupportedAnimation
-        }
-        // Native Metal-sampleable formats stay compressed until GPU upload.
-        guard let format = parsed.info.format else {
-            throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
-        }
-        switch format {
-        case .rgba8888, .r8, .rg88, .dxt1, .dxt3, .dxt5, .bc7:
-            break
-        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
-             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
-            throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
-        }
-        let texsFrames = parsed.frameInfo?.frames ?? []
-        guard parsed.bitmap.frames.count > 1 || !texsFrames.isEmpty else {
-            throw WPETexDecodeError.unsupportedAnimation
-        }
 
-        let compressedImages: [WPETexCompressedImage] = try parsed.bitmap.frames.map { mipmaps in
-            guard let largest = mipmaps.first else {
-                throw WPETexDecodeError.missingBitmapBlock
-            }
-            let payloads = mipmaps.map { mipmap in
-                WPETexCompressedMipmap(
-                    index: mipmap.index,
-                    width: mipmap.width,
-                    height: mipmap.height,
-                    depth: mipmap.depth,
-                    isCompressed: mipmap.isCompressed,
-                    compressedBytes: mipmap.payload,
-                    decompressedByteCount: mipmap.decompressedByteCount
-                        ?? format.expectedByteCount(width: mipmap.width, height: mipmap.height)
-                )
-            }
-            return WPETexCompressedImage(
-                width: largest.width,
-                height: largest.height,
-                payloads: payloads
-            )
-        }
-
-        let defaultDuration = 1.0 / WPETexAnimationTrack.defaultFrameRate
-        let info = parsed.info
-        let frames: [WPETexStreamingFrame] = if texsFrames.isEmpty {
-            parsed.bitmap.frames.indices.map { imageID in
-                WPETexStreamingFrame(
-                    imageID: imageID,
-                    subRect: CGRect(x: 0, y: 0, width: info.width, height: info.height),
-                    duration: defaultDuration
-                )
-            }
-        } else {
-            texsFrames.enumerated().map { offset, frameInfo in
-                let imageID = parsed.bitmap.frames.indices.contains(frameInfo.imageID)
-                    ? frameInfo.imageID
-                    : min(offset, max(parsed.bitmap.frames.count - 1, 0))
-                let duration = frameInfo.frameTime > 0 ? frameInfo.frameTime : defaultDuration
-                let sourceImage = compressedImages[imageID]
-                return WPETexStreamingFrame(
-                    imageID: imageID,
-                    subRect: frameInfo.subRect(
-                        textureWidth: sourceImage.width,
-                        textureHeight: sourceImage.height
-                    ),
-                    duration: duration,
-                    samplingDescriptor: frameInfo.samplingDescriptor(
-                        textureWidth: sourceImage.width,
-                        textureHeight: sourceImage.height
-                    )
-                )
-            }
-        }
-
-        let frameRate = computeFrameRate(fromDurations: frames.map(\.duration), defaultDuration: defaultDuration)
-
-        return WPETexStreamingPayload(
-            info: info,
-            compressedImages: compressedImages,
-            frames: frames,
-            frameRate: frameRate,
-            loop: true
-        )
-    }
 
     // MARK: - Parsing
 
@@ -994,7 +836,7 @@ struct WPETexDecoder: Sendable {
         let mip = parsed.bitmap.mipmaps[0]
         let byteCount = try WPETexMipValidation.layout(format: .rgba8888, width: info.width, height: info.height,
                                                        depth: info.depth).byteCount
-        guard byteCount <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+        guard byteCount <= WPETexMipValidation.maxDecompressedByteCount else {
             throw WPETexMipValidation.Invalid(detail: "Volume mip chain exceeds decoded byte budget")
         }
         let encoded = try inflateIfNeeded(payload: mip.payload, expectedByteCount: nil,
@@ -1325,7 +1167,7 @@ enum WPETexConditionalMaterializer {
             for mip in levels {
                 let count = try WPETexMipValidation.layout(format: format, width: mip.width, height: mip.height).byteCount
                 let (next, overflow) = total.addingReportingOverflow(count)
-                guard !overflow, next <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+                guard !overflow, next <= WPETexMipValidation.maxDecompressedByteCount else {
                     throw WPETexDecodeError.decodeFailed(mipmap: mip.index, detail: "Conditional texture exceeds decoded byte budget")
                 }
                 total = next

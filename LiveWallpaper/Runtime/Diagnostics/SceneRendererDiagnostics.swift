@@ -19,7 +19,6 @@ struct SceneRendererDiagnostics: Sendable {
     }
 
     let loadDiagnostics: SceneLoadDiagnostic?
-    let resolution: WPEResolutionDiagnosticsSnapshot
     let shaderErrors: ShaderErrors
     let gpuErrors: GPUErrors
     var compatibilitySummary = ""

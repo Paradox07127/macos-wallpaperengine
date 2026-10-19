@@ -101,11 +101,11 @@ test-app-interaction:
 WPE_METAL_SUITES := WPEParityMetalStateMappingTests WPEParityShaderStoreTests \
     WPEParityProductSettingsTests WPEParityResourceSaverFlagsTests WPEParityColorCorrectionPresetTests \
     WPEParityAudioFeedTests WPEParitySeedParsingTests SystemWallpaperSceneConfigurationTests \
-    SystemWallpaperPreparationTests WPEMetalTextureLoaderTests WPEMetalRenderScaleTests \
-    WPEMetalFXUpscalerTests WPEMetalUpscalePlanTests WPEDisplayHDROutputTests WPEMetalFrameSubmissionTests WPEGPUErrorSinkTests \
+    SystemWallpaperPreparationTests WPEParityTextureLoaderTests WPETexTexturePayloadTests WPEMetalRenderScaleTests \
+    WPEMetalFXUpscalerTests WPEMetalUpscalePlanTests WPEDisplayHDROutputTests WPEMetalFrameSubmissionTests \
     WPEVideoNV12ConversionTests WPEVideoHDRAndLegacyOutputTests WPEVideoSamplingFailureTests \
     WPEVideoFrameConversionSchedulingTests WPEVideoOutputCapTests WPEVideoTextureSourceTeardownTests \
-    WPETexLazyAnimatedTextureSourceTests WPETexAnimatedTextureSourceSuspendTests WPETexAnimatedTextureSourceGateTests \
+    WPEMetalTextureSnapshotterFormatTests \
     WPESceneSpanPresenterTests WPESceneSpanFramesTests WPEDisplayedFrameCaptureTests \
     WallpaperVideoPlayerDisplayedFrameCaptureTests WPERenderThreadTests WPERenderThreadDrainRuntimeTests \
     SceneLoadProgressTests WPEPreparationCancellationTests WPESceneHibernateTests

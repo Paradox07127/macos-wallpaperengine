@@ -166,15 +166,7 @@ final class ParityProgramSettingsTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         try ParityProgramPuppetTests.unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoSettingsScripts() })
+                                                        userValues: [:])
         return (document, WPEParityProgramAssets(sceneDirectory: root, assetRoots: [engine]))
-    }
-}
-
-private struct NoSettingsScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

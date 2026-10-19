@@ -37,8 +37,7 @@ final class WPEParityFramePlanShaderReadTests: XCTestCase {
             reads.withLock { $0[path, default: 0] += 1 }
             return sourceFiles[path]
         }, .directory(engine)])
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in ShaderReadNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 32, height: 32)
 
         reads.withLock { $0 = [:] }
@@ -61,10 +60,4 @@ final class WPEParityFramePlanShaderReadTests: XCTestCase {
     }
 }
 
-private struct ShaderReadNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

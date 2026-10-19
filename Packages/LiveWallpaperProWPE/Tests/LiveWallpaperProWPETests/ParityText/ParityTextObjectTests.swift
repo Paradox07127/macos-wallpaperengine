@@ -5,13 +5,6 @@ import XCTest
 
 /// WPE's text object field table (FUN_140258ca0), its parsers and the rebuild check of FUN_140256f20.
 final class ParityTextObjectTests: XCTestCase {
-    private struct NoScripts: WPESceneTransformScriptResolving {
-        func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                         seed _: SIMD3<Double>) -> SIMD3<Double>? {
-            nil
-        }
-    }
-
     private func object(_ fields: [String: Any]) throws -> WPEParityTextObject {
         try WPEParityTextObject(json: XCTUnwrap(WPESceneJSONValue(jsonValue: fields)))
     }
@@ -23,8 +16,7 @@ final class ParityTextObjectTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
             "objects": objects,
         ]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: userValues,
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: userValues)
     }
 
     func testDefaultsOfAnObjectWithOnlyText() throws {

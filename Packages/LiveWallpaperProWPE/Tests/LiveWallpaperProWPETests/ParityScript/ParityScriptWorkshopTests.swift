@@ -22,8 +22,7 @@ final class ParityScriptWorkshopTests: XCTestCase {
         let entries = Self.entries(bytes)
         let read: @Sendable (String) -> Data? = { path in entries[path].map { bytes.subdata(in: $0) } }
         let scene = try XCTUnwrap(read("scene.json"))
-        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: scene, userValues: [:])
         let projection = document.resolvedGeneralJSON["orthogonalprojection"]
         let canvas = SIMD2(Float(Self.number(projection?["width"]) ?? 1920),
                            Float(Self.number(projection?["height"]) ?? 1080))
@@ -96,12 +95,5 @@ final class ParityScriptWorkshopTests: XCTestCase {
         }
         print("parity script tick CPU mean: \(Double(total) / 60 / 1000) us over \(engine.bindings.count) bindings")
         XCTAssertEqual(engine.exceptionCount, 0)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

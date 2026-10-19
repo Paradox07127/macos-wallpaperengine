@@ -87,7 +87,7 @@ final class ParityParticleInitializerTests: XCTestCase {
     func testInheritedControlPointVelocityReachesBirthAndPackedTrailWithOneSharedDraw() throws {
         let document = try WPESceneDocumentParser.parse(
             data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":5,"name":"fx","particle":"fx"}]}"#.utf8),
-            userValues: [:], makeTransformScriptResolver: { _, _ in Support.NoScripts() }
+            userValues: [:]
         )
         let owner = simd_float4x4(SIMD4(0, 2, 0, 0), SIMD4(-3, 0, 0, 0),
                                   SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1))

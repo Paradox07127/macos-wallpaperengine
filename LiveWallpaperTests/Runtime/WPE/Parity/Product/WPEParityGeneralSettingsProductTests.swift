@@ -21,8 +21,7 @@ extension WPEParitySceneDriverTests {
                          }
                          """]]],
         ])
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
         defer { driver.cleanup() }
         let compiler = try makeCompiler()

@@ -157,8 +157,7 @@ final class ParityTextPipelineTests: XCTestCase {
                 ]],
             ]
             return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                    userValues: caption.map { ["caption": .string($0)] } ?? [:],
-                                                    makeTransformScriptResolver: { _, _ in PipelineNoScripts() })
+                                                    userValues: caption.map { ["caption": .string($0)] } ?? [:])
         }
         let old = try document(nil)
         let bindings = WPEParityUserProperties.bindings(document: old)
@@ -168,12 +167,5 @@ final class ParityTextPipelineTests: XCTestCase {
         let update = try XCTUnwrap(WPEParityUserPropertyUpdate(from: old, to: document("Hello")))
         XCTAssertEqual(update.texts.map(\.text), ["Hello"])
         XCTAssertEqual(try XCTUnwrap(WPEParityUserPropertyUpdate(from: old, to: document(nil))).texts, [])
-    }
-}
-
-private struct PipelineNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

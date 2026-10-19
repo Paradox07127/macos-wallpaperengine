@@ -1781,8 +1781,7 @@ final class WPEParityTextDrawTests: XCTestCase {
 
     private static func parse(_ scene: Data,
                               userValues: [String: WallpaperEngineProjectPropertyValue] = [:]) throws -> WPESceneDocument {
-        try WPESceneDocumentParser.parse(data: scene, userValues: userValues,
-                                         makeTransformScriptResolver: { _, _ in TextNoScripts() })
+        try WPESceneDocumentParser.parse(data: scene, userValues: userValues)
     }
 
     private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil,
@@ -1831,8 +1830,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         general["camerashake"] = false
         json["general"] = general
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in TextNoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets,
@@ -1914,10 +1912,4 @@ final class WPEParityTextDrawTests: XCTestCase {
     }
 }
 
-private struct TextNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

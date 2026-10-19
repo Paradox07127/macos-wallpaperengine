@@ -57,7 +57,7 @@ extension WPEParitySceneDriverTests {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json),
-                                                        userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false),

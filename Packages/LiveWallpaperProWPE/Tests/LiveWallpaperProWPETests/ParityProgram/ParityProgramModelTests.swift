@@ -23,8 +23,7 @@ final class ParityProgramModelTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         try ParityProgramPuppetTests.unpack(package, into: root)
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoModelScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [wpeAssets])
         return (document, WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings()))
     }
@@ -90,12 +89,5 @@ final class ParityProgramModelTests: XCTestCase {
     private static func components(_ value: WPECBufferValue?) -> [Float]? {
         guard case let .vector(components)? = value else { return nil }
         return components
-    }
-}
-
-private struct NoModelScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

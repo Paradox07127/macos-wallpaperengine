@@ -6,7 +6,7 @@ import Metal
 
 struct WPEMetalFrameInFlightBudgetExhausted: Error {}
 
-enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
+enum WPEMetalRenderError: Error, Equatable, LocalizedError, Sendable {
     case commandQueueUnavailable
     case libraryUnavailable
     case pipelineUnavailable(String)
@@ -17,37 +17,37 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .commandQueueUnavailable:
-            return String(
+            String(
                 localized: "error.render.executor.command_queue_unavailable",
                 defaultValue: "Metal command queue is unavailable.",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create or access a command queue."
             )
         case .libraryUnavailable:
-            return String(
+            String(
                 localized: "error.render.executor.library_unavailable",
                 defaultValue: "WPE Metal built-in shader library is unavailable.",
                 bundle: .appLanguage, comment: "Error shown when the built-in Metal shader library is unavailable."
             )
         case let .pipelineUnavailable(name):
-            return String(
+            String(
                 localized: "error.render.executor.pipeline_unavailable",
                 defaultValue: "WPE Metal pipeline is unavailable for \(name).",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create a render pipeline."
             )
         case let .pipelineStateBuildFailed(name, detail):
-            return String(
+            String(
                 localized: "error.render.executor.pipeline_state_build_failed",
                 defaultValue: "Metal pipeline build failed for '\(name)': \(detail)",
                 bundle: .appLanguage, comment: "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input)."
             )
         case .noRenderablePasses:
-            return String(
+            String(
                 localized: "error.render.executor.no_renderable_passes",
                 defaultValue: "WPE Metal pipeline has no renderable passes.",
                 bundle: .appLanguage, comment: "Error shown when the Metal render pipeline has no renderable passes."
             )
         case .commandBufferFailed:
-            return String(
+            String(
                 localized: "error.render.executor.command_buffer_failed",
                 defaultValue: "WPE Metal command buffer failed.",
                 bundle: .appLanguage, comment: "Error shown when a Metal command buffer reports failure."

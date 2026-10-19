@@ -23,33 +23,6 @@ struct WPEMultiRootResourceResolverTests {
         #expect(url.lastPathComponent == "dep.png")
     }
 
-    @Test("Dependency JSON format probe stays inside its declared mount")
-    func dependencyTextureFormatProbeStaysInsideMount() throws {
-        let fixture = try makeFixture()
-        defer { fixture.cleanup() }
-        let dependencyModels = fixture.dependencyRoot.appendingPathComponent("models", isDirectory: true)
-        let dependencyMaterials = fixture.dependencyRoot.appendingPathComponent("materials", isDirectory: true)
-        try FileManager.default.createDirectory(at: dependencyModels, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: dependencyMaterials, withIntermediateDirectories: true)
-        try Data(#"{"material":"materials/wrapped.json"}"#.utf8)
-            .write(to: dependencyModels.appendingPathComponent("wrapped.json"))
-        try Data(#"{"passes":[{"textures":["dep-normal"]}]}"#.utf8)
-            .write(to: dependencyMaterials.appendingPathComponent("wrapped.json"))
-        try Data("dependency-tex".utf8)
-            .write(to: dependencyMaterials.appendingPathComponent("dep-normal.tex"))
-
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: fixture.primaryRoot,
-            dependencyMounts: [WPEAssetMount(workshopID: "123", rootURL: fixture.dependencyRoot)]
-        )
-        let probe = try resolver.resolveTextureFormatProbe(
-            relativePath: "../123/models/wrapped.json"
-        )
-
-        #expect(probe.relativePath == "materials/dep-normal.tex")
-        #expect(probe.texPayload?.materializedData() == Data("dependency-tex".utf8))
-    }
-
     @Test("Engine assets fallback resolves only after primary miss")
     func engineAssetsFallbackResolvesOnlyAfterPrimaryMiss() throws {
         let fixture = try makeFixture()
@@ -97,37 +70,6 @@ struct WPEMultiRootResourceResolverTests {
         #expect(String(data: try Data(contentsOf: url), encoding: .utf8) == "project-version")
     }
 
-    @Test("Engine JSON format probe keeps its terminal TEX in the engine root")
-    func engineTextureFormatProbeKeepsOrigin() throws {
-        let fixture = try makeFixture()
-        defer { fixture.cleanup() }
-
-        let primaryMaterials = fixture.primaryRoot.appendingPathComponent("materials", isDirectory: true)
-        let engineModels = fixture.engineRoot.appendingPathComponent("assets/models", isDirectory: true)
-        let engineMaterials = fixture.engineRoot.appendingPathComponent("assets/materials", isDirectory: true)
-        try FileManager.default.createDirectory(at: primaryMaterials, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: engineModels, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: engineMaterials, withIntermediateDirectories: true)
-        try Data("primary-shadow".utf8)
-            .write(to: primaryMaterials.appendingPathComponent("shared.tex"))
-        try Data(#"{"material":"materials/wrapped.json"}"#.utf8)
-            .write(to: engineModels.appendingPathComponent("wrapped.json"))
-        try Data(#"{"passes":[{"textures":["shared"]}]}"#.utf8)
-            .write(to: engineMaterials.appendingPathComponent("wrapped.json"))
-        try Data("engine-tex".utf8)
-            .write(to: engineMaterials.appendingPathComponent("shared.tex"))
-
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: fixture.primaryRoot,
-            dependencyMounts: [],
-            engineAssetsRootURL: fixture.engineRoot
-        )
-        let probe = try resolver.resolveTextureFormatProbe(relativePath: "models/wrapped.json")
-
-        #expect(probe.relativePath == "materials/shared.tex")
-        #expect(probe.texPayload?.materializedData() == Data("engine-tex".utf8))
-    }
-
     @Test("Engine assets fallback only triggers on .fileMissing")
     func engineAssetsFallbackOnlyTriggersOnFileMissing() throws {
         let fixture = try makeFixture()
@@ -171,52 +113,6 @@ struct WPEMultiRootResourceResolverTests {
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
             _ = try resolver.resolveExistingFileURL(relativePath: "../123/../secret.png")
         }
-    }
-
-    @Test("Optional probe miss is not traced; required miss is")
-    func optionalProbeMissNotTraced() throws {
-        let fixture = try makeFixture()
-        defer { fixture.cleanup() }
-        let tracer = WPEResolutionTracer()
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: fixture.primaryRoot,
-            dependencyMounts: [],
-            engineAssetsRootURL: fixture.engineRoot,
-            tracer: tracer
-        )
-
-        #expect(throws: SceneResourceResolver.ResolveError.fileMissing) {
-            _ = try resolver.data(relativePath: "materials/particle/流星.tex-json", optional: true)
-        }
-        #expect(tracer.snapshot().missedRefs.isEmpty)
-
-        #expect(throws: SceneResourceResolver.ResolveError.fileMissing) {
-            _ = try resolver.data(relativePath: "materials/particle/流星.tex")
-        }
-        #expect(tracer.snapshot().missedRefs.map(\.ref) == ["materials/particle/流星.tex"])
-    }
-
-    @Test("Optional probe hit is still traced as resolved")
-    func optionalProbeHitTraced() throws {
-        let fixture = try makeFixture()
-        defer { fixture.cleanup() }
-        let engineParticle = fixture.engineRoot
-            .appendingPathComponent("assets/materials/particle", isDirectory: true)
-        try FileManager.default.createDirectory(at: engineParticle, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: engineParticle.appendingPathComponent("halo_3.tex-json"))
-
-        let tracer = WPEResolutionTracer()
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: fixture.primaryRoot,
-            dependencyMounts: [],
-            engineAssetsRootURL: fixture.engineRoot,
-            tracer: tracer
-        )
-
-        _ = try resolver.data(relativePath: "materials/particle/halo_3.tex-json", optional: true)
-        let snapshot = tracer.snapshot()
-        #expect(snapshot.resolvedCount == 1)
-        #expect(snapshot.missedRefs.isEmpty)
     }
 
     private struct Fixture {

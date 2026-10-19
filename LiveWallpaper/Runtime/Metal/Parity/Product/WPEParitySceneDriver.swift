@@ -120,7 +120,7 @@ final class WPEParitySceneDriver {
         didSet { renderer?.state.excludedObjectIDs = excludedObjectIDs }
     }
 
-    let executor: WPEMetalRenderExecutor
+    let executor: WPEMetalPresenter
     private(set) var renderer: WPEParityFrameRenderer?
     var didLoad: Bool {
         renderer != nil
@@ -275,7 +275,7 @@ final class WPEParitySceneDriver {
 
     init(device: MTLDevice) throws {
         self.device = device
-        executor = try WPEMetalRenderExecutor(device: device)
+        executor = try WPEMetalPresenter(device: device)
     }
 
     /// `document` already carries the user property values. Compiles every program (seconds when the disk cache is
@@ -365,12 +365,12 @@ final class WPEParitySceneDriver {
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
-                fragmentName: WPEMetalRenderExecutor.presentFragment(source: renderer.backbuffer.pixelFormat,
+                fragmentName: WPEMetalPresenter.presentFragment(source: renderer.backbuffer.pixelFormat,
                                                                      colorTransfer: renderer.colorTransfer),
                 colorPixelFormat: pixelFormat
             )
             if let soundResolver, !document.soundObjects.isEmpty {
-                let runtime = WPESoundRuntime(resolver: soundResolver, rules: .wpe)
+                let runtime = WPESoundRuntime(resolver: soundResolver)
                 preparedSound = runtime
                 await Self.prepareSound(runtime, sounds: document.soundObjects)
                 guard generation == loadGeneration else {
@@ -752,20 +752,20 @@ final class WPEParitySceneDriver {
         return commandBuffer
     }
 
-    nonisolated(nonsending) func renderMovieFrame(into destination: WPEMetalRenderExecutor.PresentCompletionTexture,
+    nonisolated(nonsending) func renderMovieFrame(into destination: WPEMetalPresenter.PresentCompletionTexture,
                                                   timestamp: CFTimeInterval) async throws {
         try Task.checkCancellation()
-        guard let renderer, let plannedTarget else { throw WPEMetalRenderExecutorError.noRenderablePasses }
+        guard let renderer, let plannedTarget else { throw WPEMetalRenderError.noRenderablePasses }
         guard encodeFrame(renderer, timestamp: timestamp, pointer: SIMD2(0.5, 0.5), buttonDown: false,
                           audio: nil, date: Date(), forceExternalFrame: true) else {
             if let runtimeFailure {
                 throw WPEParityFrameRenderError.requiredShaderUnavailable(runtimeFailure)
             }
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         let scene = SubmittedBuffer(buffer: submittedSceneBuffer)
         guard let command = executor.textureSourceCommandQueue.makeCommandBuffer() else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            throw WPEMetalRenderError.commandBufferFailed
         }
         let upscaled = try executor.encodeUpscaledPresent(source: renderer.backbuffer, target: destination.texture,
                                                           fitMode: plannedTarget.presentFit,
@@ -795,7 +795,7 @@ final class WPEParitySceneDriver {
             }
             command.commit()
         }
-        guard succeeded else { throw WPEMetalRenderExecutorError.commandBufferFailed }
+        guard succeeded else { throw WPEMetalRenderError.commandBufferFailed }
         try Task.checkCancellation()
     }
 
@@ -921,7 +921,7 @@ final class WPEParitySceneDriver {
         }
     }
 
-    /// Replays the last present pass into a texture, as `WPEMetalRenderExecutor.encodeDisplayedFrameCapture` does, but
+    /// Replays the last present pass into a texture, as `WPEMetalPresenter.encodeDisplayedFrameCapture` does, but
     /// on the frame queue that writes the backbuffer. `completion` runs on a Metal callback thread.
     func captureDisplayedFrame(colorSpace: CGColorSpace?,
                                completion: @escaping @Sendable (WPEDisplayedFrameCapture?) -> Void) {

@@ -6,26 +6,13 @@ import Testing
 
 struct WPESoundRuntimeTests {
 
-    @Test("Loop scheduler advances in authored order and skips failed candidates")
-    func loopSchedulerUsesAuthoredOrder() {
-        var scheduler = WPESoundPathScheduler(playbackMode: "loop", seed: 17)
-
-        #expect(scheduler.candidates(pathCount: 3) == [0, 1, 2])
-        scheduler.didSchedule(index: 0, pathCount: 3)
-        #expect(scheduler.candidates(pathCount: 3) == [1, 2, 0])
-
-        // Model path 1 failing and path 2 being accepted by the file scheduler.
-        scheduler.didSchedule(index: 2, pathCount: 3)
-        #expect(scheduler.candidates(pathCount: 3) == [0, 1, 2])
-    }
-
     @Test("Single scheduler accepts one file, stops, then explicit reset can replay")
-    func singleSchedulerStopsAfterOneFile() throws {
+    func singleSchedulerStopsAfterOneFile() {
         var scheduler = WPESoundPathScheduler(playbackMode: "single", seed: 23)
         let firstCandidates = scheduler.candidates(pathCount: 4)
-        let selected = try #require(firstCandidates.first)
+        #expect(!firstCandidates.isEmpty)
 
-        scheduler.didSchedule(index: selected, pathCount: 4)
+        scheduler.didSchedule()
         #expect(scheduler.candidates(pathCount: 4).isEmpty)
 
         scheduler.reset()
@@ -44,8 +31,8 @@ struct WPESoundRuntimeTests {
             let rhsIndex = try #require(rhs.candidates(pathCount: 5).first)
             lhsSelections.append(lhsIndex)
             rhsSelections.append(rhsIndex)
-            lhs.didSchedule(index: lhsIndex, pathCount: 5)
-            rhs.didSchedule(index: rhsIndex, pathCount: 5)
+            lhs.didSchedule()
+            rhs.didSchedule()
         }
 
         #expect(lhsSelections == rhsSelections)
@@ -56,7 +43,8 @@ struct WPESoundRuntimeTests {
     func unknownPlaybackModeFallsBackToLoop() {
         var scheduler = WPESoundPathScheduler(playbackMode: "future-mode", seed: 1)
         #expect(scheduler.mode == .loop)
-        #expect(scheduler.candidates(pathCount: 2) == [0, 1])
+        var loop = WPESoundPathScheduler(playbackMode: "loop", seed: 1)
+        #expect(scheduler.candidates(pathCount: 2) == loop.candidates(pathCount: 2))
     }
 
     @Test("Parses sound object with array of paths")
@@ -199,21 +187,21 @@ struct WPESoundRuntimeTests {
 
         #expect(runtime.prepare(sounds: [sound]) == 1)
         var snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(snapshot.playerVolume == 0.5)
+        #expect(snapshot.playerVolume == 0.25)
 
         runtime.setMasterVolume(2.0)
         snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(snapshot.playerVolume == 0.5, "master above 1 must not amplify the authored 0.5")
+        #expect(snapshot.playerVolume == 0.25, "master above 1 must not amplify the authored squared gain")
 
         runtime.setMasterVolume(-1.5)
         snapshot = try #require(runtime.debugTrackSnapshots().first)
         #expect(snapshot.playerVolume == 0)
 
         // Back inside the range the master scales normally, so the clamp is not
-        // a latch: 0.5 scene × 0.5 master.
+        // a latch: 0.5² scene × 0.5 master.
         runtime.setMasterVolume(0.5)
         snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(snapshot.playerVolume == 0.25)
+        #expect(snapshot.playerVolume == 0.125)
     }
 
     @Test("prepare() attaches without playing; play() is a no-op when nothing prepared")
@@ -264,10 +252,10 @@ struct WPESoundRuntimeTests {
         #expect(runtime.prepare(sounds: [sound]) == 1)
         let snapshot = try #require(runtime.debugTrackSnapshots().first)
         #expect(snapshot.availablePathCount == 2)
-        // The look-ahead fills both slots up front, so a two-path loop has
-        // consumed the authored order 0 → 1 before a single sample plays.
+        // Look-ahead retains two randomly selected files before a sample plays.
         #expect(snapshot.scheduledSegmentCount == 2)
-        #expect(snapshot.lastScheduledPathIndex == 1)
+        let selected = try #require(snapshot.lastScheduledPathIndex)
+        #expect((0 ..< snapshot.availablePathCount).contains(selected))
         #expect(snapshot.hasOpenFile)
         #expect(!snapshot.isEnabled)
     }
@@ -396,7 +384,7 @@ struct WPESoundRuntimeTests {
 
         #expect(runtime.prepare(sounds: [sound]) == 1)
         var snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(snapshot.playerVolume == 0.5)
+        #expect(snapshot.playerVolume == 0.25)
 
         runtime.setMuted(true)
         snapshot = try #require(runtime.debugTrackSnapshots().first)
@@ -409,7 +397,7 @@ struct WPESoundRuntimeTests {
 
         runtime.setMuted(false)
         snapshot = try #require(runtime.debugTrackSnapshots().first)
-        #expect(snapshot.playerVolume == 0.75)
+        #expect(snapshot.playerVolume == 0.5625)
     }
 
     @Test("Mute stops the engine outright and unmute restarts it")

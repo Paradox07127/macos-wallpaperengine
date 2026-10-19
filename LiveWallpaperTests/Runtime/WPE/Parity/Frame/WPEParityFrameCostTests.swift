@@ -185,8 +185,7 @@ final class WPEParityFrameCostTests: XCTestCase {
             ],
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in CostNoScripts() })
+                                                        userValues: [:])
         let assets = WPEParityProgramAssets(sceneDirectory: scratch, assetRoots: [wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                           width: width, height: height)
@@ -218,8 +217,7 @@ final class WPEParityFrameCostTests: XCTestCase {
         editGeneral(&general)
         json["general"] = general
         let document = try WPESceneDocumentParser.parse(
-            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-            makeTransformScriptResolver: { _, _ in CostNoScripts() }
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
@@ -262,8 +260,7 @@ final class WPEParityFrameCostTests: XCTestCase {
             projectRoot: folder, dependencyMounts: [], engineAssetsRootURL: engineRoot
         )
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in CostNoScripts() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                           width: 1920, height: 1080)
@@ -281,10 +278,4 @@ final class WPEParityFrameCostTests: XCTestCase {
     }
 }
 
-private struct CostNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

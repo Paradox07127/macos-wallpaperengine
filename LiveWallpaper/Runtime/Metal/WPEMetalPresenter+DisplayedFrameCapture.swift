@@ -66,7 +66,7 @@ final class WPEDisplayedFrameCaptureResumer: Sendable {
     }
 }
 
-extension WPEMetalRenderExecutor {
+extension WPEMetalPresenter {
     /// `completion` runs on a Metal callback thread, with nil when nothing reproducible was presented or the GPU failed.
     func encodeDisplayedFrameCapture(
         colorSpace: CGColorSpace?,

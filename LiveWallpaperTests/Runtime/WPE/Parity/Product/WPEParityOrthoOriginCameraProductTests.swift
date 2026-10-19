@@ -25,7 +25,7 @@ extension WPEParitySceneDriverTests {
             "general": ["orthogonalprojection": ["width": 16, "height": 16], "clearenabled": true,
                         "clearcolor": "0 0 0", "bloom": false],
             "objects": [["id": 1, "image": "models/origin-witness.json", "origin": "8 8 0", "size": "2 2"]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

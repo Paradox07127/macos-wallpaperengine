@@ -7,8 +7,7 @@ final class ParitySoundFieldOrderTests: XCTestCase {
         let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript")
         let data = try Data(contentsOf: fixtures.appendingPathComponent("cold-sound-field-order-v2/scene.json"))
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in SoundFieldOrderNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let base = try Data(contentsOf: fixtures.appendingPathComponent("baseclasses.js"))
         let assets = WPEParityProgramAssets(sources: [.lookup(fixtures) { path in
@@ -52,12 +51,5 @@ final class ParitySoundFieldOrderTests: XCTestCase {
         // Retain all original general markers without claiming native general early-init ordering here.
         XCTAssertFalse(diagnostics.contains { $0.contains("general.bloom script is unsupported") })
         print("cold-order actual JSC markers (Sound subset qualified only):\n" + messages.joined(separator: "\n"))
-    }
-}
-
-private struct SoundFieldOrderNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -1,12 +1,11 @@
 import Foundation
-import Testing
 @testable import LiveWallpaperProWPE
+import Testing
 
 /// `1e300` is the probe value throughout because it is *finite* — an `isFinite` guard
 /// passes it and still traps.
 @Suite("Untrusted numeric bounds")
 struct WPEUntrustedNumericBoundsTests {
-
     /// Values as `JSONSerialization` actually produces them (`__NSCFNumber`),
     /// which is the path real scene data takes.
     private func jsonValues(_ text: String) -> [String: Any] {
@@ -45,85 +44,6 @@ struct WPEUntrustedNumericBoundsTests {
         #expect(WPEValueParser.int(json["big"]) == Int.max)
         #expect(WPEValueParser.int(json["small"]) == Int.min)
         #expect(WPEValueParser.int(json["ok"]) == 5)
-    }
-
-    // MARK: - Sprite sheet sidecar
-
-    @Test("A sub-pixel sprite frame width clamps to the atlas instead of trapping")
-    func spriteSheetSubPixelFrameWidthClamps() {
-        let json = jsonValues(
-            #"{"spritesheetsequences":[{"width":1e-300,"height":1,"frames":1,"duration":1}]}"#
-        )
-        let sheet = WPEParticleSpriteSheetParser.parse(
-            dictionary: json,
-            atlasPixelSize: (width: 2048, height: 2048)
-        )
-        #expect(sheet?.cols == 2048)
-        #expect(sheet?.rows == 2048)
-    }
-
-    @Test("A well-formed sprite sheet still divides the atlas normally")
-    func spriteSheetWellFormedIsUnchanged() {
-        let json = jsonValues(
-            #"{"spritesheetsequences":[{"width":512,"height":256,"frames":8,"duration":1}]}"#
-        )
-        let sheet = WPEParticleSpriteSheetParser.parse(
-            dictionary: json,
-            atlasPixelSize: (width: 2048, height: 1024)
-        )
-        #expect(sheet?.cols == 4)
-        #expect(sheet?.rows == 4)
-        #expect(sheet?.frameCount == 8)
-    }
-
-    @Test("An out-of-range frame count saturates rather than trapping")
-    func spriteSheetOutOfRangeFrameCount() {
-        let json = jsonValues(
-            #"{"spritesheetsequences":[{"width":512,"height":512,"frames":1e300,"duration":1}]}"#
-        )
-        let sheet = WPEParticleSpriteSheetParser.parse(
-            dictionary: json,
-            atlasPixelSize: (width: 2048, height: 2048)
-        )
-        #expect(sheet?.frameCount == Int.max)
-    }
-}
-
-extension WPEUntrustedNumericBoundsTests {
-    @Test("Out-of-range particle ids, counts and audio bands saturate instead of trapping")
-    func particleParserSaturatesOutOfRangeNumbers() {
-        let json = jsonValues(#"""
-        {
-            "maxcount": 1e300,
-            "instantaneous": 1e300,
-            "emitter": [{
-                "name": "boom",
-                "rate": 5,
-                "audioprocessing": 1,
-                "audioprocessingfrequencystart": 1e300,
-                "audioprocessingfrequencyend": -1e300
-            }],
-            "controlpoint": [{"id": 1e300, "offset": "0 0 0", "flags": 1}],
-            "operator": [{"name": "controlpointattract", "controlpoint": 1e300, "scale": 1, "threshold": 2}],
-            "children": [{"id": 1e300, "name": "spark"}]
-        }
-        """#)
-        var diagnostics: [WPESceneDiagnostic] = []
-        let definition = WPEParticleDefinitionParser.parse(dictionary: json, diagnostics: &diagnostics)
-
-        // Load survived; the saturated values are pinned, not asserted loosely,
-        // so a silent behavior change here shows up as a diff.
-        #expect(definition.controlPoints.first?.id == Int.max)
-        #expect(definition.childReferences.first?.id == Int.max)
-
-        // The audio band clamp: 1e300 → last band, -1e300 → first band, swapped into order.
-        if let audio = definition.emitterAudioState {
-            #expect(audio.emissionScale(spectrum16: [Float](repeating: 0.5, count: 16)) >= 0)
-        }
-
-        #expect(definition.maxCount == Int.max, "top-level maxcount saturates at parse")
-        let scaled = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(count: 2))
-        #expect(scaled.maxCount == Int.max, "Int.max * 2 saturates instead of trapping")
     }
 }
 

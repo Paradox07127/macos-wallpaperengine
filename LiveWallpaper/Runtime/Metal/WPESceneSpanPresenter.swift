@@ -39,7 +39,7 @@ final class WPESceneSpanPresenter {
     let frames: WPESceneSpanFrames
     let state: WPESceneSpanPresentationState
     let producer: WPEDisplayRenderActor
-    let executor: WPEMetalRenderExecutor
+    let executor: WPEMetalPresenter
     let layer: WPEPresentLayer
     let permits = WPEMetalFrameSubmissionPool(slotCount: 1)
     var configuration: VideoSpanRenderConfiguration
@@ -58,7 +58,7 @@ final class WPESceneSpanPresenter {
         self.layer = layer
         self.configuration = configuration
         self.density = density
-        executor = try WPEMetalRenderExecutor(device: device)
+        executor = try WPEMetalPresenter(device: device)
     }
 
     func present() {

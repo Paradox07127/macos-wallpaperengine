@@ -242,8 +242,7 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
         for (path, data) in sourceFiles {
             XCTAssertEqual(assets.data(path), data, "Authored resource changed before planning: \(path)")
         }
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in MaterialStateNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 32, height: 32)
         let subject = try XCTUnwrap(plan.frames[0].draws.first { _, value in
             guard case let .scene(draw) = value else { return false }
@@ -336,10 +335,4 @@ final class WPEParityMaterialStateSceneTests: XCTestCase {
     ]
 }
 
-private struct MaterialStateNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

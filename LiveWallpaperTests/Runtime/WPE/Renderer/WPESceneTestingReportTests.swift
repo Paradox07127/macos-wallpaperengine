@@ -16,7 +16,7 @@ struct WPESceneTestingReportTests {
     func cleanSnapshotHasExplicitCounts() {
         let diagnostics = SceneRendererDiagnostics(
             loadDiagnostics: nil,
-            resolution: WPEResolutionDiagnosticsSnapshot(events: []),
+
             shaderErrors: .init(count: 0, entries: []),
             gpuErrors: .init(count: 0, last: nil)
         )
@@ -26,6 +26,7 @@ struct WPESceneTestingReportTests {
         )
         #expect(report.contains("Shader compile failures: 0"))
         #expect(report.contains("GPU errors: 0"))
+        #expect(!report.contains("All declared refs resolved"), "No resource-resolution telemetry is collected by this pipeline")
     }
 
     @Test("A parity snapshot reports its shader cache outcomes")
@@ -38,7 +39,7 @@ struct WPESceneTestingReportTests {
             isStatic: false, shaderCache: cache
         )
         let diagnostics = SceneRendererDiagnostics(
-            loadDiagnostics: nil, resolution: .init(events: []), shaderErrors: .init(count: 0, entries: []),
+            loadDiagnostics: nil, shaderErrors: .init(count: 0, entries: []),
             gpuErrors: .init(count: 0, last: nil), parity: parity
         )
         let report = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: diagnostics, errorCode: nil,
@@ -98,7 +99,7 @@ struct WPESceneTestingReportTests {
         reports.record(
             attempt: attempt, descriptor: descriptor, status: "frame presented",
             diagnostics: SceneRendererDiagnostics(
-                loadDiagnostics: nil, resolution: .init(events: []),
+                loadDiagnostics: nil,
                 shaderErrors: .init(count: 0, entries: []),
                 gpuErrors: .init(count: 5, last: "code=42 token=gpu-secret /Users/someone/private-scene/scene.pkg")
             )

@@ -24,24 +24,26 @@ struct WPEMetalTextureSnapshotterFormatTests {
     }
 
     @Test("BGRA8 sources are swizzled to RGBA")
-    func bgraSwizzle() throws {
+    func bgraSwizzle() async throws {
         let texture = try makeTexture(format: .bgra8Unorm, width: 1, height: 1)
         var bytes: [UInt8] = [10, 20, 30, 255]
         texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &bytes, bytesPerRow: 4)
-        let image = try #require(WPEMetalTextureSnapshotter.shared.snapshot(from: texture))
+        let snapshot = await WPEMetalTextureSnapshotter.shared.snapshotAsync(from: .init(texture: texture))
+        let image = try #require(snapshot)
         let px = try pixel(of: image, x: 0)
         #expect(px.r == 30 && px.g == 20 && px.b == 10 && px.a == 255)
     }
 
     @Test("RGBA16Float authored HDR posters apply the measured terminal transfer")
-    func rgba16FloatConverts() throws {
+    func rgba16FloatConverts() async throws {
         let texture = try makeTexture(format: .rgba16Float, width: 2, height: 1)
         var halves: [UInt16] = [
             0x4000, 0x3C00, 0x0000, 0x3C00,
             0x3800, 0x3800, 0x3800, 0x3C00,
         ]
         texture.replace(region: MTLRegionMake2D(0, 0, 2, 1), mipmapLevel: 0, withBytes: &halves, bytesPerRow: 16)
-        let image = try #require(WPEMetalTextureSnapshotter.shared.snapshot(from: texture))
+        let snapshot = await WPEMetalTextureSnapshotter.shared.snapshotAsync(from: .init(texture: texture))
+        let image = try #require(snapshot)
         let hot = try pixel(of: image, x: 0)
         #expect(hot.r == 255 && hot.g == 255 && hot.b == 0 && hot.a == 255)
         let mid = try pixel(of: image, x: 1)

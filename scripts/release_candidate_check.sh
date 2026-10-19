@@ -67,7 +67,7 @@ assert_lite_runtime_isolation() {
       echo "ERROR: Could not inspect Lite symbols: $payload" >&2
       exit 1
     fi
-    if grep -E 'WPEMetalRenderExecutor|WPEParitySceneDriver|WPEParityFrameRenderer|WPEParityScriptEngine' >/dev/null <<<"$symbols"; then
+    if grep -E 'WPEMetalPresenter|WPEParitySceneDriver|WPEParityFrameRenderer|WPEParityScriptEngine' >/dev/null <<<"$symbols"; then
       echo "ERROR: Lite binary contains a Pro-only renderer symbol: $payload" >&2
       exit 1
     fi

@@ -31,8 +31,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
             "objects": [["id": 1, "image": "models/a.json", "alpha": ["value": 1, "script": script]]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -89,8 +88,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         }
         let source: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                                      "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -139,8 +137,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         }
         let source: [String: Any] = ["camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
                                      "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": objects]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         var state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -185,8 +182,7 @@ final class ParityRegisteredAssetsTests: XCTestCase {
             "general": ["orthogonalprojection": ["width": 64, "height": 64]],
             "objects": [["id": 1, "image": "models/a.json", "alpha": ["value": 1, "script": script]]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in RegisteredAssetNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: source), userValues: [:])
         let state = WPEParitySceneState(document: document, hdr: false)
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Fixtures/ParityScript/baseclasses.js")
@@ -201,12 +197,5 @@ final class ParityRegisteredAssetsTests: XCTestCase {
         let registered = try XCTUnwrap(engine.bindings.first).registeredAssets
         XCTAssertEqual(registered.map(\.path), ["models/registered.mdl", "particles/registered.json"])
         XCTAssertEqual(registered.map(\.flag), [false, false], "a missing or non-boolean precache argument is false")
-    }
-}
-
-private struct RegisteredAssetNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

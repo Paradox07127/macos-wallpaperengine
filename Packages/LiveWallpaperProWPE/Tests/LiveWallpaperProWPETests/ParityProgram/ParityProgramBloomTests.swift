@@ -179,25 +179,16 @@ final class ParityProgramBloomTests: XCTestCase {
         general["orthogonalprojection"] = ["width": 1920, "height": 1080]
         let json: [String: Any] = ["camera": ["center": "0 0 0"], "general": general,
                                    "objects": [["id": 1, "name": "layer"]]]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: userValues,
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: userValues)
     }
 
     private func post(_ data: Data, directory: URL, hdr: Bool,
                       userValues: [String: WallpaperEngineProjectPropertyValue]) throws -> WPEParityPostProcessConfig {
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: userValues,
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: userValues)
         var post = WPEParityProgramScene(document: document,
                                          assets: WPEParityProgramAssets(sceneDirectory: directory, assetRoots: []),
                                          settings: WPEParityProgramSettings(hdrPostProcessing: hdr)).postProcess
         (post.backbufferWidth, post.backbufferHeight) = (1920, 1080)
         return post
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

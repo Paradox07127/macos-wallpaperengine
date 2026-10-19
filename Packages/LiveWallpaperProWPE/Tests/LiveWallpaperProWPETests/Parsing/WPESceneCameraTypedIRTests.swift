@@ -5,14 +5,6 @@ import Testing
 
 @Suite("WPE camera typed lossless IR")
 struct WPESceneCameraTypedIRTests {
-    private struct NoScriptResolver: WPESceneTransformScriptResolving {
-        func resolveVec3(
-            script: String,
-            properties: [String: WPESceneScriptPropertyValue],
-            seed: SIMD3<Double>
-        ) -> SIMD3<Double>? { nil }
-    }
-
     @Test("Preserves root path order and camera-object source order with explicit zeroes")
     func preservesOrderedAuthoredValues() throws {
         let document = try parse([
@@ -134,8 +126,7 @@ struct WPESceneCameraTypedIRTests {
     private func parse(_ payload: [String: Any]) throws -> WPESceneDocument {
         try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: payload),
-            userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            userValues: [:]
         )
     }
 

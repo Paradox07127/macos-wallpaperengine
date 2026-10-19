@@ -30,7 +30,7 @@ final class ParityProgramBindingSourceTests: XCTestCase {
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 32, "height": 32]],
             "objects": objects,
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in BindingSourceNoScripts() })
+        ]), userValues: [:])
         let snapshot = files
         let reads = OSAllocatedUnfairLock(initialState: [String: Int]())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("binding-source-\(UUID().uuidString)")
@@ -85,12 +85,5 @@ final class ParityProgramBindingSourceTests: XCTestCase {
 
     private func frame(_ fixture: Fixture) throws -> WPEParityFrame {
         try WPEParityFrameComposer.compose(scene: fixture.scene.scene, post: fixture.scene.postProcess)
-    }
-}
-
-private struct BindingSourceNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

@@ -720,7 +720,9 @@ struct WPESceneDocumentParserTests {
         let staticDoc = try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: staticPayload)
         )
-        #expect(staticDoc.textObjects.first { $0.id == "1" }?.originScript == nil)
+        let constant = try #require(staticDoc.textObjects.first { $0.id == "1" })
+        #expect(constant.origin == SIMD3.zero, "Parsing preserves authored seeds until the bounded VM runs")
+        #expect(constant.originScript?.script == "export function update(v){v.x=0.5;return v;}")
     }
 
     @Test("Text object alpha script is retained for runtime ticking")
@@ -1017,9 +1019,10 @@ struct WPESceneDocumentParserTests {
             let scaleTrack = try #require(scaleAnimation)
             #expect(anglesTrack.relative && scaleTrack.relative)
             #expect(anglesTrack.animation.name == .value("信封_root_1_angles"))
-            #expect(scaleTrack.originVector(at: 0) == [0, 0, 1])
-            #expect(scaleTrack.originVector(at: 10) == [1, 1, 1])
-            #expect(anglesTrack.originVector(at: 10) == [0, 0, 0])
+            #expect(scaleTrack.vectorFallback == [1, 1, 1])
+            #expect(scaleTrack.animation.tracks.map { $0.map(\.value) } == [[-1, 0], [-1, 0], [0]])
+            #expect(anglesTrack.vectorFallback == [0, 0, -1.05242])
+            #expect(anglesTrack.animation.tracks.last?.map(\.value) == [0, 1.05242])
         }
     }
 
@@ -1256,75 +1259,6 @@ struct WPESceneDocumentParserTests {
         #expect(try effect(true).visibleScript == nil)
     }
 
-    @Test("return shared.K update bodies classify as read fans; writers and side effects do not")
-    func sharedReadFanClassifier() {
-        let workshopFan = """
-        'use strict';
-        export function update(value) {
-        return shared.accentColor;
-        }
-        """
-        #expect(WPESharedReadFanAnalysis.readKey(in: workshopFan) == "accentColor")
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(v) { return shared.uiopacity; }"
-        ) == "uiopacity")
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(value) { return value; }"
-        ) == nil)
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(value) { return shared.accentColor.x; }"
-        ) == nil)
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(value) { shared.accentColor = value; return value; }"
-        ) == nil)
-        let withApply = """
-        export function applyUserProperties(changed) { thisObject.color = shared.accentColor; }
-        export function update(value) { return shared.accentColor; }
-        """
-        #expect(WPESharedReadFanAnalysis.readKey(in: withApply) == nil)
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(value) { thisLayer.visible = false; return shared.accentColor; }"
-        ) == nil)
-        #expect(WPESharedReadFanAnalysis.readKey(
-            in: "export function update(value) { setTimeout(function(){}, 16); return shared.accentColor; }"
-        ) == nil)
-
-        let parsedFan = "export function update(value) { return shared.accentColor; }"
-        let unique = "export function update(value) { return engine.runtime; }"
-        var objects: [[String: Any]] = (0..<5).map { index in
-            [
-                "id": "\(index)", "name": "img\(index)", "image": "models/util/solidlayer.json",
-                "color": ["value": "1 1 1", "script": parsedFan]
-            ]
-        }
-        objects.append([
-            "id": "9", "name": "solo", "image": "models/util/solidlayer.json",
-            "scale": ["value": "1 1 1", "script": unique]
-        ])
-        let fans = objects.compactMap { object -> String? in
-            guard let color = object["color"] as? [String: String] else { return nil }
-            return WPESharedReadFanAnalysis.readKey(in: color["script"] ?? "")
-        }
-        #expect(fans == Array(repeating: "accentColor", count: 5))
-        #expect(WPESharedReadFanAnalysis.readKey(in: unique) == nil)
-    }
-
-    @Test("Shared-read fan vec3 conversion accepts dict, array, and scalar host values")
-    func sharedReadFanVec3Conversion() {
-        #expect(
-            WPESharedReadFanAnalysis.vec3(from: ["x": 0.2, "y": 0.4, "z": 0.6])
-                == SIMD3(0.2, 0.4, 0.6)
-        )
-        #expect(
-            WPESharedReadFanAnalysis.vec3(from: [0.1, 0.2, 0.3])
-                == SIMD3(0.1, 0.2, 0.3)
-        )
-        #expect(WPESharedReadFanAnalysis.vec3(from: 0.5) == SIMD3(repeating: 0.5))
-        #expect(WPESharedReadFanAnalysis.vec3(from: true) == SIMD3(repeating: 1))
-        #expect(WPESharedReadFanAnalysis.vec3(from: false) == SIMD3.zero)
-        #expect(WPESharedReadFanAnalysis.vec3(from: Double.nan) == nil)
-    }
-
     @Test("Image and text `color` SceneScripts are parsed onto their objects")
     func colorScriptsAreParsed() throws {
         let colorScript = """
@@ -1359,15 +1293,6 @@ struct WPESceneDocumentParserTests {
         #expect(text.colorScript?.script == colorScript)
     }
 
-    @Test("A script whose only dynamic marker is registerAudioBuffers is not statically resolved")
-    func audioBufferScriptIsDynamic() {
-        let script = """
-        const b = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
-        export function update(v) { v.x = b.average[0]; return v; }
-        """
-        #expect(!WPETransformScriptStaticAnalysis.isStaticallyResolvable(script))
-    }
-
     @Test("A parent-dependent transform is retained for the runtime layer graph")
     func parentDependentTransformIsDynamic() throws {
         let script = """
@@ -1375,7 +1300,6 @@ struct WPESceneDocumentParserTests {
         export function init(value) { parent = thisLayer.getParent(); }
         export function update(value) { value.y *= Math.sign(-parent.origin.y); return value; }
         """
-        #expect(!WPETransformScriptStaticAnalysis.isStaticallyResolvable(script))
 
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -1613,8 +1537,6 @@ struct WPESceneDocumentParserTests {
         let text = try #require(document.textObjects.first)
         #expect(text.alpha == 1)
         #expect(text.alphaAnimation != nil)
-        #expect(text.resolvedAlpha(at: 1) == 1)
-        #expect(text.resolvedAlpha(at: 4) == 0)
     }
 
     @Test("Text object parses vec2 spacing and ignores legacy letterspacing")
@@ -2420,7 +2342,7 @@ struct WPESceneDocumentParserTests {
         #expect(abs(color.z - 192) < 0.001)
     }
 
-    @Test("Text object parses generic brightness (wildfire sample) and preserves it through withLiveText")
+    @Test("Text object parses generic brightness (wildfire sample)")
     func textObjectParsesBrightness() throws {
         let json = """
         {
@@ -2451,8 +2373,6 @@ struct WPESceneDocumentParserTests {
         #expect(abs(clock.brightness - 2.39) < 0.0001)
         let label = try #require(document.textObjects.first { $0.id == "102" })
         #expect(label.brightness == 1.0)
-        let live = clock.withLiveText("12:35", alpha: 0.5)
-        #expect(abs(live.brightness - 2.39) < 0.0001)
     }
 
     @Test("Text object parses WPE offscreen-background fields")
@@ -2479,9 +2399,6 @@ struct WPESceneDocumentParserTests {
         #expect(object.opaqueBackground)
         #expect(object.backgroundColor == SIMD3<Double>(0.1, 0.2, 0.3))
         #expect(object.backgroundBrightness == 1.5)
-        let live = object.withLiveText("World", alpha: 1)
-        #expect(live.copyBackground && live.opaqueBackground)
-        #expect(live.backgroundColor == object.backgroundColor)
     }
 
     @Test("Particle object inherits parent transform from group object")

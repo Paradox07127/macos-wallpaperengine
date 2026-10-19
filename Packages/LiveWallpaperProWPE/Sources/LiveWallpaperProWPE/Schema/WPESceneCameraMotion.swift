@@ -1,6 +1,6 @@
 import Foundation
 
-/// Execution IR, separate from the lossless camera-object mirror. Parsed after
+/// Authored camera selection and seeds, separate from the lossless camera-object mirror. Parsed after
 /// user bindings resolve, so the selected camera and its seeds share one source.
 public struct WPESceneCameraMotion: Equatable, Sendable {
     public let objectID: String
@@ -29,62 +29,5 @@ public struct WPESceneCameraMotion: Equatable, Sendable {
         self.zoomAnimation = zoomAnimation
         self.originIsRelative = originIsRelative
         self.originFollowsZoom = originFollowsZoom
-    }
-
-    public var seed: WPESceneCameraMotionSample {
-        .init(origin: origin, zoom: zoom, angles: angles)
-    }
-
-    public func sample(at time: Double) -> WPESceneCameraMotionSample {
-        let clock = originFollowsZoom ? zoomAnimation?.animation : nil
-        var position = origin
-        if let animated = originAnimation, !Self.isPaused(clock ?? animated.animation) {
-            let values = animated.animation.values(atFrame: (clock ?? animated.animation).frame(at: time),
-                                                   fallbacks: originIsRelative ? [0, 0, 0] : [origin.x, origin.y, origin.z])
-            if !values.isEmpty {
-                position = originIsRelative ? .zero : origin
-                for index in 0 ..< min(values.count, 3) {
-                    position[index] = values[index]
-                }
-                if originIsRelative {
-                    position += origin
-                }
-            }
-        }
-        let sampledZoom = zoomAnimation.flatMap { Self.isPaused($0.animation) ? nil : $0.scalar(at: time) } ?? zoom
-        var orientation = angles
-        if let animated = anglesAnimation, !Self.isPaused(animated.animation), let values = animated.vector(at: time), values.count == 3 {
-            orientation = SIMD3(values[0], values[1], values[2])
-        }
-        return .init(origin: position, zoom: sampledZoom, angles: orientation)
-    }
-
-    public func needsFrames(at time: Double) -> Bool {
-        let animations = [anglesAnimation?.animation, zoomAnimation?.animation, originFollowsZoom ? (zoomAnimation?.animation ?? originAnimation?.animation) : originAnimation?.animation].compactMap(\.self)
-        return animations.contains { animation in
-            guard !Self.isPaused(animation), animation.tracks.contains(where: { $0.count > 1 }) else { return false }
-            if animation.mode == "loop" || animation.mode == "mirror" || animation.wrapLoop {
-                return true
-            }
-            let end = animation.length > 0 ? animation.length : (animation.tracks.compactMap(\.last?.frame).max() ?? 0)
-            return time * animation.fps < end
-        }
-    }
-
-    private static func isPaused(_ animation: WPESceneNumericAnimation) -> Bool {
-        animation.startPaused == .value(true)
-    }
-}
-
-public struct WPESceneCameraMotionSample: Equatable, Sendable {
-    public let origin: SIMD3<Double>
-    public let zoom: Double
-    public let angles: SIMD3<Double>
-    public static let identity = Self(origin: .zero, zoom: 1)
-
-    public init(origin: SIMD3<Double>, zoom: Double, angles: SIMD3<Double> = .zero) {
-        self.origin = origin.x.isFinite && origin.y.isFinite && origin.z.isFinite ? origin : .zero
-        self.zoom = zoom.isFinite && zoom > 0 ? zoom : 1
-        self.angles = angles.x.isFinite && angles.y.isFinite && angles.z.isFinite ? angles : .zero
     }
 }

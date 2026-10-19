@@ -119,7 +119,7 @@ enum SystemWallpaperSceneRuntime {
     @MainActor
     static func makeActor(source: SystemWallpaperSceneSource, layer: CAMetalLayer, size: CGSize,
                           hidingClockCalendar: Bool = false) async throws -> WPEDisplayRenderActor {
-        guard let device = layer.device else { throw WPEMetalRenderExecutorError.commandBufferFailed }
+        guard let device = layer.device else { throw WPEMetalRenderError.commandBufferFailed }
         let descriptor = source.descriptorForSystemWallpaper(hidingClockCalendar: hidingClockCalendar)
         let compiler: (any WPEParityShaderCompiling)?
         let compilerIdentity: String?
@@ -154,7 +154,7 @@ enum SystemWallpaperSceneRuntime {
         }
         var inputs = WPEParitySceneInputs(
             descriptor: descriptor,
-            entryResolver: SceneResourceResolver(provider: source.provider, cacheRootURL: source.projectRoot),
+            entryResolver: SceneResourceResolver(provider: source.provider),
             projectRoot: source.projectRoot,
             assets: WPEParitySceneAssets.make(provider: source.provider, projectRoot: source.projectRoot,
                                               dependencyMounts: source.mounts, engineAssetsRootURL: source.engineRoot),

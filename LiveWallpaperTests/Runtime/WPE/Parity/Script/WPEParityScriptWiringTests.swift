@@ -442,8 +442,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
         files["materials/white.tex"] = white
         let snapshot = files
         let assets = WPEParityProgramAssets(sources: [.lookup(scratch) { snapshot[$0] }, .directory(engine)])
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoTransformScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 16, height: 16)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
@@ -473,8 +472,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
         ) as? [String: Any])
         edit(&json)
         let document = try WPESceneDocumentParser.parse(
-            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoTransformScripts() }
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
@@ -498,10 +496,4 @@ final class WPEParityScriptWiringTests: XCTestCase {
     }
 }
 
-private struct NoTransformScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

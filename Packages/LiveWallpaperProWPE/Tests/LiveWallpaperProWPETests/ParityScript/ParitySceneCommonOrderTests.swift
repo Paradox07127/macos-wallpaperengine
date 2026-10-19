@@ -94,14 +94,6 @@ final class ParitySceneCommonOrderTests: XCTestCase {
                 ["id": 3, "name": "C", "image": "models/c.json", "size": "16 16"],
             ],
         ]
-        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                makeTransformScriptResolver: { _, _ in NoScripts() })
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
     }
 }

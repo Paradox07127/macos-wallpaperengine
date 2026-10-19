@@ -86,8 +86,7 @@ final class WPEParityImportedTextureSharingTests: XCTestCase {
                                     "general": ["orthogonalprojection": ["width": 32, "height": 32],
                                                 "clearcolor": "0 0 0", "cameraparallax": false, "camerashake": false],
                                     "objects": [layer]]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in SharingNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 32, height: 32)
         let subject = try XCTUnwrap(plan.frames[0].draws.first { _, value in
             guard case let .scene(draw) = value else { return false }
@@ -165,10 +164,4 @@ final class WPEParityImportedTextureSharingTests: XCTestCase {
     }
 }
 
-private struct SharingNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

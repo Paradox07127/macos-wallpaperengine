@@ -26,7 +26,7 @@ final class WPEMetalPipelineCache {
         }
         guard let vertex = library.makeFunction(name: vertexName),
               let fragment = try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: colorPixelFormat) else {
-            throw WPEMetalRenderExecutorError.pipelineUnavailable(fragmentName)
+            throw WPEMetalRenderError.pipelineUnavailable(fragmentName)
         }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertex
@@ -39,7 +39,7 @@ final class WPEMetalPipelineCache {
             states[key] = state
             return state
         } catch {
-            throw WPEMetalRenderExecutorError.pipelineStateBuildFailed(name: fragmentName, detail: error.localizedDescription)
+            throw WPEMetalRenderError.pipelineStateBuildFailed(name: fragmentName, detail: error.localizedDescription)
         }
     }
 }

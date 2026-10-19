@@ -14,7 +14,7 @@ struct WPEOraclePixelProbeTests {
         values.withUnsafeBytes {
             source.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8)
         }
-        let executor = try WPEMetalRenderExecutor(device: device)
+        let executor = try WPEMetalPresenter(device: device)
         let terminal = try WPEOraclePixelProbe.terminalLinearTexture(source: source, executor: executor)
         let evidence = try WPEOraclePixelProbe.stageEvidence(
             stage: "terminal-linear", texture: terminal, coordinates: [[0, 0]],

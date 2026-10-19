@@ -384,17 +384,9 @@ private enum ParticleSceneFiles {
             try data.write(to: url)
         }
         let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in NoScripts() })
+                                                        userValues: [:])
         try body(WPEParityProgramScene(document: document,
                                        assets: WPEParityProgramAssets(sceneDirectory: root, assetRoots: []),
                                        settings: WPEParityProgramSettings()), document)
-    }
-}
-
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
     }
 }

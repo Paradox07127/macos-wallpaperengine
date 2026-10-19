@@ -104,8 +104,7 @@ final class WPEParityShapeCompositeSceneTests: XCTestCase {
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoShapeSceneScripts() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                           width: 1920, height: 1080)
@@ -122,10 +121,4 @@ final class WPEParityShapeCompositeSceneTests: XCTestCase {
     }
 }
 
-private struct NoShapeSceneScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

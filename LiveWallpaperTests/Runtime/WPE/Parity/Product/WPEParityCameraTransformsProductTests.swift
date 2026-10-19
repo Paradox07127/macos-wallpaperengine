@@ -39,7 +39,7 @@ extension WPEParitySceneDriverTests {
                     ["id": 1, "image": "models/zoom-witness.json", "origin": "128 64 0", "size": "48 96"],
                     ["id": 2, "camera": "default", "origin": "0 0 0", "zoom": 1, "visible": cameraVisible],
                 ],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         func big(_ value: Bool) -> String {
             #"{"big":{"type":"bool","value":\#(value)}}"#
@@ -110,8 +110,7 @@ extension WPEParitySceneDriverTests {
                      "parallaxDepth": ["user": "depth", "value": "1 1"]],
                     ["id": 2, "camera": "default", "origin": "0 0 0", "zoom": ["user": "lens", "value": 1]],
                 ],
-            ]), userValues: ["lens": .number(lens), "depth": .string(depth)],
-            makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: ["lens": .number(lens), "depth": .string(depth)])
         }
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
@@ -179,7 +178,7 @@ extension WPEParitySceneDriverTests {
                     ["id": 1, "image": "models/path-witness.json", "origin": "128 64 0", "size": "48 96"],
                     ["id": 2, "camera": "default", "origin": "5 7 0", "visible": cameraVisible],
                 ],
-            ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+            ]), userValues: [:])
         }
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
@@ -242,7 +241,7 @@ extension WPEParitySceneDriverTests {
             "general": ["orthogonalprojection": ["width": 256, "height": 128], "clearenabled": true,
                         "clearcolor": "0 0 0", "bloom": false, "bloomstrength": ["value": 2, "script": script]],
             "objects": [["id": 1, "image": "models/fade-witness.json", "origin": "128 64 0", "size": "48 96"]],
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let driver = try WPEParitySceneDriver(device: device)
         defer { driver.cleanup() }

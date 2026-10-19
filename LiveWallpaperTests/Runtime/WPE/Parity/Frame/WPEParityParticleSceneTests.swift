@@ -846,7 +846,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
             "general": ["orthogonalprojection": ["width": 64, "height": 64], "clearcolor": clear],
             "objects": sceneObjects,
-        ]), userValues: [:], makeTransformScriptResolver: { _, _ in NoScripts() })
+        ]), userValues: [:])
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: .init(bloom: false), width: 64, height: 64)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
@@ -931,8 +931,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
             assets = WPEParityProgramAssets(sources: [.lookup(folder) { files[$0] }] + assets.sources)
         }
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScripts() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                       width: Self.width, height: Self.height)
@@ -981,10 +980,4 @@ extension WPEParityHelperShaderCompiler {
     }
 }
 
-private struct NoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

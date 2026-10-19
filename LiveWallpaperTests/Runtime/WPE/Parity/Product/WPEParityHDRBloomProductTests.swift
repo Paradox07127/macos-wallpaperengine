@@ -50,8 +50,7 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
             let json: [String: Any] = ["camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
                                        "general": general, "objects": []]
             let document = try WPESceneDocumentParser.parse(
-                data: JSONSerialization.data(withJSONObject: json), userValues: ["on": .bool(userValue)],
-                makeTransformScriptResolver: { _, _ in HDRBloomNoScripts() }
+                data: JSONSerialization.data(withJSONObject: json), userValues: ["on": .bool(userValue)]
             )
             let plan = try WPEParityFramePlan(
                 document: document, assets: .init(sceneDirectory: scratch, assetRoots: [context.engine]),
@@ -298,8 +297,7 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
                          "origin": "\(Double(width) / 2) \(Double(height) / 2) 0",
                          "color": "\(color.x) \(color.y) \(color.z)", "alpha": 1, "brightness": 1]],
         ]
-        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-                                                        makeTransformScriptResolver: { _, _ in HDRBloomNoScripts() })
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json), userValues: [:])
         return try WPEParityFramePlan(document: document, assets: assets,
                                       settings: .init(bloom: true, hdrPostProcessing: true, displayHDR: displayHDR,
                                                       maximumPotentialEDR: maximumPotentialEDR),
@@ -494,7 +492,7 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
         descriptor.usage = [.renderTarget, .shaderRead]
         let target = try XCTUnwrap(context.device.makeTexture(descriptor: descriptor))
         let command = try XCTUnwrap(context.queue.makeCommandBuffer())
-        let executor = try WPEMetalRenderExecutor(device: context.device)
+        let executor = try WPEMetalPresenter(device: context.device)
         try executor.encodePresentPass(source: renderer.backbuffer, target: target, fitMode: .stretch,
                                        worldSourceSize: nil, uniforms: nil, colorTransfer: renderer.colorTransfer, into: command)
         command.commit()
@@ -533,9 +531,4 @@ final class WPEParityHDRBloomProductTests: XCTestCase {
     }
 }
 
-private struct HDRBloomNoScripts: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue], seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

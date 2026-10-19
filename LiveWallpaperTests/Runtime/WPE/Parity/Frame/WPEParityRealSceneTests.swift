@@ -140,8 +140,7 @@ final class WPEParityRealSceneTests: XCTestCase {
                                                    projectRoot: folder, dependencyMounts: [],
                                                    engineAssetsRootURL: engineRoot)
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
         )
         let plan = try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                           width: Self.width, height: Self.height)
@@ -709,8 +708,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         editGeneral(&general)
         json["general"] = general
         let document = try WPESceneDocumentParser.parse(
-            data: JSONSerialization.data(withJSONObject: json), userValues: [:],
-            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+            data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         // The capture's wpeassets/ holds only shaders; util materials come from the WPE install.
         let assets = WPEParityProgramAssets(sceneDirectory: sceneDirectory,
@@ -911,10 +909,4 @@ private struct BackbufferDifference: CustomStringConvertible {
     }
 }
 
-private struct NoScriptResolver: WPESceneTransformScriptResolving {
-    func resolveVec3(script _: String, properties _: [String: WPESceneScriptPropertyValue],
-                     seed _: SIMD3<Double>) -> SIMD3<Double>? {
-        nil
-    }
-}
 #endif

@@ -2,12 +2,16 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// The TEX file's regions must describe the mip geometry Metal allocates, even
-/// when inflate scope leaves some levels without materialized bytes.
+/// The TEX file's regions must describe the mip geometry Metal allocates.
 enum WPETexMipValidation {
+    /// Shared bound for raw, conditional and volume TEX decoding.
+    static let maxDecompressedByteCount = 268_435_456
+
     struct Invalid: Error, LocalizedError, Sendable {
         let detail: String
-        var errorDescription: String? { detail }
+        var errorDescription: String? {
+            detail
+        }
     }
 
     struct Layout: Sendable {
@@ -71,7 +75,7 @@ enum WPETexMipValidation {
         for mip in mipmaps {
             let expected = try layout(format: format, width: mip.width, height: mip.height, depth: mip.depth).byteCount
             let (next, overflow) = total.addingReportingOverflow(expected)
-            guard !overflow, next <= WPETexCompressedMipmap.maxDecompressedByteCount else {
+            guard !overflow, next <= WPETexMipValidation.maxDecompressedByteCount else {
                 throw Invalid(detail: "Volume mip chain exceeds decoded byte budget")
             }
             guard mip.isCompressed ? (mip.decompressedByteCount ?? 0) >= expected : mip.payload.count >= expected else {
@@ -91,29 +95,6 @@ enum WPETexMipValidation {
             }
         }
     }
-
-    static func streamingImage(_ image: WPETexCompressedImage) throws {
-        try geometry(image.payloads.map { ($0.index, $0.width, $0.height, $0.depth) })
-        guard let base = image.payloads.first, base.width == image.width, base.height == image.height,
-              base.width <= 16384, base.height <= 16384 else {
-            throw Invalid(detail: "Invalid streaming image dimensions")
-        }
-    }
-
-    static func decodedBytes(_ mip: WPETexCompressedMipmap, format: WPETexFormat) throws -> Data {
-        let expected = try layout(format: format, width: mip.width, height: mip.height, depth: mip.depth).byteCount
-        guard mip.decompressedByteCount >= expected,
-              mip.decompressedByteCount <= WPETexCompressedMipmap.maxDecompressedByteCount else {
-            throw Invalid(detail: "Invalid decompressed byte count for mip \(mip.index)")
-        }
-        if mip.isCompressed {
-            guard let bytes = mip.lz4Inflated() else { throw Invalid(detail: "Failed mip decompression") }
-            return bytes
-        }
-        guard mip.compressedBytes.count >= mip.decompressedByteCount else {
-            throw Invalid(detail: "Truncated streaming mip \(mip.index)")
-        }
-        return mip.compressedBytes.prefix(mip.decompressedByteCount).materializedData()
-    }
 }
+
 #endif
