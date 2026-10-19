@@ -674,6 +674,42 @@ final class WPEParityTextureLoaderTests: XCTestCase {
         }
     }
 
+    func testCompressedCacheDropsDamagedHeadersAndStillReadsValidEntries() throws {
+        let cache = try WPEParityCompressedTextureCache(cachesURL: cacheDirectory())
+        let levels = [Data(repeating: 0x17, count: 32), Data(repeating: 0x29, count: 16)]
+        cache.write(.blocks(levels), for: "valid")
+        guard case let .blocks(restored)? = cache.read("valid", levelByteCounts: [32, 16]) else {
+            return XCTFail("Valid cache entry was lost")
+        }
+        XCTAssertEqual(restored, levels)
+        cache.write(.rejected, for: "rejected")
+        guard case .rejected? = cache.read("rejected", levelByteCounts: [32, 16]) else {
+            return XCTFail("Quality-rejected cache entry was lost")
+        }
+
+        // Local-cache corruption: unrepresentable count, arithmetic-overflow count, incomplete table,
+        // unrepresentable level size, truncated blocks and extra trailing bytes must all become misses.
+        let headers: [[UInt64]] = [[.max], [UInt64(Int.max)], [2, 32], [1, .max], [2, 32, 16], [1, 16]]
+        for (index, header) in headers.enumerated() {
+            let key = "damaged-\(index)"
+            let url = cache.rootURL.appending(path: key)
+            var bytes = Data("LWTC".utf8)
+            for var word in header.map(\.littleEndian) {
+                withUnsafeBytes(of: &word) { bytes.append(contentsOf: $0) }
+            }
+            if index == headers.count - 1 {
+                bytes.append(Data(repeating: 0, count: 17))
+            }
+            try bytes.write(to: url)
+            XCTAssertNil(cache.read(key, levelByteCounts: index == 3 || index == 5 ? [16] : [32, 16]))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), key)
+        }
+        guard case let .blocks(unchanged)? = cache.read("valid", levelByteCounts: [32, 16]) else {
+            return XCTFail("Damaged entries affected the valid entry")
+        }
+        XCTAssertEqual(unchanged, levels)
+    }
+
     private func astcBlocks(_ texture: MTLTexture, level: Int) -> [UInt8] {
         let (width, height) = (max(texture.width >> level, 1), max(texture.height >> level, 1))
         let rowBytes = WPEParityTextureCompressor.blocksPerRow(width) * WPEParityTextureCompressor.blockBytes

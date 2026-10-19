@@ -9,11 +9,14 @@ import os
 struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
     enum Failure: Error, CustomStringConvertible {
         case helperFailed(stage: WPEParityShaderKey.Stage, status: Int32, stderr: String)
+        case helperTimedOut(stage: WPEParityShaderKey.Stage, seconds: TimeInterval)
 
         var description: String {
             switch self {
             case let .helperFailed(stage, status, stderr):
                 "wpe-shaderc \(stage.rawValue) stage exited with \(status): \(stderr)"
+            case let .helperTimedOut(stage, seconds):
+                "wpe-shaderc \(stage.rawValue) stage exceeded \(seconds) seconds"
             }
         }
     }
@@ -25,12 +28,15 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
     private let dxcompiler: URL
     private let metalIRConverter: URL
     private let workDirectory: URL
+    private let stageTimeout: TimeInterval
 
-    init(helper: URL, dxcompiler: URL, metalIRConverter: URL, workDirectory: URL) throws {
+    init(helper: URL, dxcompiler: URL, metalIRConverter: URL, workDirectory: URL,
+         stageTimeout: TimeInterval = 120) throws {
         self.helper = helper
         self.dxcompiler = dxcompiler
         self.metalIRConverter = metalIRConverter
         self.workDirectory = workDirectory
+        self.stageTimeout = stageTimeout.isFinite ? max(0.001, stageTimeout) : 120
         compilerIdentity = try "wpe-shaderc " + [helper, dxcompiler, metalIRConverter].map(Self.fileDigest)
             .joined(separator: " ")
         try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
@@ -184,21 +190,78 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = log
-        let appPID = ProcessInfo.processInfo.processIdentifier
-        return try await withCheckedThrowingContinuation { continuation in
-            process.terminationHandler = { child in
-                Logger.notice("WPE parity shader helper appPID=\(appPID) childPID=\(child.processIdentifier) "
-                    + "stage=\(stage.rawValue) exit=\(child.terminationStatus) reason=\(child.terminationReason.rawValue)",
-                    category: .wpeRender)
-                continuation.resume(returning: (child.processIdentifier, child.terminationStatus))
+        // A shared shader load outlives any one screen's waiter; only this invocation's own deadline stops it.
+        let invocation = Invocation(process: process, stage: stage, timeout: stageTimeout)
+        return try await withCheckedThrowingContinuation { invocation.start($0) }
+    }
+
+    /// Process termination and the watchdog are serialized here. Resume only after exit, so compileOnce's
+    /// defer cannot unlink output files while the helper still writes them. No caller-cancellation handler.
+    final class Invocation: @unchecked Sendable { // Mutable state is confined to queue.
+        private let process: Process
+        private let stage: WPEParityShaderKey.Stage
+        private let timeout: TimeInterval
+        private let queue = DispatchQueue(label: "com.loomscreen.wpe-shaderc-lifetime")
+        private var timer: DispatchSourceTimer?
+        private var continuation: CheckedContinuation<(pid: Int32, status: Int32), Error>?
+        private var timedOut = false
+
+        init(process: Process, stage: WPEParityShaderKey.Stage, timeout: TimeInterval) {
+            self.process = process
+            self.stage = stage
+            self.timeout = timeout
+        }
+
+        func start(_ continuation: CheckedContinuation<(pid: Int32, status: Int32), Error>) {
+            queue.async { [self] in
+                self.continuation = continuation
+                process.terminationHandler = { [self] child in
+                    queue.async { [self] in
+                        Logger.notice("WPE parity shader helper appPID=\(ProcessInfo.processInfo.processIdentifier) "
+                            + "childPID=\(child.processIdentifier) stage=\(stage.rawValue) "
+                            + "exit=\(child.terminationStatus) reason=\(child.terminationReason.rawValue)",
+                            category: .wpeRender)
+                        finish(timedOut ? .failure(Failure.helperTimedOut(stage: stage, seconds: timeout))
+                            : .success((child.processIdentifier, child.terminationStatus)))
+                    }
+                }
+                do {
+                    try process.run()
+                    let timer = DispatchSource.makeTimerSource(queue: queue)
+                    self.timer = timer
+                    timer.setEventHandler { [self] in expire() }
+                    timer.schedule(deadline: .now() + timeout)
+                    timer.resume()
+                } catch {
+                    Logger.warning("WPE parity shader helper appPID=\(ProcessInfo.processInfo.processIdentifier) "
+                        + "childPID=none stage=\(stage.rawValue) spawn-failed: \(error)", category: .wpeRender)
+                    finish(.failure(error))
+                }
             }
-            do {
-                try process.run()
-            } catch {
-                Logger.warning("WPE parity shader helper appPID=\(appPID) childPID=none "
-                    + "stage=\(stage.rawValue) spawn-failed: \(error)", category: .wpeRender)
-                continuation.resume(throwing: error)
+        }
+
+        private func expire() {
+            guard continuation != nil, process.isRunning else { return }
+            timedOut = true
+            Logger.warning("WPE parity shader helper childPID=\(process.processIdentifier) "
+                + "stage=\(stage.rawValue) exceeded \(timeout) seconds; terminating", category: .wpeRender)
+            process.terminate()
+            // Give normal termination a moment to finish; a stuck compiler must not hold its permit forever.
+            timer?.setEventHandler { [self] in
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
             }
+            timer?.schedule(deadline: .now() + 1)
+        }
+
+        private func finish(_ result: Result<(pid: Int32, status: Int32), Error>) {
+            guard let continuation else { return }
+            self.continuation = nil
+            timer?.cancel()
+            timer = nil
+            process.terminationHandler = nil
+            continuation.resume(with: result)
         }
     }
 }

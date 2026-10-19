@@ -742,11 +742,18 @@ public struct WPEParityProgramScene: Sendable {
                                userTextureBindings: override.userTextures)
             }
             var bound = false
+            var invalidBinding = false
             for case let .object(bind) in array(pass["bind"]) {
                 guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos), let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
-                material.textures[Int32(index)] = name
+                guard let slot = truncatedInteger(index, as: Int32.self) else {
+                    invalidBinding = true
+                    break
+                }
+                material.textures[slot] = name
                 bound = true
             }
+            // Reject this material record rather than publishing a pass with only part of its binding table.
+            guard !invalidBinding else { continue }
             // 1401ebf60.c:135-141: without a bind table a layer pass samples its current input in slot 0 over any
             // authored name; a shape layer passes no layer index (14025faf0.c:160) and keeps the name.
             if material.textures[0] == nil || !bound && !shape {
@@ -853,6 +860,12 @@ public struct WPEParityProgramScene: Sendable {
         }
     }
 
+    /// Keep native truncation toward zero, but reject values the destination cannot represent before conversion.
+    fileprivate static func truncatedInteger<Integer: FixedWidthInteger>(_ value: Double, as _: Integer.Type) -> Integer? {
+        guard value.isFinite else { return nil }
+        return Integer(exactly: value.rounded(.towardZero))
+    }
+
     static func flag(_ value: WPESceneJSONValue?) -> Bool {
         (number(value) ?? 0) != 0
     }
@@ -895,13 +908,19 @@ extension WPEParityProgramMaterial {
         var combos: [String: Int32] = [:]
         if case let .object(entries)? = pass["combos"] {
             for (key, value) in entries {
-                combos[key] = Scene.number(value).map { Int32($0) } ?? 0
+                guard let number = Scene.number(value) else {
+                    combos[key] = 0
+                    continue
+                }
+                guard let combo = Scene.truncatedInteger(number, as: Int32.self) else { return nil }
+                combos[key] = combo
             }
         }
         var textures: [Int32: String] = [:]
         for (slot, texture) in Scene.array(pass["textures"]).enumerated() {
             if let name = Scene.string(texture) {
-                textures[Int32(slot)] = name
+                guard let slot = Int32(exactly: slot) else { return nil }
+                textures[slot] = name
             }
         }
         var constants: [String: [Double]] = [:]
@@ -910,10 +929,12 @@ extension WPEParityProgramMaterial {
                 constants[key] = WPEParityProgramConstants.components(value, userValues: assets.userValues)
             }
         }
-        let reference = pass["usertexturereference"].flatMap { size -> SIMD2<Int>? in
+        var reference: SIMD2<Int>?
+        if let size = pass["usertexturereference"], size != .null {
             guard let width = Scene.number(size["width"]), let height = Scene.number(size["height"]),
-                  width > 0, height > 0 else { return nil }
-            return SIMD2(Int(width), Int(height))
+                  let width = Scene.truncatedInteger(width, as: Int.self),
+                  let height = Scene.truncatedInteger(height, as: Int.self), width > 0, height > 0 else { return nil }
+            reference = SIMD2(width, height)
         }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),
                   combos: combos, textures: textures, constants: constants,

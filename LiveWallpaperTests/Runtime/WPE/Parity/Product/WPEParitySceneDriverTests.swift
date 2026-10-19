@@ -27,6 +27,22 @@ final class WPEParitySceneDriverTests: XCTestCase {
         super.tearDown()
     }
 
+    func testFailedSceneWorkCannotBecomeReadyThroughASuccessfulPresent() {
+        let state = WPEParityPresentState()
+        state.reset(generation: 3)
+        state.recordGPUFailure(generation: 3, reason: "scene GPU failure")
+        state.record(generation: 3, succeeded: true)
+        XCTAssertNil(state.completedGeneration)
+        XCTAssertEqual(state.failedGeneration, 3)
+        XCTAssertEqual(state.gpuErrors.count, 1)
+        XCTAssertEqual(state.gpuErrors.last, "scene GPU failure")
+        state.reset(generation: 4)
+        state.recordGPUFailure(generation: 3, reason: "stale completion")
+        state.record(generation: 4, succeeded: true)
+        XCTAssertEqual(state.completedGeneration, 4)
+        XCTAssertEqual(state.gpuErrors.count, 0)
+    }
+
     func testLoadPresentPauseAndCleanup() async throws {
         let (document, assets) = try sceneInputs()
         let compiler = try makeCompiler()

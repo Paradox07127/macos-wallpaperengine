@@ -14,6 +14,9 @@ final class WPEParityPresentState: Sendable {
         var completed: Int?
         var failed: Int?
         var inFlight = 0
+        var sceneFailed = false
+        var gpuErrorCount = 0
+        var gpuErrorLast: String?
     }
 
     private let readiness = OSAllocatedUnfairLock(initialState: Readiness())
@@ -24,6 +27,23 @@ final class WPEParityPresentState: Sendable {
 
     var failedGeneration: Int? {
         readiness.withLock(\.failed)
+    }
+
+    var gpuErrors: (count: Int, last: String?) {
+        readiness.withLock { ($0.gpuErrorCount, $0.gpuErrorLast) }
+    }
+
+    /// Scene and presentation buffers complete separately; a successful present cannot repair failed scene work.
+    func recordGPUFailure(generation: Int, reason: String) {
+        readiness.withLock { state in
+            guard state.generation == generation else { return }
+            state.sceneFailed = true
+            state.gpuErrorCount += 1
+            state.gpuErrorLast = reason
+            if state.completed != generation {
+                state.failed = generation
+            }
+        }
     }
 
     var inFlight: Int {
@@ -46,7 +66,7 @@ final class WPEParityPresentState: Sendable {
     func record(generation: Int, succeeded: Bool) {
         readiness.withLock { state in
             guard state.generation == generation else { return }
-            if succeeded {
+            if succeeded, !state.sceneFailed {
                 state.completed = generation
                 state.failed = nil
             } else if state.completed != generation {
@@ -59,6 +79,14 @@ final class WPEParityPresentState: Sendable {
 /// Runs one scene on the parity renderer and presents its backbuffer to a layer. Confined to the render actor
 /// that owns it, like `WPEMetalSceneRenderer`; only `WPEParityPresentState` is touched from other threads.
 final class WPEParitySceneDriver {
+    /// Metal status is thread-safe; this immutable handle is read only after later work on the same queue completes.
+    private struct SubmittedBuffer: @unchecked Sendable {
+        let buffer: MTLCommandBuffer?
+        var succeeded: Bool {
+            buffer?.status == .completed
+        }
+    }
+
     /// The backbuffer a fit mode renders and how the present maps it onto the drawable.
     struct RenderTarget: Equatable {
         let width: Int
@@ -145,6 +173,12 @@ final class WPEParitySceneDriver {
     private var scriptPointer: SIMD2<Double>?
     private var lastTimestamp: CFTimeInterval?
     private var didLogFrameFailure = false
+    private var submittedSceneBuffer: MTLCommandBuffer?
+    private(set) var runtimeFailure: String?
+    var gpuErrorSummary: (count: Int, last: String?) {
+        presentState.gpuErrors
+    }
+
     /// CPU time in `encodeFrame` since the load, for the QA mean.
     private var encodeSeconds = 0.0
     private var encodeCount = 0
@@ -152,7 +186,7 @@ final class WPEParitySceneDriver {
     /// The loaded scene changes its frame on its own, as `WPEMetalSceneRenderer.needsContinuousFrames`, or plays
     /// sound, whose random intervals count down by frame time.
     var needsContinuousFrames: Bool {
-        didLoad && (renderer?.isStatic == false || soundRuntime != nil)
+        didLoad && runtimeFailure == nil && (renderer?.isStatic == false || soundRuntime != nil)
     }
 
     var diagnostics: WPEParityRuntimeDiagnostics? {
@@ -261,6 +295,7 @@ final class WPEParitySceneDriver {
         mediaMailbox = scriptHost.media
         mediaMailbox?.beginParityGeneration(generation)
         presentState.reset(generation: generation)
+        runtimeFailure = nil
         spanFrames?.reset(generation: generation)
         renderer?.destroyScript()
         renderer = nil
@@ -274,6 +309,8 @@ final class WPEParitySceneDriver {
         pendingUserProperties = nil
         shaderRequiresAudio = false
         loadDiagnostics = nil
+        runtimeFailure = nil
+        submittedSceneBuffer = nil
         shaderErrorSummary = (0, [])
         (encodeSeconds, encodeCount) = (0, 0)
         soundRuntime?.stop()
@@ -400,6 +437,8 @@ final class WPEParitySceneDriver {
                     }
                     try withScriptSound(script.engine) { try renderer.attachScript(script) }
                 } catch let error as CancellationError {
+                    throw error
+                } catch let error as WPEParityScriptEngine.Failure where error != .missingBaseClasses {
                     throw error
                 } catch {
                     loadDiagnostics = .other(layer: "scripts", message: String(describing: error))
@@ -598,6 +637,7 @@ final class WPEParitySceneDriver {
               encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
                           date: date) else { return nil }
         let backbuffer = renderer.backbuffer
+        let sceneBuffer = SubmittedBuffer(buffer: submittedSceneBuffer)
         // Same queue as the frame, so the present reads the finished backbuffer.
         guard let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer() else { return nil }
         let state = presentState
@@ -617,7 +657,10 @@ final class WPEParitySceneDriver {
                 colorTransfer: renderer.colorTransfer,
                 presentCompletion: { _, present, release in
                     release()
-                    state.record(generation: generation, succeeded: present.status == .completed)
+                    if present.status == .error {
+                        state.recordGPUFailure(generation: generation, reason: present.error?.localizedDescription ?? "Present command buffer failed")
+                    }
+                    state.record(generation: generation, succeeded: present.status == .completed && sceneBuffer.succeeded)
                 },
                 into: commandBuffer
             )
@@ -657,6 +700,7 @@ final class WPEParitySceneDriver {
                           date: date),
             let commandBuffer = executor.textureSourceCommandQueue.makeCommandBuffer(),
             let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
+        let sceneBuffer = SubmittedBuffer(buffer: submittedSceneBuffer)
         blit.copy(from: backbuffer, to: output)
         blit.endEncoding()
         spanFrameSequence &+= 1
@@ -666,7 +710,7 @@ final class WPEParitySceneDriver {
         let state = presentState
         state.begin()
         commandBuffer.addCompletedHandler { commandBuffer in
-            if commandBuffer.status == .completed {
+            if commandBuffer.status == .completed, sceneBuffer.succeeded {
                 frames.publish(frame, generation: frame.generation, sequence: frame.sequence)
             } else {
                 state.record(generation: frame.generation, succeeded: false)
@@ -686,6 +730,8 @@ final class WPEParitySceneDriver {
     /// Steps the scene clock and commits one frame into the backbuffer; false when nothing was committed.
     private func encodeFrame(_ renderer: WPEParityFrameRenderer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                              buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date) -> Bool {
+        submittedSceneBuffer = nil
+        guard runtimeFailure == nil else { return false }
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
         let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
         lastTimestamp = timestamp
@@ -697,8 +743,14 @@ final class WPEParitySceneDriver {
                                         buttonDown: buttonDown, audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
             let start = CACurrentMediaTime()
+            let state = presentState
+            let generation = loadGeneration
             let submission = try withScriptSound(renderer.script?.engine) {
-                try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input)
+                try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input, completion: { buffer in
+                    if buffer.status == .error {
+                        state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
+                    }
+                })
             }
             encodeSeconds += CACurrentMediaTime() - start
             encodeCount += 1
@@ -711,9 +763,17 @@ final class WPEParitySceneDriver {
                 }
                 renderer.takeSoundVisibility { id, visible in soundRuntime.setVisible(visible, forSoundID: id) }
             }
-            guard case .committed = submission else { return false }
+            guard case let .committed(commandBuffer) = submission else { return false }
+            submittedSceneBuffer = commandBuffer
             return true
         } catch {
+            if error is WPEParityScriptEngine.Failure {
+                let message = String(describing: error)
+                runtimeFailure = message
+                loadDiagnostics = .other(layer: "scripts", message: message)
+                soundRuntime?.pause()
+                presentState.record(generation: loadGeneration, succeeded: false)
+            }
             logFrameFailure(error)
             return false
         }

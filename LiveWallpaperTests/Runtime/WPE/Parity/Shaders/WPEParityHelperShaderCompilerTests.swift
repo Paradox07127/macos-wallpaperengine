@@ -138,6 +138,7 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         } catch {
             XCTAssertTrue(String(describing: error).contains("use of undeclared identifier 'undeclared'"), "\(error)")
         }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDirectory.path), [])
     }
 
     /// WPE's FXC expands macro arguments before `##`: `texSample2D(GRADIENT_SAMPLER, …)` pastes g_Texture4SamplerState.
@@ -388,6 +389,27 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         XCTAssertNotEqual(rewritten, first)
         XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.dxcompiler.path), 2)
         XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.helper.path), 1)
+    }
+
+    func testDeadlineStopsSystemProcessAfterWaiterCancellation() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        let invocation = WPEParityHelperShaderCompiler.Invocation(process: process, stage: .fragment, timeout: 0.25)
+        let waiter = Task {
+            try await withCheckedThrowingContinuation { invocation.start($0) }
+        }
+        waiter.cancel()
+        do {
+            _ = try await waiter.value
+            XCTFail("The helper exceeded its independent deadline without failing")
+        } catch let WPEParityHelperShaderCompiler.Failure.helperTimedOut(stage, seconds) {
+            XCTAssertEqual(stage, .fragment)
+            XCTAssertEqual(seconds, 0.25)
+        }
+        XCTAssertGreaterThan(process.processIdentifier, 0, "The system helper never started")
+        XCTAssertFalse(process.isRunning, "The deadline returned before its helper exited")
+        XCTAssertEqual(process.terminationReason, .uncaughtSignal)
     }
 
     private func binaries() throws -> Binaries {

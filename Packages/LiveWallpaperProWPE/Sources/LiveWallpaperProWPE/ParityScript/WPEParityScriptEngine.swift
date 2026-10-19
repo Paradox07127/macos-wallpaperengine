@@ -5,8 +5,41 @@ import simd
 /// One scene's SceneScript engine: a JSContext with WPE's baseclasses.js, every property script of the
 /// scene compiled as a module in binding order, and the host objects. Confined to its owner's thread.
 public final class WPEParityScriptEngine {
-    public enum Failure: Error, Equatable {
+    public enum ExecutionOperation: String, Sendable {
+        case setup, initialize, update, event, destroy
+    }
+
+    public struct ExecutionLimits: Sendable {
+        public let setupSeconds: TimeInterval
+        public let callbackSeconds: TimeInterval
+
+        public init(setupSeconds: TimeInterval = 5, callbackSeconds: TimeInterval = 0.25) {
+            precondition(setupSeconds.isFinite && setupSeconds > 0)
+            precondition(callbackSeconds.isFinite && callbackSeconds > 0)
+            self.setupSeconds = setupSeconds
+            self.callbackSeconds = callbackSeconds
+        }
+    }
+
+    public enum Failure: Error, Equatable, LocalizedError, Sendable {
         case missingBaseClasses
+        case executionLimitUnavailable
+        case executionTimedOut(operation: ExecutionOperation, seconds: TimeInterval)
+
+        public var errorDescription: String? {
+            switch self {
+            case .missingBaseClasses: "SceneScript base classes are missing."
+            case .executionLimitUnavailable: "SceneScript execution limits are unavailable on this system."
+            case let .executionTimedOut(operation, seconds):
+                "SceneScript \(operation.rawValue) exceeded its \(seconds)s execution budget and was disabled."
+            }
+        }
+    }
+
+    /// A timed-out VM is permanently disabled. The product stops this scene and keeps its last presented frame.
+    public private(set) var executionFailure: Failure?
+    public var isExecutionDisabled: Bool {
+        executionFailure != nil
     }
 
     /// Native ISound methods; only isPlaying exposes the consumer's Bool to JavaScript.
@@ -92,6 +125,8 @@ public final class WPEParityScriptEngine {
     public struct Configuration {
         /// Scene files first, then WPE's `assets`; modules and baseclasses.js load through it.
         public var assets: WPEParityProgramAssets
+        /// CPU execution limits for the whole setup or one callback batch, including nested imported scripts.
+        public var executionLimits: ExecutionLimits
         public var canvasSize: SIMD2<Float>
         public var screenResolution: SIMD2<Float>
         /// project.json `properties`: `{key: {type, value}}`, merged with the user's values.
@@ -142,8 +177,10 @@ public final class WPEParityScriptEngine {
                     pauseVideoTexture: ((String) -> Bool)? = nil,
                     executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
-                    openUserShortcut: @escaping (String) -> Bool = { _ in false }, dateEpochMillis: Double? = nil) {
+                    openUserShortcut: @escaping (String) -> Bool = { _ in false }, dateEpochMillis: Double? = nil,
+                    executionLimits: ExecutionLimits = .init()) {
             self.assets = assets
+            self.executionLimits = executionLimits
             self.canvasSize = canvasSize
             self.screenResolution = screenResolution
             self.userPropertiesJSON = userPropertiesJSON
@@ -295,6 +332,7 @@ public final class WPEParityScriptEngine {
         -> (any WPEParityModelDataPreparedShape)?)?
 
     private let context: JSContext
+    private let executionLimiter: WPEParityScriptExecutionLimiter
     private let configuration: Configuration
     private var host: JSValue!
     private var tickFunction: JSValue!
@@ -375,8 +413,15 @@ public final class WPEParityScriptEngine {
     public convenience init(document: WPESceneDocument, state: WPEParitySceneState,
                             configuration: Configuration) throws {
         try self.init(layoutOf: document, state: state, configuration: configuration)
-        mirror(state)
-        compileBindings(document: document)
+        withExecutionBudget(.setup) {
+            mirror(state)
+            if !executionLimiter.didTimeOut {
+                compileBindings(document: document)
+            }
+        }
+        if let executionFailure {
+            throw executionFailure
+        }
     }
 
     /// Constructs one VM/layout and compiles module globals against the caller's canonical mutable state.
@@ -387,9 +432,12 @@ public final class WPEParityScriptEngine {
         let engine = try WPEParityScriptEngine(layoutOf: document, state: state, configuration: configuration)
         engine.withSoundConsumers(volume: volume, command: command) {
             engine.seedMissingFields(state: &state)
-            engine.run(state: &state) {
+            engine.run(state: &state, operation: .setup) {
                 engine.compileBindings(document: document)
             }
+        }
+        if let failure = engine.executionFailure {
+            throw failure
         }
         return engine
     }
@@ -397,6 +445,7 @@ public final class WPEParityScriptEngine {
     /// Initializes the existing VM/metadata once; no authored module body executes before its caller's scope.
     private init(layoutOf document: WPESceneDocument, state: WPEParitySceneState, configuration: Configuration) throws {
         self.configuration = configuration
+        executionLimiter = try WPEParityScriptExecutionLimiter()
         materialFunctionHandler = configuration.executeMaterialFunction
         modelDataAdmissionHandler = configuration.modelData?.admitShape
         context = JSContext()
@@ -425,20 +474,27 @@ public final class WPEParityScriptEngine {
         // Never read this handler back to restore it: each Swift read/write round trip wraps it in one more block,
         // and releasing a chain thousands deep overflows the stack.
         context.exceptionHandler = { [weak self] context, exception in
-            guard let self else { return }
+            guard let self, !executionLimiter.didTimeOut else { return }
             if capturesExceptionsAsValues {
                 context?.exception = exception
             } else {
-                record(exception?.toString() ?? "")
+                recordException(exception)
             }
         }
-        context.evaluateScript(String(bytes: baseClasses, encoding: .utf8) ?? "",
-                               withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
-        layout(document: document, state: state)
-        installHost(state: state)
-        if let epoch = configuration.dateEpochMillis {
-            context.evaluateScript(Self.dateShim, withSourceURL: URL(string: "parity-date.js"))
-                .call(withArguments: [host.forProperty("globals") as Any, epoch])
+        withExecutionBudget(.setup) {
+            evaluateScript(String(bytes: baseClasses, encoding: .utf8) ?? "",
+                           withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
+            guard !executionLimiter.didTimeOut else { return }
+            layout(document: document, state: state)
+            installHost(state: state)
+            guard !executionLimiter.didTimeOut else { return }
+            if let epoch = configuration.dateEpochMillis {
+                _ = callJavaScript(evaluateScript(Self.dateShim, withSourceURL: URL(string: "parity-date.js")),
+                                   withArguments: [host.forProperty("globals") as Any, epoch])
+            }
+        }
+        if let executionFailure {
+            throw executionFailure
         }
     }
 
@@ -511,16 +567,25 @@ public final class WPEParityScriptEngine {
 
     /// Event 0 to every binding that exports `init`, once, after all objects loaded (140186c90.c:689-738).
     public func start(state: inout WPEParitySceneState) throws {
+        if let executionFailure {
+            throw executionFailure
+        }
         guard !started else { return }
         started = true
         seedMissingFields(state: &state)
-        run(state: &state) {
+        run(state: &state, operation: .initialize) {
             count(.initialize)
-            host.invokeMethod("init", withArguments: [0])
+            invokeHost("init", withArguments: [0])
+        }
+        if let executionFailure {
+            throw executionFailure
         }
         // Windows load order: every init, then one applyUserProperties per script with the full table, then update.
         applyUserProperties(changedJSON: configuration.userPropertiesJSON, mergedJSON: configuration.userPropertiesJSON,
                             state: &state)
+        if let executionFailure {
+            throw executionFailure
+        }
     }
 
     /// One frame of the manager tick's script step (140171440.c:888-896): timers, then event 1 in binding order.
@@ -534,12 +599,13 @@ public final class WPEParityScriptEngine {
             prepareFrame(frame: frame &+ 1, dt: dt, runtime: clock, input: input)
         }
         preparedFrame = false
-        run(state: &state) {
+        run(state: &state, operation: .update) {
             count(.update)
             var exception: JSValueRef?
+            guard executionLimiter.prepareInvocation(in: context) else { return }
             JSObjectCallAsFunction(context.jsGlobalContextRef, tickFunction.jsValueRef, nil, 0, nil, &exception)
-            if let exception {
-                record(JSValue(jsValueRef: exception, in: context).toString())
+            if let exception, !executionLimiter.didTimeOut {
+                recordException(JSValue(jsValueRef: exception, in: context))
             }
         }
     }
@@ -568,9 +634,10 @@ public final class WPEParityScriptEngine {
             + "\"local\":[\(input.cursorWorld.x),\(input.cursorWorld.y),\(input.cursorWorld.z)],\"hitBox\":null}"
         run(state: &state) {
             for dispatch in dispatches {
+                guard !executionLimiter.didTimeOut else { break }
                 guard let target = layers.firstIndex(where: { $0.id == dispatch.id }) else { continue }
                 count(dispatch.event)
-                host.invokeMethod("dispatch", withArguments: [dispatch.event.rawValue, target, payload])
+                invokeHost("dispatch", withArguments: [dispatch.event.rawValue, target, payload])
             }
         }
         if !input.leftDown, wasDown {
@@ -586,7 +653,7 @@ public final class WPEParityScriptEngine {
         let index = target.flatMap { id in layers.firstIndex { $0.id == id } } ?? -1
         run(state: &state) {
             count(event)
-            host.invokeMethod("dispatch", withArguments: [event.rawValue, index, payloadJSON ?? NSNull()])
+            invokeHost("dispatch", withArguments: [event.rawValue, index, payloadJSON ?? NSNull()])
         }
     }
 
@@ -596,7 +663,8 @@ public final class WPEParityScriptEngine {
         guard !indices.isEmpty else { return }
         run(state: &state) {
             for index in indices {
-                host.invokeMethod("videoEnded", withArguments: [index])
+                guard !executionLimiter.didTimeOut else { break }
+                invokeHost("videoEnded", withArguments: [index])
             }
         }
     }
@@ -622,8 +690,9 @@ public final class WPEParityScriptEngine {
         let eventJSON = (try? JSONSerialization.data(withJSONObject: typed, options: .sortedKeys))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         run(state: &state) {
-            host.invokeMethod("setUserProperties", withArguments: [mergedJSON])
+            invokeHost("setUserProperties", withArguments: [mergedJSON])
             for binding in bindings where binding.compiled {
+                guard !executionLimiter.didTimeOut else { break }
                 var vars: [String: Any] = [:]
                 for (key, properties) in binding.userKeys {
                     guard let value = (changed[key] as? [String: Any])?["value"] else { continue }
@@ -632,11 +701,12 @@ public final class WPEParityScriptEngine {
                     }
                 }
                 guard !vars.isEmpty, let data = try? JSONSerialization.data(withJSONObject: vars) else { continue }
-                host.invokeMethod("applyScriptProperties",
+                invokeHost("applyScriptProperties",
                                   withArguments: [binding.script, String(bytes: data, encoding: .utf8) ?? "{}"])
             }
+            guard !executionLimiter.didTimeOut else { return }
             count(.applyUserProperties)
-            host.invokeMethod("dispatch", withArguments: [WPEParityScriptEvent.applyUserProperties.rawValue, -1,
+            invokeHost("dispatch", withArguments: [WPEParityScriptEvent.applyUserProperties.rawValue, -1,
                                                           eventJSON])
         }
     }
@@ -662,10 +732,11 @@ public final class WPEParityScriptEngine {
 
     /// Event 3 to every binding, which then stops (140176f70.c:400-426).
     public func destroy(state: inout WPEParitySceneState) {
-        run(state: &state) {
+        run(state: &state, operation: .destroy) {
             count(.destroy)
-            host.invokeMethod("destroyAll", withArguments: [])
-            host.invokeMethod("clearVideoEnded", withArguments: [])
+            invokeHost("destroyAll", withArguments: [])
+            guard !executionLimiter.didTimeOut else { return }
+            invokeHost("clearVideoEnded", withArguments: [])
         }
     }
 
@@ -673,6 +744,13 @@ public final class WPEParityScriptEngine {
 
     private func count(_ event: WPEParityScriptEvent) {
         dispatchCounts[event.rawValue] += 1
+    }
+
+    private func recordException(_ exception: JSValue?) {
+        guard executionLimiter.prepareInvocation(in: context) else { return }
+        let message = exception?.toString() ?? "SceneScript exception"
+        guard !executionLimiter.didTimeOut else { return }
+        record(message)
     }
 
     private func record(_ message: String) {
@@ -693,16 +771,52 @@ public final class WPEParityScriptEngine {
         globals[12] = input.leftDown ? 1 : 0
     }
 
-    /// Mirrors the state into the slots, runs `body`, and applies every slot it wrote.
-    private func run(state: inout WPEParitySceneState, _ body: () -> Void) {
-        mirror(state)
-        withUnsafeMutablePointer(to: &state) { pointer in
-            let previous = activeState
-            activeState = pointer
-            defer { activeState = previous }
-            body()
+    @discardableResult
+    private func evaluateScript(_ source: String, withSourceURL url: URL?) -> JSValue? {
+        guard executionLimiter.prepareInvocation(in: context) else { return nil }
+        return context.evaluateScript(source, withSourceURL: url)
+    }
+
+    @discardableResult
+    private func invokeHost(_ name: String, withArguments arguments: [Any]) -> JSValue? {
+        guard executionLimiter.prepareInvocation(in: context) else { return nil }
+        return host.invokeMethod(name, withArguments: arguments)
+    }
+
+    private func callJavaScript(_ function: JSValue?, withArguments arguments: [Any]) -> JSValue? {
+        guard executionLimiter.prepareInvocation(in: context) else { return nil }
+        return function?.call(withArguments: arguments)
+    }
+
+    /// Every JS entry, including mirror/flush getters and reentrant native callbacks, shares this outer budget.
+    private func withExecutionBudget(_ operation: ExecutionOperation, _ body: () -> Void) {
+        guard executionFailure == nil else { return }
+        let limits = configuration.executionLimits
+        let seconds = operation == .setup || operation == .initialize ? limits.setupSeconds : limits.callbackSeconds
+        guard executionLimiter.perform(in: context, seconds: seconds, body) else {
+            if executionFailure == nil {
+                let failure = Failure.executionTimedOut(operation: operation, seconds: seconds)
+                executionFailure = failure
+                record(failure.localizedDescription)
+            }
+            return
         }
-        flushWrites(to: &state)
+    }
+
+    /// A terminated callback never flushes its unfinished slot writes, and this VM can never run again.
+    private func run(state: inout WPEParitySceneState, operation: ExecutionOperation = .event, _ body: () -> Void) {
+        withExecutionBudget(operation) {
+            mirror(state)
+            guard !executionLimiter.didTimeOut else { return }
+            withUnsafeMutablePointer(to: &state) { pointer in
+                let previous = activeState
+                activeState = pointer
+                defer { activeState = previous }
+                body()
+            }
+            guard !executionLimiter.didTimeOut else { return }
+            flushWrites(to: &state)
+        }
     }
 
     private func flushWrites(to state: inout WPEParitySceneState) {
@@ -741,7 +855,7 @@ public final class WPEParityScriptEngine {
         if mirroredMembershipGeneration != state.membershipGeneration {
             // A temporary projection of the existing wrapper slots; neither State nor Engine slots are reordered.
             let indices = Dictionary(layers.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
-            host.invokeMethod("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
+            invokeHost("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
             mirroredMembershipGeneration = state.membershipGeneration
         }
         let plan = mirrorPlan ?? makeMirrorPlan()
@@ -924,9 +1038,10 @@ public final class WPEParityScriptEngine {
         pendingStrings.removeAll(keepingCapacity: true)
         var argument: JSValueRef? = entries
         var exception: JSValueRef?
+        guard executionLimiter.prepareInvocation(in: context) else { return }
         JSObjectCallAsFunction(vm, setStringsFunction.jsValueRef, nil, 1, &argument, &exception)
-        if let exception {
-            record(JSValue(jsValueRef: exception, in: context).toString())
+        if let exception, !executionLimiter.didTimeOut {
+            recordException(JSValue(jsValueRef: exception, in: context))
         }
     }
 
@@ -982,7 +1097,7 @@ public final class WPEParityScriptEngine {
             }
         case .field:
             let stored: WPEParitySceneState.ScriptValue = switch descriptor.type {
-            case .string: .string(host.invokeMethod("getString", withArguments: [index]).toString())
+            case .string: .string(invokeHost("getString", withArguments: [index])?.toString() ?? "")
             case .int: .integer(integers[index])
             default: .vector(value)
             }
@@ -1230,7 +1345,7 @@ public final class WPEParityScriptEngine {
         // The old buffers belong to their typed arrays, which free them when collected.
         (floats, integers, dirtyFlags, dirty, capacity) = (newFloats, newIntegers, newFlags, newDirty, newCapacity)
         guard host != nil else { return }
-        host.invokeMethod("rebind", withArguments: [typedArray(.float32, floats, newCapacity * 16),
+        invokeHost("rebind", withArguments: [typedArray(.float32, floats, newCapacity * 16),
                                                     typedArray(.int32, integers, newCapacity * 4),
                                                     typedArray(.uint8, dirtyFlags, newCapacity),
                                                     typedArray(.int32, dirty, (newCapacity + 1) * 4)])
@@ -1384,7 +1499,7 @@ public final class WPEParityScriptEngine {
         }
         let load: @convention(block) (String) -> JSValue? = { [weak self] path in
             guard let self, let data = configuration.assets.data(path) else { return nil }
-            return context.evaluateScript(WPEParityScriptModule.lower(String(bytes: data, encoding: .utf8) ?? ""),
+            return evaluateScript(WPEParityScriptModule.lower(String(bytes: data, encoding: .utf8) ?? ""),
                                           withSourceURL: URL(string: path))
         }
         let error: @convention(block) (String, String) -> Void = { [weak self] name, message in
@@ -1711,8 +1826,8 @@ public final class WPEParityScriptEngine {
         set("storageSet", storageSet)
         set("storageDelete", storageDelete)
         set("storageClear", storageClear)
-        context.evaluateScript(WPEParityScriptPrelude.source, withSourceURL: URL(string: "parity-host.js"))
-            .call(withArguments: [host])
+        _ = callJavaScript(evaluateScript(WPEParityScriptPrelude.source, withSourceURL: URL(string: "parity-host.js")),
+                           withArguments: [host])
         self.host = host
         tickFunction = host.forProperty("tick")
         setStringsFunction = host.forProperty("setStrings")
@@ -1725,7 +1840,7 @@ public final class WPEParityScriptEngine {
             }
         }
         sendStrings()
-        host.invokeMethod("setUserProperties", withArguments: [configuration.userPropertiesJSON])
+        invokeHost("setUserProperties", withArguments: [configuration.userPropertiesJSON])
     }
 
     private static func fieldInfo(_ field: WPEParityScriptProperty, rel: Int) -> [String: Any] {
@@ -1776,7 +1891,7 @@ public final class WPEParityScriptEngine {
         }
         .sorted { $0.pass < $1.pass }.map(materialInfo)
         let animationLayers = (animationLayerBases[index] ?? []).enumerated().map { ["index": $0.offset, "base": $0.element] }
-        host.invokeMethod("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials,
+        invokeHost("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials,
                                                       layer.hasVideo, animationLayers])
     }
 
@@ -1865,7 +1980,7 @@ public final class WPEParityScriptEngine {
         mirror(state.pointee)
         addHostLayer(index, layers[index], state: state.pointee)
         compileLayerBindings(index, source: config)
-        host.invokeMethod("init", withArguments: [firstBinding])
+        invokeHost("init", withArguments: [firstBinding])
         createdLayers.append(created)
         return Double(index)
     }
@@ -2014,6 +2129,7 @@ public final class WPEParityScriptEngine {
                 }
             }
         }
+        guard !executionLimiter.didTimeOut else { return }
         let name = "\(className)_\(components.last ?? path)"
         let vars = resolved?["scriptproperties"].map(Self.jsonText) ?? NSNull() as Any
         let bindingIndex = bindings.count
@@ -2022,16 +2138,16 @@ public final class WPEParityScriptEngine {
         bindings.append(Binding(objectID: objectID, path: path, name: name,
                                 exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
-        let function = context.evaluateScript(WPEParityScriptModule.lower(script),
+        let function = evaluateScript(WPEParityScriptModule.lower(script),
                                               withSourceURL: URL(string: "scripts/\(name).js"))
         var bits = -1
         var handle = -1
-        if exceptionCount == before, let function, function.isObject {
-            bits = Int(host.invokeMethod("addBinding", withArguments: [
+        if !executionLimiter.didTimeOut, exceptionCount == before, let function, function.isObject {
+            bits = Int(invokeHost("addBinding", withArguments: [
                 function, name, modulePath, bindingIndex, layerIndex, slot, descriptor.type.rawValue,
                 descriptor.flags.contains(.angle), descriptor.flags.contains(.notFromJSON), vars, descriptor.isSoundVolumeWrite,
                 layerIndex >= 0 && layers[layerIndex].kind == .sound && descriptor.owner == .sound,
-            ]).toInt32())
+            ])?.toInt32() ?? -1)
             if bits >= 0 {
                 handle = bindings.filter(\.compiled).count
             }

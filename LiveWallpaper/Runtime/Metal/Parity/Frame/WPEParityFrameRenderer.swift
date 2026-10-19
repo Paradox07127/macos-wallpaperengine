@@ -1722,7 +1722,8 @@ final class WPEParityFrameRenderer {
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
     /// `paused` ramps scene time down to a hold, and back up once it is false again.
     func encodeFrame(elapsed: Double, paused: Bool = false,
-                     input: WPEParityFrameInput = WPEParityFrameInput()) throws -> WPEParityGraphExecutor.Submission {
+                     input: WPEParityFrameInput = WPEParityFrameInput(),
+                     completion: (@Sendable (MTLCommandBuffer) -> Void)? = nil) throws -> WPEParityGraphExecutor.Submission {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera
         guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
@@ -1786,6 +1787,9 @@ final class WPEParityFrameRenderer {
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
             script.tick(dt: clock.frametime, cursor: scriptCursor,
                         world: camera.cursorWorld(normalizedPointer: scriptPointer), leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
+        }
+        if let failure = script?.engine.executionFailure {
+            throw failure
         }
         // 18aac0 reads the post-tick Bool/amount with the smoother already advanced by 1891a0 above.
         let renderCamera = pathCamera
@@ -1877,6 +1881,9 @@ final class WPEParityFrameRenderer {
         return try executor.encodeFrame(on: queue, textures: textures,
                                         prepare: { commandBuffer in
                                             submitted = true
+                                            if let completion {
+                                                commandBuffer.addCompletedHandler(completion)
+                                            }
                                             if aliasing {
                                                 commandBuffer.addCompletedHandler { buffer in
                                                     if buffer.error != nil {

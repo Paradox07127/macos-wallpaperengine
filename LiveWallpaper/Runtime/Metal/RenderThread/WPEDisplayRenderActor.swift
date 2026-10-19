@@ -280,6 +280,9 @@ actor WPEDisplayRenderActor {
                 // The ramp's last frame presents nothing, so parking follows the clock.
                 applyParityPacing()
             }
+            if parityDriver.runtimeFailure != nil {
+                applyParityPacing()
+            }
             replanParityIfNeeded()
             return
         }
@@ -637,7 +640,7 @@ actor WPEDisplayRenderActor {
     /// monitoring follow the old renderer: neither applies while suspended.
     private func applyParityPacing() {
         guard let parityDriver, let parityInputs else { return }
-        let running = parityDriver.didLoad
+        let running = parityDriver.didLoad && parityDriver.runtimeFailure == nil
             && (!parityDriver.isPaused || (parityPauseRampDown && parityDriver.isPauseRamping))
             && (parityDriver.needsContinuousFrames || parityFramePending)
         let pointerDemand = parityDriver.mouseInteractionEnabled || parityInputs.mailbox.read().clickCaptureEnabled
@@ -1002,10 +1005,11 @@ actor WPEDisplayRenderActor {
                 resolution: WPEResolutionDiagnosticsSnapshot(events: []),
                 shaderErrors: shader.entries.map { .init(shader: $0.shader, reason: $0.reason) },
                 shaderErrorCount: shader.count,
-                gpuErrorCount: 0,
-                gpuErrorLast: nil,
+                gpuErrorCount: parityDriver.gpuErrorSummary.count,
+                gpuErrorLast: parityDriver.gpuErrorSummary.last,
                 descriptor: parityInputs?.descriptor,
-                parity: parityDriver.diagnostics
+                parity: parityDriver.diagnostics,
+                runtimeFailure: parityDriver.runtimeFailure
             )
         }
         #endif
@@ -1075,6 +1079,7 @@ struct WPERendererStateSnapshot: Sendable {
     #if !SYSTEM_WALLPAPER_EXTENSION
     /// Set only for a scene on the parity pipeline.
     var parity: WPEParityRuntimeDiagnostics?
+    var runtimeFailure: String?
     #endif
 }
 #endif

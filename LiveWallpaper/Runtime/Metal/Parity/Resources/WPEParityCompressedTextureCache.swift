@@ -166,24 +166,28 @@ final class WPEParityCompressedTextureCache: Sendable {
     private static func decode(_ data: Data, levelByteCounts: [Int]) -> Entry? {
         let word = MemoryLayout<UInt64>.size
         guard data.count >= magic.count + word, data.prefix(magic.count) == magic else { return nil }
-        func value(at offset: Int) -> Int {
-            Int(UInt64(littleEndian: data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt64.self) }))
+        func value(at offset: Int) -> UInt64 {
+            UInt64(littleEndian: data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt64.self) })
         }
         let count = value(at: magic.count)
+        let fixedHeader = magic.count + word
         if count == 0 {
-            return data.count == magic.count + word ? .rejected : nil
+            return data.count == fixedHeader ? .rejected : nil
         }
-        let header = magic.count + word * (1 + count)
-        guard count == levelByteCounts.count, data.count == header + levelByteCounts.reduce(0, +),
-              (0 ..< count).allSatisfy({ value(at: magic.count + word * (1 + $0)) == levelByteCounts[$0] }) else {
-            return nil
-        }
+        // Compare in UInt64 before any conversion or arithmetic on the stored count. The file must contain
+        // the complete size table, which also bounds the following multiplication and every table read.
+        guard count == UInt64(levelByteCounts.count),
+              levelByteCounts.count <= (data.count - fixedHeader) / word else { return nil }
+        let header = fixedHeader + word * levelByteCounts.count
         var levels: [Data] = []
         var offset = data.startIndex + header
-        for bytes in levelByteCounts {
+        for (index, bytes) in levelByteCounts.enumerated() {
+            guard bytes >= 0, value(at: fixedHeader + index * word) == UInt64(bytes),
+                  bytes <= data.endIndex - offset else { return nil }
             levels.append(data[offset ..< offset + bytes])
             offset += bytes
         }
+        guard offset == data.endIndex else { return nil }
         return .blocks(levels)
     }
 }

@@ -234,6 +234,9 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     private func cacheRendererState(_ snapshot: WPERendererStateSnapshot) {
+        if let failure = snapshot.runtimeFailure {
+            runtimeError = .sceneRenderingFailed(description: failure)
+        }
         hasPresentedFrame = snapshot.hasPresentedFrame
         rendererDiagnostics = SceneRendererDiagnostics(
             loadDiagnostics: snapshot.loadDiagnostics,
