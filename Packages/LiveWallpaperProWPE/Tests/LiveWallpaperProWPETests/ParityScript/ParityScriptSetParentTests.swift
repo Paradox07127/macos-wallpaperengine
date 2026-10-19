@@ -59,6 +59,24 @@ final class ParityScriptSetParentTests: XCTestCase {
         XCTAssertNil(state.parentID(of: "1"))
     }
 
+    func testHostExclusionSurvivesAuthoredVisibilityWritesAndHidesDescendants() throws {
+        var state = try WPEParitySceneState(document: Self.document(), hdr: false)
+        XCTAssertTrue(state.setParent("1", to: "2"))
+        let generation = state.visibilityGeneration
+        state.excludedObjectIDs = ["2"]
+        XCTAssertGreaterThan(state.visibilityGeneration, generation)
+        XCTAssertFalse(state.isVisible("1"))
+        XCTAssertFalse(state.isVisible("2"))
+        XCTAssertTrue(state.isVisible("3"))
+        state.set(.visible, of: "2", to: .zero)
+        state.set(.visible, of: "2", to: .one)
+        XCTAssertFalse(state.isVisible("1"), "Script visibility cannot override a host exclusion")
+        XCTAssertEqual(state.object("2")?.visible, true)
+        state.excludedObjectIDs = []
+        XCTAssertTrue(state.isVisible("1"), "Removing the mask restores the authored state")
+        XCTAssertTrue(state.isVisible("2"))
+    }
+
     private static func document(script: String? = nil) throws -> WPESceneDocument {
         let alpha: Any = if let script {
             ["value": 1, "script": script]

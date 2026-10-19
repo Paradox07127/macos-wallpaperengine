@@ -2,11 +2,17 @@
 import Foundation
 import LiveWallpaperProWPE
 
+enum WPEParityShaderPolicy: Equatable, Sendable {
+    case compileAllowed
+    case precompiledOnly
+}
+
 protocol WPEParityShaderCompiling: Sendable {
     func compile(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages
 }
 
 struct WPEParityShaderCompileRequest: Sendable {
+    static let currentBindingABIVersion = 1
     let key: WPEParityShaderKey
     let program: WPEHLSLProgram
     let options: WPEParityShaderCompileOptions

@@ -84,9 +84,20 @@ actor WPEParityShaderInFlightTable {
 }
 
 actor WPEParityShaderStore {
-    enum ArtifactError: Error {
+    enum ArtifactError: Error, CustomStringConvertible {
         case invalidStages
         case invalidReflection
+        case compilerUnavailable
+        case precompiledUnavailable(String)
+
+        var description: String {
+            switch self {
+            case .invalidStages: "WPE shader stages are invalid"
+            case .invalidReflection: "WPE shader reflection is invalid"
+            case .compilerUnavailable: "WPE shader compiler is unavailable"
+            case let .precompiledUnavailable(key): "WPE precompiled shader is missing or invalid: \(key)"
+            }
+        }
     }
 
     /// Each request has one outcome: memoryHits, joinedRequests, diskHits or compilations.
@@ -101,7 +112,8 @@ actor WPEParityShaderStore {
         var compilationFailures = 0
     }
 
-    private let compiler: any WPEParityShaderCompiling
+    private let compiler: (any WPEParityShaderCompiling)?
+    private let policy: WPEParityShaderPolicy
     private let diskCache: WPEParityShaderDiskCache
     private let limiter: WPEParityShaderCompileLimiter
     private let inFlight: WPEParityShaderInFlightTable
@@ -112,19 +124,32 @@ actor WPEParityShaderStore {
         counts.withLock { $0 }
     }
 
-    init(compiler: any WPEParityShaderCompiling, diskCache: WPEParityShaderDiskCache,
+    init(compiler: (any WPEParityShaderCompiling)?, diskCache: WPEParityShaderDiskCache,
+         policy: WPEParityShaderPolicy = .compileAllowed,
          limiter: WPEParityShaderCompileLimiter = .shared,
          inFlight: WPEParityShaderInFlightTable = WPEParityShaderInFlightTable()) {
         self.compiler = compiler
+        self.policy = policy
         self.diskCache = diskCache
         self.limiter = limiter
-        self.inFlight = inFlight
+        self.inFlight = diskCache.usesSharedInFlight ? inFlight : WPEParityShaderInFlightTable()
     }
 
     func artifact(for request: WPEParityShaderCompileRequest) async throws -> WPEParityShaderArtifact {
         count(\.requests)
         if let artifact = memory[request.key] {
             count(\.memoryHits)
+            return artifact
+        }
+        // Published capsules are immutable. Do not join an app's shared compile, touch LRU timestamps,
+        // repair a damaged entry, or request a permit when an extension has only precompiled access.
+        if policy == .precompiledOnly {
+            guard let compiled = await diskCache.read(request.key, readOnly: true),
+                  let artifact = try? Self.decode(compiled, for: request) else {
+                throw ArtifactError.precompiledUnavailable(request.key.rawValue)
+            }
+            count(\.diskHits)
+            memory[request.key] = artifact
             return artifact
         }
         let (task, joined) = await inFlight.task(for: request.key) { try await self.load(request) }
@@ -162,6 +187,7 @@ actor WPEParityShaderStore {
     }
 
     private func compileHoldingPermit(_ request: WPEParityShaderCompileRequest) async throws -> WPEParityCompiledStages {
+        guard let compiler else { throw ArtifactError.compilerUnavailable }
         try await limiter.acquire()
         defer { limiter.release() }
         return try await compiler.compile(request)

@@ -408,6 +408,95 @@ struct WPEParityShaderStoreTests {
         #expect(total <= budget)
     }
 
+    @Test(.timeLimit(.minutes(1))) func precompiledMissNeverJoinsAnActiveCompile() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = GatedCompiler()
+        let table = WPEParityShaderInFlightTable()
+        let app = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: directory),
+                                       inFlight: table)
+        let shader = request()
+        let compiling = Task { try await app.artifact(for: shader) }
+        while await compiler.calls == 0 {
+            await Task.yield()
+        }
+        let release = Task {
+            try await Task.sleep(for: .milliseconds(100))
+            await compiler.open()
+        }
+        // Deliberately offer a compiler, writable cache and shared table: policy must win over all three.
+        let empty = directory.appendingPathComponent("empty")
+        let strict = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: empty),
+                                          policy: .precompiledOnly, inFlight: table)
+        do {
+            _ = try await strict.artifact(for: shader)
+            Issue.record("A precompiled miss joined or started a compilation")
+        } catch let WPEParityShaderStore.ArtifactError.precompiledUnavailable(key) {
+            #expect(key == shader.key.rawValue)
+        }
+        _ = try await compiling.value
+        try await release.value
+        #expect(await compiler.calls == 1)
+        #expect(strict.statistics.compilations == 0 && strict.statistics.joinedRequests == 0)
+        #expect(!FileManager.default.fileExists(atPath: empty.path))
+    }
+
+    @Test func precompiledReadsNeverTouchOrRepairTheCapsule() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let shader = request()
+        let capsule = WPEParityShaderDiskCache(rootURL: directory)
+        await capsule.write(Compiler.output(for: shader), for: shader.key)
+        let entry = directory.appendingPathComponent(shader.key.rawValue, isDirectory: true)
+        let stamp = Date(timeIntervalSince1970: 1000)
+        try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: entry.path)
+        let strict = WPEParityShaderStore(compiler: nil, diskCache: capsule, policy: .precompiledOnly)
+        _ = try await strict.artifact(for: shader)
+        #expect(strict.statistics.diskHits == 1 && strict.statistics.compilations == 0)
+        #expect(try entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == stamp)
+
+        let file = entry.appendingPathComponent("fragment.metallib")
+        try Data([0]).write(to: file)
+        let damaged = WPEParityShaderStore(compiler: nil, diskCache: capsule, policy: .precompiledOnly)
+        do {
+            _ = try await damaged.artifact(for: shader)
+            Issue.record("A damaged capsule must fail closed")
+        } catch let WPEParityShaderStore.ArtifactError.precompiledUnavailable(key) {
+            #expect(key == shader.key.rawValue)
+        }
+        #expect(try Data(contentsOf: file) == Data([0]), "Read-only loading repaired or removed the capsule")
+        let readOnly = WPEParityShaderDiskCache(rootURL: directory, readOnly: true)
+        await readOnly.remove(shader.key)
+        await readOnly.write(Compiler.output(for: shader), for: shader.key)
+        #expect(try Data(contentsOf: file) == Data([0]), "A read-only cache accepted a mutation")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func capsuleCompilationPersistsInItsOwnRoot() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let compiler = GatedCompiler()
+        let table = WPEParityShaderInFlightTable()
+        let app = WPEParityShaderStore(compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: directory),
+                                       inFlight: table)
+        let shader = request()
+        let first = Task { try await app.artifact(for: shader) }
+        while await compiler.calls == 0 {
+            await Task.yield()
+        }
+        let capsule = WPEParityShaderDiskCache(rootURL: directory.appendingPathComponent("Shaders"), sizeBudget: .max)
+        let exported = WPEParityShaderStore(compiler: compiler, diskCache: capsule, inFlight: table)
+        let second = Task { try await exported.artifact(for: shader) }
+        let release = Task {
+            try await Task.sleep(for: .milliseconds(100))
+            await compiler.open()
+        }
+        _ = try await (first.value, second.value)
+        try await release.value
+        #expect(await compiler.calls == 2)
+        #expect(await capsule.read(shader.key, readOnly: true) != nil,
+                "Joining the app's in-flight task stranded the capsule without its shader bytes")
+    }
+
     @Test func invalidCompilerOutputIsNotCached() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }

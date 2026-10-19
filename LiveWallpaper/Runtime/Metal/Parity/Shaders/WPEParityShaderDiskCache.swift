@@ -7,6 +7,9 @@ actor WPEParityShaderDiskCache {
 
     private static let stageInName = "vertex-stage-in.metallib"
     private let rootURL: URL
+    private let readOnly: Bool
+    /// A capsule must persist its own outputs rather than only joining another cache owner's compilation.
+    nonisolated let usesSharedInFlight: Bool
     private let sizeBudget: Int
     /// Entry directory name → last access and bytes on disk; nil until the first write scans the root.
     /// Entries another process adds after that scan stay uncounted until the next launch.
@@ -17,9 +20,20 @@ actor WPEParityShaderDiskCache {
          sizeBudget: Int = 64 * 1024 * 1024) {
         rootURL = cachesURL.appendingPathComponent("wpe-parity-shaders/v1", isDirectory: true)
         self.sizeBudget = max(0, sizeBudget)
+        readOnly = false
+        usesSharedInFlight = true
     }
 
-    func read(_ key: WPEParityShaderKey) -> WPEParityCompiledStages? {
+    /// An immutable published capsule uses its exact Shaders directory, without the app cache suffix.
+    init(rootURL: URL, readOnly: Bool = false, sizeBudget: Int = 64 * 1024 * 1024) {
+        self.rootURL = rootURL
+        self.readOnly = readOnly
+        usesSharedInFlight = false
+        self.sizeBudget = max(0, sizeBudget)
+    }
+
+    func read(_ key: WPEParityShaderKey, readOnly requestedReadOnly: Bool = false) -> WPEParityCompiledStages? {
+        let canMutate = !readOnly && !requestedReadOnly
         let directory = entryURL(key)
         do {
             let manifest = try JSONDecoder().decode(WPEParityShaderCacheManifest.self,
@@ -31,14 +45,18 @@ actor WPEParityShaderDiskCache {
             }
             guard manifest.key == key.rawValue, !stages.isEmpty,
                   stages.count == manifest.stages.count, Set(manifest.files.keys) == names else {
-                remove(key)
+                if canMutate {
+                    remove(key)
+                }
                 return nil
             }
             var files: [String: Data] = [:]
             for name in names {
                 let data = try Data(contentsOf: directory.appendingPathComponent(name))
                 guard manifest.files[name] == WPEParityShaderCacheManifest.FileRecord(data: data) else {
-                    remove(key)
+                    if canMutate {
+                        remove(key)
+                    }
                     return nil
                 }
                 files[name] = data
@@ -51,17 +69,21 @@ actor WPEParityShaderDiskCache {
                                         stageIn: stage == .vertex ? files[Self.stageInName] : nil)
             }
             // Directory mtime records last access; creation time lives in the manifest.
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: directory.path)
-            index?[key.rawValue]?.accessedAt = Date()
+            if canMutate {
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: directory.path)
+                index?[key.rawValue]?.accessedAt = Date()
+            }
             return WPEParityCompiledStages(stages: compiled)
         } catch {
-            remove(key)
+            if canMutate {
+                remove(key)
+            }
             return nil
         }
     }
 
     func write(_ compiled: WPEParityCompiledStages, for key: WPEParityShaderKey) {
-        guard sizeBudget > 0 else { return }
+        guard !readOnly, sizeBudget > 0 else { return }
         loadIndexIfNeeded()
         let fileManager = FileManager.default
         let temporary = rootURL.appendingPathComponent(".\(UUID().uuidString)", isDirectory: true)
@@ -97,6 +119,7 @@ actor WPEParityShaderDiskCache {
     }
 
     func remove(_ key: WPEParityShaderKey) {
+        guard !readOnly else { return }
         try? FileManager.default.removeItem(at: entryURL(key))
         if let removed = index?.removeValue(forKey: key.rawValue) {
             indexedBytes -= removed.bytes

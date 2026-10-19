@@ -11,10 +11,12 @@ struct WPEParityFrameShaderSource: Sendable {
     let store: WPEParityShaderStore
     let compilerIdentity: String
     let bindingABIVersion: Int
+    var options = WPEParityShaderCompileOptions()
+    var requireAllPrograms = false
 
     func artifact(for program: WPEParityProgram) async throws -> WPEParityShaderArtifact {
         try await store.artifact(for: WPEParityShaderCompileRequest(
-            program: program.hlsl, compilerIdentity: compilerIdentity, bindingABIVersion: bindingABIVersion
+            program: program.hlsl, compilerIdentity: compilerIdentity, options: options, bindingABIVersion: bindingABIVersion
         ))
     }
 }
@@ -34,6 +36,7 @@ struct WPEParityFrameInput {
 
 enum WPEParityFrameRenderError: Error, LocalizedError {
     case missingBackbuffer
+    case requiredShaderUnavailable(String)
     case arenaUnavailable
     case allocationFailed(WPEResourceID)
     case encoderUnavailable
@@ -42,6 +45,7 @@ enum WPEParityFrameRenderError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case let .requiredShaderUnavailable(reason): "Required WPE shader unavailable: \(reason)"
         case .missingBackbuffer: "The WPE frame has no backbuffer"
         case .arenaUnavailable: "The WPE frame arena is unavailable"
         case let .allocationFailed(resource): "The WPE frame could not allocate \(resource)"
@@ -670,12 +674,13 @@ final class WPEParityFrameRenderer {
     nonisolated(nonsending) init(plan: WPEParityFramePlan, device: MTLDevice, queue: MTLCommandQueue, shaders: WPEParityFrameShaderSource,
                                  particleSeed: UInt32 = WPEParityParticleScene.productSeed(), particleArenaBytes: Int? = nil,
                                  workshopID: String? = nil, continuing previous: WPEParityFrameRenderer? = nil,
-                                 userPropertiesJSON: String = "{}") async throws {
+                                 userPropertiesJSON: String = "{}",
+                                 textureCompression: WPEParityTextureCompression? = .resolve()) async throws {
         let factory = WPEParityPipelineFactory(device: device)
         let encoder = WPEParityDrawEncoder(factory: factory)
         var planner = try WPEParityFrameDrawPlanner(device: device, factory: factory, plan: plan,
                                                     preservingVideoImages: previous?.planner.videoImages ?? [:],
-                                                    userProperties: Self.propertySnapshot(userPropertiesJSON))
+                                                    userProperties: Self.propertySnapshot(userPropertiesJSON), textureCompression: textureCompression)
         // Disabled effects' programs too, so a toggle compiles nothing.
         let artifacts = await withTaskGroup(
             of: (WPEHLSLProgram, Result<WPEParityShaderArtifact, WPEParityFrameSkip>).self
@@ -690,6 +695,13 @@ final class WPEParityFrameRenderer {
                 }
             }
             return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
+        }
+        if shaders.requireAllPrograms {
+            for artifact in artifacts.values {
+                if case let .failure(reason) = artifact {
+                    throw WPEParityFrameRenderError.requiredShaderUnavailable(reason.description)
+                }
+            }
         }
         let probes = try plan.probeFrames()
         var mipRequested = plan.requestsMipMappedFrameBuffer(in: probes, artifacts: artifacts)
@@ -1721,12 +1733,16 @@ final class WPEParityFrameRenderer {
 
     /// Advances the clock by `elapsed` seconds and the engine inputs by one frame, then commits the frame.
     /// `paused` ramps scene time down to a hold, and back up once it is false again.
-    func encodeFrame(elapsed: Double, paused: Bool = false,
+    func encodeFrame(elapsed: Double, paused: Bool = false, forceExternalFrame: Bool = false,
                      input: WPEParityFrameInput = WPEParityFrameInput(),
                      completion: (@Sendable (MTLCommandBuffer) -> Void)? = nil) throws -> WPEParityGraphExecutor.Submission {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera
-        guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
+        if forceExternalFrame, paused {
+            clock.holdForExternalFrame()
+        } else {
+            guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
+        }
         let edges = buttonEdges
         buttonEdges.removeAll()
         let shortcutIcons = userShortcutIcons

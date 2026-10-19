@@ -2,11 +2,26 @@
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 
 enum SystemWallpaperSceneBundle {
+    static func freezeParity(source: SystemWallpaperSceneSource) throws -> SystemWallpaperSceneSource {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw CocoaError(.featureUnsupported) }
+        let compiler = try WPEParityShaderToolchain.makeCompiler().get()
+        let settings = try WPEParityProductSettings.make(descriptor: source.descriptor, device: device)
+        var frozen = source
+        frozen.parityConfiguration = .init(
+            settings: settings, textureCompression: WPEParityResourceSaverFlags.resolve().textureCompression,
+            renderScale: WPEMetalFXSpatialUpscaler.renderScale, compilerIdentity: compiler.compilerIdentity
+        )
+        return frozen
+    }
+
     /// Materialise packages and dependencies once so a sandboxed provider needs no original bookmarks.
     static func stage(source: SystemWallpaperSceneSource, at bundle: URL, framesPerSecond: Int = 30,
                       renderSize: CGSize = CGSize(width: 1920, height: 1080)) throws {
+        guard let parity = source.parityConfiguration else { throw CocoaError(.fileReadCorruptFile) }
+        _ = try parity.settings(for: source.descriptor)
         let manager = FileManager.default
         let assets = bundle.appendingPathComponent("Assets", isDirectory: true)
         try copy(provider: source.provider, to: assets)
@@ -34,7 +49,7 @@ enum SystemWallpaperSceneBundle {
         }
         let configuration = SystemWallpaperSceneConfiguration(
             descriptor: source.descriptor, dependencies: dependencies, hasEngineAssets: source.engineRoot != nil,
-            framesPerSecond: framesPerSecond, renderSize: renderSize
+            parity: parity, framesPerSecond: framesPerSecond, renderSize: renderSize
         )
         try JSONEncoder().encode(configuration).write(to: bundle.appendingPathComponent("configuration.json"), options: .atomic)
     }

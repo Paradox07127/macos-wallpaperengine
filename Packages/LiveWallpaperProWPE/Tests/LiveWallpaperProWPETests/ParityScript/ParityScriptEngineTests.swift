@@ -905,6 +905,30 @@ final class ParityScriptEngineTests: XCTestCase {
         ["value": value, "script": script]
     }
 
+    /// Wrapper metadata is authored JS state. A forged offset into spare typed-array capacity is not a native slot.
+    func testForgedWrapperBaseCannotFlushAnUnregisteredSlot() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": Self.scripted(1, """
+            export function update(value) {
+                const base = thisLayer.__base;
+                thisLayer.__base = base + 255;
+                thisLayer.alpha = 0.125;
+                thisLayer.__base = base;
+                thisLayer.brightness = 0.5;
+                return 0.75;
+            }
+            """)]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        for _ in 0 ..< 2 {
+            scene.engine.tick(dt: 0.01, state: &scene.state)
+            XCTAssertEqual(scene.state.object("1")?.alpha, 0.75)
+            XCTAssertEqual(scene.state.object("1")?.brightness, 0.5)
+        }
+        XCTAssertNil(scene.engine.executionFailure)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     /// update writes the frame number into alpha; after N ticks the state reads N.
     func testUpdateWritesTheFrameNumberIntoAlphaEveryTick() throws {
         var scene = try Self.scene([

@@ -24,8 +24,8 @@ enum WPERenderDiagnosticReport {
         errorCode: String?,
         environmentLines: [String]
     ) -> [String] {
-        var lines: [String] = [
-            "Capability: \(descriptor.capabilityTier.localizedLabel)"
+        var lines = [
+            "Capability: \(descriptor.capabilityTier.localizedLabel)",
         ]
         if let preflight = descriptor.preflightTier,
            preflight != .nativePlayable {
@@ -78,7 +78,6 @@ enum WPERenderDiagnosticReport {
             lines.append("No render diagnostics yet (scene not loaded).")
         }
 
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let diagnostics {
             lines.append("")
             if let parity = diagnostics.parity {
@@ -96,7 +95,6 @@ enum WPERenderDiagnosticReport {
                 lines.append("Parity pipeline: no active snapshot")
             }
         }
-        #endif
 
         if let shaders = diagnostics?.shaderErrors {
             lines.append("")
@@ -141,7 +139,7 @@ enum WPERenderDiagnosticReport {
         var parts = [
             "scene: \(counts[.scene, default: 0])",
             "builtin: \(counts[.builtin, default: 0])",
-            "engineAssets: \(counts[.engineAssets, default: 0])"
+            "engineAssets: \(counts[.engineAssets, default: 0])",
         ]
         if dependencyCount > 0 {
             parts.append("dependency: \(dependencyCount)")
@@ -186,11 +184,11 @@ enum WPERenderDiagnosticEnvironment {
         "WPEParticlePrewarmEnabled",
         "WPEPuppetAttachmentBindAnchor",
         "WPEPuppetClipComposite",
-        "WPEPuppetDeferMeshWarp"
+        "WPEPuppetDeferMeshWarp",
     ]
 
     static func lines() -> [String] {
-        var lines: [String] = ["Environment"]
+        var lines = ["Environment"]
         let bundle = Bundle.main
         let version = bundle.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"

@@ -825,9 +825,23 @@ public final class WPEParityScriptEngine {
             mirroredGenerations = nil
         }
         let count = Int(dirty[0])
+        // Typed-array capacity includes spare slots. Authored wrapper metadata can address that storage, but
+        // only the registered native slot table admits a write. Never trust the JS dirty queue for pointer access.
+        guard count >= 0, count <= capacity else {
+            dirty[0] = 0
+            dirtyFlags.update(repeating: 0, count: capacity)
+            mirroredGenerations = nil
+            return
+        }
         if count > 0 {
             for entry in 1 ... count {
                 let slot = Int(dirty[entry])
+                guard slots.indices.contains(slot) else {
+                    if slot >= 0, slot < capacity {
+                        dirtyFlags[slot] = 0
+                    }
+                    continue
+                }
                 dirtyFlags[slot] = 0
                 flushedSlots.append(slot)
                 apply(slot: slot, to: &state)

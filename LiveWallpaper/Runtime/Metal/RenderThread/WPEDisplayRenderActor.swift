@@ -39,8 +39,7 @@ actor WPEDisplayRenderActor {
 
     #if !LITE_BUILD
     private var renderer: WPEMetalSceneRenderer?
-    #if !SYSTEM_WALLPAPER_EXTENSION
-    /// Set instead of `renderer` for scenes listed by `WPEParityRendererFlag`; both are never set at once.
+    /// New pipeline driver; legacy ownership is removed after product migration.
     private var parityDriver: WPEParitySceneDriver?
     private var parityInputs: WPEParitySceneInputs?
     private var parityReplanning = false
@@ -50,7 +49,6 @@ actor WPEDisplayRenderActor {
     private var parityPauseRampDown = false
     private var parityActivity: WPESceneRuntimeActivity?
     private var parityAudioFeed = WPEParityAudioFeed()
-    #endif
     private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
@@ -178,7 +176,6 @@ actor WPEDisplayRenderActor {
         startConfigConsumer()
     }
 
-    #if !SYSTEM_WALLPAPER_EXTENSION
     /// The driver is built here because it is not Sendable and must live on this actor.
     func adoptParity(_ inputs: WPEParitySceneInputs) throws {
         scenePropertyRendererGeneration &+= 1
@@ -228,7 +225,6 @@ actor WPEDisplayRenderActor {
             await MainActor.run { media.stop() }
         }
     }
-    #endif
 
     private func startConfigConsumer() {
         guard configConsumerTask == nil else { return }
@@ -254,7 +250,6 @@ actor WPEDisplayRenderActor {
             spanPresenter.present()
             return
         }
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver, let parityInputs {
             let acquisitionStart = parityDriver.drawableAcquisitionSeconds
             let start = CACurrentMediaTime()
@@ -286,7 +281,6 @@ actor WPEDisplayRenderActor {
             replanParityIfNeeded()
             return
         }
-        #endif
         // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
         guard let thread else {
             renderer?.renderAndPresentFrame()
@@ -398,25 +392,20 @@ actor WPEDisplayRenderActor {
         displayLink != nil
     }
 
-    #if !SYSTEM_WALLPAPER_EXTENSION
     var parityDriverForTesting: WPEParitySceneDriver? {
         parityDriver
     }
     #endif
-    #endif
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.updateSurfaceGeometry(drawableSize: drawableSize)
             replanParityIfNeeded()
             return
         }
-        #endif
         renderer?.updateSurfaceGeometry(drawableSize: drawableSize)
     }
 
-    #if !SYSTEM_WALLPAPER_EXTENSION
     /// The re-plan builds off the frame path; frames keep the current plan until it is swapped in.
     private func replanParityIfNeeded() {
         guard let parityDriver, parityDriver.needsReplan, !parityReplanning else { return }
@@ -436,7 +425,6 @@ actor WPEDisplayRenderActor {
         parityFramePending = true
         applyParityPacing()
     }
-    #endif
 
     func performStaticReload(
         path: String,
@@ -524,12 +512,10 @@ actor WPEDisplayRenderActor {
 
     /// Once one present succeeds, later frame errors remain diagnostics and cannot revoke the already-visible readiness contract.
     func recordPresentCompletion(_ result: WPEFrameReadinessResult) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.recordSpanPresent(result)
             return
         }
-        #endif
         guard let renderer,
               WPEFrameReadinessCoordinator.isCurrent(
                   result,
@@ -551,12 +537,10 @@ actor WPEDisplayRenderActor {
     }
 
     func load() async throws {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if parityDriver != nil {
             try await loadParity()
             return
         }
-        #endif
         try await renderer?.load(on: self)
         if renderer?.spanFrames != nil {
             renderer?.renderAndPresentFrame()
@@ -567,12 +551,10 @@ actor WPEDisplayRenderActor {
 
     func reload() async throws {
         scenePropertyRendererGeneration &+= 1
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if parityDriver != nil {
             try await loadParity()
             return
         }
-        #endif
         try await renderer?.reload(on: self)
         if renderer?.spanFrames != nil {
             renderer?.renderAndPresentFrame()
@@ -580,7 +562,6 @@ actor WPEDisplayRenderActor {
         thread?.boostRenderQoSWarmup()
     }
 
-    #if !SYSTEM_WALLPAPER_EXTENSION
     private func loadParity() async throws {
         guard let parityDriver, let inputs = parityInputs else { return }
         let (document, assets, userProperties) = try await CancellableBackgroundWork.run {
@@ -588,7 +569,13 @@ actor WPEDisplayRenderActor {
         }
         try await parityDriver.load(document: document, assets: assets, settings: inputs.settings,
                                     drawableSize: parityDriver.drawableSize, pixelFormat: inputs.pixelFormat,
-                                    compiler: inputs.compiler, soundResolver: inputs.soundResolver,
+                                    compiler: inputs.compiler, diskCache: inputs.diskCache,
+                                    compilerIdentity: inputs.compilerIdentity, shaderOptions: inputs.shaderOptions,
+                                    bindingABIVersion: inputs.bindingABIVersion, shaderPolicy: inputs.shaderPolicy,
+                                    requireCompleteShaders: inputs.requireCompleteShaders,
+                                    renderScaleOverride: inputs.renderScaleOverride,
+                                    textureCompression: inputs.textureCompression.map { $0 ? .shared : nil } ?? .resolve(),
+                                    soundResolver: inputs.soundResolver,
                                     audioPreset: WPEEngineAudioSettings.parse(inputs.descriptor.presetSnapshot),
                                     workshopID: inputs.descriptor.workshopID,
                                     scriptHost: inputs.scriptHost(userPropertiesJSON: userProperties),
@@ -655,10 +642,8 @@ actor WPEDisplayRenderActor {
         parityActivity = activity
         parityInputs.onRuntimeActivityChange?(activity)
     }
-    #endif
 
     func hibernate() async -> Bool {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             guard parityDriver.didLoad else { return false }
             scenePropertyRendererGeneration &+= 1
@@ -667,7 +652,6 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return true
         }
-        #endif
         guard let renderer else { return false }
         scenePropertyRendererGeneration &+= 1
         return await renderer.hibernate(on: self)
@@ -678,7 +662,6 @@ actor WPEDisplayRenderActor {
         let retiringRenderer = renderer
         renderer = nil
         spanPresenter = nil
-        #if !SYSTEM_WALLPAPER_EXTENSION
         parityDriver?.cleanup()
         let retiringInputs = parityInputs
         retiringInputs?.mailbox.publishInteractiveZones([])
@@ -688,7 +671,6 @@ actor WPEDisplayRenderActor {
         if let media = retiringInputs?.media {
             await MainActor.run { media.stop() }
         }
-        #endif
         if let retiringRenderer {
             let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()
             let staticDrain = await retiringRenderer.staticTextureReloadTaskOwner.quiesce()
@@ -703,7 +685,6 @@ actor WPEDisplayRenderActor {
     // MARK: - Configuration Forwarders
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile, rampDown: Bool = false) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.applyPerformanceProfile(profile)
             parityPauseRampDown = profile == .suspended && rampDown
@@ -711,7 +692,6 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return
         }
-        #endif
         if spanPresenter != nil {
             setLinkPaused(profile == .suspended)
         }
@@ -719,13 +699,11 @@ actor WPEDisplayRenderActor {
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.setFrameRateCeiling(framesPerSecond)
             applyParityPacing()
             return
         }
-        #endif
         if spanPresenter != nil {
             setLinkPreferredFPS(framesPerSecond)
         }
@@ -733,27 +711,21 @@ actor WPEDisplayRenderActor {
     }
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.setAdaptiveFrameRateThrottle(active)
             applyParityPacing()
             return
         }
-        #endif
         renderer?.setAdaptiveFrameRateThrottle(active)
     }
 
     func setAudioMuted(_ muted: Bool) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         parityDriver?.setAudioMuted(muted)
-        #endif
         renderer?.setAudioMuted(muted)
     }
 
     func setAudioVolume(_ volume: Double) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         parityDriver?.setAudioVolume(volume)
-        #endif
         renderer?.setAudioVolume(volume)
     }
 
@@ -764,27 +736,22 @@ actor WPEDisplayRenderActor {
     #endif
 
     func requiresSystemAudioCapture() -> Bool {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             return parityDriver.requiresSystemAudioCapture
         }
-        #endif
         return renderer?.sceneSupportsAudioProcessing ?? false
     }
 
     func setMouseInteractionEnabled(_ enabled: Bool) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.setMouseInteractionEnabled(enabled)
             applyParityPacing()
             return
         }
-        #endif
         renderer?.setMouseInteractionEnabled(enabled)
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityInputs {
             // The mailbox first, as the old renderer: its epoch cancels pending presses at once.
             parityInputs.mailbox.setClickCaptureEnabled(enabled)
@@ -792,23 +759,30 @@ actor WPEDisplayRenderActor {
             applyParityPacing()
             return
         }
-        #endif
         renderer?.setClickCaptureEnabled(enabled)
     }
 
     func setPresentFitMode(_ mode: WPEPresentFitMode) {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             parityDriver.setPresentFitMode(mode)
             replanParityIfNeeded()
             return
         }
-        #endif
         renderer?.setPresentFitMode(mode)
     }
 
     /// Reload only when an authored control changes; a layer-only exclusion needs no rebuild.
     func setSystemWallpaperState(descriptor: SceneDescriptor, excludedObjectIDs: Set<String>) async throws {
+        if let parityDriver, var inputs = parityInputs {
+            parityDriver.excludedObjectIDs = excludedObjectIDs
+            guard inputs.descriptor != descriptor else { requestParityFrame(); return }
+            inputs.descriptor = descriptor
+            parityInputs = inputs
+            if parityDriver.didLoad {
+                try await reload()
+            }
+            return
+        }
         guard let renderer else { return }
         renderer.excludedObjectIDs = excludedObjectIDs
         guard renderer.descriptor != descriptor else { return }
@@ -820,11 +794,9 @@ actor WPEDisplayRenderActor {
     }
 
     func scenePropertyBindings() -> [String: [WPEScenePropertyBinding]] {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             return parityDriver.userPropertyBindings
         }
-        #endif
         return renderer?.scenePropertyBindings ?? [:]
     }
 
@@ -833,7 +805,6 @@ actor WPEDisplayRenderActor {
         authority: ScenePropertyMutationAuthority,
         expectedIntent token: ScenePropertyMutationToken
     ) async -> PreparedScenePropertyPatch? {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver, let parityInputs {
             // The scene is re-parsed with the new values off the render thread, so frames keep running meanwhile.
             let generation = scenePropertyRendererGeneration
@@ -847,7 +818,6 @@ actor WPEDisplayRenderActor {
             }
             return PreparedScenePropertyPatch(patch: patch, rendererGeneration: generation)
         }
-        #endif
         guard authority.isCurrent(token),
               renderer?.canApplyScenePropertyPatch(patch) == true else {
             return nil
@@ -865,7 +835,6 @@ actor WPEDisplayRenderActor {
         guard prepared.rendererGeneration == scenePropertyRendererGeneration else {
             return false
         }
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             guard parityDriver.commitUserProperties(prepared.patch) else { return false }
             // A later reload parses with the committed values.
@@ -873,7 +842,6 @@ actor WPEDisplayRenderActor {
             requestParityFrame()
             return true
         }
-        #endif
         guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
             return false
         }
@@ -882,14 +850,12 @@ actor WPEDisplayRenderActor {
     }
 
     func captureLivePoster() async -> NSImage? {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             // As `enqueueLivePosterCapture`: only a presented, running scene.
             guard !parityDriver.isPaused, let copy = await parityDriver.copyPresentedBackbuffer(),
                   !Task.isCancelled else { return nil }
             return await WPEMetalTextureSnapshotter.shared.snapshotAsync(from: copy)
         }
-        #endif
         let id = UUID()
         // Keep the suspension and its continuation on the owning actor. Nesting these
         // closures in the renderer's isolated-parameter method lost executor inheritance
@@ -915,14 +881,12 @@ actor WPEDisplayRenderActor {
             await withCheckedContinuation { continuation in
                 self.preconditionIsolated()
                 resumer.install(continuation)
-                #if !SYSTEM_WALLPAPER_EXTENSION
                 if let parityDriver = self.parityDriver, let parityInputs = self.parityInputs, !Task.isCancelled {
                     parityDriver.captureDisplayedFrame(colorSpace: parityInputs.presentLayer.layer.colorspace) {
                         resumer.resume(returning: $0)
                     }
                     return
                 }
-                #endif
                 guard !Task.isCancelled, let renderer = self.renderer, renderer.outputTexture != nil else {
                     resumer.resume(returning: nil)
                     return
@@ -941,6 +905,13 @@ actor WPEDisplayRenderActor {
     /// Export uses the normal frame and terminal colour pass, without acquiring a window drawable.
     func renderMovieFrame(into destination: WPEMetalRenderExecutor.PresentCompletionTexture) async throws {
         try Task.checkCancellation()
+        if let parityDriver {
+            if parityDriver.needsReplan {
+                _ = await parityDriver.replan()
+            }
+            try await parityDriver.renderMovieFrame(into: destination, timestamp: CACurrentMediaTime())
+            return
+        }
         guard let renderer else { throw WPEMetalRenderExecutorError.noRenderablePasses }
         let production = WPEMetalFrameProductionCompletion()
         var encoded = false
@@ -964,11 +935,7 @@ actor WPEDisplayRenderActor {
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {
-        #if SYSTEM_WALLPAPER_EXTENSION
-        renderer?.loadDiagnostics
-        #else
         renderer?.loadDiagnostics ?? parityDriver?.loadDiagnostics
-        #endif
     }
 
     func isCurrentLoadGeneration(_ generation: Int) -> Bool {
@@ -992,7 +959,6 @@ actor WPEDisplayRenderActor {
     }
 
     func rendererStateSnapshot() -> WPERendererStateSnapshot? {
-        #if !SYSTEM_WALLPAPER_EXTENSION
         if let parityDriver {
             let shader = parityDriver.shaderErrorSummary
             return WPERendererStateSnapshot(
@@ -1012,7 +978,6 @@ actor WPEDisplayRenderActor {
                 runtimeFailure: parityDriver.runtimeFailure
             )
         }
-        #endif
         guard let renderer else { return nil }
         let shader = renderer.shaderErrorSummary
         let gpu = renderer.gpuErrorSummary
@@ -1076,10 +1041,8 @@ struct WPERendererStateSnapshot: Sendable {
     let gpuErrorLast: String?
     var descriptor: SceneDescriptor?
     var compatibilitySummary = ""
-    #if !SYSTEM_WALLPAPER_EXTENSION
     /// Set only for a scene on the parity pipeline.
     var parity: WPEParityRuntimeDiagnostics?
     var runtimeFailure: String?
-    #endif
 }
 #endif

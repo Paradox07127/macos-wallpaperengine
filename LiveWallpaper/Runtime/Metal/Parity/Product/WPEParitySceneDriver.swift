@@ -113,6 +113,11 @@ final class WPEParitySceneDriver {
         let sceneSize: SIMD2<Float>
         let pixelFormat: MTLPixelFormat
         let renderScale: Double
+        let textureCompression: WPEParityTextureCompression?
+    }
+
+    var excludedObjectIDs: Set<String> = [] {
+        didSet { renderer?.state.excludedObjectIDs = excludedObjectIDs }
     }
 
     let executor: WPEMetalRenderExecutor
@@ -276,8 +281,12 @@ final class WPEParitySceneDriver {
     /// driver.
     nonisolated(nonsending) func load(
         document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
-        drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: WPEParityHelperShaderCompiler,
+        drawableSize: CGSize, pixelFormat: MTLPixelFormat, compiler: (any WPEParityShaderCompiling)?,
         diskCache: WPEParityShaderDiskCache = .shared,
+        compilerIdentity: String? = nil, shaderOptions: WPEParityShaderCompileOptions = .init(),
+        bindingABIVersion: Int = 1, shaderPolicy: WPEParityShaderPolicy = .compileAllowed,
+        requireCompleteShaders: Bool = false, renderScaleOverride: Double? = nil,
+        textureCompression: WPEParityTextureCompression? = .resolve(),
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
         workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
         userShortcutIcons: WPEUserShortcutIconStore? = nil,
@@ -320,20 +329,32 @@ final class WPEParitySceneDriver {
         var preparedSound: WPESoundRuntime?
         do {
             let sceneSize = WPEParityCamera(document: document, renderTargetSize: SIMD2(1, 1)).size
-            let renderScale = WPEMetalFXSpatialUpscaler.renderScale
+            let renderScale = renderScaleOverride ?? WPEMetalFXSpatialUpscaler.renderScale
             let selection = currentTarget(sceneSize: sceneSize,
                                           isHDR: WPEParityProgramScene.hdrEnabled(document: document, settings: settings),
                                           pixelFormat: pixelFormat, renderScale: renderScale)
             let target = selection.target
             let plan = try await Self.makePlan(document: document, assets: assets, settings: settings, target: target)
-            let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache, inFlight: .shared)
-            let shaders = WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
-                                                     bindingABIVersion: 1)
+            var identity = compilerIdentity
+            #if !SYSTEM_WALLPAPER_EXTENSION
+            if identity == nil {
+                identity = (compiler as? WPEParityHelperShaderCompiler)?.compilerIdentity
+            }
+            #endif
+            guard let identity, !identity.isEmpty else {
+                throw WPEParityFrameRenderError.requiredShaderUnavailable("Compiler identity is missing")
+            }
+            let store = WPEParityShaderStore(compiler: compiler, diskCache: diskCache, policy: shaderPolicy, inFlight: .shared)
+            let shaders = WPEParityFrameShaderSource(store: store, compilerIdentity: identity,
+                                                     bindingABIVersion: bindingABIVersion, options: shaderOptions,
+                                                     requireAllPrograms: requireCompleteShaders || shaderPolicy == .precompiledOnly)
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
-                particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON
+                particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON,
+                textureCompression: textureCompression
             )
             guard generation == loadGeneration else { throw CancellationError() }
+            renderer.state.excludedObjectIDs = excludedObjectIDs
             if paused {
                 renderer.applyPerformanceProfile(.suspended)
             }
@@ -374,7 +395,7 @@ final class WPEParitySceneDriver {
             shaderRequiresAudio = Self.readsAudio(plan)
             planSource = PlanSource(document: document, scene: plan.scene, assets: assets, settings: settings,
                                     shaders: shaders, workshopID: workshopID, sceneSize: sceneSize,
-                                    pixelFormat: pixelFormat, renderScale: renderScale)
+                                    pixelFormat: pixelFormat, renderScale: renderScale, textureCompression: textureCompression)
             plannedTarget = target
             adoptUpscalePlan(selection.upscale)
             scriptUserProperties = scriptHost.userPropertiesJSON
@@ -438,7 +459,7 @@ final class WPEParitySceneDriver {
                     try withScriptSound(script.engine) { try renderer.attachScript(script) }
                 } catch let error as CancellationError {
                     throw error
-                } catch let error as WPEParityScriptEngine.Failure where error != .missingBaseClasses {
+                } catch let error as WPEParityScriptEngine.Failure where error != .missingBaseClasses || requireCompleteShaders || shaderPolicy == .precompiledOnly {
                     throw error
                 } catch {
                     loadDiagnostics = .other(layer: "scripts", message: String(describing: error))
@@ -487,7 +508,7 @@ final class WPEParitySceneDriver {
                 let renderer = try await WPEParityFrameRenderer(
                     plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
                     workshopID: planSource.workshopID, continuing: previous,
-                    userPropertiesJSON: scriptUserProperties
+                    userPropertiesJSON: scriptUserProperties, textureCompression: planSource.textureCompression
                 )
                 guard generation == loadGeneration, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
@@ -560,7 +581,8 @@ final class WPEParitySceneDriver {
         self.planSource = PlanSource(document: pending.document, scene: planSource.scene, assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
-                                     pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
+                                     pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale,
+                                     textureCompression: planSource.textureCompression)
         return true
     }
 
@@ -722,6 +744,53 @@ final class WPEParitySceneDriver {
         return commandBuffer
     }
 
+    nonisolated(nonsending) func renderMovieFrame(into destination: WPEMetalRenderExecutor.PresentCompletionTexture,
+                                                  timestamp: CFTimeInterval) async throws {
+        try Task.checkCancellation()
+        guard let renderer, let plannedTarget else { throw WPEMetalRenderExecutorError.noRenderablePasses }
+        guard encodeFrame(renderer, timestamp: timestamp, pointer: SIMD2(0.5, 0.5), buttonDown: false,
+                          audio: nil, date: Date(), forceExternalFrame: true) else {
+            if let runtimeFailure {
+                throw WPEParityFrameRenderError.requiredShaderUnavailable(runtimeFailure)
+            }
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        let scene = SubmittedBuffer(buffer: submittedSceneBuffer)
+        guard let command = executor.textureSourceCommandQueue.makeCommandBuffer() else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        let upscaled = try executor.encodeUpscaledPresent(source: renderer.backbuffer, target: destination.texture,
+                                                          fitMode: plannedTarget.presentFit,
+                                                          colorTransfer: renderer.colorTransfer, into: command)
+        if !upscaled {
+            let size = CGSize(width: destination.texture.width, height: destination.texture.height)
+            if executor.upscalePlan.isActive, executor.upscalePlan.declineIsConclusive(forDrawableSize: size) {
+                executor.upscalePlan = executor.upscalePlan.demotedToNative()
+            }
+            try executor.encodePresentPass(source: renderer.backbuffer, target: destination.texture,
+                                           fitMode: plannedTarget.presentFit,
+                                           worldSourceSize: CGSize(width: plannedTarget.width, height: plannedTarget.height),
+                                           uniforms: nil, colorTransfer: renderer.colorTransfer, into: command)
+        }
+        let state = presentState
+        let generation = loadGeneration
+        state.begin()
+        let succeeded = await withCheckedContinuation { continuation in
+            command.addCompletedHandler { buffer in
+                let succeeded = buffer.status == .completed && scene.succeeded
+                if buffer.status == .error {
+                    state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Movie frame failed")
+                }
+                state.record(generation: generation, succeeded: succeeded)
+                state.end()
+                continuation.resume(returning: succeeded)
+            }
+            command.commit()
+        }
+        guard succeeded else { throw WPEMetalRenderExecutorError.commandBufferFailed }
+        try Task.checkCancellation()
+    }
+
     /// A span member's present of a published frame: readiness, as the old renderer's `recordPresentCompletion`.
     func recordSpanPresent(_ result: WPEFrameReadinessResult) {
         presentState.record(generation: result.generation, succeeded: result.renderCompleted && result.presentCompleted)
@@ -729,7 +798,8 @@ final class WPEParitySceneDriver {
 
     /// Steps the scene clock and commits one frame into the backbuffer; false when nothing was committed.
     private func encodeFrame(_ renderer: WPEParityFrameRenderer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
-                             buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date) -> Bool {
+                             buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date,
+                             forceExternalFrame: Bool = false) -> Bool {
         submittedSceneBuffer = nil
         guard runtimeFailure == nil else { return false }
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
@@ -746,11 +816,12 @@ final class WPEParitySceneDriver {
             let state = presentState
             let generation = loadGeneration
             let submission = try withScriptSound(renderer.script?.engine) {
-                try renderer.encodeFrame(elapsed: elapsed, paused: paused, input: input, completion: { buffer in
-                    if buffer.status == .error {
-                        state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
-                    }
-                })
+                try renderer.encodeFrame(elapsed: elapsed, paused: paused, forceExternalFrame: forceExternalFrame,
+                                         input: input, completion: { buffer in
+                                             if buffer.status == .error {
+                                                 state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
+                                             }
+                                         })
             }
             encodeSeconds += CACurrentMediaTime() - start
             encodeCount += 1
@@ -1085,7 +1156,15 @@ struct WPEParitySceneInputs: Sendable {
     let projectRoot: URL
     let assets: WPEParityProgramAssets
     let settings: WPEParityProgramSettings
-    let compiler: WPEParityHelperShaderCompiler
+    let compiler: (any WPEParityShaderCompiling)?
+    var compilerIdentity: String?
+    var shaderOptions = WPEParityShaderCompileOptions()
+    var bindingABIVersion = 1
+    var shaderPolicy = WPEParityShaderPolicy.compileAllowed
+    var diskCache = WPEParityShaderDiskCache.shared
+    var requireCompleteShaders = false
+    var textureCompression: Bool?
+    var renderScaleOverride: Double?
     let device: any MTLDevice
     let presentLayer: WPEPresentLayer
     let mailbox: WPEPointerMailbox

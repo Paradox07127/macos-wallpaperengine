@@ -77,5 +77,20 @@ enum SystemWallpaperScenePreparation {
             throw error
         }
     }
+
+    /// Load the actual runtime without recording: publication warms and verifies both clock visibility variants.
+    static func prepare(source: SystemWallpaperSceneSource, size: CGSize, hidingClockCalendar: Bool) async throws {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw SystemWallpaperMovieWriter.Failure.bufferUnavailable
+        }
+        let layer = CAMetalLayer()
+        layer.device = device
+        layer.pixelFormat = .bgra8Unorm_srgb
+        layer.drawableSize = size
+        let actor = try await SystemWallpaperSceneRuntime.makeActor(source: source, layer: layer, size: size,
+                                                                    hidingClockCalendar: hidingClockCalendar)
+        await actor.teardownRenderer()
+        actor.requestStop()
+    }
 }
 #endif

@@ -178,6 +178,15 @@ public struct WPEParitySceneState: Sendable {
     public private(set) var transformGeneration = 0
     /// Bumped by every visible change.
     public private(set) var visibilityGeneration = 0
+    /// Host exclusions are independent of authored/script visibility and include every excluded ancestor.
+    public var excludedObjectIDs: Set<String> = [] {
+        didSet {
+            if excludedObjectIDs != oldValue {
+                visibilityGeneration += 1
+            }
+        }
+    }
+
     /// Common-scene membership changes require composition again, independently of visibility.
     public private(set) var membershipGeneration = 0
     /// Every image layer effect in scene order, then every text layer effect.
@@ -606,7 +615,7 @@ public struct WPEParitySceneState: Sendable {
         var current: Int? = index
         var steps = 0
         while let object = current, steps <= objects.count {
-            if !objects[object].alive || !objects[object].visible {
+            if !objects[object].alive || !objects[object].visible || excludedObjectIDs.contains(ids[object]) {
                 return false
             }
             current = parents[object]

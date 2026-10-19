@@ -118,6 +118,8 @@ final class WallpaperExportService {
     var preparationProgress: Double?
     private(set) var preparingTitle: String?
     @ObservationIgnored private var preparationTask: Task<Void, Error>?
+    @ObservationIgnored private var hasPendingLegacyRepreparation = false
+    @ObservationIgnored private var isRepreparingLegacyScenes = false
     @ObservationIgnored private var preparingItemID: String?
     @ObservationIgnored var onItemPublished: (@MainActor (String) -> Void)?
     @ObservationIgnored var onHeartbeatRefreshed: (@MainActor () -> Void)?
@@ -365,13 +367,73 @@ final class WallpaperExportService {
 
     func cancelPreparation() {
         preparationCancellationGeneration &+= 1
+        hasPendingLegacyRepreparation = false
         preparationTask?.cancel()
     }
+
+    private struct PublishedSceneRepreparation {
+        let bundle: URL
+        let item: SystemWallpaperManifest.Item
+    }
+
+    #if !LITE_BUILD
+    /// Reuse the publication slot and atomic replace path; never patch a bundle an extension may be reading.
+    @available(macOS 26.0, *)
+    func reprepareLegacySceneCapsules() async {
+        guard !isRepreparingLegacyScenes else { return }
+        guard preparationTask == nil else {
+            hasPendingLegacyRepreparation = true
+            return
+        }
+        hasPendingLegacyRepreparation = false
+        isRepreparingLegacyScenes = true
+        defer { isRepreparingLegacyScenes = false }
+        let generation = clearGeneration
+        let cancellationGeneration = preparationCancellationGeneration
+        let candidates = items.filter { $0.fileName.hasSuffix(".scene") }
+        for item in candidates {
+            guard generation == clearGeneration, cancellationGeneration == preparationCancellationGeneration,
+                  !Task.isCancelled else { return }
+            guard items.contains(where: { $0.id == item.id && $0.fileName == item.fileName }) else { continue }
+            let bundle = videosDirectory.appendingPathComponent(item.fileName, isDirectory: true)
+            do {
+                let configuration = try JSONDecoder().decode(SystemWallpaperSceneConfiguration.self,
+                                                             from: Data(contentsOf: bundle.appendingPathComponent("configuration.json")))
+                guard configuration.parity == nil
+                    || configuration.parity?.bindingABIVersion != WPEParityShaderCompileRequest.currentBindingABIVersion
+                    || configuration.parity?.schemaVersion != 1 else { continue }
+                var options = item.preparationOptions ?? SystemWallpaperPreparationOptions()
+                if item.preparationOptions == nil {
+                    options.framesPerSecond = configuration.framesPerSecond
+                    options.size = configuration.renderSize
+                }
+                options.sceneMode = .live
+                try await prepareAndPublish(content: .scene(configuration.descriptor), title: item.title,
+                                            id: item.id, options: options, origin: nil,
+                                            repreparation: PublishedSceneRepreparation(bundle: bundle, item: item))
+            } catch is CancellationError {
+                return
+            } catch {
+                lastError = error.localizedDescription
+                Logger.warning("[systemWallpaper] scene capsule migration failed for \(item.id): \(error)",
+                               category: .fileAccess)
+            }
+        }
+    }
+    #endif
 
     /// Preparation is serial across every window, and cancellation drains its renderer before the slot is freed.
     @available(macOS 26.0, *)
     func prepareAndPublish(content: WallpaperContent, title: String, id: String,
                            options: SystemWallpaperPreparationOptions, origin: WPEOrigin? = nil) async throws {
+        try await prepareAndPublish(content: content, title: title, id: id, options: options, origin: origin,
+                                    repreparation: nil)
+    }
+
+    @available(macOS 26.0, *)
+    private func prepareAndPublish(content: WallpaperContent, title: String, id: String,
+                                   options: SystemWallpaperPreparationOptions, origin: WPEOrigin?,
+                                   repreparation: PublishedSceneRepreparation?) async throws {
         if case .video = content {
             try await publish(content: content, title: title, id: id); return
         }
@@ -390,6 +452,15 @@ final class WallpaperExportService {
             defer { try? FileManager.default.removeItem(at: directory) }
             let movie = directory.appendingPathComponent("wallpaper.mov")
             let progress: (Double) -> Void = { [weak self] in self?.preparationProgress = $0 }
+            let publicationSourceKey: String?
+            let publicationOptions: SystemWallpaperPreparationOptions?
+            if let repreparation {
+                publicationSourceKey = repreparation.item.sourceKey
+                publicationOptions = repreparation.item.preparationOptions
+            } else {
+                publicationSourceKey = try Self.sourceKey(for: content)
+                publicationOptions = options
+            }
             switch content {
             case let .html(source, config):
                 #if !LITE_BUILD
@@ -402,8 +473,13 @@ final class WallpaperExportService {
                 #endif
             case let .scene(descriptor):
                 #if !LITE_BUILD
-                let source = try SystemWallpaperScenePreparation.resolve(descriptor, origin: origin)
+                let source = if let repreparation {
+                    try SystemWallpaperSceneSource.legacyRepreparation(at: repreparation.bundle)
+                } else {
+                    try SystemWallpaperScenePreparation.resolve(descriptor, origin: origin)
+                }
                 if options.sceneMode == .live {
+                    let source = try SystemWallpaperSceneBundle.freezeParity(source: source)
                     let bundle = directory.appendingPathComponent("wallpaper.scene", isDirectory: true)
                     let staging = Task.detached {
                         try SystemWallpaperSceneBundle.stage(source: source, at: bundle,
@@ -411,17 +487,25 @@ final class WallpaperExportService {
                     }
                     try await withTaskCancellationHandler(operation: { try await staging.value }, onCancel: { staging.cancel() })
                     try Task.checkCancellation()
-                    let prepared = try SystemWallpaperSceneSource.published(at: bundle)
+                    let prepared = try SystemWallpaperSceneSource.published(at: bundle, shaderPolicy: .compileAllowed)
+                    // Fill both visibility variants: the extension restores clock/calendar objects after unlock.
+                    try await SystemWallpaperScenePreparation.prepare(source: prepared, size: options.size,
+                                                                      hidingClockCalendar: false)
                     try await SystemWallpaperScenePreparation.record(
                         source: prepared, url: movie, size: options.size,
                         duration: 1, framesPerSecond: options.framesPerSecond, progress: progress
                     )
+                    let readOnly = try SystemWallpaperSceneSource.published(at: bundle)
+                    for hidingClockCalendar in [false, true] {
+                        try await SystemWallpaperScenePreparation.prepare(source: readOnly, size: options.size,
+                                                                          hidingClockCalendar: hidingClockCalendar)
+                    }
                     guard let poster = await Self.generateThumbnailJPEG(for: movie) else { throw ServiceError.thumbnailFailed }
                     try poster.write(to: bundle.appendingPathComponent("poster.jpg"), options: .atomic)
                     try Task.checkCancellation()
                     guard clearGeneration == generation else { throw ServiceError.supersededByRemoval }
-                    try await publish(id: id, title: title, source: .sceneBundle(bundle), preparationOptions: options,
-                                      sourceKey: Self.sourceKey(for: content))
+                    try await publish(id: id, title: title, source: .sceneBundle(bundle), preparationOptions: publicationOptions,
+                                      sourceKey: publicationSourceKey, preservingAddedAt: repreparation?.item.addedAt)
                     return
                 }
                 try await SystemWallpaperScenePreparation.record(
@@ -435,8 +519,8 @@ final class WallpaperExportService {
             }
             try Task.checkCancellation()
             guard clearGeneration == generation else { throw ServiceError.supersededByRemoval }
-            try await publish(id: id, title: title, source: .pickedFile(movie), preparationOptions: options,
-                              sourceKey: Self.sourceKey(for: content))
+            try await publish(id: id, title: title, source: .pickedFile(movie), preparationOptions: publicationOptions,
+                              sourceKey: publicationSourceKey, preservingAddedAt: repreparation?.item.addedAt)
         }
         preparationTask = task
         defer {
@@ -444,6 +528,16 @@ final class WallpaperExportService {
             preparingItemID = nil
             preparationProgress = nil
             preparingTitle = nil
+            #if !LITE_BUILD
+            if hasPendingLegacyRepreparation {
+                hasPendingLegacyRepreparation = false
+                let retryCancellationGeneration = preparationCancellationGeneration
+                Task { [weak self] in
+                    guard let self, preparationCancellationGeneration == retryCancellationGeneration else { return }
+                    await reprepareLegacySceneCapsules()
+                }
+            }
+            #endif
         }
         try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
@@ -488,9 +582,11 @@ final class WallpaperExportService {
     }
 
     private func publish(id: String, title: String, source: PublishSource,
-                         preparationOptions: SystemWallpaperPreparationOptions? = nil, sourceKey: String? = nil) async throws {
+                         preparationOptions: SystemWallpaperPreparationOptions? = nil, sourceKey: String? = nil,
+                         preservingAddedAt: Date? = nil) async throws {
         do {
-            try await performPublish(id: id, title: title, source: source, preparationOptions: preparationOptions, sourceKey: sourceKey)
+            try await performPublish(id: id, title: title, source: source, preparationOptions: preparationOptions,
+                                     sourceKey: sourceKey, preservingAddedAt: preservingAddedAt)
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -503,7 +599,8 @@ final class WallpaperExportService {
     }
 
     private func performPublish(id itemID: String, title: String, source: PublishSource,
-                                preparationOptions: SystemWallpaperPreparationOptions?, sourceKey: String?) async throws {
+                                preparationOptions: SystemWallpaperPreparationOptions?, sourceKey: String?,
+                                preservingAddedAt: Date?) async throws {
         let resolver = dependencies.resolver
         let copyVideoFile = dependencies.copyVideoFile
         let extractVideoFromPackage = dependencies.extractVideoFromPackage
@@ -666,7 +763,7 @@ final class WallpaperExportService {
                         title: title,
                         fileName: destination.lastPathComponent,
                         thumbnailFileName: thumbnailFileName,
-                        addedAt: dependencies.now(), preparationOptions: preparationOptions, sourceKey: sourceKey
+                        addedAt: preservingAddedAt ?? dependencies.now(), preparationOptions: preparationOptions, sourceKey: sourceKey
                     ))
                     try writeManifest(manifest)
                     try? manager.removeItem(at: videoBackupURL)
@@ -939,6 +1036,11 @@ final class WallpaperExportService {
         do {
             try FileManager.default.createDirectory(at: dependencies.sharedRoot, withIntermediateDirectories: true)
             try SystemWallpaperCoding.encoder.encode(provider).write(to: providerURL, options: .atomic)
+            #if !LITE_BUILD
+            if #available(macOS 26.0, *) {
+                Task { [weak self] in await self?.reprepareLegacySceneCapsules() }
+            }
+            #endif
         } catch {
             Logger.warning("[systemWallpaper] provider declaration failed: \(error.localizedDescription)", category: .fileAccess)
         }

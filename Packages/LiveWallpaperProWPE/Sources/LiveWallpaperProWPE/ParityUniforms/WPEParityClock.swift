@@ -60,6 +60,13 @@ public struct WPEParityClock: Sendable {
         return true
     }
 
+    /// A host-requested snapshot still updates wall-clock-driven content while scene animation stays suspended.
+    /// Ordinary display-link frames retain the native pause-ramp behavior in `advance`.
+    public mutating func holdForExternalFrame() {
+        previousFrametime = frametime
+        frametime = 0
+    }
+
     /// Compatibility for callers supplying a fresh rate. Product updates use the stored normalized owner.
     @discardableResult
     public mutating func advance(elapsed: Double, ratePercent: Float, paused: Bool) -> Bool {
