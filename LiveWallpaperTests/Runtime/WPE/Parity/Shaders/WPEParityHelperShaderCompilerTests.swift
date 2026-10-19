@@ -389,6 +389,20 @@ final class WPEParityHelperShaderCompilerTests: XCTestCase {
         XCTAssertNotEqual(rewritten, first)
         XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.dxcompiler.path), 2)
         XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.helper.path), 1)
+
+        // An MSC upgrade at the same path must also invalidate compiled-shader cache entries.
+        try Data("converter upgraded".utf8).write(to: files.metalIRConverter)
+        let upgraded = try makeCompiler(files).compilerIdentity
+        XCTAssertNotEqual(upgraded, rewritten)
+        XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.metalIRConverter.path), 2)
+        XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.dxcompiler.path), 2)
+        XCTAssertEqual(WPEParityHelperShaderCompiler.fileHashCount(path: files.helper.path), 1)
+        let program = WPEHLSLProgram(vertex: Array("same shader source".utf8))
+        let previous = WPEParityShaderCompileRequest(program: program, compilerIdentity: rewritten,
+                                                     bindingABIVersion: 1)
+        let current = WPEParityShaderCompileRequest(program: program, compilerIdentity: upgraded,
+                                                    bindingABIVersion: 1)
+        XCTAssertNotEqual(current.key, previous.key)
     }
 
     func testDeadlineStopsSystemProcessAfterWaiterCancellation() async throws {

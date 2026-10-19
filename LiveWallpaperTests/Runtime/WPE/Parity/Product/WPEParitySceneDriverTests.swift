@@ -206,6 +206,101 @@ final class WPEParitySceneDriverTests: XCTestCase {
         XCTAssertNil(afterCleanup, "Cleanup revokes the last presented frame's capture eligibility")
     }
 
+    func testPreparedSceneReuseDefaultsAndStrictRollback() throws {
+        let suite = try TestScratch.defaultsSuite("WPEParitySceneDriverTests.PreparedSceneReuse")
+        defer { suite.discard() }
+        let key = WPEParitySceneDriver.preparedSceneReuseDefaultsKey
+        let variable = WPEParitySceneDriver.preparedSceneReuseEnvironmentKey
+        func resolve(_ environment: [String: String] = [:]) -> Bool {
+            WPEParitySceneDriver.resolvePreparedSceneReuse(defaults: suite.defaults, environment: environment)
+        }
+        XCTAssertTrue(resolve(), "Unconfigured production path defaults on")
+        suite.defaults.set(false, forKey: key)
+        XCTAssertFalse(resolve(), "A real Boolean false rolls back")
+        XCTAssertFalse(resolve([variable: "invalid"]), "Invalid environment falls through to Boolean preference")
+        for value in ["1", "true", "TRUE"] {
+            XCTAssertTrue(resolve([variable: value]), "Valid environment overrides preference")
+        }
+        suite.defaults.set(true, forKey: key)
+        for value in ["0", "false", "FALSE"] {
+            XCTAssertFalse(resolve([variable: value]), "Environment rollback overrides preference")
+        }
+        for value: Any in [NSNumber(value: 0), NSNumber(value: 1), "false", "0"] {
+            suite.defaults.set(value, forKey: key)
+            XCTAssertTrue(resolve([variable: "invalid"]), "Numeric and string defaults are not Boolean opt-outs")
+        }
+    }
+
+    /// Explicit on/off and default construction keep actual presents identical after live commits and a new load.
+    /// The expected green/black/blue pixels come from authored input, not preparation counters.
+    func testPreparedSceneReusePreservesPropertyCommitAndReloadedPixels() async throws {
+        let (_, assets) = try sceneInputs()
+        let compiler = try makeCompiler()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        func document(color: String, shown: Bool) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 160, "height": 96], "clearenabled": true,
+                            "clearcolor": "0 0 0", "camerashake": false, "cameraparallax": false],
+                "objects": [["id": 20, "image": "models/util/solidlayer.json", "origin": "80 48 0",
+                             "size": "24 24", "color": color, "visible": ["user": "shown", "value": true]]],
+            ]), userValues: ["shown": .bool(shown)])
+        }
+        var framesByMode: [[[UInt8]]] = []
+        for enabled in [false, true, nil] as [Bool?] {
+            let driver = try WPEParitySceneDriver(device: device, reusePreparedScene: enabled)
+            let mode = enabled.map(String.init) ?? "default"
+            if let enabled {
+                XCTAssertEqual(driver.reusesPreparedScene, enabled, "Explicit initializer wins over defaults/environment")
+            } else if ProcessInfo.processInfo.environment[WPEParitySceneDriver.preparedSceneReuseEnvironmentKey] == nil,
+                      UserDefaults.appScoped().object(forKey: WPEParitySceneDriver.preparedSceneReuseDefaultsKey) == nil {
+                XCTAssertTrue(driver.reusesPreparedScene, "The ordinary unconfigured driver must exercise default-on reuse")
+            }
+            defer { driver.cleanup() }
+            let cache = WPEParityShaderDiskCache(cachesURL: scratch)
+            let layer = RecordingLayer()
+            layer.device = device
+            layer.pixelFormat = .rgba8Unorm
+            layer.framebufferOnly = false
+            func load(_ document: WPESceneDocument) async throws {
+                try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                                      drawableSize: CGSize(width: 160, height: 96), pixelFormat: .rgba8Unorm,
+                                      compiler: compiler, diskCache: cache, renderScaleOverride: 1, textureCompression: nil)
+            }
+            func resizedFrame(_ size: CGSize, label: String) async throws -> [UInt8] {
+                driver.updateSurfaceGeometry(drawableSize: size)
+                XCTAssertTrue(driver.needsReplan)
+                let succeeded = await driver.replan()
+                _ = try XCTUnwrap(succeeded ? true : nil, "Real resize must succeed: \(label)")
+                layer.drawableSize = size
+                try await present(driver, layer: layer, label: label)
+                let renderer = try XCTUnwrap(driver.renderer)
+                XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+                return try readBack(XCTUnwrap(layer.lastTexture), device: device)
+            }
+            try await load(document(color: "0 1 0", shown: true))
+            let green = try await resizedFrame(CGSize(width: 320, height: 192), label: "green reuse=\(mode)")
+            XCTAssertTrue(stride(from: 0, to: green.count, by: 4).contains { green[$0 + 1] > 128 })
+            let patch = WPEScenePropertyPatch(bindingsByProperty: driver.userPropertyBindings,
+                                              oldValues: ["shown": .bool(true)], newValues: ["shown": .bool(false)])
+            _ = try XCTUnwrap(driver.prepareUserProperties(patch, document: document(color: "0 1 0", shown: false))
+                ? true : nil, "Authored visibility must use the product live-property path")
+            _ = try XCTUnwrap(driver.commitUserProperties(patch) ? true : nil, "Property commit must succeed")
+            let black = try await resizedFrame(CGSize(width: 160, height: 96), label: "hidden reuse=\(mode)")
+            XCTAssertTrue(stride(from: 0, to: black.count, by: 4).allSatisfy {
+                black[$0] == 0 && black[$0 + 1] == 0 && black[$0 + 2] == 0
+            }, "A committed hidden layer must remain hidden after resize")
+            try await load(document(color: "0 0 1", shown: true))
+            let blue = try await resizedFrame(CGSize(width: 320, height: 192), label: "reload blue reuse=\(mode)")
+            XCTAssertTrue(stride(from: 0, to: blue.count, by: 4).contains { blue[$0 + 2] > 128 })
+            XCTAssertFalse(stride(from: 0, to: blue.count, by: 4).contains { blue[$0 + 1] > 128 },
+                           "A new document must not reuse the prior load's green preparation")
+            framesByMode.append([green, black, blue])
+        }
+        XCTAssertEqual(framesByMode[0], framesByMode[1], "Every presented pixel must match the original path")
+        XCTAssertEqual(framesByMode[0], framesByMode[2], "Default construction must preserve every presented pixel")
+    }
+
     func testFailedReplanWaitsForADifferentTarget() async throws {
         let (document, assets) = try sceneInputs()
         let compiler = try makeCompiler()

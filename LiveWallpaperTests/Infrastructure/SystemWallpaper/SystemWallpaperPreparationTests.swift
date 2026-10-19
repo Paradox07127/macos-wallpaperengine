@@ -209,6 +209,7 @@ struct SystemWallpaperPreparationTests {
         try await writer.finish(at: CMTime(value: 1, timescale: 1))
         let frames = try await decodedFrames(url)
         #expect(frames.count == 15)
+        #expect(frames.allSatisfy { $0.size == CGSize(width: 64, height: 64) })
         #expect(zip(frames, frames.dropFirst()).allSatisfy { pair in pair.0.time < pair.1.time })
         #expect(frames.first?.pixel != frames.last?.pixel)
         #expect(frames.first?.pixel[2] ?? 0 > 200)
@@ -317,13 +318,31 @@ struct SystemWallpaperPreparationTests {
             progress: { _ in }
         )
         let frames = try await decodedFrames(movie)
-        #expect(!frames.isEmpty)
-        #expect(frames.first?.pixel[2] ?? 0 > 200)
+        #expect((2 ... 15).contains(frames.count), "The real-time scene recording must contain multiple decoded frames")
+        #expect(frames.allSatisfy { $0.size == CGSize(width: 64, height: 64) })
+        #expect(zip(frames, frames.dropFirst()).allSatisfy { $0.0.time < $0.1.time })
+        #expect(frames.allSatisfy { $0.pixel.count == 4 && $0.pixel[2] > 200 && $0.pixel[0] < 30 && $0.pixel[1] < 30 },
+                "Every recorded frame must contain the authored red artwork, not an empty successful export")
         let duration = try await AVURLAsset(url: movie).load(.duration)
         #expect(abs(duration.seconds - 1) < 0.1)
 
         // A new runtime must produce the same pixels using only the capsule's compiled metallibs.
         let compiled = try SystemWallpaperSceneSource.published(at: bundle)
+        let configuration = try #require(compiled.parityConfiguration)
+        let currentCompiler = try WPEParityShaderToolchain.makeCompiler().get()
+        #expect(configuration.compilerIdentity == currentCompiler.compilerIdentity,
+                "Publication must capture the helper and libraries actually used by this build")
+        try Attachment.record(Data(contentsOf: movie), named: "system-wallpaper-scene.mov")
+        try Attachment.record(Data(contentsOf: bundle.appendingPathComponent("configuration.json")),
+                              named: "system-wallpaper-scene-configuration.json")
+        let summary: [String: Any] = [
+            "compilerIdentity": configuration.compilerIdentity, "frameCount": frames.count,
+            "dimensions": frames.map { [Int($0.size.width), Int($0.size.height)] },
+            "presentationTimes": frames.map(\.time.seconds),
+            "centerPixelsBGRA": frames.map(\.pixel), "durationSeconds": duration.seconds,
+        ]
+        try Attachment.record(JSONSerialization.data(withJSONObject: summary, options: [.sortedKeys]),
+                              named: "system-wallpaper-scene-decoded-summary.json")
         let device = try #require(MTLCreateSystemDefaultDevice())
         let layer = CAMetalLayer()
         layer.device = device
@@ -334,7 +353,9 @@ struct SystemWallpaperPreparationTests {
             let pool = try SystemWallpaperFramePool(size: layer.drawableSize, device: device)
             #expect(try await settledPixel(actor: actor, pool: pool)[2] > 200)
             let state = try #require(await actor.rendererStateSnapshot())
-            #expect(state.parity?.shaderCache?.compilations == 0)
+            let shaderCache = try #require(state.parity?.shaderCache)
+            #expect(shaderCache.compilations == 0)
+            #expect(shaderCache.diskHits > 0, "The provider path must load the capsule's compiled stages")
             #expect(state.shaderErrorCount == 0)
             await actor.teardownRenderer()
             actor.requestStop()
@@ -587,7 +608,7 @@ struct SystemWallpaperPreparationTests {
         return Array(UnsafeBufferPointer(start: base.advanced(by: offset).assumingMemoryBound(to: UInt8.self), count: 4))
     }
 
-    private func decodedFrames(_ url: URL) async throws -> [(time: CMTime, pixel: [UInt8])] {
+    private func decodedFrames(_ url: URL) async throws -> [(time: CMTime, size: CGSize, pixel: [UInt8])] {
         let asset = AVURLAsset(url: url)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
         let reader = try AVAssetReader(asset: asset)
@@ -596,10 +617,12 @@ struct SystemWallpaperPreparationTests {
         ])
         reader.add(output)
         #expect(reader.startReading())
-        var frames: [(CMTime, [UInt8])] = []
+        var frames: [(CMTime, CGSize, [UInt8])] = []
         while let sample = output.copyNextSampleBuffer() {
             if let buffer = CMSampleBufferGetImageBuffer(sample) {
-                frames.append((CMSampleBufferGetPresentationTimeStamp(sample), centerPixel(buffer)))
+                frames.append((CMSampleBufferGetPresentationTimeStamp(sample),
+                               CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer)),
+                               centerPixel(buffer)))
             }
         }
         #expect(reader.status == .completed)

@@ -36,14 +36,17 @@ library must report `dxc(private) 1.9.0.1 (01b62ad4)` with no `-dirty`, because
 MSC's ShaderID depends on it. The staged copy is `strip -x`ed; the unstripped
 library stays in the work directory for symbolication.
 
-The pinned MSC inputs are the installed SDK with headers declaring 4.0.1.
-The installer receipt is `com.apple.metal`, package version
-`1.0.1.1784657527`, installed 2026-10-12 06:27:17 UTC; the receipt attributes
-the library, version header and acknowledgements to that same package. The
-library contains arm64 and x86_64 slices with minimum macOS 13.0. The original
-installer archive hash is not recorded, and the opaque receipt version is not
-a claim about a binary semantic-version string. Exact input bytes are pinned
-independently of this provenance metadata.
+The pinned MSC inputs come from the matching Metal
+Shader Converter 4.0 beta 3 package, whose version header declares 4.0.3. All
+converter headers, the universal library and MSC notices were staged together
+from that package; DXC inputs remain byte-identical. Relative to the earlier
+4.0.1 SDK, only `ir_version.h`, `metal_irconverter.h` and
+`libmetalirconverter.dylib` have changed hashes. The new library SHA256 is
+`cc487a757f431c83483346c06a3ae8558910ecc510ce59b1e4f905d5d6d72bd4`.
+Both arm64 and x86_64 slices are preserved, with minimum macOS 13.0. The app and
+helper deployment requirement remains macOS 14.6. This input update is an
+independent upgrade evaluation, not evidence of visual parity or performance
+improvement.
 
 Populate the layout from those inputs, preserving the original notice files.
 The SHA list gives the full file inventory. For an already prepared directory:
@@ -169,11 +172,19 @@ not installed or executed. `pkgutil --check-signature` reported an invalid packa
 signature, so authenticated download provenance and that signature limitation are
 recorded separately rather than claiming package-signature verification.
 
-This beta 3 package is not the original installer for the earlier installed SDK
-inputs recorded above. No library or header input hash was replaced. The EULA is
-an explicit dynamic-library redistribution grant from the obtained Apple package;
-it does not establish byte-for-byte provenance or the exact original beta 2
-installer license for the existing pinned dylib, nor constitute a comprehensive
-legal/compliance audit. Keep the generic open-source licenses and acknowledgements
-alongside the Apple agreement; local build/runtime and final artifact acceptance
-remain separate gates.
+This beta 3 package supplies the matching library/header inputs pinned in this
+input set. It is not the original installer for the earlier installed
+4.0.1 SDK; that archive remains unavailable. Package signature verification is
+still limited as recorded above. The EULA is an explicit dynamic-library
+redistribution grant from the obtained Apple package, not a comprehensive
+legal/compliance audit. Keep the generic open-source licenses and
+acknowledgements alongside the Apple agreement; local compiler, sandboxed
+runtime, actual GPU output and final artifact acceptance remain separate gates.
+
+The runtime compiler identity hashes the helper and both library files. The
+changed MSC library therefore gives newly compiled shaders a different cache
+key even if the helper executable bytes are unchanged. Existing precompiled
+scene capsules retain their recorded compiler identity; updating the app's
+compiler does not retroactively relabel those metallibs. Upgrade validation
+must use cold compile requests and explicitly reprepare any capsules it intends
+to validate against 4.0.3.

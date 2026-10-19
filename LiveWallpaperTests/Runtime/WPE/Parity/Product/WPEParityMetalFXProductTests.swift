@@ -440,63 +440,67 @@ extension WPEParitySceneDriverTests {
         let device = try requiredMetalFXDevice()
         let (baseAssets, compiler) = try requiredMetalFXInputs()
         let (document, assets) = try metalFXDocument(baseAssets: baseAssets, missingAlbedo: true)
-        let gate = MetalFXOneLookupGate()
-        // @concurrent makePlan re-reads the autosize layer's albedo for each candidate, after replan selected it;
-        // every other asset read of a re-plan is memoized on the shared assets.
-        let guardedAssets = try WPEParityProgramAssets(sources: [
-            .lookup(XCTUnwrap(assets.roots.first)) { path in
-                if path == "materials/metalfx-missing-albedo.tex" {
-                    gate.blockOnceIfArmed()
-                }
-                return assets.data(path)
-            },
-        ])
-        try await withMetalFXScale(0.5) {
-            let driver = try WPEParitySceneDriver(device: device)
-            defer { gate.release(); driver.cleanup() }
-            try await driver.load(document: document, assets: guardedAssets, settings: .init(bloom: false),
-                                  drawableSize: CGSize(width: 384, height: 256), pixelFormat: .rgba8Unorm,
-                                  compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
-            let layer = metalFXLayer(device: device, size: CGSize(width: 384, height: 256))
-            try await present(driver, layer: layer, label: "active A before blocked candidate")
-            XCTAssertTrue(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
-            XCTAssertEqual(driver.executor.upscalePlan.verdict, .active)
-            let previousID = try ObjectIdentifier(XCTUnwrap(driver.renderer))
-            driver.setPresentFitMode(.stretch) // same actual extent, different cover crop/alignment
-            XCTAssertTrue(driver.needsReplan)
-            gate.arm()
-            let candidate = Task { await driver.replan() }
-            defer { gate.release(); candidate.cancel() }
-            let entered = await XCTWaiter.fulfillment(of: [gate.entered], timeout: 15)
-            XCTAssertEqual(entered, .completed, "the actual candidate must enter its controlled build window")
-            _ = try XCTUnwrap(gate.didBlock ? true : nil, "no actual armed lookup was observed")
-            XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), previousID)
-            XCTAssertEqual(driver.executor.upscalePlan.verdict, .active)
+        let admissionPath = try XCTUnwrap(document.imageObjects.first).imageRelativePath
+        for reusePreparedScene in [false, true] {
+            let gate = MetalFXOneLookupGate()
+            // Every candidate admits its image resources after target selection, on @concurrent makePlan.
+            // This required data lookup survives prepared-scene reuse; optional autosize albedo probes do not.
+            let guardedAssets = try WPEParityProgramAssets(sources: [
+                .lookup(XCTUnwrap(assets.roots.first)) { path in
+                    if path == admissionPath {
+                        gate.blockOnceIfArmed()
+                    }
+                    return assets.data(path)
+                },
+            ])
+            try await withMetalFXScale(0.5) {
+                let driver = try WPEParitySceneDriver(device: device, reusePreparedScene: reusePreparedScene)
+                XCTAssertEqual(driver.reusesPreparedScene, reusePreparedScene)
+                defer { gate.release(); driver.cleanup() }
+                try await driver.load(document: document, assets: guardedAssets, settings: .init(bloom: false),
+                                      drawableSize: CGSize(width: 384, height: 256), pixelFormat: .rgba8Unorm,
+                                      compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+                let layer = metalFXLayer(device: device, size: CGSize(width: 384, height: 256))
+                try await present(driver, layer: layer, label: "active A before blocked candidate")
+                XCTAssertTrue(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
+                XCTAssertEqual(driver.executor.upscalePlan.verdict, .active)
+                let previousID = try ObjectIdentifier(XCTUnwrap(driver.renderer))
+                driver.setPresentFitMode(.stretch) // same actual extent, different cover crop/alignment
+                XCTAssertTrue(driver.needsReplan)
+                gate.arm()
+                let candidate = Task { await driver.replan() }
+                defer { gate.release(); candidate.cancel() }
+                let entered = await XCTWaiter.fulfillment(of: [gate.entered], timeout: 15)
+                XCTAssertEqual(entered, .completed, "the actual candidate must enter its controlled build window")
+                _ = try XCTUnwrap(gate.didBlock ? true : nil, "no actual armed lookup was observed")
+                XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), previousID)
+                XCTAssertEqual(driver.executor.upscalePlan.verdict, .active)
 
-            driver.executor.metalFXUpscaler = nil
-            let declined = try XCTUnwrap(driver.renderAndPresentFrame(
-                layer: layer, timestamp: nextTimestamp(), pointer: SIMD2(0.5, 0.5)
-            ))
-            XCTAssertNotEqual(declined.status, .notEnqueued)
-            XCTAssertNotEqual(declined.status, .enqueued)
-            XCTAssertEqual(driver.executor.lastPresentedDrawableSize, CGSize(width: 384, height: 256))
-            XCTAssertEqual(driver.executor.upscalePlan.verdict, .declinedAtPresent)
-            XCTAssertFalse(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
-            try await settle(driver, label: "decline while candidate is blocked")
-            XCTAssertEqual(declined.status, .completed)
-            XCTAssertNil(declined.error)
+                driver.executor.metalFXUpscaler = nil
+                let declined = try XCTUnwrap(driver.renderAndPresentFrame(
+                    layer: layer, timestamp: nextTimestamp(), pointer: SIMD2(0.5, 0.5)
+                ))
+                XCTAssertNotEqual(declined.status, .notEnqueued)
+                XCTAssertNotEqual(declined.status, .enqueued)
+                XCTAssertEqual(driver.executor.lastPresentedDrawableSize, CGSize(width: 384, height: 256))
+                XCTAssertEqual(driver.executor.upscalePlan.verdict, .declinedAtPresent)
+                XCTAssertFalse(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
+                try await settle(driver, label: "decline while candidate is blocked")
+                XCTAssertEqual(declined.status, .completed)
+                XCTAssertNil(declined.error)
 
-            gate.release()
-            let published = await candidate.value
-            XCTAssertTrue(published)
-            XCTAssertEqual(driver.executor.upscalePlan.verdict, .declinedAtPresent,
-                           "a stale active selection must not overwrite the actual present's sticky refusal")
-            XCTAssertFalse(driver.needsReplan)
-            let native = try XCTUnwrap(driver.renderer)
-            XCTAssertNotEqual(ObjectIdentifier(native), previousID)
-            XCTAssertEqual([native.backbuffer.width, native.backbuffer.height], [384, 256])
-            try await present(driver, layer: layer, label: "native after interleaved decline")
-            XCTAssertFalse(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
+                gate.release()
+                let published = await candidate.value
+                XCTAssertTrue(published)
+                XCTAssertEqual(driver.executor.upscalePlan.verdict, .declinedAtPresent,
+                               "a stale active selection must not overwrite the actual present's sticky refusal")
+                XCTAssertFalse(driver.needsReplan)
+                let native = try XCTUnwrap(driver.renderer)
+                XCTAssertNotEqual(ObjectIdentifier(native), previousID)
+                XCTAssertEqual([native.backbuffer.width, native.backbuffer.height], [384, 256])
+                try await present(driver, layer: layer, label: "native after interleaved decline")
+                XCTAssertFalse(try XCTUnwrap(driver.executor.lastPresentPass).usedMetalFX)
+            }
         }
     }
 

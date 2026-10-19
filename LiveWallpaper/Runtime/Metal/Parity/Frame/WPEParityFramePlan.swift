@@ -138,7 +138,8 @@ struct WPEParityFramePlan {
 
     init(document: WPESceneDocument, assets: WPEParityProgramAssets, settings: WPEParityProgramSettings,
          width: Int, height: Int, alignment: WPEParityCameraAlignment = .noCrop,
-         physicalBackbufferSize: SIMD2<Int>? = nil, pixelScale: Double = 1) throws {
+         physicalBackbufferSize: SIMD2<Int>? = nil, pixelScale: Double = 1,
+         preparedScene: WPEParityProgramScene? = nil) throws {
         let physicalBackbufferSize = physicalBackbufferSize ?? SIMD2(width, height)
         let physicalCanvasSize: @Sendable (SIMD2<Int>) -> SIMD2<Int> = { size in
             guard pixelScale != 1 else { return size }
@@ -147,7 +148,7 @@ struct WPEParityFramePlan {
             )
             return SIMD2(Int(scaled.width), Int(scaled.height))
         }
-        let scene = WPEParityProgramScene(document: document, assets: assets, settings: settings)
+        let scene = preparedScene ?? WPEParityProgramScene(document: document, assets: assets, settings: settings)
         if let failure = scene.textPreparationFailure {
             throw failure
         }

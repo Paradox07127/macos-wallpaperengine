@@ -25,10 +25,19 @@ final class ParityCorpusCaptureTests: XCTestCase {
         let seed: UInt32
         /// WPE's shadow quality 0–4; nil = the product default.
         let shadowQuality: Int32?
+        /// Capture controls are local to this test, never mutations of the running app's defaults/bundle.
+        let renderScale: Double
+        let compilerPaths: CompilerPaths?
+
+        struct CompilerPaths: Decodable {
+            let helper: String
+            let dxcompiler: String
+            let metalIRConverter: String
+        }
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, scenes, resolution, frames, frameStepSeconds, replayFrame
-            case propertyOverridesByScene, seed, shadowQuality
+            case propertyOverridesByScene, seed, shadowQuality, renderScale, compilerPaths
         }
 
         init(from decoder: Decoder) throws {
@@ -45,6 +54,8 @@ final class ParityCorpusCaptureTests: XCTestCase {
             ) ?? [:]
             seed = try container.decodeIfPresent(UInt32.self, forKey: .seed) ?? 1
             shadowQuality = try container.decodeIfPresent(Int32.self, forKey: .shadowQuality)
+            renderScale = try container.decodeIfPresent(Double.self, forKey: .renderScale) ?? 1
+            compilerPaths = try container.decodeIfPresent(CompilerPaths.self, forKey: .compilerPaths)
         }
     }
 
@@ -82,11 +93,21 @@ final class ParityCorpusCaptureTests: XCTestCase {
         // Each frame's scene step is its timestamp difference; WPEParityClock clamps a step to maximumStep.
         guard size.count == 2, size.allSatisfy({ $0 > 0 && $0 <= 16384 }), config.frames > 0,
               config.frameStepSeconds > 0, config.frameStepSeconds <= Double(WPEParityClock.maximumStep),
-              replay.time.isFinite, replay.time >= 0 else {
+              replay.time.isFinite, replay.time >= 0,
+              config.renderScale.isFinite, (0.25 ... 1).contains(config.renderScale) else {
             return XCTFail("Invalid resolution/frames/frameStepSeconds/replayFrame.time in \(configURL.path)")
         }
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-        let compiler = try WPEParityShaderToolchain.makeCompiler().get()
+        let compilerWork = FileManager.default.temporaryDirectory.appending(path: "parity-capture-compiler-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: compilerWork) }
+        let compiler: WPEParityHelperShaderCompiler = if let paths = config.compilerPaths {
+            try WPEParityHelperShaderCompiler(helper: URL(fileURLWithPath: paths.helper),
+                                              dxcompiler: URL(fileURLWithPath: paths.dxcompiler),
+                                              metalIRConverter: URL(fileURLWithPath: paths.metalIRConverter),
+                                              workDirectory: compilerWork)
+        } else {
+            try WPEParityShaderToolchain.makeCompiler().get()
+        }
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let cacheRoot = FileManager.default.temporaryDirectory.appending(path: "parity-capture-cache-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: cacheRoot) }
@@ -119,6 +140,8 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 "workshopID": id, "renderer": "parity", "resolution": size, "seed": config.seed,
                 "frames": config.frames, "frameStepSeconds": config.frameStepSeconds, "replayFrame": replay.fields,
                 "compilerIdentity": compiler.compilerIdentity, "scenePackageSHA256": packageSHA256,
+                "requestedRenderScale": config.renderScale, "textureCompression": false,
+                "compilerOrigin": config.compilerPaths == nil ? "app-bundle" : "explicit-capture-inputs",
             ]
             do {
                 let descriptor = SceneDescriptor(
@@ -135,7 +158,8 @@ final class ParityCorpusCaptureTests: XCTestCase {
                     descriptor: descriptor, provider: provider, projectRoot: folder, engineAssetsRoot: engineAssetsRoot,
                     compiler: compiler, diskCache: diskCache, device: device, size: CGSize(width: size[0], height: size[1]),
                     frames: config.frames, step: config.frameStepSeconds, replay: replay, seed: config.seed,
-                    shadowQuality: config.shadowQuality, png: outDir.appending(path: "\(id).png"), record: &record
+                    shadowQuality: config.shadowQuality, renderScale: config.renderScale,
+                    png: outDir.appending(path: "\(id).png"), record: &record
                 )
                 record.merge(result) { $1 }
                 captured += 1
@@ -171,7 +195,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                          engineAssetsRoot: URL?, compiler: WPEParityHelperShaderCompiler,
                          diskCache: WPEParityShaderDiskCache, device: MTLDevice,
                          size: CGSize, frames: Int, step: Double, replay: Replay, seed: UInt32,
-                         shadowQuality: Int32?, png: URL,
+                         shadowQuality: Int32?, renderScale: Double, png: URL,
                          record: inout [String: Any]) async throws -> [String: Any] {
         let layer = WPEParitySceneDriverTests.RecordingLayer()
         layer.device = device
@@ -201,10 +225,12 @@ final class ParityCorpusCaptureTests: XCTestCase {
         var scriptHost = inputs.scriptHost(userPropertiesJSON: inputs.scriptUserProperties())
         scriptHost.dateEpochMillis = (replay.epoch ?? Date().timeIntervalSince1970) * 1000
         record["shadowQuality"] = settings.shadowQuality
+        record["programSettings"] = String(describing: settings)
         try await driver.load(document: inputs.makeDocument(), assets: inputs.assets, settings: inputs.settings,
                               drawableSize: size, pixelFormat: inputs.pixelFormat, compiler: compiler,
-                              diskCache: diskCache, workshopID: descriptor.workshopID,
-                              scriptHost: scriptHost, particleSeed: seed)
+                              diskCache: diskCache, requireCompleteShaders: true,
+                              renderScaleOverride: renderScale, textureCompression: nil,
+                              workshopID: descriptor.workshopID, scriptHost: scriptHost, particleSeed: seed)
         record["skippedDraws"] = driver.diagnostics?.skippedDraws ?? [:]
         record["skippedPrograms"] = driver.shaderErrorSummary.entries.map { ["shader": $0.shader, "reason": $0.reason] }
         record["loadDiagnostics"] = driver.loadDiagnostics.map { String(describing: $0) as Any } ?? NSNull()
@@ -229,6 +255,10 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 times.append(renderer.clock.time)
             }
         }
+        record["backbufferSize"] = [renderer.backbuffer.width, renderer.backbuffer.height]
+        record["actualRenderScale"] = driver.executor.upscalePlan.renderPixelScale
+        record["upscaleVerdict"] = driver.executor.upscalePlan.verdict.rawValue
+        record["usedMetalFX"] = driver.executor.lastPresentPass?.usedMetalFX ?? false
         let (image, pixels) = try Self.image(of: XCTUnwrap(layer.lastTexture))
         let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(png as CFURL, "public.png" as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)

@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import CoreFoundation
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
@@ -106,6 +107,8 @@ final class WPEParitySceneDriver {
         let document: WPESceneDocument
         /// The scene as loaded; its material-file constants keep their load-time watches across commits.
         let scene: WPEParityProgramScene
+        /// Immutable authored preparation for this document revision; never a renderer's live scene.
+        var preparedScene: WPEParityProgramScene?
         let assets: WPEParityProgramAssets
         let settings: WPEParityProgramSettings
         let shaders: WPEParityFrameShaderSource
@@ -139,6 +142,9 @@ final class WPEParitySceneDriver {
     }
 
     private var planSource: PlanSource?
+    /// A live property commit supersedes candidate plans without replacing the load generation.
+    private var planRevision = 0
+    let reusesPreparedScene: Bool
     private var plannedTarget: RenderTarget?
     /// The target the last re-plan of this load failed to build; not retried until the target changes.
     private var failedReplanTarget: RenderTarget?
@@ -273,8 +279,28 @@ final class WPEParitySceneDriver {
     struct ForcedReplanFailure: Error {}
     #endif
 
-    init(device: MTLDevice) throws {
+    /// Process-scoped rollback: the app and wallpaper extension each read their own appScoped defaults domain.
+    static let preparedSceneReuseDefaultsKey = "loomscreen.wallpapers.parityReusePreparedScene.v1"
+    static let preparedSceneReuseEnvironmentKey = "LOOMSCREEN_PARITY_REUSE_PREPARED_SCENE"
+
+    static func resolvePreparedSceneReuse(defaults: UserDefaults = .appScoped(),
+                                          environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        if let value = environment[preparedSceneReuseEnvironmentKey]?.lowercased() {
+            if ["1", "true"].contains(value) {
+                return true
+            }
+            if ["0", "false"].contains(value) {
+                return false
+            }
+        }
+        guard let number = defaults.object(forKey: preparedSceneReuseDefaultsKey) as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else { return true }
+        return number.boolValue
+    }
+
+    init(device: MTLDevice, reusePreparedScene: Bool? = nil) throws {
         self.device = device
+        reusesPreparedScene = reusePreparedScene ?? Self.resolvePreparedSceneReuse()
         executor = try WPEMetalPresenter(device: device)
     }
 
@@ -396,7 +422,9 @@ final class WPEParitySceneDriver {
             }
             shaderErrorSummary = (shaderErrors.count, shaderErrors)
             shaderRequiresAudio = Self.readsAudio(plan)
-            planSource = PlanSource(document: document, scene: plan.scene, assets: assets, settings: settings,
+            planSource = PlanSource(document: document, scene: plan.scene,
+                                    preparedScene: reusesPreparedScene ? plan.scene : nil,
+                                    assets: assets, settings: settings,
                                     shaders: shaders, workshopID: workshopID, sceneSize: sceneSize,
                                     pixelFormat: pixelFormat, renderScale: renderScale, textureCompression: textureCompression)
             plannedTarget = target
@@ -498,6 +526,7 @@ final class WPEParitySceneDriver {
     nonisolated(nonsending) func replan() async -> Bool {
         guard let planSource, let previous = renderer else { return false }
         let generation = loadGeneration
+        let revision = planRevision
         let isHDR = WPEParityProgramScene.hdrEnabled(document: planSource.document, settings: planSource.settings)
         while true {
             let selection = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
@@ -512,13 +541,14 @@ final class WPEParitySceneDriver {
                 }
                 #endif
                 let plan = try await Self.makePlan(document: planSource.document, assets: planSource.assets,
-                                                   settings: planSource.settings, target: target)
+                                                   settings: planSource.settings, target: target,
+                                                   preparedScene: reusesPreparedScene ? planSource.preparedScene : nil)
                 let renderer = try await WPEParityFrameRenderer(
                     plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
                     workshopID: planSource.workshopID, continuing: previous,
                     userPropertiesJSON: scriptUserProperties, textureCompression: planSource.textureCompression
                 )
-                guard generation == loadGeneration, self.renderer === previous else { return false }
+                guard generation == loadGeneration, revision == planRevision, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
                                             pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
@@ -527,12 +557,15 @@ final class WPEParitySceneDriver {
                     try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
                 }
                 self.renderer = renderer
+                if reusesPreparedScene {
+                    self.planSource?.preparedScene = plan.scene
+                }
                 plannedTarget = target
                 failedReplanTarget = nil
                 adoptUpscalePlan(selection.upscale)
                 return true
             } catch {
-                if generation == loadGeneration {
+                if generation == loadGeneration, revision == planRevision {
                     failedReplanTarget = target
                     Logger.warning("Parity scene re-plan at \(target.width)x\(target.height) failed: \(error)",
                                    category: .wpeRender)
@@ -586,7 +619,9 @@ final class WPEParitySceneDriver {
             soundRuntime?.setVolume(Double(write.volume), forSoundID: write.id)
         }
         scriptUserProperties = merged
-        self.planSource = PlanSource(document: pending.document, scene: planSource.scene, assets: planSource.assets,
+        planRevision &+= 1
+        self.planSource = PlanSource(document: pending.document, scene: planSource.scene, preparedScene: nil,
+                                     assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
                                      workshopID: planSource.workshopID, sceneSize: planSource.sceneSize,
                                      pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale,
@@ -1137,7 +1172,8 @@ final class WPEParitySceneDriver {
     @concurrent
     private static func makePlan(document: WPESceneDocument, assets: WPEParityProgramAssets,
                                  settings: WPEParityProgramSettings,
-                                 target: RenderTarget) async throws -> sending WPEParityFramePlan {
+                                 target: RenderTarget,
+                                 preparedScene: WPEParityProgramScene? = nil) async throws -> sending WPEParityFramePlan {
         for image in document.imageObjects {
             let path = image.imageRelativePath
             // The product asset provider admits safe dependency references such as ../<workshop>/models/.
@@ -1146,7 +1182,8 @@ final class WPEParitySceneDriver {
         }
         return try WPEParityFramePlan(document: document, assets: assets, settings: settings, width: target.width,
                                       height: target.height, alignment: target.alignment,
-                                      physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale)
+                                      physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale,
+                                      preparedScene: preparedScene)
     }
 
     private func logFrameFailure(_ error: Error) {
