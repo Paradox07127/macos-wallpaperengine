@@ -36,6 +36,8 @@ final class VideoRenderer: @unchecked Sendable {
     private var failureReported = false
     private var requestGeneration: UInt64 = 0
     private var didSignalFirstFrame = false
+    /// A live scene frame was shown; scene playback never sets `sourceURL` or `didSignalFirstFrame`.
+    private var presentedRenderedFrame = false
     private var currentRate: Double = 0
     /// What the policy last asked for. The first frame must land on this, not
     /// on a hardcoded 1: an update can arrive before the first frame (lock
@@ -215,6 +217,7 @@ final class VideoRenderer: @unchecked Sendable {
                                                                sampleBufferOut: &sample) == noErr, let sample else { return }
                 if first {
                     renderer.flush()
+                    presentedRenderedFrame = true
                     if let timebase {
                         CMTimebaseSetRate(timebase, rate: 0)
                     }
@@ -286,7 +289,8 @@ final class VideoRenderer: @unchecked Sendable {
             // frame stays) and wind the clock back before the new pump starts.
             // The first start after the poster seed must NOT flush — the seed
             // may not have displayed yet and flushing would un-seed the surface.
-            if sourceURL != nil || didSignalFirstFrame {
+            if sourceURL != nil || didSignalFirstFrame || presentedRenderedFrame {
+                presentedRenderedFrame = false
                 renderer.flush()
                 if let timebase {
                     CMTimebaseSetRate(timebase, rate: 0)

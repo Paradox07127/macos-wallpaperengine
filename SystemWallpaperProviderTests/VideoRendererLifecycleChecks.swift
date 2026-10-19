@@ -158,6 +158,18 @@ private func snapshotIsRed(_ surface: IOSurface) -> Bool {
         let (failedContinues, failedLatched) = await video.fixturePumpStatus(.failed, requiresFlush: false)
         check(!failedContinues && failedLatched && reclaimLog.count == 1, "terminal decode failure was not reported")
         video.stopSync()
+        let sceneThenVideo = VideoRenderer()
+        sceneThenVideo.enqueueRenderedFrame(colorFrame(red: true), first: true, isCurrent: { true }, onFirstFrame: nil)
+        sceneThenVideo.rampRate(to: 1, duration: 0.05)
+        try? await Task.sleep(for: .seconds(1))
+        let sceneClock = await sceneThenVideo.fixtureClockSeconds()
+        check(sceneClock > 0.1, "scene playback never advanced the clock")
+        sceneThenVideo.stop()
+        sceneThenVideo.start(url: URL(fileURLWithPath: "/loomscreen-fixture-nonexistent.mov"))
+        await sceneThenVideo.fixtureDrain()
+        let videoClock = await sceneThenVideo.fixtureClockSeconds()
+        check(abs(videoClock) < 0.001, "a video after a scene inherited the scene's \(videoClock)s timeline")
+        sceneThenVideo.stopSync()
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: false)
@@ -185,6 +197,6 @@ private func snapshotIsRed(_ surface: IOSurface) -> Bool {
         await video.fixtureDrain()
         guard let unchanged = video.snapshot() else { check(false, "stale frame discarded the displayed snapshot"); return }
         check(snapshotIsRed(unchanged), "a stale scene task replaced the displayed frame")
-        print("PASS: 14 controlled VideoRenderer lifecycle assertions, including raw scene presentation and snapshots")
+        print("PASS: 16 controlled VideoRenderer lifecycle assertions, including raw scene presentation and snapshots")
     }
 }

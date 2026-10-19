@@ -24,7 +24,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// caller, `invalidateAgentSnapshots()`, runs on `Self.queue`.
     nonisolated(unsafe) var agentProxyProvider: (() -> WallpaperExtensionProxyXPCProtocol?)?
 
-    private static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
+    static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
     private nonisolated(unsafe) static var systemLocked = false // read and written only on `queue` (com.loomscreen.wallpaper.lifecycle)
     private nonisolated(unsafe) static var systemAsleep = false // read and written only on `queue` (com.loomscreen.wallpaper.lifecycle)
 
@@ -487,12 +487,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// this *before* building a context: handing the Agent a context we cannot
     /// fill is what turns a stale panel tile into a black desktop.
     private func canServeChoice(_ choiceID: String, displayID: UInt32?) -> Bool {
-        guard store.loadManifestIfReadable() != nil else { return false }
-        return choiceID == SystemWallpaperManifest.selectedChoiceID || playableURL(for: choiceID, displayID: displayID) != nil
+        guard let manifest = store.loadManifestIfReadable() else { return false }
+        return choiceID == SystemWallpaperManifest.selectedChoiceID
+            || Self.playable(choiceID, displayID: displayID, in: manifest, store: store) != nil
     }
 
-    private func playableURL(for choiceID: String, displayID: UInt32? = nil) -> URL? {
-        guard let manifest = store.loadManifestIfReadable() else {
+    /// `manifest` nil = unreadable.
+    private static func playable(_ choiceID: String, displayID: UInt32?, in manifest: SystemWallpaperManifest?,
+                                 store: SharedLibraryStore) -> (item: SystemWallpaperManifest.Item, url: URL)? {
+        guard let manifest else {
             wpxLog.error("manifest unreadable — refusing to serve \(choiceID, privacy: .public)")
             return nil
         }
@@ -505,36 +508,43 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             wpxLog.error("video missing: \(url.lastPathComponent, privacy: .private)")
             return nil
         }
-        return url
+        return (item, url)
     }
 
     private func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
                                replyOnFirstFrame: (@Sendable (Error?) -> Void)?) {
-        guard let url = playableURL(for: choiceID, displayID: surface.displayID) else {
-            if choiceID == SystemWallpaperManifest.selectedChoiceID, store.loadManifestIfReadable()?.items.isEmpty == true {
+        Self.startPlayback(surface: surface, choiceID: choiceID, size: size, manifest: store.loadManifestIfReadable(),
+                           registry: registry, store: store, replyOnFirstFrame: replyOnFirstFrame)
+    }
+
+    /// Item, file and playback mode all come from `manifest`, so the recorded item is the one that plays.
+    private static func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
+                                      manifest: SystemWallpaperManifest?, registry: SurfaceRegistry, store: SharedLibraryStore,
+                                      replyOnFirstFrame: (@Sendable (Error?) -> Void)?) {
+        guard let (item, url) = playable(choiceID, displayID: surface.displayID, in: manifest, store: store) else {
+            if choiceID == SystemWallpaperManifest.selectedChoiceID, manifest?.items.isEmpty == true {
                 replyOnFirstFrame?(nil)
                 return
             }
             replyOnFirstFrame?(NSError(domain: "com.loomscreen.wallpaper", code: 3))
             return
         }
+        surface.playbackGeneration &+= 1
+        surface.publishedAt = item.addedAt
+        surface.resolvedItemID = item.id
+        surface.playbackFailure = nil
         // Picker previews use their prepared poster; loading a full scene for every tile exhausts the provider budget.
         if surface.isPreview, url.pathExtension == "scene" {
-            surface.renderer.enqueueStill(posterURL: posterURL(for: choiceID, displayID: surface.displayID), size: size)
+            // A previous video's pump would otherwise keep replacing the poster.
+            surface.renderer.stop()
+            surface.renderer.enqueueStill(posterURL: posterURL(for: item, store: store), size: size)
             replyOnFirstFrame?(nil)
             return
         }
-        surface.playbackGeneration &+= 1
-        let item = store.loadManifest().item(for: choiceID, displayID: surface.displayID)
-        surface.publishedAt = item?.addedAt
-        surface.resolvedItemID = item?.id
-        surface.playbackFailure = nil
         let generation = surface.playbackGeneration
         let uuid = surface.uuid
-        let initialRate = surface.isPreview ? 1 : Self.rate(for: surface, playbackMode: store.loadManifest().playbackMode)
-        let registry = registry
-        let store = store
-        surface.renderer.start(url: url, initialRate: initialRate, refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface), onFirstFrame: {
+        let initialRate = surface.isPreview ? 1 : rate(for: surface, playbackMode: manifest?.playbackMode ?? .always)
+        surface.renderer.start(url: url, initialRate: initialRate, refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface), onFirstFrame: {
             replyOnFirstFrame?(nil)
         }, onFailure: { [weak registry] code in
             Self.queue.async { [weak registry] in
@@ -585,12 +595,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     /// The JPEG the app writes next to each published video.
     private func posterURL(for choiceID: String?, displayID: UInt32? = nil) -> URL? {
-        guard let choiceID,
-              let item = store.loadManifest().item(for: choiceID, displayID: displayID),
-              let thumbnailFileName = item.thumbnailFileName else {
+        guard let choiceID, let item = store.loadManifest().item(for: choiceID, displayID: displayID) else {
             return choiceID == SystemWallpaperManifest.selectedChoiceID
                 ? Bundle.main.url(forResource: "SelectedWallpaper", withExtension: "png") : nil
         }
+        return Self.posterURL(for: item, store: store)
+    }
+
+    private static func posterURL(for item: SystemWallpaperManifest.Item, store: SharedLibraryStore) -> URL? {
+        guard let thumbnailFileName = item.thumbnailFileName else { return nil }
         let url = store.videosDirectory().appendingPathComponent(thumbnailFileName)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
@@ -750,12 +763,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
     }
 
-    /// Called on every live connection after a library change so the wallpaper
-    /// panel drops tiles for choices the app just deleted. `removeChoiceRequest`
-    /// cannot cover this: the panel's own Remove is disabled for our provider,
-    /// so the app is the only delete path users have.
-    func libraryDidChange() {
-        Self.queue.async { [self] in
+    /// Restarts each surface whose choice now resolves to another item. The bridge runs it on every library change, live connection or not.
+    static func retargetSurfaces(registry: SurfaceRegistry, store: SharedLibraryStore) {
+        queue.async {
             guard let manifest = store.loadManifestIfReadable() else { return }
             for surface in registry.all {
                 guard let id = surface.choiceID else { continue }
@@ -765,9 +775,19 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     continue
                 }
                 guard surface.publishedAt != item.addedAt || surface.resolvedItemID != item.id else { continue }
-                startPlayback(surface: surface, choiceID: id, size: surface.bridge.rootLayer.bounds.size, replyOnFirstFrame: nil)
+                startPlayback(surface: surface, choiceID: id, size: surface.bridge.rootLayer.bounds.size, manifest: manifest,
+                              registry: registry, store: store, replyOnFirstFrame: nil)
             }
-            writeActiveHeartbeat()
+            writeActiveHeartbeat(registry: registry, store: store)
+        }
+    }
+
+    /// Called on every live connection after a library change so the wallpaper
+    /// panel drops tiles for choices the app just deleted. `removeChoiceRequest`
+    /// cannot cover this: the panel's own Remove is disabled for our provider,
+    /// so the app is the only delete path users have.
+    func libraryDidChange() {
+        Self.queue.async { [self] in
             pushSettingsViewModels()
             invalidateAgentSnapshots()
         }

@@ -13,7 +13,7 @@ import os.log
 /// references are immutable after init.
 final class WallpaperXPCBridge: @unchecked Sendable {
     private let store: SharedLibraryStore
-    private let registry = SurfaceRegistry()
+    private let registry: SurfaceRegistry
     private let settings: SettingsProvider
     private let handlersLock = NSLock()
     private var handlers: [ObjectIdentifier: WallpaperXPCHandler] = [:]
@@ -170,8 +170,9 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         }
     }
 
-    init(store: SharedLibraryStore) {
+    init(store: SharedLibraryStore, registry: SurfaceRegistry = SurfaceRegistry()) {
         self.store = store
+        self.registry = registry
         self.settings = SettingsProvider(
             store: store,
             providerID: Bundle.main.bundleIdentifier ?? "com.loomscreen.wallpaper"
@@ -194,9 +195,10 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         sessionObserver = SessionConditionObserver(registry: registry, store: store)
     }
 
-    /// Fans a library change out to every live connection. Only a handler holds
+    /// Retargets the surfaces, then tells every live connection. Only a handler holds
     /// a route to the Agent, and only while its connection is up.
-    fileprivate func libraryDidChange() {
+    func libraryDidChange() {
+        WallpaperXPCHandler.retargetSurfaces(registry: registry, store: store)
         let live = handlersLock.withLock { Array(handlers.values) }
         for handler in live { handler.libraryDidChange() }
     }
