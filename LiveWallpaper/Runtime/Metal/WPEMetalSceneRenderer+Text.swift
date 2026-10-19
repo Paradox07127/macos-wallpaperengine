@@ -233,9 +233,10 @@ extension WPEMetalSceneRenderer {
     /// live flag (authored seed or script/property assignment), so a parent's
     /// state must fold onto its subtree here — a hidden ancestor always wins.
     var liveLayerVisibilityIncludingText: [String: Bool] {
-        let merged = liveTextVisibility.isEmpty
+        var merged = liveTextVisibility.isEmpty
             ? liveLayerVisibility
             : liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
+        for id in excludedObjectIDs { merged[id] = false }
         guard !objectParentByID.isEmpty else { return merged }
         var effective: [String: Bool] = [:]
         effective.reserveCapacity(merged.count)

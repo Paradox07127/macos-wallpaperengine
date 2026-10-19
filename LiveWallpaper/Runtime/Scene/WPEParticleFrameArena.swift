@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperProWPE
 import Metal
 
 struct WPEParticleRenderSlice {

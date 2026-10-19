@@ -171,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private var globalShortcutManager: GlobalShortcutManager?
     @ObservationIgnored private let lifecycle = ApplicationLifecycleController()
     @ObservationIgnored let wallpaperExportService = WallpaperExportService()
+    @ObservationIgnored private var systemWallpaperSelection: SystemWallpaperSelectionCoordinator?
     #if !LITE_BUILD
     @ObservationIgnored private let workshopDoctorService = SteamCMDDoctorService()
     @ObservationIgnored private let workshopServices = WorkshopServices()
@@ -219,6 +220,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture
         let manager = ScreenManager(startupOptions: startupPlan.screenManagerOptions)
         screenManager = manager
+        if !runtimeOptions.isTesting, #available(macOS 26.0, *) {
+            let selection = SystemWallpaperSelectionCoordinator(service: wallpaperExportService)
+            systemWallpaperSelection = selection
+            manager.onWallpaperSelectionChange = { [weak selection] configuration, title in
+                selection?.follow(configuration, title: title)
+            }
+            manager.notifyWallpaperSessionChanged()
+        }
+
 
         if manager.featureCatalog.isEnabled(.html) {
             HTMLWallpaperView.precompileTrackerRules()
@@ -419,6 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         globalShortcutManager?.stop()
+        systemWallpaperSelection?.stop()
         globalShortcutManager = nil
         removeLifecycleObservers()
         closeApplicationWindowsForTermination()

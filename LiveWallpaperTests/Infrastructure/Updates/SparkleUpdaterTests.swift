@@ -262,3 +262,35 @@ struct SparkleUpdaterOwnershipTests {
         #expect(updater.availableVersion == nil, "the version the user skipped still shows as available")
     }
 }
+
+@Suite("Update channel preference")
+struct SparkleUpdateChannelTests {
+    @Test("With no stored choice the running build's version picks the channel", arguments: [
+        ("0.8.8", UpdateChannel.stable),
+        ("0.9.0b1", UpdateChannel.beta),
+    ])
+    func defaultFollowsRunningVersion(_ version: String, _ expected: UpdateChannel) throws {
+        let scratch = try TestScratch.defaultsSuite("SparkleUpdateChannelTests.default.\(version)")
+        defer { scratch.discard() }
+
+        #expect(SparkleUpdaterController.currentChannel(defaults: scratch.defaults, runningVersion: version) == expected)
+    }
+
+    @Test("A stored choice wins over the running build's version", arguments: [
+        (UpdateChannel.stable, "0.9.0b1"),
+        (UpdateChannel.beta, "0.8.8"),
+    ])
+    func storedChoiceWins(_ stored: UpdateChannel, _ version: String) throws {
+        let scratch = try TestScratch.defaultsSuite("SparkleUpdateChannelTests.stored.\(stored.rawValue)")
+        defer { scratch.discard() }
+        scratch.defaults.set(stored.rawValue, forKey: SparkleUpdaterController.updateChannelKey)
+
+        #expect(SparkleUpdaterController.currentChannel(defaults: scratch.defaults, runningVersion: version) == stored)
+    }
+
+    @Test("Stable sees only the default channel; beta also sees beta items")
+    func allowedChannelsMapping() {
+        #expect(UpdateAvailabilityDelegate.allowedChannels(for: .stable).isEmpty)
+        #expect(UpdateAvailabilityDelegate.allowedChannels(for: .beta) == ["beta"])
+    }
+}

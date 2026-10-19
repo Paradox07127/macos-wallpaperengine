@@ -43,6 +43,35 @@ struct MenuBarBehaviorTests {
         }
     }
 
+    @Test("An untrusted remote page runs muted whatever its config asks for")
+    func untrustedRemotePageRunsMuted() throws {
+        let url = try #require(URL(string: "https://shadertoy.com/view/abc"))
+        let origin = try #require(TrustedHTMLOrigin(url: url))
+
+        let untrusted = HTMLEffectivePolicy(config: .default, source: .url(url), trustedOrigins: [])
+        #expect(untrusted.muted)
+        #expect(untrusted.limitedBy == origin)
+
+        let trusted = HTMLEffectivePolicy(config: .default, source: .url(url), trustedOrigins: [origin])
+        #expect(trusted.muted == HTMLConfig.default.muteAudio)
+        #expect(trusted.limitedBy == nil)
+    }
+
+    @Test("The menu-bar volume row reads what an untrusted page actually plays at")
+    func menuBarVolumeReadsEffectiveWebAudio() throws {
+        let url = try #require(URL(string: "https://shadertoy.com/view/abc"))
+        let origin = try #require(TrustedHTMLOrigin(url: url))
+        let config = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .url(url), config: .default))
+
+        let untrusted = try #require(MenuBarContent.audioReadout(for: config, trustedOrigins: []))
+        #expect(untrusted.level == 0, "the row shows the config's volume while the origin keeps the page muted")
+        #expect(untrusted.isLimited)
+
+        let trusted = try #require(MenuBarContent.audioReadout(for: config, trustedOrigins: [origin]))
+        #expect(trusted.level == HTMLConfig.default.audioVolume)
+        #expect(!trusted.isLimited)
+    }
+
     @Test("Removing a known WPE import drops it from the recents list")
     func removingKnownImportDropsIt() throws {
         withIsolatedGlobalSettings {

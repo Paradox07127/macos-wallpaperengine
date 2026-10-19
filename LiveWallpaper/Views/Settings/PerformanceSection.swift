@@ -14,6 +14,19 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "macwindow",
+                iconColor: .purple,
+                title: "Pause when an app window is visible",
+                info: "Pauses only displays with a visible app window, even a small one. Other displays keep playing. Resumes when the last window is minimized, closed, or moved away."
+            ) {
+                Toggle("", isOn: $pauseOnAppWindow)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: pauseOnAppWindow) { _, _ in updateGlobalSettings() }
+                    .accessibilityLabel(Text("Pause when an app window is visible"))
+            }
+
+            SettingRow(
                 icon: "battery.25",
                 iconColor: .green,
                 title: "Pause in Low Power Mode"

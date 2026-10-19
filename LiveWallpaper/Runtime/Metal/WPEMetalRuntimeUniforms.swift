@@ -254,7 +254,7 @@ struct WPEMetalFrameClock: Sendable {
         loadTime: CFTimeInterval = CACurrentMediaTime(),
         currentMediaTime: @escaping @Sendable () -> CFTimeInterval = { CACurrentMediaTime() },
         currentDate: @escaping @Sendable () -> Date = { Date() },
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.loadTime = loadTime
         self.currentMediaTime = currentMediaTime

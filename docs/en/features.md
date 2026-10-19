@@ -212,6 +212,11 @@ safety suspends. Full-screen, window occlusion, battery, Low Power Mode and
 per-app rules are configurable policies; **never pause** app rules only veto
 the discretionary policies. Menu-bar and display status explain pause reasons.
 
+The separate **Pause when an app window is visible** option pauses only displays
+with an ordinary visible app window, regardless of its size. Other displays keep
+playing. It resumes when the last window is minimized, closed, or moved away.
+It is off by default and requires no additional privacy permissions.
+
 Moderate thermal pressure reduces scene/web frame rates and can suspend video.
 A manual pause retains a still frame and enters deeper resource hibernation
 after the dwell period. Pro adds adaptive scene frame rates and per-display
@@ -270,12 +275,35 @@ their own.
 
 ## System Wallpaper — both editions, macOS 26+
 
-The **System Wallpaper** library copies supported video files into the
-provider's library. Choose them through macOS Wallpaper settings; the provider
-can keep playing when Loomscreen is closed. This is a video-only system path,
-separate from Loomscreen's scenes, web pages and overlay windows. The page
+The **System Wallpaper** library accepts videos, recorded web wallpapers, and
+live scenes in Pro. Scenes can also be recorded as video copies. Select
+**Loomscreen — Selected Wallpaper** once in macOS Wallpaper settings. The tile
+then follows wallpaper selections inside Loomscreen, independently per display.
+Videos are copied automatically and Pro scenes are prepared for live rendering.
+Web wallpapers need an explicitly prepared video copy; selection never starts
+screen recording automatically. The tile remains available before a copy is ready.
+The provider can keep playing when Loomscreen is closed. On the lock screen,
+live scenes exclude identified clock/date/calendar layers and their children,
+using authored visibility bindings, widget names, or date/time text scripts.
+Unlocking restores the authored desktop appearance. Scene video exports exclude
+these layers too. Web exports disable recognized clock/calendar controls and
+hide identifiable DOM widgets, including widgets added later. Clocks baked into
+video/image pixels or a shared canvas remain intact. Existing video copies must
+be prepared again to include this filtering. Live web playback and app overlay
+windows are not included. Web recording opens a preview and requires screen
+capture consent.
+Use **Update Wallpaper Copy** to republish changed sources or saved properties;
+the existing copy is retained if preparation fails. The page
 reports provider compatibility and can pause publishing on an unsupported
 macOS build. See [Architecture](architecture.md#system-wallpaper-provider).
+
+The **Keep a video frame as the desktop picture** option saves persistent PNGs.
+While the Mac stays unlocked, it refreshes enabled video displays once a minute;
+it also refreshes them when the session becomes active. Each refresh uses a fresh file URL to avoid cached
+images. A failed install keeps the previous image intact; successful refreshes
+retain the current and previous PNG per display. These desktop pictures remain
+after unlock. This desktop-picture API does not independently select a
+lock-screen wallpaper or screen saver.
 
 ## Updates and privacy
 

@@ -23,6 +23,7 @@ struct MenuBarContent: View {
 
     @State private var ownsSystemMonitorLease = false
     @State private var updater = SparkleUpdaterController.shared
+    @State private var trustStore = TrustedHostStore.shared
 
     private var monitor: SystemMonitor { .shared }
 
@@ -156,7 +157,7 @@ struct MenuBarContent: View {
                         supportsPlayback: summary.supportsPlaybackControl,
                         canStepPlaylist: canStepPlaylist(for: screen),
                         screenID: screen.id,
-                        audioVolume: audioVolumeBinding(for: screen),
+                        audio: audioVolumeBinding(for: screen),
                         addAction: summary.wallpaperType == nil
                             ? { invokeAddWallpaper(screen.id) }
                             : nil,
@@ -442,69 +443,71 @@ struct MenuBarContent: View {
         featureCatalog.isEnabled(.playlists) && screenManager.getConfiguration(for: screen)?.canNavigatePlaylist == true
     }
 
-    private func audioVolumeBinding(for screen: Screen) -> Binding<Double>? {
-        guard let config = screenManager.getConfiguration(for: screen) else { return nil }
-
+    /// What a display's volume row reads; nil when its wallpaper has no volume to control.
+    /// `isLimited` means an untrusted web origin holds the page muted whatever the config says.
+    static func audioReadout(
+        for config: ScreenConfiguration, trustedOrigins: Set<TrustedHTMLOrigin>
+    ) -> (level: Double, isLimited: Bool)? {
         switch config.wallpaperType {
         case .video:
             guard config.hasConfiguredVideoSource else { return nil }
-            return sessionAudioBinding(for: screen, fallback: config)
+            return (config.muted ? 0 : config.videoVolume, false)
         case .scene:
-            return sessionAudioBinding(for: screen, fallback: config)
+            return (config.muted ? 0 : config.videoVolume, false)
         case .html:
-            guard config.htmlConfig != nil else { return nil }
-            return htmlAudioBinding(for: screen)
+            guard let html = config.htmlConfig else { return nil }
+            let effective = HTMLEffectivePolicy(config: html, source: config.htmlSource, trustedOrigins: trustedOrigins)
+            return (effective.muted ? 0 : html.audioVolume, effective.limitedBy != nil)
         }
     }
 
-    private func sessionAudioBinding(
-        for screen: Screen,
-        fallback: ScreenConfiguration
-    ) -> Binding<Double> {
-        Binding(
+    private func audioVolumeBinding(for screen: Screen) -> (level: Binding<Double>, isLimited: Bool)? {
+        guard let config = screenManager.getConfiguration(for: screen),
+              let readout = Self.audioReadout(for: config, trustedOrigins: trustStore.originSet) else { return nil }
+        let level = Binding(
             get: {
-                let current = screenManager.getConfiguration(for: screen) ?? fallback
-                return current.muted ? 0 : current.videoVolume
+                let current = screenManager.getConfiguration(for: screen) ?? config
+                return Self.audioReadout(for: current, trustedOrigins: trustStore.originSet)?.level ?? 0
             },
             set: { newValue in
                 let clampedValue = min(max(newValue, 0), 1)
-                let current = screenManager.getConfiguration(for: screen) ?? fallback
-
-                if clampedValue <= 0.001 {
-                    if !current.muted {
-                        screenManager.updateMuted(true, for: screen)
-                    }
-                    return
+                if config.wallpaperType == .html {
+                    writeHTMLAudio(clampedValue, for: screen)
+                } else {
+                    writeSessionAudio(clampedValue, for: screen, fallback: config)
                 }
-
-                if current.muted {
-                    screenManager.updateMuted(false, for: screen)
-                }
-                screenManager.updateVideoVolume(clampedValue, for: screen)
             }
         )
+        return (level, readout.isLimited)
     }
 
-    private func htmlAudioBinding(for screen: Screen) -> Binding<Double> {
-        Binding(
-            get: {
-                guard let html = screenManager.getConfiguration(for: screen)?.htmlConfig else { return 0 }
-                return html.muteAudio ? 0 : html.audioVolume
-            },
-            set: { newValue in
-                guard var html = screenManager.getConfiguration(for: screen)?.htmlConfig else { return }
-                let clampedValue = min(max(newValue, 0), 1)
+    private func writeSessionAudio(_ clampedValue: Double, for screen: Screen, fallback: ScreenConfiguration) {
+        let current = screenManager.getConfiguration(for: screen) ?? fallback
 
-                if clampedValue <= 0.001 {
-                    guard !html.muteAudio else { return }
-                    html.muteAudio = true
-                } else {
-                    html.muteAudio = false
-                    html.audioVolume = HTMLConfig.clampedAudioVolume(clampedValue)
-                }
-                screenManager.updateHTMLConfig(html, for: screen)
+        if clampedValue <= 0.001 {
+            if !current.muted {
+                screenManager.updateMuted(true, for: screen)
             }
-        )
+            return
+        }
+
+        if current.muted {
+            screenManager.updateMuted(false, for: screen)
+        }
+        screenManager.updateVideoVolume(clampedValue, for: screen)
+    }
+
+    private func writeHTMLAudio(_ clampedValue: Double, for screen: Screen) {
+        guard var html = screenManager.getConfiguration(for: screen)?.htmlConfig else { return }
+
+        if clampedValue <= 0.001 {
+            guard !html.muteAudio else { return }
+            html.muteAudio = true
+        } else {
+            html.muteAudio = false
+            html.audioVolume = HTMLConfig.clampedAudioVolume(clampedValue)
+        }
+        screenManager.updateHTMLConfig(html, for: screen)
     }
 
     private func invokeManageWindow() {
@@ -683,7 +686,7 @@ private struct MenuBarDisplayRow: View {
     let canStepPlaylist: Bool
     /// Keys the volume slider's pending commit to this display (`CoalescedSlider` owner).
     let screenID: AnyHashable
-    let audioVolume: Binding<Double>?
+    let audio: (level: Binding<Double>, isLimited: Bool)?
     /// Non-nil only while this display has no wallpaper assigned.
     let addAction: (() -> Void)?
     let openAction: () -> Void
@@ -742,8 +745,9 @@ private struct MenuBarDisplayRow: View {
             }
             .accessibilityElement(children: .contain)
 
-            if let audioVolume {
-                VolumeControlRow(owner: screenID, audioVolume: audioVolume)
+            if let audio {
+                VolumeControlRow(owner: screenID, audioVolume: audio.level)
+                    .disabled(audio.isLimited)
             }
         }
         .padding(.horizontal, MenuBarMetrics.rowPaddingHorizontal)
@@ -883,12 +887,12 @@ private struct MenuBarWindowChromeClearer: NSViewRepresentable {
         MenuBarDisplayRow(
             title: "BenQ PD3205U", subtitle: AttributedString("Not configured"), subtitleAccessibilityText: "Not configured",
             iconName: "display", visualState: .inactive, intendsToPlay: false, supportsPlayback: false, canStepPlaylist: false,
-            screenID: 1, audioVolume: nil, addAction: {}, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
+            screenID: 1, audio: nil, addAction: {}, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
         )
         MenuBarDisplayRow(
             title: "MPG321CX OLED", subtitle: AttributedString("Scene · Paused by system"), subtitleAccessibilityText: "Paused by system",
             iconName: "display.2", isSpanned: true, visualState: .policySuspended, intendsToPlay: true, supportsPlayback: true, canStepPlaylist: true,
-            screenID: 2, audioVolume: .constant(0.5), addAction: nil, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
+            screenID: 2, audio: (.constant(0.5), false), addAction: nil, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
         )
         HStack(spacing: DesignTokens.Spacing.md) {
             ForEach(Array([MenuBarWallpaperStatus.mixed, .loading, .restoring, .policySuspended, .error, .off].enumerated()), id: \.offset) { _, state in

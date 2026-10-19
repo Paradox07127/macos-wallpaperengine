@@ -1,11 +1,6 @@
 import CryptoKit
 import Foundation
 
-enum MonitorAgentPhase: String, Codable, Sendable {
-    case responding, executing, waitingForInput, waitingForApproval, waitingForAgents
-    case completed, interrupted, failed, unknown
-}
-
 struct AgentActivityState: Codable, Sendable, Equatable {
     var phase: MonitorAgentPhase = .unknown
     var phaseStartedAt: Double?

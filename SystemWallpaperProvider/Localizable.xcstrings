@@ -1,0 +1,2065 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ has no `material` or `passes[].textures[]`" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has no `material` or `passes[].textures[]`"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no tiene `material` ni `passes[].textures[]`"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に `material` も `passes[].textures[]` もありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中没有 `material`，也没有 `passes[].textures[]`"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中沒有 `material`，也沒有 `passes[].textures[]`"
+          }
+        }
+      }
+    },
+    "%@ is not a JSON object" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is not a JSON object"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es un objeto JSON"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は JSON オブジェクトではありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 JSON 对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 JSON 物件"
+          }
+        }
+      }
+    },
+    "A required scene file is missing: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A required scene file is missing: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta un archivo necesario de la escena: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なシーンファイルがありません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少必需的场景文件：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少必要的場景檔案：%@"
+          }
+        }
+      }
+    },
+    "A scene package entry extends beyond the available data: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A scene package entry extends beyond the available data: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una entrada del paquete excede los datos disponibles: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージのエントリがデータの範囲外です：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包条目超出了可用数据范围：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件項目超出可用資料範圍：%@"
+          }
+        }
+      }
+    },
+    "A scene package entry refers outside the project: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A scene package entry refers outside the project: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una entrada del paquete apunta fuera del proyecto: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージのエントリがプロジェクト外を参照しています：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包条目指向项目外部：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件項目指向專案外部：%@"
+          }
+        }
+      }
+    },
+    "A temporary scene resource could not be prepared: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A temporary scene resource could not be prepared: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo preparar un recurso temporal de la escena: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時的なシーンリソースを準備できません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法准备临时场景资源：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法準備暫存場景資源：%@"
+          }
+        }
+      }
+    },
+    "A texture or image file is corrupted and cannot be decoded." : {
+      "comment" : "Wallpaper Engine fallback diagnostic when a texture decode fails because the file is corrupt.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A texture or image file is corrupted and cannot be decoded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un archivo de textura o imagen está dañado y no se puede descodificar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テクスチャまたは画像ファイルが破損しているため、デコードできません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "纹理或图像文件已损坏，无法解码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "紋理或影像檔案已損毀，無法解碼。"
+          }
+        }
+      }
+    },
+    "Building render graph" : {
+      "comment" : "Scene load progress: building the render graph.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Building render graph"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generando el grafo de renderizado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーグラフを構築中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在构建渲染图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在建構渲染圖"
+          }
+        }
+      }
+    },
+    "Built-in WPE layer %@ is not available on macOS" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the layer path.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built-in WPE layer %@ is not available on macOS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La capa WPE integrada %@ no está disponible en macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組み込み WPE レイヤー %@ は macOS では利用できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内置 WPE 图层 %@ 在 macOS 上不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "內建 WPE 圖層 %@ 在 macOS 上無法使用"
+          }
+        }
+      }
+    },
+    "Couldn't get exclusive access to the System Wallpaper library." : {
+      "comment" : "Error shown when the cross-process manifest lock cannot be taken.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't get exclusive access to the System Wallpaper library."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo obtener acceso exclusivo a la biblioteca de fondos del sistema."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙ライブラリへの排他アクセスを取得できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获得系统壁纸库的独占访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得系統桌布庫的獨佔存取權限。"
+          }
+        }
+      }
+    },
+    "Couldn't parse %@ as JSON" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't parse %@ as JSON"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo interpretar %@ como JSON"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を JSON として解析できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将 %@ 解析为 JSON"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將 %@ 解析為 JSON"
+          }
+        }
+      }
+    },
+    "error.render.executor.command_buffer_failed" : {
+      "comment" : "Error shown when a Metal command buffer reports failure.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal command buffer failed."
+          }
+        }
+      }
+    },
+    "error.render.executor.command_queue_unavailable" : {
+      "comment" : "Error shown when the Metal renderer cannot create or access a command queue.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Metal command queue is unavailable."
+          }
+        }
+      }
+    },
+    "error.render.executor.library_unavailable" : {
+      "comment" : "Error shown when the built-in Metal shader library is unavailable.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal built-in shader library is unavailable."
+          }
+        }
+      }
+    },
+    "error.render.executor.missing_texture" : {
+      "comment" : "Error shown when the Metal renderer cannot find a required texture.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal executor is missing texture %@."
+          }
+        }
+      }
+    },
+    "error.render.executor.no_renderable_passes" : {
+      "comment" : "Error shown when the Metal render pipeline has no renderable passes.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal pipeline has no renderable passes."
+          }
+        }
+      }
+    },
+    "error.render.executor.pipeline_state_build_failed" : {
+      "comment" : "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input).",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Metal pipeline build failed for '%1$@': %2$@"
+          }
+        }
+      }
+    },
+    "error.render.executor.pipeline_unavailable" : {
+      "comment" : "Error shown when the Metal renderer cannot create a render pipeline.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal pipeline is unavailable for %@."
+          }
+        }
+      }
+    },
+    "error.render.executor.render_target_dimensions_exceed_device_limit" : {
+      "comment" : "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal render target '%1$@' is %2$lldx%3$lld, exceeding this device's %4$lldx%5$lld 2D texture limit."
+          }
+        }
+      }
+    },
+    "error.render.executor.render_target_exceeds_limit_reason" : {
+      "comment" : "Scene failure reason. Placeholders are the target name, its width and height, then the device texture limit twice.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "render target '%1$@' is %2$lldx%3$lld, exceeding this device's %4$lldx%5$lld Metal texture limit"
+          }
+        }
+      }
+    },
+    "error.render.executor.shader_translator_unavailable" : {
+      "comment" : "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE shader '%1$@' is unsupported by the Metal renderer: %2$@"
+          }
+        }
+      }
+    },
+    "error.render.executor.unsupported_shader" : {
+      "comment" : "Error shown when the Metal renderer does not support a shader.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal executor does not support shader %@."
+          }
+        }
+      }
+    },
+    "error.render.executor.unsupported_shader_reason" : {
+      "comment" : "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "shader '%@' unsupported by Metal renderer"
+          }
+        }
+      }
+    },
+    "error.render.pipeline.include_cycle" : {
+      "comment" : "Error shown when a Wallpaper Engine shader include cycle is detected.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE shader include cycle detected at %@"
+          }
+        }
+      }
+    },
+    "error.render.pipeline.include_missing" : {
+      "comment" : "Error shown when a Wallpaper Engine shader include file is missing.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE shader include %1$@ requested by %2$@ is missing"
+          }
+        }
+      }
+    },
+    "error.render.pipeline.invalid_source_encoding" : {
+      "comment" : "Error shown when a Wallpaper Engine shader source file is not UTF-8.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE shader source is not UTF-8: %@"
+          }
+        }
+      }
+    },
+    "error.render.pipeline.shader_missing" : {
+      "comment" : "Error shown when a Wallpaper Engine shader source file is missing.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE shader %1$@ is missing %2$@ source at %3$@"
+          }
+        }
+      }
+    },
+    "error.texture.format.malformed_payload" : {
+      "comment" : "Error shown when a Wallpaper Engine texture payload is malformed.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal texture payload is malformed: %@"
+          }
+        }
+      }
+    },
+    "error.texture.format.texture_allocation_failed" : {
+      "comment" : "Error shown when Metal texture allocation fails.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Metal texture allocation failed."
+          }
+        }
+      }
+    },
+    "error.texture.format.unsupported_compressed_format" : {
+      "comment" : "Error shown when the current Metal device cannot sample a compressed texture format.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This Metal device cannot sample %@ textures."
+          }
+        }
+      }
+    },
+    "error.texture.format.unsupported_format" : {
+      "comment" : "Error shown when a Wallpaper Engine texture format cannot be mapped to Metal.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "WPE Metal texture format is unsupported: %@"
+          }
+        }
+      }
+    },
+    "Follows the wallpaper selected inside Loomscreen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follows the wallpaper selected inside Loomscreen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra el fondo seleccionado en Loomscreen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreenで選択した壁紙を表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随 Loomscreen 内选择的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨 Loomscreen 內選擇的桌布"
+          }
+        }
+      }
+    },
+    "it isn't a Wallpaper Engine project" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is absent.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it isn't a Wallpaper Engine project"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no es un proyecto de Wallpaper Engine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine のプロジェクトではありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它不是 Wallpaper Engine 项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它不是 Wallpaper Engine 專案"
+          }
+        }
+      }
+    },
+    "its project information can't be read" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project information can't be read"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no se puede leer la información del proyecto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト情報を読み取れません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取它的项目信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取它的專案資訊"
+          }
+        }
+      }
+    },
+    "its project information is damaged" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is malformed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project information is damaged"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la información del proyecto está dañada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト情報が破損しています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的项目信息已损坏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的專案資訊已損毀"
+          }
+        }
+      }
+    },
+    "Loading particle systems" : {
+      "comment" : "Scene load progress: building particle systems.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading particle systems"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando sistemas de partículas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーティクルシステムを読み込み中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载粒子系统"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入粒子系統"
+          }
+        }
+      }
+    },
+    "Loading text pipeline" : {
+      "comment" : "Scene load progress: building the text rendering pipeline.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading text pipeline"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando pipeline de texto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストパイプラインを読み込み中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载文字管线"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入文字管線"
+          }
+        }
+      }
+    },
+    "Loading textures" : {
+      "comment" : "Scene load progress: uploading textures.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading textures"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando texturas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テクスチャを読み込み中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载贴图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入貼圖"
+          }
+        }
+      }
+    },
+    "Metal pipeline '%@' rejected (likely stage_in mismatch): %@" : {
+      "comment" : "Scene failure reason. Placeholders are the pipeline name and the Metal error.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Metal pipeline '%1$@' rejected (likely stage_in mismatch): %2$@"
+          }
+        }
+      }
+    },
+    "Metal pipeline for \"%@\" failed to build: %@" : {
+      "comment" : "Scene load diagnostic. Placeholders are the pipeline name and the Metal error.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Metal pipeline for \"%1$@\" failed to build: %2$@"
+          }
+        }
+      }
+    },
+    "Metal renderer failed." : {
+      "comment" : "Scene load diagnostic fallback when the executor error carries no description.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal renderer failed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falló el renderizador Metal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal レンダラーが失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 渲染器执行失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 渲染器執行失敗。"
+          }
+        }
+      }
+    },
+    "named FBO '%@' unresolved on Metal pass — likely cross-pass alias miss" : {
+      "comment" : "Scene failure reason. Placeholder is the framebuffer name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "named FBO '%@' unresolved on Metal pass — likely cross-pass alias miss"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FBO con nombre '%@' sin resolver en el pass de Metal — probable fallo de alias entre pases"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前付き FBO「%@」を Metal パスで解決できません — パス間のエイリアス漏れの可能性"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "具名 FBO“%@”在 Metal 通道中未能解析——可能是跨通道别名遗漏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "具名 FBO「%@」在 Metal 通道中未能解析——可能是跨通道別名遺漏"
+          }
+        }
+      }
+    },
+    "Preparing render pipeline" : {
+      "comment" : "Scene load progress: compiling Metal pipeline state.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing render pipeline"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparando la pipeline de renderizado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーパイプラインを準備中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备渲染管线"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備渲染管線"
+          }
+        }
+      }
+    },
+    "Previous-frame effects (motion blur, feedback) are not yet supported." : {
+      "comment" : "Scene load diagnostic.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous-frame effects (motion blur, feedback) are not yet supported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los efectos de fotograma anterior (desenfoque de movimiento, feedback) aún no son compatibles."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前のフレームを参照する効果（モーションブラー、フィードバック）はまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支持依赖上一帧的效果（动态模糊、反馈）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支援依賴上一幀的效果（動態模糊、回饋）。"
+          }
+        }
+      }
+    },
+    "previous-frame texture unavailable for this pass — no prior frame was rendered for its target" : {
+      "comment" : "Scene failure reason.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "previous-frame texture unavailable for this pass — no prior frame was rendered for its target"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "textura de fotograma anterior no disponible para este pase — no se renderizó ningún fotograma previo para su destino"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパスの前フレームテクスチャがありません — 対象がまだ一度も描画されていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该通道所需的上一帧纹理不可用——其目标从未渲染过上一帧"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該通道所需的上一幀紋理不可用——其目標從未渲染過上一幀"
+          }
+        }
+      }
+    },
+    "Reading scene" : {
+      "comment" : "Scene load progress: parsing the scene package.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading scene"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo escena"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンを読み込み中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取场景"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在讀取場景"
+          }
+        }
+      }
+    },
+    "Reference depth exceeded for %@" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the reference path.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference depth exceeded for %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profundidad de referencia superada para %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ の参照が深すぎます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的引用层级过深"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的參照層級過深"
+          }
+        }
+      }
+    },
+    "Render target \"%@\" is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit." : {
+      "comment" : "Scene load diagnostic. Placeholders are the target name, its width and height, then the device texture limit twice.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Render target \"%1$@\" is %2$lldx%3$lld, exceeding this device's %4$lldx%5$lld Metal texture limit."
+          }
+        }
+      }
+    },
+    "Render target \"%@\" is not produced by any pass." : {
+      "comment" : "Scene load diagnostic. Placeholder is the render target name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Render target \"%@\" is not produced by any pass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El destino de renderizado \"%@\" no lo produce ningún pase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーターゲット「%@」はどのパスからも出力されていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目标“%@”未被任何渲染通道产出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目標「%@」未被任何渲染通道產出。"
+          }
+        }
+      }
+    },
+    "Rendering scene" : {
+      "comment" : "Scene load progress: first frame is being drawn.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendering scene"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renderizando escena"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンを描画中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在渲染场景"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在渲染場景"
+          }
+        }
+      }
+    },
+    "Scene contains no renderable passes." : {
+      "comment" : "Scene load diagnostic.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene contains no renderable passes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La escena no contiene pases renderizables."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンにレンダリング可能なパスがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景中没有可渲染的通道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景中沒有可渲染的通道。"
+          }
+        }
+      }
+    },
+    "Selected Wallpaper" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo seleccionado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択中の壁紙"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選桌布"
+          }
+        }
+      }
+    },
+    "shader '%@': %@" : {
+      "comment" : "Scene failure reason. Placeholders are the shader name and the translator failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "shader '%1$@': %2$@"
+          }
+        }
+      }
+    },
+    "Shader \"%@\" is not supported by the Metal renderer yet." : {
+      "comment" : "Scene load diagnostic. Placeholder is the shader name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader \"%@\" is not supported by the Metal renderer yet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El shader \"%@\" aún no es compatible con el renderizador Metal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー「%@」は Metal レンダラーではまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器“%@”尚不受 Metal 渲染器支持。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器「%@」尚不受 Metal 渲染器支援。"
+          }
+        }
+      }
+    },
+    "Shader \"%@\" needs the WPE GLSL translator: %@" : {
+      "comment" : "Scene load diagnostic. Placeholders are the shader name and the translator failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shader \"%1$@\" needs the WPE GLSL translator: %2$@"
+          }
+        }
+      }
+    },
+    "Texture upload failed." : {
+      "comment" : "Scene load diagnostic fallback when the texture loader error carries no description.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texture upload failed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al cargar la textura."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テクスチャのアップロードに失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "纹理上传失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "紋理上傳失敗。"
+          }
+        }
+      }
+    },
+    "The network appears to be offline." : {
+      "comment" : "Runtime error message.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The network appears to be offline."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parece que no hay conexión de red."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ネットワークがオフラインのようです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络似乎已离线。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網路似乎已離線。"
+          }
+        }
+      }
+    },
+    "The page stopped loading before it finished." : {
+      "comment" : "Web wallpaper failure reason shown when a frame load is interrupted.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page stopped loading before it finished."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página dejó de cargarse antes de terminar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページの読み込みが完了前に中断されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面在加载完成前中断了。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面在載入完成前中斷了。"
+          }
+        }
+      }
+    },
+    "The page tried to load from a network port the system blocks." : {
+      "comment" : "Web wallpaper failure reason shown when WebKit refuses a restricted port.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page tried to load from a network port the system blocks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página intentó cargarse desde un puerto de red que el sistema bloquea."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページがシステムでブロックされているネットワークポートから読み込もうとしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面试图从系统禁止的网络端口加载内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面試圖從系統封鎖的網路連接埠載入內容。"
+          }
+        }
+      }
+    },
+    "The page's server answered with error %lld." : {
+      "comment" : "Web wallpaper failure reason. The placeholder is an HTTP status code such as 500.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page's server answered with error %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor de la página respondió con el error %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページのサーバーがエラー %lld を返しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面所在的服务器返回了错误 %lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面所在的伺服器傳回了錯誤 %lld。"
+          }
+        }
+      }
+    },
+    "The page's server could not be reached." : {
+      "comment" : "Web wallpaper failure reason shown when a remote page's host does not answer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page's server could not be reached."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conectar con el servidor de la página."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページのサーバーに接続できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接到页面所在的服务器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線到頁面所在的伺服器。"
+          }
+        }
+      }
+    },
+    "The project settings path is not safe to open." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project settings path is not safe to open."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ruta de los ajustes del proyecto no se puede abrir de forma segura."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト設定のパスを安全に開けません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目设置路径不安全，无法打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專案設定路徑不安全，無法開啟。"
+          }
+        }
+      }
+    },
+    "The project settings source is unavailable. Choose the project folder again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project settings source is unavailable. Choose the project folder again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El origen de los ajustes no está disponible. Vuelve a elegir la carpeta del proyecto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト設定のソースを利用できません。プロジェクトフォルダを選び直してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目设置来源不可用。请重新选择项目文件夹。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專案設定來源無法使用。請重新選擇專案資料夾。"
+          }
+        }
+      }
+    },
+    "The scene package contains a duplicate entry: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene package contains a duplicate entry: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El paquete contiene una entrada duplicada: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージに重複したエントリがあります：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包包含重复条目：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件包含重複項目：%@"
+          }
+        }
+      }
+    },
+    "The scene package exceeds a supported resource limit: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene package exceeds a supported resource limit: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El paquete supera un límite de recursos admitido: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージが対応するリソース制限を超えています：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包超出了支持的资源限制：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件超出支援的資源限制：%@"
+          }
+        }
+      }
+    },
+    "The scene package format is not recognized: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene package format is not recognized: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se reconoce el formato del paquete: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージの形式を認識できません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法识别场景包格式：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法識別場景套件格式：%@"
+          }
+        }
+      }
+    },
+    "The scene package has an invalid entry name at index %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene package has an invalid entry name at index %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nombre de la entrada del índice %lld del paquete no es válido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージのインデックス %lld に無効なエントリ名があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包中索引 %lld 的条目名称无效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件中索引 %lld 的項目名稱無效。"
+          }
+        }
+      }
+    },
+    "The scene package header is truncated." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene package header is truncated."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cabecera del paquete de la escena está incompleta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンパッケージのヘッダーが途中で切れています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景包的文件头不完整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景套件的檔案標頭不完整。"
+          }
+        }
+      }
+    },
+    "The scene resource could not be read: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene resource could not be read: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer el recurso de la escena: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンのリソースを読み込めません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取场景资源：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取場景資源：%@"
+          }
+        }
+      }
+    },
+    "The scene resource path is not safe to open: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene resource path is not safe to open: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No es seguro abrir esta ruta de recurso: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンのリソースパスを安全に開けません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景资源路径不安全，无法打开：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景資源路徑不安全，無法開啟：%@"
+          }
+        }
+      }
+    },
+    "The scene's model data could not be read." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The scene's model data could not be read."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los datos del modelo de la escena."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンのモデルデータを読み込めませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取场景的模型数据。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取場景的模型資料。"
+          }
+        }
+      }
+    },
+    "The specific cause is not yet known." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The specific cause is not yet known."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se conoce la causa específica."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "具体的な原因はまだ分かっていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未确定具体原因。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未確定具體原因。"
+          }
+        }
+      }
+    },
+    "The wallpaper's entry page is missing from its folder." : {
+      "comment" : "Web wallpaper failure reason shown when the HTML file the project names cannot be served.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper's entry page is missing from its folder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta la página de entrada en la carpeta del fondo de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙のフォルダにエントリページがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸文件夹里缺少入口页面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布資料夾裡缺少進入頁面。"
+          }
+        }
+      }
+    },
+    "The wallpaper's folder could not be read. Re-pick the source to restore permission." : {
+      "comment" : "Web wallpaper failure reason shown when the sandbox refuses the project folder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper's folder could not be read. Re-pick the source to restore permission."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer la carpeta del fondo de pantalla. Vuelve a elegir el origen para restaurar el permiso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙のフォルダを読み取れませんでした。ソースを選び直して権限を回復してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取壁纸文件夹。重新选择来源以恢复访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取桌布資料夾。重新選擇來源以恢復存取權限。"
+          }
+        }
+      }
+    },
+    "The web renderer process crashed repeatedly." : {
+      "comment" : "Runtime error detail shown when an HTML wallpaper's WebKit content process keeps crashing and the retry budget is exhausted.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El proceso del renderizador web se ha cerrado inesperadamente varias veces."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webレンダラープロセスが繰り返しクラッシュしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页渲染进程反复崩溃。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網頁渲染處理程序反覆當機。"
+          }
+        }
+      }
+    },
+    "Wallpapers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondos de pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -359,7 +359,7 @@ final class AmbientWallpaperSessionBuilder {
                 renderer.userShortcutBridge,
                 icons: renderer.userShortcutIconStore,
                 wallpaperID: descriptor.workshopID,
-                declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot)
+                declaredKeys: WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: assets.projectRoot)
             )
             if spanFrames != nil {
                 renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
@@ -408,7 +408,7 @@ final class AmbientWallpaperSessionBuilder {
                 let userShortcutIcons = WPEUserShortcutIconStore(device: device)
                 UserShortcutRendererLink.shared.attach(
                     userShortcuts, icons: userShortcutIcons, wallpaperID: descriptor.workshopID,
-                    declaredKeys: UserShortcutRendererLink.declaredKeys(manifestRoot: assets.projectRoot),
+                    declaredKeys: WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: assets.projectRoot),
                     textureKeys: UserShortcutRendererLink.declaredTextureKeys(manifestRoot: assets.projectRoot)
                 )
                 var inputs = WPEParitySceneInputs(

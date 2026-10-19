@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import CoreFoundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 

@@ -6,6 +6,24 @@ import SwiftUI
 #endif
 
 extension GeneralSettingsView {
+    /// Shared by the General and About tabs. Saves in the binding: an `.onChange` would only run on the tab on screen.
+    var updateChannelPicker: some View {
+        Picker("", selection: Binding(
+            get: { updateChannel },
+            set: { channel in
+                guard channel != updateChannel else { return }
+                updateChannel = channel
+                SparkleUpdaterController.shared.updateChannel = channel
+            }
+        )) {
+            Text("Stable").tag(UpdateChannel.stable)
+            Text("Beta").tag(UpdateChannel.beta)
+        }
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel(Text("Update channel"))
+    }
+
     @ViewBuilder
     var generalSection: some View {
         Section {
@@ -70,6 +88,15 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "flask",
+                iconColor: .orange,
+                title: "Update channel",
+                info: "Beta builds arrive before stable releases and may be less reliable."
+            ) {
+                updateChannelPicker
+            }
+
+            SettingRow(
                 icon: "dock.rectangle",
                 iconColor: .indigo,
                 title: "Show in Dock",
@@ -90,15 +117,15 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
-                title: "Capture video frame when locking",
-                subtitle: "On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."
+                title: "Keep a video frame as the desktop picture",
+                subtitle: "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."
             ) {
                 Toggle("", isOn: $preservePlaybackOnLock)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: preservePlaybackOnLock) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Capture video frame when locking"))
-                    .accessibilityHint(Text("On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."))
+                    .accessibilityLabel(Text("Keep a video frame as the desktop picture"))
+                    .accessibilityHint(Text("Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."))
             }
 
             SettingRow(

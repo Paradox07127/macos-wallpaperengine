@@ -33,6 +33,7 @@ final class ScreenManager {
     @ObservationIgnored var cleanupTasks: Set<AnyCancellable> = []
     /// One-way application-termination latch.
     @ObservationIgnored var isTerminating = false
+    @ObservationIgnored var onWallpaperSelectionChange: (@MainActor (ScreenConfiguration, String) -> Void)?
     @ObservationIgnored let displayRegistry: any DisplayRegistering
     @ObservationIgnored let featureCatalog: FeatureCatalog
     @ObservationIgnored let originReconciler: any OriginReconciler
@@ -248,6 +249,10 @@ final class ScreenManager {
         },
         advanceSceneMutationIntent: { [weak self] screenID in
             self?.advanceScenePropertyMutationIntent(for: screenID)
+        },
+        configurationDidCommit: { [weak self] screenID in
+            guard let screen = self?.screens.first(where: { $0.id == screenID }) else { return }
+            screen.configurationRevision &+= 1
         }
     )
     @ObservationIgnored var transitionRegistry: PlaybackTransitionRegistry {
@@ -430,6 +435,11 @@ final class ScreenManager {
 
         NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)
             .sink { [weak self] _ in
+                // Saves can precede installation in the same transaction; observe after it commits.
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    self?.syncSystemWallpaperSelection()
+                }
                 self?.automationOrchestrator.refreshMonitoringIfActive()
                 guard let self, self.effectsCoordinatorWasInitialized else { return }
                 self.effectsCoordinator.reconcileEnvironmentOverlays()

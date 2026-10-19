@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 import Metal
+import QuartzCore
 
 /// Cross-thread status only; command buffers and drawable acquisition stay on
 /// the presenter's dedicated actor. A successful frame from an old load is not ready.

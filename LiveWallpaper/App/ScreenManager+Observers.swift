@@ -303,6 +303,7 @@ extension ScreenManager {
         withObservationTracking {
             _ = fullScreenDetector.hiddenScreens
             _ = fullScreenDetector.occludedScreens
+            _ = fullScreenDetector.appWindowScreens
             // Adaptive throttle reacts to partial coverage below the 0.85
             // pause cutoff, so track the (quantized) fraction too.
             _ = fullScreenDetector.occlusionFractions
@@ -442,7 +443,8 @@ extension ScreenManager {
             memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             isFrontmostExcludedByRule: frontmostExcluded,
-            respondsToThermalThrottle: Self.respondsToThermalThrottle(screen.runtimeSession)
+            respondsToThermalThrottle: Self.respondsToThermalThrottle(screen.runtimeSession),
+            hasAppWindow: fullScreenDetector.appWindowScreens[screen.id] ?? false
         )
     }
 
@@ -512,6 +514,7 @@ extension ScreenManager {
         )
         let shouldEnablePolling = wallpaperPolicyNeedsPolling || hasEnabledDesktopMonitorOverlay
 
+        fullScreenDetector.setAppWindowTrackingEnabled(globalSettings.pauseOnAppWindow)
         fullScreenDetector.setFallbackPollingEnabled(shouldEnablePolling)
     }
 
@@ -530,6 +533,7 @@ extension ScreenManager {
         updateFullScreenFallbackPolling()
         refreshPerformancePolicyForAllScreens()
         applyWallpaperCapturePolicy()
+        captureDesktopSnapshotsForLockIfNeeded()
     }
 
     /// Windows built later read the policy in their own initializer.
@@ -560,13 +564,26 @@ extension ScreenManager {
 
     func captureDesktopSnapshotsForLockIfNeeded() {
         guard !isTerminating else { return }
+        guard userPresenceProbe.screenLockState() == .unlocked else { return }
         let globalSettings = SettingsManager.shared.loadGlobalSettings()
         guard globalSettings.preservePlaybackOnLock else { return }
 
+        let heartbeatURL = SystemWallpaperPaths.heartbeatURL(hostBundleID: Bundle.main.bundleIdentifier ?? "com.loomscreen")
+        let native = (try? Data(contentsOf: heartbeatURL)).flatMap {
+            try? SystemWallpaperCoding.decoder.decode(SystemWallpaperHeartbeat.self, from: $0)
+        }
+
         for screen in screens {
+            guard native?.ownsDisplay(screen.id, now: Date()) != true else { continue }
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
-                  config.wallpaperType == .video,
-                  config.setAsLockScreen else { continue }
+                  LockScreenSnapshotCoordinator.shouldCapture(
+                    globallyEnabled: wallpapersGloballyEnabled,
+                    userPaused: !(screen.playbackController?.userIntendsToPlay ?? true),
+                    suspended: !(suspendReasonsByScreen[screen.id] ?? []).isEmpty,
+                    userAbsent: isUserAbsent,
+                    wallpaperType: config.wallpaperType,
+                    setAsLockScreen: config.setAsLockScreen
+                  ) else { continue }
             Task { await extractLockScreenFrame(for: screen) }
         }
     }

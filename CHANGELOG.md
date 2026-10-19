@@ -13,6 +13,35 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.9] — 2026-10-18
+
+### Added
+
+- Settings › General and Settings › About gain an **Update channel** picker:
+  Stable, or Beta for test builds. Beta builds use `X.Y.ZbN` versions and a
+  separate Sparkle channel.
+- macOS 26 and later: System Settings › Wallpaper shows one "Selected
+  Wallpaper" tile that follows the wallpaper each display runs in Loomscreen
+  ([#149](https://github.com/Paradox07127/macos-wallpaperengine/pull/149), thanks @Aleem2Z).
+- Pro: on macOS 26 and later, that tile plays Wallpaper Engine scenes live
+  ([#149](https://github.com/Paradox07127/macos-wallpaperengine/pull/149), thanks @Aleem2Z).
+- Performance & Battery gains **Pause when an app window is visible**, which
+  pauses only the display that has an app window on it ([#147](https://github.com/Paradox07127/macos-wallpaperengine/pull/147), thanks @Aleem2Z).
+
+### Changed
+
+- The video frame kept as the macOS wallpaper refreshes every minute while the
+  Mac is unlocked and the wallpaper plays, so the lock screen shows a recent
+  frame ([#148](https://github.com/Paradox07127/macos-wallpaperengine/pull/148), thanks @Aleem2Z).
+- Changing the volume or muting no longer re-captures the display thumbnail.
+
+### Fixed
+
+- The menu bar volume reads 0% for a muted wallpaper and for web pages from
+  untrusted sites, which always play muted.
+- Removing a display's wallpaper clears its thumbnail at the top of the display
+  page at once.
+
 ## [0.8.8] — 2026-10-12
 
 ### Added
@@ -1352,6 +1381,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.8.9]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.8...loomscreen-v0.8.9
 [0.8.8]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.7...loomscreen-v0.8.8
 [0.8.7]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.6...loomscreen-v0.8.7
 [0.8.6]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.5...loomscreen-v0.8.6

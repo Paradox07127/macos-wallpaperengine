@@ -93,7 +93,7 @@ struct BrowsePane: View {
     private var mainColumn: some View {
         gridColumn
             .onAppear { reloadInUseBadges() }
-            .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { _ in
+            .onChange(of: Dictionary(screenManager.screens.map { ($0.id, $0.configurationRevision) }, uniquingKeysWith: { $1 })) {
                 reloadInUseBadges()
             }
     }

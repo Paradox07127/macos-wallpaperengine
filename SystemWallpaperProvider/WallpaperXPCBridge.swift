@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import IOKit.ps
 import os.log
@@ -12,7 +13,7 @@ import os.log
 /// references are immutable after init.
 final class WallpaperXPCBridge: @unchecked Sendable {
     private let store: SharedLibraryStore
-    private let registry = SurfaceRegistry()
+    private let registry: SurfaceRegistry
     private let settings: SettingsProvider
     private let handlersLock = NSLock()
     private var handlers: [ObjectIdentifier: WallpaperXPCHandler] = [:]
@@ -131,9 +132,47 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     private let observerLock = NSLock()
     private var libraryObserver: LibraryChangeObserver?
     private var powerObserver: PowerConditionObserver?
+    private var sessionObserver: SessionConditionObserver?
 
-    init(store: SharedLibraryStore) {
+    private final class SessionConditionObserver: @unchecked Sendable { // `observers` is only touched in MainActor `start()`; the rest are `let`
+        private let registry: SurfaceRegistry
+        private let store: SharedLibraryStore
+        private var observers: [NSObjectProtocol] = []
+
+        init(registry: SurfaceRegistry, store: SharedLibraryStore) {
+            self.registry = registry
+            self.store = store
+            Task { @MainActor [weak self] in self?.start() }
+        }
+
+        @MainActor
+        private func start() {
+            let registry = registry
+            let store = store
+            WallpaperXPCHandler.updateSystemState(
+                registry: registry, store: store,
+                locked: SystemUserPresenceProbe.shared.screenLockState() == .locked,
+                asleep: SystemUserPresenceProbe.shared.areAllDisplaysAsleep()
+            )
+            for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+                observers.append(DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name(name), object: nil, queue: nil
+                ) { _ in WallpaperXPCHandler.updateSystemState(registry: registry, store: store, locked: locked) })
+            }
+            for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true),
+                                   (NSWorkspace.screensDidWakeNotification, false),
+                                   (NSWorkspace.willSleepNotification, true),
+                                   (NSWorkspace.didWakeNotification, false)] {
+                observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+                    forName: name, object: nil, queue: nil
+                ) { _ in WallpaperXPCHandler.updateSystemState(registry: registry, store: store, asleep: asleep) })
+            }
+        }
+    }
+
+    init(store: SharedLibraryStore, registry: SurfaceRegistry = SurfaceRegistry()) {
         self.store = store
+        self.registry = registry
         self.settings = SettingsProvider(
             store: store,
             providerID: Bundle.main.bundleIdentifier ?? "com.loomscreen.wallpaper"
@@ -153,11 +192,13 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         library.owner = self
         libraryObserver = library
         powerObserver = PowerConditionObserver(registry: registry, store: store)
+        sessionObserver = SessionConditionObserver(registry: registry, store: store)
     }
 
-    /// Fans a library change out to every live connection. Only a handler holds
+    /// Retargets the surfaces, then tells every live connection. Only a handler holds
     /// a route to the Agent, and only while its connection is up.
-    fileprivate func libraryDidChange() {
+    func libraryDidChange() {
+        WallpaperXPCHandler.retargetSurfaces(registry: registry, store: store)
         let live = handlersLock.withLock { Array(handlers.values) }
         for handler in live { handler.libraryDidChange() }
     }

@@ -12,11 +12,27 @@ struct SystemWallpaperManifest: Codable, Equatable {
         var fileName: String
         var thumbnailFileName: String?
         var addedAt: Date
+        var preparationOptions: SystemWallpaperPreparationOptions?
+        var sourceKey: String?
     }
 
     var version: Int
     var items: [Item]
     var playbackMode: SystemWallpaperPlaybackMode
+    var selectedItemID: String?
+    var displaySelections: [String: String]
+
+    static let selectedChoiceID = "loomscreen-selected"
+
+    /// The system choice stays fixed while the app changes its target, independently per display.
+    func item(for choiceID: String?, displayID: UInt32? = nil) -> Item? {
+        guard let choiceID else { return nil }
+        if choiceID != Self.selectedChoiceID {
+            return items.first { $0.id == choiceID }
+        }
+        let selected = displayID.flatMap { displaySelections[String($0)] } ?? selectedItemID
+        return items.first { $0.id == selected } ?? items.max { $0.addedAt < $1.addedAt }
+    }
 
     static let currentVersion = 1
     static let empty = SystemWallpaperManifest(
@@ -25,13 +41,16 @@ struct SystemWallpaperManifest: Codable, Equatable {
         playbackMode: .always
     )
 
-    init(version: Int, items: [Item], playbackMode: SystemWallpaperPlaybackMode = .always) {
+    init(version: Int, items: [Item], playbackMode: SystemWallpaperPlaybackMode = .always,
+         selectedItemID: String? = nil, displaySelections: [String: String] = [:]) {
         self.version = version
         self.items = items
         self.playbackMode = playbackMode
+        self.selectedItemID = selectedItemID
+        self.displaySelections = displaySelections
     }
 
-    private enum CodingKeys: String, CodingKey { case version, items, playbackMode }
+    private enum CodingKeys: String, CodingKey { case version, items, playbackMode, selectedItemID, displaySelections }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -44,6 +63,8 @@ struct SystemWallpaperManifest: Codable, Equatable {
         // Manifests written before the switch existed kept playing on the
         // desktop, so that stays their behaviour after an update.
         playbackMode = try c.decodeIfPresent(SystemWallpaperPlaybackMode.self, forKey: .playbackMode) ?? .always
+        selectedItemID = try c.decodeIfPresent(String.self, forKey: .selectedItemID)
+        displaySelections = try c.decodeIfPresent([String: String].self, forKey: .displaySelections) ?? [:]
     }
 
     /// A single path component: no separators, no traversal, not empty.
@@ -157,6 +178,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// Every choice currently on some display — the single field above keeps
     /// one arbitrary member for readers that predate multi-display support.
     var activeChoiceIDs: [String]?
+    var activeDisplayIDs: [UInt32]?
     /// False when the appex's private-API layout check failed on this OS —
     /// the app shows the "system incompatible" state instead of guessing.
     var runtimeHealthy: Bool
@@ -172,7 +194,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// Bump when the private-API layout check changes, or a fixed check cannot overwrite its predecessor's unhealthy verdict.
     static let currentRuntimeCheckVersion = 1
 
-    init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil,
+    init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil, activeDisplayIDs: [UInt32]? = nil,
          runtimeHealthy: Bool = true, osVersion: String? = nil,
          runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion,
          provider: SystemWallpaperProviderIdentity? = nil,
@@ -180,6 +202,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         self.timestamp = timestamp
         self.activeChoiceID = activeChoiceID
         self.activeChoiceIDs = activeChoiceIDs
+        self.activeDisplayIDs = activeDisplayIDs
         self.runtimeHealthy = runtimeHealthy
         self.osVersion = osVersion
         self.runtimeCheckVersion = runtimeCheckVersion
@@ -188,7 +211,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case timestamp, activeChoiceID, activeChoiceIDs, runtimeHealthy, osVersion, runtimeCheckVersion
+        case timestamp, activeChoiceID, activeChoiceIDs, activeDisplayIDs, runtimeHealthy, osVersion, runtimeCheckVersion
         case provider, playbackFailures
     }
 
@@ -197,6 +220,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         timestamp = try c.decode(Date.self, forKey: .timestamp)
         activeChoiceID = try c.decodeIfPresent(String.self, forKey: .activeChoiceID)
         activeChoiceIDs = try c.decodeIfPresent([String].self, forKey: .activeChoiceIDs)
+        activeDisplayIDs = try c.decodeIfPresent([UInt32].self, forKey: .activeDisplayIDs)
         runtimeHealthy = try c.decodeIfPresent(Bool.self, forKey: .runtimeHealthy) ?? true
         osVersion = try c.decodeIfPresent(String.self, forKey: .osVersion)
         runtimeCheckVersion = try c.decodeIfPresent(Int.self, forKey: .runtimeCheckVersion)
@@ -221,6 +245,13 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     func showsChoice(_ itemID: String) -> Bool {
         if let activeChoiceIDs { return activeChoiceIDs.contains(itemID) }
         return activeChoiceID == itemID
+    }
+
+    /// A legacy desktop-picture refresh must not replace a selected native wallpaper.
+    func ownsDisplay(_ displayID: UInt32, now: Date) -> Bool {
+        guard runtimeHealthy, now.timeIntervalSince(timestamp) < 300,
+              activeChoiceID != nil || activeChoiceIDs?.isEmpty == false else { return false }
+        return activeDisplayIDs?.contains(displayID) ?? true
     }
 
     /// Version plus build: beta seeds keep the same x.y.z across weekly builds,
@@ -351,8 +382,12 @@ enum SystemWallpaperLibrary {
         )) ?? []
         for file in files where !referenced.contains(file.lastPathComponent) {
             let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey])
-            // Never recurse into or delete a directory: removing one here would take a whole subtree with it.
-            if values?.isDirectory == true { continue }
+            if values?.isDirectory == true {
+                // Only scene bundles we publish may be reclaimed; leave unrelated directories alone.
+                guard file.pathExtension == "scene",
+                      stagingCreation(fileName: file.lastPathComponent) != nil
+                      || manager.fileExists(atPath: file.appendingPathComponent("configuration.json").path) else { continue }
+            }
             let cutoff: TimeInterval
             let reference: Date
             if let created = stagingCreation(fileName: file.lastPathComponent) {

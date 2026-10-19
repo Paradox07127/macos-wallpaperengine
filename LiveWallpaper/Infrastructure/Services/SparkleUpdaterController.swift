@@ -12,6 +12,11 @@ protocol SparkleUpdateStarting {
 
 extension SPUUpdater: SparkleUpdateStarting {}
 
+/// `beta` also sees appcast items tagged `<sparkle:channel>beta</sparkle:channel>`; `stable` sees only untagged ones.
+enum UpdateChannel: String, CaseIterable {
+    case stable, beta
+}
+
 /// Keep the launch check in the same runloop turn as Sparkle startup, before
 /// its scheduler takes over. Repeated startup calls must not trigger more checks.
 @MainActor
@@ -36,12 +41,24 @@ final class SparkleUpdaterController {
     /// Version string of an update Sparkle has found and is holding back, or `nil` when there is nothing to show.
     private(set) var availableVersion: String?
 
+    /// Sparkle reads the channel from defaults on each check, so the stored choice must be written before checking again.
+    var updateChannel: UpdateChannel {
+        didSet {
+            UserDefaults.appScoped().set(updateChannel.rawValue, forKey: Self.updateChannelKey)
+            availableVersion = nil
+            if startup.hasStarted {
+                controller.updater.checkForUpdatesInBackground()
+            }
+        }
+    }
+
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
     @ObservationIgnored private var driverDelegate: GentleReminderDelegate!
     @ObservationIgnored private var updaterDelegate: UpdateAvailabilityDelegate!
     @ObservationIgnored private var startup = SparkleUpdateStartup()
 
     private init() {
+        updateChannel = Self.currentChannel()
         driverDelegate = GentleReminderDelegate()
         updaterDelegate = UpdateAvailabilityDelegate()
         controller = SPUStandardUpdaterController(
@@ -111,6 +128,21 @@ final class SparkleUpdaterController {
         return sparkleChoiceIsStored ? nil : legacy
     }
 
+    /// Stores `UpdateChannel.rawValue`.
+    nonisolated static let updateChannelKey = "loomscreen.update.channel.v1"
+
+    /// With no stored choice a copy follows the channel its own build shipped on.
+    nonisolated static func currentChannel(
+        defaults: UserDefaults = .appScoped(),
+        runningVersion: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    ) -> UpdateChannel {
+        if let stored = defaults.string(forKey: updateChannelKey).flatMap(UpdateChannel.init(rawValue:)) {
+            return stored
+        }
+        // Sparkle's standard comparator ignores a `-beta.N` suffix; `bN` orders correctly.
+        return runningVersion?.range(of: #"b[0-9]+$"#, options: .regularExpression) == nil ? .stable : .beta
+    }
+
     func checkForUpdates() {
         controller.checkForUpdates(nil)
     }
@@ -158,6 +190,18 @@ final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
     /// check came back empty does not change what these surfaces show.
     nonisolated func updaterDidNotFindUpdate(_: SPUUpdater) {
         onMain { [weak self] in self?.onNoUpdateFound?() }
+    }
+
+    nonisolated func allowedChannels(for _: SPUUpdater) -> Set<String> {
+        Self.allowedChannels(for: SparkleUpdaterController.currentChannel())
+    }
+
+    /// An empty set means Sparkle's default channel only.
+    nonisolated static func allowedChannels(for channel: UpdateChannel) -> Set<String> {
+        switch channel {
+        case .stable: []
+        case .beta: ["beta"]
+        }
     }
 
     nonisolated func feedParameters(for _: SPUUpdater, sendingSystemProfile: Bool) -> [[String: String]] {

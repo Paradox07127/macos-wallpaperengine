@@ -61,6 +61,9 @@ final class Screen: Identifiable, Hashable {
 
     var playbackStateVersion: Int = 0
 
+    /// Advances on every committed save or removal of this display's configuration; reading it is how views track that configuration.
+    var configurationRevision: UInt = 0
+
     @objc private func notifyPlaybackStateChanged() {
         playbackStateVersion += 1
     }

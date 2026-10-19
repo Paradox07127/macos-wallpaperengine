@@ -59,20 +59,11 @@ final class UserShortcutRendererLink {
         push(registrations[index])
     }
 
-    nonisolated static func declaredKeys(manifestRoot: URL) -> Set<String> {
-        keys(of: .userShortcut, manifestRoot: manifestRoot)
-    }
-
     nonisolated static func declaredTextureKeys(manifestRoot: URL) -> Set<String> {
-        keys(of: .sceneTexture, manifestRoot: manifestRoot)
-    }
-
-    private nonisolated static func keys(of type: WallpaperEngineProjectPropertySchema.PropertyType,
-                                         manifestRoot: URL) -> Set<String> {
         guard let schema = try? WallpaperEngineProjectPropertySchema.read(from: manifestRoot, includeSchemeColor: true) else {
             return []
         }
-        return Set(schema.properties.filter { $0.type == type }.map(\.key))
+        return Set(schema.properties.filter { $0.type == .sceneTexture }.map(\.key))
     }
 
     private func storeDidChange(wallpaperID: String?) {

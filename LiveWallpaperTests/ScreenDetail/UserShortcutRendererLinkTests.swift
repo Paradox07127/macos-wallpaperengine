@@ -292,9 +292,9 @@ struct UserShortcutRendererLinkTests {
         let json = #"{"general":{"properties":{"launch":{"type":"usershortcut","text":"Launch","order":0},"speed":{"type":"slider","text":"Speed","value":1,"min":0,"max":2,"order":1},"background":{"type":"scenetexture","text":"Background","value":"","order":2}}}}"#
         try Data(json.utf8).write(to: folder.appendingPathComponent("project.json"))
 
-        #expect(UserShortcutRendererLink.declaredKeys(manifestRoot: folder) == ["launch"])
+        #expect(WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: folder) == ["launch"])
         #expect(UserShortcutRendererLink.declaredTextureKeys(manifestRoot: folder) == ["background"])
-        #expect(UserShortcutRendererLink.declaredKeys(manifestRoot: folder.appendingPathComponent("missing")).isEmpty)
+        #expect(WPEUserShortcutScriptBridge.declaredKeys(manifestRoot: folder.appendingPathComponent("missing")).isEmpty)
     }
 
     @Test("A scene whose only property is a usershortcut still gets a settings schema")

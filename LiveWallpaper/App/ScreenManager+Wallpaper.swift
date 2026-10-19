@@ -290,9 +290,37 @@ extension ScreenManager {
 
     func notifyWallpaperSessionChanged() {
         commitWallpaperSessionState(includePollingRefresh: true)
+        syncSystemWallpaperSelection()
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.reconcileEnvironmentOverlays()
         }
+    }
+
+    func syncSystemWallpaperSelection() {
+        if let onWallpaperSelectionChange {
+            for screen in screens where screen.runtimeSession != nil {
+                guard let configuration = getConfiguration(for: screen) else { continue }
+                onWallpaperSelectionChange(configuration, Self.systemWallpaperTitle(
+                    for: configuration, libraryBookmarks: BookmarkStore.shared.bookmarks,
+                    bookmarkName: { bookmarkDisplayName(for: $0) }
+                ))
+            }
+        }
+    }
+
+    static func systemWallpaperTitle(for configuration: ScreenConfiguration,
+                                     libraryBookmarks: [WallpaperBookmark], bookmarkName: (Data) -> String?) -> String {
+        let content = configuration.activeWallpaper
+        if let title = configuration.wpeOrigin?.title, !title.isEmpty {
+            return title
+        }
+        if let label = libraryBookmarks.first(where: { $0.content == content })?.label, !label.isEmpty {
+            return label
+        }
+        if case let .video(bookmarkData, _) = content, let name = bookmarkName(bookmarkData) {
+            return (name as NSString).deletingPathExtension
+        }
+        return BookmarkStore.defaultLabel(for: content)
     }
 
     /// Intent alone is the wrong test: during a safety suspend intent stays true while playback is stopped, so an intent-only toggle would run pause(), clearing intent and leaving the wallpaper dead after the suspend lifts.
@@ -424,6 +452,7 @@ extension ScreenManager {
               config.setAsLockScreen != enabled else { return }
         config.setAsLockScreen = enabled
         saveConfiguration(config)
+        if enabled { captureDesktopSnapshotsForLockIfNeeded() }
     }
 
     /// What the capture actually did, awaited rather than guessed: the caller

@@ -1,9 +1,11 @@
 @preconcurrency import AVFoundation
+import CoreImage
 import CoreMedia
 import CoreVideo
 import Foundation
-import QuartzCore
+@preconcurrency import IOSurface
 import os.log
+import QuartzCore
 
 /// Feeds one surface's AVSampleBufferDisplayLayer from an AVAssetReader, with
 /// a CMTimebase as the playback clock so rate changes (and the ease-to-still
@@ -34,6 +36,8 @@ final class VideoRenderer: @unchecked Sendable {
     private var failureReported = false
     private var requestGeneration: UInt64 = 0
     private var didSignalFirstFrame = false
+    /// A live scene frame was shown; scene playback never sets `sourceURL` or `didSignalFirstFrame`.
+    private var presentedRenderedFrame = false
     private var currentRate: Double = 0
     /// What the policy last asked for. The first frame must land on this, not
     /// on a hardcoded 1: an update can arrive before the first frame (lock
@@ -53,6 +57,16 @@ final class VideoRenderer: @unchecked Sendable {
     private var decodeFailureObserver: (any NSObjectProtocol)?
 
     var layer: CALayer { displayLayer }
+
+    /// Uses the displayed buffer, including live scene frames; no second video decoder or stale clock poster.
+    func snapshot() -> IOSurface? {
+        queue.sync {
+            guard let buffer = renderer.displayedPixelBuffer() else { return nil }
+            let image = CIImage(cvPixelBuffer: buffer)
+            guard let rendered = CIContext().createCGImage(image, from: image.extent) else { return nil }
+            return SnapshotFactory.makeIOSurface(image: rendered)
+        }
+    }
 
     init() {
         let prepared = Self.makeLayer()
@@ -186,6 +200,46 @@ final class VideoRenderer: @unchecked Sendable {
         waitForFirstDisplay()
     }
 
+    /// A live scene supplies an already-rendered IOSurface instead of a compressed video sample.
+    func enqueueRenderedFrame(_ pixelBuffer: CVReadOnlyPixelBuffer, first: Bool,
+                              isCurrent: @escaping @Sendable () -> Bool,
+                              onFirstFrame: (@Sendable () -> Void)?) {
+        queue.async { [self] in
+            guard isCurrent() else { return }
+            pixelBuffer.withUnsafeBuffer { buffer in
+                var format: CMVideoFormatDescription?
+                guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+                                                                   imageBuffer: buffer, formatDescriptionOut: &format) == noErr, let format else { return }
+                var sample: CMSampleBuffer?
+                var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+                guard CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
+                                                               imageBuffer: buffer, formatDescription: format, sampleTiming: &timing,
+                                                               sampleBufferOut: &sample) == noErr, let sample else { return }
+                if first {
+                    renderer.flush()
+                    presentedRenderedFrame = true
+                    if let timebase {
+                        CMTimebaseSetRate(timebase, rate: 0)
+                    }
+                }
+                if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true),
+                   CFArrayGetCount(attachments) > 0 {
+                    let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+                    CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                                         Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+                }
+                guard renderer.isReadyForMoreMediaData else { return }
+                renderer.enqueue(sample)
+                if first {
+                    waitForFirstDisplay()
+                    if isCurrent(), isLayerReadyForDisplay() {
+                        onFirstFrame?()
+                    }
+                }
+            }
+        }
+    }
+
     /// Bounded wait — a wallpaper switch must not hang on a layer that never
     /// reports ready, and one dropped frame beats a stalled Settings panel.
     private func waitForFirstDisplay(timeout: TimeInterval = 0.5) {
@@ -235,7 +289,8 @@ final class VideoRenderer: @unchecked Sendable {
             // frame stays) and wind the clock back before the new pump starts.
             // The first start after the poster seed must NOT flush — the seed
             // may not have displayed yet and flushing would un-seed the surface.
-            if sourceURL != nil || didSignalFirstFrame {
+            if sourceURL != nil || didSignalFirstFrame || presentedRenderedFrame {
+                presentedRenderedFrame = false
                 renderer.flush()
                 if let timebase {
                     CMTimebaseSetRate(timebase, rate: 0)

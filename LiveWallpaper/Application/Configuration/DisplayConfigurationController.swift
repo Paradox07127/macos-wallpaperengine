@@ -15,6 +15,7 @@ final class DisplayConfigurationController: DisplayConfigurationCommitting {
     private let releaseRuntimeSession: @MainActor (CGDirectDisplayID) -> Void
     private let notifyWallpaperSessionChanged: @MainActor () -> Void
     private let advanceSceneMutationIntent: @MainActor (CGDirectDisplayID) -> Void
+    private let configurationDidCommit: @MainActor (CGDirectDisplayID) -> Void
     private let now: @MainActor () -> Date
     private let calendar: @MainActor () -> Calendar
     private let notificationCenter: NotificationCenter
@@ -25,6 +26,7 @@ final class DisplayConfigurationController: DisplayConfigurationCommitting {
         releaseRuntimeSession: @MainActor @escaping (CGDirectDisplayID) -> Void,
         notifyWallpaperSessionChanged: @MainActor @escaping () -> Void,
         advanceSceneMutationIntent: @MainActor @escaping (CGDirectDisplayID) -> Void,
+        configurationDidCommit: @MainActor @escaping (CGDirectDisplayID) -> Void = { _ in },
         now: @MainActor @escaping () -> Date = Date.init,
         calendar: @MainActor @escaping () -> Calendar = { .current },
         notificationCenter: NotificationCenter = .default
@@ -34,6 +36,7 @@ final class DisplayConfigurationController: DisplayConfigurationCommitting {
         self.releaseRuntimeSession = releaseRuntimeSession
         self.notifyWallpaperSessionChanged = notifyWallpaperSessionChanged
         self.advanceSceneMutationIntent = advanceSceneMutationIntent
+        self.configurationDidCommit = configurationDidCommit
         self.now = now
         self.calendar = calendar
         self.notificationCenter = notificationCenter
@@ -73,8 +76,10 @@ final class DisplayConfigurationController: DisplayConfigurationCommitting {
         return removed
     }
 
-    /// Next main-actor tick so subscribers run outside the current SwiftUI reconcile.
+    /// The commit hook runs synchronously so observers redraw this turn; the notification waits for the
+    /// next main-actor tick so its subscribers run outside the current SwiftUI reconcile.
     private func postChange(for screenID: CGDirectDisplayID) {
+        configurationDidCommit(screenID)
         Task { @MainActor [notificationCenter] in
             notificationCenter.post(
                 name: .wallpaperConfigurationDidChange,

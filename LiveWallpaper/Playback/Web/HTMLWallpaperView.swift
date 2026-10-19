@@ -486,6 +486,25 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         }
     }
 
+    /// Only the disposable native-wallpaper recording view receives these overrides.
+    func hideClockCalendarForSystemWallpaperRecording() async throws {
+        if let schema = wallpaperEnginePropertySchema {
+            let previous = lastAppliedConfig?.projectWallpaperEngineProperties(forProjectKey: wallpaperEngineProjectKey) ?? [:]
+            var overrides = previous
+            for property in schema.properties where property.type == .bool {
+                guard SystemWallpaperClockPolicy.isWidgetName(property.key)
+                    || SystemWallpaperClockPolicy.isWidgetName(property.displayText) else { continue }
+                // A Hide Clock checkbox has the opposite polarity to Show Clock.
+                overrides[property.key] = .bool(property.key.lowercased().hasPrefix("hide")
+                    || property.displayText.lowercased().hasPrefix("hide"))
+            }
+            if let script = WallpaperEngineWebPropertyBridge.applyScript(schema: schema, previousOverrides: previous, overrides: overrides) {
+                _ = try await webView.evaluateJavaScript(script)
+            }
+        }
+        _ = try await webView.evaluateJavaScript(SystemWallpaperClockPolicy.webScript)
+    }
+
     private func applyRuntimeState(previous: HTMLConfig?, current: HTMLConfig) {
         var statements: [String] = []
         let audioChanged = previous?.muteAudio != current.muteAudio
@@ -1040,6 +1059,13 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             navigation,
             currentGeneration: preparationGeneration
         ) else { return }
+        if case let .url(requestedURL) = lastSource,
+           ["http", "https"].contains(requestedURL.scheme?.lowercased() ?? ""),
+           !["http", "https"].contains(webView.url?.scheme?.lowercased() ?? "") {
+            // A blank/error document finishing is not the requested remote page becoming ready.
+            failedPreparationGeneration = preparationGeneration
+            return
+        }
         resetNavigationFailureState()
         // A load that succeeded outside `retry()` (config rebuild, scheduler) still retires the classified
         // cause — unless this generation already failed: an HTTP error page finishes loading like any document.

@@ -8,6 +8,7 @@ let wpxLog = Logger(subsystem: "com.loomscreen.wallpaper", category: "extension"
 /// temporary-exception; the main app's entitlements stay untouched).
 struct SharedLibraryStore: Sendable {
     let hostBundleID: String
+    var rootOverride: URL?
 
     /// The appex bundle id is `<host>.wallpaper`, so the host id is derivable
     /// without any per-SKU compile flag (packages/appexes don't see LITE_BUILD).
@@ -20,7 +21,7 @@ struct SharedLibraryStore: Sendable {
     }
 
     func loadManifest() -> SystemWallpaperManifest {
-        let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
+        let url = sharedRoot().appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: url) else {
             wpxLog.info("manifest missing at \(url.path, privacy: .private)")
             return .empty
@@ -37,7 +38,7 @@ struct SharedLibraryStore: Sendable {
     /// would otherwise show a black wallpaper need to tell "damaged" apart
     /// from "empty library" — `loadManifest()` collapses both to empty.
     func loadManifestIfReadable() -> SystemWallpaperManifest? {
-        let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
+        let url = sharedRoot().appendingPathComponent("manifest.json")
         // Only absence means "empty library". A present file we cannot read is
         // damaged as far as callers are concerned — reporting it empty stops
         // every running choice as if the user had deleted them.
@@ -47,7 +48,7 @@ struct SharedLibraryStore: Sendable {
     }
 
     func videoURL(for item: SystemWallpaperManifest.Item) -> URL {
-        SystemWallpaperPaths.videosDirectory(hostBundleID: hostBundleID)
+        videosDirectory()
             .appendingPathComponent(item.fileName)
     }
 
@@ -56,7 +57,7 @@ struct SharedLibraryStore: Sendable {
     /// `SystemWallpaperLock` on both sides — the atomic write only prevents
     /// torn JSON, the lock is what prevents lost updates.
     func writeManifest(_ manifest: SystemWallpaperManifest) throws {
-        let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
+        let url = sharedRoot().appendingPathComponent("manifest.json")
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -65,33 +66,34 @@ struct SharedLibraryStore: Sendable {
     }
 
     func sharedRoot() -> URL {
-        SystemWallpaperPaths.sharedRoot(hostBundleID: hostBundleID)
+        rootOverride ?? SystemWallpaperPaths.sharedRoot(hostBundleID: hostBundleID)
     }
 
     /// Nil when the app never declared one (a pre-declaration app) or the file will not decode — never a mismatch.
     func loadDeclaredProvider() -> SystemWallpaperProviderIdentity? {
-        let url = SystemWallpaperPaths.providerURL(hostBundleID: hostBundleID)
+        let url = sharedRoot().appendingPathComponent("provider.json")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperProviderIdentity.self, from: data)
     }
 
     func videosDirectory() -> URL {
-        SystemWallpaperPaths.videosDirectory(hostBundleID: hostBundleID)
+        sharedRoot().appendingPathComponent("Videos", isDirectory: true)
     }
 
-    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, runtimeHealthy: Bool = true,
+    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, activeDisplayIDs: [UInt32]? = nil, runtimeHealthy: Bool = true,
                         playbackFailures: [String: String]? = nil) {
         let beat = SystemWallpaperHeartbeat(
             timestamp: Date(),
             activeChoiceID: activeChoiceID,
             activeChoiceIDs: activeChoiceIDs,
+            activeDisplayIDs: activeDisplayIDs,
             runtimeHealthy: runtimeHealthy,
             osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
             provider: .current(),
             playbackFailures: playbackFailures
         )
         guard let data = try? SystemWallpaperCoding.encoder.encode(beat) else { return }
-        let url = SystemWallpaperPaths.heartbeatURL(hostBundleID: hostBundleID)
+        let url = sharedRoot().appendingPathComponent("heartbeat.json")
         do {
             // The shared directory does not exist until the app publishes its
             // first video, but the app reads this heartbeat to tell "extension

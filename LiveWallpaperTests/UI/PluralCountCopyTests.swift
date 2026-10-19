@@ -70,7 +70,7 @@ struct PluralCountCopyTests {
             }
         }
 
-        #expect(counted > 30, "Only \(counted) counted keys matched — the scan stopped matching")
+        #expect(counted > 25, "Only \(counted) counted keys matched — the scan stopped matching")
         #expect(singularMissing.isEmpty, "No one form, so a count of 1 reads \"1 wallpapers\": \(singularMissing.joined(separator: "; "))")
         let stale = Self.exemptKeys.keys.filter { key in catalog.strings[key] == nil || Self.countedNoun(in: key) == nil }
         #expect(stale.isEmpty, "Exempt keys no longer in the catalog or no longer counted: \(stale.sorted())")

@@ -553,6 +553,45 @@ struct ModalActionsTests {
         )
     }
 
+    /// `reconcileCover` is tested as a value in `HomeCoverCaptureRetryTests`; here, that both stage paths run it.
+    @Test("A display left without a wallpaper drops its cover when its state is refreshed and when the stage is rebuilt")
+    func removedWallpaperCoversAreReconciled() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        for signature in ["private func refreshState(for id:", "private func syncDisplays("] {
+            let start = try #require(home.range(of: signature), Comment(rawValue: signature))
+            let rest = home[start.upperBound...]
+            let body = rest[..<(rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex)]
+            #expect(body.contains("reconcileCover("), "\(signature) keeps the cover of a wallpaper the display no longer runs")
+        }
+    }
+
+    @Test("Views refresh from each display's configuration revision, not the deferred change notification")
+    func viewsRefreshFromConfigurationRevision() throws {
+        for path in [
+            "LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift",
+            "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift",
+            "LiveWallpaper/Views/Workshop/BrowsePane.swift",
+        ] {
+            let source = try RepositoryRoot.source(path)
+            #expect(
+                !source.contains("publisher(for: .wallpaperConfigurationDidChange)"),
+                Comment(rawValue: "\(path) refreshes a tick late from the change notification")
+            )
+            #expect(source.contains("configurationRevision"), Comment(rawValue: "\(path) never observes a configuration revision"))
+        }
+    }
+
+    /// Which configuration changes recapture the cover is tested as a value (`coverSignature`) in `HomeCoverCaptureRetryTests`.
+    @Test("The stage follows each display's configuration revision rather than every configuration-change notification")
+    func stageFollowsConfigurationRevisions() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        #expect(
+            !home.contains("publisher(for: .wallpaperConfigurationDidChange)"),
+            "a volume or mute save still recaptures the cover through the change notification"
+        )
+        #expect(home.contains("configurationRevision"), "the stage never hears that a display's configuration was committed")
+    }
+
     @Test("A live frame handed to the modal is its preview, and nothing is decoded")
     func livePreviewSkipsTheDecode() async throws {
         let fixture = Fixture()

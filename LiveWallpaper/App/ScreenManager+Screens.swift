@@ -190,6 +190,7 @@ extension ScreenManager {
         let snapshot = screens
         for screen in snapshot {
             releaseRuntimeSession(screen)
+            screen.configurationRevision &+= 1
         }
         Task { @MainActor in
             for screen in snapshot {
@@ -428,7 +429,9 @@ extension ScreenManager {
     }
     
     func getConfiguration(for screen: Screen) -> ScreenConfiguration? {
-        configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
+        // The store is not observable; this read is what invalidates callers when the configuration commits.
+        _ = screen.configurationRevision
+        return configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
     }
 
     func displayPlaybackDiffersFromDefaults(for screen: Screen) -> Bool {

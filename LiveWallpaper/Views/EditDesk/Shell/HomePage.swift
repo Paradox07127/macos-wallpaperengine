@@ -36,6 +36,8 @@ struct HomePage: View {
     @State private var coverGenerations: [CGDirectDisplayID: Int] = [:]
     /// The generation whose capture last became a display's cover; behind `coverGenerations` while a newer one is out.
     @State private var landedCoverGenerations: [CGDirectDisplayID: Int] = [:]
+    /// `coverSignature` at each display's last configuration commit; a nil value is a removed configuration.
+    @State private var coverSignatures: [CGDirectDisplayID: ScreenConfiguration?] = [:]
     #if !LITE_BUILD
     /// Per display, the earliest its Workshop cover may be saved; none for a display that has not switched since the page opened.
     @State private var workshopCoverNotBefore: [CGDirectDisplayID: ContinuousClock.Instant] = [:]
@@ -473,11 +475,7 @@ struct HomePage: View {
         .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in syncDisplays() }
         // Switching HDR keeps the layout signature, so ScreenManager skips its refresh and never posts `.screensRefreshed`.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in syncDisplays() }
-        .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
-            guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
-            refreshState(for: id)
-            refreshCover(for: id, crossfade: true)
-        }
+        .onChange(of: configurationRevisions) { old, new in configurationsCommitted(from: old, to: new) }
         // `presenting:` hands the action the display it was opened for: dismissal clears the state.
         .alert("Web address", isPresented: pasteURLPresented, presenting: pasteURLTarget) { id in
             TextField("example.com", text: $pastedAddress)
@@ -1104,6 +1102,13 @@ struct HomePage: View {
                 state: state(for: screen)
             )
             describeWallpaper(for: screen, in: &display)
+            let configuration = screenManager.getConfiguration(for: screen)
+            if Self.reconcileCover(&display, hasConfiguration: configuration != nil) {
+                coverGenerations[screen.id, default: 0] &+= 1
+            }
+            if coverSignatures[screen.id] == nil {
+                coverSignatures[screen.id] = Self.coverSignature(of: configuration)
+            }
             return display
         }
         for display in stage.displays where display.cover == nil && display.state != .empty {
@@ -1165,6 +1170,53 @@ struct HomePage: View {
               let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
         stage.displays[index].state = state(for: screen)
         describeWallpaper(for: screen, in: &stage.displays[index])
+        if Self.reconcileCover(&stage.displays[index], hasConfiguration: screenManager.getConfiguration(for: screen) != nil) {
+            coverGenerations[id, default: 0] &+= 1
+        }
+    }
+
+    private var configurationRevisions: [CGDirectDisplayID: UInt] {
+        Dictionary(screenManager.screens.map { ($0.id, $0.configurationRevision) }, uniquingKeysWith: { $1 })
+    }
+
+    /// Displays that appear or leave are `syncDisplays`'s; this handles commits on displays present before and after.
+    private func configurationsCommitted(from old: [CGDirectDisplayID: UInt], to new: [CGDirectDisplayID: UInt]) {
+        for (id, revision) in new {
+            guard let previous = old[id], previous != revision else { continue }
+            refreshState(for: id)
+            let signature = screenManager.screen(withID: id).flatMap { Self.coverSignature(of: screenManager.getConfiguration(for: $0)) }
+            guard coverSignatures[id] != .some(signature) else { continue }
+            coverSignatures[id] = signature
+            refreshCover(for: id, crossfade: true)
+        }
+    }
+
+    /// Drops the cover of a display that no longer has a wallpaper; true when it has none, so an
+    /// in-flight capture of the removed wallpaper is superseded even before its first cover landed.
+    static func reconcileCover(_ display: inout StageDisplay, hasConfiguration: Bool) -> Bool {
+        guard !hasConfiguration else { return false }
+        display.cover = nil
+        return true
+    }
+
+    /// The configuration with every sound-only field reset, so two configurations that draw the same compare equal.
+    /// Fields are reset rather than visual ones listed: a new visual field must still recapture the cover.
+    static func coverSignature(of configuration: ScreenConfiguration?) -> ScreenConfiguration? {
+        guard var signature = configuration else { return nil }
+        signature.muted = false
+        signature.videoVolume = 0
+        if case let .html(source, config) = signature.activeWallpaper {
+            signature.activeWallpaper = .html(source: source, config: silenced(config))
+        }
+        signature.savedHTMLConfig = signature.savedHTMLConfig.map(silenced)
+        return signature
+    }
+
+    private static func silenced(_ config: HTMLConfig) -> HTMLConfig {
+        var config = config
+        config.muteAudio = false
+        config.audioVolume = 0
+        return config
     }
 
     /// What the display draws on its own screen and which transport buttons it offers. Recomputed
@@ -1222,6 +1274,8 @@ struct HomePage: View {
     /// Covers are stills of the app's own rendering (`WallpaperCoverCapture`), re-taken after
     /// every configuration change; the desktop itself is the live preview.
     private func refreshCover(for id: CGDirectDisplayID, crossfade: Bool) {
+        guard let screen = screenManager.screens.first(where: { $0.id == id }),
+              screenManager.getConfiguration(for: screen) != nil else { return }
         let generation = (coverGenerations[id] ?? 0) + 1
         coverGenerations[id] = generation
         #if !LITE_BUILD

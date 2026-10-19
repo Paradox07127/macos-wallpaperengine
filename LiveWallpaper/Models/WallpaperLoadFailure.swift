@@ -105,6 +105,7 @@ struct WallpaperLoadAttempt: Identifiable {
     var isInspecting = true
 }
 
+#if !SYSTEM_WALLPAPER_EXTENSION
 @MainActor
 @Observable
 final class WallpaperLoadState {
@@ -137,3 +138,4 @@ final class WallpaperLoadState {
         attempts.removeValue(forKey: screen.id)
     }
 }
+#endif
