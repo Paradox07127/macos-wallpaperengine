@@ -531,6 +531,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
         surface.playbackGeneration &+= 1
         surface.publishedAt = item.addedAt
+        surface.publishedContentIdentity = WallpaperPublishedContentIdentity.read(at: url)
         surface.resolvedItemID = item.id
         surface.playbackFailure = nil
         // Picker previews use their prepared poster; loading a full scene for every tile exhausts the provider budget.
@@ -763,7 +764,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
     }
 
-    /// Restarts each surface whose choice now resolves to another item. The bridge runs it on every library change, live connection or not.
+    /// Restarts each changed publication, including an upgraded capsule that keeps its library ID and date.
     static func retargetSurfaces(registry: SurfaceRegistry, store: SharedLibraryStore) {
         queue.async {
             guard let manifest = store.loadManifestIfReadable() else { return }
@@ -774,7 +775,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     surface.resolvedItemID = nil
                     continue
                 }
-                guard surface.publishedAt != item.addedAt || surface.resolvedItemID != item.id else { continue }
+                let identity = WallpaperPublishedContentIdentity.read(at: store.videoURL(for: item))
+                guard surface.publishedAt != item.addedAt || surface.resolvedItemID != item.id
+                    || surface.publishedContentIdentity != identity else { continue }
                 startPlayback(surface: surface, choiceID: id, size: surface.bridge.rootLayer.bounds.size, manifest: manifest,
                               registry: registry, store: store, replyOnFirstFrame: nil)
             }

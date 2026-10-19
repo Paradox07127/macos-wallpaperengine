@@ -29,8 +29,8 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertEqual(cell, try Data(contentsOf: oracle.appendingPathComponent("rgba-cell.bin")))
         XCTAssertEqual([mesh.minX, mesh.maxX, mesh.top, mesh.bottom, mesh.lineHeight],
                        [bitmap.minX, bitmap.maxX, bitmap.top, bitmap.bottom, bitmap.lineHeight])
-        XCTAssertEqual(prepared.layout.fboSize, planner.layout(object, effectCount: 0).fboSize)
-        XCTAssertEqual(prepared.layout.blockOffset, planner.layout(object, effectCount: 0).blockOffset)
+        XCTAssertEqual(prepared.layout.fboSize, try planner.layout(object, effectCount: 0).fboSize)
+        XCTAssertEqual(prepared.layout.blockOffset, try planner.layout(object, effectCount: 0).blockOffset)
         let vertices = mesh.mono.vertices, ordinary = bitmap.mono.vertices
         XCTAssertEqual(vertices.count, 4)
         // Actual original y_ppem33: vertex-only gutter33*12/32=12.375, not the24px logical cell extent.
@@ -78,7 +78,7 @@ final class ParityTextDistanceConsumerTests: XCTestCase {
         XCTAssertEqual(first.atlasKey, other.atlasKey)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.contentGeneration, generation)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: 43)?.references, 2)
-        let ordinary = planner.plan(text(), effectCount: 0)
+        let ordinary = try planner.plan(text(), effectCount: 0)
         XCTAssertEqual(ordinary.atlasKey, "NotoSans-Regular.ttf_512")
         XCTAssertEqual(planner.atlases[ordinary.atlasKey]?.mono.format, .r8)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: 43)?.references, 1)

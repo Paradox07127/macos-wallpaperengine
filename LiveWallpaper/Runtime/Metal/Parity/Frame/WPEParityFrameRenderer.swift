@@ -2801,6 +2801,16 @@ final class WPEParityFrameRenderer {
         guard let format = WPEParityFrameDrawPlanner.pixelFormats[resource.format] else {
             throw WPEParityGraphExecutionError.unsupportedFormat(resource.format)
         }
+        // Reject before Metal's Objective-C descriptor validation can abort the process.
+        let maximumDimension = WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
+        guard resource.width > 0, resource.height > 0,
+              resource.width <= maximumDimension, resource.height <= maximumDimension,
+              resource.mipCount > 0,
+              resource.mipCount <= Int.bitWidth - max(resource.width, resource.height).leadingZeroBitCount,
+              [1, 2, 4, 8].contains(resource.sampleCount), device.supportsTextureSampleCount(resource.sampleCount),
+              resource.sampleCount == 1 || resource.mipCount == 1 else {
+            throw WPEParityFrameRenderError.allocationFailed(resource.id)
+        }
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = resource.sampleCount > 1 ? .type2DMultisample : .type2D
         descriptor.pixelFormat = format

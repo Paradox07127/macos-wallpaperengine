@@ -25,7 +25,7 @@ final class ParityTextPlannerTests: XCTestCase {
 
     func testEveryQuadTakesItsAtlasEntryUVs() throws {
         let planner = try Self.makePlanner()
-        let (layout, key) = planner.plan(Self.textObject(), effectCount: 0)
+        let (layout, key) = try planner.plan(Self.textObject(), effectCount: 0)
         let mesh = try XCTUnwrap(layout.mesh)
         let atlas = try XCTUnwrap(planner.atlases[key]).mono
         XCTAssertEqual(mesh.mono.glyphKeys.count, 2)
@@ -41,13 +41,13 @@ final class ParityTextPlannerTests: XCTestCase {
 
     func testReplanningTheSameTextInsertsNothing() throws {
         let planner = try Self.makePlanner()
-        let first = planner.plan(Self.textObject(), effectCount: 0)
+        let first = try planner.plan(Self.textObject(), effectCount: 0)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.takeDirty(), true)
-        let second = planner.plan(Self.textObject(), effectCount: 0)
+        let second = try planner.plan(Self.textObject(), effectCount: 0)
         XCTAssertEqual(second.layout, first.layout)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.isDirty, false)
         // Another object at the same font and size shares the instance.
-        _ = planner.plan(Self.textObject("U", text: "iH"), effectCount: 0)
+        _ = try planner.plan(Self.textObject("U", text: "iH"), effectCount: 0)
         XCTAssertEqual(planner.atlases.count, 1)
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.isDirty, false)
     }
@@ -56,7 +56,7 @@ final class ParityTextPlannerTests: XCTestCase {
         let planner = try Self.makePlanner()
         var known: Set<UInt32> = []
         for text in ["HH", "ii", "H", ""] {
-            let planned = planner.plan(Self.textObject(text: text), effectCount: 0)
+            let planned = try planner.plan(Self.textObject(text: text), effectCount: 0)
             let keys = planned.layout.mesh?.mono.glyphKeys ?? []
             known.formUnion(keys)
             let atlas = try XCTUnwrap(planner.atlases[planned.atlasKey]).mono
@@ -72,8 +72,12 @@ final class ParityTextPlannerTests: XCTestCase {
         let planner = try Self.makePlanner()
         var object = Self.textObject(text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz")
         object.pointSize = 256
-        let planned = planner.plan(object, effectCount: 0)
+        // Stress atlas occupancy with many large glyphs while keeping the resulting render target legal.
+        object.limitWidth = true
+        object.maxWidth = 8192
+        let planned = try planner.plan(object, effectCount: 0)
         let mesh = try XCTUnwrap(planned.layout.mesh)
+        XCTAssertGreaterThan(mesh.lineCount, 1)
         let atlas = try XCTUnwrap(planner.atlases[planned.atlasKey]).mono
         XCTAssertGreaterThan(mesh.mono.glyphKeys.count, 2)
         for (quad, key) in mesh.mono.glyphKeys.enumerated() {
@@ -86,7 +90,7 @@ final class ParityTextPlannerTests: XCTestCase {
 
     func testOldMeshCannotReleaseAReinsertedGlyphAfterAtlasReset() throws {
         let planner = try Self.makePlanner()
-        let planned = planner.plan(Self.textObject(text: "H"), effectCount: 0)
+        let planned = try planner.plan(Self.textObject(text: "H"), effectCount: 0)
         let key = try XCTUnwrap(planned.layout.mesh?.mono.glyphKeys.first)
         var instance = try XCTUnwrap(planner.atlases[planned.atlasKey])
         instance.mono.reset()
@@ -98,7 +102,7 @@ final class ParityTextPlannerTests: XCTestCase {
         // Taking over a scene must preserve the stale mesh's ownership epoch, as well as its old UVs.
         planner.adopt(objectID: "T", layout: planned.layout, atlasKey: planned.atlasKey)
 
-        _ = planner.plan(Self.textObject(text: ""), effectCount: 0)
+        _ = try planner.plan(Self.textObject(text: ""), effectCount: 0)
 
         XCTAssertEqual(planner.atlases[planned.atlasKey]?.mono.entry(forKey: key)?.references, 1)
     }
@@ -112,7 +116,7 @@ final class ParityTextPlannerTests: XCTestCase {
         XCTAssertEqual(WPEParityTextMatrices.glyphTranslation(direct),
                        SIMD2(-width / 2 - min(direct.minX, 0), height / 2 - direct.top))
 
-        let (layout, key) = planner.plan(object, effectCount: 1)
+        let (layout, key) = try planner.plan(object, effectCount: 1)
         let text = WPEParitySceneText(object: object, effectCount: 1, layout: layout, atlasKey: key, hdr: false,
                                       orthographic: true)
         let mesh = try XCTUnwrap(layout.mesh)

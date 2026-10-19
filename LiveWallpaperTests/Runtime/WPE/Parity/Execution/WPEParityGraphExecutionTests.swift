@@ -23,6 +23,65 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testRendererRejectsTargetsAboveTheDeviceLimitAndStillLoadsNormalTargets() async throws {
+        let harness = try makeHarness()
+        let limit = WPEMetalTextureLimits.maximum2DTextureDimension(for: harness.device)
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-target-limits-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for (width, height) in [(limit + 1, 4), (4, limit + 1)] {
+            do {
+                _ = try await commandRenderer(harness, directory: directory, authoredClear: true,
+                                              width: width, height: height)
+                XCTFail("The renderer accepted a target above the device limit")
+            } catch let failure as WPEParityFrameRenderError {
+                guard case .allocationFailed = failure else { throw failure }
+            }
+        }
+        let renderer = try await commandRenderer(harness, directory: directory, authoredClear: true)
+        XCTAssertEqual([renderer.backbuffer.width, renderer.backbuffer.height], [4, 4])
+        try await submit(renderer)
+    }
+
+    func testAliasedTargetsRejectInvalidDescriptorsBeforeHeapSizing() throws {
+        let harness = try makeHarness()
+        let limit = WPEMetalTextureLimits.maximum2DTextureDimension(for: harness.device)
+        let shapes = [(limit + 1, 4, 1, 1), (4, limit + 1, 1, 1), (0, 4, 1, 1), (-1, 4, 1, 1),
+                      (4, 0, 1, 1), (4, 4, 4, 1), (4, 4, 2, 2), (4, 4, 1, 3), (4, 4, 1, 0)]
+        for (width, height, mips, samples) in shapes {
+            let resources = [(WPEResourceID("A"), WPEResourceLifetime.frameTransient), ("B", .persistent)].map { id, lifetime in
+                WPELogicalResource(id: id, width: width, height: height, mipCount: mips,
+                                   sampleCount: samples, lifetime: lifetime)
+            }
+            let graph = try WPERenderGraphCompiler.compile(resources: resources, operations: [
+                bind("A"), clear("A", .init(red: 1, green: 0, blue: 0, alpha: 1)),
+                draw(overwrites: true), op(.copy(source: "A", destination: "B")),
+            ])
+            XCTAssertEqual(graph.storage["A"], .aliased(group: 0), "the guard must cover the actual heap path")
+            XCTAssertThrowsError(try WPEParityGraphExecutor(graph: graph, device: harness.device,
+                                                            drawEncoder: harness.encoder, arena: harness.arena,
+                                                            pixelFormats: Self.formats)) {
+                XCTAssertEqual($0 as? WPEParityGraphExecutionError, .incompatibleTexture("A"))
+            }
+        }
+    }
+
+    func testMemorylessTargetsRejectOversizedDescriptorsBeforeAllocation() throws {
+        let harness = try makeHarness()
+        let width = WPEMetalTextureLimits.maximum2DTextureDimension(for: harness.device) + 1
+        let resources = [WPELogicalResource(id: "M", width: width, height: 4, sampleCount: 4, lifetime: .frameTransient),
+                         WPELogicalResource(id: "R", width: width, height: 4, lifetime: .persistent)]
+        let graph = try WPERenderGraphCompiler.compile(resources: resources, operations: [
+            bind("M"), clear("M", .init(red: 0, green: 0, blue: 0, alpha: 1)), draw(overwrites: true),
+            op(.resolve(source: "M", destination: "R")),
+        ])
+        XCTAssertEqual(graph.storage["M"], .memoryless)
+        XCTAssertThrowsError(try WPEParityGraphExecutor(graph: graph, device: harness.device,
+                                                        drawEncoder: harness.encoder, arena: harness.arena,
+                                                        pixelFormats: Self.formats)) {
+            XCTAssertEqual($0 as? WPEParityGraphExecutionError, .incompatibleTexture("M"))
+        }
+    }
+
     func testLiveClearUsesTheLastOperationOfTheExactSubresource() throws {
         let harness = try makeHarness()
         let (r, s, t) = try (makeTexture(harness, mips: 2), makeTexture(harness), makeTexture(harness))

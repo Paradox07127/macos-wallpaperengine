@@ -9,7 +9,7 @@ final class ParitySceneTextTests: XCTestCase {
     private func sceneText(_ object: WPEParityTextObject, effectCount: Int = 0,
                            orthographic: Bool = true) throws -> WPEParitySceneText {
         let planner = try ParityTextPlannerTests.makePlanner()
-        let (layout, key) = planner.plan(object, effectCount: effectCount)
+        let (layout, key) = try planner.plan(object, effectCount: effectCount)
         return WPEParitySceneText(object: object, effectCount: effectCount, layout: layout, atlasKey: key, hdr: false,
                                   orthographic: orthographic)
     }

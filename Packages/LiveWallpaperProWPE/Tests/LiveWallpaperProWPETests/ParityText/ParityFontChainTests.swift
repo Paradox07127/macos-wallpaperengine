@@ -141,7 +141,7 @@ final class ParityFontChainTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         try data.write(to: directory.appendingPathComponent("bitmap.ttf"))
         let planner = WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(directory)]))
-        let planned = planner.plan(WPEParityTextObject(json: .object([
+        let planned = try planner.plan(WPEParityTextObject(json: .object([
             "id": .string("bitmap"), "font": .string("bitmap.ttf"), "text": .string("A"),
             "pointsize": .number(24),
         ])), effectCount: 0)

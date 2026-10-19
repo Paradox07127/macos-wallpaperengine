@@ -17,6 +17,7 @@ public enum WPEParityTextPreparationError: Error, Equatable, Sendable {
     case unsupportedColorFieldScale(Int)
     case zeroAreaDistanceGlyph
     case nonfiniteDrawParameters
+    case invalidLayoutExtent
     case unqualifiedDistanceFieldGroup
     case distanceFieldGenerationFailed
     case distanceFieldAtlasAdmissionFailed

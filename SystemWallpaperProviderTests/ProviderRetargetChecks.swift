@@ -40,10 +40,39 @@ private struct Fixture {
                 made?.isPreview = isPreview
                 made?.resolvedItemID = item.id
                 made?.publishedAt = item.addedAt
+                made?.publishedContentIdentity = WallpaperPublishedContentIdentity.read(at: store.videoURL(for: item))
                 continuation.resume()
             }
         }
         return made
+    }
+
+    func playbackGeneration(of surface: WallpaperSurface, failure: String? = nil) async -> UInt64 {
+        nonisolated(unsafe) let surface = surface
+        return await withCheckedContinuation { continuation in
+            WallpaperXPCHandler.queue.async {
+                if let failure {
+                    surface.playbackFailure = failure
+                }
+                continuation.resume(returning: surface.playbackGeneration)
+            }
+        }
+    }
+
+    /// Match the publisher's directory swap while keeping the same manifest item and date.
+    func replaceCapsule(_ item: SystemWallpaperManifest.Item) throws {
+        let url = store.videoURL(for: item)
+        let incoming = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+        let backup = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+        let oldIdentity = WallpaperPublishedContentIdentity.read(at: url)
+        check(oldIdentity != nil, "fixture cannot observe the original capsule identity")
+        try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
+        try Data("new parity capsule".utf8).write(to: incoming.appendingPathComponent("configuration.json"))
+        try FileManager.default.moveItem(at: url, to: backup)
+        defer { try? FileManager.default.removeItem(at: backup) }
+        try FileManager.default.moveItem(at: incoming, to: url)
+        let newIdentity = WallpaperPublishedContentIdentity.read(at: url)
+        check(newIdentity != nil && newIdentity != oldIdentity, "fixture did not replace the filesystem object")
     }
 
     func resolvedItemID(of surface: WallpaperSurface) async -> String? {
@@ -87,6 +116,32 @@ private struct Fixture {
             await drainLifecycle()
             let resolved = await fixture.resolvedItemID(of: surface)
             check(resolved == "b", "preview switched to a scene but still records \(resolved ?? "nil"), so every library change reseeds it")
+            surface.renderer.stopSync()
+        }
+
+        // Migration keeps ID/date. A replacement must restart both an already failed and an in-flight/loaded surface,
+        // while subsequent unchanged notifications must not retry a failed load or reseed the preview repeatedly.
+        for (isPreview, failure) in [(false, nil), (false, "scene.load.failed"), (true, nil)] as [(Bool, String?)] {
+            let fixture = try Fixture()
+            let item = try fixture.item("same", file: "same.scene", addedAt: old)
+            let manifest = SystemWallpaperManifest(version: 1, items: [item], selectedItemID: item.id)
+            try fixture.store.writeManifest(manifest)
+            guard let surface = await fixture.servingSurface(item, isPreview: isPreview) else { return check(false, "no surface") }
+            let before = await fixture.playbackGeneration(of: surface, failure: failure)
+            let bridge = WallpaperXPCBridge(store: fixture.store, registry: fixture.registry)
+            bridge.libraryDidChange()
+            await drainLifecycle()
+            await check(fixture.playbackGeneration(of: surface) == before, "unchanged capsule restarted")
+
+            try fixture.replaceCapsule(item)
+            bridge.libraryDidChange()
+            await drainLifecycle()
+            await check(fixture.playbackGeneration(of: surface) == before + 1,
+                        "same-ID/date capsule replacement did not restart preview=\(isPreview), failure=\(failure ?? "none")")
+            check(fixture.store.loadManifest() == manifest, "retarget mutated user identity/date/selection")
+            bridge.libraryDidChange()
+            await drainLifecycle()
+            await check(fixture.playbackGeneration(of: surface) == before + 1, "unchanged replacement repeatedly restarted")
             surface.renderer.stopSync()
         }
 

@@ -157,11 +157,12 @@ final class ParityTextObjectTests: XCTestCase {
         XCTAssertEqual(text.outlineColor, .zero)
     }
 
-    func testHugeFinitePaddingKeepsTheFBOSizeFinite() {
+    func testHugeFinitePaddingKeepsAtLeastOneBackingPixel() throws {
         let mesh = WPEParityTextMesh(minX: 0, bottom: -10, maxX: 20, top: 10, lineHeight: 20, lineCount: 1, pointSize: 32)
         var input = WPEParityTextObject(json: .object(["text": .string("a")])).layoutInput(effectCount: 1)
         input.padding = SIMD2(-1e30, 1e30)
-        XCTAssertEqual(WPEParityTextLayoutEngine.fboSize(mesh, input: input), SIMD2(-1004, 1044))
+        XCTAssertEqual(try WPEParityTextLayoutEngine.fboSize(mesh, input: input), SIMD2(1, 1044))
+        XCTAssertEqual(input.padding, SIMD2(-1e30, 1e30), "backing bounds do not rewrite authored padding")
     }
 
     func testFontSizeAndLetterSpacingAreNotRead() throws {

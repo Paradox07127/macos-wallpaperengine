@@ -134,7 +134,12 @@ public struct WPEParityTextLayout: Hashable, Sendable {
 
 /// WPE 2.8.42's text layout, FUN_1401b0410, with the alignment offsets of FUN_140256f20.
 public enum WPEParityTextLayoutEngine {
-    public static func layout(_ input: WPEParityTextLayoutInput, fonts: WPEParityFontLibrary) -> WPEParityTextLayout {
+    public static func layout(_ input: WPEParityTextLayoutInput, fonts: WPEParityFontLibrary) throws -> WPEParityTextLayout {
+        // Both bitmap and field text share this boundary, including live script relayouts.
+        guard [input.pointSize, input.padding.x, input.padding.y, input.spacing.x, input.spacing.y,
+               input.maxWidth].allSatisfy(\.isFinite) else {
+            throw WPEParityTextPreparationError.invalidLayoutExtent
+        }
         let empty = WPEParityTextLayout(mesh: nil, blockOffset: .zero, fboSize: SIMD2(1, 1))
         let scalars = input.text.unicodeScalars.prefix { $0.value != 0 }.map(\.value)
         guard !scalars.isEmpty else { return empty }
@@ -142,7 +147,7 @@ public enum WPEParityTextLayoutEngine {
         guard let primary = chain.faces.first else { return empty }
         var layouter = WPEParityTextLayouter(input: input, chain: chain, scalars: scalars.filter { $0 != 13 })
         guard let mesh = layouter.run() else { return empty }
-        return WPEParityTextLayout(
+        return try WPEParityTextLayout(
             mesh: mesh,
             blockOffset: blockOffset(mesh, primary: primary, input: input),
             fboSize: fboSize(mesh, input: input)
@@ -167,14 +172,22 @@ public enum WPEParityTextLayoutEngine {
         return SIMD2(x, centre - anchor)
     }
 
-    static func fboSize(_ mesh: WPEParityTextMesh, input: WPEParityTextLayoutInput) -> SIMD2<Int> {
-        // Native clamps only the upper bound; the lower bound keeps Int(...) from trapping.
+    static func fboSize(_ mesh: WPEParityTextMesh, input: WPEParityTextLayoutInput) throws -> SIMD2<Int> {
         let padding = input.appliesPadding
             ? input.padding.clamped(lowerBound: SIMD2(repeating: -512), upperBound: SIMD2(repeating: 512)) : .zero
-        return SIMD2(
-            Int(padding.x + padding.x + (mesh.maxX - mesh.minX)),
-            Int(padding.y + padding.y + (mesh.top - mesh.bottom))
-        )
+        let extent = SIMD2(padding.x + padding.x + (mesh.maxX - mesh.minX),
+                           padding.y + padding.y + (mesh.top - mesh.bottom))
+        // 32768 is the largest 2D target supported by the shipping Mac GPU families. The app still checks
+        // the actual device's smaller limit before allocating. Never convert NaN/overflow into an Int or
+        // let an impossible target reach graph byte-size arithmetic or Metal's fatal descriptor validation.
+        func dimension(_ value: Float) throws -> Int {
+            guard value.isFinite,
+                  let result = Int(exactly: max(1, value).rounded(.towardZero)), result <= 32768 else {
+                throw WPEParityTextPreparationError.invalidLayoutExtent
+            }
+            return result
+        }
+        return try SIMD2(dimension(extent.x), dimension(extent.y))
     }
 }
 

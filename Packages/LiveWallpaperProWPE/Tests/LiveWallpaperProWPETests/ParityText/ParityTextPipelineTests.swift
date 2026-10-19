@@ -74,8 +74,8 @@ final class ParityTextPipelineTests: XCTestCase {
         _ = try ParityTextPlannerTests.makePlanner()
         let library = WPEParityFontLibrary(assets: WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)]))
         let face = try XCTUnwrap(library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.first)
-        let layout = WPEParityTextLayoutEngine.layout(Self.object("T", "Hello").layoutInput(effectCount: 0),
-                                                      fonts: library)
+        let layout = try WPEParityTextLayoutEngine.layout(Self.object("T", "Hello").layoutInput(effectCount: 0),
+                                                          fonts: library)
         let keys = try XCTUnwrap(layout.mesh?.mono.glyphKeys)
         XCTAssertEqual(face.renders, Set(keys).count, "layout renders each glyph once")
         var atlas = WPEParityGlyphAtlas(format: .r8)

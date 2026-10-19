@@ -58,6 +58,17 @@ final class WPEParityGraphExecutor {
             guard let format = pixelFormats[resource.format] else {
                 throw WPEParityGraphExecutionError.unsupportedFormat(resource.format)
             }
+            // Also guards heapTextureSizeAndAlign, which validates before a heap texture is allocated.
+            let maximumDimension = WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
+            guard resource.width > 0, resource.height > 0,
+                  resource.width <= maximumDimension, resource.height <= maximumDimension,
+                  resource.mipCount > 0,
+                  resource.mipCount <= Int.bitWidth - max(resource.width, resource.height).leadingZeroBitCount,
+                  [1, 2, 4, 8].contains(resource.sampleCount), device.supportsTextureSampleCount(resource.sampleCount),
+                  resource.sampleCount == 1 || resource.mipCount == 1,
+                  storage != .memoryless || resource.mipCount == 1 else {
+                throw WPEParityGraphExecutionError.incompatibleTexture(resource.id)
+            }
             let descriptor = MTLTextureDescriptor()
             descriptor.textureType = resource.sampleCount > 1 ? .type2DMultisample : .type2D
             descriptor.pixelFormat = format

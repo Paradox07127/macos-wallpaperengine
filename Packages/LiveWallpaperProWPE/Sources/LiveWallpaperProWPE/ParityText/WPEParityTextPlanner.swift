@@ -48,10 +48,10 @@ public final class WPEParityTextPlanner {
 
     /// The layout of `object` without packing its glyphs.
     public func layout(_ object: WPEParityTextObject, effectCount: Int,
-                       glyphMode: WPEParityTextGlyphMode = .bitmap) -> WPEParityTextLayout {
+                       glyphMode: WPEParityTextGlyphMode = .bitmap) throws -> WPEParityTextLayout {
         var input = object.layoutInput(effectCount: effectCount)
         input.glyphMode = glyphMode
-        return WPEParityTextLayoutEngine.layout(input, fonts: fonts)
+        return try WPEParityTextLayoutEngine.layout(input, fonts: fonts)
     }
 
     /// Takes over `layout`, planned for `objectID` against `atlases`, whose glyph references it already holds.
@@ -61,16 +61,11 @@ public final class WPEParityTextPlanner {
 
     /// The layout of `object` with every quad's UVs taken from its atlas instance, and that instance's key. Glyphs
     /// already in the atlas are not rasterised again.
-    public func plan(_ object: WPEParityTextObject, effectCount: Int) -> (layout: WPEParityTextLayout, atlasKey: String) {
+    public func plan(_ object: WPEParityTextObject, effectCount: Int) throws -> (layout: WPEParityTextLayout, atlasKey: String) {
         var next = state
-        do {
-            let result = try pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
-            state = next
-            return result
-        } catch {
-            // Only distance-field generation/admission can throw; the original bitmap skip policy is unchanged.
-            preconditionFailure("Bitmap packing violated its nonthrowing internal invariant: \(error)")
-        }
+        let result = try pack(object, layout: layout(object, effectCount: effectCount), glyphMode: .bitmap, state: &next)
+        state = next
+        return result
     }
 
     /// Explicit preparation for a caller that will atomically admit the matching font PSO, constants and
@@ -98,7 +93,7 @@ public final class WPEParityTextPlanner {
            WPEParityTextDrawParameters(object: object, pointSize: object.pointSize) == nil {
             throw WPEParityTextPreparationError.nonfiniteDrawParameters
         }
-        let layout = layout(object, effectCount: effectCount, glyphMode: glyphMode)
+        let layout = try layout(object, effectCount: effectCount, glyphMode: glyphMode)
         if glyphMode == .distanceField, let mesh = layout.mesh {
             let chain = fonts.chain(fontPath: object.font, pointSize: mesh.pointSize)
             for key in Set(mesh.mono.glyphKeys + mesh.color.glyphKeys) {

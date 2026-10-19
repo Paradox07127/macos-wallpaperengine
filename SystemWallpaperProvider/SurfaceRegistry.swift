@@ -1,6 +1,20 @@
 import Foundation
 import QuartzCore
 
+/// Identity of the published file or capsule directory, independent of the user's library date.
+/// Publication replaces the filesystem object atomically; metadata-only notifications keep this unchanged.
+struct WallpaperPublishedContentIdentity: Equatable {
+    let device: UInt64
+    let inode: UInt64
+
+    static func read(at url: URL) -> Self? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber else { return nil }
+        return Self(device: device.uint64Value, inode: inode.uint64Value)
+    }
+}
+
 /// One live surface: a remote context plus the renderer feeding it.
 final class WallpaperSurface {
     let uuid: UUID
@@ -11,6 +25,7 @@ final class WallpaperSurface {
     var choiceID: String?
     var resolvedItemID: String?
     var publishedAt: Date?
+    var publishedContentIdentity: WallpaperPublishedContentIdentity?
     var playbackGeneration: UInt64 = 0
     var playbackFailure: String?
     var isPreview = false
