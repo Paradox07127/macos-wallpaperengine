@@ -23,6 +23,8 @@ struct SceneRendererDiagnostics: Sendable {
     let shaderErrors: ShaderErrors
     let gpuErrors: GPUErrors
     var compatibilitySummary = ""
+    #if !SYSTEM_WALLPAPER_EXTENSION
     var parity: WPEParityRuntimeDiagnostics?
+    #endif
 }
 #endif

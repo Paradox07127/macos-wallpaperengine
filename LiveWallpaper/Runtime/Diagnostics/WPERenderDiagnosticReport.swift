@@ -78,6 +78,7 @@ enum WPERenderDiagnosticReport {
             lines.append("No render diagnostics yet (scene not loaded).")
         }
 
+        #if !SYSTEM_WALLPAPER_EXTENSION
         if let diagnostics {
             lines.append("")
             if let parity = diagnostics.parity {
@@ -95,6 +96,7 @@ enum WPERenderDiagnosticReport {
                 lines.append("Parity pipeline: no active snapshot")
             }
         }
+        #endif
 
         if let shaders = diagnostics?.shaderErrors {
             lines.append("")
